@@ -7,29 +7,38 @@
 Sapphire is a sleek notch app which displays current activities neatly around the notch on newer macbooks. It also includes a suite of convenient features, from nearby share compatibility for easy file sharing with android devices to your mac to eye break reminders to keep yourself in check.
 
 ## Features
-- Nearby Share
+- **Nearby Share:**
   Allows sharing files, pictures, videos, websites and more from android to your mac!
-- Now playing
+- **Now playing:**
   Displays currently playing media of all types in the notch( works with mac os 15.5 as well)
-- Eye Break
+- **Eye Break:**
   Health should always be your priority. With the sleek notch UI a reminder is given every 20 minutes to look 20 feet away for 20 seconds.
-- Weather
+- **Weather:**
   Current weather is persistently shown in the notch so you're in the know about your surroundings
-- Gemini
+- **Gemini:**
   Share your screen and discuss about topics conveniently using gemini live
-- Calendar
+- **Calendar:**
   See upcoming events and get alerted for on-going events
 
 ## Upcoming features
-- Display Focus Status Change
+- **Display Focus Status Change**
+
   Requires an account enrolled in apple developer program, so I'll only be able to finish implementing and testing this feature when I'm enrolled
-- Custom HUD in the notch
+  
+- **Custom HUD in the notch**
+
   Shows a custom HUD in the notch when volume or brightness is changed. Recent mac os 26 beta 2 broke this feature, may still work on mac os 15 or mac os beta 26 beta 1
-- Notifications in notch
+  
+- **Notifications in notch**
+
   Requires an account enrolled in apple developer program, so I'll only be able to finish implementing and testing this feature when I'm enrolled
-- Battery management features
+  
+- **Battery management features**
+
   Requires an account enrolled in apple developer program as a helper tool needs to be installed, so I'll only be able to finish implementing and testing this feature when I'm enrolled
-- New Icon
+  
+- **New Icon**
+
   A new modern icon will be published in the upcoming release
 
 ## Upcoming release status
