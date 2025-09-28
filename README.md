@@ -2,7 +2,7 @@
 
 <img width="200" height="200" alt="Group 26" src="https://github.com/user-attachments/assets/7cfadadb-be79-4a6d-892f-9a29bb22a2c0" />
 
-[Download Pre-Release Version]([https://github.com/cshariq/Sapphire/releases/download/Pre-Release/Sapphire.zip](https://github.com/cshariq/Sapphire/releases/tag/Release))
+[Download Pre-Release Version](https://github.com/cshariq/Sapphire/releases/tag/Release)
 
 Sapphire is a sleek notch app which displays current activities neatly around the notch on newer macbooks. It also includes a suite of convenient features, from nearby share compatibility for easy file sharing with android devices to your mac to eye break reminders to keep yourself in check.
 
