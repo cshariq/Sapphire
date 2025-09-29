@@ -1,6 +1,6 @@
 # Sapphire
 
-<img width="200" height="200" alt="Group 26" src="https://github.com/user-attachments/assets/7cfadadb-be79-4a6d-892f-9a29bb22a2c0" />
+<img width="170" height="170" alt="Group 31p" src="https://github.com/user-attachments/assets/b68ccfe0-2d8e-4eb6-bf23-1296caf6f924" />
 
 [Download Pre-Release Version](https://github.com/cshariq/Sapphire/releases/tag/Release)
 
