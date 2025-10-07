@@ -4,20 +4,21 @@
 //
 //  Created by Shariq Charolia on 2025-07-04.
 //
+//
 
 import SwiftUI
 import Cocoa
 import AudioToolbox
+import IOKit.hidsystem
 
+// MARK: - Private API Type Definitions (Single Source of Truth)
+internal typealias CGSConnectionID = Int32
+internal typealias CGSSpaceID = UInt64
+internal typealias CGError = Int32
 
-
-fileprivate typealias CGSConnectionID = Int
-fileprivate typealias CGSSpaceID = UInt64
-
-
+// MARK: - CoreGraphics Services Private APIs (for Notch Window)
 @_silgen_name("_CGSDefaultConnection")
-fileprivate func _CGSDefaultConnection() -> CGSConnectionID
-
+internal func _CGSDefaultConnection() -> CGSConnectionID
 
 @_silgen_name("CGSSpaceCreate")
 fileprivate func CGSSpaceCreate(_ cid: CGSConnectionID, _ unknown: Int, _ options: NSDictionary?) -> CGSSpaceID
@@ -38,20 +39,20 @@ private func CGSGetActiveSpace(_ cid: CGSConnectionID) -> CGSSpaceID
 @_silgen_name("CGSCopyManagedDisplaySpaces")
 private func CGSCopyManagedDisplaySpaces(_ cid: CGSConnectionID) -> CFArray
 
+@_silgen_name("CoreDockSendNotification")
+internal func CoreDockSendNotification(_ notification: CFString, _ unknown: CInt) -> Void
 
-
+// MARK: - DisplayServices Private APIs
 @_silgen_name("DisplayServicesGetBrightness")
 private func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
 @_silgen_name("DisplayServicesSetBrightness")
 private func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
 
-
-
+// MARK: - SwiftUI Private APIs
 @_silgen_name("$s7SwiftUI5ImageV19_internalSystemNameACSS_tcfC")
 private func _swiftUI_image(internalSystemName: String) -> Image?
 
 extension Image {
-    
     init?(privateName: String) {
         guard let systemImage = _swiftUI_image(internalSystemName: privateName) else {
             return nil
@@ -60,9 +61,7 @@ extension Image {
     }
 }
 
-
-
-
+// MARK: - CGS Space Management (for Notch Window)
 public final class CGSSpace {
     private let identifier: CGSSpaceID
     private let createdByInit: Bool
@@ -80,16 +79,14 @@ public final class CGSSpace {
                 if !add.isEmpty {
                      CGSAddWindowsToSpaces(connectionID, add.map { $0.windowNumber } as NSArray, [self.identifier] as NSArray)
                 }
-            } else {
             }
         }
     }
 
-    
-    public init(level: Int = 0) {
+    public init(level: Int = Int(CGWindowLevelForKey(.normalWindow))) {
         self.connectionID = _CGSDefaultConnection()
         let flag = 0x1
-        
+
         self.identifier = CGSSpaceCreate(connectionID, flag, nil as NSDictionary?)
         CGSSpaceSetAbsoluteLevel(connectionID, self.identifier, level)
         CGSShowSpaces(connectionID, [self.identifier] as NSArray)
@@ -106,110 +103,83 @@ public final class CGSSpace {
     }
 }
 
-
-
-
+// MARK: - System HUD Management
 class OSDManager {
     static func disableSystemHUD() {
-        let kickstart = Process()
-        kickstart.launchPath = "/bin/launchctl"
-        kickstart.arguments = ["kickstart", "gui/\(getuid())/com.apple.OSDUIHelper"]
-        
-        do {
-            try kickstart.run()
-            kickstart.waitUntilExit()
-        } catch {
-        }
-        
-        let stopProcess = Process()
-        stopProcess.launchPath = "/usr/bin/killall"
-        stopProcess.arguments = ["-STOP", "OSDUIHelper"]
-        
-        do {
-            try stopProcess.run()
-        } catch {
-        }
+        print("[OSDManager] LOG: `disableSystemHUD` called. Native HUD suppression is handled by consuming media key events in `SystemHUDManager`.")
     }
-    
+
     static func enableSystemHUD() {
-        let continueProcess = Process()
-        continueProcess.launchPath = "/usr/bin/killall"
-        continueProcess.arguments = ["-CONT", "OSDUIHelper"]
-        
-        do {
-            try continueProcess.run()
-        } catch {
-        }
+        print("[OSDManager] LOG: `enableSystemHUD` called. No action needed.")
     }
 }
 
-
-
-
+// MARK: - System Control Interface
 struct SystemControl {
+    private static var brightnessAnimationTask: Task<Void, Never>?
 
-    
-    private static func getDefaultOutputDeviceID() -> AudioDeviceID? {
-        var deviceID: AudioDeviceID = kAudioObjectUnknown
-        var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &propertySize, &deviceID)
-        return status == noErr ? deviceID : nil
+    private static let keyboardManager = KeyboardBacklightManager.sharedManager() as! KeyboardBacklightManager
+
+    static func configureKeyboardBacklight() {
+        Self.keyboardManager.configure()
     }
 
     static func getVolume() -> Float {
-        guard let deviceID = getDefaultOutputDeviceID() else { return 0.5 }
-        var volume: Float32 = 0.0
-        var propertySize = UInt32(MemoryLayout<Float32>.size)
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyVolumeScalar,
-            mScope: kAudioObjectPropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &propertySize, &volume)
-        return Float(volume)
+        let scriptSource = "output volume of (get volume settings)"
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            let result = script.executeAndReturnError(&error)
+            if error == nil {
+                return Float(result.int32Value) / 100.0
+            }
+        }
+        return 0.5 // Fallback
     }
 
     static func setVolume(to level: Float) {
-        guard let deviceID = getDefaultOutputDeviceID() else { return }
-        var newVolume = Float32(max(0.0, min(1.0, level)))
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyVolumeScalar,
-            mScope: kAudioObjectPropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        AudioObjectSetPropertyData(deviceID, &propertyAddress, 0, nil, UInt32(MemoryLayout.size(ofValue: newVolume)), &newVolume)
+        let cleanLevel = max(0.0, min(1.0, level))
+
+        let scriptVolume: Int
+        if cleanLevel < 0.05 {
+            scriptVolume = Int(ceil(cleanLevel * 100))
+        } else {
+            scriptVolume = Int((cleanLevel * 100).rounded(.toNearestOrAwayFromZero))
+        }
+
+        let scriptSource = "set volume output volume \(scriptVolume)"
+
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            script.executeAndReturnError(&error)
+            if let err = error {
+                print("[SystemControl] ERROR: AppleScript failed to set volume: \(err)")
+            }
+        }
     }
 
     static func isMuted() -> Bool {
-        guard let deviceID = getDefaultOutputDeviceID() else { return false }
-        var isMuted: UInt32 = 0
-        var propertySize = UInt32(MemoryLayout<UInt32>.size)
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioObjectPropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &propertySize, &isMuted)
-        return isMuted == 1
-    }
-    
-    static func setMuted(to isMuted: Bool) {
-        guard let deviceID = getDefaultOutputDeviceID() else { return }
-        var muteVal: UInt32 = isMuted ? 1 : 0
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioObjectPropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        AudioObjectSetPropertyData(deviceID, &propertyAddress, 0, nil, UInt32(MemoryLayout.size(ofValue: muteVal)), &muteVal)
+        let scriptSource = "output muted of (get volume settings)"
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            let result = script.executeAndReturnError(&error)
+            if error == nil {
+                return result.booleanValue
+            }
+        }
+        return false // Fallback
     }
 
-    
+    static func setMuted(to isMuted: Bool) {
+        let scriptSource = isMuted ? "set volume with output muted" : "set volume without output muted"
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            script.executeAndReturnError(&error)
+            if let err = error {
+                print("[SystemControl] ERROR: AppleScript failed to set mute state: \(err)")
+            }
+        }
+    }
+
     static func getBrightness() -> Float {
         var brightness: Float = 0.0
         guard let screen = NSScreen.main else { return 0.5 }
@@ -224,31 +194,66 @@ struct SystemControl {
         let clampedLevel = min(1.0, max(0.0, level))
         for screen in NSScreen.screens {
             let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
-            DisplayServicesSetBrightness(displayID, clampedLevel)
+            let result = DisplayServicesSetBrightness(displayID, clampedLevel)
+            if result != 0 {
+                print("[SystemControl] ERROR: DisplayServicesSetBrightness failed for display \(displayID) with result code \(result).")
+            }
         }
+    }
+
+    static func setBrightnessSmoothly(to targetBrightness: Float, duration: TimeInterval = 0.2) {
+        brightnessAnimationTask?.cancel()
+
+        brightnessAnimationTask = Task {
+            let startBrightness = getBrightness()
+            let startTime = Date()
+            let endTime = startTime.addingTimeInterval(duration)
+
+            while Date() < endTime {
+                if Task.isCancelled { break }
+
+                let elapsed = Date().timeIntervalSince(startTime)
+                let progress = min(1.0, elapsed / duration)
+
+                let interpolatedBrightness = startBrightness + (targetBrightness - startBrightness) * Float(progress)
+                setBrightness(to: interpolatedBrightness)
+
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+
+            if !Task.isCancelled {
+                setBrightness(to: targetBrightness)
+            }
+        }
+    }
+
+    static func getKeyboardBrightness() -> Float {
+        return Self.keyboardManager.getBrightness()
+    }
+
+    static func setKeyboardBrightness(to level: Float) {
+        let clampedLevel = level.clamped(to: 0...1)
+        Self.keyboardManager.setBrightness(clampedLevel)
     }
 }
 
-
-
-
+// MARK: - CGS Desktop Helper
 struct CGSHelper {
     private static let connection = _CGSDefaultConnection()
 
-    
     static func getActiveDesktopNumber() -> Int? {
         let activeSpaceID = CGSGetActiveSpace(connection)
-        
+
         guard let displaySpaces = CGSCopyManagedDisplaySpaces(connection) as? [[String: Any]],
               let mainDisplay = displaySpaces.first,
               let spacesForMainDisplay = mainDisplay["Spaces"] as? [[String: Any]] else {
             return nil
         }
-        
+
         if let index = spacesForMainDisplay.firstIndex(where: { ($0["id64"] as? CGSSpaceID) == activeSpaceID }) {
             return index + 1
         }
-        
+
         return nil
     }
 }

@@ -4,9 +4,9 @@
 //
 //  Created by Shariq Charolia on 2025-07-10.
 //
+//
 
 import SwiftUI
-
 
 private struct WindowKey: EnvironmentKey {
     static let defaultValue: NSWindow? = nil
@@ -19,23 +19,22 @@ extension EnvironmentValues {
     }
 }
 
-
 struct SettingsView: View {
-    @StateObject private var settings = SettingsModel()
+    @StateObject private var settings = SettingsModel.shared
     @State private var selectedSection: SettingsSection? = .widgets
 
     var body: some View {
-        
+
         ZStack {
             HStack(spacing: 0) {
                 SettingsSidebarView(selectedSection: $selectedSection)
-                    .frame(width: 190)
-                
+                    .frame(width: 190, height: 880)
+
                 SettingsDetailView(selectedSection: selectedSection)
             }
-            
+
             WindowDragHandle()
-            
+
             CustomTrafficLightButtons()
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
@@ -49,10 +48,9 @@ struct SettingsView: View {
     }
 }
 
-
 struct WindowDragHandle: View {
     @Environment(\.window) private var window
-    
+
     var body: some View {
         VStack {
             Color.clear

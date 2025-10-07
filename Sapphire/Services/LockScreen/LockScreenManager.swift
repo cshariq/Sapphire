@@ -1,0 +1,276 @@
+//
+//  LockScreenManager.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2025-09-11.
+//
+//
+
+import Foundation
+import SwiftUI
+import AppKit
+
+struct SizePreferenceKey: PreferenceKey {
+    static var defaultValue: [CGSize] = []
+    static func reduce(value: inout [CGSize], nextValue: () -> [CGSize]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+struct MeasureSizeModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background(
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: SizePreferenceKey.self,
+                    value: [geometry.size]
+                )
+            }
+        )
+    }
+}
+
+extension View {
+    func measureSize() -> some View {
+        self.modifier(MeasureSizeModifier())
+    }
+}
+
+private struct WidgetSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let v = nextValue()
+        if v != .zero {
+            value = v
+        }
+    }
+}
+
+private struct SizeObservingView<Content: View>: View {
+    let content: Content
+    let onSizeChange: (CGSize) -> Void
+
+    var body: some View {
+        content
+            .background(
+                GeometryReader { geometry in
+                    Color.clear
+                        .preference(key: WidgetSizePreferenceKey.self, value: geometry.size)
+                }
+            )
+            .onPreferenceChange(WidgetSizePreferenceKey.self) { newSize in
+                DispatchQueue.main.async { onSizeChange(newSize) }
+            }
+    }
+}
+
+public enum LockScreenSpaceLevel: Int32 {
+    case kCGSSpaceAbsoluteLevelDefault = 0, kCGSSpaceAbsoluteLevelSetupAssistant = 100, kCGSSpaceAbsoluteLevelSecurityAgent = 200, kCGSSpaceAbsoluteLevelScreenLock = 300, kSLSSpaceAbsoluteLevelNotificationCenterAtScreenLock = 400, kCGSSpaceAbsoluteLevelBootProgress = 500, kCGSSpaceAbsoluteLevelVoiceOver = 600
+}
+
+public class LockScreenManager {
+    public static let shared = LockScreenManager()
+
+    private let connection: Int32
+    private let space: Int32
+    private var windows: [String: NSWindowController] = [:]
+
+    private var lastMeasuredSizes: [String: CGSize] = [:]
+
+    private let MAIN_ID = "mainWidgetContainer"
+    private let MINI_ID_PREFIX = "mini" // e.g., "miniWidgetContainer" or "mini-..."
+
+    private let spacingMainAboveMini: CGFloat = 24
+    private let bottomInsetNoMini: CGFloat = 80
+    private let infoTopInset: CGFloat = 250
+
+    typealias F_SLSMainConnectionID = @convention(c) () -> Int32
+    typealias F_SLSSpaceCreate = @convention(c) (Int32, Int32, Int32) -> Int32
+    typealias F_SLSSpaceSetAbsoluteLevel = @convention(c) (Int32, Int32, Int32) -> Int32
+    typealias F_SLSShowSpaces = @convention(c) (Int32, CFArray) -> Int32
+    typealias F_SLSSpaceAddWindowsAndRemoveFromSpaces = @convention(c) (Int32, Int32, CFArray, Int32) -> Int32
+    typealias F_SLSRemoveWindowsFromSpaces = @convention(c) (Int32, CFArray, CFArray) -> Int32
+
+    let SLSMainConnectionID: F_SLSMainConnectionID
+    let SLSSpaceCreate: F_SLSSpaceCreate
+    let SLSSpaceSetAbsoluteLevel: F_SLSSpaceSetAbsoluteLevel
+    let SLSShowSpaces: F_SLSShowSpaces
+    let SLSSpaceAddWindowsAndRemoveFromSpaces: F_SLSSpaceAddWindowsAndRemoveFromSpaces
+    let SLSRemoveWindowsFromSpaces: F_SLSRemoveWindowsFromSpaces
+
+    public struct LockScreenWidgetConfig {
+        public let id: String
+        public let view: AnyView
+        public let initialSize: CGSize
+        public let positioner: (CGSize, NSScreen) -> NSRect
+
+        public init(id: String, view: AnyView, initialSize: CGSize, positioner: @escaping (CGSize, NSScreen) -> NSRect) {
+            self.id = id
+            self.view = view
+            self.initialSize = initialSize
+            self.positioner = positioner
+        }
+    }
+
+    private init() {
+        let handler = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/Versions/A/SkyLight", RTLD_NOW)!
+        SLSMainConnectionID = unsafeBitCast(dlsym(handler, "SLSMainConnectionID"), to: F_SLSMainConnectionID.self)
+        SLSSpaceCreate = unsafeBitCast(dlsym(handler, "SLSSpaceCreate"), to: F_SLSSpaceCreate.self)
+        SLSSpaceSetAbsoluteLevel = unsafeBitCast(dlsym(handler, "SLSSpaceSetAbsoluteLevel"), to: F_SLSSpaceSetAbsoluteLevel.self)
+        SLSShowSpaces = unsafeBitCast(dlsym(handler, "SLSShowSpaces"), to: F_SLSShowSpaces.self)
+        SLSSpaceAddWindowsAndRemoveFromSpaces = unsafeBitCast(dlsym(handler, "SLSSpaceAddWindowsAndRemoveFromSpaces"), to: F_SLSSpaceAddWindowsAndRemoveFromSpaces.self)
+        SLSRemoveWindowsFromSpaces = unsafeBitCast(dlsym(handler, "SLSRemoveWindowsFromSpaces"), to: F_SLSRemoveWindowsFromSpaces.self)
+        connection = SLSMainConnectionID()
+        space = SLSSpaceCreate(connection, 1, 0)
+        _ = SLSSpaceSetAbsoluteLevel(connection, space, LockScreenSpaceLevel.kSLSSpaceAbsoluteLevelNotificationCenterAtScreenLock.rawValue)
+        _ = SLSShowSpaces(connection, [space] as CFArray)
+    }
+
+    public func delegateWindow(_ window: NSWindow) {
+        _ = SLSSpaceAddWindowsAndRemoveFromSpaces(connection, space, [window.windowNumber] as CFArray, 7)
+    }
+
+    public func removeWindow(_ window: NSWindow) {
+        _ = SLSRemoveWindowsFromSpaces(connection, [window.windowNumber] as CFArray, [space] as CFArray)
+    }
+
+    private func isUserInfoVisibleOnLockScreen() -> Bool {
+        return UserDefaults.standard.persistentDomain(forName: "/Library/Preferences/com.apple.loginwindow.plist")?["HideUserAvatarAndName"] as? Bool ?? true
+    }
+
+    public func setupAndShowWindows(configs: [LockScreenWidgetConfig], on screen: NSScreen) {
+        let newWindowIDs = Set(configs.map { $0.id })
+        let existingWindowIDs = Set(windows.keys)
+        let windowsToRemove = existingWindowIDs.subtracting(newWindowIDs)
+
+        for id in windowsToRemove {
+            if let controller = windows[id] {
+                controller.close()
+                windows.removeValue(forKey: id)
+            }
+            lastMeasuredSizes.removeValue(forKey: id)
+        }
+
+        for config in configs {
+            let initialFrame = config.positioner(config.initialSize, screen)
+            displayView(config.view, withId: config.id, initialFrame: initialFrame, positioner: config.positioner, on: screen)
+        }
+
+        repositionMainIfPossible()
+    }
+
+    func calculateMainWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
+        if let miniSize = activeMiniSize(),
+           miniSize.height > 10 {
+            let miniFrame = calculateMiniWidgetFrame(size: miniSize, screen: screen)
+            let x = screen.visibleFrame.midX - (size.width / 2)
+            let y = miniFrame.maxY + spacingMainAboveMini
+            return NSRect(x: x, y: y, width: size.width, height: size.height)
+        } else {
+            let vis = screen.visibleFrame
+            let x = vis.midX - (size.width / 2)
+            let userInfoIsVisible = isUserInfoVisibleOnLockScreen()
+            let y = vis.minY + bottomInsetNoMini + (userInfoIsVisible ? 25 : 110)
+            return NSRect(x: x, y: y, width: size.width, height: size.height)
+        }
+    }
+
+    func calculateMiniWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
+        let vis = screen.visibleFrame
+        let userInfoIsVisible = isUserInfoVisibleOnLockScreen()
+        let verticalOffsetMultiplier = userInfoIsVisible ? 0.17 : 0.25
+        let x = vis.midX - (size.width / 2)
+        let y = vis.minY + vis.height * verticalOffsetMultiplier - (size.height / 2)
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    func calculateInfoWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
+        let vis = screen.visibleFrame
+        let x = vis.midX - (size.width / 2)
+        let y = vis.maxY - size.height - infoTopInset
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+
+    private func displayView(_ view: AnyView,
+                             withId id: String,
+                             initialFrame: NSRect,
+                             positioner: @escaping (CGSize, NSScreen) -> NSRect,
+                             on screen: NSScreen) {
+        let controller: NSWindowController
+        if let existing = windows[id] {
+            controller = existing
+        } else {
+            let window = UnfocusableWindow(
+                contentRect: initialFrame,
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false
+            )
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = false
+            window.level = .mainMenu + 2
+            window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+            controller = NSWindowController(window: window)
+            windows[id] = controller
+            delegateWindow(window)
+        }
+
+        let sizeObservingView = SizeObservingView(content: view) { [weak self] newSize in
+            guard let self = self, let window = controller.window else { return }
+            self.lastMeasuredSizes[id] = newSize
+
+            let newFrame = positioner(newSize, screen)
+            if !window.isVisible {
+                window.setFrame(newFrame, display: false)
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                window.animator().setFrame(newFrame, display: true)
+            }
+
+            if id.hasPrefix(self.MINI_ID_PREFIX) || id == self.MAIN_ID {
+                self.repositionMainIfPossible()
+            }
+        }
+
+        let hostingController = NSHostingController(rootView: sizeObservingView)
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
+
+        controller.window?.contentViewController = hostingController
+    }
+
+    private func activeMiniSize() -> CGSize? {
+        for (id, controller) in windows {
+            guard id.hasPrefix(MINI_ID_PREFIX),
+                  let win = controller.window,
+                  win.isVisible,
+                  let sz = lastMeasuredSizes[id],
+                  sz.height > 10 else { continue }
+            return sz
+        }
+        return nil
+    }
+
+    private func repositionMainIfPossible() {
+        guard let controller = windows[MAIN_ID],
+              let window = controller.window,
+              let screen = window.screen else { return }
+
+        let size = lastMeasuredSizes[MAIN_ID] ?? window.frame.size
+        let target = calculateMainWidgetFrame(size: size, screen: screen)
+        if window.frame != target {
+            window.animator().setFrame(target, display: true)
+        }
+    }
+
+    public func hideAndDestroyWindows() {
+        windows.values.forEach { controller in
+            controller.window?.orderOut(nil)
+            controller.window?.contentViewController = nil
+            controller.close()
+        }
+        windows.removeAll()
+        lastMeasuredSizes.removeAll()
+    }
+}

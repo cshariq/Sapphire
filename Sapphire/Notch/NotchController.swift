@@ -2,13 +2,79 @@
 //  NotchController.swift
 //  Sapphire
 //
-//  Created by Shariq Charolia on 2025-07-04.
+//  Created by Shariq Charolia on 2025-07-04
+//
 //
 
 import SwiftUI
 import Combine
 import ScreenCaptureKit
+import NearbyShare
+import UniformTypeIdentifiers
+import AppKit
 
+fileprivate struct BatteryInfoView: View {
+    let level: Int
+    let isCharging: Bool
+    let timeRemaining: String?
+
+    private var batteryColor: Color {
+        if isCharging { return .green }
+        if level <= 10 { return .red }
+        if level <= 20 { return .yellow }
+        return .white
+    }
+
+    private var contentColor: Color {
+        return .black
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let timeString = timeRemaining {
+                Text(timeString)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .transition(.opacity.animation(.easeInOut))
+                    .padding(.trailing, 2)
+            }
+            ZStack {
+                Image(systemName: "battery.100")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundColor(.white.opacity(0.7))
+
+                HStack(spacing: 0) {
+                    Rectangle()
+                        .fill(batteryColor)
+                        .frame(width: 35 * (CGFloat(level) / 100.0))
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 2.7)
+                .padding(.vertical, 2.7)
+                .mask {
+                    Image(systemName: "battery.100")
+                        .font(.system(size: 22, weight: .light))
+                }
+
+                if isCharging {
+                    HStack(spacing: 0) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 6, weight: .bold))
+                        Text("\(level)")
+                            .font(.system(size: 7, weight: .medium, design: .rounded))
+                    }
+                    .foregroundColor(level > 10 ? contentColor : .white)
+                } else {
+                    Text("\(level)")
+                        .font(.system(size: 7, weight: .medium, design: .rounded))
+                        .foregroundColor(level > 10 ? contentColor : .white)
+                }
+
+            }
+            .frame(width: 22, height: 10)
+        }
+    }
+}
 
 fileprivate class SettingsWindowDelegate: NSObject, NSWindowDelegate {
     var onClose: () -> Void
@@ -16,139 +82,564 @@ fileprivate class SettingsWindowDelegate: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) { onClose() }
 }
 
+fileprivate struct MaxContentWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct NotchController: View {
     let notchWindow: NSWindow?
+    private let notchWidget: NotchWidgetView
+    private static var renderCounter: Int = 0
 
     enum NotchState {
         case initial, autoExpanded, hoverExpanded, clickExpanded
     }
 
-    
     @EnvironmentObject var liveActivityManager: LiveActivityManager
+    @EnvironmentObject var musicWidget: MusicManager
     @EnvironmentObject var geminiLiveManager: GeminiLiveManager
     @EnvironmentObject var pickerHelper: ContentPickerHelper
     @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var batteryEstimator: BatteryEstimator
+    @EnvironmentObject var timerManager: TimerManager
 
-    
+    @StateObject private var fileShelfState = FileShelfState()
+    @StateObject private var dragManager = GlobalDragManager.shared
+    @StateObject private var dragState = DragStateManager.shared
+    @StateObject private var audioManager = MultiAudioManager.shared
+    @StateObject private var caffeineManager = CaffeineManager.shared
+    @StateObject private var calendarViewModel = InteractiveCalendarViewModel()
+
     @State private var notchState: NotchState = .initial
     @State private var isHovered: Bool = false
-    @State private var collapseTimer: Timer?
-    @State private var widgetChangeState: Bool = false
+    @State private var collapseTask: Task<Void, Never>?
+    @State private var isCollapseTimerActive: Bool = false
     @State private var isPinned = false
-
-    
     @State private var settingsWindow: NSWindow?
     @State private var settingsDelegate: SettingsWindowDelegate?
-
-    
     @State private var isGeminiHovered = false
-
-    
     @State private var animatedWidth: CGFloat = NotchConfiguration.initialSize.width
     @State private var animatedHeight: CGFloat = NotchConfiguration.initialSize.height
     @State private var animatedCornerRadius: CGFloat = NotchConfiguration.initialCornerRadius
+    @State private var animatedBottomCornerRadius: CGFloat = NotchConfiguration.initialCornerRadius
     @State private var shadowOpacity: Double = 0
-    
-    
     @State private var measuredClickContentSize: CGSize = .zero
     @State private var measuredAutoContentSize: CGSize = .zero
-    
-    
-    @State private var widgetMode: NotchWidgetMode = .defaultWidgets
-    
-    
+    @State private var navigationStack: [NotchWidgetMode] = [.defaultWidgets]
     @State private var clickContentOpacity: Double = 0
     @State private var autoContentOpacity: Double = 0
 
-    
+    @State private var activityBlurRadius: CGFloat = 0
+    @State private var widgetBlurRadius: CGFloat = 0
+    @State private var contentBlurOpacity: Double = 0
+
+    @State private var activityContentScale: CGFloat = 1.0
+
+    @State private var canRenderAutoContent: Bool = false
+
+    @State private var isAnimatingActivityOut = false
+
+    @State public var isFileDropTargeted: Bool = false
+
+    @State private var draggedAppBundleID: String? = nil
+    @State private var activeDropZone: DropZone? = nil
+    @State private var showLyrics: Bool = false
+
+    @State private var maxActivityContentWidth: CGFloat = 0
+    @State private var liveActivityHorizontalPadding: CGFloat = 10.0
+
+    @State private var expansionAnimation: Animation = NotchConfiguration.expandAnimation
+
+    @State private var cancellables = Set<AnyCancellable>()
+
+    @State private var awaitingDropCompletion: Bool = false
+
     private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
     private var isFullViewActivity: Bool { liveActivityManager.isFullViewActivity }
-    
+    private var isGeminiActive: Bool { liveActivityManager.currentActivity == .geminiLive }
+
+    private var currentMode: NotchWidgetMode { navigationStack.last ?? .defaultWidgets }
+
+    private var activeAppearanceSettings: NotchAppearanceSettings {
+        switch notchState {
+        case .initial, .clickExpanded:
+            return settings.settings.notchWidgetAppearance
+        case .autoExpanded, .hoverExpanded:
+            if isLiveActivityActive {
+                return settings.settings.notchLiveActivityAppearance
+            } else {
+                return settings.settings.notchWidgetAppearance
+            }
+        }
+    }
+
+    private var geminiShadowGradient: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                .purple.opacity(0.7),
+                .indigo.opacity(0.8),
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var glowOpacity: Double {
+        guard isGeminiActive else { return 0 }
+        let baseOpacity = (notchState == .initial || notchState == .autoExpanded) ? 0.4 : 0.7
+        return baseOpacity + (Double(geminiLiveManager.currentAudioLevel) * 0.3)
+    }
+
+    private var glowRadius: CGFloat {
+        guard isGeminiActive else { return 0 }
+        let baseRadius: CGFloat = (notchState == .initial || notchState == .autoExpanded) ? 12 : 25
+        return baseRadius + (CGFloat(geminiLiveManager.currentAudioLevel) * 15)
+    }
+
+    private var currentViewTitle: String? {
+        switch currentMode {
+        case .multiAudioDeviceAdjust(let device):
+            return "Adjust"
+        case .multiAudioEQ(let device):
+            return "EQ"
+        case .musicDevices:
+            return "Devices"
+        case .musicQueueAndPlaylists:
+            return "Queue & Playlists"
+        case .multiAudio:
+            return "Audio Devices"
+        default:
+            return nil
+        }
+    }
+
     private var activeScaleFactor: CGFloat {
         guard notchState == .hoverExpanded && !isFullViewActivity else { return 1.0 }
         return NotchConfiguration.scaleFactor
     }
-    
-    public init(notchWindow: NSWindow?) {
-        self.notchWindow = notchWindow
+
+    private var enabledAndOrderedWidgets: [WidgetType] {
+        let orderedTypes = settings.settings.widgetOrder
+
+        return orderedTypes.filter { widgetType in
+            switch widgetType {
+            case .music: return settings.settings.musicWidgetEnabled
+            case .weather: return settings.settings.weatherWidgetEnabled
+            case .calendar: return settings.settings.calendarWidgetEnabled
+            case .shortcuts: return settings.settings.shortcutsWidgetEnabled
+            }
+        }
     }
 
-    
+    private var currentSnapLayout: SnapLayout {
+        let allLayouts = LayoutTemplate.allTemplates + settings.settings.customSnapLayouts
+        if let bundleID = draggedAppBundleID,
+           let config = settings.settings.appSpecificLayoutConfigurations[bundleID] {
+            switch config {
+            case .single(let layoutID):
+                if let layout = allLayouts.first(where: { $0.id == layoutID }) {
+                    return layout
+                }
+            case .useGlobalDefault, .multi:
+                break
+            }
+        }
+        return settings.settings.defaultSnapLayout
+    }
+
+    private var showMultiAudioIcon: Bool {
+        audioManager.availableOutputDevices.count > 1
+    }
+
+    private var leftNotchButtons: [NotchButtonType] {
+        let allButtons = settings.settings.notchButtonOrder
+        if let spacerIndex = allButtons.firstIndex(of: .spacer) {
+            return Array(allButtons.prefix(upTo: spacerIndex))
+        }
+        return allButtons
+    }
+
+    private var rightNotchButtons: [NotchButtonType] {
+        let allButtons = settings.settings.notchButtonOrder
+        if let spacerIndex = allButtons.firstIndex(of: .spacer) {
+            return Array(allButtons.suffix(from: allButtons.index(after: spacerIndex)))
+        }
+        return []
+    }
+
+    public init(notchWindow: NSWindow?) {
+        self.notchWindow = notchWindow
+        self.notchWidget = NotchWidgetView(
+            navigationStack: .constant([]),
+            activeDropZone: .constant(nil),
+            isFileDropTargeted: .constant(false),
+            calendarViewModel: InteractiveCalendarViewModel()
+        )
+    }
+
+    private var activeShape: CustomNotchShape {
+        CustomNotchShape(cornerRadius: animatedCornerRadius, bottomCornerRadius: animatedBottomCornerRadius)
+    }
+
     var body: some View {
+        let renderIndex: Int = {
+            NotchController.renderCounter += 1
+            return NotchController.renderCounter
+        }()
+
         ZStack(alignment: .top) {
-            CustomNotchShape(cornerRadius: animatedCornerRadius)
-                .fill(Color.black)
-                .shadow(
-                    color: NotchConfiguration.expandedShadowColor.opacity(shadowOpacity),
-                    radius: notchState == .clickExpanded ? NotchConfiguration.expandedShadowRadius : 12,
-                    y: notchState == .clickExpanded ? NotchConfiguration.expandedShadowOffset.y : 6
-                )
-                .onTapGesture(perform: handleTap)
+            notchBackground
+                .mask(activeShape)
 
             ZStack(alignment: .top) {
-                contentView
+                let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
+
+                if showActivityView && isLiveActivityActive && canRenderAutoContent {
+                    autoActivityView
+                        .fixedSize(horizontal: true, vertical: false)
+                        .blur(radius: activityBlurRadius)
+                        .scaleEffect(activityContentScale)
+                        .id(liveActivityManager.contentUpdateID)
+                        .transition(.asymmetric(
+                            insertion: .opacity.animation(NotchConfiguration.activityOpacityAnimation),
+                            removal: .opacity.animation(NotchConfiguration.activityOpacityAnimation)
+                        ))
+                        .animation(liveActivityManager.activityHasBottomContent ?
+                                  NotchConfiguration.bottomContentTransitionAnimation :
+                                  NotchConfiguration.activityToActivityAnimation,
+                                  value: liveActivityManager.contentUpdateID)
+                        .opacity(autoContentOpacity)
+                        .scaleEffect(activeScaleFactor)
+                        .animation(NotchConfiguration.hoverAnimation, value: notchState)
+                        .allowsHitTesting(isHovered)
+                } else {
+                    contentView
+                        .blur(radius: widgetBlurRadius)
+                        .mask(activeShape)
+                }
+
                 if notchState == .clickExpanded {
                     expandedOverlayIcons
                         .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                         .zIndex(1)
                 }
             }
-            .mask(CustomNotchShape(cornerRadius: animatedCornerRadius))
         }
         .frame(width: animatedWidth, height: animatedHeight)
-        .contentShape(CustomNotchShape(cornerRadius: animatedCornerRadius))
-        .padding(.horizontal, 15)
-        .padding(.bottom, 15)
-        .contentShape(Capsule())
+        .contentShape(activeShape)
         .onHover(perform: handleHover)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(measurementView.hidden())
-        .onAppear(perform: updateMouseEventHandling)
+        .padding(.top, -NotchConfiguration.topBuffer)
+        .overlay(measurementOverlay)
+        .onAppear(perform: setupMonitors)
+        .onDisappear(perform: teardownMonitors)
+        .onChange(of: fileShelfState.selectedItemForPreview, perform: handlePreviewItemChange)
         .onChange(of: liveActivityManager.currentActivity, perform: handleActivityChange)
-        .onChange(of: notchState, perform: handleStateChange)
-        .onChange(of: isHovered, perform: { _ in updateMouseEventHandling() })
-        .onChange(of: widgetMode, perform: handleWidgetModeChange)
-        .onChange(of: measuredClickContentSize) { newSize in
-            if notchState == .clickExpanded {
-                withAnimation(NotchConfiguration.expandAnimation) {
-                    animatedWidth = newSize.width
-                    animatedHeight = newSize.height
-                }
+        .onChange(of: liveActivityManager.activityContent) { _, _ in
+            if notchState == .autoExpanded || notchState == .hoverExpanded {
+                handleStateChange(from: notchState, to: notchState)
             }
         }
-        .onChange(of: measuredAutoContentSize) { newSize in
-            let scale = activeScaleFactor
-            let targetHeight = newSize.height * scale
-            let isShrinking = targetHeight < self.animatedHeight
-            let expandAnimation = (notchState == .hoverExpanded) ? NotchConfiguration.expandAnimation : NotchConfiguration.autoExpandAnimation
-            let animationToUse = isShrinking ? NotchConfiguration.collapseAnimation : expandAnimation
+        .onDrop(of: [UTType.fileURL, .plainText], isTargeted: $isFileDropTargeted, perform: handleItemDrop)
+        .onChange(of: notchState, handleStateChange)
+        .onChange(of: navigationStack, handleNavigationStackChange)
+        .onChange(of: dragManager.isDraggingInActivationZone, perform: handleDragActivationChange)
+        .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
+        .onChange(of: measuredClickContentSize) { _, newSize in handleSizeChange(newSize, for: .clickExpanded) }
+        .onChange(of: measuredAutoContentSize) { _, newSize in handleSizeChange(newSize, for: .autoExpanded) }
+        .onReceive(pickerHelper.pickerResultPublisher, perform: handlePickerResult)
+        .onChange(of: showLyrics, perform: handleShowLyricsChange)
+    }
 
-            if notchState == .autoExpanded || (notchState == .hoverExpanded && isLiveActivityActive) {
-                withAnimation(animationToUse) {
-                    animatedWidth = newSize.width * scale
-                    animatedHeight = targetHeight
-                }
+    @ViewBuilder
+    private var notchBackground: some View {
+        ZStack {
+            let appearance = activeAppearanceSettings
+
+            if appearance.enableTransparencyBlur {
+                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
             }
+
+            Rectangle()
+                .fill(notchFillMaterial)
+                .opacity(appearance.opacity)
+
+            activeShape
+                .fill(geminiShadowGradient)
+                .blur(radius: glowRadius)
+                .opacity(glowOpacity)
+                .scaleEffect(1.05)
+                .animation(.linear(duration: 0.1), value: geminiLiveManager.currentAudioLevel)
+                .allowsHitTesting(false)
         }
-        .onReceive(pickerHelper.pickerResultPublisher) { result in
-            switch result {
-            case .success(let filter):
-                geminiLiveManager.startSession(with: filter)
-                liveActivityManager.startGeminiLive()
-            case .failure(let error):
-                if let error = error {
-                } else {
-                }
+        .clipShape(activeShape)
+        .shadow(
+            color: isGeminiActive ? .clear : NotchConfiguration.expandedShadowColor.opacity(shadowOpacity),
+            radius: notchState == .clickExpanded ? NotchConfiguration.expandedShadowRadius : 12,
+            y: notchState == .clickExpanded ? NotchConfiguration.expandedShadowOffset.y : 6
+        )
+        .onTapGesture(perform: handleTap)
+    }
+
+    private var notchFillMaterial: AnyShapeStyle {
+        let appearance = activeAppearanceSettings
+        let style = appearance.backgroundStyle
+
+        switch style {
+        case .solid:
+            return AnyShapeStyle(appearance.solidColor.color)
+        case .gradient:
+            let stops = appearance.gradientColors
+                .map { Gradient.Stop(color: $0.color, location: $0.location) }
+                .sorted { $0.location < $1.location }
+
+            let angle = appearance.gradientAngle * .pi / 180
+            let startPoint = UnitPoint(x: 0.5 - cos(angle) * 0.5, y: 0.5 - sin(angle) * 0.5)
+            let endPoint = UnitPoint(x: 0.5 + cos(angle) * 0.5, y: 0.5 + sin(angle) * 0.5)
+
+            return AnyShapeStyle(LinearGradient(
+                gradient: Gradient(stops: stops.isEmpty ? [Gradient.Stop(color: .black, location: 0)] : stops),
+                startPoint: startPoint,
+                endPoint: endPoint
+            ))
+        case .radial:
+            let stops = appearance.gradientColors
+                .map { Gradient.Stop(color: $0.color, location: $0.location) }
+                .sorted { $0.location < $1.location }
+
+            return AnyShapeStyle(RadialGradient(
+                gradient: Gradient(stops: stops.isEmpty ? [Gradient.Stop(color: .black, location: 0)] : stops),
+                center: .center,
+                startRadius: 0,
+                endRadius: animatedWidth / 2
+            ))
+        }
+    }
+
+    private func setupMonitors() {
+        updateMouseEventHandling()
+        dragManager.startMonitoring()
+        liveActivityManager.showLyricsBinding = $showLyrics
+
+        updateFPS()
+        updateWindowSharingBehavior()
+
+        TrackpadGestureHandler.shared.onSwipe = { dx, dy in
+            self.handleTrackpadSwipe(vector: CGVector(dx: dx, dy: dy))
+        }
+
+        TrackpadGestureHandler.shared.onTwoFingerTap = {
+            self.handleTrackpadTwoFingerTap()
+        }
+
+        NotificationCenter.default.addObserver(forName: .fileDropFlowCompleted, object: nil, queue: .main) { _ in
+            self.awaitingDropCompletion = false
+            if self.notchState == .clickExpanded && !self.isPinned {
+                self.scheduleCollapse(after: NotchConfiguration.widgetSwitchCollapseDelay)
             }
         }
     }
 
-    
-    
+    private func teardownMonitors() {
+        dragManager.stopMonitoring()
+        TrackpadGestureHandler.shared.stopMonitoring()
+
+        TrackpadGestureHandler.shared.onSwipe = nil
+        TrackpadGestureHandler.shared.onTwoFingerTap = nil
+
+        NotificationCenter.default.removeObserver(self, name: .fileDropFlowCompleted, object: nil)
+
+        collapseTask?.cancel()
+        cancellables.removeAll()
+    }
+
+    private func handlePreviewItemChange(newItem: ShelfItem?) {
+        if newItem != nil {
+            navigationStack.append(.fileActionPreview)
+        } else {
+            if navigationStack.last == .fileActionPreview {
+                navigationStack.removeLast()
+            }
+        }
+    }
+
+    private func toRestorableMenu(mode: NotchWidgetMode) -> RestorableNotchMenu? {
+        switch mode {
+        case .defaultWidgets: return .defaultWidgets
+        case .musicPlayer: return .musicPlayer
+        case .musicQueueAndPlaylists: return .musicQueueAndPlaylists
+        case .musicDevices: return .musicDevices
+        case .nearDrop: return .nearDrop
+        case .fileShelf: return .fileShelf
+        case .multiAudio: return .multiAudio
+        case .weatherPlayer: return .weatherPlayer
+        case .calendarPlayer: return .calendarPlayer
+        case .timerDetailView: return .timerDetailView
+        case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
+             .musicPlaylistDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
+             .multiAudioDeviceAdjust, .multiAudioEQ, .dragActivated:
+            return nil
+        }
+    }
+
+    private func handleNavigationStackChange(oldStack: [NotchWidgetMode], newStack: [NotchWidgetMode]) {
+        if notchState == .clickExpanded {
+            if settings.settings.rememberLastMenu {
+                let restorableStack = newStack.compactMap { toRestorableMenu(mode: $0) }
+                if !restorableStack.isEmpty {
+                    settings.settings.lastNotchNavigationStack = restorableStack
+                }
+            }
+        }
+
+        if notchState == .clickExpanded && oldStack.last != .defaultWidgets && oldStack != newStack && newStack != [.defaultWidgets] {
+            scheduleCollapse(after: NotchConfiguration.widgetSwitchCollapseDelay)
+        }
+    }
+
+    public func handleItemDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        self.awaitingDropCompletion = true
+        let capturedDropZone = self.activeDropZone
+        return false
+    }
+
+    private func handleDragActivationChange(isDragging: Bool) {
+        collapseTask?.cancel()
+        isCollapseTimerActive = false
+
+        if isDragging {
+            dragState.didJustDrop = false
+
+            awaitingDropCompletion = false
+            self.awaitingDropCompletion = true
+
+            let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
+            self.draggedAppBundleID = frontmostApp?.bundleIdentifier
+            self.navigationStack = [.snapZones]
+
+            if notchState != .clickExpanded {
+                notchState = .clickExpanded
+            }
+        } else {
+            if dragState.didJustDrop { return }
+            if awaitingDropCompletion { return }
+
+            draggedAppBundleID = nil
+            scheduleCollapse(after: NotchConfiguration.dragActivationCollapseDelay)
+        }
+    }
+
+    private func handleFileDropTargetChange(isTargeted: Bool) {
+        if isTargeted {
+            if navigationStack.last != .fileShelfLanding {
+                navigationStack = [.fileShelfLanding]
+            }
+        }
+    }
+
+    private func handleSizeChange(_ newSize: CGSize, for state: NotchState) {
+        if state == .clickExpanded && notchState == .clickExpanded {
+            guard newSize.width > 1 && newSize.height > 1 else { return }
+            guard abs(newSize.width - animatedWidth) > 1 || abs(newSize.height - animatedHeight) > 1 else { return }
+
+            withAnimation(NotchConfiguration.expandAnimation) {
+                animatedWidth = newSize.width
+                animatedHeight = newSize.height
+            }
+        } else if state == .autoExpanded {
+            updateAutoContentSize()
+        }
+    }
+
+    private func handlePickerResult(result: PickerResult) {
+        switch result {
+        case .success(let filter):
+            geminiLiveManager.startSession(with: filter)
+            liveActivityManager.startGeminiLive()
+        case .failure(let error):
+            if let error = error { print("Picker failed with error: \(error)") }
+            else { print("Picker was cancelled by the user.") }
+        }
+    }
+
+    private func handleShowLyricsChange(newValue: Bool) {
+        if newValue {
+            navigationStack.append(.musicLyrics)
+            DispatchQueue.main.async { self.showLyrics = false }
+        }
+    }
+
+    private func handleTrackpadSwipe(vector: CGVector) {
+        if (notchState == .initial || notchState == .hoverExpanded) && !isLiveActivityActive {
+            let verticalThreshold: CGFloat = 20.0
+            let isVerticalSwipe = abs(vector.dy) > abs(vector.dx) * 1.5
+
+            if isVerticalSwipe && abs(vector.dy) > verticalThreshold {
+                if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+
+                self.expansionAnimation = NotchConfiguration.swipeOpenAnimation
+
+                measuredClickContentSize = .zero
+                if settings.settings.clickToOpenFileShelf && !FileShelfManager.shared.files.isEmpty {
+                    navigationStack = [.fileShelf]
+                } else {
+                    navigationStack = [.defaultWidgets]
+                }
+                notchState = .clickExpanded
+                return
+            }
+        }
+
+        guard isLiveActivityActive && (notchState == .autoExpanded || notchState == .hoverExpanded) else { return }
+
+        if abs(vector.dx) > abs(vector.dy) {
+            if liveActivityManager.currentActivity == .music {
+                let isSwipeRight = vector.dx > 0
+                let invert = settings.settings.invertMusicGestures
+
+                let shouldSkipForward = (isSwipeRight && !invert) || (!isSwipeRight && invert)
+                let shouldGoBackward = (!isSwipeRight && !invert) || (isSwipeRight && invert)
+
+                if shouldSkipForward && settings.settings.swipeToSkipMusic {
+                    if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                    musicWidget.nextTrack()
+                } else if shouldGoBackward && settings.settings.swipeToRewindMusic {
+                    if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                    musicWidget.previousTrack()
+                }
+            }
+            else if settings.settings.swipeToDismissLiveActivity {
+                if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                liveActivityManager.dismissCurrentActivity()
+            }
+        }
+    }
+
+    private func handleTrackpadTwoFingerTap() {
+        guard isLiveActivityActive && liveActivityManager.currentActivity == .music &&
+              (notchState == .autoExpanded || notchState == .hoverExpanded) else {
+            return
+        }
+
+        if settings.settings.twoFingerTapToPauseMusic {
+            if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+            musicWidget.isPlaying ? musicWidget.pause() : musicWidget.play()
+        }
+    }
+
     @ViewBuilder
     private var contentView: some View {
         if notchState == .clickExpanded {
-            NotchWidgetView(mode: $widgetMode)
+            notchWidget
+                .environmentObject(fileShelfState)
+                .environmentObject(dragState)
+                .environment(\.navigationStack, $navigationStack)
+                .environment(\.activeDropZone, $activeDropZone)
+                .environment(\.isFileDropTargeted, $isFileDropTargeted)
                 .padding(.top, NotchConfiguration.contentTopPadding)
                 .padding(.bottom, NotchConfiguration.contentBottomPadding)
                 .padding(.horizontal, NotchConfiguration.contentHorizontalPadding)
@@ -156,134 +647,407 @@ struct NotchController: View {
                 .frame(width: animatedWidth, height: animatedHeight)
                 .clipped()
                 .allowsHitTesting(true)
-        } else if isLiveActivityActive && (notchState == .autoExpanded || notchState == .hoverExpanded) {
-            Group {
-                autoActivityView
-            }
-            .id(liveActivityManager.contentUpdateID)
-            .transition(.asymmetric(
-                insertion: .opacity.combined(with: .scale(scale: 0.98, anchor: .top)),
-                removal: .opacity.combined(with: .scale(scale: 1.02, anchor: .top))
-            ))
-            .animation(NotchConfiguration.autoExpandAnimation, value: liveActivityManager.contentUpdateID)
-            .opacity(autoContentOpacity)
-            .scaleEffect(activeScaleFactor)
-            .animation(NotchConfiguration.expandAnimation, value: notchState)
-            .frame(width: animatedWidth, height: animatedHeight)
-            .clipped()
-            .allowsHitTesting(isHovered)
-            .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+        } else {
+            EmptyView()
         }
     }
 
     @ViewBuilder
     private var autoActivityView: some View {
         switch liveActivityManager.activityContent {
-        case .standard(let view, _):
+        case .full(let view, _, _):
             view
-        case .full(let view, _):
-            view
+                .padding(.horizontal, 15)
+                .clipShape(activeShape)
+        case .standard(let data, _):
+            buildStandardActivityView(from: data)
+                .clipShape(activeShape)
         case .none:
             EmptyView()
         }
     }
 
     @ViewBuilder
-    private var measurementView: some View {
-        ZStack {
-            NotchWidgetView(mode: $widgetMode)
-                .padding(.top, NotchConfiguration.contentTopPadding)
-                .padding(.bottom, NotchConfiguration.contentBottomPadding)
-                .padding(.horizontal, NotchConfiguration.contentHorizontalPadding)
-                .fixedSize()
-                .background(GeometryReader { geo in Color.clear.onSizeChange(of: geo.size) { measuredClickContentSize = $0 } })
-            
-            autoActivityView
-                .fixedSize()
-                .background(GeometryReader { geo in Color.clear.onSizeChange(of: geo.size) { measuredAutoContentSize = $0 } })
+    private func buildLeftView(for data: StandardActivityData) -> some View {
+        switch data {
+        case .music: AlbumArtView()
+        case .weather(let data): WeatherActivityView.left(for: data)
+        case .calendar: CalendarProximityActivityView.left()
+        case .reminder: ReminderProximityActivityView.left()
+        case .timer: TimerActivityView.left(timerManager: timerManager)
+        case .battery(let state, let style, let timeRemaining):
+            switch style {
+            case .persistent:
+                PersistentBatteryActivityView.left(for: state, timeRemaining: timeRemaining)
+            case .default:
+                DefaultBatteryActivityView.left(for: state)
+            case .compact:
+                CompactBatteryActivityView.left(for: state)
+            }
+        case .desktop(let number): DesktopActivityView.left(for: number)
+        case .focus(let mode): FocusModeActivityView.left(for: mode)
+        case .fileShelf: FileShelfActivityView.left()
+        case .fileProgress(let task): FileProgressLiveActivityView.left(for: task)
+        case .bluetooth(let device):
+            switch device.eventType {
+            case .connected:
+                if device.isContinuityDevice {
+                    BluetoothConnectedContinuityView.left(for: device)
+                } else {
+                    BluetoothConnectedPeripheralView.left(for: device)
+                }
+            case .disconnected:
+                BluetoothDisconnectedView.left(for: device)
+            case .batteryLow:
+                BluetoothBatteryLowView.left(for: device)
+            }
+        case .audioSwitch(let event): AudioSwitchActivityView.left(for: event)
+        case .geminiLive: GeminiActiveActivityView.left()
+        case .nearDrop: NearDropCompactActivityView.left()
+        case .hud(let type): SystemHUDSlimActivityView.left(type: type)
+        case .lockScreen: LockScreenLiveActivityView.left()
         }
     }
-    
+
+    @ViewBuilder
+    private func buildRightView(for data: StandardActivityData) -> some View {
+        switch data {
+        case .music: WaveformView()
+        case .weather(let data): WeatherActivityView.right(for: data)
+        case .calendar(let event): CalendarProximityActivityView.right(event: event)
+        case .reminder(let reminder): ReminderProximityActivityView.right(reminder: reminder)
+        case .timer: TimerActivityView.right(timerManager: timerManager)
+        case .battery(let state, let style, let timeRemaining):
+            switch style {
+            case .persistent:
+                PersistentBatteryActivityView.right(for: state)
+            case .default:
+                DefaultBatteryActivityView.right(for: state, timeRemaining: timeRemaining)
+            case .compact:
+                CompactBatteryActivityView.right(for: state)
+            }
+        case .desktop(let number): DesktopActivityView.right(for: number)
+        case .focus(let mode): FocusModeActivityView.right(for: mode, displayMode: settings.settings.focusDisplayMode)
+        case .fileShelf(let count): FileShelfActivityView.right(count: count)
+        case .fileProgress(let task): FileProgressLiveActivityView.right(for: task)
+        case .bluetooth(let device):
+            switch device.eventType {
+            case .connected:
+                if device.isContinuityDevice {
+                    BluetoothConnectedContinuityView.right(for: device)
+                } else {
+                    BluetoothConnectedPeripheralView.right(for: device)
+                }
+            case .disconnected:
+                BluetoothDisconnectedView.right(for: device)
+            case .batteryLow:
+                BluetoothBatteryLowView.right(for: device)
+            }
+        case .audioSwitch(let event): AudioSwitchActivityView.right(for: event)
+        case .geminiLive(let payload): GeminiActiveActivityView.right(isMuted: payload.isMicMuted) { geminiLiveManager.isMicMuted.toggle() }
+        case .nearDrop(let payload): NearDropCompactActivityView.right(payload: payload)
+        case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: SettingsModel.shared)
+        case .lockScreen: LockScreenLiveActivityView.right()
+        }
+    }
+
+    @ViewBuilder
+    private func buildStandardActivityView(from data: StandardActivityData) -> some View {
+        VStack(spacing: 0) {
+            let left = buildLeftView(for: data)
+            let right = buildRightView(for: data)
+
+            HStack(spacing: 0) {
+                HStack {
+                    Spacer()
+                    left
+                        .fixedSize()
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: MaxContentWidthPreferenceKey.self, value: geo.size.width)
+                        })
+                }
+                Spacer().frame(width: NotchConfiguration.initialSize.width)
+                HStack {
+                    right
+                        .fixedSize()
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: MaxContentWidthPreferenceKey.self, value: geo.size.width)
+                        })
+                    Spacer()
+                }
+            }
+            .hidden()
+            .frame(height: 0)
+            .onPreferenceChange(MaxContentWidthPreferenceKey.self) { newMaxWidth in
+                guard self.notchState != .hoverExpanded else { return }
+                withAnimation(NotchConfiguration.activityToActivityAnimation) {
+                    self.maxActivityContentWidth = newMaxWidth
+                }
+            }
+
+            GeometryReader { geometry in
+                let totalWidth = geometry.size.width
+
+                HStack(spacing: 0) {
+                    HStack(alignment: .center) {
+                        left
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: (totalWidth - NotchConfiguration.initialSize.width) / 2, alignment: .leading)
+
+                    Spacer()
+                        .frame(width: NotchConfiguration.initialSize.width)
+
+                    HStack(alignment: .center) {
+                        Spacer(minLength: 0)
+                        right
+                    }
+                    .frame(width: (totalWidth - NotchConfiguration.initialSize.width) / 2, alignment: .trailing)
+                }
+                .frame(height: geometry.size.height, alignment: .center)
+            }
+            .frame(width: maxActivityContentWidth * 2 + NotchConfiguration.initialSize.width)
+            .frame(height: NotchConfiguration.initialSize.height)
+            .padding(.horizontal, liveActivityManager.activityHasBottomContent ? 25 : 10)
+            .animation(NotchConfiguration.activityToActivityAnimation, value: liveActivityHorizontalPadding)
+
+            if let bottomView = getBottomView(for: data) {
+                VStack {
+                    bottomView
+                        .padding(.bottom, 10)
+                }
+                .padding(.horizontal, liveActivityHorizontalPadding)
+                .animation(NotchConfiguration.activityToActivityAnimation, value: liveActivityHorizontalPadding)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func getBottomView(for data: StandardActivityData) -> AnyView? {
+        switch data {
+        case .music(let bottomContentType):
+            switch bottomContentType {
+            case .none:
+                return nil
+            case .peek(let title, let artist):
+                return AnyView(QuickPeekView(title: title, artist: artist))
+            case .lyrics(let text, let id):
+                let view = Text(text)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(musicWidget.accentColor.opacity(0.9))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 200)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+                    .id("lyric-\(id.uuidString)")
+                    .onTapGesture {
+                        showLyrics = true
+                    }
+                return AnyView(view)
+            }
+
+        default:
+            return nil
+        }
+    }
+
+    @ViewBuilder
+    private var measurementOverlay: some View {
+        ZStack {
+            if notchState == .clickExpanded {
+                notchWidget
+                    .environmentObject(fileShelfState)
+                    .environment(\.navigationStack, $navigationStack)
+                    .environment(\.activeDropZone, $activeDropZone)
+                    .environment(\.isFileDropTargeted, $isFileDropTargeted)
+                    .padding(.top, NotchConfiguration.contentTopPadding)
+                    .padding(.bottom, NotchConfiguration.contentBottomPadding)
+                    .padding(.horizontal, NotchConfiguration.contentHorizontalPadding)
+                    .fixedSize()
+                    .background(GeometryReader { geo in
+                        Color.clear
+                            .onAppear {
+                                measuredClickContentSize = geo.size
+                            }
+                            .onChange(of: geo.size) { _, newSize in
+                                measuredClickContentSize = newSize
+                            }
+                            .onDisappear {
+                                measuredClickContentSize = .zero
+                            }
+                    })
+            }
+
+            if isLiveActivityActive {
+                autoActivityView
+                    .fixedSize(horizontal: true, vertical: false)
+                    .background(GeometryReader { geo in
+                        Color.clear
+                            .onAppear {
+                                let newSize = geo.size
+                                let epsilon: CGFloat = 0.5
+                                if abs(newSize.width - self.measuredAutoContentSize.width) > epsilon ||
+                                   abs(newSize.height - self.measuredAutoContentSize.height) > epsilon {
+                                    self.measuredAutoContentSize = newSize
+                                }
+                            }
+                            .onChange(of: geo.size) { _, newSize in
+                                let epsilon: CGFloat = 0.5
+                                if abs(newSize.width - self.measuredAutoContentSize.width) > epsilon ||
+                                   abs(newSize.height - self.measuredAutoContentSize.height) > epsilon {
+                                    self.measuredAutoContentSize = newSize
+                                }
+                            }
+                    })
+            }
+        }
+        .opacity(0)
+        .allowsHitTesting(false)
+    }
+
     @ViewBuilder
     private var expandedOverlayIcons: some View {
-        if widgetMode == .defaultWidgets {
+        if currentMode == .defaultWidgets {
             defaultModeIcons
-        } else {
-            backButton
+        } else if ![.fileShelfLanding, .snapZones, .dragActivated].contains(currentMode) {
+            navigationHeader
         }
+    }
+
+    @ViewBuilder
+    private var navigationHeader: some View {
+        ZStack {
+            HStack {
+                Button(action: {
+                    if navigationStack.count > 1 {
+                        navigationStack.removeLast()
+                    } else {
+                        navigationStack = [.defaultWidgets]
+                    }
+                }) {
+                    ZStack(alignment: .leading) {
+                        Image(systemName: "chevron.left.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                            .symbolRenderingMode(.hierarchical)
+                            .padding(.leading, 40)
+                    }
+                }
+                .padding(.top, 8)
+                .buttonStyle(.plain)
+
+                if let title = currentViewTitle {
+                    Text(title)
+                        .font(.system(size: 18, weight: .bold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(.top, 10)
+                }
+
+                Spacer()
+            }
+        }
+        .frame(height: NotchConfiguration.initialSize.height)
+        .frame(width: animatedWidth)
     }
 
     @ViewBuilder
     private var defaultModeIcons: some View {
         HStack {
             HStack(spacing: 0) {
-                SubtleIconButton(systemName: "gearshape", action: openSettingsWindow)
-                if settings.settings.geminiEnabled { geminiButton }
+                ForEach(leftNotchButtons) { buttonType in
+                    notchButton(for: buttonType)
+                }
             }
+
             Spacer()
+
             HStack(spacing: 0) {
-                if settings.settings.dropboxIconEnabled {
-                    SubtleIconButton(systemName: "arrow.down.circle", action: { widgetMode = .nearDrop })
-                }
-                if settings.settings.batteryEstimatorEnabled {
-                    SubtleIconButton(systemName: "battery.100", action: { print("Battery tapped") })
-                }
-                if settings.settings.pinEnabled {
-                    SubtleIconButton(systemName: isPinned ? "pin.fill" : "pin", action: { isPinned.toggle(); if isPinned { collapseTimer?.invalidate() } })
+                ForEach(rightNotchButtons) { buttonType in
+                    notchButton(for: buttonType)
                 }
             }
         }
         .padding(.horizontal, 40)
         .frame(height: NotchConfiguration.initialSize.height)
         .frame(width: animatedWidth)
-        .offset(y: -4)
     }
 
     @ViewBuilder
-    private var backButton: some View {
-        HStack {
-            Button(action: {
-                withAnimation(NotchConfiguration.expandAnimation) {
-                    widgetMode = .defaultWidgets
-                }
-            }) {
-                
-                ZStack(alignment: .leading) {
-                    
-                    Rectangle()
-                        .fill(Color.clear)
-                        .frame(width: 100, height: 60) 
-
-                    
-                    Image(systemName: "chevron.left.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
-                        .symbolRenderingMode(.hierarchical)
-                        .padding(.leading, 40) 
-                }
+    private func notchButton(for type: NotchButtonType) -> some View {
+        switch type {
+        case .settings:
+            SubtleIconButton(systemName: "gearshape", action: openSettingsWindow)
+        case .fileShelf:
+            if settings.settings.fileShelfIconEnabled {
+                SubtleIconButton(systemName: "tray.full", action: { navigationStack.append(.nearDrop) })
             }
-            .buttonStyle(.plain)
-            
-            Spacer()
+        case .gemini:
+            if settings.settings.geminiEnabled {
+                geminiButton
+            }
+        case .caffeine:
+            if settings.settings.caffeinateEnabled {
+                SubtleIconButton(systemName: caffeineManager.isActive ? "cup.and.heat.waves.fill" : "cup.and.heat.waves", action: { caffeineManager.toggle() }, horizontalPadding: 6)
+                    .offset(y: -2)
+            }
+        case .battery:
+            if settings.settings.batteryEstimatorEnabled {
+                BatteryInfoView(
+                    level: batteryEstimator.batteryLevel,
+                    isCharging: batteryEstimator.isCharging,
+                    timeRemaining: batteryEstimator.estimatedTimeRemaining
+                )
+                .padding(.horizontal, 10)
+            }
+        case .multiAudio:
+            if showMultiAudioIcon {
+                SubtleIconButton(systemName: "hifispeaker.and.homepod.mini.fill", action: { navigationStack.append(.multiAudio) })
+            }
+        case .pin:
+            if settings.settings.pinEnabled {
+                SubtleIconButton(systemName: isPinned ? "pin.fill" : "pin", action: {
+                    isPinned.toggle()
+                    if isPinned {
+                        collapseTask?.cancel()
+                        isCollapseTimerActive = false
+                    }
+                }, horizontalPadding: 6)
+            }
+        case .spacer:
+            EmptyView()
         }
-        .frame(height: NotchConfiguration.initialSize.height)
-        .frame(width: animatedWidth)
     }
 
     @ViewBuilder
     private var geminiButton: some View {
+        let isRunning = geminiLiveManager.isSessionRunning
         let baseSize: CGFloat = 25
-        let geminiGradient = LinearGradient(
+        let activeGradient = LinearGradient(
             gradient: Gradient(colors: [Color.purple.opacity(0.8), Color.indigo.opacity(0.6)]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        let inactiveGradient = LinearGradient(
+            gradient: Gradient(colors: [Color.orange.opacity(0.8), Color.red.opacity(1)]),
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
 
         Button(action: {
-            pickerHelper.showPicker()
+            if isRunning {
+                geminiLiveManager.stopSession()
+            } else {
+                if settings.settings.geminiApiKey.isEmpty {
+                    navigationStack.append(.geminiApiKeysMissing)
+                } else {
+                    pickerHelper.showPicker()
+                }
+            }
         }) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkle")
+                Image(systemName: isRunning ? "stop.fill" : "sparkle")
                     .font(.system(size: isGeminiHovered ? 12 : 14, weight: .medium))
                     .rotationEffect(.degrees(isGeminiHovered ? 90 : 0))
                     .foregroundStyle(
@@ -294,7 +1058,7 @@ struct NotchController: View {
                     .animation(.spring(response: 0.5, dampingFraction: 0.6), value: isGeminiHovered)
 
                 if isGeminiHovered {
-                    Text("Go live")
+                    Text(isRunning ? "Stop" : "Go live")
                         .font(.system(size: 10, weight: .semibold))
                         .fixedSize()
                         .foregroundColor(.white)
@@ -303,7 +1067,7 @@ struct NotchController: View {
             }
             .padding(.horizontal, isGeminiHovered ? 10 : 0)
             .frame(width: isGeminiHovered ? nil : baseSize, height: baseSize)
-            .background(isGeminiHovered ? geminiGradient : nil)
+            .background(isGeminiHovered ? (isRunning ? inactiveGradient: activeGradient) : nil)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -313,124 +1077,352 @@ struct NotchController: View {
             }
         }
     }
-    
-    
-    
+
     private func handleTap() {
-        collapseTimer?.invalidate()
+        if notchState == .clickExpanded { return }
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.command) {
+            collapseTask?.cancel()
+            isCollapseTimerActive = false
+
+            measuredClickContentSize = .zero
+            navigationStack = [.defaultWidgets]
+            notchState = .clickExpanded
+
+            return
+        }
+
+        collapseTask?.cancel()
+        isCollapseTimerActive = false
         if isPinned { return }
-        
-        if isLiveActivityActive && (notchState == .autoExpanded || notchState == .hoverExpanded) {
-            let activityType = liveActivityManager.currentActivity
+
+        let activityType = liveActivityManager.currentActivity
+
+        if (notchState == .autoExpanded || notchState == .hoverExpanded) {
+            let initiateWidgetView: (NotchWidgetMode) -> Void = { mode in
+                self.measuredClickContentSize = .zero
+                self.navigationStack = [mode]
+                self.notchState = .clickExpanded
+            }
+
             if activityType == .music, settings.settings.musicOpenOnClick {
-                notchState = .clickExpanded; widgetMode = .musicPlayer; return
+                initiateWidgetView(.musicPlayer); return
             }
             if activityType == .weather, settings.settings.weatherOpenOnClick {
-                notchState = .clickExpanded; widgetMode = .weatherPlayer; return
+                initiateWidgetView(.weatherPlayer); return
+            }
+            if activityType == .calendar, settings.settings.calendarOpenOnClick {
+                initiateWidgetView(.calendarPlayer); return
+            }
+            if activityType == .fileShelf, settings.settings.clickToOpenFileShelf {
+                initiateWidgetView(.fileShelf); return
+            }
+            if activityType == .timer, settings.settings.clickToShowTimerView {
+                initiateWidgetView(.timerDetailView); return
             }
         }
-        
+
         switch notchState {
-        case .initial, .hoverExpanded, .autoExpanded: notchState = .clickExpanded
-        case .clickExpanded: notchState = isLiveActivityActive ? .autoExpanded : .initial
+        case .initial, .autoExpanded, .hoverExpanded:
+            measuredClickContentSize = .zero
+
+            var targetStack: [NotchWidgetMode]
+            if settings.settings.clickToOpenFileShelf && !FileShelfManager.shared.files.isEmpty {
+                targetStack = [.fileShelf]
+            } else if settings.settings.rememberLastMenu, let savedStack = settings.settings.lastNotchNavigationStack, !savedStack.isEmpty {
+                targetStack = savedStack.map { $0.toNotchWidgetMode() }
+            } else {
+                targetStack = [.defaultWidgets]
+            }
+
+            navigationStack = targetStack
+            notchState = .clickExpanded
+        case .clickExpanded:
+            return
         }
     }
 
     private func handleHover(hovering: Bool) {
-        isHovered = hovering
+        self.isHovered = hovering
+
+        updateMouseEventHandling()
+        updateWindowSharingBehavior()
+
         if hovering {
-            collapseTimer?.invalidate()
-            if notchState == .initial || notchState == .autoExpanded {
-                notchState = .hoverExpanded
+            TrackpadGestureHandler.shared.startMonitoring()
+        } else {
+            TrackpadGestureHandler.shared.stopMonitoring()
+        }
+
+        if hovering {
+            collapseTask?.cancel()
+            isCollapseTimerActive = false
+            let activityType = liveActivityManager.currentActivity
+
+            if activityType == .fileShelf, settings.settings.hoverToOpenFileShelf {
+                 if notchState != .clickExpanded {
+                    navigationStack = [.fileShelf]
+                    notchState = .clickExpanded
+                }
+            } else if settings.settings.expandOnHover {
+                if notchState != .clickExpanded {
+                    NSApp.activate(ignoringOtherApps: true)
+                    notchWindow?.makeKeyAndOrderFront(nil)
+
+                    var targetStack: [NotchWidgetMode]
+                    if settings.settings.hoverToOpenFileShelf && !FileShelfManager.shared.files.isEmpty {
+                        targetStack = [.fileShelf]
+                    } else if settings.settings.rememberLastMenu, let savedStack = settings.settings.lastNotchNavigationStack, !savedStack.isEmpty {
+                        targetStack = savedStack.map { $0.toNotchWidgetMode() }
+                    } else {
+                        targetStack = [.defaultWidgets]
+                    }
+                    navigationStack = targetStack
+                    notchState = .clickExpanded
+                }
+            } else {
+                if notchState == .initial || notchState == .autoExpanded {
+                    notchState = .hoverExpanded
+                }
             }
-        } else if !widgetChangeState {
-            let delay = (widgetMode == .defaultWidgets) ? 0.0 : NotchConfiguration.collapseDelay
-            scheduleCollapse(after: delay)
+        } else {
+            if !isCollapseTimerActive {
+                scheduleCollapse(after: NotchConfiguration.collapseAnimationDelay)
+            }
         }
     }
-    
+
     private func handleActivityChange(_ newActivity: ActivityType) {
         guard notchState != .clickExpanded else { return }
+
+        if newActivity != .none {
+            activityBlurRadius = NotchConfiguration.activityBlurRadiusMax
+            activityContentScale = 0.9
+
+            DispatchQueue.main.async {
+                withAnimation(NotchConfiguration.focusPullAnimation) {
+                    self.activityBlurRadius = 0
+                    self.activityContentScale = 1.0
+                }
+            }
+        }
+
         notchState = newActivity != .none ? .autoExpanded : .initial
+        updateFPS()
     }
 
-    private func handleStateChange(newState: NotchState) {
+    private func handleStateChange(from oldState: NotchState, to newState: NotchState) {
         updateMouseEventHandling()
-        
+        updateWindowSharingBehavior()
+
+        let isContentUpdate = oldState == newState
+        let animation: Animation
+
+        if isContentUpdate {
+            animation = NotchConfiguration.bottomContentAnimation
+        } else {
+            switch newState {
+            case .initial: animation = NotchConfiguration.collapseAnimation
+            case .hoverExpanded: animation = NotchConfiguration.hoverAnimation
+            case .clickExpanded: animation = self.expansionAnimation
+            case .autoExpanded: animation = (oldState == .clickExpanded) ? NotchConfiguration.collapseAnimation : NotchConfiguration.activityToActivityAnimation
+            }
+        }
+
+        withAnimation(animation) {
+            updateRadiiForCurrentState(state: newState)
+            self.liveActivityHorizontalPadding = liveActivityManager.activityHasBottomContent ? 15.0 : 10.0
+        }
+
+        if isContentUpdate { return }
+
         switch newState {
         case .initial:
+            let wasShowingActivity = (oldState == .autoExpanded || oldState == .hoverExpanded)
+            if wasShowingActivity { isAnimatingActivityOut = true }
+            self.canRenderAutoContent = false
+            collapseTask?.cancel(); isCollapseTimerActive = false
+
             withAnimation(NotchConfiguration.collapseAnimation) {
-                animatedWidth = NotchConfiguration.initialSize.width
-                animatedHeight = NotchConfiguration.initialSize.height
-                animatedCornerRadius = NotchConfiguration.initialCornerRadius
-                widgetMode = .defaultWidgets
-                autoContentOpacity = 0
-                shadowOpacity = 0
-                isPinned = false
+                if wasShowingActivity { activityBlurRadius = 20; activityContentScale = 0.9; autoContentOpacity = 0 }
+                animatedWidth = NotchConfiguration.initialSize.width; animatedHeight = NotchConfiguration.initialSize.height
+                shadowOpacity = 0; isPinned = false
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                guard self.notchState == .initial else { return }
+                if wasShowingActivity { self.isAnimatingActivityOut = false }
+                self.activityBlurRadius = 0; self.activityContentScale = 1.0
             }
             withAnimation(.easeOut(duration: 0.1)) { clickContentOpacity = 0 }
 
         case .hoverExpanded:
+            isAnimatingActivityOut = false; self.canRenderAutoContent = true
             let scale = activeScaleFactor
-            let targetWidth = isLiveActivityActive ? measuredAutoContentSize.width * scale : NotchConfiguration.hoverExpandedSize.width
-            let targetHeight = isLiveActivityActive ? measuredAutoContentSize.height * scale : NotchConfiguration.hoverExpandedSize.height
-            let targetRadius = (scale > 1.0 && self.isLiveActivityActive) ? NotchConfiguration.autoExpandedCornerRadius : NotchConfiguration.hoverExpandedCornerRadius
-                        
-            withAnimation(NotchConfiguration.expandAnimation) {
-                animatedWidth = targetWidth; animatedHeight = targetHeight; animatedCornerRadius = targetRadius
-                widgetMode = .defaultWidgets
+
+            let rawWidth = isLiveActivityActive ? measuredAutoContentSize.width * scale : NotchConfiguration.hoverExpandedSize.width
+            let rawHeight = isLiveActivityActive ? measuredAutoContentSize.height * scale : NotchConfiguration.hoverExpandedSize.height
+            let targetWidth = max(rawWidth, NotchConfiguration.initialSize.width)
+            let targetHeight = max(rawHeight, NotchConfiguration.initialSize.height)
+
+            withAnimation(NotchConfiguration.hoverAnimation) {
+                animatedWidth = targetWidth; animatedHeight = targetHeight
                 if isLiveActivityActive { autoContentOpacity = 1 }
                 shadowOpacity = 1
             }
             withAnimation(.easeOut(duration: 0.1)) { clickContentOpacity = 0 }
 
         case .clickExpanded:
-            withAnimation(NotchConfiguration.expandAnimation) {
-                animatedWidth = measuredClickContentSize.width
-                animatedHeight = measuredClickContentSize.height
-                animatedCornerRadius = NotchConfiguration.clickExpandedCornerRadius
-                autoContentOpacity = 0
-                shadowOpacity = 1
+            isAnimatingActivityOut = false; self.canRenderAutoContent = false
+            widgetBlurRadius = NotchConfiguration.widgetBlurRadiusMax
+
+            if isLiveActivityActive && (oldState == .autoExpanded || oldState == .hoverExpanded) {
+                withAnimation(NotchConfiguration.activityBlurAnimation) { activityBlurRadius = NotchConfiguration.activityBlurRadiusMax; autoContentOpacity = 0; activityContentScale = 1.05 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                withAnimation(.easeIn(duration: 0.6)) { clickContentOpacity = 1 }
+
+            withAnimation(self.expansionAnimation) { autoContentOpacity = 0; shadowOpacity = 1; clickContentOpacity = 0.1 }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(NotchConfiguration.focusPullAnimation) { self.widgetBlurRadius = 0; self.clickContentOpacity = 1; self.activityContentScale = 1.0 }
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.expansionAnimation = NotchConfiguration.expandAnimation
             }
 
         case .autoExpanded:
-            let isShrinking = measuredAutoContentSize.height < self.animatedHeight
-            let animationToUse = isShrinking ? NotchConfiguration.collapseAnimation : NotchConfiguration.autoExpandAnimation
+            isAnimatingActivityOut = false
+            let isCollapsingFromClick = (oldState == .clickExpanded)
 
+            if isCollapsingFromClick {
+                self.canRenderAutoContent = false
+                withAnimation(NotchConfiguration.blurAnimation) { widgetBlurRadius = 20; clickContentOpacity = 0.3; activityContentScale = 0.92; activityBlurRadius = NotchConfiguration.activityBlurRadiusMax * 1.5 }
+            } else {
+                self.canRenderAutoContent = true; self.autoContentOpacity = 1
+            }
+
+            let animationToUse = isCollapsingFromClick ? NotchConfiguration.collapseAnimation : NotchConfiguration.activityToActivityAnimation
             withAnimation(animationToUse) {
-                animatedWidth = measuredAutoContentSize.width
-                animatedHeight = measuredAutoContentSize.height
-                animatedCornerRadius = NotchConfiguration.autoExpandedCornerRadius
-                widgetMode = .defaultWidgets
+                animatedWidth = max(measuredAutoContentSize.width, NotchConfiguration.initialSize.width)
+                animatedHeight = max(measuredAutoContentSize.height, NotchConfiguration.initialSize.height)
                 shadowOpacity = 0
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                withAnimation(.easeIn(duration: 0.25)) { autoContentOpacity = 1 }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                withAnimation(NotchConfiguration.blurRemovalAnimation) {
+                    if isCollapsingFromClick { self.widgetBlurRadius = 0 }
+                    self.activityBlurRadius = 0; self.activityContentScale = 1.0
+                }
+            }
+
+            if isCollapsingFromClick {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if self.notchState == .autoExpanded {
+                        self.canRenderAutoContent = true
+                        withAnimation(NotchConfiguration.activityOpacityAnimation) { self.autoContentOpacity = 1 }
+                    }
+                }
+            }
+        }
+        updateFPS()
+    }
+
+    private func updateRadiiForCurrentState(state: NotchState) {
+        let hasBottom = liveActivityManager.activityHasBottomContent
+
+        switch state {
+        case .initial:
+            animatedCornerRadius = NotchConfiguration.initialCornerRadius
+            animatedBottomCornerRadius = NotchConfiguration.initialCornerRadius
+
+        case .hoverExpanded:
+            if isLiveActivityActive {
+                animatedCornerRadius = NotchConfiguration.autoExpandedCornerRadius + (hasBottom ? 10 : 0)
+                if case .full(_, _, let customRadius) = liveActivityManager.activityContent {
+                    animatedBottomCornerRadius = customRadius ?? (hasBottom ? NotchConfiguration.liveActivityBottomCornerRadius : animatedCornerRadius)
+                } else {
+                    animatedBottomCornerRadius = hasBottom ? NotchConfiguration.liveActivityBottomCornerRadius : animatedCornerRadius
+                }
+            } else {
+                animatedCornerRadius = NotchConfiguration.hoverExpandedCornerRadius
+                animatedBottomCornerRadius = NotchConfiguration.hoverExpandedCornerRadius
+            }
+
+        case .clickExpanded:
+            animatedCornerRadius = NotchConfiguration.clickExpandedCornerRadius
+            animatedBottomCornerRadius = NotchConfiguration.clickExpandedCornerRadius
+
+        case .autoExpanded:
+            animatedCornerRadius = NotchConfiguration.autoExpandedCornerRadius + (hasBottom ? 10 : 0)
+
+            if case .full(_, _, let customRadius) = liveActivityManager.activityContent {
+                animatedBottomCornerRadius = customRadius ?? (hasBottom ? NotchConfiguration.liveActivityBottomCornerRadius : animatedCornerRadius)
+            } else {
+                animatedBottomCornerRadius = hasBottom ? NotchConfiguration.liveActivityBottomCornerRadius : animatedCornerRadius
             }
         }
     }
-    
-    private func handleWidgetModeChange(_ newMode: NotchWidgetMode) {
-        guard notchState == .clickExpanded else { return }
-        widgetChangeState = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            widgetChangeState = false
-            if !isHovered { scheduleCollapse() }
+
+    private func updateFPS() {
+        guard let layer = notchWindow?.contentView?.layer else { return }
+        let targetFPS = isLiveActivityActive ? 60 : 120
+        if #available(macOS 12.0, *) {
+            let key = "preferredFrameRateRange"
+            let rateRange = CAFrameRateRange(minimum: 0, maximum: Float(targetFPS), preferred: Float(targetFPS))
+            layer.setValue(rateRange, forKey: key)
         }
     }
-    
-    private func updateMouseEventHandling() {
-        let isInteractive = notchState == .clickExpanded || isHovered
-        notchWindow?.ignoresMouseEvents = !isInteractive
+
+    private func updateAutoContentSize() {
+        guard notchState == .autoExpanded || (notchState == .hoverExpanded && isLiveActivityActive) else { return }
+
+        let scale = activeScaleFactor
+        let targetWidth = measuredAutoContentSize.width * scale
+        let targetHeight = measuredAutoContentSize.height * scale
+
+        guard targetWidth > 0 && targetHeight > 0, (targetWidth != animatedWidth || targetHeight != animatedHeight) else { return }
+
+        withAnimation(.easeIn(duration: 0.15)) { activityBlurRadius = 15 }
+        withAnimation(NotchConfiguration.activityToActivityAnimation) { animatedWidth = targetWidth; animatedHeight = targetHeight }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { withAnimation(NotchConfiguration.blurRemovalAnimation) { self.activityBlurRadius = 0 } }
     }
 
-    private func scheduleCollapse(after delay: TimeInterval = NotchConfiguration.collapseDelay) {
-        collapseTimer?.invalidate()
+    private func updateMouseEventHandling() {
+        guard notchWindow?.contentView != nil else { return }
+        let isInteractive = notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone
+        let shouldIgnore = !isInteractive
+        if notchWindow?.ignoresMouseEvents != shouldIgnore {
+            notchWindow?.ignoresMouseEvents = shouldIgnore
+        }
+    }
+
+    private func updateWindowSharingBehavior() {
+        guard let window = notchWindow else { return }
+        let shouldBeHidden = settings.settings.hideFromScreenSharing || (notchState == .initial)
+        let desired: NSWindow.SharingType = shouldBeHidden ? .none : .readOnly
+        if window.sharingType != desired {
+            window.sharingType = desired
+        }
+    }
+
+    private func scheduleCollapse(after delay: TimeInterval) {
+        collapseTask?.cancel()
         guard !isPinned else { return }
-        collapseTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in if !self.isHovered { self.notchState = self.isLiveActivityActive ? .autoExpanded : .initial } }
+
+        isCollapseTimerActive = true
+        collapseTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(Int(delay * 1000)))
+                guard !Task.isCancelled else { return }
+
+                if !self.isHovered && !self.dragManager.isDraggingInActivationZone {
+                    self.notchState = isLiveActivityActive ? .autoExpanded : .initial
+                }
+                self.isCollapseTimerActive = false
+            } catch {
+                self.isCollapseTimerActive = false
+            }
+        }
     }
 
     final class KeyWindow: NSWindow {
@@ -471,29 +1463,37 @@ struct NotchController: View {
 
         let delegate = SettingsWindowDelegate {
             self.settingsWindow = nil
-
         }
         newWindow.delegate = delegate
         self.settingsWindow = newWindow
         self.settingsDelegate = delegate
     }
-
 }
 
 fileprivate struct SubtleIconButton: View {
     let systemName: String
     let action: () -> Void
+    let horizontalPadding: CGFloat
+    let verticalPadding: CGFloat
     @State private var isHovering = false
+
+    init(systemName: String, action: @escaping () -> Void, horizontalPadding: CGFloat = 8, verticalPadding: CGFloat = 6) {
+        self.systemName = systemName
+        self.action = action
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+    }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.white.opacity(isHovering ? 1.0 : 0.7))
-                .padding(12)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, verticalPadding)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contentShape(Circle())
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) { isHovering = hovering }
         }
@@ -502,10 +1502,20 @@ fileprivate struct SubtleIconButton: View {
     }
 }
 
-
-fileprivate extension View {
-    func onSizeChange(of size: CGSize, perform action: @escaping (CGSize) -> Void) -> some View {
-        self.onAppear { action(size) }
-            .onChange(of: size) { newSize in action(newSize) }
+extension LiveActivityManager {
+    var activityHasBottomContent: Bool {
+        switch activityContent {
+        case .full:
+            return true
+        case .standard(let data, _):
+            switch data {
+            case .music(let bottomContentType):
+                return bottomContentType != .none
+            default:
+                return false
+            }
+        case .none:
+            return false
+        }
     }
 }

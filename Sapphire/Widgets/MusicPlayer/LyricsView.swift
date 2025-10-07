@@ -4,9 +4,9 @@
 //
 //  Created by Shariq Charolia on 2025-06-26.
 //
+//
 
 import SwiftUI
-
 
 struct LyricLineView: View {
     let lyric: LyricLine
@@ -20,7 +20,7 @@ struct LyricLineView: View {
                 .multilineTextAlignment(.center)
                 .foregroundColor(isCurrent ? accentColor : .primary)
                 .shadow(radius: 5)
-            
+
             if let translated = lyric.translatedText, !translated.isEmpty {
                 Text(translated)
                     .font(.system(size: 18, weight: .medium))
@@ -35,22 +35,18 @@ struct LyricLineView: View {
     }
 }
 
-
 struct LyricsView: View {
-    
+
     var lyrics: [LyricLine]
     var currentLyricID: UUID?
     var accentColor: Color
-    var onDismiss: () -> Void
-    
-    
+
     private let lineSpacing: CGFloat = 70.0
 
-    
     var body: some View {
         GeometryReader { geometry in
             let computedOffset = calculateScrollOffset(fullViewHeight: geometry.size.height)
-            
+
             ZStack(alignment: .top) {
                 if lyrics.isEmpty {
                     emptyLyricsView
@@ -74,23 +70,23 @@ struct LyricsView: View {
             .mask {
 
                 let viewHeight = geometry.size.height
-                
+
                 if viewHeight > 0 {
                     let fadeLength: CGFloat = 5
                     let fadePercentage = fadeLength / viewHeight
-                    
+
                     let solidStartLocation = min(fadePercentage, 0.5)
                     let solidEndLocation = max(1.0 - fadePercentage, 0.5)
 
                     LinearGradient(
                         gradient: Gradient(stops: [
-                            
+
                             .init(color: .clear, location: 0.0),
-                            
+
                             .init(color: .black, location: solidStartLocation),
-                            
+
                             .init(color: .black, location: solidEndLocation),
-                            
+
                             .init(color: .clear, location: 1.0)
                         ]),
                         startPoint: .top,
@@ -102,22 +98,18 @@ struct LyricsView: View {
             }
         }
         .frame(width: 400)
-        .onTapGesture(perform: onDismiss)
     }
-    
-    
-    
+
     private func calculateScrollOffset(fullViewHeight: CGFloat) -> CGFloat {
         guard let currentIndex = lyrics.firstIndex(where: { $0.id == currentLyricID }) else {
             let totalContentHeight = CGFloat(lyrics.count) * lineSpacing
             return (fullViewHeight - totalContentHeight) / 2
         }
-        
+
         let targetOffset = (fullViewHeight / 2) - (lineSpacing / 2) - (CGFloat(currentIndex) * lineSpacing)
         return targetOffset
     }
-    
-    
+
     private var emptyLyricsView: some View {
         Text("No lyrics available.")
             .font(.headline)

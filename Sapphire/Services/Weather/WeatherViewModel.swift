@@ -4,15 +4,17 @@
 //
 //  Created by Shariq Charolia on 2025-07-10.
 //
+//
 
 import SwiftUI
 import CoreLocation
 
 class WeatherViewModel: ObservableObject {
-    private let weatherService = WeatherService()
-    private let settingsModel = SettingsModel()
+    static let shared = WeatherViewModel()
 
-    
+    private let weatherService = WeatherService()
+    private let settingsModel = SettingsModel.shared
+
     @Published var locationName: String = "Loading..."
     @Published var temperature: String = "—°"
     @Published var conditionDescription: String = "Fetching..."
@@ -27,18 +29,24 @@ class WeatherViewModel: ObservableObject {
     @Published var iconName: String = "icloud"
     @Published var gradientColors: [Color] = [.blue.opacity(0.8), .purple.opacity(0.8)]
     @Published var hourlyForecasts: [HourlyForecastUIData] = []
-    
-    init() {
+    @Published var lastUpdated: Date? = nil
+
+    @Published var isFetching = false
+
+    private init() {
         fetch()
-        Timer.scheduledTimer(withTimeInterval: 60 * 15, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
             self?.fetch()
         }
     }
 
-    
     func fetch() {
+        guard !isFetching else { return }
+        isFetching = true
+
         weatherService.fetchWeather { [weak self] result in
             DispatchQueue.main.async {
+                self?.isFetching = false
                 switch result {
                 case .success(let data):
                     self?.updateUI(with: data)
@@ -49,10 +57,9 @@ class WeatherViewModel: ObservableObject {
         }
     }
 
-    
     private func updateUI(with data: ProcessedWeatherData) {
         let useCelsius = settingsModel.settings.weatherUseCelsius
-        
+
         self.locationName = data.locationName
         self.temperature = useCelsius ? "\(data.temperatureMetric)°" : "\(data.temperature)°"
         self.conditionDescription = data.conditionDescription
@@ -67,6 +74,7 @@ class WeatherViewModel: ObservableObject {
         self.iconName = WeatherIconMapper.map(from: data.iconCode)
         self.hourlyForecasts = data.hourlyForecasts
         self.gradientColors = gradientColors(for: data.iconCode)
+        self.lastUpdated = Date()
     }
 
     private func handleError(_ error: Error) {
@@ -84,9 +92,9 @@ class WeatherViewModel: ObservableObject {
         self.iconName = "exclamationmark.triangle.fill"
         self.gradientColors = [.gray, .black.opacity(0.8)]
         self.hourlyForecasts = []
+        self.lastUpdated = nil
     }
 
-    
     private func gradientColors(for iconCode: Int) -> [Color] {
         switch iconCode {
         case 31, 32, 33, 34, 36: return [Color("#4A90E2"), Color("#81C7F4")]

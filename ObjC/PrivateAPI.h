@@ -8,6 +8,7 @@
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <IOKit/hidsystem/IOHIDEventSystemClient.h>
+#import <CommonCrypto/CommonCrypto.h>
 
 // This is the private function to disable the native macOS bezel HUDs
 // for volume, brightness, etc.

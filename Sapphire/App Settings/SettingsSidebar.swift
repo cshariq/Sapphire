@@ -4,6 +4,7 @@
 //
 //  Created by Shariq Charolia on 2025-07-10.
 //
+//
 
 import SwiftUI
 
@@ -23,10 +24,9 @@ struct SettingsSidebarView: View {
                 }
             }
             .listStyle(.sidebar).scrollContentBackground(.hidden)
-            
+
             Spacer()
 
-            
             Button(action: {
                 NSApp.terminate(nil)
             }) {

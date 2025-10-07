@@ -4,35 +4,35 @@
 //
 //  Created by Shariq Charolia on 2025-06-26.
 //
+//
 
 import SwiftUI
 import AppKit
 
 struct MusicWidgetView: View {
-    @EnvironmentObject var musicWidget: MusicWidget
+    @Environment(\.navigationStack) var navigationStack
+    @EnvironmentObject var musicManager: MusicManager
     @EnvironmentObject var settings: SettingsModel
-    @Binding var mode: NotchWidgetMode
     @State private var isHoveringArtwork = false
 
     var body: some View {
-        
-        if let title = musicWidget.title, !title.isEmpty {
-            
+        if let title = musicManager.title, !title.isEmpty {
+
             HStack(alignment: .center, spacing: 16) {
                 albumArtWithOverlay
-                
+
                 VStack(alignment: .leading, spacing: 8) {
                     MusicInfoView(
-                        title: musicWidget.title,
-                        album: musicWidget.album,
-                        artist: musicWidget.artist
+                        title: musicManager.title,
+                        album: musicManager.album,
+                        artist: musicManager.artist
                     )
-                    
+
                     MusicControlsView(
-                        isPlaying: musicWidget.isPlaying,
-                        onPrevious: musicWidget.previousTrack,
-                        onPlayPause: { musicWidget.isPlaying ? musicWidget.pause() : musicWidget.play() },
-                        onNext: musicWidget.nextTrack
+                        isPlaying: musicManager.isPlaying,
+                        onPrevious: musicManager.previousTrack,
+                        onPlayPause: { musicManager.isPlaying ? musicManager.pause() : musicManager.play() },
+                        onNext: musicManager.nextTrack
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -40,22 +40,30 @@ struct MusicWidgetView: View {
             .frame(height: 100)
             .frame(maxWidth: 300)
             .fixedSize()
+            .contentShape(Rectangle()) // Makes the entire HStack tappable
+            .onTapGesture {
+                navigationStack.wrappedValue.append(.musicPlayer)
+            }
+
         } else {
-            
             OpenPlayerView(
                 player: settings.settings.defaultMusicPlayer,
                 action: openDefaultPlayer
             )
+            .contentShape(Rectangle()) // Makes the OpenPlayerView tappable
+            .onTapGesture {
+                openDefaultPlayer()
+            }
         }
     }
 
     private var albumArtWithOverlay: some View {
-        Image(nsImage: musicWidget.artwork ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art")!)
+        Image(nsImage: musicManager.artwork ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art")!)
             .resizable().aspectRatio(contentMode: .fill)
             .frame(width: 100, height: 100).cornerRadius(30)
-            .shadow(color: musicWidget.accentColor.opacity(0.7), radius: 8, y: 5)
+            .shadow(color: musicManager.accentColor.opacity(0.7), radius: 8, y: 5)
             .overlay(alignment: .bottomLeading) {
-                if let icon = musicWidget.appIcon {
+                if let icon = musicManager.appIcon {
                     Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit)
                         .frame(width: 22, height: 22).clipShape(Circle()).padding(6)
                 }
@@ -64,17 +72,14 @@ struct MusicWidgetView: View {
                 self.isHoveringArtwork = hovering
                 if hovering { HapticManager.perform(.alignment) }
             }
-            .onTapGesture { mode = .musicPlayer }
     }
-    
-    
+
     private func openDefaultPlayer() {
         let player = settings.settings.defaultMusicPlayer
         let bundleId = player == .appleMusic ? "com.apple.Music" : "com.spotify.client"
         NSWorkspace.shared.launchApplication(bundleId)
     }
 }
-
 
 private struct OpenPlayerView: View {
     let player: DefaultMusicPlayer
@@ -97,23 +102,22 @@ private struct OpenPlayerView: View {
             }
             .buttonStyle(.plain)
         }
-        .frame(width: 300, height: 100) 
+        .frame(width: 300, height: 100)
     }
 }
-
 
 private struct MusicInfoView: View {
     let title: String?
     let album: String?
     let artist: String?
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let title = title, !title.isEmpty {
                 Text(title)
                     .font(.system(size: 17, weight: .semibold))
             }
-            
+
             if let album = album, !album.isEmpty, album != title {
                 Text(album)
                     .font(.system(size: 14, weight: .medium))
@@ -126,24 +130,49 @@ private struct MusicInfoView: View {
         }
         .foregroundStyle(.white)
         .lineLimit(1)
+        .padding(.top, 8)
         .minimumScaleFactor(0.8)
     }
 }
-
 
 private struct MusicControlsView: View {
     let isPlaying: Bool
     let onPrevious: () -> Void
     let onPlayPause: () -> Void
     let onNext: () -> Void
-    
+
+    @EnvironmentObject var musicManager: MusicManager
+
+    let buttonHitboxSize: CGFloat = 37
+
     var body: some View {
-        HStack(spacing: 18) {
-            Button(action: onPrevious) { Image(systemName: "backward.end.fill") }
-            Button(action: onPlayPause) { Image(systemName: isPlaying ? "pause.fill" : "play.fill").font(.system(size: 20, weight: .semibold)) }
-            Button(action: onNext) { Image(systemName: "forward.end.fill") }
+        HStack(spacing: 0) {
+            SeekButton(
+                systemName: "backward.end.fill",
+                onTap: onPrevious,
+                onSeek: { isForward in
+                    musicManager.seek(by: isForward ? 5.0 : -5.0)
+                }
+            )
+            .frame(width: buttonHitboxSize, height: buttonHitboxSize)
+
+            Button(action: onPlayPause) {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .frame(width: buttonHitboxSize, height: buttonHitboxSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            SeekButton(
+                systemName: "forward.end.fill",
+                onTap: onNext,
+                onSeek: { isForward in
+                    musicManager.seek(by: isForward ? 5.0 : -5.0)
+                }
+            )
+            .frame(width: buttonHitboxSize, height: buttonHitboxSize)
         }
-        .buttonStyle(BlurButtonStyle())
         .font(.system(size: 16))
         .foregroundColor(.white)
     }

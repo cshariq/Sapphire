@@ -1,8 +1,9 @@
 //
-//  Data+URLSafeBase64.swift
-//  NearDrop
+//  Data+Extensions.swift
+//  Sapphire
 //
-//  Created by Grishka on 08.04.2023.
+//  Created by Shariq Charolia on 08.04.2023.
+//
 //
 
 import Foundation
@@ -20,7 +21,7 @@ extension Data{
 			}
 		})
 	}
-	
+
 	static func randomData(length: Int) -> Data{
 		var data=Data(count: length)
 		data.withUnsafeMutableBytes {
@@ -28,7 +29,7 @@ extension Data{
 		}
 		return data
 	}
-	
+
 	static func dataFromUrlSafeBase64(_ str:String)->Data?{
 		var regularB64=String(str.map{
 			if $0=="_"{

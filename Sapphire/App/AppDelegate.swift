@@ -4,6 +4,7 @@
 //
 //  Created by Shariq Charolia on 2025-07-04.
 //
+//
 
 import Cocoa
 import SwiftUI
@@ -12,174 +13,492 @@ import UserNotifications
 import NearbyShare
 import ApplicationServices
 import IOBluetooth
+import ServiceManagement
+
+@MainActor
+final class LockScreenState: ObservableObject {
+    @Published var isUnlocked: Bool = false
+    @Published var isAuthenticating: Bool = false
+    @Published var isCaffeineActive: Bool = false
+    @Published var isFaceIDEnabled: Bool = false
+    @Published var isBluetoothUnlockEnabled: Bool = false
+}
+
+final class UnfocusableWindow: NSWindow {
+    override var canBecomeKey: Bool {
+        return false
+    }
+    override var canBecomeMain: Bool {
+        return false
+    }
+}
 
 @MainActor
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, MainAppDelegate {
-    
+
     public var notchWindow: NSWindow?
     private var cgsSpace: CGSSpace?
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
-    
-    
+
     private var settingsDelegate: SettingsWindowDelegate?
 
-    var spotifyAPIManager: SpotifyAPIManager?
-    var systemHUDManager: SystemHUDManager?
-    var notificationManager: NotificationManager?
-    var desktopManager: DesktopManager?
-    var focusModeManager: FocusModeManager?
-    var musicWidget: MusicWidget?
-    var calendarService: CalendarService?
-    var batteryMonitor: BatteryMonitor?
-    var bluetoothManager: BluetoothManager?
-    var audioDeviceManager: AudioDeviceManager?
-    var eyeBreakManager: EyeBreakManager?
-    var timerManager: TimerManager?
-    var weatherActivityViewModel: WeatherActivityViewModel?
-    var contentPickerHelper: ContentPickerHelper?
-    var geminiLiveManager: GeminiLiveManager?
-    var settingsModel: SettingsModel?
-    var activeAppMonitor: ActiveAppMonitor?
-    var liveActivityManager: LiveActivityManager?
+    private lazy var lockScreenManager = LockScreenManager.shared
+
+    lazy var musicManager: MusicManager = MusicManager.shared
+    lazy var systemHUDManager: SystemHUDManager = .shared
+    lazy var notificationManager: NotificationManager = NotificationManager()
+    lazy var desktopManager: DesktopManager = DesktopManager()
+    lazy var focusModeManager: FocusModeManager = FocusModeManager()
+    lazy var calendarService: CalendarService = CalendarService()
+    lazy var batteryMonitor: BatteryMonitor = BatteryMonitor.shared
+    lazy var batteryManager = BatteryManager.shared
+    lazy var batteryEstimator: BatteryEstimator = BatteryEstimator(batteryMonitor: self.batteryMonitor)
+    lazy var bluetoothManager: BluetoothManager = BluetoothManager()
+    lazy var audioDeviceManager: AudioDeviceManager = AudioDeviceManager()
+    lazy var multiAudioManager: MultiAudioManager = .shared
+    lazy var eyeBreakManager: EyeBreakManager = EyeBreakManager()
+    lazy var timerManager: TimerManager = TimerManager()
+    lazy var weatherActivityViewModel: WeatherActivityViewModel = WeatherActivityViewModel()
+    lazy var contentPickerHelper: ContentPickerHelper = ContentPickerHelper()
+    lazy var geminiLiveManager: GeminiLiveManager = GeminiLiveManager()
+    lazy var settingsModel: SettingsModel = SettingsModel.shared
+    lazy var activeAppMonitor: ActiveAppMonitor = .shared
+    lazy var powerStateController: PowerStateController = PowerStateController()
+    lazy var scheduleManager: ScheduleManager = .shared
+    lazy var keyboardShortcutManager: KeyboardShortcutManager = .shared
+    lazy var globalDragManager: GlobalDragManager = .shared
+    lazy var fileShelfManager: FileShelfManager = .shared
+    lazy var authManager: AuthenticationManager = AuthenticationManager.shared
+    private lazy var lockScreenState = LockScreenState()
+    private lazy var caffeineManager = CaffeineManager.shared
+    private var activeUnlockID: UUID?
+
+    private var cancellables = Set<AnyCancellable>()
+
+    var isScreenLocked = false
+    private var isAuthenticating = false
+
+    private var launchpadWindowController: LaunchpadWindowController?
+    private lazy var launchpadGestureMonitor: LaunchpadGestureMonitor = .shared
+
+    private var statusItem: NSStatusItem?
+
+    lazy var liveActivityManager: LiveActivityManager = LiveActivityManager(
+        systemHUDManager: self.systemHUDManager, notificationManager: self.notificationManager, desktopManager: self.desktopManager,
+        focusModeManager: self.focusModeManager, musicWidget: self.musicManager, calendarService: self.calendarService,
+        batteryMonitor: self.batteryMonitor, bluetoothManager: self.bluetoothManager, audioDeviceManager: self.audioDeviceManager,
+        eyeBreakManager: self.eyeBreakManager, timerManager: self.timerManager, weatherActivityViewModel: self.weatherActivityViewModel,
+        geminiLiveManager: self.geminiLiveManager, settingsModel: self.settingsModel, activeAppMonitor: self.activeAppMonitor,
+        batteryEstimator: self.batteryEstimator
+    )
+
+    func unregisterHelper() {
+        do {
+            try SMAppService.mainApp.unregister()
+        } catch {
+            print("[AppDelegate] Unregistration failed (this is expected if it wasn't registered): \(error.localizedDescription)")
+        }
+    }
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        
+        NearbyConnectionManager.shared.deviceDisplayName = settingsModel.settings.neardropDeviceDisplayName
+
+        settingsModel.$settings
+            .map(\.neardropDeviceDisplayName)
+            .removeDuplicates()
+            .sink { newName in
+                NearbyConnectionManager.shared.deviceDisplayName = newName
+            }
+            .store(in: &cancellables)
+
+        settingsModel.$settings
+            .map(\.launchAtLogin)
+            .removeDuplicates()
+            .sink { shouldLaunch in
+                self.toggleLaunchAtLogin(isOn: shouldLaunch)
+            }
+            .store(in: &cancellables)
+
+        settingsModel.$settings
+            .map(\.hideFromScreenSharing)
+            .removeDuplicates()
+            .sink { [weak self] hide in
+                self?.updateWindowSharing(hide: hide)
+            }
+            .store(in: &cancellables)
+
+        settingsModel.$settings
+            .map(\.launchpadEnabled)
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                if enabled {
+                    self?.setupLaunchpad()
+                } else {
+                    self?.teardownLaunchpad()
+                }
+            }
+            .store(in: &cancellables)
+
         if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
             startMainApp()
         } else {
             showOnboardingWindow()
         }
     }
-    
+
+    private func initializeCoreManagers() {
+        let managers: [Any] = [
+            musicManager, systemHUDManager, notificationManager, desktopManager, focusModeManager,
+            calendarService, batteryMonitor, batteryManager, bluetoothManager, audioDeviceManager,
+            multiAudioManager, eyeBreakManager, timerManager, weatherActivityViewModel,
+            contentPickerHelper, geminiLiveManager, settingsModel, activeAppMonitor,
+            powerStateController, scheduleManager, keyboardShortcutManager, globalDragManager,
+            fileShelfManager, authManager, liveActivityManager // This initializes the entire dependency graph
+        ]
+        _ = managers.count
+    }
+
+    private func initializeBackgroundServices() {
+        DispatchQueue.global(qos: .userInitiated).async {
+
+            self.initializeCoreManagers()
+            _ = IOBluetoothDevice.pairedDevices()
+            NearbyConnectionManager.shared.becomeVisible()
+            Task {
+                _ = await self.batteryManager.getBatteryTemperature()
+            }
+        }
+    }
+
     func showOnboardingWindow() {
         if onboardingWindow == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
-                styleMask: [.borderless],
+            let window = KeyableWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 1200, height: 900),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered, defer: false
             )
-            
+
             window.center()
             window.title = "Welcome to Sapphire"
             window.isMovableByWindowBackground = true
             window.titlebarAppearsTransparent = true
-            
-            
             window.isOpaque = false
             window.backgroundColor = .clear
-            
-            
-            let hostingView = NSHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() }))
+            window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+
+            let hostingView = NSHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() })
+                .environmentObject(settingsModel)
+                .environmentObject(musicManager)
+            )
             hostingView.wantsLayer = true
-            hostingView.layer?.backgroundColor = NSColor.clear.cgColor  
-            
+            hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+
             window.contentView = hostingView
             onboardingWindow = window
         }
 
-        
         onboardingWindow?.makeKeyAndOrderFront(nil)
-        onboardingWindow?.level = .modalPanel 
-
-        
+        onboardingWindow?.level = .normal
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    
     func onboardingDidComplete() {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
-        
         self.onboardingWindow?.orderOut(nil)
         self.onboardingWindow = nil
-        
         startMainApp()
     }
-    
+
     func startMainApp() {
-        self.spotifyAPIManager = .shared; self.systemHUDManager = .shared; self.notificationManager = NotificationManager()
-        self.desktopManager = DesktopManager(); self.focusModeManager = FocusModeManager(); self.musicWidget = MusicWidget()
-        self.calendarService = CalendarService(); self.batteryMonitor = BatteryMonitor(); self.bluetoothManager = BluetoothManager()
-        self.audioDeviceManager = AudioDeviceManager(); self.eyeBreakManager = EyeBreakManager(); self.timerManager = TimerManager()
-        self.weatherActivityViewModel = WeatherActivityViewModel(); self.contentPickerHelper = ContentPickerHelper()
-        self.geminiLiveManager = GeminiLiveManager(); self.settingsModel = SettingsModel(); self.activeAppMonitor = .shared
-        
-        self.liveActivityManager = LiveActivityManager(
-            systemHUDManager: systemHUDManager!, notificationManager: notificationManager!, desktopManager: desktopManager!,
-            focusModeManager: focusModeManager!, musicWidget: musicWidget!, calendarService: calendarService!,
-            batteryMonitor: batteryMonitor!, bluetoothManager: bluetoothManager!, audioDeviceManager: audioDeviceManager!,
-            eyeBreakManager: eyeBreakManager!, timerManager: timerManager!, weatherActivityViewModel: weatherActivityViewModel!,
-            geminiLiveManager: geminiLiveManager!, settingsModel: settingsModel!, activeAppMonitor: activeAppMonitor!
-        )
-        
-        OSDManager.disableSystemHUD()
-        _ = IOBluetoothDevice.pairedDevices()
-        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURL), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
-        
         createNotchWindow()
-        
+        setupStatusBarItem()
+        transitionToAgentApp()
+
+        initializeBackgroundServices()
+
+        liveActivityManager.fileShelfManager = self.fileShelfManager
+
+        OSDManager.disableSystemHUD()
+        SystemControl.configureKeyboardBacklight()
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURL), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+        setupSessionObservers()
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         UNUserNotificationCenter.current().delegate = self
         NearbyConnectionManager.shared.mainAppDelegate = self
-        NearbyConnectionManager.shared.becomeVisible()
-        
-        
-        transitionToAgentApp()
+
+        if settingsModel.settings.launchpadEnabled {
+            setupLaunchpad()
+        }
     }
-    
+
+    private func setupSessionObservers() {
+        let dnc = DistributedNotificationCenter.default()
+
+        dnc.addObserver(self, selector: #selector(screenIsLocked), name: .init("com.apple.screenIsLocked"), object: nil)
+        dnc.addObserver(self, selector: #selector(screenIsUnlocked), name: .init("com.apple.screenIsUnlocked"), object: nil)
+    }
+
+    @objc private func screenIsLocked() {
+
+        self.activeUnlockID = nil
+        isScreenLocked = true
+
+        lockScreenState.isUnlocked = false
+        lockScreenState.isAuthenticating = false
+        lockScreenState.isCaffeineActive = caffeineManager.isActive
+        lockScreenState.isFaceIDEnabled = settingsModel.settings.faceIDUnlockEnabled && settingsModel.settings.hasRegisteredFaceID
+        lockScreenState.isBluetoothUnlockEnabled = settingsModel.settings.bluetoothUnlockEnabled
+
+        if settingsModel.settings.lockScreenLiveActivityEnabled {
+            liveActivityManager.startLockScreenActivity()
+        }
+
+        if !isAuthenticating {
+            startAuthentication()
+        }
+        weatherActivityViewModel.fetch()
+
+        if settingsModel.settings.lockScreenShowNotch, let notchWindow = notchWindow {
+            lockScreenManager.delegateWindow(notchWindow)
+        }
+
+        guard let mainScreen = NSScreen.main else { return }
+        var widgetConfigs: [LockScreenManager.LockScreenWidgetConfig] = []
+
+        if settingsModel.settings.lockScreenShowInfoWidget {
+            let infoWidgetView = LockScreenInfoWidgetView()
+                .environmentObject(self.settingsModel)
+                .environmentObject(self.weatherActivityViewModel)
+                .environmentObject(self.calendarService)
+                .environmentObject(self.musicManager)
+                .environmentObject(self.focusModeManager)
+                .environmentObject(self.bluetoothManager)
+
+            widgetConfigs.append(.init(
+                id: "infoWidget",
+                view: AnyView(infoWidgetView),
+                initialSize: .zero,
+                positioner: lockScreenManager.calculateInfoWidgetFrame(size:screen:)
+            ))
+        }
+
+        if settingsModel.settings.lockScreenShowMainWidget && !settingsModel.settings.lockScreenMainWidgets.isEmpty {
+            let mainWidgetContainer = LockScreenMainWidgetContainerView()
+                .environmentObject(self.settingsModel)
+                .environmentObject(self.musicManager)
+                .environmentObject(self.calendarService)
+
+            widgetConfigs.append(.init(
+                id: "mainWidgetContainer",
+                view: AnyView(mainWidgetContainer),
+                initialSize: .zero, // Size will be determined by the view's content
+                positioner: lockScreenManager.calculateMainWidgetFrame(size:screen:)
+            ))
+        }
+
+        if settingsModel.settings.lockScreenShowMiniWidgets && !settingsModel.settings.lockScreenMiniWidgets.isEmpty {
+            let miniWidgetView = LockScreenMiniWidgetView()
+                .environmentObject(self.settingsModel)
+                .environmentObject(self.weatherActivityViewModel)
+                .environmentObject(self.calendarService)
+                .environmentObject(self.musicManager)
+
+            widgetConfigs.append(.init(
+                id: "miniWidgets",
+                view: AnyView(miniWidgetView),
+                initialSize: .zero,
+                positioner: lockScreenManager.calculateMiniWidgetFrame(size:screen:)
+            ))
+        }
+
+        lockScreenManager.setupAndShowWindows(configs: widgetConfigs, on: mainScreen)
+
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func screenIsUnlocked() {
+        guard isScreenLocked else { return }
+        lockScreenManager.hideAndDestroyWindows()
+        if let notchWindow = notchWindow, let cgsSpace = cgsSpace {
+            lockScreenManager.removeWindow(notchWindow)
+            cgsSpace.windows.insert(notchWindow)
+            notchWindow.orderFront(nil)
+        }
+
+        lockScreenState.isUnlocked = true
+        lockScreenState.isAuthenticating = false
+
+        let currentUnlockID = UUID()
+        self.activeUnlockID = currentUnlockID
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self, self.activeUnlockID == currentUnlockID else {
+                return
+            }
+
+            self.isScreenLocked = false
+            self.stopAuthentication()
+            self.liveActivityManager.finishLockScreenActivity()
+            self.lockScreenManager.hideAndDestroyWindows()
+        }
+    }
+
+    private func startAuthentication() {
+        guard isScreenLocked, !isAuthenticating else { return }
+
+        isAuthenticating = true
+        lockScreenState.isAuthenticating = true
+
+        if settingsModel.settings.bluetoothUnlockEnabled {
+            authManager.startBluetoothAuthentication()
+        }
+
+        if settingsModel.settings.faceIDUnlockEnabled && settingsModel.settings.hasRegisteredFaceID {
+            authManager.startFaceIDAuthentication()
+        }
+    }
+
+    private func stopAuthentication() {
+        guard isAuthenticating else { return }
+
+        isAuthenticating = false
+        lockScreenState.isAuthenticating = false
+
+        authManager.stopAllAuthentication()
+    }
+
     private func transitionToAgentApp() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.async {
             if NSApp.activationPolicy() != .accessory {
                 NSApp.setActivationPolicy(.accessory)
             }
         }
     }
-    
+
     func applicationWillTerminate(_ aNotification: Notification) {
         OSDManager.enableSystemHUD()
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         cgsSpace = nil
         NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+
+        statusItem = nil
+
+        teardownLaunchpad()
+
+        DistributedNotificationCenter.default().removeObserver(self)
     }
 
     @objc func handleGetURL(event: NSAppleEventDescriptor!, withReplyEvent: NSAppleEventDescriptor!) {
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue, let url = URL(string: urlString) else { return }
-        if url.scheme == "dynamicnotch" { spotifyAPIManager?.handleRedirect(url: url) }
+        if url.scheme == "sapphire" {
+            musicManager.spotifyOfficialAPI.handleRedirect(url: url)
+        }
+    }
+
+    private func setupStatusBarItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+
+        if let button = statusItem?.button {
+            button.image = NSImage(systemSymbolName: "square.grid.3x3.fill", accessibilityDescription: "Sapphire Launchpad")
+        }
+
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Show Launchpad", action: #selector(showLaunchpadAction), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Quit Sapphire", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        statusItem?.menu = menu
+    }
+
+    @objc private func showLaunchpadAction() {
+        if launchpadWindowController == nil && settingsModel.settings.launchpadEnabled {
+            setupLaunchpad()
+        }
+        launchpadWindowController?.showLaunchpad()
+    }
+
+    private func setupLaunchpad() {
+        guard launchpadWindowController == nil else { return }
+
+        DispatchQueue.main.async {
+            self.launchpadWindowController = LaunchpadWindowController()
+            self.launchpadGestureMonitor.onShowLaunchpad = { [weak self] in
+                self?.launchpadWindowController?.showLaunchpad()
+            }
+            self.launchpadGestureMonitor.onHideLaunchpad = { [weak self] in
+                self?.launchpadWindowController?.hideLaunchpad()
+            }
+            self.launchpadGestureMonitor.startMonitoring()
+        }
+    }
+
+    private func teardownLaunchpad() {
+        launchpadWindowController?.hideLaunchpad()
+        launchpadGestureMonitor.stopMonitoring()
+        launchpadGestureMonitor.onShowLaunchpad = nil
+        launchpadGestureMonitor.onHideLaunchpad = nil
+        launchpadWindowController?.close()
+        launchpadWindowController = nil
     }
 
     func createNotchWindow() {
         notchWindow?.orderOut(nil); notchWindow?.close()
-        guard let mainScreen = NSScreen.main else { return }
+
+        let targetScreen: NSScreen?
+        switch settingsModel.settings.notchDisplayTarget {
+        case .macbookDisplay:
+            targetScreen = NSScreen.screens.first { screen in
+                guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+                    return false
+                }
+                return CGDisplayIsBuiltin(displayID) != 0
+            } ?? NSScreen.main
+        case .mainDisplay:
+            targetScreen = NSScreen.main
+        case .allDisplays:
+            targetScreen = NSScreen.main
+        }
+
+        guard let mainScreen = targetScreen else { return }
+
         let screenFrame = mainScreen.frame
-        let paddedWindowWidth: CGFloat = 1200, paddedWindowHeight: CGFloat = 600
-        let windowOriginX = (screenFrame.width - paddedWindowWidth) / 2, windowOriginY = screenFrame.maxY - paddedWindowHeight
+        let paddedWindowWidth: CGFloat = screenFrame.width, paddedWindowHeight: CGFloat = 400
+        let windowOriginX = screenFrame.minX, windowOriginY = screenFrame.maxY - paddedWindowHeight
         let windowRect = NSRect(x: windowOriginX, y: windowOriginY, width: paddedWindowWidth, height: paddedWindowHeight)
-        let newWindow = NSWindow(contentRect: windowRect, styleMask: .borderless, backing: .buffered, defer: false)
+
+        let newWindow = UnfocusableWindow(contentRect: windowRect, styleMask: .borderless, backing: .buffered, defer: false)
         self.notchWindow = newWindow
         guard let window = self.notchWindow else { return }
         window.isOpaque = false; window.backgroundColor = .clear; window.hasShadow = false; window.level = .statusBar
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         window.ignoresMouseEvents = true
+        window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+
         if self.cgsSpace == nil { self.cgsSpace = CGSSpace() }; self.cgsSpace?.windows.removeAll(); self.cgsSpace?.windows.insert(window)
-        
+
         let notchControllerView = NotchController(notchWindow: window)
         let rootViewContainer = VStack(spacing: 0) { notchControllerView; Spacer() }.frame(width: paddedWindowWidth, height: paddedWindowHeight)
-        
+
         let hostingView = NSHostingView(
             rootView: rootViewContainer
-                .environmentObject(systemHUDManager!).environmentObject(musicWidget!).environmentObject(spotifyAPIManager!)
-                .environmentObject(liveActivityManager!).environmentObject(audioDeviceManager!).environmentObject(bluetoothManager!)
-                .environmentObject(notificationManager!).environmentObject(desktopManager!).environmentObject(focusModeManager!)
-                .environmentObject(eyeBreakManager!).environmentObject(timerManager!).environmentObject(contentPickerHelper!)
-                .environmentObject(geminiLiveManager!).environmentObject(settingsModel!).environmentObject(activeAppMonitor!)
+                .environmentObject(lockScreenState)
+                .environmentObject(systemHUDManager).environmentObject(musicManager)
+                .environmentObject(liveActivityManager).environmentObject(audioDeviceManager).environmentObject(bluetoothManager)
+                .environmentObject(notificationManager).environmentObject(desktopManager).environmentObject(focusModeManager)
+                .environmentObject(eyeBreakManager).environmentObject(timerManager).environmentObject(contentPickerHelper)
+                .environmentObject(geminiLiveManager).environmentObject(settingsModel).environmentObject(activeAppMonitor)
+                .environmentObject(batteryEstimator)
+                .environmentObject(DragStateManager.shared)
+                .environmentObject(calendarService)
         )
         hostingView.frame = NSRect(origin: .zero, size: windowRect.size)
         hostingView.autoresizingMask = [.width, .height]
         hostingView.wantsLayer = true; hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        window.contentView = hostingView; window.makeKeyAndOrderFront(nil)
+        window.contentView = hostingView; window.orderFront(nil)
     }
-    
+
     func openSettingsWindow() {
         if let window = settingsWindow {
             NSApp.setActivationPolicy(.regular)
@@ -187,25 +506,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let newWindow = NSWindow(
+        let newWindow = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 950, height: 650),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
         newWindow.center(); newWindow.isMovableByWindowBackground = true
         newWindow.title = "Sapphire Settings"
-        
+        newWindow.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+
         let settingsView = SettingsView()
-        let hostingView = NSHostingView(rootView: settingsView.environment(\.window, newWindow).environmentObject(settingsModel!))
+        let hostingView = NSHostingView(rootView: settingsView
+            .environment(\.window, newWindow)
+            .environmentObject(settingsModel)
+            .environmentObject(musicManager)
+        )
         newWindow.contentView = hostingView
-        
-        
+
         self.settingsDelegate = SettingsWindowDelegate {
-            NSApp.setActivationPolicy(.accessory)
+            self.transitionToAgentApp()
             self.settingsWindow = nil
         }
         newWindow.delegate = self.settingsDelegate
-        
+
         self.settingsWindow = newWindow
         NSApp.setActivationPolicy(.regular)
         newWindow.makeKeyAndOrderFront(nil)
@@ -213,26 +536,65 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @objc func screenParametersChanged(notification: Notification) {
-        guard let window = self.notchWindow, let mainScreen = NSScreen.main else { createNotchWindow(); return }
-        let screenFrame = mainScreen.frame, windowSize = window.frame.size
-        let newOriginX = (screenFrame.width - windowSize.width) / 2, newOriginY = screenFrame.maxY - windowSize.height
-        window.setFrame(NSRect(x: newOriginX, y: newOriginY, width: windowSize.width, height: windowSize.height), display: true, animate: false)
+        createNotchWindow()
     }
-    
+
+    private func toggleLaunchAtLogin(isOn: Bool) {
+        do {
+            if isOn {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            print("[AppDelegate] Failed to update launch at login status: \(error)")
+        }
+    }
+
+    private func updateWindowSharing(hide: Bool) {
+        let sharingType: NSWindow.SharingType = hide ? .none : .readOnly
+        notchWindow?.sharingType = sharingType
+        onboardingWindow?.sharingType = sharingType
+        settingsWindow?.sharingType = sharingType
+    }
+
+    @objc private func onDisplayWake() {
+        if isScreenLocked && !isAuthenticating {
+            startAuthentication()
+        }
+    }
+
+    func wakeDisplay() {
+        let task = Process()
+        task.launchPath = "/usr/bin/caffeinate"
+        task.arguments = ["-u", "-t", "1"]
+        try? task.run()
+    }
+
+    func sleepDisplay() {
+        let task = Process()
+        task.launchPath = "/usr/bin/pmset"
+        task.arguments = ["displaysleepnow"]
+        try? task.run()
+    }
+
     func obtainUserConsent(for transfer: TransferMetadata, from device: RemoteDeviceInfo, fileURLs: [URL]) {
-        DispatchQueue.main.async { self.liveActivityManager?.startNearDropActivity(transfer: transfer, device: device, fileURLs: fileURLs) }
+        DispatchQueue.main.async { self.liveActivityManager.startNearDropActivity(transfer: transfer, device: device, fileURLs: fileURLs) }
     }
+
     func incomingTransfer(id: String, didUpdateProgress progress: Double) {
-        DispatchQueue.main.async { self.liveActivityManager?.updateNearDropProgress(id: id, progress: progress) }
+        DispatchQueue.main.async { self.liveActivityManager.updateNearDropProgress(id: id, progress: progress) }
     }
+
     func incomingTransfer(id: String, didFinishWith error: Error?) {
-        DispatchQueue.main.async { self.liveActivityManager?.finishNearDropTransfer(id: id, error: error) }
+        DispatchQueue.main.async { self.liveActivityManager.finishNearDropTransfer(id: id, error: error) }
     }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         if let transferID = response.notification.request.content.userInfo["transferID"] as? String {
             let accepted = response.actionIdentifier == "ACCEPT"
             NearbyConnectionManager.shared.submitUserConsent(transferID: transferID, accept: accepted)
-            if accepted { liveActivityManager?.updateNearDropState(to: .inProgress) } else { liveActivityManager?.clearNearDropActivity() }
+            if accepted { liveActivityManager.updateNearDropState(to: .inProgress) } else { liveActivityManager.clearNearDropActivity() }
         }
         completionHandler()
     }
@@ -242,4 +604,9 @@ fileprivate class SettingsWindowDelegate: NSObject, NSWindowDelegate {
     var onClose: () -> Void
     init(onClose: @escaping () -> Void) { self.onClose = onClose }
     func windowWillClose(_ notification: Notification) { onClose() }
+}
+
+class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }

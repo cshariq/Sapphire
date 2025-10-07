@@ -4,51 +4,47 @@
 //
 //  Created by Shariq Charolia on 2025-07-04.
 //
+//
 
 import SwiftUI
 import NearbyShare
 
-
 struct NearDropLiveActivityView: View {
     let payload: NearDropPayload
     @EnvironmentObject var liveActivityManager: LiveActivityManager
-    
-    
+
     @State private var isShowing = false
 
     var body: some View {
         HStack(spacing: 16) {
-            
+
             previewIconView
 
-            
             VStack(alignment: .leading, spacing: 10) {
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("From \(payload.device.name)")
                         .font(.headline)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
-                    
+
                     Text(fileInfoText)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                
-                
+
                 actionView
-                    .frame(height: 36) 
+                    .frame(height: 36)
             }
-            
+
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: payload.state)
         }
         .padding(12)
-        .padding(.horizontal)
+        .padding(.horizontal, 20)
         .padding(.top, 25)
-        
-        
+
         .scaleEffect(isShowing ? 1 : 0.95)
         .opacity(isShowing ? 1 : 0)
         .onAppear {
@@ -57,15 +53,13 @@ struct NearDropLiveActivityView: View {
             }
         }
     }
-    
-    
-    
+
     @ViewBuilder
     private var previewIconView: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(Color.accentColor)
-            
+
             Image(systemName: iconName(for: payload.transfer))
                 .font(.system(size: 36, weight: .regular))
                 .foregroundColor(.white)
@@ -73,14 +67,14 @@ struct NearDropLiveActivityView: View {
         }
         .frame(width: 72, height: 72)
     }
-    
+
     @ViewBuilder
     private var actionView: some View {
         switch payload.state {
         case .waitingForConsent:
             IntegratedActionIconButtonsView(payload: payload)
                 .environmentObject(liveActivityManager)
-                
+
                 .transition(.opacity)
 
         case .inProgress:
@@ -96,9 +90,7 @@ struct NearDropLiveActivityView: View {
                 .transition(.opacity)
         }
     }
-    
-    
-    
+
     private var fileInfoText: String {
         if let textTitle = payload.transfer.textDescription {
             return textTitle
@@ -106,7 +98,7 @@ struct NearDropLiveActivityView: View {
         if payload.transfer.files.count == 1 { return payload.transfer.files[0].name }
         return String.localizedStringWithFormat(NSLocalizedString("NFiles", comment: ""), payload.transfer.files.count)
     }
-    
+
     private func extractURL(from string: String) -> URL? {
         if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
             if let match = detector.firstMatch(in: string, options: [], range: NSRange(location: 0, length: string.utf16.count)) {
@@ -115,7 +107,7 @@ struct NearDropLiveActivityView: View {
         }
         return nil
     }
-    
+
     private func iconName(for transfer: TransferMetadata) -> String {
         if let desc = transfer.textDescription, extractURL(from: desc) != nil { return "link" }
         if transfer.textDescription != nil { return "text.quote" }
@@ -130,8 +122,6 @@ struct NearDropLiveActivityView: View {
         return "doc.fill"
     }
 }
-
-
 
 private struct IntegratedActionIconButtonsView: View {
     let payload: NearDropPayload
@@ -149,7 +139,7 @@ private struct IntegratedActionIconButtonsView: View {
                 .accessibilityLabel("Decline")
 
             if let textContent = payload.transfer.textDescription {
-                if let _ = URL(string: textContent) { 
+                if let _ = URL(string: textContent) {
                     declineButton
                     Button { submitConsent(accept: true, action: .copy) } label: { Image(systemName: "doc.on.doc") }
                         .buttonStyle(ModernIconActionButtonStyle(type: .prominent))
@@ -172,14 +162,14 @@ private struct IntegratedActionIconButtonsView: View {
                     .buttonStyle(ModernIconActionButtonStyle(type: .prominent))
                     .accessibilityLabel("Accept")
             }
-            Spacer() 
+            Spacer()
         }
     }
 }
 
 private struct ModernLinearProgressView: View {
     let progress: Double
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -198,7 +188,7 @@ private struct ModernLinearProgressView: View {
 private struct StatusTagView: View {
     let text: String
     let color: Color
-    
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: color == .green ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -214,16 +204,13 @@ private struct StatusTagView: View {
     }
 }
 
-
-
-
 enum ModernButtonType {
     case prominent, normal, destructive
 }
 
 private struct ModernIconActionButtonStyle: ButtonStyle {
     var type: ModernButtonType
-    
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 16, weight: .semibold))
@@ -234,7 +221,7 @@ private struct ModernIconActionButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.90 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.6), value: configuration.isPressed)
     }
-    
+
     private var backgroundColor: Color {
         switch type {
         case .prominent:
@@ -245,7 +232,7 @@ private struct ModernIconActionButtonStyle: ButtonStyle {
             return .red
         }
     }
-    
+
     private var foregroundColor: Color {
         switch type {
         case .prominent, .destructive:

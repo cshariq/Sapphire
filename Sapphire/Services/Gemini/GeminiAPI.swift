@@ -4,20 +4,20 @@
 //
 //  Created by Shariq Charolia on 2025-07-06.
 //
+//
 
 import Foundation
 
-
 struct GeminiAPI {
     static func webSocketURL() -> URL? {
-        
-        let settings = SettingsModel()
+
+        let settings = SettingsModel.shared
         let apiKey = settings.settings.geminiApiKey
 
         guard !apiKey.isEmpty else {
             return nil
         }
-        
+
         let host = "preprod-generativelanguage.googleapis.com"
         let urlString = "wss://\(host)/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=\(apiKey)"
         return URL(string: urlString)
@@ -25,14 +25,8 @@ struct GeminiAPI {
     static let modelName = "models/gemini-2.0-flash-exp"
 }
 
-
-
-
-
 enum GeminiWebSocketMessage {
-    
-    
-    
+
     struct Setup: Encodable {
         let setup: Payload
         struct Payload: Encodable {
@@ -40,8 +34,6 @@ enum GeminiWebSocketMessage {
         }
     }
 
-    
-    
     struct AudioInput: Encodable {
         let realtimeInput: Payload
         struct Payload: Encodable {
@@ -49,21 +41,18 @@ enum GeminiWebSocketMessage {
         }
         struct MediaChunk: Encodable {
             let mimeType: String
-            let data: String 
+            let data: String
         }
     }
 
-    
-    
-    
     struct ContentInput: Encodable {
         let clientContent: Payload
-        
+
         struct Payload: Encodable {
             let turns: [Turn]
             let turnComplete: Bool
         }
-        
+
         struct Turn: Encodable {
             let role: String = "user"
             let parts: [Part]
@@ -72,8 +61,7 @@ enum GeminiWebSocketMessage {
         struct Part: Encodable {
             let text: String?
             let inlineData: InlineData?
-            
-            
+
             private enum CodingKeys: String, CodingKey { case text, inlineData }
             func encode(to encoder: Encoder) throws {
                 var container = encoder.container(keyedBy: CodingKeys.self)
@@ -90,13 +78,10 @@ enum GeminiWebSocketMessage {
 
         struct InlineData: Encodable {
             let mimeType: String
-            let data: String 
+            let data: String
         }
     }
 }
-
-
-
 
 struct ServerSetupComplete: Decodable {
     var setupComplete: EmptyObject

@@ -4,10 +4,9 @@
 //
 //  Created by Shariq Charolia on 2025-07-10.
 //
+//
 
 import SwiftUI
-
-
 
 struct InfoContainer: View {
     let text: String
@@ -20,7 +19,7 @@ struct InfoContainer: View {
                 .font(.title3)
                 .foregroundColor(color)
                 .padding(.top, 2)
-            
+
             Text(text)
                 .font(.system(size: 13))
                 .foregroundStyle(.white.opacity(0.8))
@@ -39,7 +38,9 @@ struct InfoContainer: View {
 struct GeneralSettingToggleRowView: View {
     let setting: GeneralSettingType
     @Binding var isEnabled: Bool
-
+    static func == (lhs: GeneralSettingToggleRowView, rhs: GeneralSettingToggleRowView) -> Bool {
+        lhs.setting == rhs.setting && lhs.isEnabled == rhs.isEnabled
+    }
     var body: some View {
         HStack(spacing: 15) {
             Image(systemName: setting.systemImage)
@@ -65,6 +66,7 @@ struct GeneralSettingToggleRowView: View {
 
 struct WidgetRowView: View {
     let widgetType: WidgetType
+    let enabledWidgetCount: Int
     @EnvironmentObject var settings: SettingsModel
 
     private var isEnabledBinding: Binding<Bool> {
@@ -81,13 +83,14 @@ struct WidgetRowView: View {
             Text(widgetType.displayName)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.white)
-            
+
             Spacer()
-            
+
             Toggle("", isOn: isEnabledBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
-            
+                .disabled(isEnabledBinding.wrappedValue && enabledWidgetCount <= 1)
+
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.white.opacity(0.6))
@@ -100,7 +103,7 @@ struct WidgetRowView: View {
 struct LiveActivityRowView: View {
     let activityType: LiveActivityType
     @EnvironmentObject var settings: SettingsModel
-    
+
     private var isEnabledBinding: Binding<Bool> {
         switch activityType {
         case .music: return $settings.settings.musicLiveActivityEnabled
@@ -110,8 +113,10 @@ struct LiveActivityRowView: View {
         case .battery: return $settings.settings.batteryLiveActivityEnabled
         case .eyeBreak: return $settings.settings.eyeBreakLiveActivityEnabled
         case .desktop: return $settings.settings.desktopLiveActivityEnabled
-        
         case .focus: return $settings.settings.focusLiveActivityEnabled
+        case .fileShelf: return $settings.settings.fileShelfLiveActivityEnabled
+        case .fileProgress: return $settings.settings.fileProgressLiveActivityEnabled
+        case .reminders: return $settings.settings.remindersLiveActivityEnabled
         }
     }
 
@@ -120,13 +125,13 @@ struct LiveActivityRowView: View {
             Text(activityType.displayName)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.white)
-            
+
             Spacer()
-            
+
             Toggle("", isOn: isEnabledBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
-            
+
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.white.opacity(0.6))
@@ -135,7 +140,6 @@ struct LiveActivityRowView: View {
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
     }
 }
-
 
 struct NotificationToggleRowView: View {
     let source: NotificationSource
@@ -189,7 +193,7 @@ struct SystemAppRowView: View {
                 .foregroundStyle(.white)
 
             Spacer()
-            
+
             Toggle("", isOn: $isEnabled)
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -201,7 +205,7 @@ struct SystemAppRowView: View {
 struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
     @Binding var items: [Item]
     @ViewBuilder var content: (Item) -> Content
-    
+
     @State private var draggingItem: Item?
     @State private var dragOffset: CGSize = .zero
 
@@ -236,7 +240,7 @@ struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
                                 }
                             }
                     )
-                
+
                 if item.id != items.last?.id {
                     Rectangle()
                         .fill(Color.white.opacity(0.2))
@@ -248,14 +252,14 @@ struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
 
     private func moveItem(draggedItem: Item, with value: DragGesture.Value) {
         guard let fromIndex = items.firstIndex(of: draggedItem) else { return }
-        
+
         let rowHeight: CGFloat = 61.0
         let verticalTranslation = value.translation.height
         let moveOffset = Int((verticalTranslation / rowHeight).rounded())
-        
+
         var toIndex = fromIndex + moveOffset
         toIndex = max(0, min(items.count - 1, toIndex))
-        
+
         if fromIndex != toIndex {
             withAnimation(.spring()) {
                 let itemToMove = items.remove(at: fromIndex)
@@ -270,26 +274,26 @@ struct CustomBatterySlider: View {
     let range: ClosedRange<Double>
 
     private let horizontalPadding: CGFloat = 8
-    
+
     var body: some View {
         GeometryReader { geometry in
             let totalWidth = geometry.size.width
             let thumbSize: CGFloat = 40
-            
+
             let trackUsableWidth = totalWidth - (2 * horizontalPadding)
             let thumbUsableWidth = trackUsableWidth - thumbSize
-            
+
             let progress = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
-            
+
             let clampedProgress = max(0.0, min(1.0, progress))
-            
+
             let thumbX = (clampedProgress * thumbUsableWidth) + horizontalPadding + (thumbSize / 2)
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.black.opacity(0.4))
                     .padding(.horizontal, horizontalPadding)
-                
+
                 Circle()
                     .fill(Color(white: 0.8))
                     .frame(width: thumbSize, height: thumbSize)
@@ -306,9 +310,9 @@ struct CustomBatterySlider: View {
                         let newX = min(max(gestureValue.location.x, horizontalPadding), totalWidth - horizontalPadding)
                         let newProgress = (newX - horizontalPadding) / thumbUsableWidth
                         var newValue = (range.upperBound - range.lowerBound) * Double(newProgress) + range.lowerBound
-                        
+
                         newValue = max(range.lowerBound, min(range.upperBound, newValue))
-                        
+
                         self.value = newValue
                     }
             )
@@ -335,7 +339,6 @@ struct CustomSliderRowView: View {
     }
 }
 
-
 struct SettingsContainerModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -351,7 +354,7 @@ struct SettingsContainerModifier: ViewModifier {
 struct SettingsGroup<Content: View>: View {
     let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
-    
+
     var body: some View {
         VStack(spacing: 0) { content }
             .padding(.horizontal)

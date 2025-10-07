@@ -4,12 +4,12 @@
 //
 //  Created by Shariq Charolia on 2025-07-04.
 //
+//
 
 import SwiftUI
 import AppKit
 import Combine
 import ScreenCaptureKit
-
 
 extension Date {
     func format(as format: String) -> String {
@@ -37,10 +37,21 @@ extension Color {
     }
 }
 
+private let imageColorCache = NSCache<NSData, NSArray>()
+
 extension NSImage {
     func getEdgeColors() -> (left: Color, right: Color, accent: Color)? {
+        guard let tiffData = self.tiffRepresentation as NSData? else { return nil }
+
+        if let cachedColors = imageColorCache.object(forKey: tiffData) as? [CGFloat], cachedColors.count == 9 {
+            let left = Color(red: cachedColors[0], green: cachedColors[1], blue: cachedColors[2])
+            let right = Color(red: cachedColors[3], green: cachedColors[4], blue: cachedColors[5])
+            let accent = Color(red: cachedColors[6], green: cachedColors[7], blue: cachedColors[8])
+            return (left, right, accent)
+        }
+
         guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        
+
         let ciImage = CIImage(cgImage: cgImage)
         let extent = ciImage.extent
         let context = CIContext()
@@ -51,7 +62,7 @@ extension NSImage {
 
             var bitmap = [UInt8](repeating: 0, count: 4)
             context.render(outputImage, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
-            
+
             return NSColor(red: CGFloat(bitmap[0]) / 255.0, green: CGFloat(bitmap[1]) / 255.0, blue: CGFloat(bitmap[2]) / 255.0, alpha: 1.0)
         }
 
@@ -63,17 +74,27 @@ extension NSImage {
               var rightNSColor = getRawAverageNSColor(from: rightRect) else {
             return nil
         }
-        
+
         if leftNSColor.isSimilar(to: rightNSColor, threshold: 0.05) {
             rightNSColor = rightNSColor.madeDistinct()
         }
-        
+
         let accentNSColor = leftNSColor.withBrightness(increasedBy: 0.2)
-        
-        let finalLeftColor = Color(leftNSColor.saturated(by: 0.3).withMinimumBrightness(0.45))
-        let finalRightColor = Color(rightNSColor.saturated(by: 0.3).withMinimumBrightness(0.45))
-        let finalAccentColor = Color(accentNSColor.saturated(by: 0.3).withMinimumBrightness(0.50))
-        
+
+        let finalLeftColor = Color(leftNSColor.saturated(by: 0.3).withMinimumBrightness(0.55))
+        let finalRightColor = Color(rightNSColor.saturated(by: 0.3).withMinimumBrightness(0.55))
+        let finalAccentColor = Color(accentNSColor.saturated(by: 0.3).withMinimumBrightness(0.75))
+
+        let leftComps = finalLeftColor.resolve(in: .init())
+        let rightComps = finalRightColor.resolve(in: .init())
+        let accentComps = finalAccentColor.resolve(in: .init())
+        let colorsToCache: NSArray = [
+            CGFloat(leftComps.red), CGFloat(leftComps.green), CGFloat(leftComps.blue),
+            CGFloat(rightComps.red), CGFloat(rightComps.green), CGFloat(rightComps.blue),
+            CGFloat(accentComps.red), CGFloat(accentComps.green), CGFloat(accentComps.blue)
+        ]
+        imageColorCache.setObject(colorsToCache, forKey: tiffData)
+
         return (left: finalLeftColor, right: finalRightColor, accent: finalAccentColor)
     }
 }
@@ -85,7 +106,7 @@ extension NSColor {
         let newBrightness = min(brightness + amount, 1.0)
         return NSColor(hue: hue, saturation: saturation, brightness: newBrightness, alpha: alpha)
     }
-    
+
     func isSimilar(to otherColor: NSColor, threshold: CGFloat) -> Bool {
         var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
         var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
@@ -95,7 +116,7 @@ extension NSColor {
         let hueDiff = abs(h1 - h2)
         return brightnessDiff < threshold && hueDiff < threshold
     }
-    
+
     func madeDistinct() -> NSColor {
         var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
         self.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
@@ -103,14 +124,14 @@ extension NSColor {
         let newSaturation = max(saturation - 0.15, 0.0)
         return NSColor(hue: hue, saturation: newSaturation, brightness: newBrightness, alpha: alpha)
     }
-    
+
     func saturated(by percentage: CGFloat) -> NSColor {
         var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
         self.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
         let newSaturation = min(saturation + percentage, 1.0)
         return NSColor(hue: hue, saturation: newSaturation, brightness: brightness, alpha: alpha)
     }
-    
+
     func withMinimumBrightness(_ minBrightness: CGFloat) -> NSColor {
         var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
         self.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
@@ -121,64 +142,50 @@ extension NSColor {
     }
 }
 
-
-
-
-
-
-
-
-
 enum PickerResult {
     case success(SCContentFilter)
     case failure(Error?)
 }
 
-
 class ContentPickerHelper: NSObject, ObservableObject, SCContentSharingPickerObserver {
-    
-    
     let pickerResultPublisher = PassthroughSubject<PickerResult, Never>()
-    
+    private lazy var picker = SCContentSharingPicker.shared
+
     override init() {
         super.init()
     }
 
     deinit {
+        picker.remove(self)
     }
 
     func showPicker() {
-        let picker = SCContentSharingPicker.shared
         picker.add(self)
         picker.isActive = true
-        picker.present()
+        Task {
+            do {
+                try await picker.present()
+            } catch {
+                self.pickerResultPublisher.send(.failure(error))
+            }
+        }
     }
 
-    
-
-    
-
-    
     func contentSharingPicker(_ picker: SCContentSharingPicker, didUpdateWith filter: SCContentFilter, for stream: SCStream?) {
-        SCContentSharingPicker.shared.remove(self)
-        DispatchQueue.main.async {
-            self.pickerResultPublisher.send(.success(filter))
-        }
+        picker.remove(self)
+        picker.isActive = false
+        self.pickerResultPublisher.send(.success(filter))
     }
 
-    
     func contentSharingPicker(_ picker: SCContentSharingPicker, didCancelFor stream: SCStream?) {
-        SCContentSharingPicker.shared.remove(self)
-        DispatchQueue.main.async {
-            self.pickerResultPublisher.send(.failure(nil))
-        }
+        picker.remove(self)
+        picker.isActive = false
+        self.pickerResultPublisher.send(.failure(nil))
     }
-    
-    
+
     func contentSharingPickerStartDidFailWithError(_ error: Error) {
-        SCContentSharingPicker.shared.remove(self)
-        DispatchQueue.main.async {
-            self.pickerResultPublisher.send(.failure(error))
-        }
+        picker.remove(self)
+        picker.isActive = false
+        self.pickerResultPublisher.send(.failure(error))
     }
 }

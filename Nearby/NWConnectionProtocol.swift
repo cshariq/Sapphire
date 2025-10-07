@@ -4,13 +4,10 @@
 //
 //  Created by Shariq Charolia on 2025-07-02.
 //
-
+//
 
 import Foundation
 import Network // This is the ONLY file that will contain this import.
-
-// Create protocols that mirror the NWConnection and NWListener APIs
-// This decouples our code from the Network framework itself.
 
 protocol NWConnectionProtocol {
     init(to: NWEndpoint, using: NWParameters)
@@ -30,9 +27,5 @@ protocol NWListenerProtocol {
     func cancel()
 }
 
-// Make the real classes conform to our protocols
 extension NWConnection: NWConnectionProtocol {}
 extension NWListener: NWListenerProtocol {}
-
-// We will now use `NWConnectionProtocol` and `NWListenerProtocol`
-// throughout the NearbyShare code instead of the concrete types.

@@ -4,13 +4,11 @@
 //
 //  Created by Shariq Charolia on 2025-07-04.
 //
+//
 
 import SwiftUI
 import AppKit
 import CoreGraphics
-
-
-
 
 struct GeminiActiveActivityViewRight: View {
     let isMuted: Bool
@@ -35,7 +33,6 @@ struct GeminiActiveActivityView {
             .foregroundStyle(.purple)
     }
 
-    
     static func right(isMuted: Bool, action: @escaping () -> Void) -> some View {
         GeminiActiveActivityViewRight(isMuted: isMuted, action: action)
     }

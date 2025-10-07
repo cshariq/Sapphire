@@ -2,30 +2,31 @@
 //  WeatherWidgetView.swift
 //  Sapphire
 //
-//  Created by Shariq Charolia on 2025-06-27.
+//  Created by Shariq Charolia on 2025-10-05
 //
 
 import SwiftUI
 
 struct WeatherWidgetView: View {
-    @StateObject private var viewModel = WeatherViewModel()
-    @Binding var mode: NotchWidgetMode
+    @Environment(\.navigationStack) var navigationStack
+    @ObservedObject private var viewModel = WeatherViewModel.shared
 
     var body: some View {
-        Button(action: {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                mode = .weatherPlayer
-            }
-        }) {
-            HStack(alignment: .center, spacing: 0) {
+        ZStack {
+            HStack(alignment: .center, spacing: 10) {
                 primaryInfo.layoutPriority(1)
                 secondaryInfo
             }
-            .frame(width: 250, height: 100)
+            .padding(.horizontal, 10)
         }
-        .buttonStyle(.plain)
-        .onAppear { 
-            viewModel.fetch()
+        .padding(.top, 0)
+        .frame(minWidth: 200, minHeight: 90)
+        .fixedSize()
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                navigationStack.wrappedValue.append(.weatherPlayer)
+            }
         }
     }
 
@@ -45,7 +46,7 @@ struct WeatherWidgetView: View {
                     .minimumScaleFactor(0.5)
                     .id(viewModel.temperature)
                     .transition(.opacity)
-                
+
                 Text(viewModel.locationName)
                     .font(.headline).fontWeight(.medium).lineLimit(1).minimumScaleFactor(0.7)
                     .id(viewModel.locationName)
@@ -56,7 +57,6 @@ struct WeatherWidgetView: View {
                     .id(viewModel.conditionDescription)
                     .transition(.opacity)
             }
-            
             .animation(.easeInOut(duration: 0.4), value: viewModel.locationName)
         }
     }
@@ -67,11 +67,9 @@ struct WeatherWidgetView: View {
             CompactInfoRow(iconName: "drop.fill", value: viewModel.precipChance)
             CompactInfoRow(iconName: "humidity.fill", value: viewModel.humidity)
         }
-        
         .animation(.easeInOut(duration: 0.4), value: viewModel.windInfo)
     }
 }
-
 
 struct CompactInfoRow: View {
     let iconName: String
@@ -84,7 +82,7 @@ struct CompactInfoRow: View {
                 .frame(width: 20)
                 .symbolRenderingMode(.hierarchical)
                 .opacity(0.8)
-            
+
             Text(value)
                 .font(.system(.subheadline, design: .rounded))
                 .fontWeight(.semibold)

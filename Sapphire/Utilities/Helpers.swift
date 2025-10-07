@@ -4,11 +4,12 @@
 //
 //  Created by Shariq Charolia on 2025-07-04.
 //
+//
 
 import Foundation
 import SwiftUI
 import AppKit
-
+import IOKit
 
 public class Debouncer {
     private let delay: TimeInterval
@@ -20,20 +21,23 @@ public class Debouncer {
         self.queue = queue
     }
 
-    
     public func debounce(action: @escaping (() -> Void)) {
         workItem?.cancel()
         let newWorkItem = DispatchWorkItem(block: action)
         workItem = newWorkItem
         queue.asyncAfter(deadline: .now() + delay, execute: newWorkItem)
     }
-    
-    
+
     public func cancel() {
         workItem?.cancel()
     }
-}
 
+    func flush() {
+            workItem?.perform()
+            workItem?.cancel()
+            workItem = nil
+        }
+}
 
 struct SizeLoggingViewModifier: ViewModifier {
     let label: String
@@ -43,18 +47,73 @@ struct SizeLoggingViewModifier: ViewModifier {
                 GeometryReader { geometry in
                     Color.clear
                         .onAppear {
+                            print("[\(label) LOG] Appeared with size: \(geometry.size)")
                         }
-                        .onChange(of: geometry.size) { newSize in
+                        .onChange(of: geometry.size) { oldSize, newSize in
+                            print("[\(label) LOG] Resized to: \(newSize)")
                         }
                 }
             )
     }
 }
 
-
 struct HapticManager {
     static func perform(_ pattern: NSHapticFeedbackManager.FeedbackPattern) {
         NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
+    }
+}
+
+struct SeekButton: View {
+    let systemName: String
+    let onTap: () -> Void
+    let onSeek: (Bool) -> Void
+
+    @GestureState private var isPressing = false
+    @State private var longPressTimer: Timer?
+    @State private var seekTimer: Timer?
+    @State private var tapIsEligible = false
+
+    private var isForward: Bool {
+        systemName.contains("forward")
+    }
+
+    var body: some View {
+        Image(systemName: systemName)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($isPressing) { _, state, _ in
+                        state = true
+                    }
+            )
+            .onChange(of: isPressing) { _, nowPressing in
+                if nowPressing {
+                    tapIsEligible = true
+                    longPressTimer?.invalidate()
+                    longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { _ in
+                        tapIsEligible = false
+                        startSeeking()
+                    }
+                } else {
+                    longPressTimer?.invalidate()
+                    seekTimer?.invalidate()
+                    seekTimer = nil
+                    if tapIsEligible {
+                        onTap()
+                    }
+                }
+            }
+            .blur(radius: isPressing ? 4 : 0)
+            .scaleEffect(isPressing ? 0.9 : 1.0)
+            .opacity(isPressing ? 0.8 : 1.0)
+            .animation(.spring(response: 0.35, dampingFraction: 0.5), value: isPressing)
+    }
+
+    private func startSeeking() {
+        seekTimer?.invalidate()
+        seekTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            onSeek(isForward)
+        }
     }
 }
 
@@ -95,5 +154,23 @@ struct InteractiveProgressBar: View {
             })
             .animation(isDragging ? .none : .linear(duration: 0.5), value: value)
         }
+    }
+}
+
+struct VisualEffectView: NSViewRepresentable {
+    var material: NSVisualEffectView.Material
+    var blendingMode: NSVisualEffectView.BlendingMode
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+        nsView.blendingMode = blendingMode
     }
 }

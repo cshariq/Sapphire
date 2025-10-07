@@ -4,9 +4,9 @@
 //
 //  Created by Shariq Charolia on 2025-07-10.
 //
+//
 
 import Foundation
-
 
 struct WeatherApiResponse: Codable {
     var conditionsshort: ConditionsShort?
@@ -83,7 +83,6 @@ struct Nowlinks: Codable {
 struct Nowlink: Codable {
     var url: String?
 }
-
 
 struct ProcessedWeatherData: Hashable {
     let locationName: String

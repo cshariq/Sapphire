@@ -15,11 +15,18 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Needed to show events in calendar</string>
+	<key>NSAppTransportSecurity</key>
+	<dict/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Needed for gemini live activity</string>
+	<key>NSSystemExtensionPointIdentifier</key>
+	<string>com.apple.developer.driverkit.transport.audio</string>
+	<key>SMPrivilegedExecutables</key>
+	<dict>
+		<key>com.shariq.SapphireHelper</key>
+		<string>identifier &quot;com.shariq.SapphireHelper&quot; and anchor apple generic</string>
+	</dict>
 </dict>
 </plist>

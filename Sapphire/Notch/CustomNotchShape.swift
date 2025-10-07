@@ -4,28 +4,32 @@
 //
 //  Created by Shariq Charolia on 2025-05-12.
 //
+//
 
 import SwiftUI
 
 struct CustomNotchShape: Shape {
     var cornerRadius: CGFloat
+    var bottomCornerRadius: CGFloat
 
-    
-    var animatableData: CGFloat {
-        get { cornerRadius }
-        set { cornerRadius = newValue }
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(cornerRadius, bottomCornerRadius) }
+        set {
+            cornerRadius = newValue.first
+            bottomCornerRadius = newValue.second
+        }
     }
 
-    
-    
     func path(in rect: CGRect) -> Path {
-        
-        
-        let radii = Self.calculateRadii(cornerRadius: cornerRadius, in: rect)
-        let topRadius = radii.top
-        let safeBottomRadius = radii.bottom
+        let topRadiusBase = cornerRadius > 15 ? cornerRadius - 5 : 5
+        let maxPossibleTopRadiusFromHeight = rect.height > 0 ? rect.height / 2.0 : 0
+        let derivedTopRadius = min(topRadiusBase, maxPossibleTopRadiusFromHeight)
+        let topRadius = max(0.0, min(derivedTopRadius, rect.width / 2.0))
 
-        
+        let availableWidthForBottomRadii = rect.width - 2 * topRadius
+        let availableHeightForBottomRadius = rect.height - topRadius
+        let safeBottomRadius = max(0.0, min(bottomCornerRadius, availableWidthForBottomRadii / 2.0, availableHeightForBottomRadius))
+
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.minY))
         path.addQuadCurve(to: CGPoint(x: rect.minX + topRadius, y: rect.minY + topRadius), control: CGPoint(x: rect.minX + topRadius, y: rect.minY))
@@ -39,26 +43,24 @@ struct CustomNotchShape: Shape {
         return path
     }
 
-    
-    
-    
-    
-    
-    
-    
-    
-    static func calculateRadii(cornerRadius: CGFloat, in rect: CGRect) -> (top: CGFloat, bottom: CGFloat) {
-        
-        let derivedTopRadiusBase = cornerRadius > 15 ? cornerRadius - 5 : 5
-        let maxPossibleTopRadiusFromHeight = rect.height > 0 ? rect.height / 2.0 : 0
-        let derivedTopRadius = min(derivedTopRadiusBase, maxPossibleTopRadiusFromHeight)
-        let topRadius = max(0.0, min(derivedTopRadius, rect.width / 2.0))
+    static func calculateHorizontalPadding(for cornerRadius: CGFloat) -> CGFloat {
+        let topRadiusBase = cornerRadius > 15 ? cornerRadius - 5 : 5
+        return max(topRadiusBase, 10)
+    }
+}
 
-        
-        let availableWidthForBottomRadii = rect.width - 2 * topRadius
-        let availableHeightForBottomRadius = rect.height - topRadius
-        let safeBottomRadius = max(0.0, min(cornerRadius, availableWidthForBottomRadii / 2.0, availableHeightForBottomRadius))
+struct NotchHorizontalPadding: ViewModifier {
+    let cornerRadius: CGFloat
 
-        return (top: topRadius, bottom: safeBottomRadius)
+    func body(content: Content) -> some View {
+        let horizontalPadding = CustomNotchShape.calculateHorizontalPadding(for: cornerRadius)
+        return content
+            .padding(.horizontal, horizontalPadding)
+    }
+}
+
+extension View {
+    func notchHorizontalPadding(cornerRadius: CGFloat) -> some View {
+        self.modifier(NotchHorizontalPadding(cornerRadius: cornerRadius))
     }
 }
