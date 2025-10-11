@@ -999,7 +999,7 @@ struct NotificationLiveActivityView: View {
                 actionButtons
             }
         }
-        .padding(.bottom, 1) // <-- CORRECTION
+        .padding(.bottom, 3)
         .frame(width: 400)
         .task(id: payload.id) {
             self.contactImage = await iMessageManager.fetchContactImage(forName: payload.title)
@@ -1060,7 +1060,7 @@ struct NotificationLiveActivityView: View {
 
             actionButtons
         }
-        .padding([.horizontal, .bottom], 16) // <-- CORRECTION
+        .padding([.horizontal, .bottom], 16)
         .frame(minWidth: 350, maxWidth: 420)
     }
 
