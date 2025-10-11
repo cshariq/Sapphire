@@ -1,0 +1,2 @@
+ArcFace.psd filter=lfs diff=lfs merge=lfs -text
+ArcFace.mlmodel filter=lfs diff=lfs merge=lfs -text
