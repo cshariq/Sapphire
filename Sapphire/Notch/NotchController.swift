@@ -625,10 +625,22 @@ struct NotchController: View {
 
                 if shouldSkipForward && settings.settings.swipeToSkipMusic {
                     if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                    musicWidget.transientIcon = .skippedForward
                     musicWidget.nextTrack()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        if musicWidget.transientIcon == .skippedForward {
+                            musicWidget.transientIcon = nil
+                        }
+                    }
                 } else if shouldGoBackward && settings.settings.swipeToRewindMusic {
                     if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                    musicWidget.transientIcon = .skippedBackward
                     musicWidget.previousTrack()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                        if musicWidget.transientIcon == .skippedBackward {
+                            musicWidget.transientIcon = nil
+                        }
+                    }
                 }
             }
             else if settings.settings.swipeToDismissLiveActivity {
@@ -639,13 +651,18 @@ struct NotchController: View {
     }
 
     private func handleTrackpadTwoFingerTap() {
-        guard isLiveActivityActive && liveActivityManager.currentActivity == .music &&
-              (notchState == .autoExpanded || notchState == .hoverExpanded) else {
+        guard isLiveActivityActive && (notchState == .autoExpanded || notchState == .hoverExpanded) else {
             return
         }
 
         if settings.settings.twoFingerTapToPauseMusic {
             if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+            musicWidget.transientIcon = .paused
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                if musicWidget.transientIcon == .skippedBackward {
+                    musicWidget.transientIcon = nil
+                }
+            }
             musicWidget.isPlaying ? musicWidget.pause() : musicWidget.play()
         }
     }
@@ -1201,6 +1218,7 @@ struct NotchController: View {
             } else {
                 if notchState == .initial || notchState == .autoExpanded {
                     notchState = .hoverExpanded
+                    if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
                 }
             }
         } else {
@@ -1392,27 +1410,28 @@ struct NotchController: View {
 
     private func updateAutoContentSize() {
         guard notchState == .autoExpanded || (notchState == .hoverExpanded && isLiveActivityActive) else { return }
-
+ 
         let scale = activeScaleFactor
         let targetWidth = measuredAutoContentSize.width * scale
         let targetHeight = measuredAutoContentSize.height * scale
-
+ 
         let epsilon: CGFloat = 0.5
         guard targetWidth > 0 && targetHeight > 0,
               (abs(targetWidth - animatedWidth) > epsilon || abs(targetHeight - animatedHeight) > epsilon) else { return }
-
-        let isMusicActivity = liveActivityManager.currentActivity == .music
-
-        if !isMusicActivity {
+ 
+        let currentActivityType = liveActivityManager.currentActivity
+        let isExemptFromBlur = (currentActivityType == .music || currentActivityType == .systemHUD)
+ 
+        if !isExemptFromBlur {
             withAnimation(.easeIn(duration: NotchConfiguration.activityBlurUpdateDelay)) { activityBlurRadius = 15 }
         }
-
+ 
         withAnimation(NotchConfiguration.activityToActivityAnimation) {
             animatedWidth = targetWidth
             animatedHeight = targetHeight
         }
-
-        if !isMusicActivity {
+ 
+        if !isExemptFromBlur {
             DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.autoContentRenderDelay) {
                 withAnimation(NotchConfiguration.blurRemovalAnimation) { self.activityBlurRadius = 0 }
             }

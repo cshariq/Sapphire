@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
-//
-//
 
 import SwiftUI
 import Charts
@@ -3858,7 +3856,7 @@ struct MusicSettingsView: View {
                     }.padding()
                     if settings.settings.mediaSource != .system {
                         Divider().padding(.leading, 20)
-                        ToggleRow(title: "Prioritize Selected Source", description: "Only show media from your selected source, ignoring others (e.g., web browsers).", isOn: $settings.settings.prioritizeMediaSource)
+                        ToggleRow(title: "Prioritize Selected Source", description: "Prioritize media from your selected source, but show others (e.g., web browsers) when you selected source is inactive.", isOn: $settings.settings.prioritizeMediaSource)
                     }
                 }
                 .modifier(SettingsContainerModifier())

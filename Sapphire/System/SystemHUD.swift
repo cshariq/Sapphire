@@ -694,7 +694,7 @@ struct SystemHUDSlimActivityView {
         case .externalDeviceVolume(_, let deviceIcon, _, let systemVolume, let controllingExternal, _):
             isExternalControl = controllingExternal
             if controllingExternal {
-                iconName = deviceIcon // Spotify device icon when controlling Spotify
+                iconName = deviceIcon
             } else {
                 if systemVolume == 0 { iconName = "speaker.slash.fill" }
                 else if systemVolume < 0.33 { iconName = "speaker.wave.1.fill" }

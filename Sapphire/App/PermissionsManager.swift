@@ -23,7 +23,7 @@ import AppKit
 // MARK: - Permission Enums
 
 enum PermissionType: Identifiable, CaseIterable {
-    case accessibility, notifications, location, calendar, reminders, bluetooth, focusStatus
+    case accessibility, notifications, location, calendar, reminders, bluetooth, focusStatus, fullDiskAccess
     var id: Self { self }
 }
 
@@ -45,7 +45,6 @@ struct PermissionItem: Identifiable {
 }
 
 // MARK: - PermissionsManager
-
 @MainActor
 class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManagerDelegate, @MainActor CBCentralManagerDelegate {
     static let shared = PermissionsManager()
@@ -57,6 +56,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     @Published var remindersStatus: PermissionStatus = .notRequested
     @Published var bluetoothStatus: PermissionStatus = .notRequested
     @Published var focusStatusStatus: PermissionStatus = .notRequested
+    @Published var fullDiskAccessStatus: PermissionStatus = .notRequested
 
     private var locationManager: CLLocationManager?
     private var bluetoothManager: CBCentralManager?
@@ -64,6 +64,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
     public let allPermissions: [PermissionItem] = [
         .init(type: .accessibility, title: "Accessibility", description: "Needed for media key presses, window snapping, and HUDs.", iconName: "figure.wave.circle.fill", iconColor: .purple, category: .required),
+        .init(type: .fullDiskAccess, title: "Full Disk Access", description: "Required for features like File Shelf and advanced integrations.", iconName: "folder.badge.gearshape", iconColor: .gray, category: .required),
         .init(type: .notifications, title: "Notifications", description: "Needed to show custom alerts for messages and system events.", iconName: "bell.badge.fill", iconColor: .red, category: .recommended),
         .init(type: .location, title: "Location", description: "Needed to provide live weather updates for your current location.", iconName: "location.fill", iconColor: .blue, category: .recommended),
         .init(type: .calendar, title: "Calendar", description: "Needed to show your upcoming events.", iconName: "calendar", iconColor: .red, category: .recommended),
@@ -90,6 +91,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in
                 self?.checkAccessibilityStatus()
+                self?.checkFullDiskAccessStatus()
             }
             .store(in: &cancellables)
     }
@@ -101,9 +103,19 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             accessibilityStatus = newStatus
         }
     }
+    
+    private func checkFullDiskAccessStatus() {
+        let testUrl = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
+        let canAccess = FileManager.default.isReadableFile(atPath: testUrl.path)
+        let newStatus: PermissionStatus = canAccess ? .granted : .notRequested
+        if fullDiskAccessStatus != newStatus {
+            fullDiskAccessStatus = newStatus
+        }
+    }
 
     func checkAllPermissions() {
         checkAccessibilityStatus()
+        checkFullDiskAccessStatus() // MODIFICATION: Check it here as well
 
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
@@ -154,6 +166,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         case .reminders: return remindersStatus
         case .bluetooth: return bluetoothStatus
         case .focusStatus: return focusStatusStatus
+        case .fullDiskAccess: return fullDiskAccessStatus
         }
     }
 
@@ -163,6 +176,10 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
             NSWorkspace.shared.open(url)
 
+        case .fullDiskAccess:
+            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FullDiskAccess")!
+            NSWorkspace.shared.open(url)
+            
         case .notifications:
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in
                 DispatchQueue.main.async { self.checkAllPermissions() }
@@ -202,7 +219,6 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     }
 
     // MARK: - CLLocationManagerDelegate
-
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         updateLocationStatus(for: manager.authorizationStatus)
     }
@@ -217,7 +233,6 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     }
 
     // MARK: - CBCentralManagerDelegate
-
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         self.updateBluetoothStatus(for: CBManager.authorization)
     }

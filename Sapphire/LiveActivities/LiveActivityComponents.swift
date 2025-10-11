@@ -942,7 +942,6 @@ struct NotificationLiveActivityView: View {
         }
     }
 
-    // MARK: - iMessage View
     @ViewBuilder
     private var iMessageView: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -970,6 +969,7 @@ struct NotificationLiveActivityView: View {
                             .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .frame(maxHeight: 80)
             }
             .onTapGesture {
                 NSWorkspace.shared.launchApplication(withBundleIdentifier: payload.appIdentifier, options: [], additionalEventParamDescriptor: nil, launchIdentifier: nil)
@@ -999,8 +999,10 @@ struct NotificationLiveActivityView: View {
                 actionButtons
             }
         }
-        .padding(.bottom, 3)
+        .padding(.horizontal, 13)
+        .padding(.bottom, 12)
         .frame(width: 400)
+        .frame(minHeight: 120)
         .task(id: payload.id) {
             self.contactImage = await iMessageManager.fetchContactImage(forName: payload.title)
             attachment = nil; isFetchingAttachment = false; audioPlaybackState = .idle
@@ -1036,8 +1038,6 @@ struct NotificationLiveActivityView: View {
         .padding(.horizontal, 16).frame(height: 40).background(.ultraThinMaterial).clipShape(Capsule())
     }
 
-    // MARK: - Standard View (For other apps)
-
     @ViewBuilder
     private var standardNotificationView: some View {
         VStack(spacing: 12) {
@@ -1051,6 +1051,7 @@ struct NotificationLiveActivityView: View {
                     Text(payload.title + " - " + payload.body).font(.subheadline).foregroundStyle(.secondary)
                         .lineLimit(4).fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxHeight: 100)
                 Spacer()
             }
             .onTapGesture {
@@ -1060,11 +1061,11 @@ struct NotificationLiveActivityView: View {
 
             actionButtons
         }
-        .padding([.horizontal, .bottom], 16)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
         .frame(minWidth: 350, maxWidth: 420)
+        .frame(minHeight: 120)
     }
-
-    // MARK: - Reusable Components
 
     @ViewBuilder
     private var actionButtons: some View {
@@ -1080,8 +1081,12 @@ struct NotificationLiveActivityView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(code, forType: .string)
                     withAnimation(.spring) { didCopyCode = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         withAnimation(.spring) { didCopyCode = false }
+                        notificationManager.dismissLatestNotification()
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        notificationManager.dismissLatestNotification()
                     }
                 }) {
                     Label(
@@ -1132,7 +1137,6 @@ struct NotificationLiveActivityView: View {
         .foregroundStyle(isPrimary ? .white : .primary)
         .clipShape(Capsule())
     }
-
 }
 
 struct AudioMessageView: View {

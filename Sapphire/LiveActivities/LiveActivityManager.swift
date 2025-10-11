@@ -594,7 +594,7 @@ class LiveActivityManager: ObservableObject {
         if let until = dismissedNotifications[notification.id], until > Date() { return nil }
         let hoverBinding = Binding<Bool>(get: { self.isNotificationHovered }, set: { self.isNotificationHovered = $0 })
         let fullView = NotificationLiveActivityView(payload: notification, isHovered: hoverBinding)
-        return (.notification, .full(view: AnyView(fullView), id: notification.id), 15.0)
+        return (.notification, .full(view: AnyView(fullView), id: notification.id, bottomCornerRadius: 25), 10.0)
     }
 
     private func checkForAudioSwitch() -> (ActivityType, LiveActivityContent, TimeInterval?)? {

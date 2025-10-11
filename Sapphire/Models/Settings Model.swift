@@ -403,7 +403,7 @@ struct Settings: Codable, Equatable {
     var musicDevicesButtonEnabled: Bool = true
     var showPopularityInMusicPlayer: Bool = true
     var hideMusicWidgetWhenNotPlaying: Bool = false
-    var preferAirPlayOverSpotify: Bool = true
+    var preferAirPlayOverSpotify: Bool = false
 
     // MARK: - System HUD
     var hudDuration: Double = 2.5
