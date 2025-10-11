@@ -10,6 +10,7 @@
 //
 //
 //
+//
 
 func installHelper() {
     guard let scriptPath = Bundle.main.path(forResource: "install", ofType: "sh") else {

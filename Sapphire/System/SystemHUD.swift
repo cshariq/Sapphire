@@ -5,6 +5,7 @@
 //  Created by Shariq Charolia on 2025-07-06.
 //
 //
+//
 
 import SwiftUI
 import AppKit
@@ -87,8 +88,9 @@ class SystemHUDManager: ObservableObject {
 
     private var isInitialKeyPress = true
 
-    private var currentSpotifyVolumeForAction: Float?
     private var spotifyStateForAction: ActiveSpotifyDeviceState?
+    private var lastKnownSpotifyState: ActiveSpotifyDeviceState? // Cache
+    private var currentSpotifyVolumeForAction: Float?
     private var lastCommittedSpotifyVolume: Float?
     private var isFetchingSpotifyState = false
     private var isControllingSpotify = false
@@ -190,7 +192,31 @@ class SystemHUDManager: ObservableObject {
         currentAction = action
         isInitialKeyPress = true
 
-        performChange()
+        if action == .volumeUp || action == .volumeDown {
+            if settings.settings.showSpotifyVolumeHUD, let cachedState = self.lastKnownSpotifyState {
+                self.spotifyStateForAction = cachedState
+                self.updateVolumeHUD() // Show the cached HUD now
+            }
+
+            if settings.settings.showSpotifyVolumeHUD && !isFetchingSpotifyState {
+                isFetchingSpotifyState = true
+                Task { @MainActor in
+                    defer { self.isFetchingSpotifyState = false }
+                    if let freshState = await musicManager.fetchActiveSpotifyDeviceState() {
+                        self.spotifyStateForAction = freshState
+                        self.lastKnownSpotifyState = freshState // Update the cache
+                        if self.currentHUD != nil {
+                            self.updateVolumeHUD()
+                        }
+                    } else {
+                        self.spotifyStateForAction = nil
+                        self.lastKnownSpotifyState = nil
+                    }
+                }
+            }
+        }
+
+        performChange() // Perform the first action immediately
 
         withAnimation(.spring()) {
             glowIntensity = 0.2
@@ -266,30 +292,32 @@ class SystemHUDManager: ObservableObject {
 
         switch action {
         case .volumeUp, .volumeDown:
-            let isSpotifyControlAttempt = currentModifiers.contains(.option) && !currentModifiers.contains(.shift) && settings.settings.showSpotifyVolumeHUD
+            let isSystemFineTune = currentModifiers.contains([.option, .shift]) && !currentModifiers.contains(.command)
 
-            if settings.settings.showSpotifyVolumeHUD && self.spotifyStateForAction == nil && !isFetchingSpotifyState {
-                 isFetchingSpotifyState = true
-                 Task { @MainActor in
-                    defer { self.isFetchingSpotifyState = false }
-                    self.spotifyStateForAction = await musicManager.fetchActiveSpotifyDeviceState()
-                    self.updateVolumeHUD()
-                 }
-            }
+            let isSpotifyModifierPressed = currentModifiers.contains(.option) || currentModifiers.contains(.command)
 
-            if isSpotifyControlAttempt && (self.spotifyStateForAction?.canControlVolume ?? false) {
-                self.isControllingSpotify = true
+            let isSpotifyControlAttempt = settings.settings.showSpotifyVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune
 
-                if self.currentSpotifyVolumeForAction == nil, let initialVolume = self.spotifyStateForAction?.volumePercent {
-                    self.currentSpotifyVolumeForAction = Float(initialVolume)
-                    self.lastCommittedSpotifyVolume = Float(initialVolume)
+            if isSpotifyControlAttempt {
+                if let spotifyState = self.spotifyStateForAction, spotifyState.canControlVolume {
+                    self.isControllingSpotify = true
+
+                    if self.currentSpotifyVolumeForAction == nil {
+                        self.currentSpotifyVolumeForAction = Float(spotifyState.volumePercent ?? 75)
+                        self.lastCommittedSpotifyVolume = self.currentSpotifyVolumeForAction
+                    }
+                    let isFineTuningForSpotify = currentModifiers.contains(.shift) || currentModifiers.contains([.command, .option])
+                    performSpotifyVolumeChange(action: action, isFineTuning: isFineTuningForSpotify)
+
+                } else if isFetchingSpotifyState {
+                    return
+                } else {
+                    self.isControllingSpotify = false
+                    self.changeSystemVolume(action: action, isFineTuning: isSystemFineTune)
                 }
-                performSpotifyVolumeChange(action: action)
-
             } else {
-                self.isControllingSpotify = false // Ensure flag is reset if we switch mode mid-press or are just doing system volume
-                let isFineTuning = currentModifiers.contains([.shift, .option])
-                self.changeSystemVolume(action: action, isFineTuning: isFineTuning)
+                self.isControllingSpotify = false
+                self.changeSystemVolume(action: action, isFineTuning: isSystemFineTune)
             }
 
             self.updateVolumeHUD()
@@ -326,18 +354,19 @@ class SystemHUDManager: ObservableObject {
         }
     }
 
-    @MainActor private func performSpotifyVolumeChange(action: MediaKeyAction) {
+    @MainActor private func performSpotifyVolumeChange(action: MediaKeyAction, isFineTuning: Bool) {
         guard let currentVolume = self.currentSpotifyVolumeForAction else { return }
 
         let changeDirection: Float = action == .volumeUp ? 1 : -1
-        let step: Float = 5.0
+        let step: Float = isFineTuning ? 1.0 : 5.0
 
         let newSpotifyVolume = (currentVolume + (step * changeDirection)).clamped(to: 0...100)
         self.currentSpotifyVolumeForAction = newSpotifyVolume
 
         let lastCommitted = self.lastCommittedSpotifyVolume ?? newSpotifyVolume
-        let oldZone = Int(lastCommitted / 15)
-        let newZone = Int(newSpotifyVolume / 15)
+        let commitThreshold: Float = isFineTuning ? 5 : 15
+        let oldZone = Int(lastCommitted / commitThreshold)
+        let newZone = Int(newSpotifyVolume / commitThreshold)
 
         if oldZone != newZone {
             let volumeToSend = Int(newSpotifyVolume.rounded())

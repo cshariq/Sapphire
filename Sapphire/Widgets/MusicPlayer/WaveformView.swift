@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 import Combine
@@ -154,11 +155,12 @@ struct WaveformView: View {
     @State private var volumeScale: CGFloat = 0.7
 
     enum TransientIcon: Equatable {
-        case paused, skippedForward, skippedBackward
+        case paused, played, skippedForward, skippedBackward
 
         var systemName: String {
             switch self {
             case .paused: return "pause.fill"
+            case .played: return "play"
             case .skippedForward: return "forward.end.fill"
             case .skippedBackward: return "backward.end.fill"
             }

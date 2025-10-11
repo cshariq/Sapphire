@@ -2,7 +2,8 @@
 //  LiveActivityManager.swift
 //  Sapphire
 //
-//  Created by Shariq Charolia on 2025-07-04.
+//  Created by Shariq Charolia on 2025-07-04
+//
 //
 //
 //
@@ -16,7 +17,27 @@ import NearbyShare
 // MARK: - Enums and Structs
 
 enum ActivityType: Int, Equatable, Comparable, CaseIterable {
-    case none = 0, persistentBattery = 1, weather = 5, music = 10, timer = 20, fileShelf = 25, desktopChange = 30, battery = 40, reminder = 49, calendar = 50, focusModeChange = 55, bluetooth = 58, audioSwitch = 60, fileProgress = 65, eyeBreak = 70, notification = 80, geminiLive = 85, nearbyShare = 90, updateAvailable = 95, systemHUD = 100, lockScreen = 110
+    case none = 0
+    case persistentBattery = 1
+    case weather = 5
+    case music = 10
+    case timer = 20
+    case fileShelf = 25
+    case desktopChange = 30
+    case updateAvailable = 45
+    case battery = 50
+    case focusModeChange = 55
+    case reminder = 59
+    case calendar = 60
+    case bluetooth = 65
+    case audioSwitch = 70
+    case fileProgress = 75
+    case notification = 80
+    case geminiLive = 85
+    case nearbyShare = 90
+    case eyeBreak = 95
+    case systemHUD = 100
+    case lockScreen = 110
 
     static func < (lhs: ActivityType, rhs: ActivityType) -> Bool { return lhs.rawValue < rhs.rawValue }
 
@@ -225,7 +246,7 @@ class LiveActivityManager: ObservableObject {
         if activeAppMonitor.isFullScreen && settingsModel.settings.hideLiveActivityInFullScreen { if currentActivity != .none { setActivity(type: .none, content: .none) }; return }
         if !musicWidget.shouldShowLiveActivity { musicWidget.showQuickPeek = false }
 
-        let highPriorityActivities: [ActivityType] = [.updateAvailable, .nearbyShare, .geminiLive, .notification, .fileProgress, .audioSwitch, .bluetooth, .calendar, .reminder, .battery]
+        let highPriorityActivities: [ActivityType] = [.eyeBreak, .nearbyShare, .geminiLive, .notification, .fileProgress, .audioSwitch, .bluetooth, .calendar, .reminder, .battery, .updateAvailable]
         let userOrderedActivities = settingsModel.settings.liveActivityOrder.compactMap { ActivityType(from: $0) }
         let finalEvaluationOrder = highPriorityActivities + userOrderedActivities
 
@@ -594,7 +615,7 @@ class LiveActivityManager: ObservableObject {
         if let until = dismissedNotifications[notification.id], until > Date() { return nil }
         let hoverBinding = Binding<Bool>(get: { self.isNotificationHovered }, set: { self.isNotificationHovered = $0 })
         let fullView = NotificationLiveActivityView(payload: notification, isHovered: hoverBinding)
-        return (.notification, .full(view: AnyView(fullView), id: notification.id, bottomCornerRadius: 25), 10.0)
+        return (.notification, .full(view: AnyView(fullView), id: notification.id), 15.0)
     }
 
     private func checkForAudioSwitch() -> (ActivityType, LiveActivityContent, TimeInterval?)? {

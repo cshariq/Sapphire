@@ -6,6 +6,7 @@
 //
 //
 //
+//
 
 import Cocoa
 import SwiftUI
@@ -17,6 +18,7 @@ import IOBluetooth
 import ServiceManagement
 import Firebase
 import FirebaseAnalytics
+import Network
 
 @MainActor
 final class LockScreenState: ObservableObject {
@@ -89,6 +91,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private lazy var launchpadGestureMonitor: LaunchpadGestureMonitor = .shared
 
     private var statusItem: NSStatusItem?
+
+    private var networkMonitor: NWPathMonitor? // <-- ADD NETWORK MONITOR PROPERTY
 
     lazy var liveActivityManager: LiveActivityManager = LiveActivityManager(
         systemHUDManager: self.systemHUDManager, notificationManager: self.notificationManager, desktopManager: self.desktopManager,
@@ -259,6 +263,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         dnc.addObserver(self, selector: #selector(screenIsLocked), name: .init("com.apple.screenIsLocked"), object: nil)
         dnc.addObserver(self, selector: #selector(screenIsUnlocked), name: .init("com.apple.screenIsUnlocked"), object: nil)
+
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(systemDidWake), name: NSWorkspace.didWakeNotification, object: nil)
+
+        networkMonitor = NWPathMonitor()
+        networkMonitor?.pathUpdateHandler = { [weak self] path in
+            if path.status == .satisfied {
+                DispatchQueue.main.async {
+                    print("[AppDelegate] Network connection re-established.")
+                    self?.musicManager.spotifyPrivateAPI.checkAndReconnectIfNeeded()
+                }
+            }
+        }
+        networkMonitor?.start(queue: DispatchQueue(label: "NetworkMonitor"))
+    }
+
+    @objc private func systemDidWake(notification: NSNotification) {
+        print("[AppDelegate] System did wake from sleep.")
+        musicManager.spotifyPrivateAPI.checkAndReconnectIfNeeded()
     }
 
     @objc private func screenIsLocked() {
@@ -413,6 +435,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         cgsSpace = nil
         NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
+
+        networkMonitor?.cancel() // <-- CLEAN UP NETWORK MONITOR
 
         UpdateChecker.shared.stopPeriodicChecks()
 

@@ -5,6 +5,9 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
+//
+//
+//
 
 import SwiftUI
 import Charts
@@ -253,15 +256,6 @@ struct GeneralSettingsView: View {
 
                     Divider().padding(.leading, 20)
 
-//                    HStack {
-//                        Text("App Language")
-//                        Spacer()
-//                        Picker("", selection: $settings.settings.appLanguage) {
-//                            Text("English").tag("en")
-//                            Text("Spanish").tag("es")
-//                            Text("French").tag("fr")
-//                        }.labelsHidden().frame(width: 150)
-//                    }.padding()
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -1303,6 +1297,39 @@ struct WeatherInfoSettingsView: View {
     }
 }
 
+struct BatteryInfoSettingsView: View {
+    @Binding var selectedInfo: [BatteryInfoType]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Visible Battery Info")
+                .font(.caption.weight(.medium))
+                .foregroundColor(.secondary)
+                .padding(.top, 8)
+
+            ForEach(BatteryInfoType.allCases) { infoType in
+                let isSelectedBinding = Binding<Bool>(
+                    get: { selectedInfo.contains(infoType) },
+                    set: { isSelected in
+                        if isSelected {
+                            if !selectedInfo.contains(infoType) {
+                                selectedInfo.append(infoType)
+                            }
+                        } else {
+                            selectedInfo.removeAll { $0 == infoType }
+                        }
+                    }
+                )
+
+                Toggle(infoType.displayName, isOn: isSelectedBinding)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.bottom)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+}
+
 struct LockScreenSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
     @State private var notchsettingsHaveChanged: Bool = false
@@ -1362,13 +1389,18 @@ struct LockScreenSettingsView: View {
                         if settings.settings.lockScreenWidgets.contains(.weather) {
                             Divider().padding(.horizontal)
                             WeatherInfoSettingsView(selectedInfo: $settings.settings.lockScreenWeatherInfo)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+
+                        if settings.settings.lockScreenWidgets.contains(.battery) {
+                            Divider().padding(.horizontal)
+                            BatteryInfoSettingsView(selectedInfo: $settings.settings.lockScreenBatteryInfo)
                         }
                     }
                 }
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: settings.settings.lockScreenShowInfoWidget)
                 .animation(.default, value: settings.settings.lockScreenWidgets.contains(.weather))
+                .animation(.default, value: settings.settings.lockScreenWidgets.contains(.battery))
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Main Widget(s)").font(.headline).padding([.top, .horizontal])
@@ -3856,7 +3888,7 @@ struct MusicSettingsView: View {
                     }.padding()
                     if settings.settings.mediaSource != .system {
                         Divider().padding(.leading, 20)
-                        ToggleRow(title: "Prioritize Selected Source", description: "Prioritize media from your selected source, but show others (e.g., web browsers) when you selected source is inactive.", isOn: $settings.settings.prioritizeMediaSource)
+                        ToggleRow(title: "Prioritize Selected Source", description: "Only show media from your selected source, ignoring others (e.g., web browsers).", isOn: $settings.settings.prioritizeMediaSource)
                     }
                 }
                 .modifier(SettingsContainerModifier())

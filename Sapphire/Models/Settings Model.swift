@@ -6,6 +6,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -140,12 +141,26 @@ enum LockScreenWidgetType: String, Codable, CaseIterable, Identifiable {
 }
 
 enum LockScreenMiniWidgetType: String, Codable, CaseIterable, Identifiable {
-    case none, weather, calendar, music, battery // <-- ADDED THIS
+    case none, weather, calendar, music, battery
     var id: String { self.rawValue }
     var displayName: String { self.rawValue.capitalized }
 
     static var selectableCases: [LockScreenMiniWidgetType] {
-        return [.weather, .calendar, .music, .battery] // <-- AND ADDED IT HERE
+        return [.weather, .calendar, .music, .battery]
+    }
+}
+
+enum BatteryInfoType: String, Codable, CaseIterable, Identifiable {
+    case percentage, statusIcon, batteryIcon, estimatedTime
+    var id: String { self.rawValue }
+
+    var displayName: String {
+        switch self {
+        case .percentage: "Percentage"
+        case .statusIcon: "Status Icon"
+        case .batteryIcon: "Battery Icon"
+        case .estimatedTime: "Estimated Time"
+        }
     }
 }
 
@@ -313,6 +328,7 @@ struct Settings: Codable, Equatable {
     var lockScreenLiquidGlassLook: Bool = true
 
     var lockScreenWeatherInfo: [WeatherInfoType] = [.temperature]
+    var lockScreenBatteryInfo: [BatteryInfoType] = [.batteryIcon, .percentage]
 
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
     var notchLiveActivityAppearance: NotchAppearanceSettings = .init()
@@ -357,7 +373,7 @@ struct Settings: Codable, Equatable {
     var remindersLiveActivityEnabled: Bool = true
     var timersLiveActivityEnabled: Bool = true
     var batteryLiveActivityEnabled: Bool = true
-    var eyeBreakLiveActivityEnabled: Bool = true
+    var eyeBreakLiveActivityEnabled: Bool = false
     var desktopLiveActivityEnabled: Bool = true
     var focusLiveActivityEnabled: Bool = true
     var fileShelfLiveActivityEnabled: Bool = true
@@ -403,7 +419,7 @@ struct Settings: Codable, Equatable {
     var musicDevicesButtonEnabled: Bool = true
     var showPopularityInMusicPlayer: Bool = true
     var hideMusicWidgetWhenNotPlaying: Bool = false
-    var preferAirPlayOverSpotify: Bool = false
+    var preferAirPlayOverSpotify: Bool = true
 
     // MARK: - System HUD
     var hudDuration: Double = 2.5
@@ -591,6 +607,10 @@ class SettingsModel: ObservableObject {
 
             if let weatherInfoRaw = defaults.array(forKey: "lockScreenWeatherInfo") as? [String] {
                 loadedSettings.lockScreenWeatherInfo = weatherInfoRaw.compactMap { WeatherInfoType(rawValue: $0) }
+            }
+
+            if let batteryInfoRaw = defaults.array(forKey: "lockScreenBatteryInfo") as? [String] {
+                loadedSettings.lockScreenBatteryInfo = batteryInfoRaw.compactMap { BatteryInfoType(rawValue: $0) }
             }
 
             loadedSettings.lockScreenShowNotch = defaults.object(forKey: "lockScreenShowNotch") as? Bool ?? loadedSettings.lockScreenShowNotch
@@ -827,6 +847,11 @@ class SettingsModel: ObservableObject {
             if settings.lockScreenWeatherInfo != oldValue.lockScreenWeatherInfo {
                 let rawValues = settings.lockScreenWeatherInfo.map { $0.rawValue }
                 self.defaults.set(rawValues, forKey: "lockScreenWeatherInfo")
+            }
+
+            if settings.lockScreenBatteryInfo != oldValue.lockScreenBatteryInfo {
+                let rawValues = settings.lockScreenBatteryInfo.map { $0.rawValue }
+                self.defaults.set(rawValues, forKey: "lockScreenBatteryInfo")
             }
 
             if settings.lockScreenShowNotch != oldValue.lockScreenShowNotch { self.defaults.set(settings.lockScreenShowNotch, forKey: "lockScreenShowNotch") }

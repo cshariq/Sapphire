@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 import Combine
@@ -103,7 +104,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             accessibilityStatus = newStatus
         }
     }
-    
+
     private func checkFullDiskAccessStatus() {
         let testUrl = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
         let canAccess = FileManager.default.isReadableFile(atPath: testUrl.path)
@@ -179,7 +180,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         case .fullDiskAccess:
             let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FullDiskAccess")!
             NSWorkspace.shared.open(url)
-            
+
         case .notifications:
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in
                 DispatchQueue.main.async { self.checkAllPermissions() }

@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import Foundation
 import Combine
@@ -15,7 +16,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
     private var webSocketTask: URLSessionWebSocketTask?
     private let accessToken: String
     private var isConnected = false
-    private var isConnecting = false
+    private(set) var isConnecting = false
 
     public let controllerDeviceID: String
 

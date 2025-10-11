@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import Foundation
 import SwiftUI
@@ -260,7 +261,13 @@ public class LockScreenManager {
             let newFrame = positioner(newSize, screen)
             if !window.isVisible {
                 window.setFrame(newFrame, display: false)
+                window.alphaValue = 0
                 window.makeKeyAndOrderFront(nil)
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.4
+                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    window.animator().alphaValue = 1
+                }
             } else {
                 window.animator().setFrame(newFrame, display: true)
             }

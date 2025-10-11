@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 
@@ -39,6 +40,10 @@ struct LockScreenMainWidgetContainerView: View {
 
     @State private var maxMainWidgetHeight: CGFloat = 0
 
+    private var animationValue: (Bool, [LockScreenMainWidgetType], CGFloat) {
+        (musicManager.isPlaying, settings.settings.lockScreenMainWidgets, maxMainWidgetHeight)
+    }
+
     var body: some View {
         HStack(spacing: LockScreenConfiguration.widgetSpacing) {
             let _ = print("[Layout Debug - Main] Rebuilding view with max height: \(Int(maxMainWidgetHeight))")
@@ -46,6 +51,9 @@ struct LockScreenMainWidgetContainerView: View {
                 widgetView(for: widgetType)
             }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.0)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.1)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.2)
         .frame(height: maxMainWidgetHeight > 0 ? maxMainWidgetHeight : nil)
         .background(
             VStack(spacing: 0) {
@@ -73,15 +81,20 @@ struct LockScreenMainWidgetContainerView: View {
 
     @ViewBuilder
     private func widgetView(for widgetType: LockScreenMainWidgetType) -> some View {
+        let fadeTransition = AnyTransition.opacity
+
         switch widgetType {
         case .music:
             if musicManager.isPlaying {
                 LockScreenView()
+                    .transition(fadeTransition)
             }
         case .weather:
             LockScreenWeatherView()
+                .transition(fadeTransition)
         case .calendar:
             LockScreenCalendarView()
+                .transition(fadeTransition)
         }
     }
 

@@ -5,6 +5,7 @@
 //  Created by Shariq Charolia on 2025-07-04
 //
 //
+//
 
 import SwiftUI
 import Combine
@@ -112,6 +113,8 @@ struct NotchController: View {
     @StateObject private var caffeineManager = CaffeineManager.shared
     @StateObject private var calendarViewModel = InteractiveCalendarViewModel()
 
+    @State private var config: ResolvedNotchConfiguration?
+
     @State private var notchState: NotchState = .initial
     @State private var isHovered: Bool = false
     @State private var collapseTask: Task<Void, Never>?
@@ -120,40 +123,30 @@ struct NotchController: View {
     @State private var settingsWindow: NSWindow?
     @State private var settingsDelegate: SettingsWindowDelegate?
     @State private var isGeminiHovered = false
-    @State private var animatedWidth: CGFloat = NotchConfiguration.initialSize.width
-    @State private var animatedHeight: CGFloat = NotchConfiguration.initialSize.height
-    @State private var animatedCornerRadius: CGFloat = NotchConfiguration.initialCornerRadius
-    @State private var animatedBottomCornerRadius: CGFloat = NotchConfiguration.initialCornerRadius
+    @State private var animatedWidth: CGFloat = 0
+    @State private var animatedHeight: CGFloat = 0
+    @State private var animatedCornerRadius: CGFloat = 0
+    @State private var animatedBottomCornerRadius: CGFloat = 0
     @State private var shadowOpacity: Double = 0
     @State private var measuredClickContentSize: CGSize = .zero
     @State private var measuredAutoContentSize: CGSize = .zero
     @State private var navigationStack: [NotchWidgetMode] = [.defaultWidgets]
     @State private var clickContentOpacity: Double = 0
     @State private var autoContentOpacity: Double = 0
-
     @State private var activityBlurRadius: CGFloat = 0
     @State private var widgetBlurRadius: CGFloat = 0
     @State private var contentBlurOpacity: Double = 0
-
     @State private var activityContentScale: CGFloat = 1.0
-
     @State private var canRenderAutoContent: Bool = false
-
     @State private var isAnimatingActivityOut = false
-
     @State public var isFileDropTargeted: Bool = false
-
     @State private var draggedAppBundleID: String? = nil
     @State private var activeDropZone: DropZone? = nil
     @State private var showLyrics: Bool = false
-
     @State private var maxActivityContentWidth: CGFloat = 0
-    @State private var liveActivityHorizontalPadding: CGFloat = NotchConfiguration.activityDefaultHorizontalPadding
-
-    @State private var expansionAnimation: Animation = NotchConfiguration.expandAnimation
-
+    @State private var liveActivityHorizontalPadding: CGFloat = 0
+    @State private var expansionAnimation: Animation = .default
     @State private var cancellables = Set<AnyCancellable>()
-
     @State private var awaitingDropCompletion: Bool = false
 
     private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
@@ -174,8 +167,6 @@ struct NotchController: View {
             }
         }
     }
-
-    // MARK: - Computed State Properties for Performance
 
     private var isInteractive: Bool {
         notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone
@@ -230,8 +221,8 @@ struct NotchController: View {
     }
 
     private var activeScaleFactor: CGFloat {
-        guard notchState == .hoverExpanded && !isFullViewActivity else { return 1.0 }
-        return NotchConfiguration.scaleFactor
+        guard let config = config, notchState == .hoverExpanded && !isFullViewActivity else { return 1.0 }
+        return config.scaleFactor
     }
 
     private var enabledAndOrderedWidgets: [WidgetType] {
@@ -303,87 +294,110 @@ struct NotchController: View {
             return NotchController.renderCounter
         }()
 
-        ZStack(alignment: .top) {
-            notchBackground
-                .mask(activeShape)
-
+        if let config = config {
             ZStack(alignment: .top) {
-                let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
+                notchBackground
+                    .mask(activeShape)
 
-                if showActivityView && isLiveActivityActive && canRenderAutoContent {
-                    autoActivityView
-                        .fixedSize(horizontal: true, vertical: false)
-                        .blur(radius: activityBlurRadius)
-                        .scaleEffect(activityContentScale)
-                        .id(liveActivityManager.contentUpdateID)
-                        .transition(.asymmetric(
-                            insertion: .opacity.animation(NotchConfiguration.activityOpacityAnimation),
-                            removal: .opacity.animation(NotchConfiguration.activityOpacityAnimation)
-                        ))
-                        .animation(liveActivityManager.activityHasBottomContent ?
-                                  NotchConfiguration.bottomContentTransitionAnimation :
-                                  NotchConfiguration.activityToActivityAnimation,
-                                  value: liveActivityManager.contentUpdateID)
-                        .opacity(autoContentOpacity)
-                        .scaleEffect(activeScaleFactor)
-                        .animation(NotchConfiguration.hoverAnimation, value: notchState)
-                        .allowsHitTesting(isHovered)
-                } else {
-                    contentView
-                        .blur(radius: widgetBlurRadius)
-                        .mask(activeShape)
-                }
+                ZStack(alignment: .top) {
+                    let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
 
-                if notchState == .clickExpanded {
-                    expandedOverlayIcons
-                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
-                        .zIndex(1)
+                    if showActivityView && isLiveActivityActive && canRenderAutoContent {
+                        autoActivityView
+                            .fixedSize(horizontal: true, vertical: false)
+                            .blur(radius: activityBlurRadius)
+                            .scaleEffect(activityContentScale)
+                            .id(liveActivityManager.contentUpdateID)
+                            .transition(.asymmetric(
+                                insertion: .opacity.animation(config.activityOpacityAnimation),
+                                removal: .opacity.animation(config.activityOpacityAnimation)
+                            ))
+                            .animation(liveActivityManager.activityHasBottomContent ?
+                                      config.bottomContentTransitionAnimation :
+                                      config.activityToActivityAnimation,
+                                      value: liveActivityManager.contentUpdateID)
+                            .opacity(autoContentOpacity)
+                            .scaleEffect(activeScaleFactor)
+                            .animation(config.hoverAnimation, value: notchState)
+                            .allowsHitTesting(isHovered)
+                    } else {
+                        contentView
+                            .blur(radius: widgetBlurRadius)
+                            .mask(activeShape)
+                    }
+
+                    if notchState == .clickExpanded {
+                        expandedOverlayIcons
+                            .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+                            .zIndex(1)
+                    }
                 }
             }
-        }
-        .frame(width: animatedWidth, height: animatedHeight)
-        .contentShape(activeShape)
-        .onHover(perform: handleHover)
-        .padding(.top, -NotchConfiguration.topBuffer)
-        .overlay(measurementOverlay)
-        .onAppear(perform: setupMonitors)
-        .onDisappear(perform: teardownMonitors)
-        .onChange(of: fileShelfState.selectedItemForPreview, perform: handlePreviewItemChange)
-        .onChange(of: liveActivityManager.currentActivity, perform: handleActivityChange)
-        .onChange(of: liveActivityManager.activityContent) { _, _ in
-            if notchState == .autoExpanded || notchState == .hoverExpanded {
+            .frame(width: animatedWidth, height: animatedHeight)
+            .contentShape(activeShape)
+            .onHover(perform: handleHover)
+            .padding(.top, -config.topBuffer)
+            .overlay(measurementOverlay)
+            .onAppear(perform: setupMonitors)
+            .onDisappear(perform: teardownMonitors)
+            .onChange(of: fileShelfState.selectedItemForPreview, perform: handlePreviewItemChange)
+            .onChange(of: liveActivityManager.currentActivity, perform: handleActivityChange)
+            .onChange(of: liveActivityManager.activityContent) { _, _ in
+                if notchState == .autoExpanded || notchState == .hoverExpanded {
+                    handleStateChange(from: notchState, to: notchState)
+                }
+            }
+            .onDrop(of: [UTType.fileURL, .plainText], isTargeted: $isFileDropTargeted, perform: handleItemDrop)
+            .onChange(of: notchState) { oldState, newState in handleStateChange(from: oldState, to: newState) }
+            .onChange(of: navigationStack, handleNavigationStackChange)
+            .onChange(of: dragManager.isDraggingInActivationZone, perform: handleDragActivationChange)
+            .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
+            .onChange(of: measuredClickContentSize) { _, newSize in handleSizeChange(newSize, for: .clickExpanded) }
+            .onChange(of: measuredAutoContentSize) { _, newSize in handleSizeChange(newSize, for: .autoExpanded) }
+            .onReceive(pickerHelper.pickerResultPublisher, perform: handlePickerResult)
+            .onChange(of: showLyrics, perform: handleShowLyricsChange)
+            .onChange(of: isInteractive) { _, newValue in updateMouseEventHandling(isInteractive: newValue) }
+            .onChange(of: shouldHideWindowForSharing) { _, newValue in updateWindowSharingBehavior(shouldBeHidden: newValue) }
+            .onChange(of: settings.settings) { _, newSettings in
+                let newConfig = ResolvedNotchConfiguration(from: newSettings)
+                self.config = newConfig
+                self.expansionAnimation = newConfig.expandAnimation
                 handleStateChange(from: notchState, to: notchState)
             }
-        }
-        .onDrop(of: [UTType.fileURL, .plainText], isTargeted: $isFileDropTargeted, perform: handleItemDrop)
-        .onChange(of: notchState, handleStateChange)
-        .onChange(of: navigationStack, handleNavigationStackChange)
-        .onChange(of: dragManager.isDraggingInActivationZone, perform: handleDragActivationChange)
-        .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
-        .onChange(of: measuredClickContentSize) { _, newSize in handleSizeChange(newSize, for: .clickExpanded) }
-        .onChange(of: measuredAutoContentSize) { _, newSize in handleSizeChange(newSize, for: .autoExpanded) }
-        .onReceive(pickerHelper.pickerResultPublisher, perform: handlePickerResult)
-        .onChange(of: showLyrics, perform: handleShowLyricsChange)
-        .onChange(of: isInteractive) { _, newValue in
-            updateMouseEventHandling(isInteractive: newValue)
-        }
-        .onChange(of: shouldHideWindowForSharing) { _, newValue in
-            updateWindowSharingBehavior(shouldBeHidden: newValue)
+        } else {
+            Color.clear
+                .onAppear {
+                    let initialConfig = ResolvedNotchConfiguration(from: settings.settings)
+                    self.config = initialConfig
+                    self.animatedWidth = initialConfig.initialSize.width
+                    self.animatedHeight = initialConfig.initialSize.height
+                    self.animatedCornerRadius = initialConfig.initialCornerRadius
+                    self.animatedBottomCornerRadius = initialConfig.initialCornerRadius
+                    self.expansionAnimation = initialConfig.expandAnimation
+                    self.liveActivityHorizontalPadding = initialConfig.activityDefaultHorizontalPadding
+                }
         }
     }
 
     @ViewBuilder
     private var notchBackground: some View {
+        let appearance = activeAppearanceSettings
+
         ZStack {
-            let appearance = activeAppearanceSettings
+            Color.clear
 
-            if appearance.enableTransparencyBlur {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+            if #available(macOS 26, *), appearance.liquidGlassLook {
+                activeShape
+                    .fill(.clear)
+                    .glassEffect(.clear, in: activeShape)
+            } else {
+                if appearance.enableTransparencyBlur {
+                    VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                }
+                Rectangle()
+                    .fill(notchFillMaterial)
+                    .opacity(appearance.opacity)
             }
-
-            Rectangle()
-                .fill(notchFillMaterial)
-                .opacity(appearance.opacity)
 
             activeShape
                 .fill(geminiShadowGradient)
@@ -393,11 +407,12 @@ struct NotchController: View {
                 .animation(.linear(duration: 0.1), value: geminiLiveManager.currentAudioLevel)
                 .allowsHitTesting(false)
         }
+        .contentShape(activeShape)
         .clipShape(activeShape)
         .shadow(
-            color: isGeminiActive ? .clear : NotchConfiguration.expandedShadowColor.opacity(shadowOpacity),
-            radius: notchState == .clickExpanded ? NotchConfiguration.expandedShadowRadius : 12,
-            y: notchState == .clickExpanded ? NotchConfiguration.expandedShadowOffset.y : 6
+            color: isGeminiActive ? .clear : config?.expandedShadowColor.opacity(shadowOpacity) ?? .clear,
+            radius: notchState == .clickExpanded ? config?.expandedShadowRadius ?? 0 : 12,
+            y: notchState == .clickExpanded ? config?.expandedShadowOffsetY ?? 0 : 6
         )
         .onTapGesture(perform: handleTap)
     }
@@ -452,9 +467,10 @@ struct NotchController: View {
         }
 
         NotificationCenter.default.addObserver(forName: .fileDropFlowCompleted, object: nil, queue: .main) { _ in
+            guard let config = self.config else { return }
             self.awaitingDropCompletion = false
             if self.notchState == .clickExpanded && !self.isPinned {
-                self.scheduleCollapse(after: NotchConfiguration.widgetSwitchCollapseDelay)
+                self.scheduleCollapse(after: config.widgetSwitchCollapseDelay)
             }
         }
 
@@ -505,6 +521,7 @@ struct NotchController: View {
     }
 
     private func handleNavigationStackChange(oldStack: [NotchWidgetMode], newStack: [NotchWidgetMode]) {
+        guard let config = config else { return }
         if notchState == .clickExpanded {
             if settings.settings.rememberLastMenu {
                 let restorableStack = newStack.compactMap { toRestorableMenu(mode: $0) }
@@ -515,7 +532,7 @@ struct NotchController: View {
         }
 
         if notchState == .clickExpanded && oldStack.last != .defaultWidgets && oldStack != newStack && newStack != [.defaultWidgets] {
-            scheduleCollapse(after: NotchConfiguration.widgetSwitchCollapseDelay)
+            scheduleCollapse(after: config.widgetSwitchCollapseDelay)
         }
     }
 
@@ -527,6 +544,7 @@ struct NotchController: View {
     }
 
     private func handleDragActivationChange(isDragging: Bool) {
+        guard let config = config else { return }
         collapseTask?.cancel()
         isCollapseTimerActive = false
 
@@ -548,7 +566,7 @@ struct NotchController: View {
             if awaitingDropCompletion { return }
 
             draggedAppBundleID = nil
-            scheduleCollapse(after: NotchConfiguration.dragActivationCollapseDelay)
+            scheduleCollapse(after: config.dragActivationCollapseDelay)
         }
     }
 
@@ -561,11 +579,12 @@ struct NotchController: View {
     }
 
     private func handleSizeChange(_ newSize: CGSize, for state: NotchState) {
+        guard let config = config else { return }
         if state == .clickExpanded && notchState == .clickExpanded {
             guard newSize.width > 1 && newSize.height > 1 else { return }
             guard abs(newSize.width - animatedWidth) > 1 || abs(newSize.height - animatedHeight) > 1 else { return }
 
-            withAnimation(NotchConfiguration.expandAnimation) {
+            withAnimation(config.expandAnimation) {
                 animatedWidth = newSize.width
                 animatedHeight = newSize.height
             }
@@ -593,6 +612,7 @@ struct NotchController: View {
     }
 
     private func handleTrackpadSwipe(vector: CGVector) {
+        guard let config = config else { return }
         if (notchState == .initial || notchState == .hoverExpanded) && !isLiveActivityActive {
             let verticalThreshold: CGFloat = 20.0
             let isVerticalSwipe = abs(vector.dy) > abs(vector.dx) * 1.5
@@ -600,7 +620,7 @@ struct NotchController: View {
             if isVerticalSwipe && abs(vector.dy) > verticalThreshold {
                 if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
 
-                self.expansionAnimation = NotchConfiguration.swipeOpenAnimation
+                self.expansionAnimation = config.swipeOpenAnimation
 
                 measuredClickContentSize = .zero
                 if settings.settings.clickToOpenFileShelf && !FileShelfManager.shared.files.isEmpty {
@@ -657,9 +677,9 @@ struct NotchController: View {
 
         if settings.settings.twoFingerTapToPauseMusic {
             if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
-            musicWidget.transientIcon = .paused
+            musicWidget.transientIcon = musicWidget.isPlaying ? .paused : .played
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                if musicWidget.transientIcon == .skippedBackward {
+                if musicWidget.transientIcon == .paused || musicWidget.transientIcon == .played {
                     musicWidget.transientIcon = nil
                 }
             }
@@ -669,16 +689,16 @@ struct NotchController: View {
 
     @ViewBuilder
     private var contentView: some View {
-        if notchState == .clickExpanded {
+        if let config = config, notchState == .clickExpanded {
             notchWidget
                 .environmentObject(fileShelfState)
                 .environmentObject(dragState)
                 .environment(\.navigationStack, $navigationStack)
                 .environment(\.activeDropZone, $activeDropZone)
                 .environment(\.isFileDropTargeted, $isFileDropTargeted)
-                .padding(.top, NotchConfiguration.contentTopPadding)
-                .padding(.bottom, NotchConfiguration.contentBottomPadding)
-                .padding(.horizontal, NotchConfiguration.contentHorizontalPadding)
+                .padding(.top, config.contentTopPadding)
+                .padding(.bottom, config.contentBottomPadding)
+                .padding(.horizontal, config.contentHorizontalPadding)
                 .opacity(clickContentOpacity)
                 .frame(width: animatedWidth, height: animatedHeight)
                 .clipped()
@@ -690,16 +710,18 @@ struct NotchController: View {
 
     @ViewBuilder
     private var autoActivityView: some View {
-        switch liveActivityManager.activityContent {
-        case .full(let view, _, _):
-            view
-                .padding(.horizontal, NotchConfiguration.activityContentHorizontalPadding)
-                .clipShape(activeShape)
-        case .standard(let data, _):
-            buildStandardActivityView(from: data)
-                .clipShape(activeShape)
-        case .none:
-            EmptyView()
+        if let config = config {
+            switch liveActivityManager.activityContent {
+            case .full(let view, _, _):
+                view
+                    .padding(.horizontal, config.activityContentHorizontalPadding)
+                    .clipShape(activeShape)
+            case .standard(let data, _):
+                buildStandardActivityView(from: data)
+                    .clipShape(activeShape)
+            case .none:
+                EmptyView()
+            }
         }
     }
 
@@ -791,71 +813,73 @@ struct NotchController: View {
 
     @ViewBuilder
     private func buildStandardActivityView(from data: StandardActivityData) -> some View {
-        VStack(spacing: 0) {
-            let left = buildLeftView(for: data)
-            let right = buildRightView(for: data)
-
-            HStack(spacing: 0) {
-                HStack {
-                    Spacer()
-                    left
-                        .fixedSize()
-                        .background(GeometryReader { geo in
-                            Color.clear.preference(key: MaxContentWidthPreferenceKey.self, value: geo.size.width)
-                        })
-                }
-                Spacer().frame(width: NotchConfiguration.initialSize.width)
-                HStack {
-                    right
-                        .fixedSize()
-                        .background(GeometryReader { geo in
-                            Color.clear.preference(key: MaxContentWidthPreferenceKey.self, value: geo.size.width)
-                        })
-                    Spacer()
-                }
-            }
-            .hidden()
-            .frame(height: 0)
-            .onPreferenceChange(MaxContentWidthPreferenceKey.self) { newMaxWidth in
-                guard self.notchState != .hoverExpanded else { return }
-                withAnimation(NotchConfiguration.activityToActivityAnimation) {
-                    self.maxActivityContentWidth = newMaxWidth
-                }
-            }
-
-            GeometryReader { geometry in
-                let totalWidth = geometry.size.width
+        if let config = config {
+            VStack(spacing: 0) {
+                let left = buildLeftView(for: data)
+                let right = buildRightView(for: data)
 
                 HStack(spacing: 0) {
-                    HStack(alignment: .center) {
+                    HStack {
+                        Spacer()
                         left
-                        Spacer(minLength: 0)
+                            .fixedSize()
+                            .background(GeometryReader { geo in
+                                Color.clear.preference(key: MaxContentWidthPreferenceKey.self, value: geo.size.width)
+                            })
                     }
-                    .frame(width: (totalWidth - NotchConfiguration.initialSize.width) / 2, alignment: .leading)
-
-                    Spacer()
-                        .frame(width: NotchConfiguration.initialSize.width)
-
-                    HStack(alignment: .center) {
-                        Spacer(minLength: 0)
+                    Spacer().frame(width: config.initialSize.width)
+                    HStack {
                         right
+                            .fixedSize()
+                            .background(GeometryReader { geo in
+                                Color.clear.preference(key: MaxContentWidthPreferenceKey.self, value: geo.size.width)
+                            })
+                        Spacer()
                     }
-                    .frame(width: (totalWidth - NotchConfiguration.initialSize.width) / 2, alignment: .trailing)
                 }
-                .frame(height: geometry.size.height, alignment: .center)
-            }
-            .frame(width: maxActivityContentWidth * 2 + NotchConfiguration.initialSize.width)
-            .frame(height: NotchConfiguration.initialSize.height)
-            .padding(.horizontal, liveActivityHorizontalPadding)
-            .animation(NotchConfiguration.activityToActivityAnimation, value: liveActivityHorizontalPadding)
+                .hidden()
+                .frame(height: 0)
+                .onPreferenceChange(MaxContentWidthPreferenceKey.self) { newMaxWidth in
+                    guard self.notchState != .hoverExpanded else { return }
+                    withAnimation(config.activityToActivityAnimation) {
+                        self.maxActivityContentWidth = newMaxWidth
+                    }
+                }
 
-            if let bottomView = getBottomView(for: data) {
-                VStack {
-                    bottomView
-                        .padding(.bottom, NotchConfiguration.activityContentBottomPadding)
+                GeometryReader { geometry in
+                    let totalWidth = geometry.size.width
+
+                    HStack(spacing: 0) {
+                        HStack(alignment: .center) {
+                            left
+                            Spacer(minLength: 0)
+                        }
+                        .frame(width: (totalWidth - config.initialSize.width) / 2, alignment: .leading)
+
+                        Spacer()
+                            .frame(width: config.initialSize.width)
+
+                        HStack(alignment: .center) {
+                            Spacer(minLength: 0)
+                            right
+                        }
+                        .frame(width: (totalWidth - config.initialSize.width) / 2, alignment: .trailing)
+                    }
+                    .frame(height: geometry.size.height, alignment: .center)
                 }
+                .frame(width: maxActivityContentWidth * 2 + config.initialSize.width)
+                .frame(height: config.initialSize.height)
                 .padding(.horizontal, liveActivityHorizontalPadding)
-                .animation(NotchConfiguration.activityToActivityAnimation, value: liveActivityHorizontalPadding)
+                .animation(config.activityToActivityAnimation, value: liveActivityHorizontalPadding)
+
+                if let bottomView = getBottomView(for: data) {
+                    VStack {
+                        bottomView
+                            .padding(.bottom, config.activityContentBottomPadding)
+                    }
+                    .padding(.horizontal, liveActivityHorizontalPadding)
+                    .animation(config.activityToActivityAnimation, value: liveActivityHorizontalPadding)
+                }
             }
         }
     }
@@ -891,56 +915,58 @@ struct NotchController: View {
 
     @ViewBuilder
     private var measurementOverlay: some View {
-        ZStack {
-            if notchState == .clickExpanded {
-                notchWidget
-                    .environmentObject(fileShelfState)
-                    .environment(\.navigationStack, $navigationStack)
-                    .environment(\.activeDropZone, $activeDropZone)
-                    .environment(\.isFileDropTargeted, $isFileDropTargeted)
-                    .padding(.top, NotchConfiguration.contentTopPadding)
-                    .padding(.bottom, NotchConfiguration.contentBottomPadding)
-                    .padding(.horizontal, NotchConfiguration.contentHorizontalPadding)
-                    .fixedSize()
-                    .background(GeometryReader { geo in
-                        Color.clear
-                            .onAppear {
-                                measuredClickContentSize = geo.size
-                            }
-                            .onChange(of: geo.size) { _, newSize in
-                                measuredClickContentSize = newSize
-                            }
-                            .onDisappear {
-                                measuredClickContentSize = .zero
-                            }
-                    })
-            }
+        if let config = config {
+            ZStack {
+                if notchState == .clickExpanded {
+                    notchWidget
+                        .environmentObject(fileShelfState)
+                        .environment(\.navigationStack, $navigationStack)
+                        .environment(\.activeDropZone, $activeDropZone)
+                        .environment(\.isFileDropTargeted, $isFileDropTargeted)
+                        .padding(.top, config.contentTopPadding)
+                        .padding(.bottom, config.contentBottomPadding)
+                        .padding(.horizontal, config.contentHorizontalPadding)
+                        .fixedSize()
+                        .background(GeometryReader { geo in
+                            Color.clear
+                                .onAppear {
+                                    measuredClickContentSize = geo.size
+                                }
+                                .onChange(of: geo.size) { _, newSize in
+                                    measuredClickContentSize = newSize
+                                }
+                                .onDisappear {
+                                    measuredClickContentSize = .zero
+                                }
+                        })
+                }
 
-            if isLiveActivityActive {
-                autoActivityView
-                    .fixedSize(horizontal: true, vertical: false)
-                    .background(GeometryReader { geo in
-                        Color.clear
-                            .onAppear {
-                                let newSize = geo.size
-                                let epsilon: CGFloat = 0.5
-                                if abs(newSize.width - self.measuredAutoContentSize.width) > epsilon ||
-                                   abs(newSize.height - self.measuredAutoContentSize.height) > epsilon {
-                                    self.measuredAutoContentSize = newSize
+                if isLiveActivityActive {
+                    autoActivityView
+                        .fixedSize(horizontal: true, vertical: false)
+                        .background(GeometryReader { geo in
+                            Color.clear
+                                .onAppear {
+                                    let newSize = geo.size
+                                    let epsilon: CGFloat = 0.5
+                                    if abs(newSize.width - self.measuredAutoContentSize.width) > epsilon ||
+                                       abs(newSize.height - self.measuredAutoContentSize.height) > epsilon {
+                                        self.measuredAutoContentSize = newSize
+                                    }
                                 }
-                            }
-                            .onChange(of: geo.size) { _, newSize in
-                                let epsilon: CGFloat = 0.5
-                                if abs(newSize.width - self.measuredAutoContentSize.width) > epsilon ||
-                                   abs(newSize.height - self.measuredAutoContentSize.height) > epsilon {
-                                    self.measuredAutoContentSize = newSize
+                                .onChange(of: geo.size) { _, newSize in
+                                    let epsilon: CGFloat = 0.5
+                                    if abs(newSize.width - self.measuredAutoContentSize.width) > epsilon ||
+                                       abs(newSize.height - self.measuredAutoContentSize.height) > epsilon {
+                                        self.measuredAutoContentSize = newSize
+                                    }
                                 }
-                            }
-                    })
+                        })
+                }
             }
+            .opacity(0)
+            .allowsHitTesting(false)
         }
-        .opacity(0)
-        .allowsHitTesting(false)
     }
 
     @ViewBuilder
@@ -954,62 +980,66 @@ struct NotchController: View {
 
     @ViewBuilder
     private var navigationHeader: some View {
-        ZStack {
-            HStack {
-                Button(action: {
-                    if navigationStack.count > 1 {
-                        navigationStack.removeLast()
-                    } else {
-                        navigationStack = [.defaultWidgets]
+        if let config = config {
+            ZStack {
+                HStack {
+                    Button(action: {
+                        if navigationStack.count > 1 {
+                            navigationStack.removeLast()
+                        } else {
+                            navigationStack = [.defaultWidgets]
+                        }
+                    }) {
+                        ZStack(alignment: .leading) {
+                            Image(systemName: "chevron.left.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                                .symbolRenderingMode(.hierarchical)
+                                .padding(.leading, NotchConfiguration.navHeaderLeadingPadding)
+                        }
                     }
-                }) {
-                    ZStack(alignment: .leading) {
-                        Image(systemName: "chevron.left.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                            .symbolRenderingMode(.hierarchical)
-                            .padding(.leading, NotchConfiguration.navHeaderLeadingPadding)
+                    .padding(.top, NotchConfiguration.navHeaderTopPadding)
+                    .buttonStyle(.plain)
+
+                    if let title = currentViewTitle {
+                        Text(title)
+                            .font(.system(size: NotchConfiguration.navHeaderTitleFontSize, weight: .bold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundColor(.white.opacity(0.9))
+                            .padding(.top, NotchConfiguration.navHeaderTitleTopPadding)
                     }
-                }
-                .padding(.top, NotchConfiguration.navHeaderTopPadding)
-                .buttonStyle(.plain)
 
-                if let title = currentViewTitle {
-                    Text(title)
-                        .font(.system(size: NotchConfiguration.navHeaderTitleFontSize, weight: .bold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(.top, NotchConfiguration.navHeaderTitleTopPadding)
+                    Spacer()
                 }
-
-                Spacer()
             }
+            .frame(height: config.initialSize.height)
+            .frame(width: animatedWidth)
         }
-        .frame(height: NotchConfiguration.initialSize.height)
-        .frame(width: animatedWidth)
     }
 
     @ViewBuilder
     private var defaultModeIcons: some View {
-        HStack {
-            HStack(spacing: 0) {
-                ForEach(leftNotchButtons) { buttonType in
-                    notchButton(for: buttonType)
+        if let config = config {
+            HStack {
+                HStack(spacing: 0) {
+                    ForEach(leftNotchButtons) { buttonType in
+                        notchButton(for: buttonType)
+                    }
+                }
+
+                Spacer()
+
+                HStack(spacing: 0) {
+                    ForEach(rightNotchButtons) { buttonType in
+                        notchButton(for: buttonType)
+                    }
                 }
             }
-
-            Spacer()
-
-            HStack(spacing: 0) {
-                ForEach(rightNotchButtons) { buttonType in
-                    notchButton(for: buttonType)
-                }
-            }
+            .padding(.horizontal, NotchConfiguration.defaultModeIconsHorizontalPadding)
+            .frame(height: config.initialSize.height)
+            .frame(width: animatedWidth)
         }
-        .padding(.horizontal, NotchConfiguration.defaultModeIconsHorizontalPadding)
-        .frame(height: NotchConfiguration.initialSize.height)
-        .frame(width: animatedWidth)
     }
 
     @ViewBuilder
@@ -1181,6 +1211,7 @@ struct NotchController: View {
     }
 
     private func handleHover(hovering: Bool) {
+        guard let config = config else { return }
         self.isHovered = hovering
 
         if hovering {
@@ -1223,20 +1254,20 @@ struct NotchController: View {
             }
         } else {
             if !isCollapseTimerActive {
-                scheduleCollapse(after: NotchConfiguration.collapseAnimationDelay)
+                scheduleCollapse(after: config.collapseAnimationDelay)
             }
         }
     }
 
     private func handleActivityChange(_ newActivity: ActivityType) {
-        guard notchState != .clickExpanded else { return }
+        guard notchState != .clickExpanded, let config = config else { return }
 
         if newActivity != .none {
-            activityBlurRadius = NotchConfiguration.activityBlurRadiusMax
+            activityBlurRadius = config.activityBlurRadiusMax
             activityContentScale = 0.9
 
             DispatchQueue.main.async {
-                withAnimation(NotchConfiguration.focusPullAnimation) {
+                withAnimation(config.focusPullAnimation) {
                     self.activityBlurRadius = 0
                     self.activityContentScale = 1.0
                 }
@@ -1248,25 +1279,26 @@ struct NotchController: View {
     }
 
     private func handleStateChange(from oldState: NotchState, to newState: NotchState) {
+        guard let config = config else { return }
         let isContentUpdate = oldState == newState
         let animation: Animation
 
         if isContentUpdate {
-            animation = NotchConfiguration.bottomContentAnimation
+            animation = config.bottomContentAnimation
         } else {
             switch newState {
-            case .initial: animation = NotchConfiguration.collapseAnimation
-            case .hoverExpanded: animation = NotchConfiguration.hoverAnimation
+            case .initial: animation = config.collapseAnimation
+            case .hoverExpanded: animation = config.hoverAnimation
             case .clickExpanded: animation = self.expansionAnimation
-            case .autoExpanded: animation = (oldState == .clickExpanded) ? NotchConfiguration.collapseAnimation : NotchConfiguration.activityToActivityAnimation
+            case .autoExpanded: animation = (oldState == .clickExpanded) ? config.collapseAnimation : config.activityToActivityAnimation
             }
         }
 
         withAnimation(animation) {
             updateRadiiForCurrentState(state: newState)
             self.liveActivityHorizontalPadding = liveActivityManager.activityHasBottomContent ?
-                NotchConfiguration.activityWithContentHorizontalPadding :
-                NotchConfiguration.activityDefaultHorizontalPadding
+                config.activityWithContentHorizontalPadding :
+                config.activityDefaultHorizontalPadding
         }
 
         if isContentUpdate { return }
@@ -1278,13 +1310,13 @@ struct NotchController: View {
             self.canRenderAutoContent = false
             collapseTask?.cancel(); isCollapseTimerActive = false
 
-            withAnimation(NotchConfiguration.collapseAnimation) {
+            withAnimation(config.collapseAnimation) {
                 if wasShowingActivity { activityBlurRadius = 20; activityContentScale = 0.9; autoContentOpacity = 0 }
-                animatedWidth = NotchConfiguration.initialSize.width; animatedHeight = NotchConfiguration.initialSize.height
+                animatedWidth = config.initialSize.width; animatedHeight = config.initialSize.height
                 shadowOpacity = 0; isPinned = false
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.activityAnimationOutDelay) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + config.activityAnimationOutDelay) {
                 guard self.notchState == .initial else { return }
                 if wasShowingActivity { self.isAnimatingActivityOut = false }
                 self.activityBlurRadius = 0; self.activityContentScale = 1.0
@@ -1295,12 +1327,12 @@ struct NotchController: View {
             isAnimatingActivityOut = false; self.canRenderAutoContent = true
             let scale = activeScaleFactor
 
-            let rawWidth = isLiveActivityActive ? measuredAutoContentSize.width * scale : NotchConfiguration.hoverExpandedSize.width
-            let rawHeight = isLiveActivityActive ? measuredAutoContentSize.height * scale : NotchConfiguration.hoverExpandedSize.height
-            let targetWidth = max(rawWidth, NotchConfiguration.initialSize.width)
-            let targetHeight = max(rawHeight, NotchConfiguration.initialSize.height)
+            let rawWidth = isLiveActivityActive ? measuredAutoContentSize.width * scale : config.hoverExpandedSize.width
+            let rawHeight = isLiveActivityActive ? measuredAutoContentSize.height * scale : config.hoverExpandedSize.height
+            let targetWidth = max(rawWidth, config.initialSize.width)
+            let targetHeight = max(rawHeight, config.initialSize.height)
 
-            withAnimation(NotchConfiguration.hoverAnimation) {
+            withAnimation(config.hoverAnimation) {
                 animatedWidth = targetWidth; animatedHeight = targetHeight
                 if isLiveActivityActive { autoContentOpacity = 1 }
                 shadowOpacity = 1
@@ -1309,20 +1341,20 @@ struct NotchController: View {
 
         case .clickExpanded:
             isAnimatingActivityOut = false; self.canRenderAutoContent = false
-            widgetBlurRadius = NotchConfiguration.widgetBlurRadiusMax
+            widgetBlurRadius = config.widgetBlurRadiusMax
 
             if isLiveActivityActive && (oldState == .autoExpanded || oldState == .hoverExpanded) {
-                withAnimation(NotchConfiguration.activityBlurAnimation) { activityBlurRadius = NotchConfiguration.activityBlurRadiusMax; autoContentOpacity = 0; activityContentScale = 1.05 }
+                withAnimation(config.activityBlurAnimation) { activityBlurRadius = config.activityBlurRadiusMax; autoContentOpacity = 0; activityContentScale = 1.05 }
             }
 
             withAnimation(self.expansionAnimation) { autoContentOpacity = 0; shadowOpacity = 1; clickContentOpacity = 0.1 }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.contentUpdateDelay) {
-                withAnimation(NotchConfiguration.focusPullAnimation) { self.widgetBlurRadius = 0; self.clickContentOpacity = 1; self.activityContentScale = 1.0 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + config.contentUpdateDelay) {
+                withAnimation(config.focusPullAnimation) { self.widgetBlurRadius = 0; self.clickContentOpacity = 1; self.activityContentScale = 1.0 }
             }
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.expansionAnimation = NotchConfiguration.expandAnimation
+                self.expansionAnimation = config.expandAnimation
             }
 
         case .autoExpanded:
@@ -1331,30 +1363,30 @@ struct NotchController: View {
 
             if isCollapsingFromClick {
                 self.canRenderAutoContent = false
-                withAnimation(NotchConfiguration.blurAnimation) { widgetBlurRadius = 20; clickContentOpacity = 0.3; activityContentScale = 0.92; activityBlurRadius = NotchConfiguration.activityBlurRadiusMax * 1.5 }
+                withAnimation(config.blurAnimation) { widgetBlurRadius = 20; clickContentOpacity = 0.3; activityContentScale = 0.92; activityBlurRadius = config.activityBlurRadiusMax * 1.5 }
             } else {
                 self.canRenderAutoContent = true; self.autoContentOpacity = 1
             }
 
-            let animationToUse = isCollapsingFromClick ? NotchConfiguration.collapseAnimation : NotchConfiguration.activityToActivityAnimation
+            let animationToUse = isCollapsingFromClick ? config.collapseAnimation : config.activityToActivityAnimation
             withAnimation(animationToUse) {
-                animatedWidth = max(measuredAutoContentSize.width, NotchConfiguration.initialSize.width)
-                animatedHeight = max(measuredAutoContentSize.height, NotchConfiguration.initialSize.height)
+                animatedWidth = max(measuredAutoContentSize.width, config.initialSize.width)
+                animatedHeight = max(measuredAutoContentSize.height, config.initialSize.height)
                 shadowOpacity = 0
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.activitySizeChangeDelay) {
-                withAnimation(NotchConfiguration.blurRemovalAnimation) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + config.activitySizeChangeDelay) {
+                withAnimation(config.blurRemovalAnimation) {
                     if isCollapsingFromClick { self.widgetBlurRadius = 0 }
                     self.activityBlurRadius = 0; self.activityContentScale = 1.0
                 }
             }
 
             if isCollapsingFromClick {
-                DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.autoContentRenderDelay) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + config.autoContentRenderDelay) {
                     if self.notchState == .autoExpanded {
                         self.canRenderAutoContent = true
-                        withAnimation(NotchConfiguration.activityOpacityAnimation) { self.autoContentOpacity = 1 }
+                        withAnimation(config.activityOpacityAnimation) { self.autoContentOpacity = 1 }
                     }
                 }
             }
@@ -1363,37 +1395,38 @@ struct NotchController: View {
     }
 
     private func updateRadiiForCurrentState(state: NotchState) {
+        guard let config = config else { return }
         let hasBottom = liveActivityManager.activityHasBottomContent
 
         switch state {
         case .initial:
-            animatedCornerRadius = NotchConfiguration.initialCornerRadius
-            animatedBottomCornerRadius = NotchConfiguration.initialCornerRadius
+            animatedCornerRadius = config.initialCornerRadius
+            animatedBottomCornerRadius = config.initialCornerRadius
 
         case .hoverExpanded:
             if isLiveActivityActive {
-                animatedCornerRadius = NotchConfiguration.autoExpandedCornerRadius + (hasBottom ? 10 : 0)
+                animatedCornerRadius = config.autoExpandedCornerRadius + (hasBottom ? 10 : 0)
                 if case .full(_, _, let customRadius) = liveActivityManager.activityContent {
-                    animatedBottomCornerRadius = customRadius ?? (hasBottom ? NotchConfiguration.liveActivityBottomCornerRadius : animatedCornerRadius)
+                    animatedBottomCornerRadius = customRadius ?? (hasBottom ? config.liveActivityBottomCornerRadius : animatedCornerRadius)
                 } else {
-                    animatedBottomCornerRadius = hasBottom ? NotchConfiguration.liveActivityBottomCornerRadius : animatedCornerRadius
+                    animatedBottomCornerRadius = hasBottom ? config.liveActivityBottomCornerRadius : animatedCornerRadius
                 }
             } else {
-                animatedCornerRadius = NotchConfiguration.hoverExpandedCornerRadius
-                animatedBottomCornerRadius = NotchConfiguration.hoverExpandedCornerRadius
+                animatedCornerRadius = config.hoverExpandedCornerRadius
+                animatedBottomCornerRadius = config.hoverExpandedCornerRadius
             }
 
         case .clickExpanded:
-            animatedCornerRadius = NotchConfiguration.clickExpandedCornerRadius
-            animatedBottomCornerRadius = NotchConfiguration.clickExpandedCornerRadius
+            animatedCornerRadius = config.clickExpandedCornerRadius
+            animatedBottomCornerRadius = config.clickExpandedCornerRadius
 
         case .autoExpanded:
-            animatedCornerRadius = NotchConfiguration.autoExpandedCornerRadius + (hasBottom ? 10 : 0)
+            animatedCornerRadius = config.autoExpandedCornerRadius + (hasBottom ? 10 : 0)
 
             if case .full(_, _, let customRadius) = liveActivityManager.activityContent {
-                animatedBottomCornerRadius = customRadius ?? (hasBottom ? NotchConfiguration.liveActivityBottomCornerRadius : animatedCornerRadius)
+                animatedBottomCornerRadius = customRadius ?? (hasBottom ? config.liveActivityBottomCornerRadius : animatedCornerRadius)
             } else {
-                animatedBottomCornerRadius = hasBottom ? NotchConfiguration.liveActivityBottomCornerRadius : animatedCornerRadius
+                animatedBottomCornerRadius = hasBottom ? config.liveActivityBottomCornerRadius : animatedCornerRadius
             }
         }
     }
@@ -1409,31 +1442,31 @@ struct NotchController: View {
     }
 
     private func updateAutoContentSize() {
-        guard notchState == .autoExpanded || (notchState == .hoverExpanded && isLiveActivityActive) else { return }
- 
+        guard let config = config, notchState == .autoExpanded || (notchState == .hoverExpanded && isLiveActivityActive) else { return }
+
         let scale = activeScaleFactor
         let targetWidth = measuredAutoContentSize.width * scale
         let targetHeight = measuredAutoContentSize.height * scale
- 
+
         let epsilon: CGFloat = 0.5
         guard targetWidth > 0 && targetHeight > 0,
               (abs(targetWidth - animatedWidth) > epsilon || abs(targetHeight - animatedHeight) > epsilon) else { return }
- 
+
         let currentActivityType = liveActivityManager.currentActivity
         let isExemptFromBlur = (currentActivityType == .music || currentActivityType == .systemHUD)
- 
+
         if !isExemptFromBlur {
-            withAnimation(.easeIn(duration: NotchConfiguration.activityBlurUpdateDelay)) { activityBlurRadius = 15 }
+            withAnimation(.easeIn(duration: config.activityBlurUpdateDelay)) { activityBlurRadius = 15 }
         }
- 
-        withAnimation(NotchConfiguration.activityToActivityAnimation) {
+
+        withAnimation(config.activityToActivityAnimation) {
             animatedWidth = targetWidth
             animatedHeight = targetHeight
         }
- 
+
         if !isExemptFromBlur {
-            DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.autoContentRenderDelay) {
-                withAnimation(NotchConfiguration.blurRemovalAnimation) { self.activityBlurRadius = 0 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + config.autoContentRenderDelay) {
+                withAnimation(config.blurRemovalAnimation) { self.activityBlurRadius = 0 }
             }
         } else {
             activityBlurRadius = 0
@@ -1555,18 +1588,18 @@ fileprivate struct SubtleIconButton: View {
 
 extension LiveActivityManager {
     var activityHasBottomContent: Bool {
-        switch activityContent {
-        case .full:
-            return true
-        case .standard(let data, _):
-            switch data {
-            case .music(let bottomContentType):
-                return bottomContentType != .none
-            default:
-                return false
-            }
-        case .none:
+    switch activityContent {
+    case .full:
+        return true
+    case .standard(let data, _):
+        switch data {
+        case .music(let bottomContentType):
+            return bottomContentType != .none
+        default:
             return false
         }
+    case .none:
+        return false
+    }
     }
 }

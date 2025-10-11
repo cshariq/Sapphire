@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 
@@ -90,14 +91,19 @@ struct LockScreenMiniWidgetView: View {
 
     @EnvironmentObject var batteryMonitor: BatteryMonitor
     @EnvironmentObject var bluetoothManager: BluetoothManager
-    @EnvironmentObject var batteryEstimator: BatteryEstimator
 
     @StateObject private var calendarViewModel = InteractiveCalendarViewModel()
     @State private var dummyNavigationStack: [NotchWidgetMode] = []
 
     @State private var maxMiniWidgetHeight: CGFloat = 0
 
+    private var animationValue: (Bool, [LockScreenMiniWidgetType], CGFloat) {
+        (musicWidget.isPlaying, settings.settings.lockScreenMiniWidgets, maxMiniWidgetHeight)
+    }
+
     var body: some View {
+        let fadeTransition = AnyTransition.opacity
+
         HStack(spacing: LockScreenConfiguration.widgetSpacing) {
             ForEach(settings.settings.lockScreenMiniWidgets, id: \.self) { widgetType in
                 switch widgetType {
@@ -107,6 +113,7 @@ struct LockScreenMiniWidgetView: View {
                             .environment(\.navigationStack, $dummyNavigationStack)
                     }
                     .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                    .transition(fadeTransition)
 
                 case .calendar:
                     LockScreenWidgetBackground {
@@ -115,6 +122,7 @@ struct LockScreenMiniWidgetView: View {
                             .environment(\.navigationStack, $dummyNavigationStack)
                     }
                     .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                    .transition(fadeTransition)
 
                 case .music:
                     if musicWidget.isPlaying {
@@ -125,12 +133,14 @@ struct LockScreenMiniWidgetView: View {
                                 .environment(\.navigationStack, $dummyNavigationStack)
                         }
                         .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                        .transition(fadeTransition)
                     }
                 case .battery:
                     LockScreenWidgetBackground {
                         BatteryMiniWidget()
                     }
                     .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                    .transition(fadeTransition)
 
                 case .none:
                     EmptyView()
@@ -138,6 +148,9 @@ struct LockScreenMiniWidgetView: View {
                 }
             }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.0)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.1)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.2)
         .fixedSize(horizontal: true, vertical: false)
         .background(
             VStack(spacing: 0) {
@@ -160,7 +173,6 @@ struct LockScreenMiniWidgetView: View {
         .environmentObject(settings)
         .environmentObject(batteryMonitor)
         .environmentObject(bluetoothManager)
-        .environmentObject(batteryEstimator)
     }
 
     @ViewBuilder
@@ -209,7 +221,7 @@ struct LockScreenMiniWidgetView: View {
 struct BatteryMiniWidget: View {
     @EnvironmentObject var batteryMonitor: BatteryMonitor
     @EnvironmentObject var bluetoothManager: BluetoothManager
-    @EnvironmentObject var batteryEstimator: BatteryEstimator
+    @StateObject private var batteryEstimator = BatteryEstimator.shared
     @EnvironmentObject var settings: SettingsModel
 
     var body: some View {

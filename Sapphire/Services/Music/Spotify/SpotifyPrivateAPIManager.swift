@@ -6,6 +6,7 @@
 //
 //
 //
+//
 
 import Foundation
 import Combine
@@ -194,7 +195,6 @@ class SpotifyPrivateAPIManager: ObservableObject {
         Task {
             await cookieManager.setCookies(cookies)
             await saveSession()
-            await initializeClients() // **FIX: Initialize clients after a new login.**
             reestablishSession()
         }
     }
@@ -233,7 +233,6 @@ class SpotifyPrivateAPIManager: ObservableObject {
         }
 
         await cookieManager.setCookies(cookies)
-        await initializeClients()
         reestablishSession()
     }
 
@@ -245,6 +244,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
     func reestablishSession() {
         Task(priority: .userInitiated) {
             do {
+                await self.initializeClients()
+
                 try await self.verifySessionAndFetchUserInfo()
 
                 if let sessionCookie = await self.cookieManager.allCookies()["sp_t"] {
@@ -802,6 +803,15 @@ class SpotifyPrivateAPIManager: ObservableObject {
                 self.nativeQueue = finalQueue
             }
         }
+    }
+
+    func checkAndReconnectIfNeeded() {
+        guard !isLoggedIn, loginChallenge == nil, webSocketManager?.isConnecting == false else {
+            return
+        }
+
+        print("[SpotifyPrivateAPIManager] Proactively checking connection and re-establishing session after wake/network change.")
+        reestablishSession()
     }
 }
 

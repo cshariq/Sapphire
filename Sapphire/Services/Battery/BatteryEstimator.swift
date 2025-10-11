@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import Foundation
 import Combine
@@ -14,6 +15,8 @@ import IOKit.ps
 
 @MainActor
 class BatteryEstimator: ObservableObject {
+    static let shared = BatteryEstimator(batteryMonitor: BatteryMonitor.shared)
+
     @Published var estimatedTimeRemaining: String?
     @Published var batteryLevel: Int = 100
     @Published var isCharging: Bool = false
