@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-07-07.
 //
 //
+//
+//
 
 import Foundation
 import Combine
@@ -34,6 +36,7 @@ class BluetoothManager: NSObject, ObservableObject {
     private let iDeviceBattery = IDeviceBattery.shared
     private let bleBattery = BLEBattery()
     private let magicBattery = MagicBattery.shared
+    private let btdBattery = BTDBattery() // FIX: Add instance for HID devices
     private var periodicPollingTimer: Timer?
 
     override init() {
@@ -64,6 +67,19 @@ class BluetoothManager: NSObject, ObservableObject {
         connectionNotification?.unregister()
         disconnectionNotifications.values.forEach { $0.unregister() }
         NotificationCenter.default.removeObserver(self)
+    }
+
+    func forceBatteryUpdateScan() {
+        print("[BluetoothManager] Forcing a full battery update scan on lock.")
+        Task.detached(priority: .userInitiated) {
+            SPBluetoothDataModel.shared.refeshData { _ in
+                self.btdBattery.scanDevices(longScan: true)
+                self.bleBattery.scan(longScan: true)
+                self.iDeviceBattery.scanDevices()
+
+                self.magicBattery.scanDevices()
+            }
+        }
     }
 
     @objc private func handleAirPodsUpdate(_ notification: Notification) {

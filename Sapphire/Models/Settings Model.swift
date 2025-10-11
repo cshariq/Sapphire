@@ -4,8 +4,82 @@
 //
 //  Created by Shariq Charolia on 2025-10-07
 //
+//
+//
 
 import SwiftUI
+import UniformTypeIdentifiers
+
+// MARK: - Customizable Configuration
+struct CustomizableNotchConfiguration: Codable, Equatable {
+    var universalWidth: CGFloat = 195
+    var universalHeight: CGFloat = 32
+    var initialCornerRadius: CGFloat = 10
+    var topBuffer: CGFloat = 0
+
+    var scaleFactor: CGFloat = 1.10
+    var hoverExpandedCornerRadius: CGFloat = 18
+
+    var autoExpandedCornerRadius: CGFloat = 13
+    var autoExpandedTallHeight: CGFloat = 80
+    var autoExpandedContentVerticalPadding: CGFloat = 8
+
+    var clickExpandedCornerRadius: CGFloat = 40
+    var liveActivityBottomCornerRadius: CGFloat = 20
+
+    var collapseAnimationDelay: TimeInterval = 0.07
+    var initialOpenCollapseDelay: TimeInterval = 1.5
+    var widgetSwitchCollapseDelay: TimeInterval = 3.0
+    var dragActivationCollapseDelay: TimeInterval = 0.1
+
+    var expandAnimationResponse: Double = 0.45
+    var expandAnimationDamping: Double = 0.68
+    var swipeOpenAnimationResponse: Double = 0.5
+    var swipeOpenAnimationDamping: Double = 0.85
+    var collapseAnimationResponse: Double = 0.3
+    var collapseAnimationDamping: Double = 0.98
+
+    var widgetBlurRadiusMax: CGFloat = 30
+    var activityBlurRadiusMax: CGFloat = 40
+    var expandedShadowRadius: CGFloat = 18
+    var expandedShadowOffsetY: CGFloat = 8
+
+    var contentTopPadding: CGFloat = 10
+    var contentBottomPadding: CGFloat = 10
+    var contentHorizontalPadding: CGFloat = 35
+
+    static func == (lhs: CustomizableNotchConfiguration, rhs: CustomizableNotchConfiguration) -> Bool {
+        return lhs.universalWidth == rhs.universalWidth &&
+               lhs.universalHeight == rhs.universalHeight &&
+               lhs.initialCornerRadius == rhs.initialCornerRadius &&
+               lhs.topBuffer == rhs.topBuffer &&
+               lhs.scaleFactor == rhs.scaleFactor &&
+               lhs.hoverExpandedCornerRadius == rhs.hoverExpandedCornerRadius &&
+               lhs.autoExpandedCornerRadius == rhs.autoExpandedCornerRadius &&
+               lhs.autoExpandedTallHeight == rhs.autoExpandedTallHeight &&
+               lhs.autoExpandedContentVerticalPadding == rhs.autoExpandedContentVerticalPadding &&
+               lhs.clickExpandedCornerRadius == rhs.clickExpandedCornerRadius &&
+               lhs.liveActivityBottomCornerRadius == rhs.liveActivityBottomCornerRadius &&
+               lhs.collapseAnimationDelay == rhs.collapseAnimationDelay &&
+               lhs.initialOpenCollapseDelay == rhs.initialOpenCollapseDelay &&
+               lhs.widgetSwitchCollapseDelay == rhs.widgetSwitchCollapseDelay &&
+               lhs.dragActivationCollapseDelay == rhs.dragActivationCollapseDelay &&
+               lhs.expandAnimationResponse == rhs.expandAnimationResponse &&
+               lhs.expandAnimationDamping == rhs.expandAnimationDamping &&
+               lhs.swipeOpenAnimationResponse == rhs.swipeOpenAnimationResponse &&
+               lhs.swipeOpenAnimationDamping == rhs.swipeOpenAnimationDamping &&
+               lhs.collapseAnimationResponse == rhs.collapseAnimationResponse &&
+               lhs.collapseAnimationDamping == rhs.collapseAnimationDamping &&
+               lhs.widgetBlurRadiusMax == rhs.widgetBlurRadiusMax &&
+               lhs.activityBlurRadiusMax == rhs.activityBlurRadiusMax &&
+               lhs.expandedShadowRadius == rhs.expandedShadowRadius &&
+               lhs.expandedShadowOffsetY == rhs.expandedShadowOffsetY &&
+               lhs.contentTopPadding == rhs.contentTopPadding &&
+               lhs.contentBottomPadding == rhs.contentBottomPadding &&
+               lhs.contentHorizontalPadding == rhs.contentHorizontalPadding
+    }
+}
+
 enum WeatherInfoType: String, Codable, CaseIterable, Identifiable {
     case temperature, condition, wind, humidity, feelsLike, precipitation, sunrise, sunset, uvIndex, visibility, pressure, locationName, conditionDescription, highLowTemp
     var id: String { self.rawValue }
@@ -56,22 +130,22 @@ enum LockScreenMainWidgetType: String, Codable, CaseIterable, Identifiable {
 }
 
 enum LockScreenWidgetType: String, Codable, CaseIterable, Identifiable {
-    case none, weather, calendar, music, focus, bluetooth
+    case none, weather, calendar, music, focus, bluetooth, battery
     var id: String { self.rawValue }
     var displayName: String { self.rawValue.capitalized }
 
     static var selectableCases: [LockScreenWidgetType] {
-        return [.weather, .calendar, .music, .focus, .bluetooth]
+        return [.weather, .calendar, .music, .focus, .bluetooth, .battery]
     }
 }
 
 enum LockScreenMiniWidgetType: String, Codable, CaseIterable, Identifiable {
-    case none, weather, calendar, music
+    case none, weather, calendar, music, battery // <-- ADDED THIS
     var id: String { self.rawValue }
     var displayName: String { self.rawValue.capitalized }
 
     static var selectableCases: [LockScreenMiniWidgetType] {
-        return [.weather, .calendar, .music]
+        return [.weather, .calendar, .music, .battery] // <-- AND ADDED IT HERE
     }
 }
 
@@ -225,18 +299,20 @@ enum MusicPlayerButtonType: String, Codable, CaseIterable, Identifiable, Equatab
 
 // MARK: - Main Settings Struct (Refactored)
 struct Settings: Codable, Equatable {
+    var useCustomNotchConfiguration: Bool = false
+    var customNotchConfiguration: CustomizableNotchConfiguration = .init()
     var lockScreenShowInfoWidget: Bool = true
-    var lockScreenWidgets: [LockScreenWidgetType] = [.weather]
+    var lockScreenWidgets: [LockScreenWidgetType] = [.weather, .bluetooth]
     var lockScreenHideInactiveInfoWidgets: Bool = true
-    var lockScreenShowMainWidget: Bool = true
-    var lockScreenMainWidgets: [LockScreenMainWidgetType] = [.music]
+    var lockScreenShowMainWidget: Bool = false
+    var lockScreenMainWidgets: [LockScreenMainWidgetType] = [.weather]
     var lockScreenShowMiniWidgets: Bool = true
-    var lockScreenMiniWidgets: [LockScreenMiniWidgetType] = [.weather, .calendar]
+    var lockScreenMiniWidgets: [LockScreenMiniWidgetType] = [.music]
     var lockScreenShowNotch: Bool = true
     var lockScreenLiveActivityEnabled: Bool = true
     var lockScreenLiquidGlassLook: Bool = true
 
-    var lockScreenWeatherInfo: [WeatherInfoType] = [.condition, .temperature]
+    var lockScreenWeatherInfo: [WeatherInfoType] = [.temperature]
 
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
     var notchLiveActivityAppearance: NotchAppearanceSettings = .init()
@@ -249,7 +325,7 @@ struct Settings: Codable, Equatable {
 
     // MARK: - Features & Notch Bar
     var expandOnHover: Bool = false
-    var launchpadEnabled: Bool = true
+    var launchpadEnabled: Bool = false
     var caffeinateEnabled: Bool = true
     var fileShelfIconEnabled: Bool = true
     var batteryEstimatorEnabled: Bool = true
@@ -285,7 +361,7 @@ struct Settings: Codable, Equatable {
     var desktopLiveActivityEnabled: Bool = true
     var focusLiveActivityEnabled: Bool = true
     var fileShelfLiveActivityEnabled: Bool = true
-    var fileProgressLiveActivityEnabled: Bool = true
+    var fileProgressLiveActivityEnabled: Bool = false
     var swipeToDismissLiveActivity: Bool = true
     var hideLiveActivityInFullScreen: Bool = false
     var hideActivitiesInFullScreen: [String: Bool] = [:]
@@ -346,12 +422,16 @@ struct Settings: Codable, Equatable {
     var brightnessliderstep: Int = 6
 
     // MARK: - Snap Zones & Planes
-    var snapZoneViewMode: SnapZoneViewMode = .single
+    var snapZoneViewMode: SnapZoneViewMode = .multi
     var snapOnWindowDragEnabled: Bool = true
     var defaultSnapLayout: SnapLayout = LayoutTemplate.columns
     var appSpecificLayoutConfigurations: [String: AppSnapLayoutConfiguration] = [:]
     var customSnapLayouts: [SnapLayout] = []
-    var snapZoneLayoutOptions: [UUID] = []
+    var snapZoneLayoutOptions: [UUID] = [
+        LayoutTemplate.columns.id,
+        LayoutTemplate.splitscreen.id,
+        LayoutTemplate.focus.id
+    ]
     var planes: [Plane] = []
 
     // MARK: - Battery & Charging
@@ -383,7 +463,7 @@ struct Settings: Codable, Equatable {
     // MARK: - Bluetooth
     var bluetoothNotifyLowBattery: Bool = true
     var bluetoothNotifySound: Bool = true
-    var showBluetoothDeviceName: Bool = true
+    var showBluetoothDeviceName: Bool = false
 
     // MARK: - Proximity Unlock Settings
 
@@ -406,12 +486,15 @@ struct Settings: Codable, Equatable {
     var bluetoothUnlockTurnOffScreenOnLock: Bool = true
 
     // MARK: - Notifications
-    var masterNotificationsEnabled: Bool = false
+    var masterNotificationsEnabled: Bool = true
     var iMessageNotificationsEnabled: Bool = true
     var airDropNotificationsEnabled: Bool = true
     var faceTimeNotificationsEnabled: Bool = true
     var systemNotificationsEnabled: Bool = true
     var appNotificationStates: [String: Bool] = [:]
+
+    var onlyShowVerificationCodeNotifications: Bool = true
+    var showCopyButtonForVerificationCodes: Bool = true
 
     // MARK: - Neardrop
     var neardropEnabled: Bool = true
@@ -481,6 +564,8 @@ class SettingsModel: ObservableObject {
         settingsAccessQueue.sync {
             var loadedSettings = Settings()
 
+            loadedSettings.useCustomNotchConfiguration = defaults.object(forKey: "useCustomNotchConfiguration") as? Bool ?? loadedSettings.useCustomNotchConfiguration
+            loadedSettings.customNotchConfiguration = decode(CustomizableNotchConfiguration.self, forKey: "customNotchConfiguration") ?? loadedSettings.customNotchConfiguration
             loadedSettings.lockScreenShowInfoWidget = defaults.object(forKey: "lockScreenShowInfoWidget") as? Bool ?? loadedSettings.lockScreenShowInfoWidget
             if let widgetsRaw = defaults.array(forKey: "lockScreenWidgets") as? [String] {
                 loadedSettings.lockScreenWidgets = widgetsRaw.compactMap { LockScreenWidgetType(rawValue: $0) }
@@ -678,6 +763,9 @@ class SettingsModel: ObservableObject {
             loadedSettings.systemNotificationsEnabled = defaults.object(forKey: "systemNotificationsEnabled") as? Bool ?? loadedSettings.systemNotificationsEnabled
             loadedSettings.appNotificationStates = decode([String: Bool].self, forKey: "appNotificationStates") ?? loadedSettings.appNotificationStates
 
+            loadedSettings.onlyShowVerificationCodeNotifications = defaults.object(forKey: "onlyShowVerificationCodeNotifications") as? Bool ?? loadedSettings.onlyShowVerificationCodeNotifications
+            loadedSettings.showCopyButtonForVerificationCodes = defaults.object(forKey: "showCopyButtonForVerificationCodes") as? Bool ?? loadedSettings.showCopyButtonForVerificationCodes
+
             loadedSettings.neardropEnabled = defaults.object(forKey: "neardropEnabled") as? Bool ?? loadedSettings.neardropEnabled
             loadedSettings.neardropDeviceDisplayName = defaults.string(forKey: "neardropDeviceDisplayName") ?? loadedSettings.neardropDeviceDisplayName
             loadedSettings.neardropDownloadLocationPath = defaults.string(forKey: "neardropDownloadLocationPath") ?? loadedSettings.neardropDownloadLocationPath
@@ -712,6 +800,8 @@ class SettingsModel: ObservableObject {
 
     private func saveSettings(settings: Settings, from oldValue: Settings) {
         settingsAccessQueue.async {
+            if settings.useCustomNotchConfiguration != oldValue.useCustomNotchConfiguration { self.defaults.set(settings.useCustomNotchConfiguration, forKey: "useCustomNotchConfiguration") }
+            if settings.customNotchConfiguration != oldValue.customNotchConfiguration { self.encode(settings.customNotchConfiguration, forKey: "customNotchConfiguration") }
             if settings.lockScreenShowInfoWidget != oldValue.lockScreenShowInfoWidget { self.defaults.set(settings.lockScreenShowInfoWidget, forKey: "lockScreenShowInfoWidget") }
             if settings.lockScreenWidgets != oldValue.lockScreenWidgets {
                 let rawValues = settings.lockScreenWidgets.map { $0.rawValue }
@@ -903,6 +993,9 @@ class SettingsModel: ObservableObject {
             if settings.systemNotificationsEnabled != oldValue.systemNotificationsEnabled { self.defaults.set(settings.systemNotificationsEnabled, forKey: "systemNotificationsEnabled") }
             if settings.appNotificationStates != oldValue.appNotificationStates { self.encode(settings.appNotificationStates, forKey: "appNotificationStates") }
 
+            if settings.onlyShowVerificationCodeNotifications != oldValue.onlyShowVerificationCodeNotifications { self.defaults.set(settings.onlyShowVerificationCodeNotifications, forKey: "onlyShowVerificationCodeNotifications") }
+            if settings.showCopyButtonForVerificationCodes != oldValue.showCopyButtonForVerificationCodes { self.defaults.set(settings.showCopyButtonForVerificationCodes, forKey: "showCopyButtonForVerificationCodes") }
+
             if settings.neardropEnabled != oldValue.neardropEnabled { self.defaults.set(settings.neardropEnabled, forKey: "neardropEnabled") }
             if settings.neardropDeviceDisplayName != oldValue.neardropDeviceDisplayName { self.defaults.set(settings.neardropDeviceDisplayName, forKey: "neardropDeviceDisplayName") }
             if settings.neardropDownloadLocationPath != oldValue.neardropDownloadLocationPath { self.defaults.set(settings.neardropDownloadLocationPath, forKey: "neardropDownloadLocationPath") }
@@ -1035,7 +1128,8 @@ enum NotchButtonType: String, Codable, CaseIterable, Identifiable, Equatable {
 }
 
 struct SystemApp: Identifiable, Equatable {
-    let id: String, name: String, icon: NSImage, isBrowser: Bool
+    let id: String, name: String, icon: NSImage, isBrowser: Bool, url: URL
+
 }
 
 enum Day: String, Codable, CaseIterable, Identifiable {
@@ -1058,18 +1152,18 @@ enum HUDStyle: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue.capitalized }
 }
 
-struct LaunchpadItem: Codable, Equatable, Identifiable {
+struct LaunchpadItem: Codable, Equatable, Identifiable, Hashable {
     var id: String { appBundleID }
     let appBundleID: String
 }
 
-struct LaunchpadFolder: Codable, Equatable, Identifiable {
+struct LaunchpadFolder: Codable, Equatable, Identifiable, Hashable {
     let id: UUID
     var name: String
     var items: [LaunchpadItem]
 }
 
-enum LaunchpadPageItem: Codable, Equatable, Identifiable {
+enum LaunchpadPageItem: Codable, Equatable, Identifiable, Hashable {
     case app(LaunchpadItem)
     case folder(LaunchpadFolder)
 
@@ -1079,6 +1173,21 @@ enum LaunchpadPageItem: Codable, Equatable, Identifiable {
         case .folder(let folder): return folder.id.uuidString
         }
     }
+
+    var appItem: LaunchpadItem? {
+        if case .app(let item) = self { return item }
+        return nil
+    }
+}
+
+extension LaunchpadPageItem: Transferable {
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .launchpadItem)
+    }
+}
+
+extension UTType {
+    static let launchpadItem = UTType(exportedAs: "com.shariq.sapphire.launchpaditem")
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
@@ -1130,22 +1239,34 @@ class SystemAppFetcher: ObservableObject {
             var seenBundleIDs = Set<String>()
 
             let fileManager = FileManager.default
-            let searchPaths = ["/System/Applications", "/Applications", NSSearchPathForDirectoriesInDomains(.applicationDirectory, .userDomainMask, true).first].compactMap { $0 }
+            let searchPaths = [
+                "/System/Applications",
+                "/Applications"
+            ] + NSSearchPathForDirectoriesInDomains(.applicationDirectory, .userDomainMask, true)
 
-            for path in searchPaths {
-                guard let enumerator = fileManager.enumerator(at: URL(fileURLWithPath: path),
-                                                               includingPropertiesForKeys: [.isApplicationKey, .nameKey],
-                                                               options: [.skipsHiddenFiles, .skipsPackageDescendants],
-                                                               errorHandler: nil) else { continue }
+            for path in searchPaths.compactMap({ $0 }) {
+                guard let enumerator = fileManager.enumerator(
+                    at: URL(fileURLWithPath: path),
+                    includingPropertiesForKeys: [.isApplicationKey, .nameKey],
+                    options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                    errorHandler: nil
+                ) else { continue }
 
                 for case let url as URL in enumerator {
                     if url.pathExtension == "app" {
-                        guard let bundle = Bundle(url: url), let bundleId = bundle.bundleIdentifier, !seenBundleIDs.contains(bundleId) else { continue }
+                        guard let bundle = Bundle(url: url),
+                              let bundleId = bundle.bundleIdentifier,
+                              !seenBundleIDs.contains(bundleId) else { continue }
+
                         let name = fileManager.displayName(atPath: url.path)
                         let icon = NSWorkspace.shared.icon(forFile: url.path)
+
                         let isBrowser = await self.isBrowser(bundle: bundle)
-                        let app = SystemApp(id: bundleId, name: name, icon: icon, isBrowser: isBrowser)
-                        fetchedApps.append(app); seenBundleIDs.insert(bundleId)
+
+                        let app = SystemApp(id: bundleId, name: name, icon: icon, isBrowser: isBrowser, url: url)
+
+                        fetchedApps.append(app)
+                        seenBundleIDs.insert(bundleId)
                     }
                 }
             }
@@ -1153,13 +1274,15 @@ class SystemAppFetcher: ObservableObject {
             let sortedApps = fetchedApps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
             await MainActor.run {
-                self.apps = sortedApps; self.foundBundleIDs = seenBundleIDs
+                self.apps = sortedApps
+                self.foundBundleIDs = seenBundleIDs
             }
         }
     }
 
     private func isBrowser(bundle: Bundle?) -> Bool {
         guard let bundle = bundle, let urlTypes = bundle.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]] else { return false }
+
         return urlTypes.contains { type in
             if let schemes = type["CFBundleURLSchemes"] as? [String] {
                 return schemes.contains("http") || schemes.contains("https")

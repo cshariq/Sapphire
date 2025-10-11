@@ -30,17 +30,17 @@ fileprivate struct BatteryInfoView: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: NotchConfiguration.batteryHStackSpacing) {
             if let timeString = timeRemaining {
                 Text(timeString)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.system(size: NotchConfiguration.batteryTextFontSize, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .transition(.opacity.animation(.easeInOut))
-                    .padding(.trailing, 2)
+                    .padding(.trailing, NotchConfiguration.batteryTextTrailingPadding)
             }
             ZStack {
                 Image(systemName: "battery.100")
-                    .font(.system(size: 22, weight: .light))
+                    .font(.system(size: NotchConfiguration.batteryIconSize, weight: .light))
                     .foregroundColor(.white.opacity(0.7))
 
                 HStack(spacing: 0) {
@@ -49,29 +49,28 @@ fileprivate struct BatteryInfoView: View {
                         .frame(width: 35 * (CGFloat(level) / 100.0))
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, 2.7)
-                .padding(.vertical, 2.7)
+                .padding(.leading, NotchConfiguration.batteryIconPadding)
+                .padding(.vertical, NotchConfiguration.batteryIconPadding)
                 .mask {
                     Image(systemName: "battery.100")
-                        .font(.system(size: 22, weight: .light))
+                        .font(.system(size: NotchConfiguration.batteryIconSize, weight: .light))
                 }
 
                 if isCharging {
                     HStack(spacing: 0) {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 6, weight: .bold))
+                            .font(.system(size: NotchConfiguration.batteryBoltIconSize, weight: .bold))
                         Text("\(level)")
-                            .font(.system(size: 7, weight: .medium, design: .rounded))
+                            .font(.system(size: NotchConfiguration.batteryValueFontSize, weight: .medium, design: .rounded))
                     }
                     .foregroundColor(level > 10 ? contentColor : .white)
                 } else {
                     Text("\(level)")
-                        .font(.system(size: 7, weight: .medium, design: .rounded))
+                        .font(.system(size: NotchConfiguration.batteryValueFontSize, weight: .medium, design: .rounded))
                         .foregroundColor(level > 10 ? contentColor : .white)
                 }
-
             }
-            .frame(width: 22, height: 10)
+            .frame(width: NotchConfiguration.batteryFrameWidth, height: NotchConfiguration.batteryFrameHeight)
         }
     }
 }
@@ -149,7 +148,7 @@ struct NotchController: View {
     @State private var showLyrics: Bool = false
 
     @State private var maxActivityContentWidth: CGFloat = 0
-    @State private var liveActivityHorizontalPadding: CGFloat = 10.0
+    @State private var liveActivityHorizontalPadding: CGFloat = NotchConfiguration.activityDefaultHorizontalPadding
 
     @State private var expansionAnimation: Animation = NotchConfiguration.expandAnimation
 
@@ -176,6 +175,16 @@ struct NotchController: View {
         }
     }
 
+    // MARK: - Computed State Properties for Performance
+
+    private var isInteractive: Bool {
+        notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone
+    }
+
+    private var shouldHideWindowForSharing: Bool {
+        settings.settings.hideFromScreenSharing || (notchState == .initial)
+    }
+
     private var geminiShadowGradient: LinearGradient {
         LinearGradient(
             gradient: Gradient(colors: [
@@ -189,14 +198,18 @@ struct NotchController: View {
 
     private var glowOpacity: Double {
         guard isGeminiActive else { return 0 }
-        let baseOpacity = (notchState == .initial || notchState == .autoExpanded) ? 0.4 : 0.7
-        return baseOpacity + (Double(geminiLiveManager.currentAudioLevel) * 0.3)
+        let baseOpacity = (notchState == .initial || notchState == .autoExpanded) ?
+            NotchConfiguration.geminiGlowBaseOpacityNormal :
+            NotchConfiguration.geminiGlowBaseOpacityExpanded
+        return baseOpacity + (Double(geminiLiveManager.currentAudioLevel) * NotchConfiguration.geminiGlowAudioMultiplier)
     }
 
     private var glowRadius: CGFloat {
         guard isGeminiActive else { return 0 }
-        let baseRadius: CGFloat = (notchState == .initial || notchState == .autoExpanded) ? 12 : 25
-        return baseRadius + (CGFloat(geminiLiveManager.currentAudioLevel) * 15)
+        let baseRadius: CGFloat = (notchState == .initial || notchState == .autoExpanded) ?
+            NotchConfiguration.geminiGlowBaseRadiusNormal :
+            NotchConfiguration.geminiGlowBaseRadiusExpanded
+        return baseRadius + (CGFloat(geminiLiveManager.currentAudioLevel) * NotchConfiguration.geminiGlowAudioRadiusMultiplier)
     }
 
     private var currentViewTitle: String? {
@@ -331,7 +344,6 @@ struct NotchController: View {
         .frame(width: animatedWidth, height: animatedHeight)
         .contentShape(activeShape)
         .onHover(perform: handleHover)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, -NotchConfiguration.topBuffer)
         .overlay(measurementOverlay)
         .onAppear(perform: setupMonitors)
@@ -352,6 +364,12 @@ struct NotchController: View {
         .onChange(of: measuredAutoContentSize) { _, newSize in handleSizeChange(newSize, for: .autoExpanded) }
         .onReceive(pickerHelper.pickerResultPublisher, perform: handlePickerResult)
         .onChange(of: showLyrics, perform: handleShowLyricsChange)
+        .onChange(of: isInteractive) { _, newValue in
+            updateMouseEventHandling(isInteractive: newValue)
+        }
+        .onChange(of: shouldHideWindowForSharing) { _, newValue in
+            updateWindowSharingBehavior(shouldBeHidden: newValue)
+        }
     }
 
     @ViewBuilder
@@ -371,7 +389,7 @@ struct NotchController: View {
                 .fill(geminiShadowGradient)
                 .blur(radius: glowRadius)
                 .opacity(glowOpacity)
-                .scaleEffect(1.05)
+                .scaleEffect(NotchConfiguration.expandButtonAnimationScaleMultiplier)
                 .animation(.linear(duration: 0.1), value: geminiLiveManager.currentAudioLevel)
                 .allowsHitTesting(false)
         }
@@ -420,12 +438,10 @@ struct NotchController: View {
     }
 
     private func setupMonitors() {
-        updateMouseEventHandling()
         dragManager.startMonitoring()
         liveActivityManager.showLyricsBinding = $showLyrics
 
         updateFPS()
-        updateWindowSharingBehavior()
 
         TrackpadGestureHandler.shared.onSwipe = { dx, dy in
             self.handleTrackpadSwipe(vector: CGVector(dx: dx, dy: dy))
@@ -441,6 +457,9 @@ struct NotchController: View {
                 self.scheduleCollapse(after: NotchConfiguration.widgetSwitchCollapseDelay)
             }
         }
+
+        updateMouseEventHandling(isInteractive: isInteractive)
+        updateWindowSharingBehavior(shouldBeHidden: shouldHideWindowForSharing)
     }
 
     private func teardownMonitors() {
@@ -657,7 +676,7 @@ struct NotchController: View {
         switch liveActivityManager.activityContent {
         case .full(let view, _, _):
             view
-                .padding(.horizontal, 15)
+                .padding(.horizontal, NotchConfiguration.activityContentHorizontalPadding)
                 .clipShape(activeShape)
         case .standard(let data, _):
             buildStandardActivityView(from: data)
@@ -706,6 +725,7 @@ struct NotchController: View {
         case .nearDrop: NearDropCompactActivityView.left()
         case .hud(let type): SystemHUDSlimActivityView.left(type: type)
         case .lockScreen: LockScreenLiveActivityView.left()
+        case .updateAvailable: UpdateAvailableActivityView.left()
         }
     }
 
@@ -748,6 +768,7 @@ struct NotchController: View {
         case .nearDrop(let payload): NearDropCompactActivityView.right(payload: payload)
         case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: SettingsModel.shared)
         case .lockScreen: LockScreenLiveActivityView.right()
+        case .updateAvailable(let version): UpdateAvailableActivityView.right(version: version)
         }
     }
 
@@ -808,13 +829,13 @@ struct NotchController: View {
             }
             .frame(width: maxActivityContentWidth * 2 + NotchConfiguration.initialSize.width)
             .frame(height: NotchConfiguration.initialSize.height)
-            .padding(.horizontal, liveActivityManager.activityHasBottomContent ? 25 : 10)
+            .padding(.horizontal, liveActivityHorizontalPadding)
             .animation(NotchConfiguration.activityToActivityAnimation, value: liveActivityHorizontalPadding)
 
             if let bottomView = getBottomView(for: data) {
                 VStack {
                     bottomView
-                        .padding(.bottom, 10)
+                        .padding(.bottom, NotchConfiguration.activityContentBottomPadding)
                 }
                 .padding(.horizontal, liveActivityHorizontalPadding)
                 .animation(NotchConfiguration.activityToActivityAnimation, value: liveActivityHorizontalPadding)
@@ -833,11 +854,11 @@ struct NotchController: View {
                 return AnyView(QuickPeekView(title: title, artist: artist))
             case .lyrics(let text, let id):
                 let view = Text(text)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(size: NotchConfiguration.lyricsFontSize, weight: .semibold, design: .rounded))
                     .foregroundColor(musicWidget.accentColor.opacity(0.9))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 200)
+                    .frame(maxWidth: NotchConfiguration.lyricsMaxWidth)
                     .transition(.opacity.animation(.easeInOut(duration: 0.3)))
                     .id("lyric-\(id.uuidString)")
                     .onTapGesture {
@@ -930,19 +951,19 @@ struct NotchController: View {
                             .font(.title2)
                             .foregroundStyle(.secondary)
                             .symbolRenderingMode(.hierarchical)
-                            .padding(.leading, 40)
+                            .padding(.leading, NotchConfiguration.navHeaderLeadingPadding)
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, NotchConfiguration.navHeaderTopPadding)
                 .buttonStyle(.plain)
 
                 if let title = currentViewTitle {
                     Text(title)
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: NotchConfiguration.navHeaderTitleFontSize, weight: .bold))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .foregroundColor(.white.opacity(0.9))
-                        .padding(.top, 10)
+                        .padding(.top, NotchConfiguration.navHeaderTitleTopPadding)
                 }
 
                 Spacer()
@@ -969,7 +990,7 @@ struct NotchController: View {
                 }
             }
         }
-        .padding(.horizontal, 40)
+        .padding(.horizontal, NotchConfiguration.defaultModeIconsHorizontalPadding)
         .frame(height: NotchConfiguration.initialSize.height)
         .frame(width: animatedWidth)
     }
@@ -999,7 +1020,7 @@ struct NotchController: View {
                     isCharging: batteryEstimator.isCharging,
                     timeRemaining: batteryEstimator.estimatedTimeRemaining
                 )
-                .padding(.horizontal, 10)
+                .padding(.horizontal, NotchConfiguration.batteryHorizontalPadding)
             }
         case .multiAudio:
             if showMultiAudioIcon {
@@ -1023,7 +1044,7 @@ struct NotchController: View {
     @ViewBuilder
     private var geminiButton: some View {
         let isRunning = geminiLiveManager.isSessionRunning
-        let baseSize: CGFloat = 25
+        let baseSize: CGFloat = NotchConfiguration.geminiButtonBaseSize
         let activeGradient = LinearGradient(
             gradient: Gradient(colors: [Color.purple.opacity(0.8), Color.indigo.opacity(0.6)]),
             startPoint: .topLeading,
@@ -1048,31 +1069,31 @@ struct NotchController: View {
         }) {
             HStack(spacing: 4) {
                 Image(systemName: isRunning ? "stop.fill" : "sparkle")
-                    .font(.system(size: isGeminiHovered ? 12 : 14, weight: .medium))
+                    .font(.system(size: isGeminiHovered ? NotchConfiguration.geminiButtonActiveIconSize : NotchConfiguration.geminiButtonInactiveIconSize, weight: .medium))
                     .rotationEffect(.degrees(isGeminiHovered ? 90 : 0))
                     .foregroundStyle(
                         isGeminiHovered ?
                         LinearGradient(gradient: Gradient(colors: [Color.white, Color.white.opacity(0.5)]), startPoint: .topLeading, endPoint: .bottomTrailing) :
                         LinearGradient(gradient: Gradient(colors: [Color.blue, Color.pink]), startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
-                    .animation(.spring(response: 0.5, dampingFraction: 0.6), value: isGeminiHovered)
+                    .animation(.spring(response: NotchConfiguration.geminiButtonSpringResponse, dampingFraction: NotchConfiguration.geminiButtonSpringDamping), value: isGeminiHovered)
 
                 if isGeminiHovered {
                     Text(isRunning ? "Stop" : "Go live")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: NotchConfiguration.geminiButtonTextFontSize, weight: .semibold))
                         .fixedSize()
                         .foregroundColor(.white)
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
             }
-            .padding(.horizontal, isGeminiHovered ? 10 : 0)
+            .padding(.horizontal, isGeminiHovered ? NotchConfiguration.geminiButtonActiveHorizontalPadding : 0)
             .frame(width: isGeminiHovered ? nil : baseSize, height: baseSize)
             .background(isGeminiHovered ? (isRunning ? inactiveGradient: activeGradient) : nil)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.spring(response: 0.5, dampingFraction: 1)) {
+            withAnimation(.spring(response: NotchConfiguration.geminiButtonSpringResponse, dampingFraction: 1)) {
                 isGeminiHovered = hovering
             }
         }
@@ -1145,9 +1166,6 @@ struct NotchController: View {
     private func handleHover(hovering: Bool) {
         self.isHovered = hovering
 
-        updateMouseEventHandling()
-        updateWindowSharingBehavior()
-
         if hovering {
             TrackpadGestureHandler.shared.startMonitoring()
         } else {
@@ -1212,9 +1230,6 @@ struct NotchController: View {
     }
 
     private func handleStateChange(from oldState: NotchState, to newState: NotchState) {
-        updateMouseEventHandling()
-        updateWindowSharingBehavior()
-
         let isContentUpdate = oldState == newState
         let animation: Animation
 
@@ -1231,7 +1246,9 @@ struct NotchController: View {
 
         withAnimation(animation) {
             updateRadiiForCurrentState(state: newState)
-            self.liveActivityHorizontalPadding = liveActivityManager.activityHasBottomContent ? 15.0 : 10.0
+            self.liveActivityHorizontalPadding = liveActivityManager.activityHasBottomContent ?
+                NotchConfiguration.activityWithContentHorizontalPadding :
+                NotchConfiguration.activityDefaultHorizontalPadding
         }
 
         if isContentUpdate { return }
@@ -1249,7 +1266,7 @@ struct NotchController: View {
                 shadowOpacity = 0; isPinned = false
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.activityAnimationOutDelay) {
                 guard self.notchState == .initial else { return }
                 if wasShowingActivity { self.isAnimatingActivityOut = false }
                 self.activityBlurRadius = 0; self.activityContentScale = 1.0
@@ -1282,7 +1299,7 @@ struct NotchController: View {
 
             withAnimation(self.expansionAnimation) { autoContentOpacity = 0; shadowOpacity = 1; clickContentOpacity = 0.1 }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.contentUpdateDelay) {
                 withAnimation(NotchConfiguration.focusPullAnimation) { self.widgetBlurRadius = 0; self.clickContentOpacity = 1; self.activityContentScale = 1.0 }
             }
 
@@ -1308,7 +1325,7 @@ struct NotchController: View {
                 shadowOpacity = 0
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.activitySizeChangeDelay) {
                 withAnimation(NotchConfiguration.blurRemovalAnimation) {
                     if isCollapsingFromClick { self.widgetBlurRadius = 0 }
                     self.activityBlurRadius = 0; self.activityContentScale = 1.0
@@ -1316,7 +1333,7 @@ struct NotchController: View {
             }
 
             if isCollapsingFromClick {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.autoContentRenderDelay) {
                     if self.notchState == .autoExpanded {
                         self.canRenderAutoContent = true
                         withAnimation(NotchConfiguration.activityOpacityAnimation) { self.autoContentOpacity = 1 }
@@ -1380,25 +1397,40 @@ struct NotchController: View {
         let targetWidth = measuredAutoContentSize.width * scale
         let targetHeight = measuredAutoContentSize.height * scale
 
-        guard targetWidth > 0 && targetHeight > 0, (targetWidth != animatedWidth || targetHeight != animatedHeight) else { return }
+        let epsilon: CGFloat = 0.5
+        guard targetWidth > 0 && targetHeight > 0,
+              (abs(targetWidth - animatedWidth) > epsilon || abs(targetHeight - animatedHeight) > epsilon) else { return }
 
-        withAnimation(.easeIn(duration: 0.15)) { activityBlurRadius = 15 }
-        withAnimation(NotchConfiguration.activityToActivityAnimation) { animatedWidth = targetWidth; animatedHeight = targetHeight }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { withAnimation(NotchConfiguration.blurRemovalAnimation) { self.activityBlurRadius = 0 } }
+        let isMusicActivity = liveActivityManager.currentActivity == .music
+
+        if !isMusicActivity {
+            withAnimation(.easeIn(duration: NotchConfiguration.activityBlurUpdateDelay)) { activityBlurRadius = 15 }
+        }
+
+        withAnimation(NotchConfiguration.activityToActivityAnimation) {
+            animatedWidth = targetWidth
+            animatedHeight = targetHeight
+        }
+
+        if !isMusicActivity {
+            DispatchQueue.main.asyncAfter(deadline: .now() + NotchConfiguration.autoContentRenderDelay) {
+                withAnimation(NotchConfiguration.blurRemovalAnimation) { self.activityBlurRadius = 0 }
+            }
+        } else {
+            activityBlurRadius = 0
+        }
     }
 
-    private func updateMouseEventHandling() {
+    private func updateMouseEventHandling(isInteractive: Bool) {
         guard notchWindow?.contentView != nil else { return }
-        let isInteractive = notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone
         let shouldIgnore = !isInteractive
         if notchWindow?.ignoresMouseEvents != shouldIgnore {
             notchWindow?.ignoresMouseEvents = shouldIgnore
         }
     }
 
-    private func updateWindowSharingBehavior() {
+    private func updateWindowSharingBehavior(shouldBeHidden: Bool) {
         guard let window = notchWindow else { return }
-        let shouldBeHidden = settings.settings.hideFromScreenSharing || (notchState == .initial)
         let desired: NSWindow.SharingType = shouldBeHidden ? .none : .readOnly
         if window.sharingType != desired {
             window.sharingType = desired

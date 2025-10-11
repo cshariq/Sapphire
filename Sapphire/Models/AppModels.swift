@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 205-07-06.
 //
 //
+//
+//
 
 import SwiftUI
 import NearbyShare
@@ -134,6 +136,7 @@ enum StandardActivityData: Equatable {
     case hud(type: HUDType)
     case reminder(reminder: EKReminder)
     case lockScreen
+    case updateAvailable(version: String)
 
     static func == (lhs: StandardActivityData, rhs: StandardActivityData) -> Bool {
         switch (lhs, rhs) {
@@ -153,6 +156,7 @@ enum StandardActivityData: Equatable {
         case let (.nearDrop(a), .nearDrop(b)): return a == b
         case let (.hud(a), .hud(b)): return a == b
         case (.lockScreen, .lockScreen): return true
+        case let (.updateAvailable(a), .updateAvailable(b)): return a == b
         default: return false
         }
     }

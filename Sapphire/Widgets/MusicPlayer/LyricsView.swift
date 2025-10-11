@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-06-26.
 //
 //
+//
+//
 
 import SwiftUI
 
@@ -36,10 +38,11 @@ struct LyricLineView: View {
 }
 
 struct LyricsView: View {
+    @EnvironmentObject var musicManager: MusicManager
 
-    var lyrics: [LyricLine]
-    var currentLyricID: UUID?
-    var accentColor: Color
+    private var lyrics: [LyricLine] { musicManager.lyrics }
+    private var currentLyricID: UUID? { musicManager.currentLyric?.id }
+    private var accentColor: Color { musicManager.accentColor }
 
     private let lineSpacing: CGFloat = 70.0
 
@@ -97,7 +100,7 @@ struct LyricsView: View {
                 }
             }
         }
-        .frame(width: 400)
+        .frame(width: 550, height: 250)
     }
 
     private func calculateScrollOffset(fullViewHeight: CGFloat) -> CGFloat {

@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-09-11.
 //
 //
+//
+//
 
 import SwiftUI
 
@@ -38,7 +40,7 @@ struct LockScreenMainWidgetContainerView: View {
     @State private var maxMainWidgetHeight: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: LockScreenConfiguration.widgetSpacing) {
             let _ = print("[Layout Debug - Main] Rebuilding view with max height: \(Int(maxMainWidgetHeight))")
             ForEach(settings.settings.lockScreenMainWidgets, id: \.self) { widgetType in
                 widgetView(for: widgetType)
@@ -113,7 +115,7 @@ struct LockScreenView: View {
         return MusicPlayerView(navigationStack: $dummyNavigationStack, isLockScreenMode: true)
             .environmentObject(musicManager)
             .environmentObject(settings)
-            .padding(15)
+            .padding(LockScreenConfiguration.backgroundPadding)
             .frame(height: fixedHeight)
             .background(backgroundMaterial)
     }
@@ -122,8 +124,8 @@ struct LockScreenView: View {
     private var backgroundMaterial: some View {
         if settings.settings.lockScreenLiquidGlassLook {
             if #available(macOS 26, *) {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
+                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
             } else {
                 ZStack {
                     VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
@@ -137,27 +139,27 @@ struct LockScreenView: View {
                         endPoint: .bottom
                     )
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 gradient: Gradient(colors: [.white.opacity(0.25), .clear]),
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
-                            lineWidth: 1.5
+                            lineWidth: LockScreenConfiguration.backgroundStrokeWidth
                         )
-                        .blur(radius: 1)
+                        .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
                 )
             }
         } else {
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
                             gradient: Gradient(colors: [
@@ -167,9 +169,9 @@ struct LockScreenView: View {
                             startPoint: .top,
                             endPoint: .bottom
                         ),
-                        lineWidth: 1.5
+                        lineWidth: LockScreenConfiguration.backgroundStrokeWidth
                     )
-                    .blur(radius: 1)
+                    .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
             )
         }
     }
@@ -181,7 +183,7 @@ struct LockScreenWeatherView: View {
 
     var body: some View {
         WeatherPlayerView()
-            .padding(15)
+            .padding(LockScreenConfiguration.backgroundPadding)
             .frame(height: _lockScreenWidgetHeight)
             .background(backgroundMaterial)
     }
@@ -190,8 +192,8 @@ struct LockScreenWeatherView: View {
     private var backgroundMaterial: some View {
         if settings.settings.lockScreenLiquidGlassLook {
             if #available(macOS 26, *) {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
+                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
             } else {
                 ZStack {
                     VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
@@ -205,27 +207,27 @@ struct LockScreenWeatherView: View {
                         endPoint: .bottom
                     )
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 gradient: Gradient(colors: [.white.opacity(0.25), .clear]),
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
-                            lineWidth: 1.5
+                            lineWidth: LockScreenConfiguration.backgroundStrokeWidth
                         )
-                        .blur(radius: 1)
+                        .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
                 )
             }
         } else {
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
                             gradient: Gradient(colors: [
@@ -235,9 +237,9 @@ struct LockScreenWeatherView: View {
                             startPoint: .top,
                             endPoint: .bottom
                         ),
-                        lineWidth: 1.5
+                        lineWidth: LockScreenConfiguration.backgroundStrokeWidth
                     )
-                    .blur(radius: 1)
+                    .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
             )
         }
     }
@@ -249,7 +251,7 @@ struct LockScreenCalendarView: View {
 
     var body: some View {
         CalendarDetailView()
-            .padding(15)
+            .padding(LockScreenConfiguration.backgroundPadding)
             .frame(height: _lockScreenWidgetHeight)
             .background(backgroundMaterial)
     }
@@ -258,8 +260,8 @@ struct LockScreenCalendarView: View {
     private var backgroundMaterial: some View {
         if settings.settings.lockScreenLiquidGlassLook {
             if #available(macOS 26, *) {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
+                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
             } else {
                 ZStack {
                     VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
@@ -273,9 +275,9 @@ struct LockScreenCalendarView: View {
                         endPoint: .bottom
                     )
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 gradient: Gradient(colors: [
@@ -285,18 +287,18 @@ struct LockScreenCalendarView: View {
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
-                            lineWidth: 1.5
+                            lineWidth: LockScreenConfiguration.backgroundStrokeWidth
                         )
-                        .blur(radius: 1)
+                        .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
                 )
             }
         } else {
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
                             gradient: Gradient(colors: [
@@ -306,9 +308,9 @@ struct LockScreenCalendarView: View {
                             startPoint: .top,
                             endPoint: .bottom
                         ),
-                        lineWidth: 1.5
+                        lineWidth: LockScreenConfiguration.backgroundStrokeWidth
                     )
-                    .blur(radius: 1)
+                    .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
             )
         }
     }

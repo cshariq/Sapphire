@@ -4,6 +4,8 @@
 //
 //  Created by Shariq Charolia on 2025-10-05
 //
+//
+//
 
 import Foundation
 import Combine
@@ -176,7 +178,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
             .store(in: &cancellables)
     }
 
-    private func initializeClients() {
+    private func initializeClients() async {
         openSpotifyClient = CustomTLSClient(host: "open.spotify.com", userAgent: commonUserAgent, cookieManager: cookieManager)
         spclientClient = CustomTLSClient(host: "gue1-spclient.spotify.com", userAgent: commonUserAgent, cookieManager: cookieManager)
         apiPartnerClient = CustomTLSClient(host: "api-partner.spotify.com", userAgent: commonUserAgent, cookieManager: cookieManager)
@@ -192,6 +194,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
         Task {
             await cookieManager.setCookies(cookies)
             await saveSession()
+            await initializeClients() // **FIX: Initialize clients after a new login.**
             reestablishSession()
         }
     }
@@ -224,11 +227,14 @@ class SpotifyPrivateAPIManager: ObservableObject {
     private func loadSession() async {
         guard let savedCookiesData = UserDefaults.standard.array(forKey: sessionUserDefaultsKey) as? [[String: Any]] else { return }
         let cookies = savedCookiesData.compactMap { HTTPCookie(properties: $0.toStringKeys()) }
-        if cookies.isEmpty { UserDefaults.standard.removeObject(forKey: sessionUserDefaultsKey); return }
+        if cookies.isEmpty {
+            UserDefaults.standard.removeObject(forKey: sessionUserDefaultsKey)
+            return
+        }
 
         await cookieManager.setCookies(cookies)
         await initializeClients()
-        do { try await verifySessionAndFetchUserInfo(); reestablishSession() } catch { print("[SpotifyPrivateAPIManager] Error loading session: \(error.localizedDescription)"); await logout() }
+        reestablishSession()
     }
 
     private func getOrSetControllerDeviceID() -> String {
@@ -239,13 +245,14 @@ class SpotifyPrivateAPIManager: ObservableObject {
     func reestablishSession() {
         Task(priority: .userInitiated) {
             do {
+                try await self.verifySessionAndFetchUserInfo()
+
                 if let sessionCookie = await self.cookieManager.allCookies()["sp_t"] {
                     self.sessionDeviceID = sessionCookie.value
                 } else {
                     throw SpotAPIError.missingData("sp_t cookie not found in saved session.")
                 }
 
-                self.initializeClients()
                 try await self.fetchApiTokensAndClientVersion()
 
                 guard let token = self.accessToken else {
@@ -276,8 +283,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
                 wsManager.connect()
 
             } catch let error {
-                print("[SpotifyPrivateAPIManager] Error re-establishing session: \(error.localizedDescription)")
-                await self.logout()
+                print("[SpotifyPrivateAPIManager] Failed to re-establish session: \(error.localizedDescription). Will try again on next launch.")
+                self.isLoggedIn = false
             }
         }
     }
@@ -289,14 +296,13 @@ class SpotifyPrivateAPIManager: ObservableObject {
             if let previouslyActiveDevice = playerStateResponse.activeDeviceId, let newControllerID = self.controllerDeviceID {
                 try await self.transferDevice(from: previouslyActiveDevice, to: newControllerID, isInitialHandshake: true)
             }
-            try await verifySessionAndFetchUserInfo()
             await performUserVerification()
             await sendGaboSessionEvent()
             try await self.refreshPlayerAndDeviceState()
-            self.isLoggedIn = true
+            self.isLoggedIn = true // Set login state only after everything succeeds
         } catch {
-            print("[SpotifyPrivateAPIManager] Error in initialization flow: \(error.localizedDescription)")
-            await self.logout()
+            print("[SpotifyPrivateAPIManager] Error in final initialization flow: \(error.localizedDescription)")
+            self.isLoggedIn = false
         }
     }
 

@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
+//
+//
 
 import SwiftUI
 import Charts
@@ -206,6 +208,7 @@ struct NotchAppearanceEditorView: View {
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
+    @State private var showingCustomConfig = false
 
     var body: some View {
         ScrollView {
@@ -252,17 +255,32 @@ struct GeneralSettingsView: View {
 
                     Divider().padding(.leading, 20)
 
-                    HStack {
-                        Text("App Language")
-                        Spacer()
-                        Picker("", selection: $settings.settings.appLanguage) {
-                            Text("English").tag("en")
-                            Text("Spanish").tag("es")
-                            Text("French").tag("fr")
-                        }.labelsHidden().frame(width: 150)
-                    }.padding()
+//                    HStack {
+//                        Text("App Language")
+//                        Spacer()
+//                        Picker("", selection: $settings.settings.appLanguage) {
+//                            Text("English").tag("en")
+//                            Text("Spanish").tag("es")
+//                            Text("French").tag("fr")
+//                        }.labelsHidden().frame(width: 150)
+//                    }.padding()
                 }
                 .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Advanced Customization").font(.headline).padding([.top, .horizontal])
+                    ToggleRow(title: "Enable Custom Notch Configuration", description: "Override default appearance and animation values. This may lead to unexpected behavior.", isOn: $settings.settings.useCustomNotchConfiguration)
+
+                    if settings.settings.useCustomNotchConfiguration {
+                        Button("Edit Custom Configuration") {
+                            showingCustomConfig = true
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+                .animation(.default, value: settings.settings.useCustomNotchConfiguration)
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Notch Bar Items").font(.headline).padding([.horizontal, .top])
@@ -279,12 +297,235 @@ struct GeneralSettingsView: View {
             .padding(25)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .sheet(isPresented: $showingCustomConfig) {
+            CustomNotchConfigView(config: $settings.settings.customNotchConfiguration)
+        }
     }
 
     private func binding(for setting: GeneralSettingType) -> Binding<Bool> {
         switch setting {
         case .expandOnHover: return $settings.settings.expandOnHover
         }
+    }
+}
+
+struct CustomNotchConfigView: View {
+    @Binding var config: CustomizableNotchConfiguration
+    @Environment(\.dismiss) var dismiss
+
+    @State private var universalWidth: Double
+    @State private var universalHeight: Double
+    @State private var initialCornerRadius: Double
+    @State private var topBuffer: Double
+    @State private var scaleFactor: Double
+    @State private var hoverExpandedCornerRadius: Double
+    @State private var autoExpandedCornerRadius: Double
+    @State private var autoExpandedTallHeight: Double
+    @State private var autoExpandedContentVerticalPadding: Double
+    @State private var clickExpandedCornerRadius: Double
+    @State private var liveActivityBottomCornerRadius: Double
+    @State private var collapseAnimationDelay: Double
+    @State private var initialOpenCollapseDelay: Double
+    @State private var widgetSwitchCollapseDelay: Double
+    @State private var dragActivationCollapseDelay: Double
+    @State private var expandAnimationResponse: Double
+    @State private var expandAnimationDamping: Double
+    @State private var swipeOpenAnimationResponse: Double
+    @State private var swipeOpenAnimationDamping: Double
+    @State private var collapseAnimationResponse: Double
+    @State private var collapseAnimationDamping: Double
+    @State private var widgetBlurRadiusMax: Double
+    @State private var activityBlurRadiusMax: Double
+    @State private var expandedShadowRadius: Double
+    @State private var expandedShadowOffsetY: Double
+    @State private var contentTopPadding: Double
+    @State private var contentBottomPadding: Double
+    @State private var contentHorizontalPadding: Double
+
+    init(config: Binding<CustomizableNotchConfiguration>) {
+        self._config = config
+        let wrapped = config.wrappedValue
+
+        _universalWidth = State(initialValue: Double(wrapped.universalWidth))
+        _universalHeight = State(initialValue: Double(wrapped.universalHeight))
+        _initialCornerRadius = State(initialValue: Double(wrapped.initialCornerRadius))
+        _topBuffer = State(initialValue: Double(wrapped.topBuffer))
+        _scaleFactor = State(initialValue: Double(wrapped.scaleFactor))
+        _hoverExpandedCornerRadius = State(initialValue: Double(wrapped.hoverExpandedCornerRadius))
+        _autoExpandedCornerRadius = State(initialValue: Double(wrapped.autoExpandedCornerRadius))
+        _autoExpandedTallHeight = State(initialValue: Double(wrapped.autoExpandedTallHeight))
+        _autoExpandedContentVerticalPadding = State(initialValue: Double(wrapped.autoExpandedContentVerticalPadding))
+        _clickExpandedCornerRadius = State(initialValue: Double(wrapped.clickExpandedCornerRadius))
+        _liveActivityBottomCornerRadius = State(initialValue: Double(wrapped.liveActivityBottomCornerRadius))
+        _collapseAnimationDelay = State(initialValue: wrapped.collapseAnimationDelay)
+        _initialOpenCollapseDelay = State(initialValue: wrapped.initialOpenCollapseDelay)
+        _widgetSwitchCollapseDelay = State(initialValue: wrapped.widgetSwitchCollapseDelay)
+        _dragActivationCollapseDelay = State(initialValue: wrapped.dragActivationCollapseDelay)
+        _expandAnimationResponse = State(initialValue: wrapped.expandAnimationResponse)
+        _expandAnimationDamping = State(initialValue: wrapped.expandAnimationDamping)
+        _swipeOpenAnimationResponse = State(initialValue: wrapped.swipeOpenAnimationResponse)
+        _swipeOpenAnimationDamping = State(initialValue: wrapped.swipeOpenAnimationDamping)
+        _collapseAnimationResponse = State(initialValue: wrapped.collapseAnimationResponse)
+        _collapseAnimationDamping = State(initialValue: wrapped.collapseAnimationDamping)
+        _widgetBlurRadiusMax = State(initialValue: Double(wrapped.widgetBlurRadiusMax))
+        _activityBlurRadiusMax = State(initialValue: Double(wrapped.activityBlurRadiusMax))
+        _expandedShadowRadius = State(initialValue: Double(wrapped.expandedShadowRadius))
+        _expandedShadowOffsetY = State(initialValue: Double(wrapped.expandedShadowOffsetY))
+        _contentTopPadding = State(initialValue: Double(wrapped.contentTopPadding))
+        _contentBottomPadding = State(initialValue: Double(wrapped.contentBottomPadding))
+        _contentHorizontalPadding = State(initialValue: Double(wrapped.contentHorizontalPadding))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Custom Notch Configuration")
+                    .font(.title2.bold())
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(spacing: 25) {
+                    Section(header: Text("Sizing & Position").font(.headline)) {
+                        CustomSliderRowView(label: "Universal Width", value: $universalWidth, range: 100...400, specifier: "%.1f")
+                        CustomSliderRowView(label: "Universal Height", value: $universalHeight, range: 20...60, specifier: "%.1f")
+                        CustomSliderRowView(label: "Auto-Expanded Height", value: $autoExpandedTallHeight, range: 50...150, specifier: "%.1f")
+                        CustomSliderRowView(label: "Top Buffer", value: $topBuffer, range: 0...20, specifier: "%.1f")
+                    }
+
+                    Section(header: Text("Hover State").font(.headline)) {
+                        CustomSliderRowView(label: "Hover Scale Factor", value: $scaleFactor, range: 1.0...1.5, specifier: "%.2f x")
+                    }
+
+                    Section(header: Text("Corner Radii").font(.headline)) {
+                        CustomSliderRowView(label: "Initial", value: $initialCornerRadius, range: 5...50, specifier: "%.1f")
+                        CustomSliderRowView(label: "Hover-Expanded", value: $hoverExpandedCornerRadius, range: 10...60, specifier: "%.1f")
+                        CustomSliderRowView(label: "Auto-Expanded", value: $autoExpandedCornerRadius, range: 10...60, specifier: "%.1f")
+                        CustomSliderRowView(label: "Click-Expanded", value: $clickExpandedCornerRadius, range: 10...60, specifier: "%.1f")
+                        CustomSliderRowView(label: "Live Activity Bottom", value: $liveActivityBottomCornerRadius, range: 10...60, specifier: "%.1f")
+                    }
+
+                    Section(header: Text("Animation (Springs)").font(.headline)) {
+                        CustomSliderRowView(label: "Expand Response", value: $expandAnimationResponse, range: 0.1...1.0, specifier: "%.2f")
+                        CustomSliderRowView(label: "Expand Damping", value: $expandAnimationDamping, range: 0.1...1.0, specifier: "%.2f")
+                        CustomSliderRowView(label: "Swipe Open Response", value: $swipeOpenAnimationResponse, range: 0.1...1.0, specifier: "%.2f")
+                        CustomSliderRowView(label: "Swipe Open Damping", value: $swipeOpenAnimationDamping, range: 0.1...1.0, specifier: "%.2f")
+                        CustomSliderRowView(label: "Collapse Response", value: $collapseAnimationResponse, range: 0.1...1.0, specifier: "%.2f")
+                        CustomSliderRowView(label: "Collapse Damping", value: $collapseAnimationDamping, range: 0.1...1.0, specifier: "%.2f")
+                    }
+
+                    Section(header: Text("Delays").font(.headline)) {
+                        CustomSliderRowView(label: "Collapse Animation Delay", value: $collapseAnimationDelay, range: 0.0...1.0, specifier: "%.2f s")
+                        CustomSliderRowView(label: "Initial Open Collapse Delay", value: $initialOpenCollapseDelay, range: 0.5...5.0, specifier: "%.2f s")
+                        CustomSliderRowView(label: "Widget Switch Collapse Delay", value: $widgetSwitchCollapseDelay, range: 1.0...10.0, specifier: "%.2f s")
+                        CustomSliderRowView(label: "Drag Activation Collapse Delay", value: $dragActivationCollapseDelay, range: 0.0...1.0, specifier: "%.2f s")
+                    }
+
+                    Section(header: Text("Padding").font(.headline)) {
+                        CustomSliderRowView(label: "Content Top Padding", value: $contentTopPadding, range: 0...50, specifier: "%.1f")
+                        CustomSliderRowView(label: "Content Bottom Padding", value: $contentBottomPadding, range: 0...50, specifier: "%.1f")
+                        CustomSliderRowView(label: "Content Horizontal Padding", value: $contentHorizontalPadding, range: 0...100, specifier: "%.1f")
+                        CustomSliderRowView(label: "Auto-Expanded Vertical Padding", value: $autoExpandedContentVerticalPadding, range: 0...50, specifier: "%.1f")
+                    }
+
+                    Section(header: Text("Blur & Shadow").font(.headline)) {
+                        CustomSliderRowView(label: "Widget Blur Radius Max", value: $widgetBlurRadiusMax, range: 0...100, specifier: "%.1f")
+                        CustomSliderRowView(label: "Activity Blur Radius Max", value: $activityBlurRadiusMax, range: 0...100, specifier: "%.1f")
+                        CustomSliderRowView(label: "Expanded Shadow Radius", value: $expandedShadowRadius, range: 0...50, specifier: "%.1f")
+                        CustomSliderRowView(label: "Expanded Shadow Offset Y", value: $expandedShadowOffsetY, range: 0...30, specifier: "%.1f")
+                    }
+                }
+                .padding()
+            }
+
+            Divider()
+
+            HStack {
+                Button("Reset to Defaults") {
+                    let defaultConfig = CustomizableNotchConfiguration()
+                    syncState(from: defaultConfig)
+                }
+                Spacer()
+                Button("Done") {
+                    syncConfig()
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding()
+        }
+        .frame(minWidth: 550, idealWidth: 600, minHeight: 400, idealHeight: 750)
+    }
+
+    private func syncState(from sourceConfig: CustomizableNotchConfiguration) {
+        universalWidth = Double(sourceConfig.universalWidth)
+        universalHeight = Double(sourceConfig.universalHeight)
+        initialCornerRadius = Double(sourceConfig.initialCornerRadius)
+        topBuffer = Double(sourceConfig.topBuffer)
+        scaleFactor = Double(sourceConfig.scaleFactor)
+        hoverExpandedCornerRadius = Double(sourceConfig.hoverExpandedCornerRadius)
+        autoExpandedCornerRadius = Double(sourceConfig.autoExpandedCornerRadius)
+        autoExpandedTallHeight = Double(sourceConfig.autoExpandedTallHeight)
+        autoExpandedContentVerticalPadding = Double(sourceConfig.autoExpandedContentVerticalPadding)
+        clickExpandedCornerRadius = Double(sourceConfig.clickExpandedCornerRadius)
+        liveActivityBottomCornerRadius = Double(sourceConfig.liveActivityBottomCornerRadius)
+        collapseAnimationDelay = sourceConfig.collapseAnimationDelay
+        initialOpenCollapseDelay = sourceConfig.initialOpenCollapseDelay
+        widgetSwitchCollapseDelay = sourceConfig.widgetSwitchCollapseDelay
+        dragActivationCollapseDelay = sourceConfig.dragActivationCollapseDelay
+        expandAnimationResponse = sourceConfig.expandAnimationResponse
+        expandAnimationDamping = sourceConfig.expandAnimationDamping
+        swipeOpenAnimationResponse = sourceConfig.swipeOpenAnimationResponse
+        swipeOpenAnimationDamping = sourceConfig.swipeOpenAnimationDamping
+        collapseAnimationResponse = sourceConfig.collapseAnimationResponse
+        collapseAnimationDamping = sourceConfig.collapseAnimationDamping
+        widgetBlurRadiusMax = Double(sourceConfig.widgetBlurRadiusMax)
+        activityBlurRadiusMax = Double(sourceConfig.activityBlurRadiusMax)
+        expandedShadowRadius = Double(sourceConfig.expandedShadowRadius)
+        expandedShadowOffsetY = Double(sourceConfig.expandedShadowOffsetY)
+        contentTopPadding = Double(sourceConfig.contentTopPadding)
+        contentBottomPadding = Double(sourceConfig.contentBottomPadding)
+        contentHorizontalPadding = Double(sourceConfig.contentHorizontalPadding)
+    }
+
+    private func syncConfig() {
+        config.universalWidth = CGFloat(universalWidth)
+        config.universalHeight = CGFloat(universalHeight)
+        config.initialCornerRadius = CGFloat(initialCornerRadius)
+        config.topBuffer = CGFloat(topBuffer)
+        config.scaleFactor = CGFloat(scaleFactor)
+        config.hoverExpandedCornerRadius = CGFloat(hoverExpandedCornerRadius)
+        config.autoExpandedCornerRadius = CGFloat(autoExpandedCornerRadius)
+        config.autoExpandedTallHeight = CGFloat(autoExpandedTallHeight)
+        config.autoExpandedContentVerticalPadding = CGFloat(autoExpandedContentVerticalPadding)
+        config.clickExpandedCornerRadius = CGFloat(clickExpandedCornerRadius)
+        config.liveActivityBottomCornerRadius = CGFloat(liveActivityBottomCornerRadius)
+        config.collapseAnimationDelay = collapseAnimationDelay
+        config.initialOpenCollapseDelay = initialOpenCollapseDelay
+        config.widgetSwitchCollapseDelay = widgetSwitchCollapseDelay
+        config.dragActivationCollapseDelay = dragActivationCollapseDelay
+        config.expandAnimationResponse = expandAnimationResponse
+        config.expandAnimationDamping = expandAnimationDamping
+        config.swipeOpenAnimationResponse = swipeOpenAnimationResponse
+        config.swipeOpenAnimationDamping = swipeOpenAnimationDamping
+        config.collapseAnimationResponse = collapseAnimationResponse
+        config.collapseAnimationDamping = collapseAnimationDamping
+        config.widgetBlurRadiusMax = CGFloat(widgetBlurRadiusMax)
+        config.activityBlurRadiusMax = CGFloat(activityBlurRadiusMax)
+        config.expandedShadowRadius = CGFloat(expandedShadowRadius)
+        config.expandedShadowOffsetY = CGFloat(expandedShadowOffsetY)
+        config.contentTopPadding = CGFloat(contentTopPadding)
+        config.contentBottomPadding = CGFloat(contentBottomPadding)
+        config.contentHorizontalPadding = CGFloat(contentHorizontalPadding)
     }
 }
 
@@ -2014,6 +2255,31 @@ struct NotificationsSettingsView: View {
                 .modifier(SettingsContainerModifier())
 
                 VStack(spacing: 20) {
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Verification Codes")
+                            .font(.headline)
+                            .padding([.top, .horizontal])
+
+                        ToggleRow(
+                            title: "Only show notifications with verification codes",
+                            description: "Filter notifications to only display when a code (OTP) is detected.",
+                            isOn: $settings.settings.onlyShowVerificationCodeNotifications
+                        )
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Show copy button for detected codes",
+                            description: "Add a quick action to copy the code from supported notifications.",
+                            isOn: $settings.settings.showCopyButtonForVerificationCodes
+                        )
+                    }
+                    .modifier(SettingsContainerModifier())
+                    .disabled(!settings.settings.masterNotificationsEnabled)
+                    .opacity(settings.settings.masterNotificationsEnabled ? 1.0 : 0.5)
+                    .animation(.easeInOut, value: settings.settings.masterNotificationsEnabled)
+
                     VStack(spacing: 0) {
                         ForEach(NotificationSource.allCases) { source in
                             NotificationToggleRowView(source: source)
@@ -4755,7 +5021,7 @@ struct NeardropSettingsView: View {
 }
 
 struct AboutSettingsView: View {
-    @StateObject private var updateChecker = UpdateChecker()
+    @StateObject private var updateChecker = UpdateChecker.shared
     @StateObject private var permissionsManager = PermissionsManager.shared
 
     var body: some View {

@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-06-27
 //
 //
+//
+//
 
 import SwiftUI
 
@@ -117,7 +119,7 @@ struct DevicesView: View {
             }
         }
         .padding(20)
-        .frame(width: 1000)
+        .frame(width: 700)
         .frame(maxHeight: 350)
         .fixedSize(horizontal: false, vertical: true)
         .task {
@@ -302,7 +304,7 @@ fileprivate struct AppleMusicDeviceRow: View {
                     .transition(.opacity.combined(with: .offset(y: 5)))
             }
         }
-        .padding(.horizontal, 20).padding(.vertical, 16).background(.gray.opacity(0.13)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).contentShape(Rectangle())
+        .padding(.horizontal, 20).padding(.vertical, 16).background(.gray.opacity(0.13)).clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous)).contentShape(Rectangle())
         .onTapGesture { if !device.isSelected { onSelect() } }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: device.isSelected)
         .onChange(of: volume) { _, _ in
@@ -330,7 +332,7 @@ fileprivate struct SpotifyDeviceRow: View {
                     .transition(.opacity.combined(with: .offset(y: 5)))
             }
         }
-        .padding(.horizontal, 20).padding(.vertical, 16).background(.gray.opacity(0.13)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).contentShape(Rectangle())
+        .padding(.horizontal, 20).padding(.vertical, 16).background(.gray.opacity(0.13)).clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous)).contentShape(Rectangle())
         .onTapGesture { guard !device.isActive else { return }; onTransfer() }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: device.isActive)
     }
@@ -357,7 +359,7 @@ fileprivate struct SpotifyNativeDeviceRow: View {
                     .transition(.opacity.combined(with: .offset(y: 5)))
             }
         }
-        .padding(.horizontal, 20).padding(.vertical, 16).background(.gray.opacity(0.13)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).contentShape(Rectangle())
+        .padding(.horizontal, 20).padding(.vertical, 16).background(.gray.opacity(0.13)).clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous)).contentShape(Rectangle())
         .onTapGesture { if !isActive { onTransfer() } }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isActive)
     }
@@ -377,7 +379,7 @@ fileprivate struct FreeUserNoticeView: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.lock.fill").font(.title3).foregroundColor(.yellow)
-            Text("Switching devices requires a Spotify Premium account.").font(.subheadline).foregroundColor(.secondary)
+            Text("Switching devices requires a Spotify Premium account or a private api login.").font(.subheadline).foregroundColor(.secondary)
         }.padding().background(Color.yellow.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

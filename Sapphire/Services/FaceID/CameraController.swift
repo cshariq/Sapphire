@@ -4,6 +4,8 @@
 //
 //  Created by Shariq Charolia on 2025-09-15
 //
+//
+//
 
 import Vision
 import CoreML
@@ -170,8 +172,12 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
                 DispatchQueue.main.async { self.smoothedBoundingBox = nil }
                 return
             }
-            self.processFaceObservation(observation, pixelBuffer: pixelBuffer)
-        } catch {  }
+
+            processFaceObservation(observation, pixelBuffer: pixelBuffer)
+
+        } catch {
+            print("Error performing face detection: \(error)")
+        }
     }
 
     private func processFaceObservation(_ observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
@@ -181,12 +187,12 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
             else { self.smoothedBoundingBox = self.smoothedBoundingBox!.lerp(to: newBox, alpha: 0.2) }
         }
 
-        switch self.appState {
-        case .registering:
+        if isRegistrationMode {
             handleSimplifiedRegistration(observation: observation, pixelBuffer: pixelBuffer)
-        case .authenticating, .detecting, .recognized:
-            performAuthenticationChecks(observation: observation, pixelBuffer: pixelBuffer)
-        default: break
+        } else if isAuthenticating {
+            Task {
+                await performAuthenticationChecks(observation: observation, pixelBuffer: pixelBuffer)
+            }
         }
     }
 
@@ -213,15 +219,19 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
             }
 
             if stableFrameCounter >= requiredStableFrames {
-                currentRegistrationStep = .capturingFace
-                DispatchQueue.main.async { self.appState = .registering(.capturingFace) }
-                sampleCounter = 0
-                updateInstruction()
+                DispatchQueue.main.async {
+                    self.currentRegistrationStep = .capturingFace
+                    self.appState = .registering(.capturingFace)
+                    self.sampleCounter = 0
+                    self.updateInstruction()
+                }
             }
 
         case .capturingFace:
             captureSample(observation, pixelBuffer)
-            if sampleCounter >= totalSamplesToCapture { advanceToCompletion() }
+            if sampleCounter >= totalSamplesToCapture {
+                advanceToCompletion()
+            }
         }
     }
 
@@ -264,7 +274,7 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
         }
     }
 
-    private func performAuthenticationChecks(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
+    private func performAuthenticationChecks(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) async {
         guard isAuthenticating, let preparedImage = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) else { return }
 
         let faceScore = faceDataStore.getSimilarityScore(for: preparedImage)
@@ -277,15 +287,15 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
         let mediumConfidenceThreshold: Double = 0.75
         guard faceScore >= mediumConfidenceThreshold else { return }
 
+        let depthScore = await faceDataStore.getDepthSimilarity(for: pixelBuffer)
         let metricsScore = FacialMetricsCalculator.calculateMetrics(from: observation).map { faceDataStore.getMetricsSimilarity(for: $0) } ?? 0.0
-        let depthScore = faceDataStore.getDepthSimilarity(for: pixelBuffer)
 
         let excellentFaceScoreThreshold: Double = 0.8
         let excellentDepthScoreThreshold: Double = 0.75
         let excellentmetricsScoreThreshold: Double = 0.85
 
         if faceScore >= excellentFaceScoreThreshold && depthScore >= excellentDepthScoreThreshold && metricsScore >= excellentmetricsScoreThreshold{
-            DispatchQueue.main.async {
+            await MainActor.run {
                 self.completeAuthentication(reason: "Fast Lane Match", faceScore: faceScore, metricsScore: metricsScore, depthScore: depthScore)
             }
             return
@@ -309,7 +319,7 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
             reason = "Spoof Detected"
         }
 
-        DispatchQueue.main.async {
+        await MainActor.run {
             guard self.isAuthenticating else { return }
             self.currentMetricsScore = metricsScore
             self.currentDepthScore = depthScore

@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
+//
+//
 
 import Foundation
 import Combine
@@ -92,24 +94,23 @@ class EyeBreakManager: ObservableObject {
 
     private var timer: Timer?
     private var currentWorkSessionStartDate: Date?
-    private var idleMonitor: IdleTimeMonitor?
 
     init() {
-        self.timeUntilNextBreak = 20 * 60
-        self.idleMonitor = IdleTimeMonitor()
+        self.timeUntilNextBreak = TimeInterval(settingsModel.settings.eyeBreakWorkInterval * 60)
 
         loadHistory()
         calculateDailySummaries()
+
         startWorkTimer()
 
-        idleMonitor?.onIdleThresholdReached = { [weak self] in
-            self?.handleSystemIdle()
-        }
-        idleMonitor?.onReturnFromIdle = { [weak self] in
-            self?.handleReturnFromIdle()
-        }
+        let dnc = DistributedNotificationCenter.default()
+        dnc.addObserver(self, selector: #selector(handleScreenLocked), name: .init("com.apple.screenIsLocked"), object: nil)
+        dnc.addObserver(self, selector: #selector(handleScreenUnlocked), name: .init("com.apple.screenIsUnlocked"), object: nil)
+    }
 
-        idleMonitor?.startMonitoring()
+    deinit {
+        timer?.invalidate()
+        DistributedNotificationCenter.default().removeObserver(self)
     }
 
     private func startWorkTimer() {
@@ -203,17 +204,16 @@ class EyeBreakManager: ObservableObject {
         updateDailySummaries()
     }
 
-    private func handleSystemIdle() {
-        if !isBreakTime && timer != nil {
-            timer?.invalidate()
+    @objc private func handleScreenLocked() {
+        if !isBreakTime {
+            recordWorkSession()
         }
+        timer?.invalidate()
+        timer = nil
     }
 
-    private func handleReturnFromIdle() {
-        if !isBreakTime && currentWorkSessionStartDate != nil {
-            recordWorkSession()
-            startWorkTimer()
-        }
+    @objc private func handleScreenUnlocked() {
+        resetAndStartWork()
     }
 
     private func saveHistory() {
@@ -315,36 +315,5 @@ class EyeBreakManager: ObservableObject {
         }
 
         currentStreak = streak
-    }
-}
-
-class IdleTimeMonitor {
-    private let idleThreshold: TimeInterval = 300 // 5 minutes
-    private var timer: Timer?
-    private var isIdle = false
-
-    var onIdleThresholdReached: (() -> Void)?
-    var onReturnFromIdle: (() -> Void)?
-
-    func startMonitoring() {
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.checkIdleTime()
-        }
-    }
-
-    private func checkIdleTime() {
-        let wasIdle = isIdle
-
-        if NSWorkspace.shared.frontmostApplication == nil {
-            if !isIdle {
-                isIdle = true
-                onIdleThresholdReached?()
-            }
-        } else {
-            if isIdle {
-                isIdle = false
-                onReturnFromIdle?()
-            }
-        }
     }
 }

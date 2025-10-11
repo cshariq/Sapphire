@@ -4,6 +4,8 @@
 //
 //  Created by Shariq Charolia on 2025-09-14
 //
+//
+//
 
 import Vision
 import CoreImage
@@ -37,7 +39,7 @@ class DepthDetector {
         }
     }
 
-    func getDepthSimilarity(for pixelBuffer: CVPixelBuffer) -> Double {
+    func getDepthSimilarity(for pixelBuffer: CVPixelBuffer) async -> Double {
         if !isCalibrated && registeredDepthMaps.isEmpty {
             if calibrationSamples < initialCalibrationFrames {
                 if let depthMap = generateDepthMap(for: pixelBuffer) {
@@ -50,23 +52,36 @@ class DepthDetector {
                         print("LOG (Depth): Initial calibration complete")
                     }
                 }
-
-                return 0.95
+                return 0.95 // Return a high score during calibration
             }
         }
 
-        guard !registeredDepthMaps.isEmpty,
-              let currentMap = generateDepthMap(for: pixelBuffer) else {
-            print("LOG (Depth): No depth maps available for comparison - using fallback")
-            return 0.75
+        guard !registeredDepthMaps.isEmpty else {
+            print("LOG (Depth): No registered depth maps for comparison.")
+            return 0.0 // Not ready for comparison
+        }
+
+        let depthMapTask = Task.detached(priority: .userInitiated) {
+            return self.generateDepthMap(for: pixelBuffer)
+        }
+
+        guard let currentMap = await depthMapTask.value else {
+            print("LOG (Depth): Failed to generate current depth map for comparison.")
+            return 0.0
         }
 
         var bestSimilarity = 0.0
 
-        for registeredMap in registeredDepthMaps {
-            let similarity = calculateSSIM(between: registeredMap, and: currentMap)
-            bestSimilarity = max(bestSimilarity, similarity)
-        }
+        let similarities = await Task.detached(priority: .userInitiated) { () -> [Double] in
+            var results = [Double]()
+            for registeredMap in self.registeredDepthMaps {
+                let similarity = self.calculateSSIM(between: registeredMap, and: currentMap)
+                results.append(similarity)
+            }
+            return results
+        }.value
+
+        bestSimilarity = similarities.max() ?? 0.0
 
         print("LOG (Depth): Best similarity score: \(bestSimilarity), Threshold: \(minAcceptableScore)")
 

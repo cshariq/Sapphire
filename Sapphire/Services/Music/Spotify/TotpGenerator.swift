@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-08-17.
 //
 //
+//
+//
 
 import Foundation
 import CryptoKit
@@ -28,9 +30,22 @@ func hmacSHA1(key: Data, message: Data) -> Data {
 class TotpGenerator {
     private static var secretCache: (version: Int, secretBytes: Data)?
     private static var cacheExpiry: Date?
-    private static let cacheTTL: TimeInterval = 15 * 60 // 15 minutes
+    private static let cacheTTL: TimeInterval = 15 * 60
 
-    private static let fallbackSecret: (version: Int, secretBytes: Data) = (18, Data([70, 60, 33, 57, 92, 120, 90, 33, 32, 62, 62, 55, 126, 93, 66, 35, 108, 68]))
+    private static let fallbackSecrets: [Int: Data] = [
+        18: Data([70, 60, 33, 57, 92, 120, 90, 33, 32, 62, 62, 55, 126, 93, 66, 35, 108, 68]),
+        12: Data([107, 81, 49, 57, 67, 93, 87, 81, 69, 67, 40, 93, 48, 50, 46, 91, 94, 113, 41, 108, 77, 107, 34]),
+        11: Data([111, 45, 40, 73, 95, 74, 35, 85, 105, 107, 60, 110, 55, 72, 69, 70, 114, 83, 63, 88, 91]),
+        10: Data([61, 110, 58, 98, 35, 79, 117, 69, 102, 72, 92, 102, 69, 93, 41, 101, 42, 75]),
+    ]
+
+    private static func getLatestFallbackSecret() -> (version: Int, secretBytes: Data) {
+        guard let latestVersion = fallbackSecrets.keys.max(),
+              let secretData = fallbackSecrets[latestVersion] else {
+            fatalError("Fallback TOTP secrets dictionary is empty.")
+        }
+        return (latestVersion, secretData)
+    }
 
     static func getLatestTotpSecret() async -> (version: Int, secretBytes: Data) {
         if let cache = secretCache, let expiry = cacheExpiry, Date() < expiry {
@@ -38,34 +53,35 @@ class TotpGenerator {
         }
 
         do {
-            let url = URL(string: "https://github.com/Thereallo1026/spotify-secrets/blob/main/secrets/secretDict.json?raw=true")!
+            let url = URL(string: "https://raw.githubusercontent.com/xyloflake/spot-secrets-go/main/secrets/secretDict.json")!
             let (data, response) = try await URLSession.shared.data(from: url)
 
             guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-                print("Failed to fetch secrets: Invalid HTTP response.")
-                return fallbackSecret
+                print("[TotpGenerator] Failed to fetch secrets from GitHub, using fallback.")
+                return getLatestFallbackSecret()
             }
 
             guard let secretsDict = try JSONSerialization.jsonObject(with: data) as? [String: [Int]] else {
-                 print("Failed to decode secrets JSON into expected dictionary format.")
-                 return fallbackSecret
+                 print("[TotpGenerator] Failed to decode secrets JSON, using fallback.")
+                 return getLatestFallbackSecret()
             }
 
             guard let latestVersionString = secretsDict.keys.max(),
                   let latestVersion = Int(latestVersionString),
                   let secretList = secretsDict[latestVersionString] else {
-                print("Failed to find latest secret version or secret list.")
-                return fallbackSecret
+                print("[TotpGenerator] Failed to find latest secret version in fetched JSON, using fallback.")
+                return getLatestFallbackSecret()
             }
 
             let secretData = Data(secretList.map { UInt8($0) })
             secretCache = (latestVersion, secretData)
             cacheExpiry = Date().addingTimeInterval(cacheTTL)
+            print("[TotpGenerator] Successfully fetched and cached secret version: \(latestVersion)")
             return (latestVersion, secretData)
 
         } catch {
-            print("Failed to fetch secrets: \(error.localizedDescription). Falling back to default secret.")
-            return fallbackSecret
+            print("[TotpGenerator] Network error fetching secrets: \(error.localizedDescription). Using fallback.")
+            return getLatestFallbackSecret()
         }
     }
 
@@ -80,19 +96,18 @@ class TotpGenerator {
         let joinedString = transformedBytes.map { String($0) }.joined()
 
         guard let joinedData = joinedString.data(using: .utf8) else {
-            print("Error: Could not convert joined string to data.")
+            print("[TotpGenerator] Error: Could not convert joined string to data.")
             return ("", 0)
         }
 
         let hexString = joinedData.map { String(format: "%02x", $0) }.joined()
 
         guard let keyData = Data(hex: hexString) else {
-            print("Error: Could not convert hex string to Data for TOTP key.")
+            print("[TotpGenerator] Error: Could not convert hex string to Data for TOTP key.")
             return ("", 0)
         }
 
         let base32Secret = base32Encode(data: keyData).replacingOccurrences(of: "=", with: "")
-
         let totpCode = calculateTOTP(secret: base32Secret, timeInterval: 30, digits: 6)
 
         return (totpCode, version)

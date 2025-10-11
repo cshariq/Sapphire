@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-07-04.
 //
 //
+//
+//
 
 import SwiftUI
 import NearbyShare
@@ -42,7 +44,7 @@ struct NearDropLiveActivityView: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: payload.state)
         }
         .padding(12)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 10)
         .padding(.top, 25)
 
         .scaleEffect(isShowing ? 1 : 0.95)

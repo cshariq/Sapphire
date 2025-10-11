@@ -5,10 +5,45 @@
 //  Created by Shariq Charolia on 2025-09-11.
 //
 //
+//
+//
 
 import Foundation
 import SwiftUI
 import AppKit
+
+struct LockScreenConfiguration {
+
+    // MARK: - General Layout (Using base values that look good on most screens)
+    static let widgetSpacing: CGFloat = 24
+    static let cornerRadius: CGFloat = 24
+    static let backgroundPadding: CGFloat = 15
+    static let backgroundStrokeWidth: CGFloat = 1.5
+    static let backgroundStrokeBlur: CGFloat = 1
+
+    // MARK: - Info Widgets (Top)
+    static let infoWidgetContainerHorizontalPadding: CGFloat = 18
+    static let infoWidgetInternalHSpacing: CGFloat = 12
+    static let infoWidgetSmallIconHSpacing: CGFloat = 4
+    static let infoWidgetGenericHSpacing: CGFloat = 10
+
+    static let infoWidgetMediumFontSize: CGFloat = 16
+    static let infoWidgetLargeFontSize: CGFloat = 22
+    static let infoWidgetBoldFontSize: CGFloat = 19
+    static let infoWidgetIconFontSize: CGFloat = 20
+
+    static let infoWidgetMusicArtworkSize: CGFloat = 35
+    static let infoWidgetMusicArtworkCornerRadius: CGFloat = 10
+    static let infoWidgetFocusIconSize: CGFloat = 20
+
+    // MARK: - Manager Positioning
+    static let spacingMainAboveMini: CGFloat = 24
+}
+
+private final class UnfocusableWindow: NSWindow {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
 
 struct SizePreferenceKey: PreferenceKey {
     static var defaultValue: [CGSize] = []
@@ -80,10 +115,6 @@ public class LockScreenManager {
     private let MAIN_ID = "mainWidgetContainer"
     private let MINI_ID_PREFIX = "mini" // e.g., "miniWidgetContainer" or "mini-..."
 
-    private let spacingMainAboveMini: CGFloat = 24
-    private let bottomInsetNoMini: CGFloat = 80
-    private let infoTopInset: CGFloat = 250
-
     typealias F_SLSMainConnectionID = @convention(c) () -> Int32
     typealias F_SLSSpaceCreate = @convention(c) (Int32, Int32, Int32) -> Int32
     typealias F_SLSSpaceSetAbsoluteLevel = @convention(c) (Int32, Int32, Int32) -> Int32
@@ -151,43 +182,49 @@ public class LockScreenManager {
             lastMeasuredSizes.removeValue(forKey: id)
         }
 
-        for config in configs {
-            let initialFrame = config.positioner(config.initialSize, screen)
-            displayView(config.view, withId: config.id, initialFrame: initialFrame, positioner: config.positioner, on: screen)
+        for (index, config) in configs.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (Double(index) * 0.05)) {
+                let initialFrame = config.positioner(config.initialSize, screen)
+                self.displayView(config.view, withId: config.id, initialFrame: initialFrame, positioner: config.positioner, on: screen)
+            }
         }
 
-        repositionMainIfPossible()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.repositionMainIfPossible()
+        }
     }
 
     func calculateMainWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
-        if let miniSize = activeMiniSize(),
-           miniSize.height > 10 {
+        let x = screen.visibleFrame.midX - (size.width / 2)
+
+        if let miniSize = activeMiniSize(), miniSize.height > 10 {
             let miniFrame = calculateMiniWidgetFrame(size: miniSize, screen: screen)
-            let x = screen.visibleFrame.midX - (size.width / 2)
-            let y = miniFrame.maxY + spacingMainAboveMini
+            let y = miniFrame.maxY + LockScreenConfiguration.spacingMainAboveMini
             return NSRect(x: x, y: y, width: size.width, height: size.height)
         } else {
-            let vis = screen.visibleFrame
-            let x = vis.midX - (size.width / 2)
-            let userInfoIsVisible = isUserInfoVisibleOnLockScreen()
-            let y = vis.minY + bottomInsetNoMini + (userInfoIsVisible ? 25 : 110)
+            let bottomInset = screen.visibleFrame.height * (isUserInfoVisibleOnLockScreen() ? 0.22 : 0.30)
+            let y = screen.visibleFrame.minY + bottomInset
             return NSRect(x: x, y: y, width: size.width, height: size.height)
         }
     }
 
     func calculateMiniWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
         let vis = screen.visibleFrame
-        let userInfoIsVisible = isUserInfoVisibleOnLockScreen()
-        let verticalOffsetMultiplier = userInfoIsVisible ? 0.17 : 0.25
         let x = vis.midX - (size.width / 2)
-        let y = vis.minY + vis.height * verticalOffsetMultiplier - (size.height / 2)
+
+        let verticalOffset = vis.height * (isUserInfoVisibleOnLockScreen() ? 0.22 : 0.28)
+        let y = vis.minY + verticalOffset - (size.height / 2)
+
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
     func calculateInfoWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
         let vis = screen.visibleFrame
         let x = vis.midX - (size.width / 2)
-        let y = vis.maxY - size.height - infoTopInset
+
+        let topInset = vis.height * 0.22
+        let y = vis.maxY - topInset - size.height
+
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
@@ -202,15 +239,15 @@ public class LockScreenManager {
         } else {
             let window = UnfocusableWindow(
                 contentRect: initialFrame,
-                styleMask: .borderless,
-                backing: .buffered,
+                styleMask: NSWindow.StyleMask.borderless,
+                backing: NSWindow.BackingStoreType.buffered,
                 defer: false
             )
             window.isOpaque = false
-            window.backgroundColor = .clear
+            window.backgroundColor = NSColor.clear
             window.hasShadow = false
             window.level = .mainMenu + 2
-            window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+            window.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, .stationary]
             controller = NSWindowController(window: window)
             windows[id] = controller
             delegateWindow(window)

@@ -4,6 +4,8 @@
 //
 //  Created by Shariq Charolia on 2025-09-15
 //
+//
+//
 
 import Vision
 import CoreML
@@ -157,8 +159,8 @@ class FaceDataStore {
         return bestScore
     }
 
-    func getDepthSimilarity(for pixelBuffer: CVPixelBuffer) -> Double {
-        return depthDetector.getDepthSimilarity(for: pixelBuffer)
+    func getDepthSimilarity(for pixelBuffer: CVPixelBuffer) async -> Double {
+        return await depthDetector.getDepthSimilarity(for: pixelBuffer)
     }
 
     func learnNewFaceprint(faceImage: NSImage) {

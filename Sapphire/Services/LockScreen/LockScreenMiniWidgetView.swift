@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-10-05.
 //
 //
+//
+//
 
 import SwiftUI
 
@@ -19,7 +21,7 @@ struct LockScreenWidgetBackground<Content: View>: View {
 
     var body: some View {
         content
-            .padding(15) // Standard padding consistent with main widgets
+            .padding(LockScreenConfiguration.backgroundPadding)
             .background(backgroundMaterial)
     }
 
@@ -27,8 +29,8 @@ struct LockScreenWidgetBackground<Content: View>: View {
     private var backgroundMaterial: some View {
         if settings.settings.lockScreenLiquidGlassLook {
             if #available(macOS 26, *) {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
+                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
             } else {
                 ZStack {
                     VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
@@ -42,27 +44,27 @@ struct LockScreenWidgetBackground<Content: View>: View {
                         endPoint: .bottom
                     )
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
                         .stroke(
                             LinearGradient(
                                 gradient: Gradient(colors: [.white.opacity(0.25), .clear]),
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
-                            lineWidth: 1.5
+                            lineWidth: LockScreenConfiguration.backgroundStrokeWidth
                         )
-                        .blur(radius: 1)
+                        .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
                 )
             }
         } else {
             ZStack {
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
                     .stroke(
                         LinearGradient(
                             gradient: Gradient(colors: [
@@ -72,9 +74,9 @@ struct LockScreenWidgetBackground<Content: View>: View {
                             startPoint: .top,
                             endPoint: .bottom
                         ),
-                        lineWidth: 1.5
+                        lineWidth: LockScreenConfiguration.backgroundStrokeWidth
                     )
-                    .blur(radius: 1)
+                    .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
             )
         }
     }
@@ -86,13 +88,17 @@ struct LockScreenMiniWidgetView: View {
     @EnvironmentObject var calendarService: CalendarService
     @EnvironmentObject var musicWidget: MusicManager
 
+    @EnvironmentObject var batteryMonitor: BatteryMonitor
+    @EnvironmentObject var bluetoothManager: BluetoothManager
+    @EnvironmentObject var batteryEstimator: BatteryEstimator
+
     @StateObject private var calendarViewModel = InteractiveCalendarViewModel()
     @State private var dummyNavigationStack: [NotchWidgetMode] = []
 
     @State private var maxMiniWidgetHeight: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: LockScreenConfiguration.widgetSpacing) {
             ForEach(settings.settings.lockScreenMiniWidgets, id: \.self) { widgetType in
                 switch widgetType {
                 case .weather:
@@ -120,6 +126,11 @@ struct LockScreenMiniWidgetView: View {
                         }
                         .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
                     }
+                case .battery:
+                    LockScreenWidgetBackground {
+                        BatteryMiniWidget()
+                    }
+                    .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
 
                 case .none:
                     EmptyView()
@@ -147,6 +158,9 @@ struct LockScreenMiniWidgetView: View {
         .environmentObject(musicManager)
         .environmentObject(calendarService)
         .environmentObject(settings)
+        .environmentObject(batteryMonitor)
+        .environmentObject(bluetoothManager)
+        .environmentObject(batteryEstimator)
     }
 
     @ViewBuilder
@@ -180,8 +194,79 @@ struct LockScreenMiniWidgetView: View {
                 EmptyView().measureSize()
             }
 
+        case .battery:
+            LockScreenWidgetBackground {
+                BatteryMiniWidget()
+            }
+            .measureSize()
+
         case .none:
             EmptyView().measureSize()
         }
+    }
+}
+
+struct BatteryMiniWidget: View {
+    @EnvironmentObject var batteryMonitor: BatteryMonitor
+    @EnvironmentObject var bluetoothManager: BluetoothManager
+    @EnvironmentObject var batteryEstimator: BatteryEstimator
+    @EnvironmentObject var settings: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let internalState = batteryMonitor.currentState {
+                HStack {
+                    Image(systemName: "laptopcomputer")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 20)
+
+                    Text("MacBook")
+                        .fontWeight(.medium)
+
+                    Spacer()
+
+                    if settings.settings.showEstimatedBatteryTime, let timeRemaining = batteryEstimator.estimatedTimeRemaining, !timeRemaining.isEmpty {
+                        Text(timeRemaining)
+                            .font(.system(size: 13, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("\(internalState.level)%")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+
+                    FilledBatteryIcon(
+                        level: internalState.level,
+                        isCharging: internalState.isCharging,
+                        isPluggedIn: internalState.isPluggedIn,
+                        isLowBattery: internalState.isLow
+                    )
+                }
+            }
+
+            if let device = bluetoothManager.lastEvent, device.eventType == .connected, let batteryLevel = device.batteryLevel {
+                HStack {
+                    Image(systemName: device.iconName)
+                        .font(.body.weight(.semibold))
+                        .frame(width: 20)
+
+                    Text(device.name)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    Text("\(batteryLevel)%")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+
+                    FilledBatteryIcon(
+                        level: batteryLevel,
+                        isCharging: false, // BT devices don't report this state reliably
+                        isPluggedIn: false,
+                        isLowBattery: batteryLevel <= 20
+                    )
+                }
+            }
+        }
+        .foregroundColor(.white)
     }
 }

@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-09-11.
 //
 //
+//
+//
 
 import SwiftUI
 
@@ -30,9 +32,10 @@ struct LockScreenInfoWidgetView: View {
     @EnvironmentObject var musicWidget: MusicManager
     @EnvironmentObject var focusModeManager: FocusModeManager
     @EnvironmentObject var bluetoothManager: BluetoothManager
+    @EnvironmentObject var batteryMonitor: BatteryMonitor
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: LockScreenConfiguration.widgetSpacing) {
             ForEach(settings.settings.lockScreenWidgets, id: \.self) { widgetType in
                 switch widgetType {
                 case .weather:
@@ -45,19 +48,21 @@ struct LockScreenInfoWidgetView: View {
                     FocusInfoView()
                 case .bluetooth:
                     BluetoothInfoView()
+                case .battery:
+                    BatteryInfoView()
                 case .none:
                     EmptyView()
                 }
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, LockScreenConfiguration.infoWidgetContainerHorizontalPadding)
         .fixedSize()
     }
 
     @ViewBuilder
     private func WeatherInfoView() -> some View {
         if let weather = weatherVM.weatherData {
-            HStack(spacing: 12) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
                 ForEach(settings.settings.lockScreenWeatherInfo, id: \.self) { infoType in
                     weatherItemView(for: infoType, with: weather)
                 }
@@ -69,7 +74,7 @@ struct LockScreenInfoWidgetView: View {
 
     @ViewBuilder
     private func weatherItemView(for type: WeatherInfoType, with data: ProcessedWeatherData) -> some View {
-        let textFont = Font.system(size: 16, weight: .medium)
+        let textFont = Font.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .medium)
 
         switch type {
         case .temperature:
@@ -77,32 +82,32 @@ struct LockScreenInfoWidgetView: View {
                 .font(.title2)
                 .symbolRenderingMode(.multicolor)
             Text("\(settings.settings.weatherUseCelsius ? data.temperatureMetric : data.temperature)°")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .font(.system(size: LockScreenConfiguration.infoWidgetLargeFontSize, weight: .bold, design: .rounded))
         case .condition:
             Image(systemName: WeatherIconMapper.map(from: data.iconCode))
                 .font(.title2)
                 .symbolRenderingMode(.multicolor)
         case .wind:
-            HStack(spacing: 4) { Image(systemName: "wind"); Text(data.windInfo) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "wind"); Text(data.windInfo) }.font(textFont)
         case .humidity:
-            HStack(spacing: 4) { Image(systemName: "humidity.fill"); Text(data.humidity) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "humidity.fill"); Text(data.humidity) }.font(textFont)
         case .feelsLike:
             Image(systemName: WeatherIconMapper.map(from: data.iconCode))
                 .font(.title2)
                 .symbolRenderingMode(.multicolor)
              Text("Feels \(settings.settings.weatherUseCelsius ? data.feelsLikeMetric : data.feelsLike)°").font(textFont)
         case .precipitation:
-            HStack(spacing: 4) { Image(systemName: "drop.fill"); Text("\(data.precipChance)%") }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "drop.fill"); Text("\(data.precipChance)%") }.font(textFont)
         case .sunrise:
-            HStack(spacing: 4) { Image(systemName: "sunrise.fill"); Text(data.sunriseTime) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sunrise.fill"); Text(data.sunriseTime) }.font(textFont)
         case .sunset:
-            HStack(spacing: 4) { Image(systemName: "sunset.fill"); Text(data.sunsetTime) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sunset.fill"); Text(data.sunsetTime) }.font(textFont)
         case .uvIndex:
-            HStack(spacing: 4) { Image(systemName: "sun.max.fill"); Text(data.uvIndex) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sun.max.fill"); Text(data.uvIndex) }.font(textFont)
         case .visibility:
-            HStack(spacing: 4) { Image(systemName: "eye.fill"); Text(data.visibility) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "eye.fill"); Text(data.visibility) }.font(textFont)
         case .pressure:
-            HStack(spacing: 4) { Image(systemName: "gauge.medium"); Text(data.pressure) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "gauge.medium"); Text(data.pressure) }.font(textFont)
         case .locationName:
             Text(data.locationName).fontWeight(.semibold).font(textFont)
         case .conditionDescription:
@@ -117,7 +122,7 @@ struct LockScreenInfoWidgetView: View {
     @ViewBuilder
     private func CalendarInfoView() -> some View {
         if let event = calendarService.upcomingEvents.first {
-            HStack(spacing: 12) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
                 Image(systemName: "calendar")
                     .font(.title3)
                     .foregroundColor(.blue)
@@ -133,9 +138,9 @@ struct LockScreenInfoWidgetView: View {
             .foregroundColor(.white)
             .modifier(TransparentEffect())
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
-            HStack(spacing: 12) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 20))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
                 Text("No More Events Today")
             }
             .foregroundColor(.secondary)
@@ -146,11 +151,11 @@ struct LockScreenInfoWidgetView: View {
     @ViewBuilder
     private func MusicInfoView() -> some View {
         if musicWidget.isPlaying, let title = musicWidget.title {
-            HStack(spacing: 12) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
                 Image(nsImage: musicWidget.artwork ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: "Album art")!)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: 35, height: 35).cornerRadius(10)
+                    .frame(width: LockScreenConfiguration.infoWidgetMusicArtworkSize, height: LockScreenConfiguration.infoWidgetMusicArtworkSize).cornerRadius(LockScreenConfiguration.infoWidgetMusicArtworkCornerRadius)
 
                 VStack(alignment: .leading) {
                     Text(title)
@@ -166,7 +171,7 @@ struct LockScreenInfoWidgetView: View {
             }
             .foregroundColor(.white)
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
-            HStack(spacing: 10) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: "music.note")
                     .font(.callout)
                 Text("Nothing Playing")
@@ -188,21 +193,21 @@ struct LockScreenInfoWidgetView: View {
         if focusStatus.isActive {
             let focusInfo = focusStatus.toFocusModeInfo(isActive: true)
 
-            HStack(spacing: 10) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 if focusStatus.identifier == "com.apple.focus.reduce-interruptions" {
                     Image(systemName: "apple.intelligence")
-                        .font(.system(size: 20))
+                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
 
                 } else if customImageAssetNames.contains(focusStatus.symbolName) {
                     Image(focusStatus.symbolName)
                         .renderingMode(.template)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 20, height: 20)
+                        .frame(width: LockScreenConfiguration.infoWidgetFocusIconSize, height: LockScreenConfiguration.infoWidgetFocusIconSize)
 
                 } else {
                     Image(systemName: focusInfo.symbolName)
-                        .font(.system(size: 20))
+                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
                 }
 
                 Text(focusInfo.name)
@@ -210,9 +215,9 @@ struct LockScreenInfoWidgetView: View {
             }
             .modifier(TransparentEffect())
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
-            HStack(spacing: 10) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: "moon.zzz.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
                 Text("Focus Off")
             }
             .foregroundColor(.secondary)
@@ -225,22 +230,42 @@ struct LockScreenInfoWidgetView: View {
         let device = bluetoothManager.lastEvent
 
         if let device = device, device.eventType == .connected, let batteryLevel = device.batteryLevel {
-            HStack(spacing: 10) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: device.iconName)
-                    .font(.system(size: 20))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
 
                 Text("\(batteryLevel)%")
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetBoldFontSize, weight: .bold, design: .rounded))
             }
             .foregroundColor(.white)
             .modifier(TransparentEffect())
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
-            HStack(spacing: 10) {
+            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: "headphones")
-                    .font(.system(size: 20))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
                 Text("No Device")
             }
             .foregroundColor(.secondary)
+            .modifier(TransparentEffect())
+        }
+    }
+
+    @ViewBuilder
+    private func BatteryInfoView() -> some View {
+        if let state = batteryMonitor.currentState {
+            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
+                FilledBatteryIcon(
+                    level: state.level,
+                    isCharging: state.isCharging,
+                    isPluggedIn: state.isPluggedIn,
+                    isLowBattery: state.isLow
+                )
+                .frame(width: 30, height: 30)
+
+                Text("\(state.level)%")
+                    .font(.system(size: LockScreenConfiguration.infoWidgetBoldFontSize, weight: .bold, design: .rounded))
+            }
+            .foregroundColor(.white)
             .modifier(TransparentEffect())
         }
     }

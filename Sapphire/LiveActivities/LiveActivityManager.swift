@@ -5,6 +5,7 @@
 //  Created by Shariq Charolia on 2025-07-04.
 //
 //
+//
 
 import Foundation
 import SwiftUI
@@ -15,7 +16,7 @@ import NearbyShare
 // MARK: - Enums and Structs
 
 enum ActivityType: Int, Equatable, Comparable, CaseIterable {
-    case none = 0, persistentBattery = 1, weather = 5, music = 10, timer = 20, fileShelf = 25, desktopChange = 30, battery = 40, reminder = 49, calendar = 50, focusModeChange = 55, bluetooth = 58, audioSwitch = 60, fileProgress = 65, eyeBreak = 70, notification = 80, geminiLive = 85, nearbyShare = 90, systemHUD = 100, lockScreen = 110
+    case none = 0, persistentBattery = 1, weather = 5, music = 10, timer = 20, fileShelf = 25, desktopChange = 30, battery = 40, reminder = 49, calendar = 50, focusModeChange = 55, bluetooth = 58, audioSwitch = 60, fileProgress = 65, eyeBreak = 70, notification = 80, geminiLive = 85, nearbyShare = 90, updateAvailable = 95, systemHUD = 100, lockScreen = 110
 
     static func < (lhs: ActivityType, rhs: ActivityType) -> Bool { return lhs.rawValue < rhs.rawValue }
 
@@ -60,6 +61,7 @@ class LiveActivityManager: ObservableObject {
     @Published private(set) var currentNearDropPayload: NearDropPayload?
     @Published private(set) var currentGeminiPayload: GeminiPayload?
     @Published private(set) var isScreenLocked: Bool = false
+    @Published var isNotificationHovered: Bool = false
 
     // MARK: - Public Properties
     var showLyricsBinding: Binding<Bool>?
@@ -70,15 +72,12 @@ class LiveActivityManager: ObservableObject {
     private var dismissalTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     private var activityCheckers: [ActivityType: () -> (ActivityType, LiveActivityContent, TimeInterval?)?] = [:]
-
     private var snoozedActivities: [ActivityType: Date] = [:]
     private let snoozableActivityTypes: Set<ActivityType> = [.persistentBattery, .weather, .timer, .calendar, .reminder, .fileShelf]
-
+    private var dismissedNotifications: [AnyHashable: Date] = [:]
     private var lastIntervalWeatherShowTime: Date?
     private var periodicCheckTimer: Timer?
-
     private var lastKnownFocusStatus: FocusStatus?
-    // MARK: - State Tracking
     private var hasShownPluggedInAlert = false, hasShownLowBatteryAlert = false, hasShownCurrentEyeBreak = false
     private var lastShownDesktopNumber: Int?, lastShownFocusModeID: String?
     private var lastShownBluetoothEvent: BluetoothDeviceState?, lastShownAudioSwitchEventID: UUID?
@@ -97,7 +96,7 @@ class LiveActivityManager: ObservableObject {
         self.lastShownDesktopNumber = desktopManager.currentDesktopNumber
         self.activityCheckers = [
             .lockScreen: { self.checkForLockScreenActivity() },
-            .systemHUD: { self.checkForSystemHUD() },
+            .updateAvailable: { self.checkForUpdateAvailable() },
             .nearbyShare: { self.checkForNearDrop() },
             .geminiLive: { self.checkForGeminiLive() },
             .notification: { self.checkForNotification() },
@@ -117,22 +116,21 @@ class LiveActivityManager: ObservableObject {
         ]
         setupSubscriptions()
         setupPeriodicTimer()
-
     }
 
     // MARK: - Subscriptions
     private func setupSubscriptions() {
-        geminiLiveManager.$isMicMuted.receive(on: DispatchQueue.main).sink { [weak self] newMuteState in guard let self, var payload = self.currentGeminiPayload, payload.isMicMuted != newMuteState else { return }; payload.isMicMuted = newMuteState; self.currentGeminiPayload = payload }.store(in: &cancellables)
-        geminiLiveManager.sessionDidEndPublisher.receive(on: DispatchQueue.main).sink { [weak self] in self?.finishGeminiLive() }.store(in: &cancellables)
-
-        FileDropManager.shared.$tasks
-            .throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true)
-            .sink { [weak self] _ in
-                if self?.currentActivity == .fileProgress || self?.currentActivity == .none {
-                    self?.evaluateAndDisplayActivity()
-                }
+        systemHUDManager.$currentHUD
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] hudType in
+                self?.handleHUDUpdate(hudType)
             }
             .store(in: &cancellables)
+
+        geminiLiveManager.$isMicMuted.receive(on: DispatchQueue.main).sink { [weak self] newMuteState in guard let self, var payload = self.currentGeminiPayload, payload.isMicMuted != newMuteState else { return }; payload.isMicMuted = newMuteState; self.currentGeminiPayload = payload }.store(in: &cancellables)
+        geminiLiveManager.sessionDidEndPublisher.receive(on: DispatchQueue.main).sink { [weak self] in self?.finishGeminiLive() }.store(in: &cancellables)
+        FileDropManager.shared.$tasks.throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true).sink { [weak self] _ in if self?.currentActivity == .fileProgress || self?.currentActivity == .none { self?.evaluateAndDisplayActivity() } }.store(in: &cancellables)
+        $isNotificationHovered.removeDuplicates().debounce(for: .milliseconds(50), scheduler: DispatchQueue.main).sink { [weak self] isHovered in }.store(in: &cancellables)
 
         let stateChangeTriggers: [AnyPublisher<Void, Never>] = [
             $isScreenLocked.removeDuplicates().mapToVoid(),
@@ -159,8 +157,8 @@ class LiveActivityManager: ObservableObject {
             activeAppMonitor.$isLyricsAllowedForActiveApp.removeDuplicates().mapToVoid(),
             activeAppMonitor.$isFullScreen.removeDuplicates().mapToVoid(),
             activeAppMonitor.$activeAppBundleID.removeDuplicates().mapToVoid(),
-            systemHUDManager.$currentHUD.mapToVoid(),
-            focusModeManager.$currentStatus.removeDuplicates().mapToVoid()
+            focusModeManager.$currentStatus.removeDuplicates().mapToVoid(),
+            UpdateChecker.shared.$status.mapToVoid() // Listen for update status changes
         ]
 
         Publishers.MergeMany(stateChangeTriggers)
@@ -169,48 +167,71 @@ class LiveActivityManager: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Activity Management
+    // MARK: - Direct HUD Handler
+    private func handleHUDUpdate(_ hudType: HUDType?) {
+        if let hudType = hudType {
+            let hudStyle: HUDStyle
+            switch hudType {
+            case .volume, .externalDeviceVolume:
+                hudStyle = settingsModel.settings.volumeHUDStyle
+            case .brightness, .keyboardBrightness:
+                hudStyle = settingsModel.settings.brightnessHUDStyle
+            }
 
+            if hudStyle == .thin {
+                let data = StandardActivityData.hud(type: hudType)
+                let content = LiveActivityContent.standard(data: data, id: hudType)
+                setActivity(type: .systemHUD, content: content, dismissAfter: nil)
+            } else { // .default style
+                if currentActivity != .systemHUD {
+                    let hudBottomCornerRadius: CGFloat = 25.0
+                    let view = AnyView(
+                        SystemHUDView()
+                            .environmentObject(systemHUDManager)
+                            .environmentObject(settingsModel)
+                    )
+                    let content = LiveActivityContent.full(
+                        view: view,
+                        id: "system_hud_activity",
+                        bottomCornerRadius: hudBottomCornerRadius
+                    )
+                    setActivity(type: .systemHUD, content: content, dismissAfter: nil)
+                }
+            }
+        } else {
+            if currentActivity == .systemHUD {
+                setActivity(type: .none, content: .none)
+                evaluateAndDisplayActivity()
+            }
+        }
+    }
+
+    // MARK: - Activity Management
     private func evaluateAndDisplayActivity() {
         let now = Date()
         snoozedActivities = snoozedActivities.filter { $0.value > now }
+        dismissedNotifications = dismissedNotifications.filter { $0.value > now }
+
+        if currentActivity == .systemHUD {
+            return
+        }
 
         if let (type, content, duration) = checkForLockScreenActivity() {
             setActivity(type: type, content: content, dismissAfter: duration)
             return
         }
 
-        if let (type, content, duration) = checkForSystemHUD() {
-            setActivity(type: type, content: content, dismissAfter: duration)
-            return
-        }
+        if self.currentActivity == .battery, let state = batteryMonitor.currentState, !state.isPluggedIn, self.dismissalTimer != nil { return }
+        if activeAppMonitor.isFullScreen && settingsModel.settings.hideLiveActivityInFullScreen { if currentActivity != .none { setActivity(type: .none, content: .none) }; return }
+        if !musicWidget.shouldShowLiveActivity { musicWidget.showQuickPeek = false }
 
-        if self.currentActivity == .battery,
-           let state = batteryMonitor.currentState,
-           !state.isPluggedIn,
-           self.dismissalTimer != nil {
-            return
-        }
-
-        if activeAppMonitor.isFullScreen && settingsModel.settings.hideLiveActivityInFullScreen {
-            if currentActivity != .none {
-                setActivity(type: .none, content: .none)
-            }
-            return
-        }
-
-        if !musicWidget.shouldShowLiveActivity {
-             musicWidget.showQuickPeek = false
-        }
-
-        let highPriorityActivities: [ActivityType] = [.nearbyShare, .geminiLive, .notification, .fileProgress, .audioSwitch, .bluetooth, .calendar, .reminder, .battery]
+        let highPriorityActivities: [ActivityType] = [.updateAvailable, .nearbyShare, .geminiLive, .notification, .fileProgress, .audioSwitch, .bluetooth, .calendar, .reminder, .battery]
         let userOrderedActivities = settingsModel.settings.liveActivityOrder.compactMap { ActivityType(from: $0) }
         let finalEvaluationOrder = highPriorityActivities + userOrderedActivities
 
         for activityType in finalEvaluationOrder.sorted(by: >) {
             guard snoozedActivities[activityType] == nil else { continue }
-
-            guard let checker = activityCheckers[activityType], activityType != .systemHUD, activityType != .lockScreen else { continue }
+            guard let checker = activityCheckers[activityType], activityType != .lockScreen else { continue }
 
             if activeAppMonitor.isFullScreen {
                 if let liveActivitySettingsType = activityType.toLiveActivityType(),
@@ -226,8 +247,7 @@ class LiveActivityManager: ObservableObject {
         }
 
         if let batterySettingsType = ActivityType.persistentBattery.toLiveActivityType() {
-            let shouldHide = activeAppMonitor.isFullScreen &&
-                             settingsModel.settings.hideActivitiesInFullScreen[batterySettingsType.rawValue] == true
+            let shouldHide = activeAppMonitor.isFullScreen && settingsModel.settings.hideActivitiesInFullScreen[batterySettingsType.rawValue] == true
             if !shouldHide {
                 if snoozedActivities[.persistentBattery] == nil, let (type, content, duration) = checkForPersistentBattery() {
                     setActivity(type: type, content: content, dismissAfter: duration)
@@ -241,6 +261,7 @@ class LiveActivityManager: ObservableObject {
 
     private func setActivity(type: ActivityType, content: LiveActivityContent, dismissAfter duration: TimeInterval? = nil) {
         if self.currentActivity == type && self.activityContent == content { return }
+        if type != .notification { clearNotificationState() }
 
         let oldTimer = self.dismissalTimer
         self.dismissalTimer = nil
@@ -273,11 +294,21 @@ class LiveActivityManager: ObservableObject {
         case .bluetooth: self.lastShownBluetoothEvent = self.bluetoothManager.lastEvent
         case .audioSwitch: self.lastShownAudioSwitchEventID = self.audioDeviceManager.lastSwitchEvent?.id
         case .music: self.isDismissingPausedMusic = true
+        case .notification:
+            if let id = self.activityContent.id {
+                dismissedNotifications[id] = Date().addingTimeInterval(300)
+            }
+            clearNotificationState()
         default: break
         }
     }
 
     // MARK: - Activity Checkers
+    private func checkForUpdateAvailable() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
+        guard case .available(let version, _) = UpdateChecker.shared.status else { return nil }
+        let data = StandardActivityData.updateAvailable(version: version)
+        return (.updateAvailable, .standard(data: data, id: "update_available_\(version)"), nil)
+    }
 
     private func checkForLockScreenActivity() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
         guard isScreenLocked else { return nil }
@@ -520,7 +551,7 @@ class LiveActivityManager: ObservableObject {
 
         let newStatus = focusModeManager.currentStatus
         let oldStatus = lastKnownFocusStatus
-        self.lastKnownFocusStatus = newStatus // Update for the next check
+        self.lastKnownFocusStatus = newStatus
 
         if newStatus.isActive && !(oldStatus?.isActive ?? false) {
             let modeInfo = newStatus.toFocusModeInfo(isActive: true)
@@ -528,14 +559,7 @@ class LiveActivityManager: ObservableObject {
         }
 
         if !newStatus.isActive && (oldStatus?.isActive ?? false) {
-            let offModeInfo = FocusModeInfo(
-                name: "Off",
-                identifier: "focus.off.activity", // Use a unique, temporary ID
-                symbolName: oldStatus?.symbolName ?? "moon.zzz.fill", // Show the icon of the mode that just turned off
-                tintColorName: "systemGrayColor",
-                tintColorNames: nil,
-                isActive: false // The crucial flag
-            )
+            let offModeInfo = FocusModeInfo(name: "Off", identifier: "focus.off.activity", symbolName: oldStatus?.symbolName ?? "moon.zzz.fill", tintColorName: "systemGrayColor", tintColorNames: nil, isActive: false)
             return (.focusModeChange, .standard(data: .focus(mode: offModeInfo), id: offModeInfo.identifier), 2.0)
         }
 
@@ -545,27 +569,6 @@ class LiveActivityManager: ObservableObject {
         }
 
         return nil
-    }
-
-    private func checkForSystemHUD() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
-        guard let hudType = systemHUDManager.currentHUD else { return nil }
-        let style: HUDStyle
-        let id: SystemHUDIdentifier
-        let content: LiveActivityContent
-        let hudBottomCornerRadius: CGFloat = 25.0
-        switch hudType {
-        case .volume, .externalDeviceVolume:
-            guard settingsModel.settings.enableVolumeHUD else { return nil }
-            style = settingsModel.settings.volumeHUDStyle
-            id = SystemHUDIdentifier(type: hudType, style: style)
-            content = style == .default ? .full(view: AnyView(SystemHUDView(type: hudType).environmentObject(settingsModel)), id: id, bottomCornerRadius: hudBottomCornerRadius) : .standard(data: .hud(type: hudType), id: id)
-        case .brightness, .keyboardBrightness:
-            guard settingsModel.settings.enableBrightnessHUD else { return nil }
-            style = settingsModel.settings.brightnessHUDStyle
-            id = SystemHUDIdentifier(type: hudType, style: style)
-            content = style == .default ? .full(view: AnyView(SystemHUDView(type: hudType).environmentObject(settingsModel)), id: id, bottomCornerRadius: hudBottomCornerRadius) : .standard(data: .hud(type: hudType), id: id)
-        }
-        return (.systemHUD, content, nil)
     }
 
     private func checkForNearDrop() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
@@ -588,9 +591,9 @@ class LiveActivityManager: ObservableObject {
 
     private func checkForNotification() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
         guard let notification = notificationManager.latestNotification else { return nil }
-
-        let fullView = NotificationLiveActivityView(payload: notification)
-
+        if let until = dismissedNotifications[notification.id], until > Date() { return nil }
+        let hoverBinding = Binding<Bool>(get: { self.isNotificationHovered }, set: { self.isNotificationHovered = $0 })
+        let fullView = NotificationLiveActivityView(payload: notification, isHovered: hoverBinding)
         return (.notification, .full(view: AnyView(fullView), id: notification.id), 15.0)
     }
 
@@ -618,6 +621,12 @@ class LiveActivityManager: ObservableObject {
 
         setActivity(type: .none, content: .none)
         evaluateAndDisplayActivity()
+    }
+
+    private func clearNotificationState() {
+        if isNotificationHovered {
+            isNotificationHovered = false
+        }
     }
 
     func startLockScreenActivity() {

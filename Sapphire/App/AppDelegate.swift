@@ -5,6 +5,7 @@
 //  Created by Shariq Charolia on 2025-07-04.
 //
 //
+//
 
 import Cocoa
 import SwiftUI
@@ -14,6 +15,8 @@ import NearbyShare
 import ApplicationServices
 import IOBluetooth
 import ServiceManagement
+import Firebase
+import FirebaseAnalytics
 
 @MainActor
 final class LockScreenState: ObservableObject {
@@ -24,12 +27,14 @@ final class LockScreenState: ObservableObject {
     @Published var isBluetoothUnlockEnabled: Bool = false
 }
 
-final class UnfocusableWindow: NSWindow {
+final class DynamicFocusWindow: NSWindow {
+    var isFocusable: Bool = false
+
     override var canBecomeKey: Bool {
-        return false
+        return isFocusable
     }
     override var canBecomeMain: Bool {
-        return false
+        return isFocusable
     }
 }
 
@@ -103,6 +108,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        FirebaseApp.configure()
+
         NearbyConnectionManager.shared.deviceDisplayName = settingsModel.settings.neardropDeviceDisplayName
 
         settingsModel.$settings
@@ -138,6 +145,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 } else {
                     self?.teardownLaunchpad()
                 }
+                self?.setupStatusBarItem() // <-- MODIFICATION: Re-evaluate status bar when launchpad setting changes.
             }
             .store(in: &cancellables)
 
@@ -173,17 +181,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func showOnboardingWindow() {
+        Analytics.logEvent("onboarding_started", parameters: nil)
+
         if onboardingWindow == nil {
             let window = KeyableWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 1200, height: 900),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                styleMask: [.titled, .resizable, .fullSizeContentView],
                 backing: .buffered, defer: false
             )
 
             window.center()
+
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            if let close = window.standardWindowButton(.closeButton) { close.isHidden = true }
+            if let mini = window.standardWindowButton(.miniaturizeButton) { mini.isHidden = true }
+            if let zoom = window.standardWindowButton(.zoomButton) { zoom.isHidden = true }
+
             window.title = "Welcome to Sapphire"
             window.isMovableByWindowBackground = true
-            window.titlebarAppearsTransparent = true
             window.isOpaque = false
             window.backgroundColor = .clear
             window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
@@ -206,12 +222,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func onboardingDidComplete() {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        Analytics.logEvent("onboarding_completed", parameters: nil) // Log completion
         self.onboardingWindow?.orderOut(nil)
         self.onboardingWindow = nil
         startMainApp()
     }
 
     func startMainApp() {
+        Analytics.logEvent("main_app_started", parameters: nil)
+
         createNotchWindow()
         setupStatusBarItem()
         transitionToAgentApp()
@@ -227,6 +246,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         UNUserNotificationCenter.current().delegate = self
         NearbyConnectionManager.shared.mainAppDelegate = self
+
+        UpdateChecker.shared.startPeriodicChecks(interval: 5 * 60 * 60)
 
         if settingsModel.settings.launchpadEnabled {
             setupLaunchpad()
@@ -256,8 +277,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         if !isAuthenticating {
-            startAuthentication()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                guard self.isScreenLocked else { return }
+                self.startAuthentication()
+            }
         }
+
+        self.bluetoothManager.forceBatteryUpdateScan()
+
         weatherActivityViewModel.fetch()
 
         if settingsModel.settings.lockScreenShowNotch, let notchWindow = notchWindow {
@@ -275,6 +302,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(self.musicManager)
                 .environmentObject(self.focusModeManager)
                 .environmentObject(self.bluetoothManager)
+                .environmentObject(self.batteryMonitor)
 
             widgetConfigs.append(.init(
                 id: "infoWidget",
@@ -304,6 +332,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(self.weatherActivityViewModel)
                 .environmentObject(self.calendarService)
                 .environmentObject(self.musicManager)
+                .environmentObject(self.batteryMonitor)
+                .environmentObject(self.bluetoothManager)
+                .environmentObject(self.batteryEstimator)
 
             widgetConfigs.append(.init(
                 id: "miniWidgets",
@@ -383,7 +414,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         cgsSpace = nil
         NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
-        statusItem = nil
+        UpdateChecker.shared.stopPeriodicChecks()
 
         teardownLaunchpad()
 
@@ -398,18 +429,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func setupStatusBarItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if settingsModel.settings.launchpadEnabled {
+            if statusItem == nil {
+                statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+                if let button = statusItem?.button {
+                    button.image = NSImage(systemSymbolName: "square.grid.3x3.fill", accessibilityDescription: "Sapphire Launchpad")
+                }
 
-        if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "square.grid.3x3.fill", accessibilityDescription: "Sapphire Launchpad")
+                let menu = NSMenu()
+                menu.addItem(NSMenuItem(title: "Show Launchpad", action: #selector(showLaunchpadAction), keyEquivalent: ""))
+                menu.addItem(NSMenuItem.separator())
+                menu.addItem(NSMenuItem(title: "Quit Sapphire", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+                statusItem?.menu = menu
+            }
+        } else {
+            if let item = statusItem {
+                NSStatusBar.system.removeStatusItem(item)
+                statusItem = nil
+            }
         }
-
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Show Launchpad", action: #selector(showLaunchpadAction), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit Sapphire", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-
-        statusItem?.menu = menu
     }
 
     @objc private func showLaunchpadAction() {
@@ -421,6 +459,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func setupLaunchpad() {
         guard launchpadWindowController == nil else { return }
+
+        setupStatusBarItem()
 
         DispatchQueue.main.async {
             self.launchpadWindowController = LaunchpadWindowController()
@@ -441,6 +481,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         launchpadGestureMonitor.onHideLaunchpad = nil
         launchpadWindowController?.close()
         launchpadWindowController = nil
+
+        setupStatusBarItem()
     }
 
     func createNotchWindow() {
@@ -468,7 +510,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let windowOriginX = screenFrame.minX, windowOriginY = screenFrame.maxY - paddedWindowHeight
         let windowRect = NSRect(x: windowOriginX, y: windowOriginY, width: paddedWindowWidth, height: paddedWindowHeight)
 
-        let newWindow = UnfocusableWindow(contentRect: windowRect, styleMask: .borderless, backing: .buffered, defer: false)
+        let newWindow = DynamicFocusWindow(contentRect: windowRect, styleMask: .borderless, backing: .buffered, defer: false)
+
         self.notchWindow = newWindow
         guard let window = self.notchWindow else { return }
         window.isOpaque = false; window.backgroundColor = .clear; window.hasShadow = false; window.level = .statusBar
@@ -497,6 +540,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         hostingView.autoresizingMask = [.width, .height]
         hostingView.wantsLayer = true; hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         window.contentView = hostingView; window.orderFront(nil)
+    }
+
+    func makeNotchWindowFocusable() {
+        guard let window = notchWindow as? DynamicFocusWindow else { return }
+
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+
+        window.ignoresMouseEvents = false
+        window.isFocusable = true
+
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func revertNotchWindowFocus() {
+        guard let window = notchWindow as? DynamicFocusWindow else { return }
+
+        if window.isKeyWindow {
+            window.resignKey()
+        }
+
+        window.isFocusable = false
+        window.ignoresMouseEvents = true
+
+        if NSApp.activationPolicy() != .accessory {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     func openSettingsWindow() {
@@ -560,7 +632,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @objc private func onDisplayWake() {
         if isScreenLocked && !isAuthenticating {
-            startAuthentication()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                guard self.isScreenLocked && !self.isAuthenticating else { return }
+                self.startAuthentication()
+            }
         }
     }
 

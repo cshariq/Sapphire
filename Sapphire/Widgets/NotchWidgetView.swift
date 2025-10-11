@@ -5,6 +5,8 @@
 //  Created by Shariq Charolia on 2025-06-26.
 //
 //
+//
+//
 
 import SwiftUI
 
@@ -33,7 +35,7 @@ extension EnvironmentValues {
     }
 }
 
-struct NotchWidgetView: View, Equatable {
+struct NotchWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
     @Environment(\.activeDropZone) var activeDropZone
     @Environment(\.isFileDropTargeted) var isFileDropTargeted
@@ -51,10 +53,6 @@ struct NotchWidgetView: View, Equatable {
     @Environment(\.notchCornerRadius) private var cornerRadius
 
     @StateObject private var dragState = DragStateManager.shared
-
-    static func == (lhs: NotchWidgetView, rhs: NotchWidgetView) -> Bool {
-        return lhs.calendarWidgetView.viewModel === rhs.calendarWidgetView.viewModel
-    }
 
     init(navigationStack: Binding<[NotchWidgetMode]>, activeDropZone: Binding<DropZone?>, isFileDropTargeted: Binding<Bool>, calendarViewModel: InteractiveCalendarViewModel) {
         self.musicWidgetView = MusicWidgetView()
@@ -125,11 +123,7 @@ struct NotchWidgetView: View, Equatable {
         case .musicDevices:
             DevicesView(navigationStack: navigationStack)
         case .musicLyrics:
-            LyricsView(
-                lyrics: musicWidget.lyrics,
-                currentLyricID: musicWidget.currentLyric?.id,
-                accentColor: musicWidget.accentColor
-            )
+            LyricsView()
         case .musicPlaylistDetail(let playlist):
             PlaylistView(playlist: playlist)
         case .nearDrop:

@@ -4,6 +4,8 @@
 //
 //  Created by Shariq Charolia on 2025-10-05
 //
+//
+//
 
 import Foundation
 import AppKit
@@ -80,7 +82,7 @@ class MusicManager: ObservableObject {
     @Published var nativeQueue: [PlayerState.Track] = []
     @Published var nowPlayingTrack: PlayerState.Track?
 
-    private(set) var currentLyric: LyricLine?
+    @Published private(set) var currentLyric: LyricLine?
     private(set) var playbackProgress: Double = 0.0
     private(set) var currentElapsedTime: TimeInterval = 0
     private(set) var systemVolume: Float = 0.0
@@ -625,7 +627,9 @@ class MusicManager: ObservableObject {
         } else { newLyricIndex = lyrics.lastIndex { $0.timestamp <= elapsedTime } }
         if newLyricIndex != self.currentLyricIndex {
             self.currentLyricIndex = newLyricIndex; let newLyric = newLyricIndex != nil ? lyrics[newLyricIndex!] : nil
-            self.currentLyric = newLyric; self.currentLyricPublisher.send(newLyric)
+            if self.currentLyric?.id != newLyric?.id {
+                self.currentLyric = newLyric; self.currentLyricPublisher.send(newLyric)
+            }
         }
     }
 

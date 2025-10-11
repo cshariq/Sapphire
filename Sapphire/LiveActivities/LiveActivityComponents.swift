@@ -5,9 +5,12 @@
 //  Created by Shariq Charolia on 2025-07-06.
 //
 //
+//
+//
 
 import SwiftUI
 import EventKit
+import AVFoundation
 
 struct PersistentBatteryActivityView {
     static func left(for state: BatteryState, timeRemaining: String?) -> some View {
@@ -521,13 +524,6 @@ struct BluetoothDisconnectedView {
             .font(.system(size: 18, weight: .semibold))
             .foregroundColor(.white.opacity(0.5))
             .symbolRenderingMode(.hierarchical)
-            .overlay(alignment: .bottomTrailing) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.red)
-                    .symbolRenderingMode(.hierarchical)
-                    .padding(2)
-            }
     }
 
     static func right(for device: BluetoothDeviceState) -> some View {
@@ -739,6 +735,25 @@ struct EyeBreakPillButtonStyle: ButtonStyle {
     }
 }
 
+struct UpdateAvailableActivityView {
+    static func left() -> some View {
+        Image(systemName: "square.and.arrow.down.badge.clock")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(.cyan)
+    }
+
+    static func right(version: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("Update Available")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+            Text("Version \(version)")
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.7))
+        }
+    }
+}
+
 struct FocusModeActivityView {
 
     private static let colorMap: [String: Color] = [
@@ -881,7 +896,7 @@ struct ModernNotificationButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.body, design: .rounded).weight(.semibold))
-            .padding(.horizontal, 16).padding(.vertical, 8)
+            .padding(.horizontal, 16).padding(.vertical, 0)
             .foregroundStyle(isPrimary ? .white : .primary.opacity(0.9))
             .clipShape(Capsule())
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
@@ -892,110 +907,252 @@ struct ModernNotificationButtonStyle: ButtonStyle {
 struct NotificationLiveActivityView: View {
     let payload: NotificationPayload
 
+    @Binding var isHovered: Bool
+
     @EnvironmentObject var notificationManager: NotificationManager
+    @EnvironmentObject var settings: SettingsModel
+    @State private var replyText = ""
+    @FocusState private var isTextFieldFocused: Bool
+
+    @State private var contactImage: NSImage? = nil
+
+    @State private var attachment: MessageAttachment? = nil
+    @State private var isFetchingAttachment = false
+    @State private var audioPlaybackState: AudioPlaybackState = .idle
+    public enum AudioPlaybackState { case idle, playing, finished }
+
+    @State private var didCopyCode = false
 
     private let iMessageManager = iMessageActionManager.shared
 
+    private var isIMessage: Bool {
+        return payload.appIdentifier == "com.apple.MobileSMS" || payload.appIdentifier == "com.apple.iChat"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            Color.clear
+                .frame(height: NotchConfiguration.initialSize.height)
+
+            if isIMessage {
+                iMessageView
+            } else {
+                standardNotificationView
+            }
+        }
+    }
+
+    // MARK: - iMessage View
+    @ViewBuilder
+    private var iMessageView: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                if let icon = payload.appIcon {
-                    Image(nsImage: icon)
-                        .resizable().aspectRatio(contentMode: .fit)
-                        .frame(width: 48, height: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                ZStack(alignment: .bottomTrailing) {
+                    if let image = contactImage {
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                            .frame(width: 44, height: 44).clipShape(Circle())
+                    } else {
+                        Image(systemName: "person.circle.fill").font(.system(size: 44))
+                            .foregroundStyle(.gray.opacity(0.5))
+                    }
+                    Image(systemName: "message.fill").font(.system(size: 10)).foregroundColor(.white)
+                        .padding(4).background(Color.green).clipShape(Circle())
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text(payload.appName).font(.headline).fontWeight(.semibold)
+                        Text(payload.title).font(.headline).fontWeight(.bold)
                         Spacer()
                         Text("now").font(.caption).foregroundStyle(.secondary)
                     }
-                    Text(payload.title).font(.subheadline).fontWeight(.bold).lineLimit(1)
-                    Text(payload.body).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Button("Dismiss") {
-                        notificationManager.dismissLatestNotification()
-                    }
-                    .buttonStyle(ModernNotificationButtonStyle())
-
-                    if payload.appIdentifier == "com.apple.iChat" {
-                        Button {
-                            iMessageManager.markConversationAsRead(senderName: payload.title)
-                            notificationManager.dismissLatestNotification()
-                        } label: {
-                            Label("Read", systemImage: "checkmark.circle")
-                        }
-                        .buttonStyle(ModernNotificationButtonStyle())
+                    if !payload.hasAudioAttachment && !payload.hasImageAttachment {
+                        Text(payload.body).font(.subheadline).foregroundStyle(.secondary)
+                            .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-
-                Spacer()
-
-                contextualActionButton
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .onTapGesture {
+                NSWorkspace.shared.launchApplication(withBundleIdentifier: payload.appIdentifier, options: [], additionalEventParamDescriptor: nil, launchIdentifier: nil)
+                notificationManager.dismissLatestNotification()
+            }
+
+            if isFetchingAttachment {
+                ProgressView().frame(maxWidth: .infinity, alignment: .center)
+            } else if let attachment = attachment {
+                switch attachment.type {
+                case .image:
+                    if let image = NSImage(contentsOf: attachment.localURL) {
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                            .frame(maxHeight: 200).clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                case .audio:
+                    AudioMessageView(attachment: attachment, playbackState: $audioPlaybackState)
+                case .other:
+                    Text("Attachment: \(attachment.localURL.lastPathComponent)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if isHovered {
+                replyBox.transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                actionButtons
+            }
         }
-        .padding(.top, NotchConfiguration.initialSize.height)
-        .overlay(alignment: .top) {
-            Color.clear.frame(width: NotchConfiguration.initialSize.width, height: NotchConfiguration.initialSize.height)
+        .padding(.bottom, 1) // <-- CORRECTION
+        .frame(width: 400)
+        .task(id: payload.id) {
+            self.contactImage = await iMessageManager.fetchContactImage(forName: payload.title)
+            attachment = nil; isFetchingAttachment = false; audioPlaybackState = .idle
+            guard payload.hasAudioAttachment || payload.hasImageAttachment else { return }
+            isFetchingAttachment = true
+            self.attachment = await iMessageManager.fetchAndCopyLatestAttachment(for: payload.title)
+            isFetchingAttachment = false
         }
-        .frame(maxWidth: 420)
+        .onHover { hovering in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { self.isHovered = hovering }
+        }
+        .onChange(of: isHovered) { _, newIsHovered in if !newIsHovered { isTextFieldFocused = false } }
+        .onChange(of: isTextFieldFocused) { _, isFocused in
+            if let appDelegate = NSApp.delegate as? AppDelegate {
+                if isFocused { appDelegate.makeNotchWindowFocusable() } else { appDelegate.revertNotchWindowFocus() }
+            }
+        }
+        .onDisappear { isHovered = false }
     }
 
     @ViewBuilder
-    private var contextualActionButton: some View {
-        if payload.appIdentifier == "com.apple.sharingd" {
-            Button(action: {
-                if let url = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
-                    NSWorkspace.shared.open(url)
+    private var replyBox: some View {
+        HStack(spacing: 8) {
+            TextField("Reply...", text: $replyText)
+                .textFieldStyle(.plain).onSubmit(sendIMessage).focused($isTextFieldFocused)
+            Button(action: sendIMessage) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title3).symbolRenderingMode(.palette)
+                    .foregroundStyle(replyText.isEmpty ? Color.secondary : Color.white, replyText.isEmpty ? Color.clear : Color.accentColor)
+            }
+            .buttonStyle(.plain).disabled(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(.horizontal, 16).frame(height: 40).background(.ultraThinMaterial).clipShape(Capsule())
+    }
+
+    // MARK: - Standard View (For other apps)
+
+    @ViewBuilder
+    private var standardNotificationView: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                if let icon = payload.appIcon {
+                    Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit)
+                        .frame(width: 50, height: 50).clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                notificationManager.dismissLatestNotification()
-            }) {
-                Label("Show", systemImage: "folder.fill")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(payload.appName).font(.headline).fontWeight(.bold)
+                    Text(payload.title + " - " + payload.body).font(.subheadline).foregroundStyle(.secondary)
+                        .lineLimit(4).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
             }
-            .buttonStyle(ModernNotificationButtonStyle(isPrimary: true))
-        }
-        else if payload.hasAudioAttachment {
-            Button(action: {
-                iMessageManager.playLatestAudioMessage()
-                notificationManager.dismissLatestNotification()
-            }) {
-                Label("Play", systemImage: "play.fill")
-            }
-            .buttonStyle(ModernNotificationButtonStyle(isPrimary: true))
-        }
-        else if payload.appIdentifier == "com.apple.iChat" {
-            Button(action: {
-                iMessageManager.replyToLastMessage()
-                notificationManager.dismissLatestNotification()
-            }) {
-                Label("Reply", systemImage: "arrowshape.turn.up.left.fill")
-            }
-            .buttonStyle(ModernNotificationButtonStyle(isPrimary: true))
-        }
-        else {
-            Button(action: {
+            .onTapGesture {
                 NSWorkspace.shared.launchApplication(withBundleIdentifier: payload.appIdentifier, options: [], additionalEventParamDescriptor: nil, launchIdentifier: nil)
                 notificationManager.dismissLatestNotification()
-            }) {
-                Label("Open", systemImage: "arrow.up.forward.app.fill")
             }
-            .buttonStyle(ModernNotificationButtonStyle(isPrimary: true))
+
+            actionButtons
         }
+        .padding([.horizontal, .bottom], 16) // <-- CORRECTION
+        .frame(minWidth: 350, maxWidth: 420)
+    }
+
+    // MARK: - Reusable Components
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        HStack {
+            standardActionButton(title: "Dismiss", systemName: "xmark") {
+                notificationManager.dismissLatestNotification()
+            }
+
+            Spacer()
+
+            if let code = payload.verificationCode, settings.settings.showCopyButtonForVerificationCodes {
+                Button(action: {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(code, forType: .string)
+                    withAnimation(.spring) { didCopyCode = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        withAnimation(.spring) { didCopyCode = false }
+                    }
+                }) {
+                    Label(
+                        didCopyCode ? "Copied" : code,
+                        systemImage: didCopyCode ? "checkmark" : "doc.on.doc"
+                    )
+                    .font(.system(size: 13, weight: .medium, design: didCopyCode ? .default : .monospaced))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .contentTransition(.numericText())
+                }
+                .buttonStyle(.plain)
+                .background(didCopyCode ? Color.green.opacity(0.25) : Color.primary.opacity(0.15))
+                .foregroundStyle(didCopyCode ? .green : .primary)
+                .clipShape(Capsule())
+                .animation(.spring, value: didCopyCode)
+            }
+
+            if payload.appIdentifier == "com.apple.sharingd" {
+                standardActionButton(title: "Show", systemName: "folder", isPrimary: true) {
+                    if let url = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first { NSWorkspace.shared.open(url) }
+                    notificationManager.dismissLatestNotification()
+                }
+            } else {
+                standardActionButton(title: "Open", systemName: "arrow.up.forward.app", isPrimary: true) {
+                    NSWorkspace.shared.launchApplication(withBundleIdentifier: payload.appIdentifier, options: [], additionalEventParamDescriptor: nil, launchIdentifier: nil)
+                    notificationManager.dismissLatestNotification()
+                }
+            }
+        }
+    }
+
+    private func sendIMessage() {
+        let msg = replyText.trimmingCharacters(in: .whitespacesAndNewlines); guard !msg.isEmpty else { return }
+        iMessageManager.sendMessage(msg, to: payload.title)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            replyText = ""; isTextFieldFocused = false; notificationManager.dismissLatestNotification()
+        }
+    }
+
+    private func standardActionButton(title: String, systemName: String, isPrimary: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemName)
+                .font(.system(size: 13, weight: .medium))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .background(isPrimary ? Color.accentColor.opacity(0.8) : Color.primary.opacity(0.15))
+        .foregroundStyle(isPrimary ? .white : .primary)
+        .clipShape(Capsule())
+    }
+
+}
+
+struct AudioMessageView: View {
+    let attachment: MessageAttachment
+    @Binding var playbackState: NotificationLiveActivityView.AudioPlaybackState
+    private var buttonLabel: String { switch playbackState { case .idle: "Play Audio Message"; case .playing: "Playing..."; case .finished: "Playback Finished" } }
+    private var buttonIcon: String { switch playbackState { case .idle: "play.circle.fill"; case .playing: "stop.circle.fill"; case .finished: "checkmark.circle.fill" } }
+    var body: some View {
+        Button(action: { if playbackState == .idle { iMessageActionManager.shared.playAudio(at: attachment.localURL); playbackState = .playing } }) {
+            HStack {
+                Image(systemName: buttonIcon).font(.title2).symbolRenderingMode(.palette).foregroundStyle(.white, Color.accentColor).contentTransition(.symbolEffect(.replace))
+                Text(buttonLabel).font(.headline).fontWeight(.medium).foregroundStyle(.primary).contentTransition(.interpolate)
+            }
+            .padding(.horizontal, 16).frame(height: 50).frame(maxWidth: .infinity).background(.regularMaterial).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain).disabled(playbackState != .idle).animation(.spring, value: playbackState)
     }
 }
 
 // MARK: - Lock Screen Auth Activity
-
 private struct AnimatedLockIcon: View {
     @EnvironmentObject var lockScreenState: LockScreenState
 

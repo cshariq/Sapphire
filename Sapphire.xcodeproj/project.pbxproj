@@ -109,6 +109,8 @@
 		DA91BE752E773AC8001E7836 /* head_gestures_double_shake.caf in Resources */ = {isa = PBXBuildFile; fileRef = DA91BE0E2E773AC8001E7836 /* head_gestures_double_shake.caf */; };
 		DA91BE762E773AC8001E7836 /* Media Keys.aif in Resources */ = {isa = PBXBuildFile; fileRef = DA91BE112E773AC8001E7836 /* Media Keys.aif */; };
 		DA91BE772E773AC8001E7836 /* drag to trash.aif in Resources */ = {isa = PBXBuildFile; fileRef = DA91BDF22E773AC8001E7836 /* drag to trash.aif */; };
+		DA9709EC2E99E9CF00F34217 /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */; };
+		DA9709EE2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport in Frameworks */ = {isa = PBXBuildFile; productRef = DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */; };
 		DAA7D9142E848D340032748B /* busy_tone_cept.caf in Resources */ = {isa = PBXBuildFile; fileRef = DA91BE212E773AC8001E7836 /* busy_tone_cept.caf */; };
 		DAABEBB82E54FCA1004ADCA2 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = DAF9CB232E517DF800348E9F /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DAB2D08F2E78CE34002A9778 /* DisplayServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA9385452E17B443006C5361 /* DisplayServices.framework */; };
@@ -554,6 +556,7 @@
 				DA8FB04A2E7CBE9500C9BD1A /* IDS.framework in Frameworks */,
 				DA8FB04D2E7CC1B100C9BD1A /* IMCore.framework in Frameworks */,
 				DABC6CDF2E17458500A5CF83 /* UserNotifications.framework in Frameworks */,
+				DA9709EC2E99E9CF00F34217 /* FirebaseAnalyticsCore in Frameworks */,
 				DAF7D8AB2E207BBC00AB0820 /* SwiftProtobufPluginLibrary in Frameworks */,
 				DA343DD32E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */,
 				DAB2D08F2E78CE34002A9778 /* DisplayServices.framework in Frameworks */,
@@ -562,6 +565,7 @@
 				DABC6CDD2E17457A00A5CF83 /* IOKit.framework in Frameworks */,
 				DAF9CB242E517DF800348E9F /* MediaRemoteAdapter in Frameworks */,
 				DA8FB0532E7D898F00C9BD1A /* MobileTimerSupport.framework in Frameworks */,
+				DA9709EE2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport in Frameworks */,
 				DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */,
 				DA8FB0512E7D898F00C9BD1A /* MobileTimer.framework in Frameworks */,
 			);
@@ -994,6 +998,8 @@
 				DAF7D8AA2E207BBC00AB0820 /* SwiftProtobufPluginLibrary */,
 				DAF9CB232E517DF800348E9F /* MediaRemoteAdapter */,
 				DA48B01A2E93DF9B0099BF74 /* SQLite */,
+				DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */,
+				DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */,
 			);
 			productName = DynamicNotch;
 			productReference = DA46CF762DCBCA0000F00EC5 /* Sapphire.app */;
@@ -1145,6 +1151,7 @@
 				DAA7D8E02E8488800032748B /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
 				DACA66602E8B70E60056ED60 /* XCRemoteSwiftPackageReference "qrcode" */,
 				DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */,
+				DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DA46CF772DCBCA0000F00EC5 /* Products */;
@@ -1796,7 +1803,7 @@
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
-				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -1810,6 +1817,7 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Sapphire needs bluetooth to show new connections and battery low notifications";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sapphire needs calendar permission to show upcoming events";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sapphire needs the camera is needed for Face ID functionality";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Sapphire needs access to your contacts to find the correct phone number or email when sending a reply from a notification.";
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Needed to provide live focus updates";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2025 Shariq Charolia. All rights reserved.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Sapphire needs this to provide nearby share functionality";
@@ -1876,7 +1884,7 @@
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
 				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
-				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				FRAMEWORK_SEARCH_PATHS = "";
@@ -1890,6 +1898,7 @@
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Sapphire needs bluetooth to show new connections and battery low notifications";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sapphire needs calendar permission to show upcoming events";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sapphire needs the camera is needed for Face ID functionality";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Sapphire needs access to your contacts to find the correct phone number or email when sending a reply from a notification.";
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Needed to provide live focus updates";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2025 Shariq Charolia. All rights reserved.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Sapphire needs this to provide nearby share functionality";
@@ -2192,6 +2201,14 @@
 				minimumVersion = 7.6.5;
 			};
 		};
+		DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.4.0;
+			};
+		};
 		DAA7D8E02E8488800032748B /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-argument-parser.git";
@@ -2251,6 +2268,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */;
 			productName = "protoc-gen-swift";
+		};
+		DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsCore;
+		};
+		DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsIdentitySupport;
 		};
 		DACA66612E8B70E60056ED60 /* QRCode */ = {
 			isa = XCSwiftPackageProductDependency;

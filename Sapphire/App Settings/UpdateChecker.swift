@@ -5,11 +5,13 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
+//
+//
 
 import SwiftUI
 import AppKit
 
-let currentAppVersion = "0.1"
+let currentAppVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0"
 
 struct GitHubReleaseAsset: Codable, Equatable {
     let name: String
@@ -40,11 +42,21 @@ enum UpdateStatus: Equatable {
 
 @MainActor
 class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
-    @Published var status: UpdateStatus = .checking
+    static let shared = UpdateChecker()
+
+    @Published var status: UpdateStatus = .upToDate
     private var downloadTask: URLSessionDownloadTask?
     private var downloadedAssetPath: URL?
+    private var timer: Timer?
+
+    private override init() {
+        super.init()
+    }
 
     func checkForUpdates() {
+        if case .checking = status { return }
+        if case .downloading = status { return }
+
         self.status = .checking
         guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases/latest") else {
             self.status = .error("Invalid update URL"); return
@@ -74,11 +86,30 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }.resume()
     }
 
+    func startPeriodicChecks(interval: TimeInterval) {
+        timer?.invalidate()
+
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            print("[UpdateChecker] Performing periodic update check...")
+            self?.checkForUpdates()
+        }
+
+        DispatchQueue.main.async {
+             self.checkForUpdates()
+        }
+    }
+
+    func stopPeriodicChecks() {
+        timer?.invalidate()
+        timer = nil
+    }
+
     func downloadUpdate(asset: GitHubReleaseAsset) {
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         downloadTask = session.downloadTask(with: asset.browserDownloadUrl)
         downloadTask?.resume()
-        self.status = .downloading(progress: 0)
+
+        self.status = .downloading(progress: 0.0)
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
