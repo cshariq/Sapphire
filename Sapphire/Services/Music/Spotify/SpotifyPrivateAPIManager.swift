@@ -200,16 +200,20 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     func logout() {
+        _internalLogout() // Clear in-memory state
+
         apiCache.clear()
+        Task { await cookieManager.clear() }
+        UserDefaults.standard.removeObject(forKey: sessionUserDefaultsKey)
+    }
+
+    private func _internalLogout() {
         webSocketManager?.disconnect(); webSocketManager = nil
-        cancellables.removeAll()
+        cancellables.removeAll() // Re-subscribed in reestablishSession
 
         openSpotifyClient = nil; spclientClient = nil; apiPartnerClient = nil; clientTokenClient = nil; wwwSpotifyClient = nil; wgSpclientClient = nil
         accessToken = nil; clientToken = nil; activePlayerDeviceID = nil; controllerDeviceID = nil; sessionDeviceID = nil
         jsPackURL = nil; clientVersion = nil
-
-        Task { await cookieManager.clear() }
-        UserDefaults.standard.removeObject(forKey: sessionUserDefaultsKey)
 
         self.isLoggedIn = false; self.userProfile = nil; self.playerState = nil; self.devices = []
         self.nativeQueue = []
@@ -217,6 +221,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
         self.selectedPlaylist = nil
         self.playlistTrackViewModels = []
         self.isPlaylistLoading = false
+
+        setupSubscribers()
     }
 
     private func saveSession() async {
@@ -284,7 +290,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
                 wsManager.connect()
 
             } catch let error {
-                print("[SpotifyPrivateAPIManager] Failed to re-establish session: \(error.localizedDescription). Will try again on next launch.")
+                _internalLogout()
+                print("[SpotifyPrivateAPIManager] Failed to re-establish session: \(error.localizedDescription). State has been cleared for next attempt.")
                 self.isLoggedIn = false
             }
         }

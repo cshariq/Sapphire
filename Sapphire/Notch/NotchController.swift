@@ -6,6 +6,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 import Combine
@@ -296,6 +297,22 @@ struct NotchController: View {
 
         if let config = config {
             ZStack(alignment: .top) {
+                // MARK: - Custom Gradient Shadow for Gemini
+                if isGeminiActive {
+                    // The shadow should be visible in any state except the default minimized one.
+                    let isShadowVisible = (notchState != .initial)
+                    
+                    let shadowRadius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
+                    let shadowYOffset = notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
+                    
+                    activeShape
+                        .fill(geminiShadowGradient)
+                        .blur(radius: shadowRadius)
+                        .offset(y: shadowYOffset)
+                        .opacity(isShadowVisible ? 0.75 : 0) // Animate visibility based on the current state
+                        .allowsHitTesting(false)
+                }
+                
                 notchBackground
                     .mask(activeShape)
 
@@ -307,7 +324,7 @@ struct NotchController: View {
                             .fixedSize(horizontal: true, vertical: false)
                             .blur(radius: activityBlurRadius)
                             .scaleEffect(activityContentScale)
-                            .id(liveActivityManager.contentUpdateID)
+                            .id(liveActivityManager.currentActivity)
                             .transition(.asymmetric(
                                 insertion: .opacity.animation(config.activityOpacityAnimation),
                                 removal: .opacity.animation(config.activityOpacityAnimation)
@@ -398,14 +415,6 @@ struct NotchController: View {
                     .fill(notchFillMaterial)
                     .opacity(appearance.opacity)
             }
-
-            activeShape
-                .fill(geminiShadowGradient)
-                .blur(radius: glowRadius)
-                .opacity(glowOpacity)
-                .scaleEffect(NotchConfiguration.expandButtonAnimationScaleMultiplier)
-                .animation(.linear(duration: 0.1), value: geminiLiveManager.currentAudioLevel)
-                .allowsHitTesting(false)
         }
         .contentShape(activeShape)
         .clipShape(activeShape)
@@ -762,7 +771,7 @@ struct NotchController: View {
         case .audioSwitch(let event): AudioSwitchActivityView.left(for: event)
         case .geminiLive: GeminiActiveActivityView.left()
         case .nearDrop: NearDropCompactActivityView.left()
-        case .hud(let type): SystemHUDSlimActivityView.left(type: type)
+        case .hud(let type): SystemHUDSlimActivityView.left(type: type, settings: settings)
         case .lockScreen: LockScreenLiveActivityView.left()
         case .updateAvailable: UpdateAvailableActivityView.left()
         }

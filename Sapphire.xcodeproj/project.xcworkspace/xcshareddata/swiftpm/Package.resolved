@@ -1,5 +1,5 @@
 {
-  "originHash" : "7896ad086092843b49826156156d1ba7ff6885cffe0cce2a0933582804d93a5c",
+  "originHash" : "212ac58fb94d5e36b7bd5aadbdad5ad27e9515c6d7b57a97320a62143ad48c2b",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -139,10 +139,10 @@
     {
       "identity" : "mediaremote-adapter",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ejbills/mediaremote-adapter.git",
+      "location" : "https://github.com/otuerk/mediaremote-adapter",
       "state" : {
         "branch" : "master",
-        "revision" : "3529aa25023082a2ceadebcd2c9c4a9430ee96b9"
+        "revision" : "9ae9eb722b640d74c2030f8f5c9355f89ec2397c"
       }
     },
     {

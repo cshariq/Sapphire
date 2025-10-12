@@ -5,12 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-07.
 //
 
-// ...
-//
-//
-//
-//
-
 import Foundation
 import Combine
 import AppKit
@@ -125,25 +119,20 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         ble.thresholdRSSI = settings.settings.bluetoothUnlockMinScanRSSI
 
         scannedDevices.removeAll()
+        // It's also good practice to clear the BLE manager's device cache on a fresh scan
+        ble.devices.removeAll()
 
         isScanning = true
         status = "Scanning..."
         ble.startScanning(includeUnnamed: includeUnnamed)
     }
 
-    func rescanWithNewSettings(includeUnnamed: Bool) {
-        guard isScanning, ble.centralMgr.state == .poweredOn else { return }
-
-        ble.stopScanning()
-
+    func updateScanFilter(includeUnnamed: Bool) {
+        ble.includeUnnamedDevices = includeUnnamed
+        
         if !includeUnnamed {
-            scannedDevices.removeAll { device in
-                let hasName = device.peripheral?.name != nil && !device.peripheral!.name!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                return !hasName
-            }
+            scannedDevices.removeAll { $0.displayName == "Unnamed Device" }
         }
-
-        ble.startScanning(includeUnnamed: includeUnnamed)
     }
 
     func stopScan() {
@@ -213,36 +202,55 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
         status = "Unlocking..."
         guard let source = CGEventSource(stateID: .hidSystemState) else { status = "Unlock failed"; return }
+        let tapLocation = CGEventTapLocation.cghidEventTap
 
-        let passwordEvent = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
-        var utf16chars = Array(password.utf16)
-        passwordEvent?.keyboardSetUnicodeString(stringLength: utf16chars.count, unicodeString: &utf16chars)
+        let chunkSize = 20
+        let utf16chars = Array(password.utf16)
+        let totalChars = utf16chars.count
+        var offset = 0
+
+        while offset < totalChars {
+            let chunkLength = min(chunkSize, totalChars - offset)
+            var chunk = Array(utf16chars[offset..<(offset + chunkLength)])
+            
+            let passwordEvent = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+            passwordEvent?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+            passwordEvent?.post(tap: tapLocation)
+            
+            offset += chunkLength
+        }
 
         let returnDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
         let returnUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
-
-        let tapLocation = CGEventTapLocation.cghidEventTap
-        passwordEvent?.post(tap: tapLocation)
         returnDown?.post(tap: tapLocation)
         returnUp?.post(tap: tapLocation)
 
         status = "Unlocked"
     }
 
+    // MARK: - BLEDelegate Methods (Corrected)
+
     func newDevice(device: Device) {
-        if !scannedDevices.contains(where: { $0.id == device.id }) {
-            scannedDevices.append(device)
-            scannedDevices.sort { $0.displayName < $1.displayName }
-        }
+        // This method now forwards to the more robust updateDevice method.
+        updateDevice(device: device)
     }
 
     func updateDevice(device: Device) {
+        // This is the key fix. It now handles both updates and inserts.
         if let index = scannedDevices.firstIndex(where: { $0.id == device.id }) {
+            // Device is already in the list, so update its data.
             scannedDevices[index] = device
+        } else {
+            // Device is NOT in the list (e.g., after a rescan), so add it.
+            scannedDevices.append(device)
         }
+        // Always re-sort the list after any modification to keep it alphabetical.
+        scannedDevices.sort { $0.displayName < $1.displayName }
     }
 
-    func removeDevice(device: Device) { scannedDevices.removeAll { $0.id == device.id } }
+    func removeDevice(device: Device) {
+        scannedDevices.removeAll { $0.id == device.id }
+    }
 
     func updateRSSI(rssi: Int?, active: Bool) {
         self.lastRSSI = rssi

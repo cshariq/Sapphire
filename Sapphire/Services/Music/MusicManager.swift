@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import Foundation
 import AppKit
@@ -443,6 +444,10 @@ class MusicManager: ObservableObject {
         mediaController.onTrackInfoReceived = { [weak self] trackInfo in
             Task { @MainActor in
                 guard let self = self else { return }
+                guard let trackInfo = trackInfo else {
+                    self.clearPlayerState()
+                    return
+                }
                 let payload = trackInfo.payload
 
                 guard let title = payload.title, !title.isEmpty else { self.clearPlayerState(); return }

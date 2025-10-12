@@ -8,6 +8,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 import EventKit
@@ -176,8 +177,8 @@ struct AlbumArtView: View {
 
     var body: some View {
         Group {
-            if let artwork = musicWidget.artwork {
-                Image(nsImage: artwork)
+            if let image = (musicWidget.artwork ?? musicWidget.appIcon) {
+                Image(nsImage: image)
                     .resizable()
             } else {
                 Image(systemName: "music.note")
@@ -606,6 +607,7 @@ struct DesktopActivityView {
 struct EyeBreakFullActivityView: View {
     @EnvironmentObject var eyeBreakManager: EyeBreakManager
     @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var liveActivityManager: LiveActivityManager
 
     @State private var isShowing = false
     @State private var skipHovered = false
@@ -645,9 +647,8 @@ struct EyeBreakFullActivityView: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        withAnimation {
-                            eyeBreakManager.dismissBreak()
-                        }
+                        eyeBreakManager.dismissBreak()
+                        liveActivityManager.dismissCurrentActivity()
                     } label: {
                         Text("Skip")
                             .frame(maxWidth: .infinity)
@@ -660,9 +661,8 @@ struct EyeBreakFullActivityView: View {
                     }
 
                     Button {
-                        withAnimation {
-                            eyeBreakManager.completeBreak()
-                        }
+                        eyeBreakManager.completeBreak()
+                        liveActivityManager.dismissCurrentActivity()
                     } label: {
                         HStack(spacing: 6) {
                             Text("Done")

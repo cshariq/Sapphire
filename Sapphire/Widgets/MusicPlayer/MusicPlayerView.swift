@@ -8,6 +8,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 import AppKit
@@ -95,7 +96,7 @@ struct MusicPlayerView: View {
         VStack(spacing: 3) {
             HStack(spacing: 12) {
                 ZStack {
-                    Image(nsImage: musicManager.artwork ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art")!)
+                    Image(nsImage: musicManager.artwork ?? musicManager.appIcon ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art")!)
                         .resizable().aspectRatio(contentMode: .fit).frame(width: 60, height: 60)
                         .cornerRadius(8)
                         .compositingGroup()

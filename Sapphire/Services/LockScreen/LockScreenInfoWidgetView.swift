@@ -10,7 +10,7 @@
 //
 
 import SwiftUI
-import EventKit // Import EventKit to ensure EKEvent properties are available
+import EventKit
 
 struct TransparentEffect: ViewModifier {
     @EnvironmentObject var settings: SettingsModel
@@ -92,44 +92,39 @@ struct LockScreenInfoWidgetView: View {
     @ViewBuilder
     private func weatherItemView(for type: WeatherInfoType, with data: ProcessedWeatherData) -> some View {
         let textFont = Font.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .medium)
-        let iconFont = Font.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .semibold)
 
         switch type {
         case .temperature:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) {
-                Image(systemName: WeatherIconMapper.map(from: data.iconCode))
-                    .font(.title2)
-                    .symbolRenderingMode(.multicolor)
-                Text("\(settings.settings.weatherUseCelsius ? data.temperatureMetric : data.temperature)°")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetLargeFontSize, weight: .bold, design: .rounded))
-            }
+            Image(systemName: WeatherIconMapper.map(from: data.iconCode))
+                .font(.title2)
+                .symbolRenderingMode(.multicolor)
+            Text("\(settings.settings.weatherUseCelsius ? data.temperatureMetric : data.temperature)°")
+                .font(.system(size: LockScreenConfiguration.infoWidgetLargeFontSize, weight: .bold, design: .rounded))
         case .condition:
             Image(systemName: WeatherIconMapper.map(from: data.iconCode))
                 .font(.title2)
                 .symbolRenderingMode(.multicolor)
         case .wind:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "wind").font(iconFont); Text(data.windInfo) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "wind"); Text(data.windInfo) }.font(textFont)
         case .humidity:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "humidity.fill").font(iconFont); Text(data.humidity) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "humidity.fill"); Text(data.humidity) }.font(textFont)
         case .feelsLike:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) {
-                Image(systemName: WeatherIconMapper.map(from: data.iconCode))
-                    .font(.title2)
-                    .symbolRenderingMode(.multicolor)
-                 Text("Feels \(settings.settings.weatherUseCelsius ? data.feelsLikeMetric : data.feelsLike)°").font(textFont)
-            }
+            Image(systemName: WeatherIconMapper.map(from: data.iconCode))
+                .font(.title2)
+                .symbolRenderingMode(.multicolor)
+             Text("Feels \(settings.settings.weatherUseCelsius ? data.feelsLikeMetric : data.feelsLike)°").font(textFont)
         case .precipitation:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "drop.fill").font(iconFont); Text("\(data.precipChance)%") }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "drop.fill"); Text("\(data.precipChance)%") }.font(textFont)
         case .sunrise:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sunrise.fill").font(iconFont); Text(data.sunriseTime) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sunrise.fill"); Text(data.sunriseTime) }.font(textFont)
         case .sunset:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sunset.fill").font(iconFont); Text(data.sunsetTime) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sunset.fill"); Text(data.sunsetTime) }.font(textFont)
         case .uvIndex:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sun.max.fill").font(iconFont); Text(data.uvIndex) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sun.max.fill"); Text(data.uvIndex) }.font(textFont)
         case .visibility:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "eye.fill").font(iconFont); Text(data.visibility) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "eye.fill"); Text(data.visibility) }.font(textFont)
         case .pressure:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "gauge.medium").font(iconFont); Text(data.pressure) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "gauge.medium"); Text(data.pressure) }.font(textFont)
         case .locationName:
             Text(data.locationName).fontWeight(.semibold).font(textFont)
         case .conditionDescription:
@@ -146,7 +141,7 @@ struct LockScreenInfoWidgetView: View {
         if let event = calendarService.upcomingEvents.first {
             HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
                 Image(systemName: "calendar")
-                    .font(.title3.weight(.semibold))
+                    .font(.title3)
                     .foregroundColor(.blue)
 
                 VStack(alignment: .leading) {
@@ -163,7 +158,7 @@ struct LockScreenInfoWidgetView: View {
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
             HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
                 Image(systemName: "calendar")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize, weight: .semibold))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
                 Text("No More Events Today")
             }
             .foregroundColor(.secondary)
@@ -198,7 +193,7 @@ struct LockScreenInfoWidgetView: View {
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: "music.note")
-                    .font(.callout.weight(.semibold))
+                    .font(.callout)
                 Text("Nothing Playing")
             }
             .foregroundColor(.secondary)
@@ -222,7 +217,7 @@ struct LockScreenInfoWidgetView: View {
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 if focusStatus.identifier == "com.apple.focus.reduce-interruptions" {
                     Image(systemName: "apple.intelligence")
-                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize, weight: .semibold))
+                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
 
                 } else if customImageAssetNames.contains(focusStatus.symbolName) {
                     Image(focusStatus.symbolName)
@@ -233,7 +228,7 @@ struct LockScreenInfoWidgetView: View {
 
                 } else {
                     Image(systemName: focusInfo.symbolName)
-                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize, weight: .semibold))
+                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
                 }
 
                 Text(focusInfo.name)
@@ -244,7 +239,7 @@ struct LockScreenInfoWidgetView: View {
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: "moon.zzz.fill")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize, weight: .semibold))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
                 Text("Focus Off")
             }
             .foregroundColor(.secondary)
@@ -260,7 +255,7 @@ struct LockScreenInfoWidgetView: View {
         if let device = device, device.eventType == .connected, let batteryLevel = device.batteryLevel {
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: device.iconName)
-                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize, weight: .semibold))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
 
                 Text("\(batteryLevel)%")
                     .font(.system(size: LockScreenConfiguration.infoWidgetBoldFontSize, weight: .bold, design: .rounded))
@@ -271,7 +266,7 @@ struct LockScreenInfoWidgetView: View {
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: "headphones")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize, weight: .semibold))
+                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
                 Text("No Device")
             }
             .foregroundColor(.secondary)
@@ -284,56 +279,71 @@ struct LockScreenInfoWidgetView: View {
     private func BatteryInfoView() -> some View {
         if let state = batteryMonitor.currentState {
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
-                ForEach(settings.settings.lockScreenBatteryInfo, id: \.self) { infoType in
-                    batteryInfoItemView(for: infoType, with: state)
+                
+                if settings.settings.lockScreenBatteryInfo.contains(.statusIcon) {
+                    // Show a smaller, white bolt when charging
+                    if state.isCharging {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize - 5, weight: .bold))
+                    // Show a plug when plugged in but full
+                    } else if state.isPluggedIn && !state.isCharging {
+                        Image(systemName: "powerplug.fill")
+                            .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize, weight: .semibold))
+                    }
+                }
+
+                if settings.settings.lockScreenBatteryInfo.contains(.batteryIcon) {
+                    let iconSize: CGFloat = LockScreenConfiguration.infoWidgetLargeFontSize + 2
+
+                    if state.isCharging {
+                        Image(systemName: "battery.100.bolt")
+                            .font(.system(size: iconSize, weight: .semibold))
+                            .symbolRenderingMode(.multicolor)
+                            .frame(width: 30, height: 28)
+                    } else {
+                        let batterySymbol = Image(systemName: "battery.100")
+                            .font(.system(size: iconSize, weight: .semibold))
+
+                        ZStack(alignment: .leading) {
+                            batterySymbol
+                                .foregroundColor(.white.opacity(0.35))
+
+                            GeometryReader { geo in
+                                let insetHorizontal = geo.size.width * 0.11
+                                let terminalWidth = geo.size.width * 0.05
+                                let fillableWidth = geo.size.width - (insetHorizontal * 2) - terminalWidth
+                                let currentFillWidth = fillableWidth * (CGFloat(state.level) / 100.0)
+                                let totalMaskWidth = insetHorizontal + currentFillWidth
+                                
+                                Rectangle()
+                                    .frame(width: totalMaskWidth)
+                                    .foregroundColor(.white)
+                            }
+                            .mask(batterySymbol)
+                        }
+                        .frame(width: 30, height: 28)
+                    }
+                }
+
+                if settings.settings.lockScreenBatteryInfo.contains(.percentage) {
+                    Text("\(state.level)%")
+                        .font(.system(size: LockScreenConfiguration.infoWidgetBoldFontSize, weight: .bold, design: .rounded))
+                }
+
+                if settings.settings.lockScreenBatteryInfo.contains(.estimatedTime) {
+                    if settings.settings.showEstimatedBatteryTime,
+                       let timeRemaining = batteryEstimator.estimatedTimeRemaining,
+                       !timeRemaining.isEmpty,
+                       timeRemaining != "Charged" {
+                        Text(timeRemaining)
+                            .font(.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                 }
             }
             .foregroundColor(.white)
             .modifier(TransparentEffect())
             .transition(fadeTransition)
-        }
-    }
-
-    @ViewBuilder
-    private func batteryInfoItemView(for type: BatteryInfoType, with state: BatteryState) -> some View {
-        switch type {
-        case .batteryIcon:
-            FilledBatteryIcon(
-                level: state.level,
-                isCharging: state.isCharging,
-                isPluggedIn: state.isPluggedIn,
-                isLowBattery: state.isLow
-            )
-            .frame(width: 30, height: 30)
-
-        case .statusIcon:
-            if state.isCharging {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .semibold))
-                    .foregroundColor(.green)
-            } else if state.isPluggedIn {
-                Image(systemName: "powerplug.fill")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .semibold))
-                    .foregroundColor(.green)
-            } else {
-                Image(systemName: "arrow.down")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.8))
-            }
-
-        case .percentage:
-            Text("\(state.level)%")
-                .font(.system(size: LockScreenConfiguration.infoWidgetBoldFontSize, weight: .bold, design: .rounded))
-
-        case .estimatedTime:
-            if settings.settings.showEstimatedBatteryTime,
-               let timeRemaining = batteryEstimator.estimatedTimeRemaining,
-               !timeRemaining.isEmpty,
-               timeRemaining != "Charged" {
-                Text(timeRemaining)
-                    .font(.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.8))
-            }
         }
     }
 }

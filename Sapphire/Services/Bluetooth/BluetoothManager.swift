@@ -37,8 +37,12 @@ class BluetoothManager: NSObject, ObservableObject {
     private let iDeviceBattery = IDeviceBattery.shared
     private let bleBattery = BLEBattery()
     private let magicBattery = MagicBattery.shared
-    private let btdBattery = BTDBattery() // FIX: Add instance for HID devices
+    private let btdBattery = BTDBattery()
     private var periodicPollingTimer: Timer?
+
+    // MARK: - New properties for scan suppression
+    private var cancellables = Set<AnyCancellable>() // <-- ADD THIS CANCELLABLE SET
+    private var isProximityScanActive = false      // <-- ADD THIS STATE-TRACKING PROPERTY
 
     override init() {
         super.init()
@@ -62,6 +66,18 @@ class BluetoothManager: NSObject, ObservableObject {
             name: .didUpdateAirPodsBattery,
             object: nil
         )
+
+        AuthenticationManager.shared.$isScanning
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isScanning in
+                self?.isProximityScanActive = isScanning
+                if isScanning {
+                    print("[BluetoothManager] Suppressing connection notifications: Proximity scan started.")
+                } else {
+                    print("[BluetoothManager] Resuming connection notifications: Proximity scan stopped.")
+                }
+            }
+            .store(in: &cancellables)
     }
 
     deinit {
@@ -84,6 +100,12 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func handleAirPodsUpdate(_ notification: Notification) {
+        // <-- ADD THIS GUARD CLAUSE
+        guard !isProximityScanActive else {
+            print("[BluetoothManager] Suppressing AirPods update because proximity scan is active.")
+            return
+        }
+        
         guard let userInfo = notification.userInfo,
               let bleName = userInfo["name"] as? String,
               let level = userInfo["level"] as? Int else {
@@ -113,6 +135,14 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func deviceConnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        // <-- ADD THIS GUARD CLAUSE
+        guard !isProximityScanActive else {
+            print("[BluetoothManager] Suppressing connection event for '\(device.name ?? "??")' because proximity scan is active.")
+            // Still register for disconnect so we don't miss it when the scan ends
+            registerForDisconnect(device: device)
+            return
+        }
+        
         guard let address = device.addressString, let name = device.name else { return }
 
         if recentlyConnectedDebounceSet.contains(address) { return }
@@ -130,45 +160,75 @@ class BluetoothManager: NSObject, ObservableObject {
         let lowercasedName = name.lowercased()
         if lowercasedName.contains("airpods") || lowercasedName.contains("beats") {
             registerForDisconnect(device: device)
-            return
+            return // AirPods battery is handled by BLEBattery, not here.
         }
 
-        guard IconMapper.isBatteryPowered(for: device) else {
-            let iconName = IconMapper.icon(for: device)
+        let batteryStatus = IconMapper.getBatteryStatus(for: device)
+        let iconName = IconMapper.icon(for: device)
+
+        switch batteryStatus {
+        case .noBattery:
             let deviceState = BluetoothDeviceState(
                 id: address, name: name, iconName: iconName,
                 eventType: .connected, batteryLevel: nil,
                 isContinuityDevice: isContinuityDevice(name: name)
             )
             self.lastEvent = deviceState
-            registerForDisconnect(device: device)
-            return
-        }
 
-        Task {
-            var batteryLevel: Int? = nil
-            let timeout = 5.0
-            let interval: UInt64 = 300_000_000
-            let startTime = Date()
-
-            while Date().timeIntervalSince(startTime) < timeout {
-                batteryLevel = await BatteryScanner.getBattery(for: device)
-                if batteryLevel != nil { break }
-                try? await Task.sleep(nanoseconds: interval)
+        case .hasBattery:
+            Task {
+                let batteryLevel = await findBatteryLevel(for: device)
+                let deviceState = BluetoothDeviceState(
+                    id: address, name: name, iconName: iconName,
+                    eventType: .connected, batteryLevel: batteryLevel,
+                    isContinuityDevice: isContinuityDevice(name: name)
+                )
+                self.lastEvent = deviceState
             }
 
-            print("[BluetoothManager] Final battery level for [\(name)]: \(batteryLevel ?? -1)%")
-            let iconName = IconMapper.icon(for: device)
-
-            let deviceState = BluetoothDeviceState(
+        case .unknown:
+            print("[BluetoothManager] Unknown device '\(name)'. Entering learn mode.")
+            let immediateState = BluetoothDeviceState(
                 id: address, name: name, iconName: iconName,
-                eventType: .connected, batteryLevel: batteryLevel,
+                eventType: .connected, batteryLevel: nil,
                 isContinuityDevice: isContinuityDevice(name: name)
             )
-            self.lastEvent = deviceState
+            self.lastEvent = immediateState
+
+            Task {
+                let batteryLevel = await findBatteryLevel(for: device)
+
+                IconMapper.learnDeviceBatteryStatus(address: address, hasBattery: batteryLevel != nil)
+
+                if let level = batteryLevel {
+                    let updatedState = BluetoothDeviceState(
+                        id: address, name: name, iconName: iconName,
+                        eventType: .connected, batteryLevel: level,
+                        isContinuityDevice: isContinuityDevice(name: name)
+                    )
+                    self.lastEvent = updatedState
+                }
+            }
         }
 
         registerForDisconnect(device: device)
+    }
+
+    private func findBatteryLevel(for device: IOBluetoothDevice) async -> Int? {
+        let timeout = 5.0
+        let interval: UInt64 = 300_000_000 // 0.3 seconds
+        let startTime = Date()
+
+        while Date().timeIntervalSince(startTime) < timeout {
+            if let batteryLevel = await BatteryScanner.getBattery(for: device) {
+                print("[BluetoothManager] Found battery level for [\(device.name ?? "??")] after scanning: \(batteryLevel)%")
+                return batteryLevel
+            }
+            try? await Task.sleep(nanoseconds: interval)
+        }
+
+        print("[BluetoothManager] Final battery level for [\(device.name ?? "??")]: nil (timeout)")
+        return nil
     }
 
     private func registerForDisconnect(device: IOBluetoothDevice) {
@@ -182,6 +242,16 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func deviceDisconnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        // <-- ADD THIS GUARD CLAUSE
+        guard !isProximityScanActive else {
+            print("[BluetoothManager] Suppressing disconnection event for '\(device.name ?? "??")' because proximity scan is active.")
+            // Clean up the notification listener regardless
+            if let address = device.addressString, let notificationToRemove = disconnectionNotifications.removeValue(forKey: address) {
+                notificationToRemove.unregister()
+            }
+            return
+        }
+        
         guard let address = device.addressString, let name = device.name else { return }
 
         if let soundURL = Bundle.main.url(forResource: "jbl_cancel", withExtension: "caf") {

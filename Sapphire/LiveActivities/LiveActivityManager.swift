@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import Foundation
 import SwiftUI
@@ -94,7 +95,7 @@ class LiveActivityManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var activityCheckers: [ActivityType: () -> (ActivityType, LiveActivityContent, TimeInterval?)?] = [:]
     private var snoozedActivities: [ActivityType: Date] = [:]
-    private let snoozableActivityTypes: Set<ActivityType> = [.persistentBattery, .weather, .timer, .calendar, .reminder, .fileShelf]
+    private let snoozableActivityTypes: Set<ActivityType> = [.persistentBattery, .weather, .timer, .calendar, .reminder, .fileShelf, .updateAvailable]
     private var dismissedNotifications: [AnyHashable: Date] = [:]
     private var lastIntervalWeatherShowTime: Date?
     private var periodicCheckTimer: Timer?
@@ -107,6 +108,8 @@ class LiveActivityManager: ObservableObject {
     private var notifiedEventMilestones: [String: Set<CalendarNotificationMilestone>] = [:]
     private enum ReminderNotificationMilestone { case thirtyMinutes }
     private var notifiedReminderMilestones: [String: Set<ReminderNotificationMilestone>] = [:]
+
+    private var hasReceivedInitialFocusStatus = false
 
     // MARK: - Dependencies
     private let systemHUDManager: SystemHUDManager, notificationManager: NotificationManager, desktopManager: DesktopManager, focusModeManager: FocusModeManager, musicWidget: MusicManager, calendarService: CalendarService, batteryMonitor: BatteryMonitor, bluetoothManager: BluetoothManager, audioDeviceManager: AudioDeviceManager, eyeBreakManager: EyeBreakManager, timerManager: TimerManager, weatherActivityViewModel: WeatherActivityViewModel, geminiLiveManager: GeminiLiveManager, settingsModel: SettingsModel, activeAppMonitor: ActiveAppMonitor, batteryEstimator: BatteryEstimator
@@ -148,6 +151,13 @@ class LiveActivityManager: ObservableObject {
             }
             .store(in: &cancellables)
 
+        musicWidget.currentLyricPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handleLyricUpdate()
+            }
+            .store(in: &cancellables)
+
         geminiLiveManager.$isMicMuted.receive(on: DispatchQueue.main).sink { [weak self] newMuteState in guard let self, var payload = self.currentGeminiPayload, payload.isMicMuted != newMuteState else { return }; payload.isMicMuted = newMuteState; self.currentGeminiPayload = payload }.store(in: &cancellables)
         geminiLiveManager.sessionDidEndPublisher.receive(on: DispatchQueue.main).sink { [weak self] in self?.finishGeminiLive() }.store(in: &cancellables)
         FileDropManager.shared.$tasks.throttle(for: .milliseconds(100), scheduler: RunLoop.main, latest: true).sink { [weak self] _ in if self?.currentActivity == .fileProgress || self?.currentActivity == .none { self?.evaluateAndDisplayActivity() } }.store(in: &cancellables)
@@ -169,7 +179,6 @@ class LiveActivityManager: ObservableObject {
             weatherActivityViewModel.$weatherData.removeDuplicates().mapToVoid(),
             musicWidget.$shouldShowLiveActivity.removeDuplicates().mapToVoid(),
             musicWidget.$isPlaying.removeDuplicates().mapToVoid(),
-            musicWidget.currentLyricPublisher.mapToVoid(),
             musicWidget.trackDidChange.mapToVoid(),
             musicWidget.$showQuickPeek.removeDuplicates().mapToVoid(),
             musicWidget.$isHoveringAlbumArt.removeDuplicates().mapToVoid(),
@@ -179,7 +188,7 @@ class LiveActivityManager: ObservableObject {
             activeAppMonitor.$isFullScreen.removeDuplicates().mapToVoid(),
             activeAppMonitor.$activeAppBundleID.removeDuplicates().mapToVoid(),
             focusModeManager.$currentStatus.removeDuplicates().mapToVoid(),
-            UpdateChecker.shared.$status.mapToVoid() // Listen for update status changes
+            UpdateChecker.shared.$status.mapToVoid()
         ]
 
         Publishers.MergeMany(stateChangeTriggers)
@@ -224,6 +233,16 @@ class LiveActivityManager: ObservableObject {
                 setActivity(type: .none, content: .none)
                 evaluateAndDisplayActivity()
             }
+        }
+    }
+
+    // MARK: - Special Update Handlers
+    private func handleLyricUpdate() {
+        guard self.currentActivity == .music else { return }
+
+        if let (_, newContent, _) = checkForMusic() {
+            self.activityContent = newContent
+            self.contentUpdateID = UUID() // This triggers a view update in SwiftUI.
         }
     }
 
@@ -433,21 +452,24 @@ class LiveActivityManager: ObservableObject {
         if musicWidget.isPlaying { isDismissingPausedMusic = false }
 
         var bottomContentType: MusicBottomContentType = .none
+        var bottomContentIdentifier = "none"
         let showHoverPeek = settingsModel.settings.enableQuickPeekOnHover && musicWidget.isHoveringAlbumArt
 
         if musicWidget.showQuickPeek || showHoverPeek {
             bottomContentType = .peek(title: " " + (musicWidget.title ?? "Now Playing"), artist: musicWidget.artist ?? "")
+            bottomContentIdentifier = "peek"
         } else if musicWidget.isPlaying {
             let lyricsAllowed = activeAppMonitor.isLyricsAllowedForActiveApp && settingsModel.settings.showLyricsInLiveActivity
             if lyricsAllowed, let currentLyric = musicWidget.currentLyric {
                 let lyricText = currentLyric.translatedText ?? currentLyric.text
                 if !lyricText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     bottomContentType = .lyrics(text: lyricText, id: currentLyric.id)
+                    bottomContentIdentifier = "lyrics"
                 }
             }
         }
 
-        let id = "\((musicWidget.title ?? "") + (musicWidget.artist ?? ""))-\(bottomContentType)"
+        let id = "\((musicWidget.title ?? "") + (musicWidget.artist ?? ""))-\(bottomContentIdentifier)"
         let duration: TimeInterval? = musicWidget.isPlaying ? nil : 7.0
         return (.music, .standard(data: .music(bottom: bottomContentType), id: id), duration)
     }
@@ -559,7 +581,7 @@ class LiveActivityManager: ObservableObject {
     private func checkForEyeBreak() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
         if !eyeBreakManager.isBreakTime { hasShownCurrentEyeBreak = false }
         guard settingsModel.settings.eyeBreakLiveActivityEnabled, eyeBreakManager.isBreakTime, !hasShownCurrentEyeBreak else { return nil }
-        return (.eyeBreak, .full(view: AnyView(EyeBreakFullActivityView()), id: "eye_break_active_full"), nil)
+        return (.eyeBreak, .full(view: AnyView(EyeBreakFullActivityView()), id: "eye_break_active_full", bottomCornerRadius: 30), nil)
     }
 
     private func checkForDesktopChange() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
@@ -571,6 +593,13 @@ class LiveActivityManager: ObservableObject {
         guard settingsModel.settings.focusLiveActivityEnabled else { return nil }
 
         let newStatus = focusModeManager.currentStatus
+
+        if !hasReceivedInitialFocusStatus {
+            hasReceivedInitialFocusStatus = true
+            self.lastKnownFocusStatus = newStatus
+            return nil
+        }
+
         let oldStatus = lastKnownFocusStatus
         self.lastKnownFocusStatus = newStatus
 
@@ -633,6 +662,10 @@ class LiveActivityManager: ObservableObject {
     func dismissCurrentActivity() {
         guard currentActivity != .none else { return }
         if settingsModel.settings.hapticFeedbackEnabled { HapticManager.perform(.alignment) }
+
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.revertNotchWindowFocus()
+        }
 
         if snoozableActivityTypes.contains(currentActivity) {
             snoozedActivities[currentActivity] = Date().addingTimeInterval(300)

@@ -158,7 +158,7 @@ private struct PermissionsStepView: View {
                 .font(.system(size: 32, weight: .bold, design: .rounded))
                 .padding(.top, 40).padding(.bottom, 10)
 
-            Text("Sapphire needs a few permissions for its core features. Your data is never collected or sent anywhere.")
+            Text("Sapphire needs a few permissions for its core features.")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -275,9 +275,8 @@ private struct MusicChoiceStepView: View {
                 .padding(.horizontal)
 
             VStack(spacing: 15) {
-                MusicServiceButton(title: "Apple Music", icon: "apple_logo", isSelected: settings.settings.mediaSource == .appleMusic) { settings.settings.mediaSource = .appleMusic; onNext() }
-                MusicServiceButton(title: "Spotify", icon: "spotify_logo", isSelected: settings.settings.mediaSource == .spotify) { settings.settings.mediaSource = .spotify; onNext() }
-                MusicServiceButton(title: "Other / None", icon: "music.note", isSelected: settings.settings.mediaSource == .system) { settings.settings.mediaSource = .system; onNext() }
+                MusicServiceButton(title: "Apple Music", icon: "apple_logo", isSelected: settings.settings.defaultMusicPlayer == .appleMusic) { settings.settings.defaultMusicPlayer = .appleMusic; onNext() }
+                MusicServiceButton(title: "Spotify", icon: "spotify_logo", isSelected: settings.settings.defaultMusicPlayer == .spotify) { settings.settings.defaultMusicPlayer = .spotify; onNext() }
             }
             .padding(50)
 
@@ -330,6 +329,9 @@ private struct CorePreferencesStepView: View {
             Text("Personalize your experience. You can change these any time in Settings.").font(.title3).multilineTextAlignment(.center).foregroundColor(.secondary).padding(.horizontal, 50)
             VStack(spacing: 15) {
                 ModernOnboardingRow(iconName: "sparkles.tv", iconColor: .cyan, title: "Show Custom HUDs", description: "Replace default volume & brightness indicators.") { Toggle("", isOn: showHudsBinding).labelsHidden().toggleStyle(.switch) }
+                ModernOnboardingRow(iconName: "eye.fill", iconColor: .cyan, title: "Enable Eye Break Reminders", description: "Get reminded to look away from your screen periodically.") {
+                    Toggle("", isOn: $settings.settings.eyeBreakLiveActivityEnabled).labelsHidden().toggleStyle(.switch)
+                }
                 ModernOnboardingRow(iconName: "thermometer.sun.fill", iconColor: .orange, title: "Temperature Unit", description: "Preferred unit for weather forecasts.") { Picker("", selection: $settings.settings.weatherUseCelsius) { Text("°C").tag(true); Text("°F").tag(false) }.pickerStyle(.segmented).labelsHidden().frame(width: 100) }
                 ModernOnboardingRow(iconName: "bolt.horizontal.circle.fill", iconColor: .purple, title: "Launch at Login", description: "Start Sapphire automatically with your Mac.") { Toggle("", isOn: $settings.settings.launchAtLogin).labelsHidden().toggleStyle(.switch) }
             }.padding(50)

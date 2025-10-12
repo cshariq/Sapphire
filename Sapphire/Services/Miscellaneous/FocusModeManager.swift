@@ -7,6 +7,7 @@
 //
 //
 //
+//
 
 import Foundation
 import Combine
@@ -74,17 +75,61 @@ class FocusModeManager: NSObject, ObservableObject {
         self.modesURL = homeDirectory.appendingPathComponent("Library/DoNotDisturb/DB/ModeConfigurations.json")
         super.init()
         print("[FocusManager] LOG: Initializing Manager with continuous file polling.")
+        loadInitialFocusStatus()
         setupFocusMonitoring()
     }
 
     private func setupFocusMonitoring() {
-        checkFocusFilesForChange()
         Timer.publish(every: 1.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.checkFocusFilesForChange()
             }
             .store(in: &cancellables)
+    }
+
+    private func loadInitialFocusStatus() {
+        do {
+            let assertionsData = try Data(contentsOf: assertionsURL)
+            let assertions = try JSONDecoder().decode(Assertions.self, from: assertionsData)
+            let latestAssertion = assertions.data.first?.storeAssertionRecords.max(by: { $0.assertionStartDateTimestamp < $1.assertionStartDateTimestamp })
+            let activeModeIdentifier = latestAssertion?.assertionDetails.assertionDetailsModeIdentifier
+
+            self.lastKnownModeIdentifier = activeModeIdentifier
+
+            if let activeIdentifier = activeModeIdentifier {
+                do {
+                    let modesData = try Data(contentsOf: modesURL)
+                    let modeConfigs = try JSONDecoder().decode(ModeConfigurations.self, from: modesData)
+
+                    if let allModes = modeConfigs.data.first?.modeConfigurations,
+                       let activeModeConfig = allModes[activeIdentifier] {
+
+                        let mode = activeModeConfig.mode
+                        let symbolName = mode.symbolImageName ?? "questionmark.circle"
+                        let newStatus = FocusStatus(
+                            name: mode.name,
+                            symbolName: symbolName,
+                            isActive: true,
+                            identifier: mode.modeIdentifier,
+                            tintColorName: mode.tintColorName,
+                            tintColorNames: mode.symbolDescriptorTintColorNames
+                        )
+
+                        self.currentStatus = newStatus
+                    } else {
+                        self.currentStatus = .notActive
+                    }
+                } catch {
+                    self.currentStatus = .notActive
+                }
+            } else {
+                self.currentStatus = .notActive
+            }
+        } catch {
+            self.lastKnownModeIdentifier = nil
+            self.currentStatus = .notActive
+        }
     }
 
     private func checkFocusFilesForChange() {

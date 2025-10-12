@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DA17EA162E9B74E500C83AC6 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; };
 		DA343DA22E55068300B675ED /* CaptchaSolver.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343D972E55068200B675ED /* CaptchaSolver.framework */; };
 		DA343DC92E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
 		DA343DD32E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
@@ -112,7 +113,6 @@
 		DA9709EC2E99E9CF00F34217 /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */; };
 		DA9709EE2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport in Frameworks */ = {isa = PBXBuildFile; productRef = DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */; };
 		DAA7D9142E848D340032748B /* busy_tone_cept.caf in Resources */ = {isa = PBXBuildFile; fileRef = DA91BE212E773AC8001E7836 /* busy_tone_cept.caf */; };
-		DAABEBB82E54FCA1004ADCA2 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = DAF9CB232E517DF800348E9F /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DAB2D08F2E78CE34002A9778 /* DisplayServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA9385452E17B443006C5361 /* DisplayServices.framework */; };
 		DABC6CDD2E17457A00A5CF83 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DABC6CDB2E17457700A5CF83 /* IOKit.framework */; };
 		DABC6CDF2E17458500A5CF83 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49B92E15DB160049937A /* UserNotifications.framework */; };
@@ -124,7 +124,6 @@
 		DACBB01D2E20321D00740C9B /* libNearbyShare.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49802E15CCA50049937A /* libNearbyShare.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DAF7D8AB2E207BBC00AB0820 /* SwiftProtobufPluginLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = DAF7D8AA2E207BBC00AB0820 /* SwiftProtobufPluginLibrary */; };
 		DAF7D8AE2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle in CopyFiles */ = {isa = PBXBuildFile; fileRef = DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		DAF9CB242E517DF800348E9F /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = DAF9CB232E517DF800348E9F /* MediaRemoteAdapter */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -242,7 +241,6 @@
 			files = (
 				DA343DD42E55098000B675ED /* CaptchaSolverInterface.framework in Embed Frameworks */,
 				DACBB01D2E20321D00740C9B /* libNearbyShare.dylib in Embed Frameworks */,
-				DAABEBB82E54FCA1004ADCA2 /* MediaRemoteAdapter in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -551,6 +549,7 @@
 			files = (
 				DA8FB0482E7CBE9400C9BD1A /* IMSharedUtilities.framework in Frameworks */,
 				DABC6CE32E1749CA00A5CF83 /* CoreGraphics.framework in Frameworks */,
+				DA17EA162E9B74E500C83AC6 /* MediaRemoteAdapter in Frameworks */,
 				DABC6CE12E17458600A5CF83 /* UserNotificationsUI.framework in Frameworks */,
 				DA8FB0442E7CBE9000C9BD1A /* TelephonyUtilities.framework in Frameworks */,
 				DA8FB04A2E7CBE9500C9BD1A /* IDS.framework in Frameworks */,
@@ -563,7 +562,6 @@
 				DA8FB0462E7CBE9300C9BD1A /* FTServices.framework in Frameworks */,
 				DA7C49AD2E15D3800049937A /* libNearbyShare.dylib in Frameworks */,
 				DABC6CDD2E17457A00A5CF83 /* IOKit.framework in Frameworks */,
-				DAF9CB242E517DF800348E9F /* MediaRemoteAdapter in Frameworks */,
 				DA8FB0532E7D898F00C9BD1A /* MobileTimerSupport.framework in Frameworks */,
 				DA9709EE2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport in Frameworks */,
 				DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */,
@@ -996,10 +994,10 @@
 			name = Sapphire;
 			packageProductDependencies = (
 				DAF7D8AA2E207BBC00AB0820 /* SwiftProtobufPluginLibrary */,
-				DAF9CB232E517DF800348E9F /* MediaRemoteAdapter */,
 				DA48B01A2E93DF9B0099BF74 /* SQLite */,
 				DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */,
 				DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */,
+				DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */,
 			);
 			productName = DynamicNotch;
 			productReference = DA46CF762DCBCA0000F00EC5 /* Sapphire.app */;
@@ -1146,12 +1144,12 @@
 			packageReferences = (
 				DAD47CD22E13C3DB001B70C8 /* XCRemoteSwiftPackageReference "SwiftECC" */,
 				DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */,
-				DAF9CB222E517DF800348E9F /* XCRemoteSwiftPackageReference "mediaremote-adapter" */,
 				DA8FAEFC2E7CA8B900C9BD1A /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */,
 				DAA7D8E02E8488800032748B /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
 				DACA66602E8B70E60056ED60 /* XCRemoteSwiftPackageReference "qrcode" */,
 				DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */,
 				DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				DA17EA142E9B74E500C83AC6 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DA46CF772DCBCA0000F00EC5 /* Products */;
@@ -1847,7 +1845,7 @@
 					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.1;
+				MARKETING_VERSION = 0.2;
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1928,7 +1926,7 @@
 					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 0.1;
+				MARKETING_VERSION = 0.2;
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -2177,6 +2175,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		DA17EA142E9B74E500C83AC6 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/otuerk/mediaremote-adapter";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
 		DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stephencelis/SQLite.swift";
@@ -2233,17 +2239,14 @@
 				minimumVersion = 5.5.0;
 			};
 		};
-		DAF9CB222E517DF800348E9F /* XCRemoteSwiftPackageReference "mediaremote-adapter" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ejbills/mediaremote-adapter.git";
-			requirement = {
-				branch = master;
-				kind = branch;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA17EA142E9B74E500C83AC6 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */;
+			productName = MediaRemoteAdapter;
+		};
 		DA48B01A2E93DF9B0099BF74 /* SQLite */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */;
@@ -2288,11 +2291,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */;
 			productName = SwiftProtobufPluginLibrary;
-		};
-		DAF9CB232E517DF800348E9F /* MediaRemoteAdapter */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DAF9CB222E517DF800348E9F /* XCRemoteSwiftPackageReference "mediaremote-adapter" */;
-			productName = MediaRemoteAdapter;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-06.
 //
 //
-//
 
 import SwiftUI
 import AppKit
@@ -258,7 +257,11 @@ class SystemHUDManager: ObservableObject {
         keyRepeatTimer?.invalidate()
         keyRepeatTimer = nil
         currentAction = nil
-        isControllingSpotify = false // Reset the flag
+        
+        // FIX: This line is removed. By not resetting the flag here, the HUD's state (e.g., showing Spotify controls)
+        // will persist until the HUD times out or another key press (without modifiers) changes it.
+        // This makes the slim HUD's behavior consistent with the user's expectation of holding down the modifier key.
+        // isControllingSpotify = false
 
         withAnimation(.spring()) {
             glowIntensity = 0.0
@@ -437,6 +440,7 @@ class SystemHUDManager: ObservableObject {
                 self?.spotifyStateForAction = nil
                 self?.currentSpotifyVolumeForAction = nil
                 self?.lastCommittedSpotifyVolume = nil
+                // The state is correctly reset here upon dismissal.
                 self?.isControllingSpotify = false
             }
         }
@@ -458,8 +462,15 @@ struct SystemHUDView: View {
                     brightnessContent(level: level)
                 case .keyboardBrightness(let level):
                     keyboardBrightnessContent(level: level)
-                case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, let systemVolume, _, let canControlVolume):
-                    systemVolumeContent(level: systemVolume, device: nil)
+                case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, let systemVolume, let isControllingExternal, let canControlVolume):
+                    let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
+
+                    systemVolumeContent(
+                        level: systemVolume,
+                        device: systemDevice,
+                        isControllingExternal: isControllingExternal
+                    )
+
                     ExternalDeviceIndicatorHUD(level: deviceVolume, deviceName: deviceName, deviceIcon: deviceIcon, canControlVolume: canControlVolume)
                         .transition(.opacity.combined(with: .offset(y: 5)))
                 }
@@ -483,15 +494,20 @@ struct SystemHUDView: View {
     }
 
     @ViewBuilder
-    private func systemVolumeContent(level: Float, device: AudioDevice?) -> some View {
+    private func systemVolumeContent(
+        level: Float,
+        device: AudioDevice?,
+        isControllingExternal: Bool = false
+    ) -> some View {
         HStack(spacing: 12) {
             let icon: String = {
-                if settings.settings.volumeHUDShowDeviceIcon, let device = device {
-                    if settings.settings.excludeBuiltInSpeakersFromHUDIcon && device.name.lowercased().contains("macbook") {
+                if settings.settings.volumeHUDShowDeviceIcon, let dev = device {
+                    if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {
                         return volumeIconName(for: level)
                     }
-                    return IconMapper.icon(for: device)
+                    return IconMapper.icon(for: dev)
                 }
+
                 return volumeIconName(for: level)
             }()
 
@@ -700,17 +716,29 @@ struct DynamicSliderIndicator: View {
 }
 
 struct SystemHUDSlimActivityView {
-    static func left(type: HUDType) -> some View {
+    private static func volumeIconName(for level: Float) -> String {
+        if level == 0 { return "speaker.slash.fill" }
+        if level < 0.33 { return "speaker.wave.1.fill" }
+        if level < 0.66 { return "speaker.wave.2.fill" }
+        return "speaker.wave.3.fill"
+    }
+
+    static func left(type: HUDType, settings: SettingsModel) -> some View {
         let iconName: String
         let isExternalControl: Bool
 
         switch type {
-        case .volume(let level, _):
+        case .volume(let level, let device):
             isExternalControl = false
-            if level == 0 { iconName = "speaker.slash.fill" }
-            else if level < 0.33 { iconName = "speaker.wave.1.fill" }
-            else if level < 0.66 { iconName = "speaker.wave.2.fill" }
-            else { iconName = "speaker.wave.3.fill" }
+            if settings.settings.volumeHUDShowDeviceIcon, let dev = device {
+                if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {
+                    iconName = volumeIconName(for: level)
+                } else {
+                    iconName = IconMapper.icon(for: dev)
+                }
+            } else {
+                iconName = volumeIconName(for: level)
+            }
 
         case .brightness:
             iconName = "sun.max.fill"
@@ -721,14 +749,24 @@ struct SystemHUDSlimActivityView {
             isExternalControl = false
 
         case .externalDeviceVolume(_, let deviceIcon, _, let systemVolume, let controllingExternal, _):
-            isExternalControl = controllingExternal
+             // This logic now correctly differentiates between the icon to show and the color to use.
             if controllingExternal {
+                // When controlling Spotify, show the Spotify icon.
                 iconName = deviceIcon
+                isExternalControl = true
             } else {
-                if systemVolume == 0 { iconName = "speaker.slash.fill" }
-                else if systemVolume < 0.33 { iconName = "speaker.wave.1.fill" }
-                else if systemVolume < 0.66 { iconName = "speaker.wave.2.fill" }
-                else { iconName = "speaker.wave.3.fill" }
+                // When not controlling Spotify, show the system device icon.
+                let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
+                if settings.settings.volumeHUDShowDeviceIcon, let dev = systemDevice {
+                    if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {
+                        iconName = volumeIconName(for: systemVolume)
+                    } else {
+                        iconName = IconMapper.icon(for: dev)
+                    }
+                } else {
+                    iconName = volumeIconName(for: systemVolume)
+                }
+                isExternalControl = false
             }
         }
 

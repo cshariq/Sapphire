@@ -8,6 +8,7 @@
 //
 //
 //
+//
 
 import SwiftUI
 import Charts
@@ -2388,14 +2389,16 @@ struct ProximityUnlockSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
     @ObservedObject private var authManager = AuthenticationManager.shared
 
+    // --- View State ---
     @State private var showPasswordPrompt = false
     @State private var showFaceIDRegistration = false
     @State private var faceProfileToRegister: String?
-
     @State private var showUnnamedDevices = false
     @State private var isFindingByDistance = false
     @State private var isCalibratingRSSI = false
-
+    
+    private let deviceRowHeight: CGFloat = 38
+    private let maxDeviceListHeight: CGFloat = 228
     private var isBluetoothEnabled: Binding<Bool> {
         Binding<Bool>(
             get: { settings.settings.bluetoothUnlockEnabled },
@@ -2434,39 +2437,36 @@ struct ProximityUnlockSettingsView: View {
     private var selectedDevice: Device? {
         guard let selectedIDString = authManager.selectedDeviceID,
               let selectedID = UUID(uuidString: selectedIDString) else { return nil }
-
         return authManager.scannedDevices.first { $0.id == selectedID } ?? authManager.ble.devices[selectedID]
     }
+    
+    private var filteredScannedDevices: [Device] {
+        if showUnnamedDevices {
+            return authManager.scannedDevices
+        } else {
+            return authManager.scannedDevices.filter { $0.displayName != "Unnamed Device" }
+        }
+    }
 
+    // MARK: - Body
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                
                 InfoContainer(text: "WARNING: All these features are in development and may not work as expected. They might cause unexpected unlocks on your mac. Use at your own risk.", iconName: "exclamationmark.triangle.fill", color: .red)
-                passwordSection
-                faceIDSection
-
-                VStack(alignment: .leading, spacing: 0) {
-                    ToggleRow(title: "Enable Bluetooth Unlock", description: "Automatically lock and unlock your Mac using a trusted Bluetooth device.", isOn: isBluetoothEnabled)
-                }
-                .modifier(SettingsContainerModifier())
-
-                Group {
-                    deviceSelectionSection
-                    sensitivitySection
-                    actionsSection
-                    advancedSection
-                }
-                .disabled(!settings.settings.bluetoothUnlockEnabled)
-                .opacity(settings.settings.bluetoothUnlockEnabled ? 1.0 : 0.6)
-                .animation(.easeInOut, value: settings.settings.bluetoothUnlockEnabled)
+                
+                authenticationSection // Shared password settings
+                faceIDSection         // Face ID specific settings
+                bluetoothUnlockSection // Bluetooth specific settings
+                actionsSection        // Shared lock/unlock actions
+                
             }
             .padding(25)
         }
         .sheet(isPresented: $showPasswordPrompt) {
             PasswordPromptView(isPresented: $showPasswordPrompt) { password in
                 if authManager.verifyAndSavePassword(password) {
-                    if !settings.settings.bluetoothUnlockEnabled { settings.settings.bluetoothUnlockEnabled = true }
                     showPasswordPrompt = false
                 }
             }
@@ -2486,87 +2486,14 @@ struct ProximityUnlockSettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private var deviceSelectionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Device").font(.headline).padding([.horizontal, .top])
-            if let device = selectedDevice {
-                DeviceRowView(device: device, isSelected: true) {}
-                    .padding(.horizontal)
-                HStack {
-                    pairingStatusView
-                    Spacer()
-                    Button("Calibrate Range") {
-                        isCalibratingRSSI = true
-                    }
-                    Button("Forget Device", role: .destructive) { authManager.forgetDevice() }
-                }.padding([.horizontal, .bottom])
-            } else {
-                VStack(spacing: 12) {
-                    HStack {
-                        Button(authManager.isScanning ? "Stop Scanning" : "Scan for Devices") {
-                            if authManager.isScanning { authManager.stopScan() }
-                            else { authManager.startScan(includeUnnamed: showUnnamedDevices) }
-                        }
-                        if authManager.isScanning { ProgressView().padding(.leading) }
-                    }
-
-                    Toggle(isOn: $showUnnamedDevices) { Text("Show unnamed devices") }
-                    .onChange(of: showUnnamedDevices) { _, newValue in
-                        if authManager.isScanning {
-                            authManager.rescanWithNewSettings(includeUnnamed: newValue)
-                        }
-                    }
-
-                    if showUnnamedDevices && authManager.isScanning {
-                        VStack(spacing: 4) {
-                            Button("Find by Distance...") { isFindingByDistance = true }
-                            Text("Helps identify a device if you can't find it in the list.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .padding(.top, 5)
-                        .transition(.opacity)
-                    }
-
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            if authManager.scannedDevices.isEmpty && authManager.isScanning {
-                                Text("Scanning...")
-                                    .font(.caption).foregroundColor(.secondary).frame(height: 150)
-                            } else if authManager.scannedDevices.isEmpty {
-                                 Text("No devices found. Click 'Scan' to begin.")
-                                     .font(.caption).foregroundColor(.secondary).frame(height: 150)
-                            } else {
-                                ForEach(authManager.scannedDevices) { device in
-                                    DeviceRowView(device: device) {
-                                        authManager.selectDevice(uuid: device.id)
-                                    }
-                                    if device.id != authManager.scannedDevices.last?.id {
-                                        Divider().padding(.leading, 50)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .frame(height: 180)
-                    .background(Color.black.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                }
-                .padding([.horizontal, .bottom])
-                .animation(.default, value: showUnnamedDevices)
-            }
-        }.modifier(SettingsContainerModifier())
-    }
-
+    // MARK: - View Components
+    
     private var header: some View {
         VStack(alignment: .leading) {
-            Text("Proximity Unlock").font(.largeTitle.bold())
+            Text("Proximity & Face Unlock").font(.largeTitle.bold())
             HStack {
                 Button("Lock Screen Now") { authManager.manualLock() }
-                .disabled(!settings.settings.bluetoothUnlockEnabled && !settings.settings.faceIDUnlockEnabled)
+                    .disabled(!settings.settings.bluetoothUnlockEnabled && !settings.settings.faceIDUnlockEnabled)
                 Spacer()
                 Text(authManager.status).font(.caption).foregroundColor(.secondary)
             }.padding(.top, 2)
@@ -2574,29 +2501,68 @@ struct ProximityUnlockSettingsView: View {
     }
 
     @ViewBuilder
+    private var authenticationSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Authentication").font(.headline).padding([.horizontal, .top])
+            
+            if authManager.isPasswordSet {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                    Text("Your Mac's password is securely stored in the Keychain.")
+                    Spacer()
+                    Button("Change") { showPasswordPrompt = true }
+                    Button("Remove", role: .destructive) {
+                        authManager.removePassword()
+                        settings.settings.bluetoothUnlockEnabled = false
+                        settings.settings.faceIDUnlockEnabled = false
+                    }
+                }
+                .padding([.horizontal, .bottom])
+            } else {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.yellow)
+                    Text("To enable Face ID or Bluetooth Unlock, you must first provide your Mac's login password.")
+                    Spacer()
+                    Button("Set Password") { showPasswordPrompt = true }
+                }
+                .padding([.horizontal, .bottom])
+            }
+        }.modifier(SettingsContainerModifier())
+    }
+
+    @ViewBuilder
     private var faceIDSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ToggleRow(title: "Enable Face ID Unlock", description: "Unlock your Mac using facial recognition when you open the lid or wake the screen.", isOn: isFaceIDEnabled)
+            ToggleRow(title: "Enable Face ID Unlock", description: "Unlock your Mac using facial recognition when you wake the screen.", isOn: isFaceIDEnabled)
+                .disabled(!authManager.isPasswordSet)
+            
             if settings.settings.faceIDUnlockEnabled {
                 Divider().padding(.leading, 20)
-
+                
                 let registeredFaces = authManager.cameraController.faceDataStore.getRegisteredProfileNames()
-                ForEach(registeredFaces, id: \.self) { profileName in
-                    HStack {
-                        Image(systemName: "faceid").font(.title2).foregroundColor(.accentColor)
-                        Text(profileName)
-                        Spacer()
-                        Button("Re-Register") {
-                            self.faceProfileToRegister = profileName
-                            showFaceIDRegistration = true
-                        }
-                        Button("Delete", role: .destructive) {
-                            authManager.cameraController.faceDataStore.deleteProfile(name: profileName)
-                            authManager.objectWillChange.send()
-                        }
-                    }.padding()
+                if registeredFaces.isEmpty {
+                    Text("No faces registered. Enable Face ID to add one.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding()
+                } else {
+                    ForEach(registeredFaces, id: \.self) { profileName in
+                        HStack {
+                            Image(systemName: "faceid").font(.title2).foregroundColor(.accentColor)
+                            Text(profileName)
+                            Spacer()
+                            Button("Re-Register") {
+                                self.faceProfileToRegister = profileName
+                                showFaceIDRegistration = true
+                            }
+                            Button("Delete", role: .destructive) {
+                                authManager.cameraController.faceDataStore.deleteProfile(name: profileName)
+                                authManager.objectWillChange.send() // Force UI update
+                            }
+                        }.padding()
+                    }
                 }
-
+                
                 if registeredFaces.count < 2 {
                     HStack {
                         Spacer()
@@ -2611,82 +2577,135 @@ struct ProximityUnlockSettingsView: View {
             }
         }
         .modifier(SettingsContainerModifier())
+        .opacity(authManager.isPasswordSet ? 1.0 : 0.6)
     }
 
     @ViewBuilder
-    private var passwordSection: some View {
-        if authManager.isPasswordSet {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Password").font(.headline).padding([.horizontal, .top])
-                HStack {
-                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                    Text("Password is set in Keychain.")
-                    Spacer()
-                    Button("Change") { showPasswordPrompt = true }
-                    Button("Remove", role: .destructive) {
-                        authManager.removePassword()
-                        settings.settings.bluetoothUnlockEnabled = false
-                        settings.settings.faceIDUnlockEnabled = false
-                    }
-                }.padding()
-            }.modifier(SettingsContainerModifier())
-        }
-    }
-
-    @ViewBuilder
-    private var pairingStatusView: some View {
-        HStack(spacing: 4) {
-            switch authManager.monitoredPeripheralState {
-            case .connected:
-                Image(systemName: "checkmark.shield.fill").foregroundColor(.green)
-                Text("Paired & Monitoring")
-            case .connecting:
-                ProgressView().scaleEffect(0.5)
-                Text("Connecting...")
-            case .disconnecting:
-                Image(systemName: "xmark.shield.fill").foregroundColor(.gray)
-                Text("Disconnecting...")
-            case .disconnected:
-                Image(systemName: "xmark.shield.fill").foregroundColor(.red)
-                Text("Out of Range")
-            @unknown default:
-                Image(systemName: "questionmark.circle.fill").foregroundColor(.gray)
-                Text("Unknown State")
+    private var bluetoothUnlockSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ToggleRow(title: "Enable Bluetooth Unlock", description: "Automatically lock and unlock your Mac using a trusted Bluetooth device.", isOn: isBluetoothEnabled)
+                .disabled(!authManager.isPasswordSet)
+            
+            Group {
+                if settings.settings.bluetoothUnlockEnabled {
+                    Divider().padding(.leading, 20)
+                    deviceSelectionSection
+                    Divider().padding(.horizontal)
+                    sensitivitySection
+                    Divider().padding(.horizontal)
+                    advancedSection
+                }
             }
+            .transition(.opacity.combined(with: .move(edge: .top)))
         }
-        .font(.caption)
-        .foregroundColor(.secondary)
+        .modifier(SettingsContainerModifier())
+        .opacity(authManager.isPasswordSet ? 1.0 : 0.6)
+        .animation(.default, value: settings.settings.bluetoothUnlockEnabled)
+    }
+
+    @ViewBuilder
+    private var deviceSelectionSection: some View {
+        let listHeight = min(maxDeviceListHeight, CGFloat(filteredScannedDevices.count) * deviceRowHeight)
+        
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Trusted Device").font(.subheadline).bold().padding(.horizontal)
+            
+            if let device = selectedDevice {
+                DeviceRowView(device: device, isSelected: true) {}
+                    .padding(.horizontal)
+                HStack {
+                    pairingStatusView
+                    Spacer()
+                    Button("Calibrate Range") { isCalibratingRSSI = true }
+                    Button("Forget Device", role: .destructive) { authManager.forgetDevice() }
+                }.padding(.horizontal)
+            } else {
+                VStack(spacing: 12) {
+                    HStack {
+                        Button(authManager.isScanning ? "Stop Scanning" : "Scan for Devices") {
+                            if authManager.isScanning { authManager.stopScan() }
+                            else { authManager.startScan(includeUnnamed: showUnnamedDevices) }
+                        }
+                        if authManager.isScanning { ProgressView().scaleEffect(0.8).padding(.leading) }
+                    }
+
+                    Toggle(isOn: $showUnnamedDevices) { Text("Show unnamed devices") }
+                        .onChange(of: showUnnamedDevices) { _, newValue in
+                            authManager.updateScanFilter(includeUnnamed: newValue)
+                        }
+
+                    if showUnnamedDevices && authManager.isScanning {
+                        Button("Find by Distance...") { isFindingByDistance = true }
+                            .font(.caption)
+                            .padding(.top, 5)
+                            .transition(.opacity)
+                    }
+
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            if authManager.scannedDevices.isEmpty && authManager.isScanning {
+                                Text("Scanning...").font(.caption).foregroundColor(.secondary).frame(minHeight: 80)
+                            } else if filteredScannedDevices.isEmpty {
+                                 Text(showUnnamedDevices ? "No devices found. Ensure device is nearby and discoverable." : "No named devices found. Try enabling 'Show unnamed devices'.")
+                                     .font(.caption).foregroundColor(.secondary).frame(minHeight: 80).padding(.horizontal).multilineTextAlignment(.center)
+                            } else {
+                                ForEach(filteredScannedDevices) { device in
+                                    DeviceRowView(device: device) { authManager.selectDevice(uuid: device.id) }
+                                    if device.id != filteredScannedDevices.last?.id { Divider().padding(.leading, 50) }
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: listHeight)
+                    .background(Color.black.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .animation(.spring(), value: listHeight)
+                }
+                .padding(.horizontal)
+                .animation(.default, value: showUnnamedDevices)
+            }
+        }.padding(.vertical)
     }
 
     @ViewBuilder
     private var sensitivitySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Sensitivity").font(.headline)
-            }.padding([.top, .horizontal])
-
-            if authManager.selectedDeviceID != nil {
-                let rssiString = authManager.lastRSSI.map { "\($0) dBm" } ?? "N/A"
-                Text("Current Signal: \(rssiString)")
-                    .font(.caption).foregroundColor(.secondary).padding(.horizontal)
-            }
+                Text("Sensitivity").font(.subheadline).bold()
+                if authManager.selectedDeviceID != nil {
+                    Spacer()
+                    let rssiString = authManager.lastRSSI.map { "\($0) dBm" } ?? "N/A"
+                    Text("Current Signal: \(rssiString)")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }.padding(.horizontal)
 
             VStack(spacing: 0) {
                 CustomSliderRowView(label: "Unlock RSSI", value: Binding(get: { Double(settings.settings.bluetoothUnlockUnlockRSSI) }, set: { settings.settings.bluetoothUnlockUnlockRSSI = Int($0) }), range: -100...0, specifier: "%.0f dBm")
                 Divider().padding(.leading, 20)
                 CustomSliderRowView(label: "Lock RSSI", value: Binding(get: { Double(settings.settings.bluetoothUnlockLockRSSI) }, set: { settings.settings.bluetoothUnlockLockRSSI = Int($0) }), range: -100...0, specifier: "%.0f dBm")
-                Divider().padding(.leading, 20)
-                CustomSliderRowView(label: "Delay to Lock", value: $settings.settings.bluetoothUnlockTimeout, range: 1...60, specifier: "%.0f sec")
-                Divider().padding(.leading, 20)
-                CustomSliderRowView(label: "No-Signal Timeout", value: $settings.settings.bluetoothUnlockNoSignalTimeout, range: 10...300, specifier: "%.0f sec")
             }.padding(.top, 5)
-        }.modifier(SettingsContainerModifier())
+        }.padding(.vertical)
     }
 
     @ViewBuilder
+    private var advancedSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Advanced").font(.subheadline).bold().padding(.horizontal)
+            CustomSliderRowView(label: "Delay to Lock", value: $settings.settings.bluetoothUnlockTimeout, range: 1...60, specifier: "%.0f sec")
+            Divider().padding(.leading, 20)
+            CustomSliderRowView(label: "No-Signal Timeout", value: $settings.settings.bluetoothUnlockNoSignalTimeout, range: 10...300, specifier: "%.0f sec")
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Passive Mode", description: "Uses less energy but may be slightly slower to react.", isOn: $settings.settings.bluetoothUnlockPassiveMode)
+            Divider().padding(.leading, 20)
+            CustomSliderRowView(label: "Minimum Scan RSSI", value: Binding(get: { Double(settings.settings.bluetoothUnlockMinScanRSSI) }, set: { settings.settings.bluetoothUnlockMinScanRSSI = Int($0) }), range: -100 ... -30, specifier: "%.0f dBm")
+        }.padding(.vertical)
+    }
+    
+    @ViewBuilder
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Actions").font(.headline).padding([.top, .horizontal])
+            Text("Lock & Unlock Actions").font(.headline).padding([.top, .horizontal])
             ToggleRow(title: "Wake on Proximity", description: "Wake the screen when your device comes into range.", isOn: $settings.settings.bluetoothUnlockWakeOnProximity)
             Divider().padding(.leading, 20)
             ToggleRow(title: "Wake without Unlocking", description: "Only wake the screen, do not enter the password.", isOn: $settings.settings.bluetoothUnlockWakeWithoutUnlocking)
@@ -2700,20 +2719,32 @@ struct ProximityUnlockSettingsView: View {
     }
 
     @ViewBuilder
-    private var advancedSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Advanced").font(.headline).padding([.top, .horizontal])
-            ToggleRow(title: "Passive Mode", description: "Uses less energy but may be slightly slower to react.", isOn: $settings.settings.bluetoothUnlockPassiveMode)
-            Divider().padding(.leading, 20)
-            CustomSliderRowView(label: "Minimum Scan RSSI", value: Binding(get: { Double(settings.settings.bluetoothUnlockMinScanRSSI) }, set: { settings.settings.bluetoothUnlockMinScanRSSI = Int($0) }), range: -100 ... -30, specifier: "%.0f dBm")
-        }.modifier(SettingsContainerModifier())
+    private var pairingStatusView: some View {
+        HStack(spacing: 4) {
+            switch authManager.monitoredPeripheralState {
+            case .connected: Image(systemName: "checkmark.shield.fill").foregroundColor(.green); Text("Paired & Monitoring")
+            case .connecting: ProgressView().scaleEffect(0.5); Text("Connecting...")
+            case .disconnecting: Image(systemName: "xmark.shield.fill").foregroundColor(.gray); Text("Disconnecting...")
+            case .disconnected: Image(systemName: "xmark.shield.fill").foregroundColor(.red); Text("Out of Range")
+            @unknown default: Image(systemName: "questionmark.circle.fill").foregroundColor(.gray); Text("Unknown State")
+            }
+        }
+        .font(.caption)
+        .foregroundColor(.secondary)
     }
 }
+
+// MARK: - Helper Views
 
 fileprivate struct DeviceRowView: View {
     let device: Device
     var isSelected: Bool = false
     let action: () -> Void
+
+    private var truncatedUUID: String {
+        let fullUUID = device.id.uuidString
+        return "\(fullUUID.prefix(8))...\(fullUUID.suffix(4))"
+    }
 
     private func iconForDevice() -> String {
         if let name = device.peripheral?.name, let icon = IconMapper.icon(forName: name) {
@@ -2724,20 +2755,20 @@ fileprivate struct DeviceRowView: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: iconForDevice())
-                    .font(.title2)
+                    .font(.system(size: 20))
                     .foregroundColor(isSelected ? .accentColor : .secondary)
-                    .frame(width: 25)
+                    .frame(width: 22)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(device.peripheral?.name ?? "Unnamed Device")
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(device.displayName)
                         .fontWeight(isSelected ? .semibold : .medium)
                         .foregroundColor(isSelected ? .accentColor : .primary)
                         .lineLimit(1)
 
-                    Text(device.uuid.uuidString)
-                        .font(.caption.monospaced())
+                    Text(truncatedUUID)
+                        .font(.caption2.monospaced())
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
@@ -2745,11 +2776,11 @@ fileprivate struct DeviceRowView: View {
                 Spacer()
 
                 Text("\(device.rssi) dBm")
-                    .font(.callout.monospaced())
+                    .font(.caption.monospaced())
                     .foregroundColor(isSelected ? .accentColor : .secondary)
             }
             .padding(.horizontal)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
             .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
         }
         .buttonStyle(.plain)
@@ -4218,7 +4249,6 @@ struct CalendarSettingsView: View {
         }
     }
 }
-
 struct EyeBreakRecommendationsView: View {
     @Environment(\.presentationMode) var presentationMode
 
@@ -4324,13 +4354,24 @@ struct EyeBreakSettingsView: View {
                     .font(.largeTitle.bold())
                     .padding(.bottom)
 
-                currentStatusSection
+                VStack(alignment: .leading, spacing: 0) {
+                    ToggleRow(
+                        title: "Enable Eye Break Reminders",
+                        description: "Receive live activities reminding you to take breaks.",
+                        isOn: $settings.settings.eyeBreakLiveActivityEnabled
+                    )
+                }
+                .modifier(SettingsContainerModifier())
 
-                configurationSection
-
-                statisticsSection
-
-                resetSection
+                Group {
+                    currentStatusSection
+                    configurationSection
+                    statisticsSection
+                    resetSection
+                }
+                .disabled(!settings.settings.eyeBreakLiveActivityEnabled)
+                .opacity(settings.settings.eyeBreakLiveActivityEnabled ? 1.0 : 0.6)
+                .animation(.easeInOut(duration: 0.2), value: settings.settings.eyeBreakLiveActivityEnabled)
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -4466,9 +4507,7 @@ struct EyeBreakSettingsView: View {
                     .foregroundColor(.blue)
                     .padding(.top, 4)
                 }
-
                 Spacer()
-
                 Image(systemName: "eyes")
                     .font(.system(size: 24))
                     .foregroundColor(.blue)
@@ -4488,6 +4527,9 @@ struct EyeBreakSettingsView: View {
                 range: 5...60,
                 specifier: "%.0f min"
             )
+            .onChange(of: settings.settings.eyeBreakWorkInterval) {
+                eyeBreakManager.dismissBreak()
+            }
 
             Divider().padding(.leading, 20)
 
@@ -4497,6 +4539,9 @@ struct EyeBreakSettingsView: View {
                 range: 10...60,
                 specifier: "%.0f sec"
             )
+            .onChange(of: settings.settings.eyeBreakBreakDuration) {
+                eyeBreakManager.dismissBreak()
+            }
 
             Divider().padding(.leading, 20)
 
@@ -4521,7 +4566,6 @@ struct EyeBreakSettingsView: View {
     private var statisticsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Activity Statistics").font(.headline).padding([.top, .horizontal])
-
             if settings.settings.showEyeBreakGraph {
                 EyeBreakGraphView(summaries: eyeBreakManager.dailySummaries)
                     .environmentObject(settings)
@@ -4541,7 +4585,6 @@ struct EyeBreakSettingsView: View {
     private var resetSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Reset & Data").font(.headline).padding([.top, .horizontal])
-
             Button(action: {
                 eyeBreakManager.dismissBreak()
             }) {

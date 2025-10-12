@@ -6,8 +6,6 @@
 //
 //
 //
-//
-//
 
 import Foundation
 import ScreenCaptureKit
@@ -167,13 +165,6 @@ class GeminiLiveManager: NSObject, ObservableObject, SCStreamOutput, SCStreamDel
     private func sendSetupMessage() async throws {
         let payload = GeminiWebSocketMessage.Setup.Payload(model: GeminiAPI.modelName)
         let message = GeminiWebSocketMessage.Setup(setup: payload)
-        try await send(message: message)
-    }
-
-    private func sendContentPart(_ part: GeminiWebSocketMessage.ContentInput.Part) async throws {
-        let turn = GeminiWebSocketMessage.ContentInput.Turn(parts: [part])
-        let payload = GeminiWebSocketMessage.ContentInput.Payload(turns: [turn], turnComplete: false)
-        let message = GeminiWebSocketMessage.ContentInput(clientContent: payload)
         try await send(message: message)
     }
 
@@ -339,6 +330,7 @@ class GeminiLiveManager: NSObject, ObservableObject, SCStreamOutput, SCStreamDel
         try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoFrameOutputQueue)
         try await stream?.startCapture()
         print("[GeminiLiveManager LOG] Screen capture stream started.")
+        try await Task.sleep(nanoseconds: .max)
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -350,16 +342,21 @@ class GeminiLiveManager: NSObject, ObservableObject, SCStreamOutput, SCStreamDel
               let jpegData = NSBitmapImageRep(cgImage: cgImage).representation(using: .jpeg, properties: [.compressionFactor: 0.7]) else { return }
 
         let base64String = jpegData.base64EncodedString()
-        let inlineData = GeminiWebSocketMessage.ContentInput.InlineData(mimeType: "image/jpeg", data: base64String)
-        let part = GeminiWebSocketMessage.ContentInput.Part(inlineData: inlineData)
 
-        Task { try? await self.sendContentPart(part) }
+        let chunk = GeminiWebSocketMessage.VideoInput.MediaChunk(mimeType: "image/jpeg", data: base64String)
+        let payload = GeminiWebSocketMessage.VideoInput.Payload(video: chunk)
+        let message = GeminiWebSocketMessage.VideoInput(realtimeInput: payload)
+
+        Task {
+            try? await self.send(message: message)
+        }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         Task { @MainActor in
-            print("[GeminiLiveManager LOG]  Delegate method stream(didStopWithError:) was called. Error: \(error.localizedDescription)")
+            print("[GeminiLiveManager ERROR] Delegate method stream(didStopWithError:) was called. Error: \(error.localizedDescription)")
             self.stream = nil
+            await self.cleanupSession()
         }
     }
 

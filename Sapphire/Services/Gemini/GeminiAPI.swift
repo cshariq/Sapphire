@@ -48,6 +48,17 @@ enum GeminiWebSocketMessage {
         }
     }
 
+    struct VideoInput: Encodable {
+        let realtimeInput: Payload
+        struct Payload: Encodable {
+            let video: MediaChunk
+        }
+        struct MediaChunk: Encodable {
+            let mimeType: String
+            let data: String
+        }
+    }
+
     struct ContentInput: Encodable {
         let clientContent: Payload
 
