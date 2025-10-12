@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-04.
 //
 //
-//
-//
-//
 
 import Cocoa
 import SwiftUI
@@ -93,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private var statusItem: NSStatusItem?
 
-    private var networkMonitor: NWPathMonitor? // <-- ADD NETWORK MONITOR PROPERTY
+    private var networkMonitor: NWPathMonitor?
 
     lazy var liveActivityManager: LiveActivityManager = LiveActivityManager(
         systemHUDManager: self.systemHUDManager, notificationManager: self.notificationManager, desktopManager: self.desktopManager,
@@ -150,7 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 } else {
                     self?.teardownLaunchpad()
                 }
-                self?.setupStatusBarItem() // <-- MODIFICATION: Re-evaluate status bar when launchpad setting changes.
+                self?.setupStatusBarItem()
             }
             .store(in: &cancellables)
 
@@ -168,7 +165,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             multiAudioManager, eyeBreakManager, timerManager, weatherActivityViewModel,
             contentPickerHelper, geminiLiveManager, settingsModel, activeAppMonitor,
             powerStateController, scheduleManager, keyboardShortcutManager, globalDragManager,
-            fileShelfManager, authManager, liveActivityManager // This initializes the entire dependency graph
+            fileShelfManager, authManager, liveActivityManager
         ]
         _ = managers.count
     }
@@ -227,7 +224,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func onboardingDidComplete() {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
-        Analytics.logEvent("onboarding_completed", parameters: nil) // Log completion
+        Analytics.logEvent("onboarding_completed", parameters: nil)
         self.onboardingWindow?.orderOut(nil)
         self.onboardingWindow = nil
         startMainApp()
@@ -344,7 +341,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             widgetConfigs.append(.init(
                 id: "mainWidgetContainer",
                 view: AnyView(mainWidgetContainer),
-                initialSize: .zero, // Size will be determined by the view's content
+                initialSize: .zero,
                 positioner: lockScreenManager.calculateMainWidgetFrame(size:screen:)
             ))
         }
@@ -437,7 +434,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         cgsSpace = nil
         NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
-        networkMonitor?.cancel() // <-- CLEAN UP NETWORK MONITOR
+        networkMonitor?.cancel()
 
         UpdateChecker.shared.stopPeriodicChecks()
 

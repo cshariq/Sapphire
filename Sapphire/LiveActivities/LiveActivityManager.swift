@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-04
 //
 //
-//
-//
-//
 
 import Foundation
 import SwiftUI
@@ -212,7 +209,7 @@ class LiveActivityManager: ObservableObject {
                 let data = StandardActivityData.hud(type: hudType)
                 let content = LiveActivityContent.standard(data: data, id: hudType)
                 setActivity(type: .systemHUD, content: content, dismissAfter: nil)
-            } else { // .default style
+            } else {
                 if currentActivity != .systemHUD {
                     let hudBottomCornerRadius: CGFloat = 25.0
                     let view = AnyView(
@@ -242,7 +239,7 @@ class LiveActivityManager: ObservableObject {
 
         if let (_, newContent, _) = checkForMusic() {
             self.activityContent = newContent
-            self.contentUpdateID = UUID() // This triggers a view update in SwiftUI.
+            self.contentUpdateID = UUID()
         }
     }
 

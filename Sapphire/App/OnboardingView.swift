@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-09.
 //
 //
-//
-//
 
 import SwiftUI
 import CaptchaSolverInterface
@@ -233,7 +231,7 @@ private struct PrivacyStepView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Color.white.opacity(0.1)))
             }
-            .frame(maxHeight: .infinity) // **FIX: Allow scroll view to expand**
+            .frame(maxHeight: .infinity)
             .padding(.horizontal, 50)
 
             Toggle(isOn: $hasAgreed) {

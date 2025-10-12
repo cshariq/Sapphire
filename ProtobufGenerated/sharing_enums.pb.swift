@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-30
 //
 //
-//
 
 import Foundation
 import SwiftProtobuf
@@ -17,153 +16,153 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 
 enum Location_Nearby_Proto_Sharing_EventType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownEventType // = 0
+  case unknownEventType
 
-  case acceptAgreements // = 1
+  case acceptAgreements
 
-  case enableNearbySharing // = 2
+  case enableNearbySharing
 
-  case setVisibility // = 3
+  case setVisibility
 
-  case describeAttachments // = 4
+  case describeAttachments
 
-  case scanForShareTargetsStart // = 5
+  case scanForShareTargetsStart
 
-  case scanForShareTargetsEnd // = 6
+  case scanForShareTargetsEnd
 
-  case advertiseDevicePresenceStart // = 7
+  case advertiseDevicePresenceStart
 
-  case advertiseDevicePresenceEnd // = 8
+  case advertiseDevicePresenceEnd
 
-  case sendFastInitialization // = 9
+  case sendFastInitialization
 
-  case receiveFastInitialization // = 10
+  case receiveFastInitialization
 
-  case discoverShareTarget // = 11
+  case discoverShareTarget
 
-  case sendIntroduction // = 12
+  case sendIntroduction
 
-  case receiveIntroduction // = 13
+  case receiveIntroduction
 
-  case respondToIntroduction // = 14
+  case respondToIntroduction
 
-  case sendAttachmentsStart // = 15
+  case sendAttachmentsStart
 
-  case sendAttachmentsEnd // = 16
+  case sendAttachmentsEnd
 
-  case receiveAttachmentsStart // = 17
+  case receiveAttachmentsStart
 
-  case receiveAttachmentsEnd // = 18
+  case receiveAttachmentsEnd
 
-  case cancelSendingAttachments // = 19
+  case cancelSendingAttachments
 
-  case cancelReceivingAttachments // = 20
+  case cancelReceivingAttachments
 
-  case openReceivedAttachments // = 21
+  case openReceivedAttachments
 
-  case launchSetupActivity // = 22
+  case launchSetupActivity
 
-  case addContact // = 23
+  case addContact
 
-  case removeContact // = 24
+  case removeContact
 
-  case fastShareServerResponse // = 25
+  case fastShareServerResponse
 
-  case sendStart // = 26
+  case sendStart
 
-  case acceptFastInitialization // = 27
+  case acceptFastInitialization
 
-  case setDataUsage // = 28
+  case setDataUsage
 
-  case dismissFastInitialization // = 29
+  case dismissFastInitialization
 
-  case cancelConnection // = 30
+  case cancelConnection
 
-  case launchActivity // = 31
+  case launchActivity
 
-  case dismissPrivacyNotification // = 32
+  case dismissPrivacyNotification
 
-  case tapPrivacyNotification // = 33
+  case tapPrivacyNotification
 
-  case tapHelp // = 34
+  case tapHelp
 
-  case tapFeedback // = 35
+  case tapFeedback
 
-  case addQuickSettingsTile // = 36
+  case addQuickSettingsTile
 
-  case removeQuickSettingsTile // = 37
+  case removeQuickSettingsTile
 
-  case launchPhoneConsent // = 38
+  case launchPhoneConsent
 
-  case displayPhoneConsent // = 54
+  case displayPhoneConsent
 
-  case tapQuickSettingsTile // = 39
+  case tapQuickSettingsTile
 
-  case installApk // = 40
+  case installApk
 
-  case verifyApk // = 41
+  case verifyApk
 
-  case launchConsent // = 42
+  case launchConsent
 
-  case processReceivedAttachmentsEnd // = 43
+  case processReceivedAttachmentsEnd
 
-  case toggleShowNotification // = 44
+  case toggleShowNotification
 
-  case setDeviceName // = 45
+  case setDeviceName
 
-  case declineAgreements // = 46
+  case declineAgreements
 
-  case requestSettingPermissions // = 47
+  case requestSettingPermissions
 
-  case establishConnection // = 48
+  case establishConnection
 
-  case deviceSettings // = 49
+  case deviceSettings
 
-  case autoDismissFastInitialization // = 50
+  case autoDismissFastInitialization
 
-  case appCrash // = 51
+  case appCrash
 
-  case tapQuickSettingsFileShare // = 52
+  case tapQuickSettingsFileShare
 
-  case displayPrivacyNotification // = 53
+  case displayPrivacyNotification
 
-  case preferencesUsage // = 55
+  case preferencesUsage
 
-  case defaultOptIn // = 56
+  case defaultOptIn
 
-  case setupWizard // = 57
+  case setupWizard
 
-  case tapQrCode // = 58
+  case tapQrCode
 
-  case qrCodeLinkShown // = 59
+  case qrCodeLinkShown
 
-  case parsingFailedEndpointID // = 60
+  case parsingFailedEndpointID
 
-  case fastInitDiscoverDevice // = 61
+  case fastInitDiscoverDevice
 
-  case sendDesktopNotification // = 62
+  case sendDesktopNotification
 
-  case setAccount // = 63
+  case setAccount
 
-  case decryptCertificateFailure // = 64
+  case decryptCertificateFailure
 
-  case showAllowPermissionAutoAccess // = 65
+  case showAllowPermissionAutoAccess
 
-  case sendDesktopTransferEvent // = 66
+  case sendDesktopTransferEvent
 
-  case waitingForAccept // = 67
+  case waitingForAccept
 
-  case highQualityMediumSetup // = 68
+  case highQualityMediumSetup
 
-  case rpcCallStatus // = 69
+  case rpcCallStatus
 
-  case startQrCodeSession // = 70
+  case startQrCodeSession
 
-  case qrCodeOpenedInWebClient // = 71
+  case qrCodeOpenedInWebClient
 
-  case hatsJointEvent // = 72
+  case hatsJointEvent
 
-  case receivePreviews // = 73
+  case receivePreviews
 
   init() {
     self = .unknownEventType
@@ -335,15 +334,15 @@ enum Location_Nearby_Proto_Sharing_EventType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_EventType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_EventCategory: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownEventCategory // = 0
-  case sendingEvent // = 1
-  case receivingEvent // = 2
-  case settingsEvent // = 3
-  case rpcEvent // = 4
+  case unknownEventCategory
+  case sendingEvent
+  case receivingEvent
+  case settingsEvent
+  case rpcEvent
 
   init() {
     self = .unknownEventCategory
@@ -377,13 +376,13 @@ enum Location_Nearby_Proto_Sharing_EventCategory: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_EventCategory: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_NearbySharingStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownNearbySharingStatus // = 0
-  case on // = 1
-  case off // = 2
+  case unknownNearbySharingStatus
+  case on
+  case off
 
   init() {
     self = .unknownNearbySharingStatus
@@ -413,16 +412,16 @@ enum Location_Nearby_Proto_Sharing_NearbySharingStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_NearbySharingStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_Visibility: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownVisibility // = 0
-  case contactsOnly // = 1
-  case everyone // = 2
-  case selectedContactsOnly // = 3
-  case hidden // = 4
-  case selfShare // = 5
+  case unknownVisibility
+  case contactsOnly
+  case everyone
+  case selectedContactsOnly
+  case hidden
+  case selfShare
 
   init() {
     self = .unknownVisibility
@@ -458,14 +457,14 @@ enum Location_Nearby_Proto_Sharing_Visibility: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_Visibility: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_DataUsage: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownDataUsage // = 0
-  case online // = 1
-  case wifiOnly // = 2
-  case offline // = 3
+  case unknownDataUsage
+  case online
+  case wifiOnly
+  case offline
 
   init() {
     self = .unknownDataUsage
@@ -497,22 +496,22 @@ enum Location_Nearby_Proto_Sharing_DataUsage: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_DataUsage: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_EstablishConnectionStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case connectionStatusUnknown // = 0
-  case connectionStatusSuccess // = 1
-  case connectionStatusFailure // = 2
-  case connectionStatusCancellation // = 3
-  case connectionStatusMediaUnavailableAttachment // = 4
-  case connectionStatusFailedPairedKeyhandshake // = 5
-  case connectionStatusFailedWriteIntroduction // = 6
-  case connectionStatusFailedNullConnection // = 7
-  case connectionStatusFailedNoTransferUpdateCallback // = 8
-  case connectionStatusLostConnectivity // = 9
+  case connectionStatusUnknown
+  case connectionStatusSuccess
+  case connectionStatusFailure
+  case connectionStatusCancellation
+  case connectionStatusMediaUnavailableAttachment
+  case connectionStatusFailedPairedKeyhandshake
+  case connectionStatusFailedWriteIntroduction
+  case connectionStatusFailedNullConnection
+  case connectionStatusFailedNoTransferUpdateCallback
+  case connectionStatusLostConnectivity
 
-  case connectionStatusInvalidAdvertisement // = 10
+  case connectionStatusInvalidAdvertisement
 
   init() {
     self = .connectionStatusUnknown
@@ -558,49 +557,49 @@ enum Location_Nearby_Proto_Sharing_EstablishConnectionStatus: SwiftProtobuf.Enum
 extension Location_Nearby_Proto_Sharing_EstablishConnectionStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_AttachmentTransmissionStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownAttachmentTransmissionStatus // = 0
-  case completeAttachmentTransmissionStatus // = 1
-  case canceledAttachmentTransmissionStatus // = 2
-  case failedAttachmentTransmissionStatus // = 3
-  case rejectedAttachment // = 4
-  case timedOutAttachment // = 5
-  case awaitingRemoteAcceptanceFailedAttachment // = 6
-  case notEnoughSpaceAttachment // = 7
-  case failedNoTransferUpdateCallback // = 8
-  case mediaUnavailableAttachment // = 9
-  case unsupportedAttachmentTypeAttachment // = 10
-  case noAttachmentFound // = 11
-  case failedNoShareTargetEndpoint // = 12
-  case failedPairedKeyhandshake // = 13
-  case failedNullConnection // = 14
-  case failedNoPayload // = 15
-  case failedWriteIntroduction // = 16
+  case unknownAttachmentTransmissionStatus
+  case completeAttachmentTransmissionStatus
+  case canceledAttachmentTransmissionStatus
+  case failedAttachmentTransmissionStatus
+  case rejectedAttachment
+  case timedOutAttachment
+  case awaitingRemoteAcceptanceFailedAttachment
+  case notEnoughSpaceAttachment
+  case failedNoTransferUpdateCallback
+  case mediaUnavailableAttachment
+  case unsupportedAttachmentTypeAttachment
+  case noAttachmentFound
+  case failedNoShareTargetEndpoint
+  case failedPairedKeyhandshake
+  case failedNullConnection
+  case failedNoPayload
+  case failedWriteIntroduction
 
-  case failedUnknownRemoteResponse // = 17
+  case failedUnknownRemoteResponse
 
-  case failedNullConnectionInitOutgoing // = 18
-  case failedNullConnectionDisconnected // = 19
+  case failedNullConnectionInitOutgoing
+  case failedNullConnectionDisconnected
 
-  case failedNullConnectionLostConnectivity // = 20
+  case failedNullConnectionLostConnectivity
 
-  case failedNullConnectionFailure // = 21
-  case rejectedAttachmentTransmissionStatus // = 22
-  case timedOutAttachmentTransmissionStatus // = 23
-  case notEnoughSpaceAttachmentTransmissionStatus // = 24
-  case unsupportedAttachmentTypeAttachmentTransmissionStatus // = 25
-  case failedUnknownRemoteResponseTransmissionStatus // = 26
+  case failedNullConnectionFailure
+  case rejectedAttachmentTransmissionStatus
+  case timedOutAttachmentTransmissionStatus
+  case notEnoughSpaceAttachmentTransmissionStatus
+  case unsupportedAttachmentTypeAttachmentTransmissionStatus
+  case failedUnknownRemoteResponseTransmissionStatus
 
-  case noResponseFrameConnectionClosedLostConnectivityTransmissionStatus // = 27
+  case noResponseFrameConnectionClosedLostConnectivityTransmissionStatus
 
-  case noResponseFrameConnectionClosedTransmissionStatus // = 28
+  case noResponseFrameConnectionClosedTransmissionStatus
 
-  case lostConnectivityTransmissionStatus // = 29
+  case lostConnectivityTransmissionStatus
 
-  case failedDisallowedMedium // = 30
+  case failedDisallowedMedium
 
   init() {
     self = .unknownAttachmentTransmissionStatus
@@ -686,48 +685,48 @@ enum Location_Nearby_Proto_Sharing_AttachmentTransmissionStatus: SwiftProtobuf.E
 extension Location_Nearby_Proto_Sharing_AttachmentTransmissionStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ConnectionLayerStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
 
-  case unknown // = 0
+  case unknown
 
-  case success // = 1
+  case success
 
-  case error // = 2
+  case error
 
-  case outOfOrderApiCall // = 3
+  case outOfOrderApiCall
 
-  case alreadyHaveActiveStrategy // = 4
+  case alreadyHaveActiveStrategy
 
-  case alreadyAdvertising // = 5
+  case alreadyAdvertising
 
-  case alreadyDiscovering // = 6
+  case alreadyDiscovering
 
-  case alreadyListening // = 7
+  case alreadyListening
 
-  case endPointIoError // = 8
+  case endPointIoError
 
-  case endPointUnknown // = 9
+  case endPointUnknown
 
-  case connectionRejected // = 10
+  case connectionRejected
 
-  case alreadyConnectedToEndPoint // = 11
+  case alreadyConnectedToEndPoint
 
-  case notConnectedToEndPoint // = 12
+  case notConnectedToEndPoint
 
-  case bluetoothError // = 13
+  case bluetoothError
 
-  case bleError // = 14
+  case bleError
 
-  case wifiLanError // = 15
+  case wifiLanError
 
-  case payloadUnknown // = 16
+  case payloadUnknown
 
-  case reset // = 17
+  case reset
 
-  case timeout // = 18
+  case timeout
 
   init() {
     self = .unknown
@@ -789,16 +788,16 @@ enum Location_Nearby_Proto_Sharing_ConnectionLayerStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ConnectionLayerStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ProcessReceivedAttachmentsStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case processingStatusUnknown // = 0
-  case processingStatusCompleteProcessingAttachments // = 1
-  case processingStatusFailedMovingFiles // = 2
-  case processingStatusFailedReceivingApk // = 3
-  case processingStatusFailedReceivingText // = 4
-  case processingStatusFailedReceivingWifiCredentials // = 5
+  case processingStatusUnknown
+  case processingStatusCompleteProcessingAttachments
+  case processingStatusFailedMovingFiles
+  case processingStatusFailedReceivingApk
+  case processingStatusFailedReceivingText
+  case processingStatusFailedReceivingWifiCredentials
 
   init() {
     self = .processingStatusUnknown
@@ -834,14 +833,14 @@ enum Location_Nearby_Proto_Sharing_ProcessReceivedAttachmentsStatus: SwiftProtob
 extension Location_Nearby_Proto_Sharing_ProcessReceivedAttachmentsStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_SessionStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownSessionStatus // = 0
-  case succeededSessionStatus // = 1
+  case unknownSessionStatus
+  case succeededSessionStatus
 
-  case failedSessionStatus // = 2
+  case failedSessionStatus
 
   init() {
     self = .unknownSessionStatus
@@ -871,14 +870,14 @@ enum Location_Nearby_Proto_Sharing_SessionStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_SessionStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ResponseToIntroduction: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownResponseToIntroduction // = 0
-  case acceptIntroduction // = 1
-  case rejectIntroduction // = 2
-  case failIntroduction // = 3
+  case unknownResponseToIntroduction
+  case acceptIntroduction
+  case rejectIntroduction
+  case failIntroduction
 
   init() {
     self = .unknownResponseToIntroduction
@@ -910,17 +909,17 @@ enum Location_Nearby_Proto_Sharing_ResponseToIntroduction: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ResponseToIntroduction: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_DeviceType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownDeviceType // = 0
-  case phone // = 1
-  case tablet // = 2
-  case laptop // = 3
-  case car // = 4
-  case foldable // = 5
-  case xr // = 6
+  case unknownDeviceType
+  case phone
+  case tablet
+  case laptop
+  case car
+  case foldable
+  case xr
 
   init() {
     self = .unknownDeviceType
@@ -958,16 +957,16 @@ enum Location_Nearby_Proto_Sharing_DeviceType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_DeviceType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_OSType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownOsType // = 0
-  case android // = 1
-  case chromeOs // = 2
-  case ios // = 3
-  case windows // = 4
-  case macos // = 5
+  case unknownOsType
+  case android
+  case chromeOs
+  case ios
+  case windows
+  case macos
 
   init() {
     self = .unknownOsType
@@ -1003,17 +1002,17 @@ enum Location_Nearby_Proto_Sharing_OSType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_OSType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_DeviceRelationship: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownDeviceRelationship // = 0
+  case unknownDeviceRelationship
 
-  case isSelf // = 1
+  case isSelf
 
-  case isContact // = 2
+  case isContact
 
-  case isStranger // = 3
+  case isStranger
 
   init() {
     self = .unknownDeviceRelationship
@@ -1045,29 +1044,29 @@ enum Location_Nearby_Proto_Sharing_DeviceRelationship: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_DeviceRelationship: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_LogSource: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unspecifiedSource // = 0
+  case unspecifiedSource
 
-  case labDevices // = 1
+  case labDevices
 
-  case internalDevices // = 2
+  case internalDevices
 
-  case betaTesterDevices // = 3
+  case betaTesterDevices
 
-  case oemDevices // = 4
+  case oemDevices
 
-  case debugDevices // = 5
+  case debugDevices
 
-  case nearbyModuleFoodDevices // = 6
+  case nearbyModuleFoodDevices
 
-  case betoDogfoodDevices // = 7
+  case betoDogfoodDevices
 
-  case nearbyDogfoodDevices // = 8
+  case nearbyDogfoodDevices
 
-  case nearbyTeamfoodDevices // = 9
+  case nearbyTeamfoodDevices
 
   init() {
     self = .unspecifiedSource
@@ -1111,24 +1110,24 @@ enum Location_Nearby_Proto_Sharing_LogSource: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_LogSource: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ServerActionName: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownServerAction // = 0
-  case uploadCertificates // = 1
-  case downloadCertificates // = 2
-  case checkReachability // = 3
-  case uploadContacts // = 4
-  case updateDeviceName // = 5
-  case uploadSenderCertificates // = 6
-  case downloadSenderCertificates // = 7
-  case uploadContactsAndCertificates // = 8
-  case listReachablePhoneNumbers // = 9
-  case listMyDevices // = 10
-  case listContactPeople // = 11
+  case unknownServerAction
+  case uploadCertificates
+  case downloadCertificates
+  case checkReachability
+  case uploadContacts
+  case updateDeviceName
+  case uploadSenderCertificates
+  case downloadSenderCertificates
+  case uploadContactsAndCertificates
+  case listReachablePhoneNumbers
+  case listMyDevices
+  case listContactPeople
 
-  case downloadCertificatesInfo // = 12
+  case downloadCertificatesInfo
 
   init() {
     self = .unknownServerAction
@@ -1178,24 +1177,24 @@ enum Location_Nearby_Proto_Sharing_ServerActionName: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ServerActionName: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ServerResponseState: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownServerResponseState // = 0
-  case serverResponseSuccess // = 1
-  case serverResponseUnknownFailure // = 2
+  case unknownServerResponseState
+  case serverResponseSuccess
+  case serverResponseUnknownFailure
 
-  case serverResponseStatusOtherFailure // = 3
-  case serverResponseStatusDeadlineExceeded // = 4
-  case serverResponseStatusPermissionDenied // = 5
-  case serverResponseStatusUnavailable // = 6
-  case serverResponseStatusUnauthenticated // = 7
-  case serverResponseStatusInvalidArgument // = 9
+  case serverResponseStatusOtherFailure
+  case serverResponseStatusDeadlineExceeded
+  case serverResponseStatusPermissionDenied
+  case serverResponseStatusUnavailable
+  case serverResponseStatusUnauthenticated
+  case serverResponseStatusInvalidArgument
 
-  case serverResponseGoogleAuthFailure // = 8
+  case serverResponseGoogleAuthFailure
 
-  case serverResponseNotConnectedToInternet // = 10
+  case serverResponseNotConnectedToInternet
 
   init() {
     self = .unknownServerResponseState
@@ -1241,45 +1240,45 @@ enum Location_Nearby_Proto_Sharing_ServerResponseState: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ServerResponseState: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_SyncPurpose: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
+  case unknown
 
-  case onDemandSync // = 1
+  case onDemandSync
 
-  case chimeNotification // = 2
+  case chimeNotification
 
-  case dailySync // = 3
+  case dailySync
 
-  case optInFirstSync // = 4
+  case optInFirstSync
 
-  case checkDefaultOptIn // = 5
+  case checkDefaultOptIn
 
-  case nearbyShareEnabled // = 6
+  case nearbyShareEnabled
 
-  case syncAtFastInit // = 7
+  case syncAtFastInit
 
-  case syncAtDiscovery // = 8
+  case syncAtDiscovery
 
-  case syncAtLoadPrivateCertificate // = 9
+  case syncAtLoadPrivateCertificate
 
-  case syncAtAdvertisement // = 10
+  case syncAtAdvertisement
 
-  case contactListChange // = 11
+  case contactListChange
 
-  case showC11NView // = 12
+  case showC11NView
 
-  case regularCheckContactReachability // = 13
+  case regularCheckContactReachability
 
-  case visibilitySelectedContactChange // = 14
+  case visibilitySelectedContactChange
 
-  case accountChange // = 15
+  case accountChange
 
-  case regenerateCertificates // = 16
+  case regenerateCertificates
 
-  case deviceContactsConsentChange // = 17
+  case deviceContactsConsentChange
 
   init() {
     self = .unknown
@@ -1339,13 +1338,13 @@ enum Location_Nearby_Proto_Sharing_SyncPurpose: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_SyncPurpose: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ClientRole: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
-  case sender // = 1
-  case receiver // = 2
+  case unknown
+  case sender
+  case receiver
 
   init() {
     self = .unknown
@@ -1375,15 +1374,15 @@ enum Location_Nearby_Proto_Sharing_ClientRole: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ClientRole: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ScanType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownScanType // = 0
-  case foregroundScan // = 1
-  case foregroundRetryScan // = 2
-  case directShareScan // = 3
-  case backgroundScan // = 4
+  case unknownScanType
+  case foregroundScan
+  case foregroundRetryScan
+  case directShareScan
+  case backgroundScan
 
   init() {
     self = .unknownScanType
@@ -1417,15 +1416,15 @@ enum Location_Nearby_Proto_Sharing_ScanType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ScanType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ParsingFailedType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case failedUnknownType // = 0
+  case failedUnknownType
 
-  case failedParseAdvertisement // = 1
+  case failedParseAdvertisement
 
-  case failedConvertShareTarget // = 2
+  case failedConvertShareTarget
 
   init() {
     self = .failedUnknownType
@@ -1455,16 +1454,16 @@ enum Location_Nearby_Proto_Sharing_ParsingFailedType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ParsingFailedType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_AdvertisingMode: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownAdvertisingMode // = 0
-  case screenOffAdvertisingMode // = 1
-  case backgroundAdvertisingMode // = 2
-  case midgroundAdvertisingMode // = 3
-  case foregroundAdvertisingMode // = 4
-  case suspendedAdvertisingMode // = 5
+  case unknownAdvertisingMode
+  case screenOffAdvertisingMode
+  case backgroundAdvertisingMode
+  case midgroundAdvertisingMode
+  case foregroundAdvertisingMode
+  case suspendedAdvertisingMode
 
   init() {
     self = .unknownAdvertisingMode
@@ -1500,16 +1499,16 @@ enum Location_Nearby_Proto_Sharing_AdvertisingMode: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_AdvertisingMode: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_DiscoveryMode: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownDiscoveryMode // = 0
-  case screenOffDiscoveryMode // = 1
-  case backgroundDiscoveryMode // = 2
-  case midgroundDiscoveryMode // = 3
-  case foregroundDiscoveryMode // = 4
-  case suspendedDiscoveryMode // = 5
+  case unknownDiscoveryMode
+  case screenOffDiscoveryMode
+  case backgroundDiscoveryMode
+  case midgroundDiscoveryMode
+  case foregroundDiscoveryMode
+  case suspendedDiscoveryMode
 
   init() {
     self = .unknownDiscoveryMode
@@ -1545,23 +1544,23 @@ enum Location_Nearby_Proto_Sharing_DiscoveryMode: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_DiscoveryMode: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ActivityName: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownActivity // = 0
-  case shareSheetActivity // = 1
-  case settingsActivity // = 2
-  case receiveSurfaceActivity // = 3
-  case setupActivity // = 4
-  case deviceVisibilityActivity // = 5
-  case consentsActivity // = 6
-  case setDeviceNameDialog // = 7
-  case setDataUsageDialog // = 8
-  case quickSettingsActivity // = 9
-  case remoteCopyShareSheetActivity // = 10
-  case setupWizardActivity // = 11
-  case settingsReviewActivity // = 12
+  case unknownActivity
+  case shareSheetActivity
+  case settingsActivity
+  case receiveSurfaceActivity
+  case setupActivity
+  case deviceVisibilityActivity
+  case consentsActivity
+  case setDeviceNameDialog
+  case setDataUsageDialog
+  case quickSettingsActivity
+  case remoteCopyShareSheetActivity
+  case setupWizardActivity
+  case settingsReviewActivity
 
   init() {
     self = .unknownActivity
@@ -1611,15 +1610,15 @@ enum Location_Nearby_Proto_Sharing_ActivityName: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ActivityName: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ConsentType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
+  case unknown
 
-  case c11N // = 1
+  case c11N
 
-  case deviceContact // = 2
+  case deviceContact
 
   init() {
     self = .unknown
@@ -1649,15 +1648,15 @@ enum Location_Nearby_Proto_Sharing_ConsentType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ConsentType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ConsentAcceptanceStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case consentUnknownAcceptStatus // = 0
-  case consentAccepted // = 1
-  case consentDeclined // = 2
+  case consentUnknownAcceptStatus
+  case consentAccepted
+  case consentDeclined
 
-  case consentUnableToEnable // = 3
+  case consentUnableToEnable
 
   init() {
     self = .consentUnknownAcceptStatus
@@ -1689,13 +1688,13 @@ enum Location_Nearby_Proto_Sharing_ConsentAcceptanceStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ConsentAcceptanceStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ApkSource: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownApkSource // = 0
-  case apkFromSdCard // = 1
-  case installedApp // = 2
+  case unknownApkSource
+  case apkFromSdCard
+  case installedApp
 
   init() {
     self = .unknownApkSource
@@ -1725,13 +1724,13 @@ enum Location_Nearby_Proto_Sharing_ApkSource: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ApkSource: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_InstallAPKStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownInstallApkStatus // = 0
-  case failInstallation // = 1
-  case successInstallation // = 2
+  case unknownInstallApkStatus
+  case failInstallation
+  case successInstallation
 
   init() {
     self = .unknownInstallApkStatus
@@ -1761,14 +1760,14 @@ enum Location_Nearby_Proto_Sharing_InstallAPKStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_InstallAPKStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_VerifyAPKStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownVerifyApkStatus // = 0
-  case notInstallable // = 1
-  case installable // = 2
-  case alreadyInstalled // = 3
+  case unknownVerifyApkStatus
+  case notInstallable
+  case installable
+  case alreadyInstalled
 
   init() {
     self = .unknownVerifyApkStatus
@@ -1800,13 +1799,13 @@ enum Location_Nearby_Proto_Sharing_VerifyAPKStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_VerifyAPKStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ShowNotificationStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownShowNotificationStatus // = 0
-  case show // = 1
-  case notShow // = 2
+  case unknownShowNotificationStatus
+  case show
+  case notShow
 
   init() {
     self = .unknownShowNotificationStatus
@@ -1836,14 +1835,14 @@ enum Location_Nearby_Proto_Sharing_ShowNotificationStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ShowNotificationStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_PermissionRequestResult: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case permissionUnknownRequestResult // = 0
-  case permissionGranted // = 1
-  case permissionRejected // = 2
-  case permissionUnableToGrant // = 3
+  case permissionUnknownRequestResult
+  case permissionGranted
+  case permissionRejected
+  case permissionUnableToGrant
 
   init() {
     self = .permissionUnknownRequestResult
@@ -1875,16 +1874,16 @@ enum Location_Nearby_Proto_Sharing_PermissionRequestResult: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_PermissionRequestResult: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_PermissionRequestType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case permissionUnknownType // = 0
-  case permissionAirplaneModeOff // = 1
-  case permissionWifi // = 2
-  case permissionBluetooth // = 3
-  case permissionLocation // = 4
-  case permissionWifiHotspot // = 5
+  case permissionUnknownType
+  case permissionAirplaneModeOff
+  case permissionWifi
+  case permissionBluetooth
+  case permissionLocation
+  case permissionWifiHotspot
 
   init() {
     self = .permissionUnknownType
@@ -1920,21 +1919,21 @@ enum Location_Nearby_Proto_Sharing_PermissionRequestType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_PermissionRequestType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_SharingUseCase: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case useCaseUnknown // = 0
-  case useCaseNearbyShare // = 1
-  case useCaseRemoteCopyPaste // = 2
-  case useCaseWifiCredential // = 3
-  case useCaseAppShare // = 4
-  case useCaseQuickSettingFileShare // = 5
-  case useCaseSetupWizard // = 6
+  case useCaseUnknown
+  case useCaseNearbyShare
+  case useCaseRemoteCopyPaste
+  case useCaseWifiCredential
+  case useCaseAppShare
+  case useCaseQuickSettingFileShare
+  case useCaseSetupWizard
 
-  case useCaseNearbyShareWithQrCode // = 7
+  case useCaseNearbyShareWithQrCode
 
-  case useCaseRedirectedFromBluetoothShare // = 8
+  case useCaseRedirectedFromBluetoothShare
 
   init() {
     self = .useCaseUnknown
@@ -1976,11 +1975,11 @@ enum Location_Nearby_Proto_Sharing_SharingUseCase: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_SharingUseCase: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_AppCrashReason: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
+  case unknown
 
   init() {
     self = .unknown
@@ -2006,17 +2005,17 @@ enum Location_Nearby_Proto_Sharing_AppCrashReason: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_AppCrashReason: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_AttachmentSourceType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case attachmentSourceUnknown // = 0
-  case attachmentSourceContextMenu // = 1
-  case attachmentSourceDragAndDrop // = 2
-  case attachmentSourceSelectFilesButton // = 3
-  case attachmentSourcePaste // = 4
-  case attachmentSourceSelectFoldersButton // = 5
-  case attachmentSourceShareActivation // = 6
+  case attachmentSourceUnknown
+  case attachmentSourceContextMenu
+  case attachmentSourceDragAndDrop
+  case attachmentSourceSelectFilesButton
+  case attachmentSourcePaste
+  case attachmentSourceSelectFoldersButton
+  case attachmentSourceShareActivation
 
   init() {
     self = .attachmentSourceUnknown
@@ -2054,24 +2053,24 @@ enum Location_Nearby_Proto_Sharing_AttachmentSourceType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_AttachmentSourceType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_PreferencesAction: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
-  case noAction // = 1
+  case unknown
+  case noAction
 
-  case loadPreferences // = 2
-  case savePreferencess // = 3
-  case attemptLoad // = 4
-  case restoreFromBackup // = 5
+  case loadPreferences
+  case savePreferencess
+  case attemptLoad
+  case restoreFromBackup
 
-  case createPreferencesPath // = 6
-  case makePreferencesBackupFile // = 7
-  case checkIfPreferencesPathExists // = 8
-  case checkIfPreferencesInputStreamStatus // = 9
-  case checkIfPreferencesFileIsCorrupted // = 10
-  case checkIfPreferencesBackupFileExists // = 11
+  case createPreferencesPath
+  case makePreferencesBackupFile
+  case checkIfPreferencesPathExists
+  case checkIfPreferencesInputStreamStatus
+  case checkIfPreferencesFileIsCorrupted
+  case checkIfPreferencesBackupFileExists
 
   init() {
     self = .unknown
@@ -2119,13 +2118,13 @@ enum Location_Nearby_Proto_Sharing_PreferencesAction: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_PreferencesAction: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_PreferencesActionStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
-  case success // = 1
-  case fail // = 2
+  case unknown
+  case success
+  case fail
 
   init() {
     self = .unknown
@@ -2155,17 +2154,17 @@ enum Location_Nearby_Proto_Sharing_PreferencesActionStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_PreferencesActionStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_FastInitState: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case fastInitUnknownState // = 0
+  case fastInitUnknownState
 
-  case fastInitCloseState // = 1
+  case fastInitCloseState
 
-  case fastInitFarState // = 2
+  case fastInitFarState
 
-  case fastInitLostState // = 3
+  case fastInitLostState
 
   init() {
     self = .fastInitUnknownState
@@ -2197,15 +2196,15 @@ enum Location_Nearby_Proto_Sharing_FastInitState: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_FastInitState: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_FastInitType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case fastInitUnknownType // = 0
+  case fastInitUnknownType
 
-  case fastInitNotifyType // = 1
+  case fastInitNotifyType
 
-  case fastInitSilentType // = 2
+  case fastInitSilentType
 
   init() {
     self = .fastInitUnknownType
@@ -2235,16 +2234,16 @@ enum Location_Nearby_Proto_Sharing_FastInitType: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_FastInitType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_DesktopNotification: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
-  case connecting // = 1
-  case progress // = 2
-  case accept // = 3
-  case received // = 4
-  case error // = 5
+  case unknown
+  case connecting
+  case progress
+  case accept
+  case received
+  case error
 
   init() {
     self = .unknown
@@ -2280,22 +2279,22 @@ enum Location_Nearby_Proto_Sharing_DesktopNotification: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_DesktopNotification: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_DesktopTransferEventType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
+  case unknown
 
-  case desktopTransferEventReceiveTypeAccept // = 1
-  case desktopTransferEventReceiveTypeProgress // = 2
-  case desktopTransferEventReceiveTypeReceived // = 3
-  case desktopTransferEventReceiveTypeError // = 4
+  case desktopTransferEventReceiveTypeAccept
+  case desktopTransferEventReceiveTypeProgress
+  case desktopTransferEventReceiveTypeReceived
+  case desktopTransferEventReceiveTypeError
 
-  case desktopTransferEventSendTypeStart // = 5
-  case desktopTransferEventSendTypeSelectADevice // = 6
-  case desktopTransferEventSendTypeProgress // = 7
-  case desktopTransferEventSendTypeSent // = 8
-  case desktopTransferEventSendTypeError // = 9
+  case desktopTransferEventSendTypeStart
+  case desktopTransferEventSendTypeSelectADevice
+  case desktopTransferEventSendTypeProgress
+  case desktopTransferEventSendTypeSent
+  case desktopTransferEventSendTypeError
 
   init() {
     self = .unknown
@@ -2339,17 +2338,17 @@ enum Location_Nearby_Proto_Sharing_DesktopTransferEventType: SwiftProtobuf.Enum 
 extension Location_Nearby_Proto_Sharing_DesktopTransferEventType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_DecryptCertificateFailureStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case decryptCertUnknownFailure // = 0
-  case decryptCertNoSuchAlgorithmFailure // = 1
-  case decryptCertNoSuchPaddingFailure // = 2
-  case decryptCertInvalidKeyFailure // = 3
-  case decryptCertInvalidAlgorithmParameterFailure // = 4
-  case decryptCertIllegalBlockSizeFailure // = 5
-  case decryptCertBadPaddingFailure // = 6
+  case decryptCertUnknownFailure
+  case decryptCertNoSuchAlgorithmFailure
+  case decryptCertNoSuchPaddingFailure
+  case decryptCertInvalidKeyFailure
+  case decryptCertInvalidAlgorithmParameterFailure
+  case decryptCertIllegalBlockSizeFailure
+  case decryptCertBadPaddingFailure
 
   init() {
     self = .decryptCertUnknownFailure
@@ -2387,15 +2386,15 @@ enum Location_Nearby_Proto_Sharing_DecryptCertificateFailureStatus: SwiftProtobu
 extension Location_Nearby_Proto_Sharing_DecryptCertificateFailureStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ContactAccess: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
-  case noContactUploaded // = 1
-  case onlyUploadGoogleContact // = 2
-  case uploadContactForDeviceContactConsent // = 3
-  case uploadContactForQuickShareConsent // = 4
+  case unknown
+  case noContactUploaded
+  case onlyUploadGoogleContact
+  case uploadContactForDeviceContactConsent
+  case uploadContactForQuickShareConsent
 
   init() {
     self = .unknown
@@ -2429,14 +2428,14 @@ enum Location_Nearby_Proto_Sharing_ContactAccess: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ContactAccess: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_IdentityVerification: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
-  case noPhoneNumberVerified // = 1
-  case phoneNumberVerifiedNotLinkedToGaia // = 2
-  case phoneNumberVerifiedLinkedToQsGaia // = 3
+  case unknown
+  case noPhoneNumberVerified
+  case phoneNumberVerifiedNotLinkedToGaia
+  case phoneNumberVerifiedLinkedToQsGaia
 
   init() {
     self = .unknown
@@ -2468,14 +2467,14 @@ enum Location_Nearby_Proto_Sharing_IdentityVerification: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_IdentityVerification: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Location_Nearby_Proto_Sharing_ButtonStatus: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
-  case clickAccept // = 1
-  case clickReject // = 2
-  case ignore // = 3
+  case unknown
+  case clickAccept
+  case clickReject
+  case ignore
 
   init() {
     self = .unknown
@@ -2507,7 +2506,7 @@ enum Location_Nearby_Proto_Sharing_ButtonStatus: SwiftProtobuf.Enum {
 extension Location_Nearby_Proto_Sharing_ButtonStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 #if swift(>=5.5) && canImport(_Concurrency)
 extension Location_Nearby_Proto_Sharing_EventType: @unchecked Sendable {}
@@ -2555,7 +2554,7 @@ extension Location_Nearby_Proto_Sharing_DecryptCertificateFailureStatus: @unchec
 extension Location_Nearby_Proto_Sharing_ContactAccess: @unchecked Sendable {}
 extension Location_Nearby_Proto_Sharing_IdentityVerification: @unchecked Sendable {}
 extension Location_Nearby_Proto_Sharing_ButtonStatus: @unchecked Sendable {}
-#endif  // swift(>=5.5) && canImport(_Concurrency)
+#endif
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 

@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-04.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import Cocoa
@@ -137,7 +133,7 @@ struct SystemControl {
                 return Float(result.int32Value) / 100.0
             }
         }
-        return 0.5 // Fallback
+        return 0.5
     }
 
     static func setVolume(to level: Float) {
@@ -170,7 +166,7 @@ struct SystemControl {
                 return result.booleanValue
             }
         }
-        return false // Fallback
+        return false
     }
 
     static func setMuted(to isMuted: Bool) {

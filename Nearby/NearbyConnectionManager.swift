@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-21.
 //
 //
-//
-//
 
 import Foundation
 import Network
@@ -158,12 +156,12 @@ struct EndpointInfo{
             offset=offset+1+deviceNameLength
         }
         var qrCodeData:Data?=nil
-        while data.count-offset>2{ // read TLV records, if any
+        while data.count-offset>2{
             let type=data[offset]
             let length=Int(data[offset+1])
             offset=offset+2
             if data.count-offset>=length{
-                if type==1{ // QR code data
+                if type==1{
                     qrCodeData=data.subdata(in: offset..<offset+length)
                 }
                 offset=offset+length

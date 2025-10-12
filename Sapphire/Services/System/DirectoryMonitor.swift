@@ -4,14 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-08-17.
 //
-
-
-//
-//
-//
-//
-//
-//
 //
 
 import Foundation
@@ -37,7 +29,7 @@ class DirectoryMonitor {
 
         dispatchSource = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fileDescriptor,
-            eventMask: .write, // Notify on writes, which includes creations and modifications
+            eventMask: .write,
             queue: dispatchQueue
         )
 

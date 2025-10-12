@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2024/2/9.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import CryptoKit
@@ -39,7 +35,7 @@ class LogReader {
     static let shared = LogReader()
 
     @AppStorage("readBTHID") var readBTHID = true
-    @AppStorage("logReaderLastTS") var lastTS: String = ""   // e.g. "2025-07-01 12:34:56 +0000"
+    @AppStorage("logReaderLastTS") var lastTS: String = ""
 
     private var isRunning = false
     private var queued = false
@@ -359,7 +355,7 @@ func getPowerState() -> iBattery {
     return iBattery(hasBattery: false, isCharging: false, isCharged: false, acPowered: false, timeLeft: "", batteryLevel: 0)
 }
 
-func getPowerColor(_ device: BatteryDevice) -> String { // UPDATED
+func getPowerColor(_ device: BatteryDevice) -> String {
     if device.lowPower { return "my_yellow" }
 
     var colorName = "my_green"
@@ -383,16 +379,16 @@ func getMonoNum(_ num: Int, count: Int = 3, bold: Bool = false) -> String {
     return String(repeating: "  ", count: (count - output.count)) + output.joined()
 }
 
-func ib2ab(_ ib: iBattery) -> BatteryDevice { // UPDATED
+func ib2ab(_ ib: iBattery) -> BatteryDevice {
     @AppStorage("machineType") var machineType = "mac"
     @AppStorage("deviceName") var deviceName = "Mac"
     return BatteryDevice(hasBattery: ib.hasBattery, deviceID: "@MacInternalBattery", deviceType: machineType, deviceName: deviceName, deviceModel: macID, batteryLevel: ib.batteryLevel, isCharging: ib.isCharging ? 1 : 0, isCharged: ib.isCharged, acPowered: ib.acPowered, lowPower: ib.lowPower, lastUpdate: Double(Date().timeIntervalSince1970))
 }
 
-func sliceList(data: [BatteryDevice], length: Int, count: Int) -> [BatteryDevice] { // UPDATED
+func sliceList(data: [BatteryDevice], length: Int, count: Int) -> [BatteryDevice] {
     let totalLength = length * count
     if totalLength <= data.count { return Array(data[totalLength-length..<totalLength]) }
-    var list: [BatteryDevice] // UPDATED
+    var list: [BatteryDevice]
     if totalLength - length > data.count {
         list = []
     } else {
@@ -575,7 +571,7 @@ func getHeadphoneModel(_ model: String) -> String {
     }
 }
 
-func getDeviceIcon(_ d: BatteryDevice) -> String { // UPDATED
+func getDeviceIcon(_ d: BatteryDevice) -> String {
     switch d.deviceType {
     case "blank":
         return "blank"

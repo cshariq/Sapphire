@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-11.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 
@@ -301,7 +297,7 @@ fileprivate struct EditorGridPattern: View {
                 for i in 1..<rows {
                     let yPos = geometry.size.height * CGFloat(i) / CGFloat(rows)
                     path.move(to: CGPoint(x: 0, y: yPos))
-                    path.addLine(to: CGPoint(x: geometry.size.width, y: yPos)) // <-- FIX HERE
+                    path.addLine(to: CGPoint(x: geometry.size.width, y: yPos))
                 }
             }
             .stroke(Color.white.opacity(0.1), lineWidth: 1)

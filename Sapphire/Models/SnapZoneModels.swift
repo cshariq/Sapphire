@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-11.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import SwiftUI
@@ -93,7 +89,7 @@ struct Plane: Codable, Equatable, Identifiable {
     var name: String
     var layoutID: UUID
     var shortcut: KeyboardShortcut?
-    var assignments: [UUID: String] = [:] // [Zone.ID: AppBundleIdentifier]
+    var assignments: [UUID: String] = [:]
 }
 
 struct LayoutTemplate {

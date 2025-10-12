@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-15.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import Security
@@ -21,7 +17,7 @@ class KeychainHelper {
         if let bundleIdentifier = Bundle.main.bundleIdentifier {
             self.service = bundleIdentifier
         } else {
-            self.service = "com.shariq.sapphire" // Fallback service name
+            self.service = "com.shariq.sapphire"
         }
     }
 

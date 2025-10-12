@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-29
 //
 //
-//
 
 import Foundation
 import SwiftProtobuf
@@ -18,9 +17,9 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 enum Securegcm_AppleDeviceDiagonalMils: SwiftProtobuf.Enum {
   typealias RawValue = Int
 
-  case applePhone // = 4000
+  case applePhone
 
-  case applePad // = 7900
+  case applePad
 
   init() {
     self = .applePhone
@@ -48,16 +47,16 @@ enum Securegcm_AppleDeviceDiagonalMils: SwiftProtobuf.Enum {
 extension Securegcm_AppleDeviceDiagonalMils: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Securegcm_DeviceType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknown // = 0
-  case android // = 1
-  case chrome // = 2
-  case ios // = 3
-  case browser // = 4
-  case osx // = 5
+  case unknown
+  case android
+  case chrome
+  case ios
+  case browser
+  case osx
 
   init() {
     self = .unknown
@@ -93,19 +92,19 @@ enum Securegcm_DeviceType: SwiftProtobuf.Enum {
 extension Securegcm_DeviceType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Securegcm_SoftwareFeature: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownFeature // = 0
-  case betterTogetherHost // = 1
-  case betterTogetherClient // = 2
-  case easyUnlockHost // = 3
-  case easyUnlockClient // = 4
-  case magicTetherHost // = 5
-  case magicTetherClient // = 6
-  case smsConnectHost // = 7
-  case smsConnectClient // = 8
+  case unknownFeature
+  case betterTogetherHost
+  case betterTogetherClient
+  case easyUnlockHost
+  case easyUnlockClient
+  case magicTetherHost
+  case magicTetherClient
+  case smsConnectHost
+  case smsConnectClient
 
   init() {
     self = .unknownFeature
@@ -147,41 +146,41 @@ enum Securegcm_SoftwareFeature: SwiftProtobuf.Enum {
 extension Securegcm_SoftwareFeature: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Securegcm_InvocationReason: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case reasonUnknown // = 0
+  case reasonUnknown
 
-  case reasonInitialization // = 1
+  case reasonInitialization
 
-  case reasonPeriodic // = 2
+  case reasonPeriodic
 
-  case reasonSlowPeriodic // = 3
+  case reasonSlowPeriodic
 
-  case reasonFastPeriodic // = 4
+  case reasonFastPeriodic
 
-  case reasonExpiration // = 5
+  case reasonExpiration
 
-  case reasonFailureRecovery // = 6
+  case reasonFailureRecovery
 
-  case reasonNewAccount // = 7
+  case reasonNewAccount
 
-  case reasonChangedAccount // = 8
+  case reasonChangedAccount
 
-  case reasonFeatureToggled // = 9
+  case reasonFeatureToggled
 
-  case reasonServerInitiated // = 10
+  case reasonServerInitiated
 
-  case reasonAddressChange // = 11
+  case reasonAddressChange
 
-  case reasonSoftwareUpdate // = 12
+  case reasonSoftwareUpdate
 
-  case reasonManual // = 13
+  case reasonManual
 
-  case reasonCustomKeyInvalidation // = 14
+  case reasonCustomKeyInvalidation
 
-  case reasonProximityPeriodic // = 15
+  case reasonProximityPeriodic
 
   init() {
     self = .reasonUnknown
@@ -237,33 +236,33 @@ enum Securegcm_InvocationReason: SwiftProtobuf.Enum {
 extension Securegcm_InvocationReason: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Securegcm_Type: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case enrollment // = 0
-  case tickle // = 1
-  case txRequest // = 2
-  case txReply // = 3
-  case txSyncRequest // = 4
-  case txSyncResponse // = 5
-  case txPing // = 6
-  case deviceInfoUpdate // = 7
-  case txCancelRequest // = 8
+  case enrollment
+  case tickle
+  case txRequest
+  case txReply
+  case txSyncRequest
+  case txSyncResponse
+  case txPing
+  case deviceInfoUpdate
+  case txCancelRequest
 
-  case proximityauthPairing // = 10
+  case proximityauthPairing
 
-  case gcmv1IdentityAssertion // = 11
+  case gcmv1IdentityAssertion
 
-  case deviceToDeviceResponderHelloPayload // = 12
+  case deviceToDeviceResponderHelloPayload
 
-  case deviceToDeviceMessage // = 13
+  case deviceToDeviceMessage
 
-  case deviceProximityCallback // = 14
+  case deviceProximityCallback
 
-  case unlockKeySignedChallenge // = 15
+  case unlockKeySignedChallenge
 
-  case loginNotification // = 101
+  case loginNotification
 
   init() {
     self = .enrollment
@@ -319,7 +318,7 @@ enum Securegcm_Type: SwiftProtobuf.Enum {
 extension Securegcm_Type: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Securegcm_GcmDeviceInfo {
 
@@ -690,7 +689,7 @@ extension Securegcm_GcmDeviceInfo: @unchecked Sendable {}
 extension Securegcm_GcmMetadata: @unchecked Sendable {}
 extension Securegcm_Tickle: @unchecked Sendable {}
 extension Securegcm_LoginNotificationInfo: @unchecked Sendable {}
-#endif  // swift(>=5.5) && canImport(_Concurrency)
+#endif
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 

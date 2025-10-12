@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2024/2/9.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 
@@ -63,11 +59,11 @@ struct BatteryDevice: Hashable, Codable {
 
 class AirBatteryModel {
     static var lock = false
-    static var Devices: [BatteryDevice] = [] // UPDATED
+    static var Devices: [BatteryDevice] = []
     static let machineType = ud.string(forKey: "machineType") ?? "Mac"
     static let key = "com.lihaoyun6.AirBattery.widget"
 
-    static func updateDevice(_ device: BatteryDevice) { // UPDATED
+    static func updateDevice(_ device: BatteryDevice) {
         if lock { return }
         lock = true
         if let index = self.Devices.firstIndex(where: { $0.deviceName == device.deviceName }) {
@@ -94,20 +90,20 @@ class AirBatteryModel {
         }
     }
 
-    static func getBlackList() -> [BatteryDevice] { // UPDATED
+    static func getBlackList() -> [BatteryDevice] {
         let blackList = (ud.object(forKey: "blackList") ?? []) as! [String]
         let devices = getAll(noFilter: true)
         return devices.filter({ blackList.contains($0.deviceName) })
     }
 
-    static func getAll(reverse: Bool = false, noFilter: Bool = false) -> [BatteryDevice] { // UPDATED
+    static func getAll(reverse: Bool = false, noFilter: Bool = false) -> [BatteryDevice] {
         let thisMac = ud.string(forKey: "deviceName")
         let disappearTime = (ud.object(forKey: "disappearTime") ?? 20) as! Int
         let blackList = (ud.object(forKey: "blackList") ?? []) as! [String]
         let now = Double(Date().timeIntervalSince1970)
         var list = (reverse ? Array(Devices.reversed()) : Devices).filter { (now - $0.lastUpdate < Double(disappearTime * 60)) }
         if !noFilter { list = list.filter { !blackList.contains($0.deviceName) && !$0.isHidden } }
-        var newList: [BatteryDevice] = list.filter({ $0.parentName == thisMac }) // UPDATED
+        var newList: [BatteryDevice] = list.filter({ $0.parentName == thisMac })
         for d in list {
             if d.parentName == "" && d.parentName != thisMac {
                 newList.append(d)
@@ -120,12 +116,12 @@ class AirBatteryModel {
         return newList.filter({ !checkIfBlocked(name: $0.deviceName) })
     }
 
-    static func getByName(_ name: String) -> BatteryDevice? { // UPDATED
+    static func getByName(_ name: String) -> BatteryDevice? {
         for d in getAll(noFilter: true) { if d.deviceName == name { return d } }
         return nil
     }
 
-    static func getByID(_ id: String) -> BatteryDevice? { // UPDATED
+    static func getByID(_ id: String) -> BatteryDevice? {
         for d in getAll(noFilter: true) { if d.deviceID == id { return d } }
         return nil
     }
@@ -169,10 +165,10 @@ class AirBatteryModel {
         }
     }
 
-    static func readData(url: URL = getJsonURL()) -> [BatteryDevice]{ // UPDATED
+    static func readData(url: URL = getJsonURL()) -> [BatteryDevice]{
         do {
             let jsonData = try Data(contentsOf: url)
-            let list = try JSONDecoder().decode([BatteryDevice].self, from: jsonData) // UPDATED
+            let list = try JSONDecoder().decode([BatteryDevice].self, from: jsonData)
             return list
         } catch {
             print("Read JSON error：\(error)")
@@ -180,7 +176,7 @@ class AirBatteryModel {
         return []
     }
 
-    static func ncGetAll(url: URL, fromWidget: Bool = false) -> [BatteryDevice] { // UPDATED
+    static func ncGetAll(url: URL, fromWidget: Bool = false) -> [BatteryDevice] {
         let disappearTime = (ud.object(forKey: "disappearTime") ?? 20) as! Int
         let devices = readData(url: url)
         let now = Double(Date().timeIntervalSince1970)

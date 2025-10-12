@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-25.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import IOBluetooth
@@ -44,7 +40,7 @@ class BatteryScanner {
                 }
 
                 print("[BatteryScanner] No battery level found for '\(name)' after all checks.")
-                continuation.resume(returning: nil) // This is now valid
+                continuation.resume(returning: nil)
             }
         }
 

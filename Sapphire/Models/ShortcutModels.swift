@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-11.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import SwiftUI
@@ -19,7 +15,7 @@ struct CodableColor: Codable, Equatable, Hashable, Identifiable {
     var green: Double
     var blue: Double
     var alpha: Double
-    var location: Double = 0.0 // Location for gradient stops (0.0 to 1.0)
+    var location: Double = 0.0
 
     init(color: Color, location: Double = 0.0) {
         let resolved = color.resolve(in: .init())
@@ -53,7 +49,7 @@ struct CodableColor: Codable, Equatable, Hashable, Identifiable {
 }
 
 struct ShortcutInfo: Codable, Equatable, Identifiable, Hashable {
-    let id: String // The UUID of the shortcut
+    let id: String
     let name: String
     var systemImageName: String?
     var backgroundColor: CodableColor?

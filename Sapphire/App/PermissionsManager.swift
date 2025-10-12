@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import Combine
@@ -117,7 +113,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
     func checkAllPermissions() {
         checkAccessibilityStatus()
-        checkFullDiskAccessStatus() // MODIFICATION: Check it here as well
+        checkFullDiskAccessStatus()
 
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {

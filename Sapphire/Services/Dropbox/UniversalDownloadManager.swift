@@ -4,14 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-08-17.
 //
-
-
-//
-//
-//
-//
-//
-//
 //
 
 import Foundation
@@ -135,7 +127,7 @@ class UniversalDownloadManager {
             }
         }
 
-        return task.progress // Return old progress if we can't determine a new one
+        return task.progress
     }
 
     private func publishTasks() {

@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-12.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import Combine
@@ -172,7 +168,7 @@ class FileConversionManager {
                 throw NSError(domain: "FileConversionError", code: 5, userInfo: [NSLocalizedDescriptionKey: "Could not create PDF context."])
             }
             let frameSetter = CTFramesetterCreateWithAttributedString(attributedString)
-            let path = CGPath(rect: CGRect(x: 0, y: 0, width: 595, height: 842), transform: nil) // A4 size
+            let path = CGPath(rect: CGRect(x: 0, y: 0, width: 595, height: 842), transform: nil)
             let frame = CTFramesetterCreateFrame(frameSetter, CFRangeMake(0, attributedString.length), path, nil)
             context.beginPDFPage(nil)
             CTFrameDraw(frame, context)

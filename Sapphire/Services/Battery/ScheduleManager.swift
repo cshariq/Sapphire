@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-19.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import Combine
@@ -84,7 +80,7 @@ class ScheduleManager: ObservableObject {
                     shouldRun = true
                 case .weekdays:
                     let weekday = calendar.component(.weekday, from: now)
-                    shouldRun = (weekday >= 2 && weekday <= 6) // Mon-Fri
+                    shouldRun = (weekday >= 2 && weekday <= 6)
                 case .weekly:
                     shouldRun = calendar.component(.weekday, from: now) == calendar.component(.weekday, from: task.startTime)
                 default:

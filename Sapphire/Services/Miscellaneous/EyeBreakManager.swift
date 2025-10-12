@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
-//
-//
-//
 
 import Foundation
 import Combine
@@ -22,7 +19,7 @@ struct EyeBreakSession: Identifiable, Codable {
     var type: SessionType
     var duration: TimeInterval
     var date: Date
-    var completed: Bool // Whether the break was completed or skipped
+    var completed: Bool
 }
 
 struct EyeBreakDailySummary: Identifiable {
@@ -39,7 +36,7 @@ struct EyeBreakDailySummary: Identifiable {
     }
 
     var eyeStrainScore: Int {
-        let idealBreakRatio = 0.05 // Ideally 5% of work time should be break time
+        let idealBreakRatio = 0.05
         let actualBreakRatio = workDuration > 0 ? breakDuration / workDuration : 0
         let ratioScore = min(1.0, actualBreakRatio / idealBreakRatio)
 

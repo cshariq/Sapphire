@@ -5,14 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-22.
 //
 
-
-//
-//  KBPAnimator.h
-//  KBPulse
-//
-//  Created by EthanRDoesMC on 10/20/21.
-//
-
 #import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN

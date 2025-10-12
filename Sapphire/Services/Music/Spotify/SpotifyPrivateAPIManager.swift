@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 2025-10-05
 //
 //
-//
-//
 
 import Foundation
 import Combine
@@ -45,7 +43,7 @@ enum CachePolicy {
 private class FileAPICache {
     private let fileManager = FileManager.default
     private let cacheDirectory: URL
-    private let expirationInterval: TimeInterval = 7 * 24 * 60 * 60 // 7 days
+    private let expirationInterval: TimeInterval = 7 * 24 * 60 * 60
 
     init() {
         let cacheBaseUrl = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -200,7 +198,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     func logout() {
-        _internalLogout() // Clear in-memory state
+        _internalLogout()
 
         apiCache.clear()
         Task { await cookieManager.clear() }
@@ -209,7 +207,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
     private func _internalLogout() {
         webSocketManager?.disconnect(); webSocketManager = nil
-        cancellables.removeAll() // Re-subscribed in reestablishSession
+        cancellables.removeAll()
 
         openSpotifyClient = nil; spclientClient = nil; apiPartnerClient = nil; clientTokenClient = nil; wwwSpotifyClient = nil; wgSpclientClient = nil
         accessToken = nil; clientToken = nil; activePlayerDeviceID = nil; controllerDeviceID = nil; sessionDeviceID = nil
@@ -307,7 +305,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
             await performUserVerification()
             await sendGaboSessionEvent()
             try await self.refreshPlayerAndDeviceState()
-            self.isLoggedIn = true // Set login state only after everything succeeds
+            self.isLoggedIn = true
         } catch {
             print("[SpotifyPrivateAPIManager] Error in final initialization flow: \(error.localizedDescription)")
             self.isLoggedIn = false
@@ -734,6 +732,13 @@ class SpotifyPrivateAPIManager: ObservableObject {
             self.playerState = playerStateResponse.playerState; self.devices = Array(playerStateResponse.devices.values); self.activePlayerDeviceID = playerStateResponse.activeDeviceId
         } catch let error {
             print("[SpotifyPrivateAPIManager] Error refreshing player state: \(error.localizedDescription)")
+
+            if let spotError = error as? SpotAPIError, case .decodingError = spotError {
+                print("[SpotifyPrivateAPIManager] Decoding error detected. Treating as a connection loss and resetting session.")
+                _internalLogout()
+                checkAndReconnectIfNeeded()
+            }
+
             throw error
         }
     }

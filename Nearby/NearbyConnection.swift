@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 09.04.2023.
 //
 //
-//
-//
 
 import Foundation
 import Network
@@ -19,7 +17,7 @@ import BigInt
 
 class NearbyConnection{
     internal static let SANE_FRAME_LENGTH=5*1024*1024
-    private static let dispatchQueue=DispatchQueue(label: "me.grishka.NearDrop.queue", qos: .utility) // FIFO (non-concurrent) queue to avoid those exciting concurrency bugs
+    private static let dispatchQueue=DispatchQueue(label: "me.grishka.NearDrop.queue", qos: .utility)
 
     internal let connection:NWConnection
     internal var remoteDeviceInfo:RemoteDeviceInfo?
@@ -224,7 +222,7 @@ class NearbyConnection{
         wrapper.v1.payloadTransfer=transfer
         try encryptAndSendOfflineFrame(wrapper)
 
-        transfer.payloadChunk.flags=1 // .lastChunk
+        transfer.payloadChunk.flags=1
         transfer.payloadChunk.offset=Int64(transfer.payloadChunk.body.count)
         transfer.payloadChunk.clearBody()
         wrapper.v1.payloadTransfer=transfer

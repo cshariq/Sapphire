@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-29
 //
 //
-//
 
 import Foundation
 import SwiftProtobuf
@@ -17,11 +16,11 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 
 enum Securegcm_Ukey2HandshakeCipher: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case reserved // = 0
+  case reserved
 
-  case p256Sha512 // = 100
+  case p256Sha512
 
-  case curve25519Sha512 // = 200
+  case curve25519Sha512
 
   init() {
     self = .reserved
@@ -51,7 +50,7 @@ enum Securegcm_Ukey2HandshakeCipher: SwiftProtobuf.Enum {
 extension Securegcm_Ukey2HandshakeCipher: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Securegcm_Ukey2Message {
 
@@ -73,11 +72,11 @@ struct Securegcm_Ukey2Message {
 
   enum TypeEnum: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownDoNotUse // = 0
-    case alert // = 1
-    case clientInit // = 2
-    case serverInit // = 3
-    case clientFinish // = 4
+    case unknownDoNotUse
+    case alert
+    case clientInit
+    case serverInit
+    case clientFinish
 
     init() {
       self = .unknownDoNotUse
@@ -117,7 +116,7 @@ struct Securegcm_Ukey2Message {
 extension Securegcm_Ukey2Message.TypeEnum: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Securegcm_Ukey2Alert {
 
@@ -140,25 +139,25 @@ struct Securegcm_Ukey2Alert {
   enum AlertType: SwiftProtobuf.Enum {
     typealias RawValue = Int
 
-    case badMessage // = 1
+    case badMessage
 
-    case badMessageType // = 2
+    case badMessageType
 
-    case incorrectMessage // = 3
+    case incorrectMessage
 
-    case badMessageData // = 4
+    case badMessageData
 
-    case badVersion // = 100
+    case badVersion
 
-    case badRandom // = 101
+    case badRandom
 
-    case badHandshakeCipher // = 102
+    case badHandshakeCipher
 
-    case badNextProtocol // = 103
+    case badNextProtocol
 
-    case badPublicKey // = 104
+    case badPublicKey
 
-    case internalError // = 200
+    case internalError
 
     init() {
       self = .badMessage
@@ -208,7 +207,7 @@ struct Securegcm_Ukey2Alert {
 extension Securegcm_Ukey2Alert.AlertType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Securegcm_Ukey2ClientInit {
 
@@ -334,7 +333,7 @@ extension Securegcm_Ukey2ClientInit: @unchecked Sendable {}
 extension Securegcm_Ukey2ClientInit.CipherCommitment: @unchecked Sendable {}
 extension Securegcm_Ukey2ServerInit: @unchecked Sendable {}
 extension Securegcm_Ukey2ClientFinished: @unchecked Sendable {}
-#endif  // swift(>=5.5) && canImport(_Concurrency)
+#endif
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 

@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import Charts
@@ -1594,8 +1590,8 @@ struct SnapZonesSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     ToggleRow(
-                        title: "Activate on Window Drag",
-                        description: "Show Snap Zones when dragging a window's title bar near the notch.",
+                        title: "Activate on Drag",
+                        description: "Show Snap Zones when dragging near the notch.",
                         isOn: $settings.settings.snapOnWindowDragEnabled
                     )
                 }
@@ -2389,14 +2385,13 @@ struct ProximityUnlockSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
     @ObservedObject private var authManager = AuthenticationManager.shared
 
-    // --- View State ---
     @State private var showPasswordPrompt = false
     @State private var showFaceIDRegistration = false
     @State private var faceProfileToRegister: String?
     @State private var showUnnamedDevices = false
     @State private var isFindingByDistance = false
     @State private var isCalibratingRSSI = false
-    
+
     private let deviceRowHeight: CGFloat = 38
     private let maxDeviceListHeight: CGFloat = 228
     private var isBluetoothEnabled: Binding<Bool> {
@@ -2439,7 +2434,7 @@ struct ProximityUnlockSettingsView: View {
               let selectedID = UUID(uuidString: selectedIDString) else { return nil }
         return authManager.scannedDevices.first { $0.id == selectedID } ?? authManager.ble.devices[selectedID]
     }
-    
+
     private var filteredScannedDevices: [Device] {
         if showUnnamedDevices {
             return authManager.scannedDevices
@@ -2453,14 +2448,14 @@ struct ProximityUnlockSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
-                
+
                 InfoContainer(text: "WARNING: All these features are in development and may not work as expected. They might cause unexpected unlocks on your mac. Use at your own risk.", iconName: "exclamationmark.triangle.fill", color: .red)
-                
-                authenticationSection // Shared password settings
-                faceIDSection         // Face ID specific settings
-                bluetoothUnlockSection // Bluetooth specific settings
-                actionsSection        // Shared lock/unlock actions
-                
+
+                authenticationSection
+                faceIDSection
+                bluetoothUnlockSection
+                actionsSection
+
             }
             .padding(25)
         }
@@ -2487,7 +2482,7 @@ struct ProximityUnlockSettingsView: View {
     }
 
     // MARK: - View Components
-    
+
     private var header: some View {
         VStack(alignment: .leading) {
             Text("Proximity & Face Unlock").font(.largeTitle.bold())
@@ -2504,7 +2499,7 @@ struct ProximityUnlockSettingsView: View {
     private var authenticationSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Authentication").font(.headline).padding([.horizontal, .top])
-            
+
             if authManager.isPasswordSet {
                 HStack {
                     Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
@@ -2535,10 +2530,10 @@ struct ProximityUnlockSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             ToggleRow(title: "Enable Face ID Unlock", description: "Unlock your Mac using facial recognition when you wake the screen.", isOn: isFaceIDEnabled)
                 .disabled(!authManager.isPasswordSet)
-            
+
             if settings.settings.faceIDUnlockEnabled {
                 Divider().padding(.leading, 20)
-                
+
                 let registeredFaces = authManager.cameraController.faceDataStore.getRegisteredProfileNames()
                 if registeredFaces.isEmpty {
                     Text("No faces registered. Enable Face ID to add one.")
@@ -2557,12 +2552,12 @@ struct ProximityUnlockSettingsView: View {
                             }
                             Button("Delete", role: .destructive) {
                                 authManager.cameraController.faceDataStore.deleteProfile(name: profileName)
-                                authManager.objectWillChange.send() // Force UI update
+                                authManager.objectWillChange.send()
                             }
                         }.padding()
                     }
                 }
-                
+
                 if registeredFaces.count < 2 {
                     HStack {
                         Spacer()
@@ -2585,7 +2580,7 @@ struct ProximityUnlockSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             ToggleRow(title: "Enable Bluetooth Unlock", description: "Automatically lock and unlock your Mac using a trusted Bluetooth device.", isOn: isBluetoothEnabled)
                 .disabled(!authManager.isPasswordSet)
-            
+
             Group {
                 if settings.settings.bluetoothUnlockEnabled {
                     Divider().padding(.leading, 20)
@@ -2606,10 +2601,10 @@ struct ProximityUnlockSettingsView: View {
     @ViewBuilder
     private var deviceSelectionSection: some View {
         let listHeight = min(maxDeviceListHeight, CGFloat(filteredScannedDevices.count) * deviceRowHeight)
-        
+
         VStack(alignment: .leading, spacing: 10) {
             Text("Trusted Device").font(.subheadline).bold().padding(.horizontal)
-            
+
             if let device = selectedDevice {
                 DeviceRowView(device: device, isSelected: true) {}
                     .padding(.horizontal)
@@ -2701,7 +2696,7 @@ struct ProximityUnlockSettingsView: View {
             CustomSliderRowView(label: "Minimum Scan RSSI", value: Binding(get: { Double(settings.settings.bluetoothUnlockMinScanRSSI) }, set: { settings.settings.bluetoothUnlockMinScanRSSI = Int($0) }), range: -100 ... -30, specifier: "%.0f dBm")
         }.padding(.vertical)
     }
-    
+
     @ViewBuilder
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -5124,7 +5119,7 @@ struct AboutSettingsView: View {
                             Link(destination: URL(string: "https://github.com/cshariq/Sapphire")!) {
                                 Image("github_logo")
                                     .resizable()
-                                    .renderingMode(.template) // Allows coloring the image
+                                    .renderingMode(.template)
                                     .aspectRatio(contentMode: .fit)
                                     .frame(width: 18, height: 18)
                                     .foregroundColor(.white)
@@ -5140,7 +5135,7 @@ struct AboutSettingsView: View {
                                         .aspectRatio(contentMode: .fit)
                                     .frame(width: 18, height: 18)
                                     .padding(6)
-                                    .background(Color(red: 0.35, green: 0.40, blue: 0.95)) // Custom Pink
+                                    .background(Color(red: 0.35, green: 0.40, blue: 0.95))
                                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             }
                             .buttonStyle(PlainButtonStyle())

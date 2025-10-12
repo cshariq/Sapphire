@@ -5,11 +5,9 @@
 //  Created by Shariq Charolia on 2025-08-18.
 //
 //
-//
-//
 
 import SwiftUI
-import Foundation // We only need Foundation
+import Foundation
 
 public struct LoginChallengeDetails: Identifiable {
     public let id = UUID()

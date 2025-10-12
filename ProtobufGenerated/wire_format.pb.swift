@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-29
 //
 //
-//
 
 import Foundation
 import SwiftProtobuf
@@ -84,13 +83,13 @@ struct Sharing_Nearby_FileMetadata {
 
   enum TypeEnum: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknown // = 0
-    case image // = 1
-    case video // = 2
-    case androidApp // = 3
-    case audio // = 4
-    case document // = 5
-    case contactCard // = 6
+    case unknown
+    case image
+    case video
+    case androidApp
+    case audio
+    case document
+    case contactCard
 
     init() {
       self = .unknown
@@ -141,7 +140,7 @@ struct Sharing_Nearby_FileMetadata {
 extension Sharing_Nearby_FileMetadata.TypeEnum: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_TextMetadata {
 
@@ -191,14 +190,14 @@ struct Sharing_Nearby_TextMetadata {
 
   enum TypeEnum: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknown // = 0
-    case text // = 1
+    case unknown
+    case text
 
-    case url // = 2
+    case url
 
-    case address // = 3
+    case address
 
-    case phoneNumber // = 4
+    case phoneNumber
 
     init() {
       self = .unknown
@@ -242,7 +241,7 @@ struct Sharing_Nearby_TextMetadata {
 extension Sharing_Nearby_TextMetadata.TypeEnum: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_WifiCredentialsMetadata {
 
@@ -278,11 +277,11 @@ struct Sharing_Nearby_WifiCredentialsMetadata {
 
   enum SecurityType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownSecurityType // = 0
-    case `open` // = 1
-    case wpaPsk // = 2
-    case wep // = 3
-    case sae // = 4
+    case unknownSecurityType
+    case `open`
+    case wpaPsk
+    case wep
+    case sae
 
     init() {
       self = .unknownSecurityType
@@ -324,7 +323,7 @@ struct Sharing_Nearby_WifiCredentialsMetadata {
 extension Sharing_Nearby_WifiCredentialsMetadata.SecurityType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_AppMetadata {
 
@@ -432,8 +431,8 @@ struct Sharing_Nearby_Frame {
 
   enum Version: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownVersion // = 0
-    case v1 // = 1
+    case unknownVersion
+    case v1
 
     init() {
       self = .unknownVersion
@@ -467,7 +466,7 @@ struct Sharing_Nearby_Frame {
 extension Sharing_Nearby_Frame.Version: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_V1Frame {
 
@@ -524,16 +523,16 @@ struct Sharing_Nearby_V1Frame {
 
   enum FrameType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownFrameType // = 0
-    case introduction // = 1
-    case response // = 2
-    case pairedKeyEncryption // = 3
-    case pairedKeyResult // = 4
+    case unknownFrameType
+    case introduction
+    case response
+    case pairedKeyEncryption
+    case pairedKeyResult
 
-    case certificateInfo // = 5
-    case cancel // = 6
+    case certificateInfo
+    case cancel
 
-    case progressUpdate // = 7
+    case progressUpdate
 
     init() {
       self = .unknownFrameType
@@ -578,7 +577,7 @@ struct Sharing_Nearby_V1Frame {
 extension Sharing_Nearby_V1Frame.FrameType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_IntroductionFrame {
 
@@ -619,9 +618,9 @@ struct Sharing_Nearby_IntroductionFrame {
 
   enum SharingUseCase: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknown // = 0
-    case nearbyShare // = 1
-    case remoteCopy // = 2
+    case unknown
+    case nearbyShare
+    case remoteCopy
 
     init() {
       self = .unknown
@@ -658,7 +657,7 @@ struct Sharing_Nearby_IntroductionFrame {
 extension Sharing_Nearby_IntroductionFrame.SharingUseCase: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_ProgressUpdateFrame {
 
@@ -701,12 +700,12 @@ struct Sharing_Nearby_ConnectionResponseFrame {
 
   enum Status: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknown // = 0
-    case accept // = 1
-    case reject // = 2
-    case notEnoughSpace // = 3
-    case unsupportedAttachmentType // = 4
-    case timedOut // = 5
+    case unknown
+    case accept
+    case reject
+    case notEnoughSpace
+    case unsupportedAttachmentType
+    case timedOut
 
     init() {
       self = .unknown
@@ -747,7 +746,7 @@ struct Sharing_Nearby_ConnectionResponseFrame {
 extension Sharing_Nearby_ConnectionResponseFrame.Status: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_AttachmentDetails {
 
@@ -769,17 +768,17 @@ struct Sharing_Nearby_AttachmentDetails {
 
   enum TypeEnum: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknown // = 0
+    case unknown
 
-    case file // = 1
+    case file
 
-    case text // = 2
+    case text
 
-    case wifiCredentials // = 3
+    case wifiCredentials
 
-    case app // = 4
+    case app
 
-    case stream // = 5
+    case stream
 
     init() {
       self = .unknown
@@ -821,7 +820,7 @@ struct Sharing_Nearby_AttachmentDetails {
 extension Sharing_Nearby_AttachmentDetails.TypeEnum: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_FileAttachmentDetails {
 
@@ -942,10 +941,10 @@ struct Sharing_Nearby_PairedKeyResultFrame {
 
   enum Status: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknown // = 0
-    case success // = 1
-    case fail // = 2
-    case unable // = 3
+    case unknown
+    case success
+    case fail
+    case unable
 
     init() {
       self = .unknown
@@ -983,7 +982,7 @@ struct Sharing_Nearby_PairedKeyResultFrame {
 extension Sharing_Nearby_PairedKeyResultFrame.Status: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Sharing_Nearby_CertificateInfoFrame {
 
@@ -1128,7 +1127,7 @@ extension Sharing_Nearby_CertificateInfoFrame: @unchecked Sendable {}
 extension Sharing_Nearby_PublicCertificate: @unchecked Sendable {}
 extension Sharing_Nearby_WifiCredentials: @unchecked Sendable {}
 extension Sharing_Nearby_StreamDetails: @unchecked Sendable {}
-#endif  // swift(>=5.5) && canImport(_Concurrency)
+#endif
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 

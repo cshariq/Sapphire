@@ -4,13 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-08-13.
 //
-
-
-//
-//
-//
-//
-//
 //
 
 func installHelper() {

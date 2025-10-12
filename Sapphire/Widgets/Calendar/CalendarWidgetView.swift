@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-06-27.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import EventKit
@@ -41,7 +37,7 @@ struct CenterDatePreferenceKey: PreferenceKey {
 
 @available(macOS 14.0, *)
 struct CalendarWidgetView: View {
-    @Environment(\.navigationStack) var navigationStack // Used for onTapGesture navigation
+    @Environment(\.navigationStack) var navigationStack
     @ObservedObject var viewModel: InteractiveCalendarViewModel
     @EnvironmentObject var calendarService: CalendarService
 

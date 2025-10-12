@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-10-05
 //
 //
-//
-//
-//
 
 import Foundation
 import AppKit
@@ -212,13 +209,13 @@ class MusicManager: ObservableObject {
 
     func toggleLike() {
         let newLikedState = !self.isLiked
-        self.isLiked = newLikedState // Optimistic update
+        self.isLiked = newLikedState
 
         Task {
             var success = false
             if self.lastKnownBundleID == "com.apple.Music" {
                 appleMusic.setLiked(isLiked: newLikedState)
-                success = true // AppleScript provides no return value
+                success = true
             } else if let trackId = self.trackID {
                 if spotifyPrivateAPI.isLoggedIn {
                     success = newLikedState ? await spotifyPrivateAPI.likeTrack(trackURI: "spotify:track:\(trackId)") : await spotifyPrivateAPI.unlikeTrack(trackURI: "spotify:track:\(trackId)")
@@ -228,14 +225,14 @@ class MusicManager: ObservableObject {
             }
 
             if !success {
-                self.isLiked = !newLikedState // Revert on failure
+                self.isLiked = !newLikedState
             }
         }
     }
 
     func toggleShuffle() {
         let newShuffleState = !self.shuffleState
-        self.shuffleState = newShuffleState // Optimistic update
+        self.shuffleState = newShuffleState
 
         Task {
             var success = false
@@ -250,14 +247,14 @@ class MusicManager: ObservableObject {
                 }
             }
             if !success {
-                self.shuffleState = !newShuffleState // Revert
+                self.shuffleState = !newShuffleState
             }
         }
     }
 
     func cycleRepeatMode() {
         let newRepeatState = self.repeatState.next()
-        self.repeatState = newRepeatState // Optimistic update
+        self.repeatState = newRepeatState
 
         Task {
             var success = false
@@ -272,7 +269,7 @@ class MusicManager: ObservableObject {
                 }
             }
             if !success {
-                self.repeatState = newRepeatState.next().next() // Revert
+                self.repeatState = newRepeatState.next().next()
             }
         }
     }
@@ -596,6 +593,7 @@ class MusicManager: ObservableObject {
         lyrics = []
         currentLyric = nil
         currentLyricIndex = nil
+        currentLyricPublisher.send(nil)
     }
 
     private func fetchAndTranslateLyricsIfNeeded() {

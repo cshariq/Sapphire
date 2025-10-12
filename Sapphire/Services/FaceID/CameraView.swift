@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-13.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import AVFoundation
@@ -18,7 +14,7 @@ struct CameraView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        view.wantsLayer = true // NSView must be layer-hosting to show a CALayer
+        view.wantsLayer = true
 
         let previewLayer = AVCaptureVideoPreviewLayer(session: session)
         previewLayer.videoGravity = .resizeAspectFill

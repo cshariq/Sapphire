@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-02.
 //
 //
-//
-//
 
 import Foundation
 
@@ -18,7 +16,7 @@ enum NearDropDisplayState: Equatable {
 }
 
 struct NearDropDisplayPayload: Identifiable, Equatable {
-    let id: String // The unique transfer ID
+    let id: String
     let deviceName: String
     let fileInfo: String
     let pinCode: String?

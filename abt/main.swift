@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 2025/5/19.
 //
 //
-//
-//
 
 import AppKit
 import ArgumentParser
@@ -24,7 +22,7 @@ func getFiles(withExtension fileExtension: String, in directory: URL) -> [URL] {
     }
 }
 
-extension BatteryDevice { // Use the non-conflicting name
+extension BatteryDevice {
     func toItem() -> item {
         var status = "?"
         if isCharged || acPowered || (isCharging != 0) {

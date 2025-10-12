@@ -4,14 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-09-14.
 //
-
-
-//
-//
-//
-//
-//
-//
 //
 
 import Foundation
@@ -93,7 +85,7 @@ class SystemLogParser {
             timestamp: timestamp,
             charge: charge,
             isCharging: isCharging,
-            isPluggedIn: isCharging, // A reasonable assumption from system logs
+            isPluggedIn: isCharging,
             isScreenOn: isScreenOn,
             isLowPowerMode: isLowPowerMode,
             temperature: -1,

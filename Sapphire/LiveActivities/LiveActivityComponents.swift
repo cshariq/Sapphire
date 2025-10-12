@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-06.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import EventKit
@@ -822,7 +818,7 @@ struct FocusModeActivityView {
         let text: String
 
         if !mode.isActive {
-            text = "Off" // Always show "Off" when inactive
+            text = "Off"
         } else {
             switch displayMode {
             case .full:
@@ -834,7 +830,7 @@ struct FocusModeActivityView {
 
         return Text(text)
             .font(.system(size: 13, weight: .semibold))
-            .foregroundColor(.white.opacity(mode.isActive ? 0.9 : 0.7)) // Dim the text when off
+            .foregroundColor(.white.opacity(mode.isActive ? 0.9 : 0.7))
             .lineLimit(1)
     }
 }

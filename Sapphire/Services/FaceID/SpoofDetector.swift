@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-17
 //
 //
-//
-//
-//
 
 import Vision
 import Foundation
@@ -19,7 +16,7 @@ enum SpoofConfidence {
 class SpoofDetector {
 
     private var poseHistory: [(yaw: Double, pitch: Double, roll: Double)] = []
-    private let poseHistoryLimit = 5 // Number of frames to consider for movement.
+    private let poseHistoryLimit = 5
 
     private let movementThreshold: Double = 0.005
 
@@ -63,7 +60,7 @@ class SpoofDetector {
         guard let yaw = observation.yaw?.doubleValue,
               let pitch = observation.pitch?.doubleValue,
               let roll = observation.roll?.doubleValue else {
-            return 0.0 // Not enough data for movement analysis
+            return 0.0
         }
 
         let currentPose = (yaw: yaw, pitch: pitch, roll: roll)
@@ -74,7 +71,7 @@ class SpoofDetector {
         }
 
         guard poseHistory.count > 1 else {
-            return 0.5 // Not enough history yet, assume neutral.
+            return 0.5
         }
 
         let yawAvg = poseHistory.map { $0.yaw }.reduce(0, +) / Double(poseHistory.count)

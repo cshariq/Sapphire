@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-11.
 //
 //
-//
-//
-//
-//
 
 import AppKit
 import Carbon.HIToolbox.Events
@@ -94,7 +90,7 @@ struct KeyCodeTranslator {
         let status = UCKeyTranslate(layout,
                                     keyCode,
                                     UInt16(kUCKeyActionDown),
-                                    0, // No modifiers
+                                    0,
                                     UInt32(LMGetKbdType()),
                                     UInt32(kUCKeyTranslateNoDeadKeysBit),
                                     &deadKeyState,

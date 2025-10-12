@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-20.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import AppKit
@@ -24,9 +20,9 @@ class TrackpadGestureHandler {
     private var isMonitoring = false
     private var hasProcessedCurrentGesture = false
     private var lastGestureTime: Date = .distantPast
-    private var gestureDebounceInterval: TimeInterval = 0.7 // Increased debounce interval
+    private var gestureDebounceInterval: TimeInterval = 0.7
     private var monitoringStartTime: Date = .distantPast
-    private var initialStabilizationPeriod: TimeInterval = 0.3 // Wait period after monitoring starts
+    private var initialStabilizationPeriod: TimeInterval = 0.3
 
     var onSwipe: ((CGFloat, CGFloat) -> Void)?
     var onTwoFingerTap: (() -> Void)?
@@ -109,7 +105,7 @@ class TrackpadGestureHandler {
 
             if !self.hasProcessedCurrentGesture && now.timeIntervalSince(self.lastGestureTime) > self.gestureDebounceInterval {
 
-                if abs(event.magnification) > 0.1 { // Threshold for pinch
+                if abs(event.magnification) > 0.1 {
                     self.hasProcessedCurrentGesture = true
                     self.lastGestureTime = now
 

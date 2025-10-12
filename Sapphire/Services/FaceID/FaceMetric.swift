@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-13.
 //
 //
-//
-//
-//
-//
 
 import Vision
 import Foundation
@@ -47,7 +43,7 @@ struct FacialMetricSet: Codable {
 
     func matches(with other: FacialMetricSet) -> Bool {
         let score = similarityScore(with: other)
-        return score > 0.85 // 85% similarity threshold
+        return score > 0.85
     }
 }
 

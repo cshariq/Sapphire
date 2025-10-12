@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-13.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import CoreAudio
@@ -25,10 +21,10 @@ struct AudioDevice: Identifiable, Hashable {
 
 struct AudioDeviceSettings: Equatable {
     var volume: Double = 1.0
-    var balance: Double = 0.0 // -1.0 (Left) to 1.0 (Right)
-    var delay: TimeInterval = 0.0 // in seconds
+    var balance: Double = 0.0
+    var delay: TimeInterval = 0.0
     var equalizer: EQPreset = .flat
-    var customEQGains: [Double] = EQPreset.flat.gainValues // Holds the 10-band EQ values
+    var customEQGains: [Double] = EQPreset.flat.gainValues
 }
 
 @MainActor
@@ -91,7 +87,7 @@ class MultiAudioManager: ObservableObject {
         for deviceID in deviceIDs {
             guard let name = getDeviceName(for: deviceID),
                   let uid = getDeviceUID(for: deviceID),
-                  !isSoftwareDevice(for: deviceID), // <-- CORRECTED: Using more comprehensive check
+                  !isSoftwareDevice(for: deviceID),
                   !name.contains("Sapphire Multi-Output") else {
                 continue
             }
@@ -133,8 +129,8 @@ class MultiAudioManager: ObservableObject {
     private func applySettings(for deviceID: AudioDeviceID, settings: AudioDeviceSettings) {
         print("[MultiAudioManager] Applying settings for device \(deviceID): Volume=\(settings.volume), Balance=\(settings.balance)")
 
-        setDeviceProperty(deviceID: deviceID, selector: kAudioDevicePropertyVolumeScalar, scope: kAudioObjectPropertyScopeOutput, element: 1, value: Float(settings.volume)) // Channel 1 (Left)
-        setDeviceProperty(deviceID: deviceID, selector: kAudioDevicePropertyVolumeScalar, scope: kAudioObjectPropertyScopeOutput, element: 2, value: Float(settings.volume)) // Channel 2 (Right)
+        setDeviceProperty(deviceID: deviceID, selector: kAudioDevicePropertyVolumeScalar, scope: kAudioObjectPropertyScopeOutput, element: 1, value: Float(settings.volume))
+        setDeviceProperty(deviceID: deviceID, selector: kAudioDevicePropertyVolumeScalar, scope: kAudioObjectPropertyScopeOutput, element: 2, value: Float(settings.volume))
 
         setDeviceProperty(deviceID: deviceID, selector: kAudioDevicePropertyStereoPan, scope: kAudioObjectPropertyScopeOutput, element: kAudioObjectPropertyElementMain, value: Float(settings.balance))
 
@@ -166,7 +162,7 @@ class MultiAudioManager: ObservableObject {
         let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &propertySize, &transportType)
 
         if status != noErr {
-            return false // Assume it's a physical device if we can't get the property.
+            return false
         }
 
         return transportType == kAudioDeviceTransportTypeVirtual || transportType == kAudioDeviceTransportTypeAggregate

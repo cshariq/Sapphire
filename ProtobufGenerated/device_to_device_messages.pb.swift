@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-29
 //
 //
-//
 
 import Foundation
 import SwiftProtobuf
@@ -17,7 +16,7 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 
 enum Securegcm_Curve: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case ed25519 // = 1
+  case ed25519
 
   init() {
     self = .ed25519
@@ -43,7 +42,7 @@ enum Securegcm_Curve: SwiftProtobuf.Enum {
 extension Securegcm_Curve: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Securegcm_DeviceToDeviceMessage {
 
@@ -196,7 +195,7 @@ extension Securegcm_InitiatorHello: @unchecked Sendable {}
 extension Securegcm_ResponderHello: @unchecked Sendable {}
 extension Securegcm_EcPoint: @unchecked Sendable {}
 extension Securegcm_SpakeHandshakeMessage: @unchecked Sendable {}
-#endif  // swift(>=5.5) && canImport(_Concurrency)
+#endif
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 

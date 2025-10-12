@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-13.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 
@@ -116,7 +112,7 @@ fileprivate struct DeviceOutputRow: View {
                         navigationStack.append(.multiAudioEQ(device))
                     }
                 }
-                .padding(.leading, 45) // Indent controls under the name
+                .padding(.leading, 45)
                 .transition(.opacity.combined(with: .offset(y: 5)))
             }
         }

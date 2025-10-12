@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-11.
 //
 //
-//
-//
-//
-//
 
 import AppKit
 import Combine
@@ -33,14 +29,14 @@ class KeyboardShortcutManager {
     private init() {
         SettingsModel.shared.$settings
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in // The closure now has the correct type context.
+            .sink { [weak self] _ in
                 self?.setupMonitor()
             }
             .store(in: &cancellables)
     }
 
     func setupMonitor() {
-        stopMonitoring() // This is synchronous and uses the lock.
+        stopMonitoring()
 
         let planesWithShortcuts = SettingsModel.shared.settings.planes.filter { $0.shortcut != nil }
 

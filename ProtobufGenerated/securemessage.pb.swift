@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-29
 //
 //
-//
 
 import Foundation
 import SwiftProtobuf
@@ -17,10 +16,10 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 
 enum Securemessage_SigScheme: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case hmacSha256 // = 1
-  case ecdsaP256Sha256 // = 2
+  case hmacSha256
+  case ecdsaP256Sha256
 
-  case rsa2048Sha256 // = 3
+  case rsa2048Sha256
 
   init() {
     self = .hmacSha256
@@ -50,13 +49,13 @@ enum Securemessage_SigScheme: SwiftProtobuf.Enum {
 extension Securemessage_SigScheme: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Securemessage_EncScheme: SwiftProtobuf.Enum {
   typealias RawValue = Int
 
-  case none // = 1
-  case aes256Cbc // = 2
+  case none
+  case aes256Cbc
 
   init() {
     self = .none
@@ -84,14 +83,14 @@ enum Securemessage_EncScheme: SwiftProtobuf.Enum {
 extension Securemessage_EncScheme: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 enum Securemessage_PublicKeyType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case ecP256 // = 1
-  case rsa2048 // = 2
+  case ecP256
+  case rsa2048
 
-  case dh2048Modp // = 3
+  case dh2048Modp
 
   init() {
     self = .ecP256
@@ -121,7 +120,7 @@ enum Securemessage_PublicKeyType: SwiftProtobuf.Enum {
 extension Securemessage_PublicKeyType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Securemessage_SecureMessage {
 
@@ -375,7 +374,7 @@ extension Securemessage_EcP256PublicKey: @unchecked Sendable {}
 extension Securemessage_SimpleRsaPublicKey: @unchecked Sendable {}
 extension Securemessage_DhPublicKey: @unchecked Sendable {}
 extension Securemessage_GenericPublicKey: @unchecked Sendable {}
-#endif  // swift(>=5.5) && canImport(_Concurrency)
+#endif
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 

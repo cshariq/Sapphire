@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-11.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 
@@ -54,7 +50,7 @@ fileprivate struct ShortcutIconView: View {
                 .font(.system(size: 2, weight: .bold))
                 .frame(width: 22, height: 22)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .help(shortcut.name) // Show the name on hover as a tooltip.
+                .help(shortcut.name)
         }
         .buttonStyle(.plain)
         .onAppear {

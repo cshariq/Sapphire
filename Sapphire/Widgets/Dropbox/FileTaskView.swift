@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-05.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import NearbyShare
@@ -42,15 +38,15 @@ private struct SwipeToDismissWrapper<Content: View>: View {
     @State private var offset: CGFloat = 0
     @State private var isSwipingHorizontally = false
 
-    private let deleteThreshold: CGFloat = -80 // Swipe left to trigger
-    private let actionThreshold: CGFloat = 80 // Swipe right to trigger
+    private let deleteThreshold: CGFloat = -80
+    private let actionThreshold: CGFloat = 80
     private let releaseAnimation = Animation.spring(response: 0.4, dampingFraction: 0.7)
     private let dragAnimation = Animation.interactiveSpring(response: 0.2, dampingFraction: 0.8, blendDuration: 0.1)
 
     private var dynamicCornerRadius: CGFloat {
-        let startRadius: CGFloat = 30 // Pill shape radius
-        let endRadius: CGFloat = 12   // Final rectangle radius
-        let transitionWidth: CGFloat = 60 // Swipe distance over which the radius changes
+        let startRadius: CGFloat = 30
+        let endRadius: CGFloat = 12
+        let transitionWidth: CGFloat = 60
 
         let progress = min(CGFloat(1.0), abs(offset) / transitionWidth)
 

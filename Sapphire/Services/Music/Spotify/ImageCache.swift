@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-23.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 
@@ -56,7 +52,7 @@ fileprivate class FileImageCache {
     }
 
     private func cleanupOldFiles() {
-        let expirationInterval: TimeInterval = 7 * 24 * 60 * 60 // 7 days
+        let expirationInterval: TimeInterval = 7 * 24 * 60 * 60
         do {
             let files = try fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: [.contentModificationDateKey], options: .skipsHiddenFiles)
             for file in files {
@@ -94,7 +90,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
             content(Image(nsImage: nsImage))
         } else {
             placeholder()
-                .task(id: url) { // Re-triggers the task if the URL changes
+                .task(id: url) {
                     await loadImage()
                 }
         }

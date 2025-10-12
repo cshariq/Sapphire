@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-16.
 //
 //
-//
-//
-//
 
 import SwiftUI
 import Combine
@@ -124,7 +121,7 @@ class LaunchpadViewModel: ObservableObject {
 
             if case .folder(let folder) = item {
                 if folder.items.count <= 1 {
-                    seenIDs.insert(item.id) // Mark folder ID as seen
+                    seenIDs.insert(item.id)
                     for appItem in folder.items {
                         if !seenIDs.contains(appItem.id) {
                             processedItems.append(.app(appItem))

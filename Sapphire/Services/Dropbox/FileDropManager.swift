@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-12.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import Combine
@@ -36,7 +32,7 @@ enum FileTask: Identifiable, Equatable {
 struct AirDropTask: Identifiable, Equatable {
     var id = UUID()
     var fileName: String
-    var progress: Double = 0.5 // Start at 50% as we can't get real progress
+    var progress: Double = 0.5
     var isComplete: Bool = false
 }
 
@@ -124,7 +120,7 @@ class FileDropManager: ObservableObject {
 
             switch taskData.state {
             case .finished, .failed, .canceled:
-                scheduleTaskDismissal(for: taskID, after: 300.0) // 5 minutes
+                scheduleTaskDismissal(for: taskID, after: 300.0)
             default:
                 taskDismissalTimers[taskID]?.invalidate()
                 taskDismissalTimers.removeValue(forKey: taskID)

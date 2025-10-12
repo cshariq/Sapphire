@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-16.
 //
 //
-//
-//
-//
 
 import AppKit
 import Combine
@@ -83,7 +80,7 @@ class LaunchpadGestureManager: ObservableObject {
 
         if event.type == .flagsChanged {
             self.isOptionKeyPressed = event.modifierFlags.contains(.option)
-            return true // Consume to prevent system beep
+            return true
         }
 
         switch event.type {

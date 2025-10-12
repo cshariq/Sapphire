@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-17.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 
@@ -63,13 +59,13 @@ struct BatteryLowPowerView: View {
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.title3) // A slightly larger, more tappable size
-                    .foregroundColor(.secondary.opacity(0.6)) // Subtle color
-                    .symbolRenderingMode(.hierarchical) // Gives the button some depth for better visibility
+                    .font(.title3)
+                    .foregroundColor(.secondary.opacity(0.6))
+                    .symbolRenderingMode(.hierarchical)
             }
             .buttonStyle(.plain)
-            .padding(.top, 6)      // Nudge it down from the very top edge
-            .padding(.trailing, 6) // Nudge it in from the very right edge
+            .padding(.top, 6)
+            .padding(.trailing, 6)
 
         }
         .scaleEffect(isShowing ? 1 : 0.95)

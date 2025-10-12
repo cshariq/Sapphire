@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-10.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import CoreLocation
@@ -20,7 +16,7 @@ class WeatherService: NSObject, CLLocationManagerDelegate {
 
     private var cachedWeatherData: ProcessedWeatherData?
     private var lastFetchDate: Date?
-    private let cacheDuration: TimeInterval = 10 * 60 // 10 minutes
+    private let cacheDuration: TimeInterval = 10 * 60
 
     private let weatherAPIKey = "e45ff1b7c7bda231216c7ab7c33509b8"
 

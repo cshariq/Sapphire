@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-06-28.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import EventKit
@@ -83,10 +79,10 @@ class CalendarService: ObservableObject {
         let fetchedEvents = eventStore.events(matching: predicate)
             .sorted {
                 if $0.isAllDay && !$1.isAllDay {
-                    return true // All-day event comes first
+                    return true
                 }
                 if !$0.isAllDay && $1.isAllDay {
-                    return false // Timed event comes after all-day
+                    return false
                 }
                 return $0.startDate < $1.startDate
             }
@@ -103,7 +99,7 @@ class CalendarService: ObservableObject {
 
         let predicate = eventStore.predicateForEvents(withStart: now, end: twoDaysFromNow, calendars: calendars)
         let fetchedEvents = eventStore.events(matching: predicate)
-            .filter { !$0.isAllDay } // <-- This is correct here, leave as is.
+            .filter { !$0.isAllDay }
             .sorted { $0.startDate < $1.startDate }
 
         print("[CalendarService] Fetched \(fetchedEvents.count) upcoming events for live activities.")

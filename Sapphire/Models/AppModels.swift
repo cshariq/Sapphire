@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 205-07-06.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import NearbyShare
@@ -29,12 +25,12 @@ enum NotchWidgetMode: Hashable {
 
     case musicPlayer
     case weatherPlayer
-    case calendarPlayer // <<< NEW
+    case calendarPlayer
 
     case musicQueueAndPlaylists
     case musicDevices
     case musicLyrics
-    case musicPlaylistDetail(SpotifyPlaylist) // Assuming SpotifyPlaylist is Hashable
+    case musicPlaylistDetail(SpotifyPlaylist)
 
     case nearDrop
     case fileShelf
@@ -42,8 +38,8 @@ enum NotchWidgetMode: Hashable {
     case fileActionPreview
 
     case multiAudio
-    case multiAudioDeviceAdjust(AudioDevice) // Assuming AudioDevice is Hashable
-    case multiAudioEQ(AudioDevice)           // Assuming AudioDevice is Hashable
+    case multiAudioDeviceAdjust(AudioDevice)
+    case multiAudioEQ(AudioDevice)
 
     case musicApiKeysMissing
     case geminiApiKeysMissing
@@ -61,7 +57,7 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(3)
         case .weatherPlayer:
             hasher.combine(4)
-        case .calendarPlayer: // <<< NEW HASH LOGIC
+        case .calendarPlayer:
             hasher.combine(5)
         case .musicQueueAndPlaylists:
             hasher.combine(6)

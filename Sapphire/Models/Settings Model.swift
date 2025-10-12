@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-10-07
 //
 //
-//
-//
-//
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -348,7 +345,7 @@ struct Settings: Codable, Equatable {
     var batteryEstimatorEnabled: Bool = true
     var geminiEnabled: Bool = true
     var pinEnabled: Bool = true
-    var hideNotchWhenInactive: Bool = false // New setting for hiding the notch when inactive
+    var hideNotchWhenInactive: Bool = false
     var notchButtonOrder: [NotchButtonType] = [
         .settings, .fileShelf, .gemini, .spacer, .battery, .multiAudio, .caffeine, .pin
     ]
@@ -363,7 +360,7 @@ struct Settings: Codable, Equatable {
     var weatherWidgetEnabled: Bool = true
     var calendarWidgetEnabled: Bool = true
     var shortcutsWidgetEnabled: Bool = false
-    var timerWidgetEnabled: Bool = true // NEW
+    var timerWidgetEnabled: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
 
     // MARK: - Live Activities
@@ -545,7 +542,7 @@ struct Settings: Codable, Equatable {
     var geminiApiKey: String = ""
 
     // MARK: - Timer & Stopwatch
-    var clickToShowTimerView: Bool = true // NEW
+    var clickToShowTimerView: Bool = true
 }
 
 // MARK: - SettingsModel Class
@@ -1113,21 +1110,21 @@ enum NotificationSource: String, CaseIterable, Identifiable {
 }
 
 enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
-    case expandOnHover //, launchpad
+    case expandOnHover
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .expandOnHover: "Expand on Hover"; //case .launchpad: "Reinstate Launchpad";
+        case .expandOnHover: "Expand on Hover";
         }
     }
     var systemImage: String {
         switch self {
-        case .expandOnHover: "cursorarrow.motionlines"; //case .launchpad: "square.grid.3x3.fill";
+        case .expandOnHover: "cursorarrow.motionlines";
         }
     }
     var iconColor: Color {
         switch self {
-        case .expandOnHover: .cyan; //case .launchpad: .gray;
+        case .expandOnHover: .cyan;
         }
     }
 }
@@ -1217,7 +1214,7 @@ extension UTType {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, widgets, liveActivities, lockScreen, bluetoothUnlock, shortcuts, snapZones, battery, bluetooth, hud, notifications, neardrop, fileShelf, music, weather, calendar, eyeBreak, gemini, about //, audio
+    case general, widgets, liveActivities, lockScreen, bluetoothUnlock, shortcuts, snapZones, battery, bluetooth, hud, notifications, neardrop, fileShelf, music, weather, calendar, eyeBreak, gemini, about
 
     var id: String { self.rawValue }
 
@@ -1237,17 +1234,17 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .general: "General"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .lockScreen: "Lock Screen";  case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .gemini: "Gemini"; case .about: "About" //, case .audio: "Audio";
+        case .general: "General"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .lockScreen: "Lock Screen";  case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .gemini: "Gemini"; case .about: "About"
         }
     }
     var systemImage: String {
         switch self {
-        case .general: "gear"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill"; case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .gemini: "sparkles"; case .about: "info.circle" //, case .audio: "speaker.wave.3.fill";
+        case .general: "gear"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill"; case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .gemini: "sparkles"; case .about: "info.circle"
         }
     }
     var iconBackgroundColor: Color {
         switch self {
-        case .general: .gray; case .widgets: .purple; case .liveActivities: .cyan; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .music: .pink; case .weather: .blue; case .calendar: .red; case .eyeBreak: .teal; case .gemini: .purple; case .about: .blue //, case .audio: .cyan;
+        case .general: .gray; case .widgets: .purple; case .liveActivities: .cyan; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .music: .pink; case .weather: .blue; case .calendar: .red; case .eyeBreak: .teal; case .gemini: .purple; case .about: .blue
         }
     }
 }

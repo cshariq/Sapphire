@@ -1,10 +1,14 @@
-// BluetoothDeviceResolver.swift
+//
+//  BluetoothDeviceResolver.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2025-10-12
+//
+//
 
 import Foundation
 import SQLite3
 
-/// A resolver to find BLE device info from private macOS data stores.
-/// This uses undocumented system files and may break in future macOS updates.
 class BluetoothDeviceResolver {
     static let shared = BluetoothDeviceResolver()
 
@@ -25,49 +29,48 @@ class BluetoothDeviceResolver {
             print("[Resolver] Could not open paired devices database at \(pairedDBPath)")
             db_paired = nil
         }
-        
+
         if sqlite3_open_v2(otherDBPath, &db_other, SQLITE_OPEN_READONLY, nil) != SQLITE_OK {
             print("[Resolver] Could not open other devices database at \(otherDBPath)")
             db_other = nil
         }
     }
-    
-    /// Fetches device info (name, MAC) from the modern SQLite databases.
+
     func getLEDeviceInfo(from uuid: String) -> (name: String?, macAddr: String?)? {
         connectToDatabases()
-        
+
         if let pairedInfo = queryDatabase(db_paired, uuid: uuid, table: "PairedDevices") {
             return pairedInfo
         }
         if let otherInfo = queryDatabase(db_other, uuid: uuid, table: "OtherDevices") {
             return otherInfo
         }
-        
+
         return nil
     }
 
     private func queryDatabase(_ db: OpaquePointer?, uuid: String, table: String) -> (name: String?, macAddr: String?)? {
         guard let db = db else { return nil }
-        
+
         var stmt: OpaquePointer?
         let queryString = "SELECT Name, Address, ResolvedAddress FROM \(table) WHERE Uuid='\(uuid)' LIMIT 1"
-        
+
         guard sqlite3_prepare_v2(db, queryString, -1, &stmt, nil) == SQLITE_OK else {
             print("[Resolver] Failed to prepare statement for \(table)")
             return nil
         }
         defer { sqlite3_finalize(stmt) }
-        
+
         guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
-        
+
         let name = getStringFrom(stmt: stmt, index: 0)
         let address = getStringFrom(stmt: stmt, index: 1)
         let resolvedAddress = getStringFrom(stmt: stmt, index: 2)
-        
+
         let mac = parseMAC(from: resolvedAddress ?? address)
-        
+
         if name == nil && mac == nil { return nil }
-        
+
         return (name: name, macAddr: mac)
     }
 
@@ -80,7 +83,6 @@ class BluetoothDeviceResolver {
 
     private func parseMAC(from addressString: String?) -> String? {
         guard let addr = addressString else { return nil }
-        // Address is like "Public XX:XX:..." or "Random XX:XX:...", so we take the last part.
         let parts = addr.split(separator: " ")
         if let macPart = parts.last {
             return String(macPart)
@@ -88,7 +90,6 @@ class BluetoothDeviceResolver {
         return nil
     }
 
-    /// Fetches MAC address from the legacy plist file.
     func getMACFromPlist(for uuid: String) -> String? {
         guard let plist = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.Bluetooth.plist"),
               let cbcache = plist["CoreBluetoothCache"] as? NSDictionary,
@@ -99,7 +100,6 @@ class BluetoothDeviceResolver {
         return address
     }
 
-    /// Fetches device name from the legacy plist file using a MAC address.
     func getNameFromPlist(for mac: String) -> String? {
         guard let plist = NSDictionary(contentsOfFile: "/Library/Preferences/com.apple.Bluetooth.plist"),
               let devcache = plist["DeviceCache"] as? NSDictionary,

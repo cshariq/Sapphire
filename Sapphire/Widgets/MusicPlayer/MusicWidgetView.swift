@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-06-26.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import AppKit
@@ -43,14 +39,12 @@ struct MusicWidgetView: View {
             .frame(height: 100)
             .frame(maxWidth: 300)
             .fixedSize()
-            .contentShape(Rectangle()) // Makes the entire HStack tappable
+            .contentShape(Rectangle())
             .onTapGesture {
                 navigationStack.wrappedValue.append(.musicPlayer)
             }
 
         } else {
-            // FIX: Removed the conflicting .onTapGesture and .contentShape.
-            // The Button inside OpenPlayerView will now correctly receive taps.
             OpenPlayerView(
                 player: settings.settings.defaultMusicPlayer,
                 action: openDefaultPlayer
@@ -72,7 +66,7 @@ struct MusicWidgetView: View {
     private func openDefaultPlayer() {
         let player = settings.settings.defaultMusicPlayer
         let bundleId = player == .appleMusic ? "com.apple.Music" : "com.spotify.client"
-        
+
         NSWorkspace.shared.launchApplication(
             withBundleIdentifier: bundleId,
             options: [],

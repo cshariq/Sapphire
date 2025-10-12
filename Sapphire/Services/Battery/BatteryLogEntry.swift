@@ -4,14 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-09-14.
 //
-
-
-//
-//
-//
-//
-//
-//
 //
 
 import Foundation
@@ -27,9 +19,9 @@ struct BatteryLogEntry: Codable, Identifiable, Hashable {
     let isPluggedIn: Bool
     let isScreenOn: Bool
     let isLowPowerMode: Bool
-    let temperature: Double // in Celsius
-    let timeToEmpty: Int // in minutes
-    let timeToFull: Int // in minutes
+    let temperature: Double
+    let timeToEmpty: Int
+    let timeToFull: Int
 
     var estimatedTimeRemaining: Int {
         isCharging ? timeToFull : timeToEmpty

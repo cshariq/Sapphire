@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-10-05.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 
@@ -273,7 +269,7 @@ struct BatteryMiniWidget: View {
 
                     FilledBatteryIcon(
                         level: batteryLevel,
-                        isCharging: false, // BT devices don't report this state reliably
+                        isCharging: false,
                         isPluggedIn: false,
                         isLowBattery: batteryLevel <= 20
                     )

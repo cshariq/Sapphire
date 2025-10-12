@@ -4,6 +4,7 @@
 //
 //  Created by Shariq Charolia on 2025-07-07.
 //
+//
 
 import Foundation
 import Combine
@@ -119,7 +120,6 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         ble.thresholdRSSI = settings.settings.bluetoothUnlockMinScanRSSI
 
         scannedDevices.removeAll()
-        // It's also good practice to clear the BLE manager's device cache on a fresh scan
         ble.devices.removeAll()
 
         isScanning = true
@@ -129,7 +129,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     func updateScanFilter(includeUnnamed: Bool) {
         ble.includeUnnamedDevices = includeUnnamed
-        
+
         if !includeUnnamed {
             scannedDevices.removeAll { $0.displayName == "Unnamed Device" }
         }
@@ -212,11 +212,11 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         while offset < totalChars {
             let chunkLength = min(chunkSize, totalChars - offset)
             var chunk = Array(utf16chars[offset..<(offset + chunkLength)])
-            
+
             let passwordEvent = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
             passwordEvent?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
             passwordEvent?.post(tap: tapLocation)
-            
+
             offset += chunkLength
         }
 
@@ -231,20 +231,15 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     // MARK: - BLEDelegate Methods (Corrected)
 
     func newDevice(device: Device) {
-        // This method now forwards to the more robust updateDevice method.
         updateDevice(device: device)
     }
 
     func updateDevice(device: Device) {
-        // This is the key fix. It now handles both updates and inserts.
         if let index = scannedDevices.firstIndex(where: { $0.id == device.id }) {
-            // Device is already in the list, so update its data.
             scannedDevices[index] = device
         } else {
-            // Device is NOT in the list (e.g., after a rescan), so add it.
             scannedDevices.append(device)
         }
-        // Always re-sort the list after any modification to keep it alphabetical.
         scannedDevices.sort { $0.displayName < $1.displayName }
     }
 

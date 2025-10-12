@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-17.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import Combine
@@ -20,8 +16,8 @@ struct FileTransferTask: Identifiable, Equatable {
     let fileName: String
     var destinationURL: URL
     var currentSize: Int64 = 0
-    var totalSize: Int64? // This will be nil for Finder copies
-    var speed: Double = 0 // Added speed property for showing download rates
+    var totalSize: Int64?
+    var speed: Double = 0
     var lastChangeDate: Date = Date()
     var isComplete: Bool = false
     var status: Status = .inProgress
@@ -168,7 +164,7 @@ class UniversalFileTransferManager {
                         if timeDiff > 0 {
                             updatedTask.speed = Double(fileSize - oldSize) / timeDiff
                         }
-                        updatedTask.lastChangeDate = now // Reset the timer
+                        updatedTask.lastChangeDate = now
                         hasChanges = true
                     } else {
                         let timeSinceLastChange = Date().timeIntervalSince(updatedTask.lastChangeDate)

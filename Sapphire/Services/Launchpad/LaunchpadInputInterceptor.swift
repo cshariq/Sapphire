@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-16.
 //
 //
-//
-//
-//
 
 import AppKit
 import Carbon.HIToolbox
@@ -73,7 +70,7 @@ class LaunchpadInputInterceptor {
         eventTap = nil
         isMonitoring = false
         isAwaitingFirstTypingKey = false
-        folderFrame = .zero // Reset frame on stop
+        folderFrame = .zero
         print("[LaunchpadInputInterceptor] Smart event filter disabled.")
     }
 
@@ -92,7 +89,7 @@ class LaunchpadInputInterceptor {
             event.postToPid(sapphirePID)
             return nil
 
-        default: // This covers all mouse events
+        default:
             let mouseLocation = event.location
 
             if dockFrame.contains(mouseLocation) || folderFrame.contains(mouseLocation) {

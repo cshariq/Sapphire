@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-29
 //
 //
-//
 
 import Foundation
 import SwiftProtobuf
@@ -17,9 +16,9 @@ fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAP
 
 enum Location_Nearby_Connections_EndpointType: SwiftProtobuf.Enum {
   typealias RawValue = Int
-  case unknownEndpoint // = 0
-  case connectionsEndpoint // = 1
-  case presenceEndpoint // = 2
+  case unknownEndpoint
+  case connectionsEndpoint
+  case presenceEndpoint
 
   init() {
     self = .unknownEndpoint
@@ -49,7 +48,7 @@ enum Location_Nearby_Connections_EndpointType: SwiftProtobuf.Enum {
 extension Location_Nearby_Connections_EndpointType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_OfflineFrame {
 
@@ -71,8 +70,8 @@ struct Location_Nearby_Connections_OfflineFrame {
 
   enum Version: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownVersion // = 0
-    case v1 // = 1
+    case unknownVersion
+    case v1
 
     init() {
       self = .unknownVersion
@@ -106,7 +105,7 @@ struct Location_Nearby_Connections_OfflineFrame {
 extension Location_Nearby_Connections_OfflineFrame.Version: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_V1Frame {
 
@@ -205,19 +204,19 @@ struct Location_Nearby_Connections_V1Frame {
 
   enum FrameType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownFrameType // = 0
-    case connectionRequest // = 1
-    case connectionResponse // = 2
-    case payloadTransfer // = 3
-    case bandwidthUpgradeNegotiation // = 4
-    case keepAlive // = 5
-    case disconnection // = 6
-    case pairedKeyEncryption // = 7
-    case authenticationMessage // = 8
-    case authenticationResult // = 9
-    case autoResume // = 10
-    case autoReconnect // = 11
-    case bandwidthUpgradeRetry // = 12
+    case unknownFrameType
+    case connectionRequest
+    case connectionResponse
+    case payloadTransfer
+    case bandwidthUpgradeNegotiation
+    case keepAlive
+    case disconnection
+    case pairedKeyEncryption
+    case authenticationMessage
+    case authenticationResult
+    case autoResume
+    case autoReconnect
+    case bandwidthUpgradeRetry
 
     init() {
       self = .unknownFrameType
@@ -272,7 +271,7 @@ struct Location_Nearby_Connections_V1Frame {
 extension Location_Nearby_Connections_V1Frame.FrameType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_ConnectionRequestFrame {
 
@@ -411,20 +410,20 @@ struct Location_Nearby_Connections_ConnectionRequestFrame {
 
   enum Medium: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownMedium // = 0
-    case mdns // = 1
-    case bluetooth // = 2
-    case wifiHotspot // = 3
-    case ble // = 4
-    case wifiLan // = 5
-    case wifiAware // = 6
-    case nfc // = 7
-    case wifiDirect // = 8
-    case webRtc // = 9
-    case bleL2Cap // = 10
-    case usb // = 11
-    case webRtcNonCellular // = 12
-    case awdl // = 13
+    case unknownMedium
+    case mdns
+    case bluetooth
+    case wifiHotspot
+    case ble
+    case wifiLan
+    case wifiAware
+    case nfc
+    case wifiDirect
+    case webRtc
+    case bleL2Cap
+    case usb
+    case webRtcNonCellular
+    case awdl
 
     init() {
       self = .unknownMedium
@@ -473,8 +472,8 @@ struct Location_Nearby_Connections_ConnectionRequestFrame {
 
   enum ConnectionMode: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case legacy // = 0
-    case instant // = 1
+    case legacy
+    case instant
 
     init() {
       self = .legacy
@@ -510,7 +509,7 @@ extension Location_Nearby_Connections_ConnectionRequestFrame.Medium: CaseIterabl
 extension Location_Nearby_Connections_ConnectionRequestFrame.ConnectionMode: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_ConnectionResponseFrame {
 
@@ -581,9 +580,9 @@ struct Location_Nearby_Connections_ConnectionResponseFrame {
 
   enum ResponseStatus: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownResponseStatus // = 0
-    case accept // = 1
-    case reject // = 2
+    case unknownResponseStatus
+    case accept
+    case reject
 
     init() {
       self = .unknownResponseStatus
@@ -626,7 +625,7 @@ struct Location_Nearby_Connections_ConnectionResponseFrame {
 extension Location_Nearby_Connections_ConnectionResponseFrame.ResponseStatus: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_PayloadTransferFrame {
 
@@ -662,10 +661,10 @@ struct Location_Nearby_Connections_PayloadTransferFrame {
 
   enum PacketType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownPacketType // = 0
-    case data // = 1
-    case control // = 2
-    case payloadAck // = 3
+    case unknownPacketType
+    case data
+    case control
+    case payloadAck
 
     init() {
       self = .unknownPacketType
@@ -747,10 +746,10 @@ struct Location_Nearby_Connections_PayloadTransferFrame {
 
     enum PayloadType: SwiftProtobuf.Enum {
       typealias RawValue = Int
-      case unknownPayloadType // = 0
-      case bytes // = 1
-      case file // = 2
-      case stream // = 3
+      case unknownPayloadType
+      case bytes
+      case file
+      case stream
 
       init() {
         self = .unknownPayloadType
@@ -822,7 +821,7 @@ struct Location_Nearby_Connections_PayloadTransferFrame {
 
     enum Flags: SwiftProtobuf.Enum {
       typealias RawValue = Int
-      case lastChunk // = 1
+      case lastChunk
 
       init() {
         self = .lastChunk
@@ -871,11 +870,11 @@ struct Location_Nearby_Connections_PayloadTransferFrame {
 
     enum EventType: SwiftProtobuf.Enum {
       typealias RawValue = Int
-      case unknownEventType // = 0
-      case payloadError // = 1
-      case payloadCanceled // = 2
+      case unknownEventType
+      case payloadError
+      case payloadCanceled
 
-      case payloadReceivedAck // = 3
+      case payloadReceivedAck
 
       init() {
         self = .unknownEventType
@@ -930,7 +929,7 @@ extension Location_Nearby_Connections_PayloadTransferFrame.PayloadChunk.Flags: C
 extension Location_Nearby_Connections_PayloadTransferFrame.ControlMessage.EventType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_BandwidthUpgradeNegotiationFrame {
 
@@ -973,15 +972,15 @@ struct Location_Nearby_Connections_BandwidthUpgradeNegotiationFrame {
 
   enum EventType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownEventType // = 0
-    case upgradePathAvailable // = 1
-    case lastWriteToPriorChannel // = 2
-    case safeToClosePriorChannel // = 3
-    case clientIntroduction // = 4
-    case upgradeFailure // = 5
-    case clientIntroductionAck // = 6
+    case unknownEventType
+    case upgradePathAvailable
+    case lastWriteToPriorChannel
+    case safeToClosePriorChannel
+    case clientIntroduction
+    case upgradeFailure
+    case clientIntroductionAck
 
-    case upgradePathRequest // = 7
+    case upgradePathRequest
 
     init() {
       self = .unknownEventType
@@ -1099,20 +1098,20 @@ struct Location_Nearby_Connections_BandwidthUpgradeNegotiationFrame {
 
     enum Medium: SwiftProtobuf.Enum {
       typealias RawValue = Int
-      case unknownMedium // = 0
-      case mdns // = 1
-      case bluetooth // = 2
-      case wifiHotspot // = 3
-      case ble // = 4
-      case wifiLan // = 5
-      case wifiAware // = 6
-      case nfc // = 7
-      case wifiDirect // = 8
-      case webRtc // = 9
+      case unknownMedium
+      case mdns
+      case bluetooth
+      case wifiHotspot
+      case ble
+      case wifiLan
+      case wifiAware
+      case nfc
+      case wifiDirect
+      case webRtc
 
-      case usb // = 11
-      case webRtcNonCellular // = 12
-      case awdl // = 13
+      case usb
+      case webRtcNonCellular
+      case awdl
 
       init() {
         self = .unknownMedium
@@ -1492,7 +1491,7 @@ extension Location_Nearby_Connections_BandwidthUpgradeNegotiationFrame.EventType
 extension Location_Nearby_Connections_BandwidthUpgradeNegotiationFrame.UpgradePathInfo.Medium: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_BandwidthUpgradeRetryFrame {
 
@@ -1509,20 +1508,20 @@ struct Location_Nearby_Connections_BandwidthUpgradeRetryFrame {
 
   enum Medium: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownMedium // = 0
+    case unknownMedium
 
-    case bluetooth // = 2
-    case wifiHotspot // = 3
-    case ble // = 4
-    case wifiLan // = 5
-    case wifiAware // = 6
-    case nfc // = 7
-    case wifiDirect // = 8
-    case webRtc // = 9
-    case bleL2Cap // = 10
-    case usb // = 11
-    case webRtcNonCellular // = 12
-    case awdl // = 13
+    case bluetooth
+    case wifiHotspot
+    case ble
+    case wifiLan
+    case wifiAware
+    case nfc
+    case wifiDirect
+    case webRtc
+    case bleL2Cap
+    case usb
+    case webRtcNonCellular
+    case awdl
 
     init() {
       self = .unknownMedium
@@ -1577,7 +1576,7 @@ struct Location_Nearby_Connections_BandwidthUpgradeRetryFrame {
 extension Location_Nearby_Connections_BandwidthUpgradeRetryFrame.Medium: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_KeepAliveFrame {
 
@@ -1709,9 +1708,9 @@ struct Location_Nearby_Connections_AutoResumeFrame {
 
   enum EventType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownAutoResumeEventType // = 0
-    case payloadResumeTransferStart // = 1
-    case payloadResumeTransferAck // = 2
+    case unknownAutoResumeEventType
+    case payloadResumeTransferStart
+    case payloadResumeTransferAck
 
     init() {
       self = .unknownAutoResumeEventType
@@ -1749,7 +1748,7 @@ struct Location_Nearby_Connections_AutoResumeFrame {
 extension Location_Nearby_Connections_AutoResumeFrame.EventType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_AutoReconnectFrame {
 
@@ -1778,9 +1777,9 @@ struct Location_Nearby_Connections_AutoReconnectFrame {
 
   enum EventType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownEventType // = 0
-    case clientIntroduction // = 1
-    case clientIntroductionAck // = 2
+    case unknownEventType
+    case clientIntroduction
+    case clientIntroductionAck
 
     init() {
       self = .unknownEventType
@@ -1817,7 +1816,7 @@ struct Location_Nearby_Connections_AutoReconnectFrame {
 extension Location_Nearby_Connections_AutoReconnectFrame.EventType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_MediumMetadata {
 
@@ -2059,11 +2058,11 @@ struct Location_Nearby_Connections_LocationStandard {
 
   enum Format: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknown // = 0
+    case unknown
 
-    case e164Calling // = 1
+    case e164Calling
 
-    case iso31661Alpha2 // = 2
+    case iso31661Alpha2
 
     init() {
       self = .unknown
@@ -2096,7 +2095,7 @@ struct Location_Nearby_Connections_LocationStandard {
 extension Location_Nearby_Connections_LocationStandard.Format: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_OsInfo {
 
@@ -2111,13 +2110,13 @@ struct Location_Nearby_Connections_OsInfo {
 
   enum OsType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknownOsType // = 0
-    case android // = 1
-    case chromeOs // = 2
-    case windows // = 3
-    case apple // = 4
+    case unknownOsType
+    case android
+    case chromeOs
+    case windows
+    case apple
 
-    case linux // = 100
+    case linux
 
     init() {
       self = .unknownOsType
@@ -2158,7 +2157,7 @@ struct Location_Nearby_Connections_OsInfo {
 extension Location_Nearby_Connections_OsInfo.OsType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 struct Location_Nearby_Connections_ConnectionsDevice {
 
@@ -2261,13 +2260,13 @@ struct Location_Nearby_Connections_PresenceDevice {
 
   enum DeviceType: SwiftProtobuf.Enum {
     typealias RawValue = Int
-    case unknown // = 0
-    case phone // = 1
-    case tablet // = 2
-    case display // = 3
-    case laptop // = 4
-    case tv // = 5
-    case watch // = 6
+    case unknown
+    case phone
+    case tablet
+    case display
+    case laptop
+    case tv
+    case watch
 
     init() {
       self = .unknown
@@ -2316,7 +2315,7 @@ struct Location_Nearby_Connections_PresenceDevice {
 extension Location_Nearby_Connections_PresenceDevice.DeviceType: CaseIterable {
 }
 
-#endif  // swift(>=4.2)
+#endif
 
 #if swift(>=5.5) && canImport(_Concurrency)
 extension Location_Nearby_Connections_EndpointType: @unchecked Sendable {}
@@ -2379,7 +2378,7 @@ extension Location_Nearby_Connections_OsInfo.OsType: @unchecked Sendable {}
 extension Location_Nearby_Connections_ConnectionsDevice: @unchecked Sendable {}
 extension Location_Nearby_Connections_PresenceDevice: @unchecked Sendable {}
 extension Location_Nearby_Connections_PresenceDevice.DeviceType: @unchecked Sendable {}
-#endif  // swift(>=5.5) && canImport(_Concurrency)
+#endif
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 

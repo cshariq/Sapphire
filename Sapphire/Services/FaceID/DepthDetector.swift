@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-14
 //
 //
-//
-//
-//
 
 import Vision
 import CoreImage
@@ -19,8 +16,8 @@ class DepthDetector {
 
     private var registeredDepthMaps: [CVPixelBuffer] = []
 
-    private let minAcceptableScore: Double = 0.45  // Lowered threshold for real-world conditions
-    private let initialCalibrationFrames = 3       // Number of frames to use for initial calibration
+    private let minAcceptableScore: Double = 0.45
+    private let initialCalibrationFrames = 3
     private var isCalibrated = false
     private var calibrationSamples = 0
 
@@ -54,13 +51,13 @@ class DepthDetector {
                         print("LOG (Depth): Initial calibration complete")
                     }
                 }
-                return 0.95 // Return a high score during calibration
+                return 0.95
             }
         }
 
         guard !registeredDepthMaps.isEmpty else {
             print("LOG (Depth): No registered depth maps for comparison.")
-            return 0.0 // Not ready for comparison
+            return 0.0
         }
 
         let depthMapTask = Task.detached(priority: .userInitiated) {
@@ -89,7 +86,7 @@ class DepthDetector {
 
         if bestSimilarity > minAcceptableScore && bestSimilarity < 0.7 {
             registeredDepthMaps.append(currentMap)
-            if registeredDepthMaps.count > 10 {  // Keep a reasonable number of depth maps
+            if registeredDepthMaps.count > 10 {
                 registeredDepthMaps.removeFirst()
             }
             print("LOG (Depth): Added new depth map for future reference")

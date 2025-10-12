@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-25.
 //
 //
-//
-//
-//
 
 import Foundation
 import CoreAudio
@@ -34,7 +31,7 @@ struct IconMapper {
 
     static func getBatteryStatus(for device: IOBluetoothDevice) -> BatteryStatus {
         guard let name = device.name, !name.isEmpty, let address = device.addressString else {
-            return .noBattery // Cannot identify the device, assume no battery.
+            return .noBattery
         }
 
         let lowercasedName = name.lowercased()
@@ -86,7 +83,7 @@ struct IconMapper {
         (["airpods 4"], "airpods.gen4", true),
         (["airpods 3"], "airpods gen3", true),
         (["airpods 2", "airpods"], "airpods", true),
-        (["earpods"], "earpods", false), // Earpods are wired
+        (["earpods"], "earpods", false),
         (["homepod mini"], "homepod.mini", false),
         (["homepod"], "homepod", false),
         (["beats fit pro"], "beats.fitpro", true),
@@ -119,7 +116,7 @@ struct IconMapper {
 
         (["qc ultra earbuds", "qc earbuds ii", "bose sport earbuds"], "earbuds.in.ear", true),
         (["qc 45", "qc 35", "qc ultra headphones", "bose headphones"], "airpods.max", true),
-        (["bose home speaker", "bose soundbar", "bose portable smart speaker"], "hifispeaker", false), // Portable speaker is an exception, but safer to default to false
+        (["bose home speaker", "bose soundbar", "bose portable smart speaker"], "hifispeaker", false),
         (["bose frames", "bose tempo"], "headphones", true),
 
         (["dualsense", "dualshock", "playstation"], "gamecontroller.fill", true),
@@ -130,8 +127,8 @@ struct IconMapper {
         (["logitech", "razer", "keychron", "nuphy", "mechanical keyboard"], "keyboard.fill", true),
 
         (["sennheiser", "momentum", "pxc", "hd 280", "hd 450", "hd 600", "hd 800"], "headphones.over.ear", true),
-        (["jbl", "anker", "soundcore"], "hifispeaker", true), // Many of these are portable speakers
-        (["shure", "mv7", "sm7b", "sm58"], "mic.fill", false), // Typically USB/XLR powered
+        (["jbl", "anker", "soundcore"], "hifispeaker", true),
+        (["shure", "mv7", "sm7b", "sm58"], "mic.fill", false),
 
         (["printer"], "printer.fill", false),
         (["scanner"], "scanner.fill", false),
@@ -139,7 +136,7 @@ struct IconMapper {
 
     static func icon(forName name: String) -> String? {
         let lowercasedName = name.lowercased()
-        for (keywords, icon, _) in universalDeviceMap { // Ignore the boolean here
+        for (keywords, icon, _) in universalDeviceMap {
             if keywords.contains(where: { lowercasedName.contains($0) }) {
                 return icon
             }

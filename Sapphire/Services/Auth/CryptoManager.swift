@@ -5,16 +5,13 @@
 //  Created by Shariq Charolia on 2025-09-26
 //
 //
-//
-//
-//
 
 import Foundation
 import CryptoKit
 
 class CryptoManager {
     static let shared = CryptoManager()
-    private let keyAccount = "SapphireEncryptionMasterKey" // Changed to be more specific
+    private let keyAccount = "SapphireEncryptionMasterKey"
 
     private init() {}
 

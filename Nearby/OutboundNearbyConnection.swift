@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 23.09.2023.
 //
 //
-//
-//
 
 import Foundation
 import Network
@@ -419,7 +417,7 @@ class OutboundNearbyConnection:NearbyConnection{
             var transfer=Location_Nearby_Connections_PayloadTransferFrame()
             transfer.packetType = .data
             transfer.payloadChunk.offset=currentTransfer!.currentOffset
-            transfer.payloadChunk.flags=1 // <- this one here
+            transfer.payloadChunk.flags=1
             transfer.payloadHeader.id=currentTransfer!.payloadID
             transfer.payloadHeader.type = .file
             transfer.payloadHeader.totalSize=Int64(currentTransfer!.totalBytes)

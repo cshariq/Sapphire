@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-07.
 //
 //
-//
-//
-//
 
 import Foundation
 import Combine
@@ -41,8 +38,8 @@ class BluetoothManager: NSObject, ObservableObject {
     private var periodicPollingTimer: Timer?
 
     // MARK: - New properties for scan suppression
-    private var cancellables = Set<AnyCancellable>() // <-- ADD THIS CANCELLABLE SET
-    private var isProximityScanActive = false      // <-- ADD THIS STATE-TRACKING PROPERTY
+    private var cancellables = Set<AnyCancellable>()
+    private var isProximityScanActive = false
 
     override init() {
         super.init()
@@ -100,12 +97,11 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func handleAirPodsUpdate(_ notification: Notification) {
-        // <-- ADD THIS GUARD CLAUSE
         guard !isProximityScanActive else {
             print("[BluetoothManager] Suppressing AirPods update because proximity scan is active.")
             return
         }
-        
+
         guard let userInfo = notification.userInfo,
               let bleName = userInfo["name"] as? String,
               let level = userInfo["level"] as? Int else {
@@ -135,14 +131,12 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func deviceConnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
-        // <-- ADD THIS GUARD CLAUSE
         guard !isProximityScanActive else {
             print("[BluetoothManager] Suppressing connection event for '\(device.name ?? "??")' because proximity scan is active.")
-            // Still register for disconnect so we don't miss it when the scan ends
             registerForDisconnect(device: device)
             return
         }
-        
+
         guard let address = device.addressString, let name = device.name else { return }
 
         if recentlyConnectedDebounceSet.contains(address) { return }
@@ -160,7 +154,7 @@ class BluetoothManager: NSObject, ObservableObject {
         let lowercasedName = name.lowercased()
         if lowercasedName.contains("airpods") || lowercasedName.contains("beats") {
             registerForDisconnect(device: device)
-            return // AirPods battery is handled by BLEBattery, not here.
+            return
         }
 
         let batteryStatus = IconMapper.getBatteryStatus(for: device)
@@ -216,7 +210,7 @@ class BluetoothManager: NSObject, ObservableObject {
 
     private func findBatteryLevel(for device: IOBluetoothDevice) async -> Int? {
         let timeout = 5.0
-        let interval: UInt64 = 300_000_000 // 0.3 seconds
+        let interval: UInt64 = 300_000_000
         let startTime = Date()
 
         while Date().timeIntervalSince(startTime) < timeout {
@@ -242,16 +236,14 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func deviceDisconnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
-        // <-- ADD THIS GUARD CLAUSE
         guard !isProximityScanActive else {
             print("[BluetoothManager] Suppressing disconnection event for '\(device.name ?? "??")' because proximity scan is active.")
-            // Clean up the notification listener regardless
             if let address = device.addressString, let notificationToRemove = disconnectionNotifications.removeValue(forKey: address) {
                 notificationToRemove.unregister()
             }
             return
         }
-        
+
         guard let address = device.addressString, let name = device.name else { return }
 
         if let soundURL = Bundle.main.url(forResource: "jbl_cancel", withExtension: "caf") {

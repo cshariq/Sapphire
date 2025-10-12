@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-10-07
 //
 //
-//
-//
-//
 
 import Foundation
 import Combine
@@ -21,7 +18,7 @@ public struct FocusStatus: Equatable {
     public let isActive: Bool
     public let identifier: String
     public let tintColorName: String?
-    public let tintColorNames: [String]? // For gradient colors
+    public let tintColorNames: [String]?
 
     public static let notActive = FocusStatus(
         name: "None",
@@ -39,7 +36,7 @@ struct FocusModeInfo: Equatable, Hashable, Identifiable {
     public let symbolName: String
     public let tintColorName: String?
     public let tintColorNames: [String]?
-    public var isActive: Bool // This flag tells the view if the mode is on or off
+    public var isActive: Bool
 
     public var id: String { identifier }
 }
@@ -52,7 +49,7 @@ extension FocusStatus {
             symbolName: self.symbolName,
             tintColorName: self.tintColorName,
             tintColorNames: self.tintColorNames,
-            isActive: isActive // Pass the state
+            isActive: isActive
         )
     }
 }
@@ -172,7 +169,7 @@ class FocusModeManager: NSObject, ObservableObject {
                     isActive: true,
                     identifier: mode.modeIdentifier,
                     tintColorName: mode.tintColorName,
-                    tintColorNames: mode.symbolDescriptorTintColorNames // Passing the gradient colors
+                    tintColorNames: mode.symbolDescriptorTintColorNames
                 )
 
                 self.currentStatus = newStatus
@@ -207,7 +204,7 @@ private struct Mode: Decodable {
     let modeIdentifier: String
     let symbolImageName: String?
     let tintColorName: String?
-    let symbolDescriptorTintColorNames: [String]? // This property was missing
+    let symbolDescriptorTintColorNames: [String]?
 }
 
 private struct Assertions: Decodable {

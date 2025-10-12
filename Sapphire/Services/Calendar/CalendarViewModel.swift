@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-06-27.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import SwiftUI
@@ -37,7 +33,7 @@ class InteractiveCalendarViewModel: ObservableObject {
     init() {
         self.selectedDate = self.today
         generateDates()
-        generateMonthGrid() // Generate initial month grid
+        generateMonthGrid()
     }
 
     private func generateDates() {
@@ -75,7 +71,7 @@ class InteractiveCalendarViewModel: ObservableObject {
             }
         }
 
-        let remainingSlots = 42 - grid.count // A 6x7 grid has 42 slots
+        let remainingSlots = 42 - grid.count
         if remainingSlots > 0 {
             guard let lastDayOfMonth = monthInterval.end as Date? else { return }
             for i in 0..<remainingSlots {

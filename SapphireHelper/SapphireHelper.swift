@@ -13,6 +13,25 @@
 //
 
 
-//// MARK: - C Interop Structures
-//// MARK: - Main Helper Class
-//// MARK: - SMC Hardware Manager
+////
+//
+
+
+////
+//
+
+
+////
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+

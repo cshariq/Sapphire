@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-07-19.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import IOKit
@@ -84,23 +80,23 @@ class PowerStateController: ObservableObject {
         guard settings.settings.controlMagSafeLEDEnabled else { return }
 
         if settings.settings.magSafeLEDSetting == .off && !settings.settings.magSafeGreenAtLimit {
-            batteryManager.setMagSafeLED(color: 0) // Off
+            batteryManager.setMagSafeLED(color: 0)
             return
         }
 
         let limitReached = chargeState.level >= settings.settings.batteryChargeLimit
 
         if limitReached && settings.settings.magSafeGreenAtLimit {
-            batteryManager.setMagSafeLED(color: 1) // Green
+            batteryManager.setMagSafeLED(color: 1)
             return
         }
 
         if chargeState.isCharging && !inhibited {
-            batteryManager.setMagSafeLED(color: 2) // Amber
+            batteryManager.setMagSafeLED(color: 2)
         } else if inhibited {
-            batteryManager.setMagSafeLED(color: settings.settings.magSafeLEDBlinkOnDischarge ? 2 : 0) // Amber (blinking is handled by hardware) or Off
+            batteryManager.setMagSafeLED(color: settings.settings.magSafeLEDBlinkOnDischarge ? 2 : 0)
         } else {
-            batteryManager.setMagSafeLED(color: 0) // Off
+            batteryManager.setMagSafeLED(color: 0)
         }
     }
 }

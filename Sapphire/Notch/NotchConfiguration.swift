@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-05-08.
 //
 //
-//
-//
-//
-//
 
 import SwiftUI
 import AppKit
@@ -83,8 +79,8 @@ struct NotchConfiguration {
     static var contentBottomPadding: CGFloat = 10 * screenHeightAdjustment
     static var contentHorizontalPadding: CGFloat = 35 * screenWidthAdjustment
     static var contentVisibilityThresholdHeight: CGFloat { universalHeight + 1 }
-    static var primaryWidgetSwitchDelay: TimeInterval = 0.2 // Delay for switching between main widgets
-    static var dragActivationCollapseDelay: TimeInterval = 0.1 // Faster collapse for drag-related views
+    static var primaryWidgetSwitchDelay: TimeInterval = 0.2
+    static var dragActivationCollapseDelay: TimeInterval = 0.1
 
     // MARK: - Battery View Configuration
     static var batteryTextFontSize: CGFloat = 12

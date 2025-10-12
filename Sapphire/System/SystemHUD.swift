@@ -88,7 +88,7 @@ class SystemHUDManager: ObservableObject {
     private var isInitialKeyPress = true
 
     private var spotifyStateForAction: ActiveSpotifyDeviceState?
-    private var lastKnownSpotifyState: ActiveSpotifyDeviceState? // Cache
+    private var lastKnownSpotifyState: ActiveSpotifyDeviceState?
     private var currentSpotifyVolumeForAction: Float?
     private var lastCommittedSpotifyVolume: Float?
     private var isFetchingSpotifyState = false
@@ -194,7 +194,7 @@ class SystemHUDManager: ObservableObject {
         if action == .volumeUp || action == .volumeDown {
             if settings.settings.showSpotifyVolumeHUD, let cachedState = self.lastKnownSpotifyState {
                 self.spotifyStateForAction = cachedState
-                self.updateVolumeHUD() // Show the cached HUD now
+                self.updateVolumeHUD()
             }
 
             if settings.settings.showSpotifyVolumeHUD && !isFetchingSpotifyState {
@@ -203,7 +203,7 @@ class SystemHUDManager: ObservableObject {
                     defer { self.isFetchingSpotifyState = false }
                     if let freshState = await musicManager.fetchActiveSpotifyDeviceState() {
                         self.spotifyStateForAction = freshState
-                        self.lastKnownSpotifyState = freshState // Update the cache
+                        self.lastKnownSpotifyState = freshState
                         if self.currentHUD != nil {
                             self.updateVolumeHUD()
                         }
@@ -215,7 +215,7 @@ class SystemHUDManager: ObservableObject {
             }
         }
 
-        performChange() // Perform the first action immediately
+        performChange()
 
         withAnimation(.spring()) {
             glowIntensity = 0.2
@@ -257,11 +257,6 @@ class SystemHUDManager: ObservableObject {
         keyRepeatTimer?.invalidate()
         keyRepeatTimer = nil
         currentAction = nil
-        
-        // FIX: This line is removed. By not resetting the flag here, the HUD's state (e.g., showing Spotify controls)
-        // will persist until the HUD times out or another key press (without modifiers) changes it.
-        // This makes the slim HUD's behavior consistent with the user's expectation of holding down the modifier key.
-        // isControllingSpotify = false
 
         withAnimation(.spring()) {
             glowIntensity = 0.0
@@ -306,7 +301,7 @@ class SystemHUDManager: ObservableObject {
                     self.isControllingSpotify = true
 
                     if self.currentSpotifyVolumeForAction == nil {
-                        self.currentSpotifyVolumeForAction = Float(spotifyState.volumePercent ?? 75)
+                        self.currentSpotifyVolumeForAction = Float(spotifyState.volumePercent ?? 0)
                         self.lastCommittedSpotifyVolume = self.currentSpotifyVolumeForAction
                     }
                     let isFineTuningForSpotify = currentModifiers.contains(.shift) || currentModifiers.contains([.command, .option])
@@ -419,7 +414,7 @@ class SystemHUDManager: ObservableObject {
             let hud = HUDType.externalDeviceVolume(
                 deviceName: spotifyState.name,
                 deviceIcon: spotifyState.iconName,
-                deviceVolume: spotifyVolumePercent / 100.0, // Pass 0-1 range
+                deviceVolume: spotifyVolumePercent / 100.0,
                 systemVolume: systemVolume,
                 isControllingExternal: isControllingSpotify,
                 canControlVolume: spotifyState.canControlVolume
@@ -440,7 +435,6 @@ class SystemHUDManager: ObservableObject {
                 self?.spotifyStateForAction = nil
                 self?.currentSpotifyVolumeForAction = nil
                 self?.lastCommittedSpotifyVolume = nil
-                // The state is correctly reset here upon dismissal.
                 self?.isControllingSpotify = false
             }
         }
@@ -749,13 +743,10 @@ struct SystemHUDSlimActivityView {
             isExternalControl = false
 
         case .externalDeviceVolume(_, let deviceIcon, _, let systemVolume, let controllingExternal, _):
-             // This logic now correctly differentiates between the icon to show and the color to use.
             if controllingExternal {
-                // When controlling Spotify, show the Spotify icon.
                 iconName = deviceIcon
                 isExternalControl = true
             } else {
-                // When not controlling Spotify, show the system device icon.
                 let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
                 if settings.settings.volumeHUDShowDeviceIcon, let dev = systemDevice {
                     if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {

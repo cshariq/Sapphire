@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-11.
 //
 //
-//
-//
-//
-//
 
 import AppKit
 import SwiftUI
@@ -109,6 +105,6 @@ class WindowArrangementManager {
 
             try? await Task.sleep(for: .milliseconds(200))
         }
-        return false // Timed out
+        return false
     }
 }

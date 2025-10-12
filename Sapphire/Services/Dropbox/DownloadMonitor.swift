@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-08-17.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import Combine
@@ -23,7 +19,7 @@ struct DownloadTask: Identifiable, Equatable {
     var currentBytes: Int64 = 0
     var startTime: Date = Date()
     var estimatedTimeRemaining: TimeInterval?
-    var downloadSpeed: Double?  // bytes per second
+    var downloadSpeed: Double?
     var source: DownloadSource = .browser
     var status: String = "Downloading..."
 }

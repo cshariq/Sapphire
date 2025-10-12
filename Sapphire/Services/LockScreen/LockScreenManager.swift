@@ -5,10 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-11.
 //
 //
-//
-//
-//
-//
 
 import Foundation
 import SwiftUI
@@ -115,7 +111,7 @@ public class LockScreenManager {
     private var lastMeasuredSizes: [String: CGSize] = [:]
 
     private let MAIN_ID = "mainWidgetContainer"
-    private let MINI_ID_PREFIX = "mini" // e.g., "miniWidgetContainer" or "mini-..."
+    private let MINI_ID_PREFIX = "mini"
 
     typealias F_SLSMainConnectionID = @convention(c) () -> Int32
     typealias F_SLSSpaceCreate = @convention(c) (Int32, Int32, Int32) -> Int32

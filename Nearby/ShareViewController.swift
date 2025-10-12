@@ -5,8 +5,6 @@
 //  Created by Shariq Charolia on 12.09.2023.
 //
 //
-//
-//
 
 import Foundation
 import Cocoa
@@ -303,7 +301,7 @@ fileprivate func imageForDeviceType(type:RemoteDeviceInfo.DeviceType)->NSImage{
         imageName="com.apple.ipad"
     case .computer:
         imageName="com.apple.macbookpro-13-unibody"
-    default: // also .phone
+    default:
         imageName="com.apple.iphone"
     }
     return NSImage(contentsOfFile: "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/\(imageName).icns")!

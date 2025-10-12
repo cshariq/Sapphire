@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-11.
 //
 //
-//
-//
-//
 
 import SwiftUI
 import EventKit
@@ -279,13 +276,11 @@ struct LockScreenInfoWidgetView: View {
     private func BatteryInfoView() -> some View {
         if let state = batteryMonitor.currentState {
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
-                
+
                 if settings.settings.lockScreenBatteryInfo.contains(.statusIcon) {
-                    // Show a smaller, white bolt when charging
                     if state.isCharging {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize - 5, weight: .bold))
-                    // Show a plug when plugged in but full
                     } else if state.isPluggedIn && !state.isCharging {
                         Image(systemName: "powerplug.fill")
                             .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize, weight: .semibold))
@@ -314,7 +309,7 @@ struct LockScreenInfoWidgetView: View {
                                 let fillableWidth = geo.size.width - (insetHorizontal * 2) - terminalWidth
                                 let currentFillWidth = fillableWidth * (CGFloat(state.level) / 100.0)
                                 let totalMaskWidth = insetHorizontal + currentFillWidth
-                                
+
                                 Rectangle()
                                     .frame(width: totalMaskWidth)
                                     .foregroundColor(.white)

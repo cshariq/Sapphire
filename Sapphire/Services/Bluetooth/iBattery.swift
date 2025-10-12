@@ -4,14 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-09-24.
 //
-
-
-//
-//
-//
-//
-//
-//
 //
 
 import Foundation
@@ -92,7 +84,7 @@ class InternalBattery {
 }
 
 class InternalFinder {
-    private var serviceInternal: io_connect_t = 0 // io_object_t
+    private var serviceInternal: io_connect_t = 0
     private var internalChecked: Bool = false
     private var hasInternalBattery: Bool = false
 

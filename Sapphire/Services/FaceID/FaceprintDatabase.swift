@@ -5,9 +5,6 @@
 //  Created by Shariq Charolia on 2025-09-15
 //
 //
-//
-//
-//
 
 import Vision
 import CoreML
@@ -121,7 +118,7 @@ class FaceDataStore {
             newDatabase.globalAverage = globalAvg
         }
 
-        profiles[name] = newDatabase // Save the new database to the dictionary
+        profiles[name] = newDatabase
         saveToSecureStorage()
 
         DispatchQueue.main.async {
@@ -174,7 +171,7 @@ class FaceDataStore {
             database.learnedPrints = Array(database.learnedPrints.prefix(maxLearnedPrints))
         }
 
-        profiles[profileName] = database // Write the updated database back
+        profiles[profileName] = database
         saveToSecureStorage()
     }
 
