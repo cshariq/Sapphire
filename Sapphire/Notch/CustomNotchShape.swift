@@ -29,7 +29,7 @@ struct CustomNotchShape: Shape {
         let adjustedCornerRadius = cornerRadius
         let adjustedBottomCornerRadius = bottomCornerRadius
 
-        let topRadiusBase = adjustedCornerRadius > 15 ? adjustedCornerRadius - 5 : 5
+        let topRadiusBase = adjustedCornerRadius > 23 ? adjustedCornerRadius - 5 : 8
         let maxPossibleTopRadiusFromHeight = rect.height > 0 ? rect.height / 2.0 : 0
         let derivedTopRadius = min(topRadiusBase, maxPossibleTopRadiusFromHeight)
         let topRadius = max(0.0, min(derivedTopRadius, rect.width / 2.0))

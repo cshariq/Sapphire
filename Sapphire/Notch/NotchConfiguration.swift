@@ -100,8 +100,8 @@ struct NotchConfiguration {
 
     // MARK: - Notch Activity View Configuration
     static var activityContentHorizontalPadding: CGFloat = 15 * screenWidthAdjustment
-    static var activityDefaultHorizontalPadding: CGFloat = 10 * screenWidthAdjustment
-    static var activityWithContentHorizontalPadding: CGFloat = 25 * screenWidthAdjustment
+    static var activityDefaultHorizontalPadding: CGFloat = 13 * screenWidthAdjustment
+    static var activityWithContentHorizontalPadding: CGFloat = 15 * screenWidthAdjustment
     static var activityContentBottomPadding: CGFloat = 10 * screenHeightAdjustment
 
     // MARK: - Lyric View Configuration

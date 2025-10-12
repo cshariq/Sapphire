@@ -1421,8 +1421,8 @@ struct NotchController: View {
                     animatedBottomCornerRadius = hasBottom ? config.liveActivityBottomCornerRadius : animatedCornerRadius
                 }
             } else {
-                animatedCornerRadius = config.hoverExpandedCornerRadius
-                animatedBottomCornerRadius = config.hoverExpandedCornerRadius
+                animatedCornerRadius = config.initialCornerRadius
+                animatedBottomCornerRadius = config.initialCornerRadius
             }
 
         case .clickExpanded:
