@@ -52,13 +52,13 @@ A good bug report shouldn't leave others needing to chase you up for more inform
 
 We use GitHub issues to track bugs and errors. If you run into an issue with the project:
 
-- Open an [Issue](https://github.com/cshariq/Sapphire/issues/new) and use the issue template.
+- Open an [Issue](https://github.com/cshariq/Sapphire/issues/new?template=bug_report.md) and use the issue template.
 - Provide as much context as you can about what you're running into.
 - As per the template, provide your app version, mac model, macOS version and any other information that may be important.
 
 
-### Suggesting Enhancements
-- Open an [Issue](https://github.com/cshariq/Sapphire/issues/new)and use the blank template.
+### Suggesting Features
+- Open an [Issue](https://github.com/cshariq/Sapphire/issues/new?template=feature_request.md) and use the blank template.
 - Provide as much detail as you can about the feature you want.
 
 #### Before Submitting an Enhancement
@@ -68,7 +68,7 @@ We use GitHub issues to track bugs and errors. If you run into an issue with the
 
 #### How Do I Submit a Good Enhancement Suggestion?
 
-Enhancement suggestions are tracked as [GitHub issues](https://github.com/cshariq/Sapphire/issues).
+Enhancement suggestions are tracked as [GitHub issues](https://github.com/cshariq/Sapphire/issues/new?template=feature_request.md).
 
 - Use a **clear and descriptive title** for the issue to identify the suggestion.
 - Provide a **step-by-step description of the suggested enhancement** in as many details as possible.
