@@ -23,11 +23,11 @@ By participating, you are expected to uphold this code.
 
 ## I Have a Question
 
-Before you ask a question, it is best to search for existing [Issues](issues) that might help you. In case you have found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
+Before you ask a question, it is best to search for existing [Issues](https://github.com/cshariq/Sapphire/issues) that might help you. In case you have found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
 
 If you then still feel the need to ask a question and need clarification, we recommend the following:
 
-- Open an [Issue](/issues/new) and use the blank template.
+- Open an [Issue](https://github.com/cshariq/Sapphire/issues/new) and use the blank template.
 - Provide as much context as you can about what you're running into.
 
 ## I Want To Contribute
@@ -52,23 +52,23 @@ A good bug report shouldn't leave others needing to chase you up for more inform
 
 We use GitHub issues to track bugs and errors. If you run into an issue with the project:
 
-- Open an [Issue](/issues/new) and use the issue template.
+- Open an [Issue](https://github.com/cshariq/Sapphire/issues/new) and use the issue template.
 - Provide as much context as you can about what you're running into.
 - As per the template, provide your app version, mac model, macOS version and any other information that may be important.
 
 
 ### Suggesting Enhancements
-- Open an [Issue](/issues/new) and use the blank template.
+- Open an [Issue](https://github.com/cshariq/Sapphire/issues/new)and use the blank template.
 - Provide as much detail as you can about the feature you want.
 
 #### Before Submitting an Enhancement
 
 - Make sure that you are using the latest version.
-- Perform a [search](/issues) to see if the enhancement has already been suggested. If it has, add a comment to the existing issue instead of opening a new one.
+- Perform a [search](https://github.com/cshariq/Sapphire/issues) to see if the enhancement has already been suggested. If it has, add a comment to the existing issue instead of opening a new one.
 
 #### How Do I Submit a Good Enhancement Suggestion?
 
-Enhancement suggestions are tracked as [GitHub issues](/issues).
+Enhancement suggestions are tracked as [GitHub issues](https://github.com/cshariq/Sapphire/issues).
 
 - Use a **clear and descriptive title** for the issue to identify the suggestion.
 - Provide a **step-by-step description of the suggested enhancement** in as many details as possible.
