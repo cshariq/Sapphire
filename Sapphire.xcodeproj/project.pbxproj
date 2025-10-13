@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		DA17EA162E9B74E500C83AC6 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; };
+		DA2A74402E9CD8910084C657 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DA343DA22E55068300B675ED /* CaptchaSolver.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343D972E55068200B675ED /* CaptchaSolver.framework */; };
 		DA343DC92E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
 		DA343DD32E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
@@ -240,6 +241,7 @@
 			dstSubfolderSpec = 10;
 			files = (
 				DA343DD42E55098000B675ED /* CaptchaSolverInterface.framework in Embed Frameworks */,
+				DA2A74402E9CD8910084C657 /* MediaRemoteAdapter in Embed Frameworks */,
 				DACBB01D2E20321D00740C9B /* libNearbyShare.dylib in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";

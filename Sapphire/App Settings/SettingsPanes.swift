@@ -3737,6 +3737,13 @@ struct HUDSettingsView: View {
         )
     }
 
+    private var xdrBrightnessLevelBinding: Binding<Double> {
+        Binding(
+            get: { Double(settings.settings.xdrBrightnessLevel * 100) },
+            set: { settings.settings.xdrBrightnessLevel = Float($0 / 100) }
+        )
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -3835,9 +3842,11 @@ struct HUDSettingsView: View {
                     .disabled(!settings.settings.enableVolumeHUD)
                     .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
 
-                    Divider().padding(.horizontal)
+                    Divider()
 
                     CustomSliderRowView(label: "Slider step", value: Binding(get: { Double(settings.settings.volumesliderstep) }, set: { settings.settings.volumesliderstep = Int($0) }), range: 1...10, specifier: "%.0f")
+                        .disabled(!settings.settings.enableVolumeHUD)
+                        .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
 
                 }
                 .padding()
@@ -3869,14 +3878,69 @@ struct HUDSettingsView: View {
                     .disabled(!settings.settings.enableBrightnessHUD)
                     .opacity(settings.settings.enableBrightnessHUD ? 1.0 : 0.5)
 
-                    Divider().padding(.horizontal)
+                    Divider()
 
                     CustomSliderRowView(label: "Slider step", value: Binding(get: { Double(settings.settings.brightnessliderstep) }, set: { settings.settings.brightnessliderstep = Int($0) }), range: 1...10, specifier: "%.0f")
+                        .disabled(!settings.settings.enableBrightnessHUD)
+                        .opacity(settings.settings.enableBrightnessHUD ? 1.0 : 0.5)
 
                 }
                 .padding()
                 .modifier(SettingsContainerModifier())
                 .animation(.easeInOut, value: settings.settings.enableBrightnessHUD)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("XDR Brightness")
+                            .font(.headline)
+                        Spacer()
+                        Toggle("", isOn: $settings.settings.enableXDRBrightness)
+                            .labelsHidden().toggleStyle(.switch)
+                    }
+
+                    Divider()
+
+                    VStack {
+                        ToggleRow(
+                            title: "XDR Brightness Lock",
+                            description: "Require holding the Command (⌘) key to increase the brightness in the XDR range.",
+                            isOn: $settings.settings.xdrBrightnessLock
+                        )
+
+                        Divider()
+
+                        CustomSliderRowView(
+                            label: "Max XDR Brightness",
+                            value: xdrBrightnessLevelBinding,
+                            range: 100...Double(getDeviceMaxBrightness() * 100),
+                            specifier: "%.0f%%"
+                        )
+
+                        HStack(alignment: .top) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.yellow)
+                                .padding(.top, 4)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("Apple limits brightness to preserve battery life. While this feature is system-controlled and there are no known side-effects, you should use this feature at your own risk.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("This feature works best on devices with XDR displays (14in and 16in Macbook Pro's and Pro Display XDR). M4 Macbook Pro's already display this behaviour in bright environments like in direct sunlight, this feature will allow you to do it in any type of environment. A small brightness boost may also be observed on the M3 Macbook Air and later.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.top, 5)
+                    }
+                    .disabled(!settings.settings.enableXDRBrightness)
+                    .opacity(settings.settings.enableXDRBrightness ? 1.0 : 0.5)
+
+                }
+                .padding()
+                .modifier(SettingsContainerModifier())
+                .disabled(!settings.settings.enableBrightnessHUD)
+                .opacity(settings.settings.enableBrightnessHUD ? 1.0 : 0.5)
+                .animation(.easeInOut, value: settings.settings.enableBrightnessHUD)
+                .animation(.easeInOut, value: settings.settings.enableXDRBrightness)
 
                 RequiredPermissionsView(section: .hud)
             }
@@ -4939,113 +5003,119 @@ struct NeardropSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Nearby Share")
-                    .font(.largeTitle.bold())
-                    .padding(.bottom)
+            VStack(alignment: .leading, spacing: 40) {
+                // MARK: - Nearby Share Section
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Nearby Share")
+                        .font(.largeTitle.bold())
+                        .padding(.bottom)
 
-                VStack(spacing: 0) {
-                    HStack {
-                        Text("Enable Nearby Share")
-                            .font(.system(size: 14, weight: .medium))
-                        Spacer()
-                        Toggle("", isOn: $settings.settings.neardropEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                    }
-                    .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
-
-                    Rectangle().fill(Color.white.opacity(0.2)).frame(height: 1).padding(.horizontal, 20)
-
-                    InfoContainer(
-                        text: "Nearby Share allows you to share files from Android phones to your Mac using Android's native file sharing (Nearby Share / Quick Share). It's recommended to keep this feature enabled for convenient sharing from family and friends.",
-                        iconName: "info.circle.fill",
-                        color: .blue
-                    )
-                    .padding()
-
-                    VStack(alignment: .leading, spacing: 15) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Device Display Name")
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("Enable Nearby Share")
                                 .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(.white)
-
-                            TextField("My Mac", text: $settings.settings.neardropDeviceDisplayName)
-                                .textFieldStyle(.plain)
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 12)
-                                .background(Color.black.opacity(0.2))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                                .foregroundStyle(.white)
-                                .font(.system(size: 13))
-                                .disabled(!settings.settings.neardropEnabled)
-
-                            if settingsHaveChanged {
-                                VStack(spacing: 15) {
-
-                                    Button(action: restartApp) {
-                                        Text("Restart to Apply Changes")
-                                            .fontWeight(.semibold)
-                                            .frame(width: 180, height: 10)
-                                            .padding()
-                                            .background(Color.accentColor.gradient)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(100)
-                                            .shadow(color: .accentColor.opacity(0.4), radius: 8, y: 4)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
+                            Spacer()
+                            Toggle("", isOn: $settings.settings.neardropEnabled)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
                         }
+                        .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Download Location")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(.white)
+                        Rectangle().fill(Color.white.opacity(0.2)).frame(height: 1).padding(.horizontal, 20)
 
-                            HStack {
-                                TextField("Path", text: $downloadPath, onCommit: validateAndSavePath)
+                        InfoContainer(
+                            text: "Nearby Share allows you to share files from Android phones to your Mac using Android's native file sharing (Nearby Share / Quick Share). It's recommended to keep this feature enabled for convenient sharing from family and friends.",
+                            iconName: "info.circle.fill",
+                            color: .blue
+                        )
+                        .padding()
+
+                        VStack(alignment: .leading, spacing: 15) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Device Display Name")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(.white)
+
+                                TextField("My Mac", text: $settings.settings.neardropDeviceDisplayName)
                                     .textFieldStyle(.plain)
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 12)
+                                    .background(Color.black.opacity(0.2))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
                                     .foregroundStyle(.white)
                                     .font(.system(size: 13))
                                     .disabled(!settings.settings.neardropEnabled)
 
-                                Image(systemName: isPathValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(isPathValid ? .green : .red)
-                            }
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 12)
-                            .background(Color.black.opacity(0.2))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(isPathValid ? Color.white.opacity(0.2) : Color.red, lineWidth: 1))
+                                if settingsHaveChanged {
+                                    VStack(spacing: 15) {
 
-                            if !isPathValid {
-                                Text("A valid directory is required.")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
+                                        Button(action: restartApp) {
+                                            Text("Restart to Apply Changes")
+                                                .fontWeight(.semibold)
+                                                .frame(width: 180, height: 10)
+                                                .padding()
+                                                .background(Color.accentColor.gradient)
+                                                .foregroundColor(.white)
+                                                .cornerRadius(100)
+                                                .shadow(color: .accentColor.opacity(0.4), radius: 8, y: 4)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Download Location")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(.white)
+
+                                HStack {
+                                    TextField("Path", text: $downloadPath, onCommit: validateAndSavePath)
+                                        .textFieldStyle(.plain)
+                                        .foregroundStyle(.white)
+                                        .font(.system(size: 13))
+                                        .disabled(!settings.settings.neardropEnabled)
+
+                                    Image(systemName: isPathValid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                        .foregroundColor(isPathValid ? .green : .red)
+                                }
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(Color.black.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(RoundedRectangle(cornerRadius: 8).stroke(isPathValid ? Color.white.opacity(0.2) : Color.red, lineWidth: 1))
+
+                                if !isPathValid {
+                                    Text("A valid directory is required.")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                }
                             }
                         }
+                        .padding([.horizontal, .bottom], 20)
+                        .opacity(settings.settings.neardropEnabled ? 1.0 : 0.5)
+
+                        Rectangle().fill(Color.white.opacity(0.2)).frame(height: 1).padding(.horizontal, 20)
+
+                        HStack {
+                            Text("Open detailed AirDrop widget on live activity click")
+                            Spacer()
+                            Toggle("", isOn: $settings.settings.neardropOpenOnClick)
+                                .labelsHidden().toggleStyle(.switch)
+                        }
+                        .padding()
+                        .disabled(!settings.settings.neardropEnabled)
+                        .opacity(settings.settings.neardropEnabled ? 1.0 : 0.5)
+
                     }
-                    .padding([.horizontal, .bottom], 20)
-                    .opacity(settings.settings.neardropEnabled ? 1.0 : 0.5)
-
-                    Rectangle().fill(Color.white.opacity(0.2)).frame(height: 1).padding(.horizontal, 20)
-
-                    HStack {
-                        Text("Open detailed AirDrop widget on live activity click")
-                        Spacer()
-                        Toggle("", isOn: $settings.settings.neardropOpenOnClick)
-                            .labelsHidden().toggleStyle(.switch)
-                    }
-                    .padding()
-                    .disabled(!settings.settings.neardropEnabled)
-                    .opacity(settings.settings.neardropEnabled ? 1.0 : 0.5)
-
+                    .modifier(SettingsContainerModifier())
+                    .animation(.easeInOut, value: settings.settings.neardropEnabled)
                 }
-                .modifier(SettingsContainerModifier())
-                .animation(.easeInOut, value: settings.settings.neardropEnabled)
+
+                // MARK: - NEW iMessage Registration Section
+                OpenBubblesActivationView()
 
             }
             .padding(25)

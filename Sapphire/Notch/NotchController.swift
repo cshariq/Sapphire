@@ -4,6 +4,7 @@
 //
 //  Created by Shariq Charolia on 2025-07-04
 //
+//
 
 import SwiftUI
 import Combine
@@ -16,18 +17,18 @@ fileprivate struct BatteryInfoView: View {
     let level: Int
     let isCharging: Bool
     let timeRemaining: String?
-    
+
     private var batteryColor: Color {
         if isCharging { return .green }
         if level <= 10 { return .red }
         if level <= 20 { return .yellow }
         return .white
     }
-    
+
     private var contentColor: Color {
         return .black
     }
-    
+
     var body: some View {
         HStack(spacing: NotchConfiguration.batteryHStackSpacing) {
             if let timeString = timeRemaining {
@@ -41,7 +42,7 @@ fileprivate struct BatteryInfoView: View {
                 Image(systemName: "battery.100")
                     .font(.system(size: NotchConfiguration.batteryIconSize, weight: .light))
                     .foregroundColor(.white.opacity(0.7))
-                
+
                 HStack(spacing: 0) {
                     Rectangle()
                         .fill(batteryColor)
@@ -54,7 +55,7 @@ fileprivate struct BatteryInfoView: View {
                     Image(systemName: "battery.100")
                         .font(.system(size: NotchConfiguration.batteryIconSize, weight: .light))
                 }
-                
+
                 if isCharging {
                     HStack(spacing: 0) {
                         Image(systemName: "bolt.fill")
@@ -91,11 +92,11 @@ struct NotchController: View {
     let notchWindow: NSWindow?
     private let notchWidget: NotchWidgetView
     private static var renderCounter: Int = 0
-    
+
     enum NotchState {
         case initial, autoExpanded, hoverExpanded, clickExpanded
     }
-    
+
     // MARK: - Environment Objects
     @EnvironmentObject var liveActivityManager: LiveActivityManager
     @EnvironmentObject var musicWidget: MusicManager
@@ -104,7 +105,7 @@ struct NotchController: View {
     @EnvironmentObject var settings: SettingsModel
     @EnvironmentObject var batteryEstimator: BatteryEstimator
     @EnvironmentObject var timerManager: TimerManager
-    
+
     // MARK: - State Objects
     @StateObject private var fileShelfState = FileShelfState()
     @StateObject private var dragManager = GlobalDragManager.shared
@@ -112,7 +113,7 @@ struct NotchController: View {
     @StateObject private var audioManager = MultiAudioManager.shared
     @StateObject private var caffeineManager = CaffeineManager.shared
     @StateObject private var calendarViewModel = InteractiveCalendarViewModel()
-    
+
     // MARK: - State Properties
     @State private var config: ResolvedNotchConfiguration?
     @State private var notchState: NotchState = .initial
@@ -148,20 +149,20 @@ struct NotchController: View {
     @State private var expansionAnimation: Animation = .default
     @State private var cancellables = Set<AnyCancellable>()
     @State private var awaitingDropCompletion: Bool = false
-    
+
     // MARK: - Computed Properties
     private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
     private var isFullViewActivity: Bool { liveActivityManager.isFullViewActivity }
     private var isGeminiActive: Bool { liveActivityManager.currentActivity == .geminiLive }
-    
+
     private var isDisplayingMusicLiveActivity: Bool {
         let isMusic = (liveActivityManager.currentActivity == .music)
         let isShowingActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded)
         return isMusic && isShowingActivityView
     }
-    
+
     private var currentMode: NotchWidgetMode { navigationStack.last ?? .defaultWidgets }
-    
+
     private var activeAppearanceSettings: NotchAppearanceSettings {
         switch notchState {
         case .initial, .clickExpanded:
@@ -174,15 +175,15 @@ struct NotchController: View {
             }
         }
     }
-    
+
     private var isInteractive: Bool {
         notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone
     }
-    
+
     private var shouldHideWindowForSharing: Bool {
         settings.settings.hideFromScreenSharing || (notchState == .initial)
     }
-    
+
     private var geminiShadowGradient: LinearGradient {
         LinearGradient(
             gradient: Gradient(colors: [
@@ -193,7 +194,7 @@ struct NotchController: View {
             endPoint: .bottomTrailing
         )
     }
-    
+
     private var glowOpacity: Double {
         guard isGeminiActive else { return 0 }
         let baseOpacity = (notchState == .initial || notchState == .autoExpanded) ?
@@ -201,7 +202,7 @@ struct NotchController: View {
         NotchConfiguration.geminiGlowBaseOpacityExpanded
         return baseOpacity + (Double(geminiLiveManager.currentAudioLevel) * NotchConfiguration.geminiGlowAudioMultiplier)
     }
-    
+
     private var glowRadius: CGFloat {
         guard isGeminiActive else { return 0 }
         let baseRadius: CGFloat = (notchState == .initial || notchState == .autoExpanded) ?
@@ -209,7 +210,7 @@ struct NotchController: View {
         NotchConfiguration.geminiGlowBaseRadiusExpanded
         return baseRadius + (CGFloat(geminiLiveManager.currentAudioLevel) * NotchConfiguration.geminiGlowAudioRadiusMultiplier)
     }
-    
+
     private var currentViewTitle: String? {
         switch currentMode {
         case .multiAudioDeviceAdjust: return "Adjust"
@@ -220,12 +221,12 @@ struct NotchController: View {
         default: return nil
         }
     }
-    
+
     private var activeScaleFactor: CGFloat {
         guard let config = config, notchState == .hoverExpanded && !isFullViewActivity else { return 1.0 }
         return config.scaleFactor
     }
-    
+
     private var enabledAndOrderedWidgets: [WidgetType] {
         let orderedTypes = settings.settings.widgetOrder
         return orderedTypes.filter { widgetType in
@@ -237,7 +238,7 @@ struct NotchController: View {
             }
         }
     }
-    
+
     private var currentSnapLayout: SnapLayout {
         let allLayouts = LayoutTemplate.allTemplates + settings.settings.customSnapLayouts
         if let bundleID = draggedAppBundleID,
@@ -253,11 +254,11 @@ struct NotchController: View {
         }
         return settings.settings.defaultSnapLayout
     }
-    
+
     private var showMultiAudioIcon: Bool {
         audioManager.availableOutputDevices.count > 1
     }
-    
+
     private var leftNotchButtons: [NotchButtonType] {
         let allButtons = settings.settings.notchButtonOrder
         if let spacerIndex = allButtons.firstIndex(of: .spacer) {
@@ -265,7 +266,7 @@ struct NotchController: View {
         }
         return allButtons
     }
-    
+
     private var rightNotchButtons: [NotchButtonType] {
         let allButtons = settings.settings.notchButtonOrder
         if let spacerIndex = allButtons.firstIndex(of: .spacer) {
@@ -273,7 +274,7 @@ struct NotchController: View {
         }
         return []
     }
-    
+
     private var activeShape: CustomNotchShape {
         CustomNotchShape(
             cornerRadius: animatedCornerRadius,
@@ -281,7 +282,7 @@ struct NotchController: View {
             isMusicActivity: isDisplayingMusicLiveActivity
         )
     }
-    
+
     // MARK: - Initializer
     public init(notchWindow: NSWindow?) {
         self.notchWindow = notchWindow
@@ -292,14 +293,14 @@ struct NotchController: View {
             calendarViewModel: InteractiveCalendarViewModel()
         )
     }
-    
+
     // MARK: - Body
     var body: some View {
         let renderIndex: Int = {
             NotchController.renderCounter += 1
             return NotchController.renderCounter
         }()
-        
+
         if let config = config {
             ZStack(alignment: .top) {
                 // MARK: - Custom Gradient Shadow for Gemini
@@ -314,10 +315,10 @@ struct NotchController: View {
                         .opacity(isShadowVisible ? 0.75 : 0)
                         .allowsHitTesting(false)
                 }
-                
+
                 notchBackground
                     .mask(activeShape)
-                
+
                 ZStack(alignment: .top) {
                     let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
                     if showActivityView && isLiveActivityActive && canRenderAutoContent {
@@ -343,7 +344,7 @@ struct NotchController: View {
                             .blur(radius: widgetBlurRadius)
                             .mask(activeShape)
                     }
-                    
+
                     if notchState == .clickExpanded {
                         expandedOverlayIcons
                             .transition(.opacity.animation(.easeInOut(duration: 0.2)))
@@ -396,7 +397,7 @@ struct NotchController: View {
                 }
         }
     }
-    
+
     // MARK: - Subviews
     @ViewBuilder
     private var notchBackground: some View {
@@ -425,7 +426,7 @@ struct NotchController: View {
         )
         .onTapGesture(perform: handleTap)
     }
-    
+
     private var notchFillMaterial: AnyShapeStyle {
         let appearance = activeAppearanceSettings
         let style = appearance.backgroundStyle
@@ -456,7 +457,7 @@ struct NotchController: View {
             ))
         }
     }
-    
+
     @ViewBuilder
     private var contentView: some View {
         if let config = config, notchState == .clickExpanded {
@@ -477,7 +478,7 @@ struct NotchController: View {
             EmptyView()
         }
     }
-    
+
     @ViewBuilder
     private var autoActivityView: some View {
         if let config = config {
@@ -494,14 +495,14 @@ struct NotchController: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func buildStandardActivityView(from data: StandardActivityData) -> some View {
         if let config = config {
             VStack(spacing: 0) {
                 let left = buildLeftView(for: data)
                 let right = buildRightView(for: data)
-                
+
                 HStack(spacing: 0) {
                     HStack {
                         Spacer()
@@ -529,7 +530,7 @@ struct NotchController: View {
                         self.maxActivityContentWidth = newMaxWidth
                     }
                 }
-                
+
                 GeometryReader { geometry in
                     let totalWidth = geometry.size.width
                     HStack(spacing: 0) {
@@ -538,10 +539,10 @@ struct NotchController: View {
                             Spacer(minLength: 0)
                         }
                         .frame(width: (totalWidth - config.initialSize.width) / 2, alignment: .leading)
-                        
+
                         Spacer()
                             .frame(width: config.initialSize.width)
-                        
+
                         HStack(alignment: .center) {
                             Spacer(minLength: 0)
                             right
@@ -554,7 +555,7 @@ struct NotchController: View {
                 .frame(height: config.initialSize.height)
                 .padding(.horizontal, liveActivityHorizontalPadding)
                 .animation(config.activityToActivityAnimation, value: liveActivityHorizontalPadding)
-                
+
                 if let bottomView = getBottomView(for: data) {
                     VStack {
                         bottomView
@@ -566,7 +567,7 @@ struct NotchController: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private var measurementOverlay: some View {
         if let config = config {
@@ -616,7 +617,7 @@ struct NotchController: View {
             .allowsHitTesting(false)
         }
     }
-    
+
     @ViewBuilder
     private var expandedOverlayIcons: some View {
         if currentMode == .defaultWidgets {
@@ -625,7 +626,7 @@ struct NotchController: View {
             navigationHeader
         }
     }
-    
+
     @ViewBuilder
     private var navigationHeader: some View {
         if let config = config {
@@ -648,7 +649,7 @@ struct NotchController: View {
                     }
                     .padding(.top, NotchConfiguration.navHeaderTopPadding)
                     .buttonStyle(.plain)
-                    
+
                     if let title = currentViewTitle {
                         Text(title)
                             .font(.system(size: NotchConfiguration.navHeaderTitleFontSize, weight: .bold))
@@ -664,7 +665,7 @@ struct NotchController: View {
             .frame(width: animatedWidth)
         }
     }
-    
+
     @ViewBuilder
     private var defaultModeIcons: some View {
         if let config = config {
@@ -686,7 +687,7 @@ struct NotchController: View {
             .frame(width: animatedWidth)
         }
     }
-    
+
     @ViewBuilder
     private var geminiButton: some View {
         let isRunning = geminiLiveManager.isSessionRunning
@@ -701,7 +702,7 @@ struct NotchController: View {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
-        
+
         Button(action: {
             if isRunning {
                 geminiLiveManager.stopSession()
@@ -723,7 +724,7 @@ struct NotchController: View {
                         LinearGradient(gradient: Gradient(colors: [Color.blue, Color.pink]), startPoint: .topLeading, endPoint: .bottomTrailing)
                     )
                     .animation(.spring(response: NotchConfiguration.geminiButtonSpringResponse, dampingFraction: NotchConfiguration.geminiButtonSpringDamping), value: isGeminiHovered)
-                
+
                 if isGeminiHovered {
                     Text(isRunning ? "Stop" : "Go live")
                         .font(.system(size: NotchConfiguration.geminiButtonTextFontSize, weight: .semibold))
@@ -744,7 +745,7 @@ struct NotchController: View {
             }
         }
     }
-    
+
     // MARK: - Activity View Builders
     @ViewBuilder
     private func getBottomView(for data: StandardActivityData) -> AnyView? {
@@ -771,7 +772,7 @@ struct NotchController: View {
             return nil
         }
     }
-    
+
     @ViewBuilder
     private func buildLeftView(for data: StandardActivityData) -> some View {
         switch data {
@@ -806,7 +807,7 @@ struct NotchController: View {
         case .updateAvailable: UpdateAvailableActivityView.left()
         }
     }
-    
+
     @ViewBuilder
     private func buildRightView(for data: StandardActivityData) -> some View {
         switch data {
@@ -841,7 +842,7 @@ struct NotchController: View {
         case .updateAvailable(let version): UpdateAvailableActivityView.right(version: version)
         }
     }
-    
+
     @ViewBuilder
     private func notchButton(for type: NotchButtonType) -> some View {
         switch type {
@@ -887,20 +888,20 @@ struct NotchController: View {
             EmptyView()
         }
     }
-    
+
     // MARK: - Setup and Teardown
     private func setupMonitors() {
         dragManager.startMonitoring()
         liveActivityManager.showLyricsBinding = $showLyrics
         updateFPS()
-        
+
         TrackpadGestureHandler.shared.onSwipe = { dx, dy in
             self.handleTrackpadSwipe(vector: CGVector(dx: dx, dy: dy))
         }
         TrackpadGestureHandler.shared.onTwoFingerTap = {
             self.handleTrackpadTwoFingerTap()
         }
-        
+
         NotificationCenter.default.addObserver(forName: .fileDropFlowCompleted, object: nil, queue: .main) { _ in
             guard let config = self.config else { return }
             self.awaitingDropCompletion = false
@@ -908,11 +909,11 @@ struct NotchController: View {
                 self.scheduleCollapse(after: config.widgetSwitchCollapseDelay)
             }
         }
-        
+
         updateMouseEventHandling(isInteractive: isInteractive)
         updateWindowSharingBehavior(shouldBeHidden: shouldHideWindowForSharing)
     }
-    
+
     private func teardownMonitors() {
         dragManager.stopMonitoring()
         TrackpadGestureHandler.shared.stopMonitoring()
@@ -922,11 +923,11 @@ struct NotchController: View {
         collapseTask?.cancel()
         cancellables.removeAll()
     }
-    
+
     // MARK: - Event Handlers
     private func handleTap() {
         if notchState == .clickExpanded { return }
-        
+
         let flags = NSEvent.modifierFlags
         if flags.contains(.command) {
             collapseTask?.cancel()
@@ -936,11 +937,11 @@ struct NotchController: View {
             notchState = .clickExpanded
             return
         }
-        
+
         collapseTask?.cancel()
         isCollapseTimerActive = false
         if isPinned { return }
-        
+
         let activityType = liveActivityManager.currentActivity
         if (notchState == .autoExpanded || notchState == .hoverExpanded) {
             let initiateWidgetView: (NotchWidgetMode) -> Void = { mode in
@@ -954,7 +955,7 @@ struct NotchController: View {
             if activityType == .fileShelf, settings.settings.clickToOpenFileShelf { initiateWidgetView(.fileShelf); return }
             if activityType == .timer, settings.settings.clickToShowTimerView { initiateWidgetView(.timerDetailView); return }
         }
-        
+
         switch notchState {
         case .initial, .autoExpanded, .hoverExpanded:
             measuredClickContentSize = .zero
@@ -972,22 +973,22 @@ struct NotchController: View {
             return
         }
     }
-    
+
     private func handleHover(hovering: Bool) {
         guard let config = config else { return }
         self.isHovered = hovering
-        
+
         if hovering {
             TrackpadGestureHandler.shared.startMonitoring()
         } else {
             TrackpadGestureHandler.shared.stopMonitoring()
         }
-        
+
         if hovering {
             collapseTask?.cancel()
             isCollapseTimerActive = false
             let activityType = liveActivityManager.currentActivity
-            
+
             if activityType == .fileShelf, settings.settings.hoverToOpenFileShelf {
                 if notchState != .clickExpanded {
                     navigationStack = [.fileShelf]
@@ -1020,10 +1021,10 @@ struct NotchController: View {
             }
         }
     }
-    
+
     private func handleActivityChange(_ newActivity: ActivityType) {
         guard notchState != .clickExpanded, let config = config else { return }
-        
+
         if newActivity != .none {
             activityBlurRadius = config.activityBlurRadiusMax
             activityContentScale = 0.9
@@ -1034,14 +1035,14 @@ struct NotchController: View {
                 }
             }
         }
-        
+
         notchState = newActivity != .none ? .autoExpanded : .initial
         updateFPS()
     }
-    
+
     private func handleStateChange(from oldState: NotchState, to newState: NotchState) {
         guard let config = config else { return }
-        
+
         let isContentUpdate = oldState == newState
         let animation: Animation
         if isContentUpdate {
@@ -1054,16 +1055,16 @@ struct NotchController: View {
             case .autoExpanded: animation = (oldState == .clickExpanded) ? config.collapseAnimation : config.activityToActivityAnimation
             }
         }
-        
+
         withAnimation(animation) {
             updateRadiiForCurrentState(state: newState)
             self.liveActivityHorizontalPadding = liveActivityManager.activityHasBottomContent ?
             config.activityWithContentHorizontalPadding :
             config.activityDefaultHorizontalPadding
         }
-        
+
         if isContentUpdate { return }
-        
+
         switch newState {
         case .initial:
             let wasShowingActivity = (oldState == .autoExpanded || oldState == .hoverExpanded)
@@ -1081,7 +1082,7 @@ struct NotchController: View {
                 self.activityBlurRadius = 0; self.activityContentScale = 1.0
             }
             withAnimation(.easeOut(duration: 0.1)) { clickContentOpacity = 0 }
-            
+
         case .hoverExpanded:
             isAnimatingActivityOut = false; self.canRenderAutoContent = true
             let scale = activeScaleFactor
@@ -1095,7 +1096,7 @@ struct NotchController: View {
                 shadowOpacity = 1
             }
             withAnimation(.easeOut(duration: 0.1)) { clickContentOpacity = 0 }
-            
+
         case .clickExpanded:
             isAnimatingActivityOut = false; self.canRenderAutoContent = false
             widgetBlurRadius = config.widgetBlurRadiusMax
@@ -1109,7 +1110,7 @@ struct NotchController: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.expansionAnimation = config.expandAnimation
             }
-            
+
         case .autoExpanded:
             isAnimatingActivityOut = false
             let isCollapsingFromClick = (oldState == .clickExpanded)
@@ -1142,7 +1143,7 @@ struct NotchController: View {
         }
         updateFPS()
     }
-    
+
     private func handlePreviewItemChange(newItem: ShelfItem?) {
         if newItem != nil {
             navigationStack.append(.fileActionPreview)
@@ -1152,7 +1153,7 @@ struct NotchController: View {
             }
         }
     }
-    
+
     private func handleNavigationStackChange(oldStack: [NotchWidgetMode], newStack: [NotchWidgetMode]) {
         guard let config = config else { return }
         if notchState == .clickExpanded {
@@ -1167,14 +1168,14 @@ struct NotchController: View {
             scheduleCollapse(after: config.widgetSwitchCollapseDelay)
         }
     }
-    
+
     public func handleItemDrop(providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first else { return false }
         self.awaitingDropCompletion = true
         let capturedDropZone = self.activeDropZone
-        return false // Actual handling likely happens elsewhere
+        return false
     }
-    
+
     private func handleDragActivationChange(isDragging: Bool) {
         guard let config = config else { return }
         collapseTask?.cancel()
@@ -1198,7 +1199,7 @@ struct NotchController: View {
             scheduleCollapse(after: config.dragActivationCollapseDelay)
         }
     }
-    
+
     private func handleFileDropTargetChange(isTargeted: Bool) {
         if isTargeted {
             if navigationStack.last != .fileShelfLanding {
@@ -1206,7 +1207,7 @@ struct NotchController: View {
             }
         }
     }
-    
+
     private func handleSizeChange(_ newSize: CGSize, for state: NotchState) {
         guard let config = config else { return }
         if state == .clickExpanded && notchState == .clickExpanded {
@@ -1220,7 +1221,7 @@ struct NotchController: View {
             updateAutoContentSize()
         }
     }
-    
+
     private func handlePickerResult(result: PickerResult) {
         switch result {
         case .success(let filter):
@@ -1231,17 +1232,17 @@ struct NotchController: View {
             else { print("Picker was cancelled by the user.") }
         }
     }
-    
+
     private func handleShowLyricsChange(newValue: Bool) {
         if newValue {
             navigationStack.append(.musicLyrics)
             DispatchQueue.main.async { self.showLyrics = false }
         }
     }
-    
+
     private func handleTrackpadSwipe(vector: CGVector) {
         guard let config = config else { return }
-        
+
         if (notchState == .initial || notchState == .hoverExpanded) && !isLiveActivityActive {
             let verticalThreshold: CGFloat = 20.0
             let isVerticalSwipe = abs(vector.dy) > abs(vector.dx) * 1.5
@@ -1258,16 +1259,16 @@ struct NotchController: View {
                 return
             }
         }
-        
+
         guard isLiveActivityActive && (notchState == .autoExpanded || notchState == .hoverExpanded) else { return }
-        
+
         if abs(vector.dx) > abs(vector.dy) {
             if liveActivityManager.currentActivity == .music {
                 let isSwipeRight = vector.dx > 0
                 let invert = settings.settings.invertMusicGestures
                 let shouldSkipForward = (isSwipeRight && !invert) || (!isSwipeRight && invert)
                 let shouldGoBackward = (!isSwipeRight && !invert) || (isSwipeRight && invert)
-                
+
                 if shouldSkipForward && settings.settings.swipeToSkipMusic {
                     if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
                     musicWidget.transientIcon = .skippedForward
@@ -1289,10 +1290,10 @@ struct NotchController: View {
             }
         }
     }
-    
+
     private func handleTrackpadTwoFingerTap() {
         guard isLiveActivityActive && (notchState == .autoExpanded || notchState == .hoverExpanded) else { return }
-        
+
         if settings.settings.twoFingerTapToPauseMusic {
             if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
             musicWidget.transientIcon = musicWidget.isPlaying ? .paused : .played
@@ -1304,7 +1305,7 @@ struct NotchController: View {
             musicWidget.isPlaying ? musicWidget.pause() : musicWidget.play()
         }
     }
-    
+
     // MARK: - Helper Methods
     private func toRestorableMenu(mode: NotchWidgetMode) -> RestorableNotchMenu? {
         switch mode {
@@ -1324,11 +1325,11 @@ struct NotchController: View {
             return nil
         }
     }
-    
+
     private func updateRadiiForCurrentState(state: NotchState) {
         guard let config = config else { return }
         let hasBottom = liveActivityManager.activityHasBottomContent
-        
+
         switch state {
         case .initial:
             animatedCornerRadius = config.initialCornerRadius
@@ -1357,7 +1358,7 @@ struct NotchController: View {
             }
         }
     }
-    
+
     private func updateFPS() {
         guard let layer = notchWindow?.contentView?.layer else { return }
         let targetFPS = isLiveActivityActive ? 60 : 120
@@ -1367,29 +1368,29 @@ struct NotchController: View {
             layer.setValue(rateRange, forKey: key)
         }
     }
-    
+
     private func updateAutoContentSize() {
         guard let config = config, notchState == .autoExpanded || (notchState == .hoverExpanded && isLiveActivityActive) else { return }
         let scale = activeScaleFactor
         let targetWidth = measuredAutoContentSize.width * scale
         let targetHeight = measuredAutoContentSize.height * scale
         let epsilon: CGFloat = 0.5
-        
+
         guard targetWidth > 0 && targetHeight > 0,
               (abs(targetWidth - animatedWidth) > epsilon || abs(targetHeight - animatedHeight) > epsilon) else { return }
-        
+
         let currentActivityType = liveActivityManager.currentActivity
         let isExemptFromBlur = (currentActivityType == .music || currentActivityType == .systemHUD)
-        
+
         if !isExemptFromBlur {
             withAnimation(.easeIn(duration: config.activityBlurUpdateDelay)) { activityBlurRadius = 15 }
         }
-        
+
         withAnimation(config.activityToActivityAnimation) {
             animatedWidth = targetWidth
             animatedHeight = targetHeight
         }
-        
+
         if !isExemptFromBlur {
             DispatchQueue.main.asyncAfter(deadline: .now() + config.autoContentRenderDelay) {
                 withAnimation(config.blurRemovalAnimation) { self.activityBlurRadius = 0 }
@@ -1398,7 +1399,7 @@ struct NotchController: View {
             activityBlurRadius = 0
         }
     }
-    
+
     private func updateMouseEventHandling(isInteractive: Bool) {
         guard notchWindow?.contentView != nil else { return }
         let shouldIgnore = !isInteractive
@@ -1406,7 +1407,7 @@ struct NotchController: View {
             notchWindow?.ignoresMouseEvents = shouldIgnore
         }
     }
-    
+
     private func updateWindowSharingBehavior(shouldBeHidden: Bool) {
         guard let window = notchWindow else { return }
         let desired: NSWindow.SharingType = shouldBeHidden ? .none : .readOnly
@@ -1414,7 +1415,7 @@ struct NotchController: View {
             window.sharingType = desired
         }
     }
-    
+
     private func scheduleCollapse(after delay: TimeInterval) {
         collapseTask?.cancel()
         guard !isPinned else { return }
@@ -1432,19 +1433,19 @@ struct NotchController: View {
             }
         }
     }
-    
+
     final class KeyWindow: NSWindow {
         override var canBecomeKey: Bool { true }
         override var canBecomeMain: Bool { true }
     }
-    
+
     private func openSettingsWindow() {
         if let window = settingsWindow {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        
+
         let newWindow = KeyWindow(
             contentRect: NSRect(x: 0, y: 0, width: 950, height: 650),
             styleMask: [.borderless, .resizable, .closable],
@@ -1457,22 +1458,22 @@ struct NotchController: View {
         newWindow.isOpaque = false
         newWindow.hasShadow = true
         newWindow.isReleasedWhenClosed = false
-        
+
         let settingsView = SettingsView()
         let hostingView = NSHostingView(rootView: settingsView
             .environmentObject(settings)
             .environment(\.window, newWindow)
         )
         hostingView.autoresizingMask = [.width, .height]
-        
+
         newWindow.contentView = hostingView
         newWindow.makeKeyAndOrderFront(nil)
         newWindow.makeFirstResponder(hostingView)
         NSApp.activate(ignoringOtherApps: true)
-        
+
         let delegate = SettingsWindowDelegate { self.settingsWindow = nil }
         newWindow.delegate = delegate
-        
+
         self.settingsWindow = newWindow
         self.settingsDelegate = delegate
     }
@@ -1483,16 +1484,16 @@ fileprivate struct SubtleIconButton: View {
     let action: () -> Void
     let horizontalPadding: CGFloat
     let verticalPadding: CGFloat
-    
+
     @State private var isHovering = false
-    
+
     init(systemName: String, action: @escaping () -> Void, horizontalPadding: CGFloat = 8, verticalPadding: CGFloat = 6) {
         self.systemName = systemName
         self.action = action
         self.horizontalPadding = horizontalPadding
         self.verticalPadding = verticalPadding
     }
-    
+
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)

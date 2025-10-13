@@ -310,8 +310,13 @@ enum MusicPlayerButtonType: String, Codable, CaseIterable, Identifiable, Equatab
     }
 }
 
-// MARK: - Main Settings Struct (Refactored)
+// MARK: - Main Settings Struct
 struct Settings: Codable, Equatable {
+    var enableXDRBrightness: Bool = true
+    var brightness: Float = 1.0
+    var xdrBrightnessLevel: Float = 1.59
+    var xdrBrightnessLock: Bool = false
+
     var useCustomNotchConfiguration: Bool = false
     var customNotchConfiguration: CustomizableNotchConfiguration = .init()
     var lockScreenShowInfoWidget: Bool = true
@@ -324,20 +329,15 @@ struct Settings: Codable, Equatable {
     var lockScreenShowNotch: Bool = true
     var lockScreenLiveActivityEnabled: Bool = true
     var lockScreenLiquidGlassLook: Bool = true
-
     var lockScreenWeatherInfo: [WeatherInfoType] = [.temperature]
     var lockScreenBatteryInfo: [BatteryInfoType] = [.batteryIcon, .percentage]
-
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
     var notchLiveActivityAppearance: NotchAppearanceSettings = .init()
-
     var launchAtLogin: Bool = true
     var appLanguage: String = "en"
     var hapticFeedbackEnabled: Bool = true
     var hideFromScreenSharing: Bool = false
     var notchDisplayTarget: NotchDisplayTarget = .macbookDisplay
-
-    // MARK: - Features & Notch Bar
     var expandOnHover: Bool = false
     var launchpadEnabled: Bool = false
     var caffeinateEnabled: Bool = true
@@ -346,14 +346,9 @@ struct Settings: Codable, Equatable {
     var geminiEnabled: Bool = true
     var pinEnabled: Bool = true
     var hideNotchWhenInactive: Bool = false
-    var notchButtonOrder: [NotchButtonType] = [
-        .settings, .fileShelf, .gemini, .spacer, .battery, .multiAudio, .caffeine, .pin
-    ]
-
-    // MARK: - Widgets
+    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .gemini, .spacer, .battery, .multiAudio, .caffeine, .pin]
     var rememberLastMenu: Bool = false
     var lastNotchNavigationStack: [RestorableNotchMenu]? = nil
-
     var showDividersBetweenWidgets: Bool = false
     var widgetOrder: [WidgetType] = [.music, .weather, .calendar, .shortcuts]
     var musicWidgetEnabled: Bool = true
@@ -362,8 +357,6 @@ struct Settings: Codable, Equatable {
     var shortcutsWidgetEnabled: Bool = false
     var timerWidgetEnabled: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
-
-    // MARK: - Live Activities
     var liveActivityOrder: [LiveActivityType] = LiveActivityType.allCases
     var musicLiveActivityEnabled: Bool = true
     var weatherLiveActivityEnabled: Bool = true
@@ -382,10 +375,7 @@ struct Settings: Codable, Equatable {
     var showPersistentBatteryLiveActivity: Bool = false
     var showPersistentWeatherLiveActivity: Bool = true
     var weatherLiveActivityInterval: Int = 10
-
     var focusDisplayMode: FocusDisplayMode = .full
-
-    // MARK: - Music & Spotify
     var mediaSource: MediaSource = .system
     var prioritizeMediaSource: Bool = true
     var hideLiveActivityWhenSourceActive: Bool = true
@@ -418,8 +408,6 @@ struct Settings: Codable, Equatable {
     var showPopularityInMusicPlayer: Bool = true
     var hideMusicWidgetWhenNotPlaying: Bool = false
     var preferAirPlayOverSpotify: Bool = true
-
-    // MARK: - System HUD
     var hudDuration: Double = 2.5
     var hudShowPercentage: Bool = true
     var hudVisualStyle: HUDVisualStyle = .adaptive
@@ -434,21 +422,13 @@ struct Settings: Codable, Equatable {
     var brightnessHUDStyle: HUDStyle = .default
     var volumesliderstep: Int = 6
     var brightnessliderstep: Int = 6
-
-    // MARK: - Snap Zones & Planes
     var snapZoneViewMode: SnapZoneViewMode = .multi
     var snapOnWindowDragEnabled: Bool = true
     var defaultSnapLayout: SnapLayout = LayoutTemplate.columns
     var appSpecificLayoutConfigurations: [String: AppSnapLayoutConfiguration] = [:]
     var customSnapLayouts: [SnapLayout] = []
-    var snapZoneLayoutOptions: [UUID] = [
-        LayoutTemplate.columns.id,
-        LayoutTemplate.splitscreen.id,
-        LayoutTemplate.focus.id
-    ]
+    var snapZoneLayoutOptions: [UUID] = [LayoutTemplate.columns.id, LayoutTemplate.splitscreen.id, LayoutTemplate.focus.id]
     var planes: [Plane] = []
-
-    // MARK: - Battery & Charging
     var batteryChargeLimit: Int = 80
     var lowBatteryNotificationPercentage: Int = 20
     var lowBatteryNotificationSoundEnabled: Bool = true
@@ -473,14 +453,9 @@ struct Settings: Codable, Equatable {
     var preventSleepDuringDischarge: Bool = true
     var enableBiweeklyCalibration: Bool = false
     var magSafeGreenAtLimit: Bool = true
-
-    // MARK: - Bluetooth
     var bluetoothNotifyLowBattery: Bool = true
     var bluetoothNotifySound: Bool = true
     var showBluetoothDeviceName: Bool = false
-
-    // MARK: - Proximity Unlock Settings
-
     var bluetoothUnlockEnabled: Bool = false
     var bluetoothUnlockDeviceID: String? = nil
     var bluetoothUnlockUnlockRSSI: Int = -65
@@ -489,59 +464,38 @@ struct Settings: Codable, Equatable {
     var bluetoothUnlockNoSignalTimeout: Double = 60.0
     var bluetoothUnlockMinScanRSSI: Int = -80
     var bluetoothUnlockPassiveMode: Bool = false
-
     var faceIDUnlockEnabled: Bool = false
     var hasRegisteredFaceID: Bool = false
-
     var bluetoothUnlockWakeOnProximity: Bool = true
     var bluetoothUnlockWakeWithoutUnlocking: Bool = false
     var bluetoothUnlockPauseMusicOnLock: Bool = false
     var bluetoothUnlockUseScreensaver: Bool = false
     var bluetoothUnlockTurnOffScreenOnLock: Bool = true
-
-    // MARK: - Notifications
     var masterNotificationsEnabled: Bool = true
     var iMessageNotificationsEnabled: Bool = true
     var airDropNotificationsEnabled: Bool = true
     var faceTimeNotificationsEnabled: Bool = true
     var systemNotificationsEnabled: Bool = true
     var appNotificationStates: [String: Bool] = [:]
-
     var onlyShowVerificationCodeNotifications: Bool = true
     var showCopyButtonForVerificationCodes: Bool = true
-
-    // MARK: - Neardrop
     var neardropEnabled: Bool = true
     var neardropDeviceDisplayName: String = Host.current().localizedName ?? "My Mac"
     var neardropDownloadLocationPath: String = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.path
     var neardropOpenOnClick: Bool = true
-
-    // MARK: - File Shelf
     var clickToOpenFileShelf: Bool = true
     var hoverToOpenFileShelf: Bool = true
-
-    // MARK: - Launchpad
     var launchpadLayout: [[LaunchpadPageItem]] = []
-
-    // MARK: - Weather
     var weatherUseCelsius: Bool = false
     var weatherOpenOnClick: Bool = false
-
-    // MARK: - Calendar & Reminders
     var calendarShowAllDayEvents: Bool = true
     var calendarStartOfWeek: Day = .sunday
     var calendarOpenOnClick: Bool = true
-
-    // MARK: - Eye Break
     var eyeBreakWorkInterval: Double = 20
     var eyeBreakBreakDuration: Double = 20
     var eyeBreakSoundAlerts: Bool = true
     var showEyeBreakGraph: Bool = true
-
-    // MARK: - Gemini
     var geminiApiKey: String = ""
-
-    // MARK: - Timer & Stopwatch
     var clickToShowTimerView: Bool = true
 }
 
@@ -577,6 +531,11 @@ class SettingsModel: ObservableObject {
     private func loadSettings() {
         settingsAccessQueue.sync {
             var loadedSettings = Settings()
+
+            loadedSettings.enableXDRBrightness = defaults.object(forKey: "enableXDRBrightness") as? Bool ?? loadedSettings.enableXDRBrightness
+            loadedSettings.brightness = defaults.object(forKey: "brightness") as? Float ?? loadedSettings.brightness
+            loadedSettings.xdrBrightnessLevel = defaults.object(forKey: "xdrBrightnessLevel") as? Float ?? loadedSettings.xdrBrightnessLevel
+            loadedSettings.xdrBrightnessLock = defaults.object(forKey: "xdrBrightnessLock") as? Bool ?? loadedSettings.xdrBrightnessLock
 
             loadedSettings.useCustomNotchConfiguration = defaults.object(forKey: "useCustomNotchConfiguration") as? Bool ?? loadedSettings.useCustomNotchConfiguration
             loadedSettings.customNotchConfiguration = decode(CustomizableNotchConfiguration.self, forKey: "customNotchConfiguration") ?? loadedSettings.customNotchConfiguration
@@ -818,6 +777,11 @@ class SettingsModel: ObservableObject {
 
     private func saveSettings(settings: Settings, from oldValue: Settings) {
         settingsAccessQueue.async {
+            if settings.enableXDRBrightness != oldValue.enableXDRBrightness { self.defaults.set(settings.enableXDRBrightness, forKey: "enableXDRBrightness") }
+            if settings.brightness != oldValue.brightness { self.defaults.set(settings.brightness, forKey: "brightness") }
+            if settings.xdrBrightnessLevel != oldValue.xdrBrightnessLevel { self.defaults.set(settings.xdrBrightnessLevel, forKey: "xdrBrightnessLevel") }
+            if settings.xdrBrightnessLock != oldValue.xdrBrightnessLock { self.defaults.set(settings.xdrBrightnessLock, forKey: "xdrBrightnessLock") }
+
             if settings.useCustomNotchConfiguration != oldValue.useCustomNotchConfiguration { self.defaults.set(settings.useCustomNotchConfiguration, forKey: "useCustomNotchConfiguration") }
             if settings.customNotchConfiguration != oldValue.customNotchConfiguration { self.encode(settings.customNotchConfiguration, forKey: "customNotchConfiguration") }
             if settings.lockScreenShowInfoWidget != oldValue.lockScreenShowInfoWidget { self.defaults.set(settings.lockScreenShowInfoWidget, forKey: "lockScreenShowInfoWidget") }
