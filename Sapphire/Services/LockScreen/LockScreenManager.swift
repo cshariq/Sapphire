@@ -168,17 +168,7 @@ public class LockScreenManager {
     }
 
     public func setupAndShowWindows(configs: [LockScreenWidgetConfig], on screen: NSScreen) {
-        let newWindowIDs = Set(configs.map { $0.id })
-        let existingWindowIDs = Set(windows.keys)
-        let windowsToRemove = existingWindowIDs.subtracting(newWindowIDs)
-
-        for id in windowsToRemove {
-            if let controller = windows[id] {
-                controller.close()
-                windows.removeValue(forKey: id)
-            }
-            lastMeasuredSizes.removeValue(forKey: id)
-        }
+        hideAndDestroyWindows()
 
         for (index, config) in configs.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + (Double(index) * 0.05)) {
@@ -231,25 +221,22 @@ public class LockScreenManager {
                              initialFrame: NSRect,
                              positioner: @escaping (CGSize, NSScreen) -> NSRect,
                              on screen: NSScreen) {
-        let controller: NSWindowController
-        if let existing = windows[id] {
-            controller = existing
-        } else {
-            let window = UnfocusableWindow(
-                contentRect: initialFrame,
-                styleMask: NSWindow.StyleMask.borderless,
-                backing: NSWindow.BackingStoreType.buffered,
-                defer: false
-            )
-            window.isOpaque = false
-            window.backgroundColor = NSColor.clear
-            window.hasShadow = false
-            window.level = .mainMenu + 2
-            window.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, .stationary]
-            controller = NSWindowController(window: window)
-            windows[id] = controller
-            delegateWindow(window)
-        }
+
+        let window = UnfocusableWindow(
+            contentRect: initialFrame,
+            styleMask: NSWindow.StyleMask.borderless,
+            backing: NSWindow.BackingStoreType.buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = NSColor.clear
+        window.hasShadow = false
+        window.level = .mainMenu + 2
+        window.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, .stationary]
+
+        let controller = NSWindowController(window: window)
+        windows[id] = controller
+        delegateWindow(window)
 
         let sizeObservingView = SizeObservingView(content: view) { [weak self] newSize in
             guard let self = self, let window = controller.window else { return }
@@ -306,6 +293,13 @@ public class LockScreenManager {
     }
 
     public func hideAndDestroyWindows() {
+        let windowNumbers = windows.values.compactMap { $0.window?.windowNumber }
+
+        if !windowNumbers.isEmpty {
+            _ = SLSRemoveWindowsFromSpaces(connection, windowNumbers as CFArray, [space] as CFArray)
+            print("[LockScreenManager] Explicitly removed \(windowNumbers.count) windows from the lock screen space.")
+        }
+
         windows.values.forEach { controller in
             controller.window?.orderOut(nil)
             controller.window?.contentViewController = nil

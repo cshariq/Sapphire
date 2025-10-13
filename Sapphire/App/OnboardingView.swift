@@ -520,13 +520,27 @@ private struct PermissionRowView: View {
 }
 
 private struct CustomWindowControls: View {
-    @Environment(\.window) private var window: NSWindow?
     @State private var isHovering = false
+
     var body: some View {
         HStack(spacing: 8) {
-            Button(action: { window?.close() }) { Image(systemName: "xmark").font(.system(size: 9, weight: .bold, design: .rounded)) }.buttonStyle(TrafficLightButtonStyle(color: .red, isHovering: isHovering))
-            Button(action: { window?.miniaturize(nil) }) { Image(systemName: "minus").font(.system(size: 9, weight: .bold, design: .rounded)) }.buttonStyle(TrafficLightButtonStyle(color: .yellow, isHovering: isHovering))
-            Button(action: { window?.zoom(nil) }) { Image(systemName: "plus").font(.system(size: 9, weight: .bold, design: .rounded)) }.buttonStyle(TrafficLightButtonStyle(color: .green, isHovering: isHovering))
-        }.onHover { hovering in withAnimation(.easeInOut(duration: 0.1)) { isHovering = hovering } }
+            Button(action: { NSApp.terminate(nil) }) {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold, design: .rounded))
+            }
+            .buttonStyle(TrafficLightButtonStyle(color: .red, isHovering: isHovering))
+
+            Button(action: {}) {
+                Image(systemName: "minus").font(.system(size: 9, weight: .bold, design: .rounded))
+            }
+            .buttonStyle(TrafficLightButtonStyle(color: .yellow, isHovering: isHovering))
+
+            Button(action: {}) {
+                Image(systemName: "plus").font(.system(size: 9, weight: .bold, design: .rounded))
+            }
+            .buttonStyle(TrafficLightButtonStyle(color: .green, isHovering: isHovering))
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) { isHovering = hovering }
+        }
     }
 }

@@ -140,6 +140,13 @@ class SystemHUDManager: ObservableObject {
     }
 
     @objc func verifyAndReinstateEventTap() {
+        let windowCount = NSApp.windows.count
+        if windowCount > 10 {
+             print("[WindowMonitor] WARNING: High window count detected: \(windowCount)")
+        } else {
+             print("[WindowMonitor] Current window count: \(windowCount)")
+        }
+
         guard let tap = self.eventTap, CGEvent.tapIsEnabled(tap: tap) else {
             print("[SystemHUDManager] Event tap is not active or missing. Attempting to reinstate...")
             DispatchQueue.main.async {

@@ -69,9 +69,16 @@ class GammaTechnique: BrightnessTechnique {
     override func enableScreen(screen: NSScreen) {
         guard let displayId = screen.displayId else { return }
 
+        if overlayWindowControllers[displayId] != nil {
+            print("[GammaTechnique] Overlay for display \(displayId) already exists. Skipping creation.")
+            return
+        }
+
         if !gammaTables.keys.contains(displayId) {
             gammaTables[displayId] = GammaTable.createFromCurrentGammaTable(displayId: displayId)
         }
+
+        print("[GammaTechnique] Creating new overlay for display \(displayId).")
         let overlayWindowController = OverlayWindowController(screen: screen)
         overlayWindowControllers[displayId] = overlayWindowController
         let rect = NSRect(x: screen.frame.origin.x, y: screen.frame.origin.y, width: 1, height: 1)
@@ -84,6 +91,7 @@ class GammaTechnique: BrightnessTechnique {
         overlayWindowControllers.removeAll()
         gammaTables.removeAll()
         resetGammaTable()
+        print("[GammaTechnique] Disabled and closed all overlay windows.")
     }
 
     override func adjustBrightness() {

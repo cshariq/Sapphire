@@ -69,7 +69,7 @@ struct OpenBubblesActivationView: View {
                         .font(.title).foregroundStyle(.blue)
                     Text("What is OpenBubbles?").font(.headline)
                 }
-                Text("OpenBubbles is a free, open-source project that brings iMessage, FaceTime, and other Apple services to Android, Windows, and Linux. This tool generates a secure registration code using your Mac's hardware identifiers, allowing other devices to connect directly to Apple's services.")
+                Text("OpenBubbles is a free, open-source project that brings iMessage, FaceTime, and other Apple services to Android, Windows, and Linux. This tool generates a registration code using your Mac's hardware identifiers, allowing other devices to connect directly to Apple's services.")
                     .font(.subheadline).foregroundStyle(.secondary)
 
                 Divider().padding(.vertical, 5)
@@ -87,7 +87,7 @@ struct OpenBubblesActivationView: View {
                         .buttonStyle(PillButtonStyle())
                     }
                     GridRow {
-                        Link(destination: URL(string: "https://github.com/openbubbles-app/openbubbles-android/releases")!) {
+                        Link(destination: URL(string: "https://play.google.com/store/apps/details?id=com.openbubbles.messaging")!) {
                             Label("Download App", systemImage: "arrow.down.circle.fill")
                         }
                         .buttonStyle(PillButtonStyle())
@@ -99,7 +99,7 @@ struct OpenBubblesActivationView: View {
                     }
                 }
             }
-            .padding()
+            .padding([Edge.Set .bottom], 10)
             .background(.black.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
@@ -188,7 +188,7 @@ struct OpenBubblesActivationView: View {
         self.identifiers = data; updateHardwareQrCode(); generateDefaultActivationCode()
     }
     private func generateAppDownloadQrCode() {
-        let urlString = "https://github.com/openbubbles-app/openbubbles-android/releases"
+        let urlString = "https://play.google.com/store/apps/details?id=com.openbubbles.messaging"
         self.appDownloadQrImage = try? QRCode.Document(utf8String: urlString, errorCorrection: .low).cgImage(CGSize(width: 256, height: 256))
     }
     private func generateDefaultActivationCode() {

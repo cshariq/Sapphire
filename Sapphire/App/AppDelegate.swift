@@ -78,7 +78,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     lazy var authManager: AuthenticationManager = AuthenticationManager.shared
     private lazy var lockScreenState = LockScreenState()
     private lazy var caffeineManager = CaffeineManager.shared
-    private var activeUnlockID: UUID?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -283,8 +282,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @objc private func screenIsLocked() {
-
-        self.activeUnlockID = nil
         isScreenLocked = true
 
         lockScreenState.isUnlocked = false
@@ -372,28 +369,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @objc private func screenIsUnlocked() {
         guard isScreenLocked else { return }
+
+        isScreenLocked = false
+        lockScreenState.isUnlocked = true
+        lockScreenState.isAuthenticating = false
+
+        stopAuthentication()
+
         lockScreenManager.hideAndDestroyWindows()
+        liveActivityManager.finishLockScreenActivity()
+
         if let notchWindow = notchWindow, let cgsSpace = cgsSpace {
             lockScreenManager.removeWindow(notchWindow)
             cgsSpace.windows.insert(notchWindow)
             notchWindow.orderFront(nil)
-        }
-
-        lockScreenState.isUnlocked = true
-        lockScreenState.isAuthenticating = false
-
-        let currentUnlockID = UUID()
-        self.activeUnlockID = currentUnlockID
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self = self, self.activeUnlockID == currentUnlockID else {
-                return
-            }
-
-            self.isScreenLocked = false
-            self.stopAuthentication()
-            self.liveActivityManager.finishLockScreenActivity()
-            self.lockScreenManager.hideAndDestroyWindows()
         }
     }
 
@@ -509,7 +498,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func createNotchWindow() {
-        notchWindow?.orderOut(nil); notchWindow?.close()
+        if let oldWindow = self.notchWindow {
+            print("[AppDelegate] Tearing down existing notch window before recreation.")
+            self.notchWindow = nil
+            self.cgsSpace?.windows.remove(oldWindow)
+            oldWindow.orderOut(nil)
+            oldWindow.close()
+        }
 
         let targetScreen: NSScreen?
         switch settingsModel.settings.notchDisplayTarget {
@@ -542,7 +537,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.ignoresMouseEvents = true
         window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
 
-        if self.cgsSpace == nil { self.cgsSpace = CGSSpace() }; self.cgsSpace?.windows.removeAll(); self.cgsSpace?.windows.insert(window)
+        if self.cgsSpace == nil { self.cgsSpace = CGSSpace() }
+        self.cgsSpace?.windows.insert(window)
 
         let notchControllerView = NotchController(notchWindow: window)
         let rootViewContainer = VStack(spacing: 0) { notchControllerView; Spacer() }.frame(width: paddedWindowWidth, height: paddedWindowHeight)

@@ -20,7 +20,7 @@ class OverlayWindow: NSWindow {
         hasShadow = false
         backgroundColor = .clear
         ignoresMouseEvents = true
-        isReleasedWhenClosed = false
+        isReleasedWhenClosed = true
         hidesOnDeactivate = false
     }
 
