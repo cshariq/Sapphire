@@ -17,11 +17,12 @@ import CoreBluetooth
 import Intents
 import ApplicationServices
 import AppKit
+import Network
 
 // MARK: - Permission Enums
 
 enum PermissionType: Identifiable, CaseIterable {
-    case accessibility, notifications, location, calendar, reminders, bluetooth, focusStatus, fullDiskAccess
+    case accessibility, notifications, location, calendar, reminders, bluetooth, focusStatus, fullDiskAccess, localNetwork
     var id: Self { self }
 }
 
@@ -55,14 +56,18 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     @Published var bluetoothStatus: PermissionStatus = .notRequested
     @Published var focusStatusStatus: PermissionStatus = .notRequested
     @Published var fullDiskAccessStatus: PermissionStatus = .notRequested
+    @Published var localNetworkStatus: PermissionStatus = .notRequested
 
     private var locationManager: CLLocationManager?
     private var bluetoothManager: CBCentralManager?
+    private var localNetworkListener: NWListener?
+
     private var cancellables = Set<AnyCancellable>()
 
     public let allPermissions: [PermissionItem] = [
         .init(type: .accessibility, title: "Accessibility", description: "Needed for media key presses, window snapping, and HUDs.", iconName: "figure.wave.circle.fill", iconColor: .purple, category: .required),
         .init(type: .fullDiskAccess, title: "Full Disk Access", description: "Required for features like File Shelf and advanced integrations.", iconName: "folder.badge.gearshape", iconColor: .gray, category: .required),
+        .init(type: .localNetwork, title: "Local Network", description: "Needed to discover and control supported media players on your network.", iconName: "network", iconColor: .cyan, category: .recommended),
         .init(type: .notifications, title: "Notifications", description: "Needed to show custom alerts for messages and system events.", iconName: "bell.badge.fill", iconColor: .red, category: .recommended),
         .init(type: .location, title: "Location", description: "Needed to provide live weather updates for your current location.", iconName: "location.fill", iconColor: .blue, category: .recommended),
         .init(type: .calendar, title: "Calendar", description: "Needed to show your upcoming events.", iconName: "calendar", iconColor: .red, category: .recommended),
@@ -165,6 +170,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         case .bluetooth: return bluetoothStatus
         case .focusStatus: return focusStatusStatus
         case .fullDiskAccess: return fullDiskAccessStatus
+        case .localNetwork: return localNetworkStatus
         }
     }
 
@@ -177,6 +183,9 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         case .fullDiskAccess:
             let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FullDiskAccess")!
             NSWorkspace.shared.open(url)
+
+        case .localNetwork:
+            triggerLocalNetworkPrivacyAlert()
 
         case .notifications:
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in
@@ -213,6 +222,43 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             INFocusStatusCenter.default.requestAuthorization { _ in
                 DispatchQueue.main.async { self.checkAllPermissions() }
             }
+        }
+    }
+
+    // MARK: - Local Network Trigger
+    private func triggerLocalNetworkPrivacyAlert() {
+        self.localNetworkStatus = .granted
+
+        do {
+            let parameters = NWParameters.udp
+            parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.any), port: .any)
+
+            let listener = try NWListener(using: parameters)
+
+            listener.stateUpdateHandler = { [weak self] newState in
+                DispatchQueue.main.async {
+                    switch newState {
+                    case .ready:
+                        print("[PermissionsManager] Local network listener is ready.")
+                    case .failed(let error):
+                        print("[PermissionsManager] Local network listener failed with error: \(error)")
+                        self?.localNetworkStatus = .notRequested
+                    default:
+                        break
+                    }
+                }
+            }
+
+            listener.start(queue: DispatchQueue(label: "local-network-permission"))
+            self.localNetworkListener = listener
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.localNetworkListener?.cancel()
+                self?.localNetworkListener = nil
+            }
+        } catch {
+            print("[PermissionsManager] Failed to create NWListener: \(error)")
+            self.localNetworkStatus = .notRequested
         }
     }
 

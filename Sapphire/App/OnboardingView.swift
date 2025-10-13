@@ -53,7 +53,7 @@ struct OnboardingView: View {
                         .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
                 case .musicChoice:
                     MusicChoiceStepView(onNext: {
-                        if settings.settings.mediaSource == .spotify {
+                        if settings.settings.defaultMusicPlayer == .spotify {
                             currentStep = .spotifySetup
                         } else {
                             currentStep = .corePreferences

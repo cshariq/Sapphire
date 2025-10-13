@@ -72,19 +72,17 @@ class SystemHUDManager: ObservableObject {
 
     @Published private(set) var currentHUD: HUDType?
     @Published private(set) var glowIntensity: Double = 0.0
-
-    // MARK: - XDR Brightness Properties
     @Published var isXDREnabled = false
-    private let brightnessManager = BrightnessManager.shared
 
+    private let brightnessManager = BrightnessManager.shared
     private let settings = SettingsModel.shared
     private let musicManager = MusicManager.shared
 
     private var eventTap: CFMachPort?
     private var hudDismissalTimer: Timer?
-
     private var keyRepeatTimer: Timer?
     private var currentAction: MediaKeyAction?
+    private var verificationTimer: Timer?
 
     private let keyRepeatDelay: TimeInterval = 0.25
     private let keyRepeatInterval: TimeInterval = 0.03
@@ -100,9 +98,21 @@ class SystemHUDManager: ObservableObject {
 
     private init() {
         setupEventTap()
+        verificationTimer = Timer.scheduledTimer(
+            timeInterval: 5.0,
+            target: self,
+            selector: #selector(verifyAndReinstateEventTap),
+            userInfo: nil,
+            repeats: true
+        )
     }
 
     private func setupEventTap() {
+        if let existingTap = eventTap {
+            CGEvent.tapEnable(tap: existingTap, enable: false)
+        }
+        eventTap = nil
+
         let eventsToMonitor: CGEventMask = (1 << NX_SYSDEFINED)
         eventTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -121,6 +131,22 @@ class SystemHUDManager: ObservableObject {
         let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: eventTap, enable: true)
+
+        if CGEvent.tapIsEnabled(tap: eventTap) {
+            print("[SystemHUDManager] Event tap successfully created and enabled.")
+        } else {
+            print("[SystemHUDManager] Event tap created but failed to enable.")
+        }
+    }
+
+    @objc func verifyAndReinstateEventTap() {
+        guard let tap = self.eventTap, CGEvent.tapIsEnabled(tap: tap) else {
+            print("[SystemHUDManager] Event tap is not active or missing. Attempting to reinstate...")
+            DispatchQueue.main.async {
+                self.setupEventTap()
+            }
+            return
+        }
     }
 
     fileprivate func handleMediaKeyEvent(_ cgEvent: CGEvent) -> Bool {
@@ -244,7 +270,6 @@ class SystemHUDManager: ObservableObject {
 
                 let finalVolumeInt = Int(finalVolume.rounded())
                 Task {
-                    print("[SystemHUDManager] Final commit on key-up: Sending Spotify volume \(finalVolumeInt)%")
                     _ = await self.musicManager.setSpotifyVolume(percent: finalVolumeInt)
                 }
             }
@@ -295,9 +320,7 @@ class SystemHUDManager: ObservableObject {
         switch action {
         case .volumeUp, .volumeDown:
             let isSystemFineTune = currentModifiers.contains([.option, .shift]) && !currentModifiers.contains(.command)
-
             let isSpotifyModifierPressed = currentModifiers.contains(.option) || currentModifiers.contains(.command)
-
             let isSpotifyControlAttempt = settings.settings.showSpotifyVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune
 
             if isSpotifyControlAttempt {
@@ -308,7 +331,7 @@ class SystemHUDManager: ObservableObject {
                         self.currentSpotifyVolumeForAction = Float(spotifyState.volumePercent ?? 0)
                         self.lastCommittedSpotifyVolume = self.currentSpotifyVolumeForAction
                     }
-                    let isFineTuningForSpotify = currentModifiers.contains(.shift) || currentModifiers.contains([.command, .option])
+                    let isFineTuningForSpotify = currentModifiers.contains([.shift, .option])
                     performSpotifyVolumeChange(action: action, isFineTuning: isFineTuningForSpotify)
 
                 } else if isFetchingSpotifyState {
@@ -365,7 +388,6 @@ class SystemHUDManager: ObservableObject {
         }
     }
 
-    // MARK: - XDR Brightness Methods
     @MainActor private func changeBrightness(direction: Float) {
         let xdrBrightness = self.settings.settings.brightness
         let maxBrightness = self.settings.settings.xdrBrightnessLevel
@@ -424,7 +446,6 @@ class SystemHUDManager: ObservableObject {
         }
     }
 
-    // MARK: - Original Volume/Spotify Logic
     @MainActor private func performSpotifyVolumeChange(action: MediaKeyAction, isFineTuning: Bool) {
         guard let currentVolume = self.currentSpotifyVolumeForAction else { return }
 
@@ -441,7 +462,6 @@ class SystemHUDManager: ObservableObject {
 
         if oldZone != newZone {
             let volumeToSend = Int(newSpotifyVolume.rounded())
-            print("[SystemHUDManager] Threshold crossed. Sending Spotify volume update: \(volumeToSend)%")
             Task {
                 _ = await self.musicManager.setSpotifyVolume(percent: volumeToSend)
             }
@@ -514,7 +534,6 @@ class SystemHUDManager: ObservableObject {
     }
 }
 
-// MARK: - Redesigned HUD Views
 struct SystemHUDView: View {
     @EnvironmentObject var hudManager: SystemHUDManager
     @EnvironmentObject var settings: SettingsModel
@@ -574,7 +593,6 @@ struct SystemHUDView: View {
                     }
                     return IconMapper.icon(for: dev)
                 }
-
                 return volumeIconName(for: level)
             }()
 
@@ -603,9 +621,7 @@ struct SystemHUDView: View {
     @ViewBuilder
     private func brightnessContent(level: Float) -> some View {
         let isXDR = level > 1.0
-
         let currentDisplayScaleMax = hudManager.isXDREnabled ? settings.settings.xdrBrightnessLevel : 1.0
-
         let normalizedDisplayLevel = level / currentDisplayScaleMax
         let percentageText = "\(Int(roundf(level * 100)))%"
 
@@ -723,7 +739,6 @@ struct ExternalDeviceIndicatorHUD: View {
             guard canControlVolume else { return }
             sliderDebouncer.debounce {
                 Task {
-                    print("[ExternalDeviceIndicatorHUD] Slider sending Spotify volume update: \(Int((newValue * 100).rounded(.toNearestOrAwayFromZero)))%")
                     _ = await MusicManager.shared.setSpotifyVolume(percent: Int((newValue * 100).rounded(.toNearestOrAwayFromZero)))
                 }
             }
@@ -767,7 +782,6 @@ struct DynamicSliderIndicator: View {
 
     private var indicatorColor: Color {
         if forceGreen { return .green }
-
         switch settings.settings.hudVisualStyle {
         case .white: return .white.opacity(0.7)
         case .color: return settings.settings.hudCustomColor?.color ?? .accentColor

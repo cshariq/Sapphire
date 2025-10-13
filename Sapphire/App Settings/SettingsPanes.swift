@@ -5134,6 +5134,8 @@ struct NeardropSettingsView: View {
             }
             .animation(.spring(), value: settingsHaveChanged)
         }
+
+        RequiredPermissionsView(section: .neardrop)
     }
 
     private func validateAndSavePath() {

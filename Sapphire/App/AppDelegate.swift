@@ -279,6 +279,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     @objc private func systemDidWake(notification: NSNotification) {
         print("[AppDelegate] System did wake from sleep.")
         musicManager.spotifyPrivateAPI.checkAndReconnectIfNeeded()
+        systemHUDManager.verifyAndReinstateEventTap()
     }
 
     @objc private func screenIsLocked() {
