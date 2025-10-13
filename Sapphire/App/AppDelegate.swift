@@ -227,6 +227,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         self.onboardingWindow?.orderOut(nil)
         self.onboardingWindow = nil
         startMainApp()
+        DispatchQueue.main.async {
+            self.openSettingsWindow()
+        }
     }
 
     func startMainApp() {
@@ -592,38 +595,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func openSettingsWindow() {
         if let window = settingsWindow {
-            NSApp.setActivationPolicy(.regular)
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+
         let newWindow = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 950, height: 650),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false
+            styleMask: [.borderless, .resizable, .closable],
+            backing: .buffered,
+            defer: false
         )
-        newWindow.center(); newWindow.isMovableByWindowBackground = true
-        newWindow.title = "Sapphire Settings"
-        newWindow.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+        newWindow.center()
+        newWindow.isMovableByWindowBackground = false
+        newWindow.backgroundColor = .clear
+        newWindow.isOpaque = false
+        newWindow.hasShadow = true
+        newWindow.isReleasedWhenClosed = true
 
         let settingsView = SettingsView()
         let hostingView = NSHostingView(rootView: settingsView
             .environment(\.window, newWindow)
-            .environmentObject(settingsModel)
-            .environmentObject(musicManager)
         )
         newWindow.contentView = hostingView
+        newWindow.makeKeyAndOrderFront(nil)
+        newWindow.makeFirstResponder(hostingView)
+        NSApp.activate(ignoringOtherApps: true)
 
-        self.settingsDelegate = SettingsWindowDelegate {
-            self.transitionToAgentApp()
-            self.settingsWindow = nil
-        }
-        newWindow.delegate = self.settingsDelegate
+        let delegate = SettingsWindowDelegate { self.settingsWindow = nil }
+        newWindow.delegate = delegate
 
         self.settingsWindow = newWindow
-        NSApp.setActivationPolicy(.regular)
-        newWindow.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        self.settingsDelegate = delegate
     }
 
     @objc func screenParametersChanged(notification: Notification) {

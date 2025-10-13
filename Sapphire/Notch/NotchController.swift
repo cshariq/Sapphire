@@ -805,6 +805,7 @@ struct NotchController: View {
         case .hud(let type): SystemHUDSlimActivityView.left(type: type, settings: settings)
         case .lockScreen: LockScreenLiveActivityView.left()
         case .updateAvailable: UpdateAvailableActivityView.left()
+        case .unlocked: LockScreenLiveActivityView.left()
         }
     }
 
@@ -840,6 +841,7 @@ struct NotchController: View {
         case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: SettingsModel.shared)
         case .lockScreen: LockScreenLiveActivityView.right()
         case .updateAvailable(let version): UpdateAvailableActivityView.right(version: version)
+        case .unlocked: LockScreenLiveActivityView.right()
         }
     }
 
@@ -847,7 +849,9 @@ struct NotchController: View {
     private func notchButton(for type: NotchButtonType) -> some View {
         switch type {
         case .settings:
-            SubtleIconButton(systemName: "gearshape", action: openSettingsWindow)
+            SubtleIconButton(systemName: "gearshape", action: {
+                (NSApp.delegate as? AppDelegate)?.openSettingsWindow()
+            })
         case .fileShelf:
             if settings.settings.fileShelfIconEnabled {
                 SubtleIconButton(systemName: "tray.full", action: { navigationStack.append(.nearDrop) })
@@ -1437,45 +1441,6 @@ struct NotchController: View {
     final class KeyWindow: NSWindow {
         override var canBecomeKey: Bool { true }
         override var canBecomeMain: Bool { true }
-    }
-
-    private func openSettingsWindow() {
-        if let window = settingsWindow {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        let newWindow = KeyWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 950, height: 650),
-            styleMask: [.borderless, .resizable, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        newWindow.center()
-        newWindow.isMovableByWindowBackground = false
-        newWindow.backgroundColor = .clear
-        newWindow.isOpaque = false
-        newWindow.hasShadow = true
-        newWindow.isReleasedWhenClosed = false
-
-        let settingsView = SettingsView()
-        let hostingView = NSHostingView(rootView: settingsView
-            .environmentObject(settings)
-            .environment(\.window, newWindow)
-        )
-        hostingView.autoresizingMask = [.width, .height]
-
-        newWindow.contentView = hostingView
-        newWindow.makeKeyAndOrderFront(nil)
-        newWindow.makeFirstResponder(hostingView)
-        NSApp.activate(ignoringOtherApps: true)
-
-        let delegate = SettingsWindowDelegate { self.settingsWindow = nil }
-        newWindow.delegate = delegate
-
-        self.settingsWindow = newWindow
-        self.settingsDelegate = delegate
     }
 }
 

@@ -227,12 +227,14 @@ private struct PrivacyStepView: View {
                     )
                 }
                 .padding(20)
+                .padding(.vertical, 20)
                 .background(.black.opacity(0.2))
                 .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(Color.white.opacity(0.1)))
             }
             .frame(maxHeight: .infinity)
-            .padding(.horizontal, 50)
+            .padding(.horizontal, 60)
+            .padding(.top, 20)
 
             Toggle(isOn: $hasAgreed) {
                 Text("I have read and agree to the collection of anonymous usage data to help improve the app.")

@@ -134,6 +134,7 @@ enum StandardActivityData: Equatable {
     case hud(type: HUDType)
     case reminder(reminder: EKReminder)
     case lockScreen
+    case unlocked
     case updateAvailable(version: String)
 
     static func == (lhs: StandardActivityData, rhs: StandardActivityData) -> Bool {
@@ -154,6 +155,7 @@ enum StandardActivityData: Equatable {
         case let (.nearDrop(a), .nearDrop(b)): return a == b
         case let (.hud(a), .hud(b)): return a == b
         case (.lockScreen, .lockScreen): return true
+        case (.unlocked, .unlocked): return true
         case let (.updateAvailable(a), .updateAvailable(b)): return a == b
         default: return false
         }

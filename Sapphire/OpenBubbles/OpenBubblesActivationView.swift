@@ -99,7 +99,7 @@ struct OpenBubblesActivationView: View {
                     }
                 }
             }
-            .padding([Edge.Set .bottom], 10)
+            .padding()
             .background(.black.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 

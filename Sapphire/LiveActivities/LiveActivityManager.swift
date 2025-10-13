@@ -35,6 +35,7 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
     case nearbyShare = 90
     case eyeBreak = 95
     case systemHUD = 100
+    case unlocked = 105
     case lockScreen = 110
 
     static func < (lhs: ActivityType, rhs: ActivityType) -> Bool { return lhs.rawValue < rhs.rawValue }
@@ -245,13 +246,13 @@ class LiveActivityManager: ObservableObject {
 
     // MARK: - Activity Management
     private func evaluateAndDisplayActivity() {
+        if currentActivity == .systemHUD || currentActivity == .unlocked {
+            return
+        }
+
         let now = Date()
         snoozedActivities = snoozedActivities.filter { $0.value > now }
         dismissedNotifications = dismissedNotifications.filter { $0.value > now }
-
-        if currentActivity == .systemHUD {
-            return
-        }
 
         if let (type, content, duration) = checkForLockScreenActivity() {
             setActivity(type: type, content: content, dismissAfter: duration)
@@ -268,7 +269,7 @@ class LiveActivityManager: ObservableObject {
 
         for activityType in finalEvaluationOrder.sorted(by: >) {
             guard snoozedActivities[activityType] == nil else { continue }
-            guard let checker = activityCheckers[activityType], activityType != .lockScreen else { continue }
+            guard let checker = activityCheckers[activityType] else { continue }
 
             if activeAppMonitor.isFullScreen {
                 if let liveActivitySettingsType = activityType.toLiveActivityType(),
@@ -310,9 +311,15 @@ class LiveActivityManager: ObservableObject {
 
         if let duration = duration {
             self.dismissalTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
-                guard let self = self, self.currentActivity == type else { return }
+                guard let self = self else { return }
+                guard self.currentActivity == type else { return }
+
                 self.dismissalTimer = nil
                 self.handleActivityDismissal(for: type)
+
+                self.currentActivity = .none
+                self.activityContent = .none
+
                 self.evaluateAndDisplayActivity()
             }
         }
@@ -689,7 +696,9 @@ class LiveActivityManager: ObservableObject {
     func finishLockScreenActivity() {
         guard isScreenLocked else { return }
         self.isScreenLocked = false
-        evaluateAndDisplayActivity()
+
+        let content = LiveActivityContent.standard(data: .unlocked, id: "unlock_activity")
+        setActivity(type: .unlocked, content: content, dismissAfter: 1.5)
     }
 
     func startGeminiLive() { guard currentGeminiPayload == nil else { return }; self.currentGeminiPayload = GeminiPayload(isMicMuted: geminiLiveManager.isMicMuted); evaluateAndDisplayActivity() }
