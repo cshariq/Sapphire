@@ -17,7 +17,7 @@ See the [Table of Contents](#table-of-contents) for different ways to help and d
 ## Code of Conduct
 
 This project and everyone participating in it is governed by the
-[CONTRIBUTING.md Code of Conduct](blob/master/CODE_OF_CONDUCT.md).
+[CONTRIBUTING.md Code of Conduct](CODE_OF_CONDUCT.md).
 By participating, you are expected to uphold this code.
 
 
