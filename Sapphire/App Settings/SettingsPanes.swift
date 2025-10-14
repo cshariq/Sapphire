@@ -5173,7 +5173,7 @@ struct AboutSettingsView: View {
                     Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 100, height: 100).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous)).padding(.trailing, 10)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Sapphire").font(.largeTitle.weight(.bold))
-                        Text("Version \(currentAppVersion) (Beta)").foregroundStyle(.secondary).textSelection(.enabled)
+                        Text("Version \(currentAppVersion)").foregroundStyle(.secondary).textSelection(.enabled)
 
                         HStack(spacing: 10) {
                             Link(destination: URL(string: "https://cshariq.github.io/Sapphire-Website/")!) {
