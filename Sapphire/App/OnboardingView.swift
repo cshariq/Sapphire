@@ -218,12 +218,12 @@ private struct PrivacyStepView: View {
 
                     PrivacySection(
                         title: "Data We NEVER Collect",
-                        content: "We are committed to your privacy. We DO NOT collect, store, or transmit any personal or sensitive information. This includes, but is not limited to:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps\n• Your location or IP address"
+                        content: "We are committed to your privacy. We DO NOT collect, store, or transmit any personal or sensitive information. This includes, but is not limited to:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps"
                     )
 
                     PrivacySection(
                         title: "Data Storage & Third Parties",
-                        content: "Anonymous data is processed by trusted third-party services for analytics. This data is always aggregated and cannot be used to identify you. We do not sell or share your data."
+                        content: "Anonymous data is processed by google for analytics. This data is always aggregated and cannot be used to identify you."
                     )
                 }
                 .padding(20)
