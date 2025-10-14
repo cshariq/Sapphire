@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-09-01.
 //
-//
 
 import SwiftUI
 import EventKit

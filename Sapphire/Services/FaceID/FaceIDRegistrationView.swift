@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-09-26
 //
-//
 
 import SwiftUI
 
@@ -14,7 +13,6 @@ struct FaceIDRegistrationView: View {
 
     let profileName: String
 
-    @State private var resetOnDisappear = true
     @State private var isPulsating = false
 
     private var isRegistered: Bool {
@@ -116,9 +114,6 @@ struct FaceIDRegistrationView: View {
         .onAppear {
             cameraController.startRegistration(forProfile: profileName)
             isPulsating = true
-        }
-        .onDisappear {
-            cameraController.stopSession()
         }
         .onChange(of: isRegistered) { registered in
             if registered {

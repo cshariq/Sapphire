@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-10-07
 //
-//
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -314,7 +313,7 @@ enum MusicPlayerButtonType: String, Codable, CaseIterable, Identifiable, Equatab
 struct Settings: Codable, Equatable {
     var enableXDRBrightness: Bool = true
     var brightness: Float = 1.0
-    var xdrBrightnessLevel: Float = 1.59
+    var xdrBrightnessLevel: Float = getDeviceMaxBrightness()
     var xdrBrightnessLock: Bool = false
 
     var useCustomNotchConfiguration: Bool = false
@@ -534,7 +533,7 @@ class SettingsModel: ObservableObject {
 
             loadedSettings.enableXDRBrightness = defaults.object(forKey: "enableXDRBrightness") as? Bool ?? loadedSettings.enableXDRBrightness
             loadedSettings.brightness = defaults.object(forKey: "brightness") as? Float ?? loadedSettings.brightness
-            loadedSettings.xdrBrightnessLevel = defaults.object(forKey: "xdrBrightnessLevel") as? Float ?? loadedSettings.xdrBrightnessLevel
+            loadedSettings.xdrBrightnessLevel = defaults.object(forKey: "xdrBrightnessLevel") as? Float ?? getDeviceMaxBrightness()
             loadedSettings.xdrBrightnessLock = defaults.object(forKey: "xdrBrightnessLock") as? Bool ?? loadedSettings.xdrBrightnessLock
 
             loadedSettings.useCustomNotchConfiguration = defaults.object(forKey: "useCustomNotchConfiguration") as? Bool ?? loadedSettings.useCustomNotchConfiguration

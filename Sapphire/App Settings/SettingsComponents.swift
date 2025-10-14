@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-07-10.
 //
-//
 
 import SwiftUI
 
@@ -325,6 +324,7 @@ struct CustomSliderRowView: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let specifier: String
+    var onEditingChanged: ((Bool) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -333,7 +333,7 @@ struct CustomSliderRowView: View {
                 Spacer()
                 Text(String(format: specifier, value))
             }
-            Slider(value: $value, in: range)
+            Slider(value: $value, in: range, onEditingChanged: { editing in onEditingChanged?(editing)})
         }
         .padding()
     }

@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-07-10.
 //
-//
 
 import Foundation
 import Combine
@@ -70,7 +69,6 @@ struct EyeBreakDailySummary: Identifiable {
     }
 }
 
-@MainActor
 class EyeBreakManager: ObservableObject {
     static let shared = EyeBreakManager()
     private let settingsModel = SettingsModel.shared
@@ -121,19 +119,14 @@ class EyeBreakManager: ObservableObject {
         timer?.invalidate()
         timeUntilNextBreak = workInterval
 
-        DispatchQueue.main.async {
-            self.timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
 
-                if self.timeUntilNextBreak > 0 {
-                    self.timeUntilNextBreak -= 1
-                } else {
-                    self.recordWorkSession()
-                    self.startBreakTimer()
-                }
-            }
-            if let timer = self.timer {
-                RunLoop.main.add(timer, forMode: .common)
+            if self.timeUntilNextBreak > 0 {
+                self.timeUntilNextBreak -= 1
+            } else {
+                self.recordWorkSession()
+                self.startBreakTimer()
             }
         }
     }
@@ -149,22 +142,17 @@ class EyeBreakManager: ObservableObject {
         isDoneButtonEnabled = false
         timeRemainingInBreak = breakInterval
 
-        DispatchQueue.main.async {
-            self.timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
 
-                if self.timeRemainingInBreak > 0 {
-                    self.timeRemainingInBreak -= 1
-                } else {
-                    self.isDoneButtonEnabled = true
-                    if self.soundAlertsEnabled {
-                        NSSound(named: "Glass")?.play()
-                    }
-                    self.timer?.invalidate()
+            if self.timeRemainingInBreak > 0 {
+                self.timeRemainingInBreak -= 1
+            } else {
+                self.isDoneButtonEnabled = true
+                if soundAlertsEnabled {
+                    NSSound(named: "Glass")?.play()
                 }
-            }
-            if let timer = self.timer {
-                RunLoop.main.add(timer, forMode: .common)
+                self.timer?.invalidate()
             }
         }
     }
@@ -180,7 +168,6 @@ class EyeBreakManager: ObservableObject {
     }
 
     private func resetAndStartWork() {
-        isBreakTime = false
         self.startWorkTimer()
     }
 
@@ -196,7 +183,7 @@ class EyeBreakManager: ObservableObject {
     private func recordBreakSession(completed: Bool) {
         let session = EyeBreakSession(
             type: .break,
-            duration: completed ? breakInterval : (breakInterval - timeRemainingInBreak),
+            duration: completed ? breakInterval : timeRemainingInBreak,
             date: Date(),
             completed: completed
         )

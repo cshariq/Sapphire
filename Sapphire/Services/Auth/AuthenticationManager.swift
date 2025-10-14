@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-07-07.
 //
-//
 
 import Foundation
 import Combine
@@ -26,268 +25,163 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     @Published var isPasswordSet: Bool = false
     @Published var monitoredPeripheralState: CBPeripheralState = .disconnected
 
-    public lazy var cameraController = CameraController()
+    @Published var registeredFaceProfiles: [String] = []
+    @Published var faceRegistrationController: CameraController?
+    private(set) var profileNameToRegister: String = ""
 
+    private var cameraController: CameraController?
     public let ble = BLE()
-
     private let settings = SettingsModel.shared
     private var cancellables = Set<AnyCancellable>()
-
     private var isBluetoothAuthenticating = false
     private var isFaceIDAuthenticating = false
-
     private let passwordAccount = "SapphireUserPassword"
 
     private override init() {
         super.init()
         self.ble.delegate = self
-
         self.selectedDeviceID = settings.settings.bluetoothUnlockDeviceID
         self.isEnabled = settings.settings.bluetoothUnlockEnabled
         self.isPasswordSet = KeychainManager.shared.load(for: passwordAccount) != nil
-
         setupBindings()
         setupSettingsObserver()
+        fetchRegisteredFaces()
+    }
+
+    func fetchRegisteredFaces() {
+        self.registeredFaceProfiles = FaceDataStore.shared.getRegisteredProfileNames()
+    }
+
+    func beginFaceRegistration(profileName: String) {
+        self.profileNameToRegister = profileName
+        self.faceRegistrationController = CameraController()
+    }
+
+    func completeFaceRegistration() {
+        self.faceRegistrationController = nil
+        self.fetchRegisteredFaces()
+        MLModelManager.shared.unloadModels()
+    }
+
+    func deleteFaceProfile(name: String) {
+        FaceDataStore.shared.deleteProfile(name: name)
+        fetchRegisteredFaces()
+    }
+
+    func startFaceIDAuthentication() {
+        guard !isFaceIDAuthenticating, settings.settings.faceIDUnlockEnabled, settings.settings.hasRegisteredFaceID, self.cameraController == nil else { return }
+        print("LOG (FaceID): Creating new CameraController instance for authentication.")
+        isFaceIDAuthenticating = true
+        self.cameraController = CameraController()
+        self.cameraController?.startAuthentication()
+    }
+
+    private func tearDownFaceID() {
+        guard isFaceIDAuthenticating else { return }
+        print("LOG (FaceID): Tearing down Face ID engine.")
+        isFaceIDAuthenticating = false
+
+        cameraController?.teardown()
+        cameraController = nil
+
+        MLModelManager.shared.unloadModels()
+    }
+
+    func stopAllAuthentication() {
+        if isBluetoothAuthenticating {
+            isBluetoothAuthenticating = false; ble.monitoredUUID = nil; status = "Disabled"; self.monitoredPeripheralState = .disconnected
+        }
+        if isFaceIDAuthenticating {
+            tearDownFaceID()
+        }
+    }
+
+    func handleUnlock() {
+        if settings.settings.bluetoothUnlockWakeOnProximity { (NSApp.delegate as? AppDelegate)?.wakeDisplay() }
+        if settings.settings.bluetoothUnlockWakeWithoutUnlocking { return }
+        if isFaceIDAuthenticating {
+            tearDownFaceID()
+        }
+        self.unlockWithPassword()
     }
 
     private func setupBindings() {
         settings.$settings.map(\.bluetoothUnlockEnabled).removeDuplicates().assign(to: \.isEnabled, on: self).store(in: &cancellables)
         settings.$settings.map(\.bluetoothUnlockDeviceID).removeDuplicates().assign(to: \.selectedDeviceID, on: self).store(in: &cancellables)
-
-        $isEnabled.combineLatest($selectedDeviceID)
-            .sink { [weak self] (enabled, deviceID) in
-                self?.updateMonitoringConfig(enabled: enabled, deviceID: deviceID)
-            }
-            .store(in: &cancellables)
+        $isEnabled.combineLatest($selectedDeviceID).sink { [weak self] (enabled, deviceID) in self?.updateMonitoringConfig(enabled: enabled, deviceID: deviceID) }.store(in: &cancellables)
     }
-
     private func setupSettingsObserver() {
-        settings.$settings
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] newSettings in
-                guard let self = self else { return }
-
-                self.ble.lockRSSI = newSettings.bluetoothUnlockLockRSSI
-                self.ble.unlockRSSI = newSettings.bluetoothUnlockUnlockRSSI
-                self.ble.proximityTimeout = newSettings.bluetoothUnlockTimeout
-                self.ble.signalTimeout = newSettings.bluetoothUnlockNoSignalTimeout
-                self.ble.setPassiveMode(newSettings.bluetoothUnlockPassiveMode)
-            }
-            .store(in: &cancellables)
+        settings.$settings.receive(on: DispatchQueue.main).sink { [weak self] newSettings in
+            guard let self = self else { return }
+            self.ble.lockRSSI = newSettings.bluetoothUnlockLockRSSI; self.ble.unlockRSSI = newSettings.bluetoothUnlockUnlockRSSI
+            self.ble.proximityTimeout = newSettings.bluetoothUnlockTimeout; self.ble.signalTimeout = newSettings.bluetoothUnlockNoSignalTimeout
+            self.ble.setPassiveMode(newSettings.bluetoothUnlockPassiveMode)
+        }.store(in: &cancellables)
     }
-
-    func handleDisplayWillSleep() {
-        if isFaceIDAuthenticating {
-            cameraController.stopSession()
-        }
-    }
-
-    func handleDisplayDidWake() {
-        if isFaceIDAuthenticating {
-            cameraController.startSession()
-        }
-    }
-
+    func handleDisplayWillSleep() { cameraController?.teardown() }
+    func handleDisplayDidWake() { if isFaceIDAuthenticating { cameraController?.startAuthentication() } }
     func startBluetoothAuthentication() {
         guard !isBluetoothAuthenticating, isEnabled, isPasswordSet, let deviceID = selectedDeviceID, let uuid = UUID(uuidString: deviceID) else { return }
-        isBluetoothAuthenticating = true
-        ble.startMonitor(uuid: uuid)
-        status = "Monitoring for device..."
+        isBluetoothAuthenticating = true; ble.startMonitor(uuid: uuid); status = "Monitoring for device..."
     }
-
-    func startFaceIDAuthentication() {
-        guard !isFaceIDAuthenticating, settings.settings.faceIDUnlockEnabled, settings.settings.hasRegisteredFaceID else { return }
-        isFaceIDAuthenticating = true
-        cameraController.startAuthentication()
-    }
-
-    func stopAllAuthentication() {
-        if isBluetoothAuthenticating {
-            isBluetoothAuthenticating = false
-            ble.monitoredUUID = nil
-            status = "Disabled"
-            self.monitoredPeripheralState = .disconnected
-        }
-        if isFaceIDAuthenticating {
-            isFaceIDAuthenticating = false
-            cameraController.stopSession()
-            cameraController.handleManualUnlock()
-        }
-    }
-
     func startScan(includeUnnamed: Bool) {
         guard ble.centralMgr.state == .poweredOn else { status = "Bluetooth is off"; return }
-        ble.thresholdRSSI = settings.settings.bluetoothUnlockMinScanRSSI
-
-        scannedDevices.removeAll()
-        ble.devices.removeAll()
-
-        isScanning = true
-        status = "Scanning..."
-        ble.startScanning(includeUnnamed: includeUnnamed)
+        ble.thresholdRSSI = settings.settings.bluetoothUnlockMinScanRSSI; scannedDevices.removeAll(); ble.devices.removeAll()
+        isScanning = true; status = "Scanning..."; ble.startScanning(includeUnnamed: includeUnnamed)
     }
-
     func updateScanFilter(includeUnnamed: Bool) {
-        ble.includeUnnamedDevices = includeUnnamed
-
-        if !includeUnnamed {
-            scannedDevices.removeAll { $0.displayName == "Unnamed Device" }
-        }
+        ble.includeUnnamedDevices = includeUnnamed; if !includeUnnamed { scannedDevices.removeAll { $0.displayName == "Unnamed Device" } }
     }
-
-    func stopScan() {
-        isScanning = false
-        status = isEnabled ? "Monitoring" : "Idle"
-        ble.stopScanning()
-    }
-
-    func selectDevice(uuid: UUID) {
-        settings.settings.bluetoothUnlockDeviceID = uuid.uuidString; stopScan()
-    }
-
-    func forgetDevice() {
-        settings.settings.bluetoothUnlockDeviceID = nil
-        ble.monitoredUUID = nil
-        self.monitoredPeripheralState = .disconnected
-    }
-
+    func stopScan() { isScanning = false; status = isEnabled ? "Monitoring" : "Idle"; ble.stopScanning() }
+    func selectDevice(uuid: UUID) { settings.settings.bluetoothUnlockDeviceID = uuid.uuidString; stopScan() }
+    func forgetDevice() { settings.settings.bluetoothUnlockDeviceID = nil; ble.monitoredUUID = nil; self.monitoredPeripheralState = .disconnected }
     func manualLock() { handleLock() }
-
-    func removePassword() {
-        _ = KeychainManager.shared.delete(for: passwordAccount)
-        self.isPasswordSet = false
-    }
-
+    func removePassword() { _ = KeychainManager.shared.delete(for: passwordAccount); self.isPasswordSet = false }
     func verifyAndSavePassword(_ password: String) -> Bool {
-        let process = Process()
-        process.launchPath = "/usr/bin/sudo"; process.arguments = ["-S", "-v"]
-        let pipe = Pipe(); process.standardInput = pipe
-        process.launch()
-        if let data = (password + "\n").data(using: .utf8) {
-            try? pipe.fileHandleForWriting.write(contentsOf: data)
-            try? pipe.fileHandleForWriting.close()
-        }
-        process.waitUntilExit()
-
-        let success = process.terminationStatus == 0
-        if success { _ = savePasswordToKeychain(password); self.isPasswordSet = true }
-        return success
+        let process = Process(); process.launchPath = "/usr-bin/sudo"; process.arguments = ["-S", "-v"]; let pipe = Pipe(); process.standardInput = pipe; process.launch()
+        if let data = (password + "\n").data(using: .utf8) { try? pipe.fileHandleForWriting.write(contentsOf: data); try? pipe.fileHandleForWriting.close() }
+        process.waitUntilExit(); let success = process.terminationStatus == 0
+        if success { _ = savePasswordToKeychain(password); self.isPasswordSet = true }; return success
     }
-
     private func updateMonitoringConfig(enabled: Bool, deviceID: String?) {
-        if enabled, self.isPasswordSet, deviceID != nil {
-            if !isBluetoothAuthenticating { status = "Ready to monitor" }
-        } else {
-            status = "Disabled"
-            self.monitoredPeripheralState = .disconnected
-        }
+        if enabled, self.isPasswordSet, deviceID != nil { if !isBluetoothAuthenticating { status = "Ready to monitor" } } else { status = "Disabled"; self.monitoredPeripheralState = .disconnected }
     }
-
-    var isScreenLocked: Bool {
-        (NSApp.delegate as? AppDelegate)?.isScreenLocked ?? false
-    }
-
-    func handleUnlock() {
-        if settings.settings.bluetoothUnlockWakeOnProximity, let appDelegate = NSApp.delegate as? AppDelegate {
-            appDelegate.wakeDisplay()
-        }
-        if settings.settings.bluetoothUnlockWakeWithoutUnlocking { return }
-        if cameraController.captureSession.isRunning { cameraController.stopSession() }
-        self.unlockWithPassword()
-    }
-
+    var isScreenLocked: Bool { (NSApp.delegate as? AppDelegate)?.isScreenLocked ?? false }
     private func unlockWithPassword() {
-        guard let encrypted = KeychainManager.shared.load(for: passwordAccount) else { showPasswordPrompt(); return }
-        guard let decrypted = CryptoManager.shared.decrypt(data: encrypted), let password = String(data: decrypted, encoding: .utf8) else { showPasswordPrompt(); return }
-
-        status = "Unlocking..."
-        guard let source = CGEventSource(stateID: .hidSystemState) else { status = "Unlock failed"; return }
-        let tapLocation = CGEventTapLocation.cghidEventTap
-
-        let chunkSize = 20
-        let utf16chars = Array(password.utf16)
-        let totalChars = utf16chars.count
-        var offset = 0
-
-        while offset < totalChars {
-            let chunkLength = min(chunkSize, totalChars - offset)
-            var chunk = Array(utf16chars[offset..<(offset + chunkLength)])
-
-            let passwordEvent = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
-            passwordEvent?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
-            passwordEvent?.post(tap: tapLocation)
-
-            offset += chunkLength
+        guard let encrypted = KeychainManager.shared.load(for: passwordAccount), let decrypted = CryptoManager.shared.decrypt(data: encrypted), let password = String(data: decrypted, encoding: .utf8) else { showPasswordPrompt(); return }
+        status = "Unlocking..."; guard let source = CGEventSource(stateID: .hidSystemState) else { status = "Unlock failed"; return }; let tapLocation = CGEventTapLocation.cghidEventTap
+        let utf16chars = Array(password.utf16); var offset = 0
+        while offset < utf16chars.count {
+            var chunk = Array(utf16chars[offset..<min(offset + 20, utf16chars.count)])
+            let pwEvent = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+            pwEvent?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk); pwEvent?.post(tap: tapLocation); offset += 20
         }
-
-        let returnDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
-        let returnUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
-        returnDown?.post(tap: tapLocation)
-        returnUp?.post(tap: tapLocation)
-
-        status = "Unlocked"
+        let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true); let retUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
+        retDown?.post(tap: tapLocation); retUp?.post(tap: tapLocation); status = "Unlocked"
     }
-
-    // MARK: - BLEDelegate Methods (Corrected)
-
-    func newDevice(device: Device) {
-        updateDevice(device: device)
-    }
-
+    func newDevice(device: Device) { updateDevice(device: device) }
     func updateDevice(device: Device) {
-        if let index = scannedDevices.firstIndex(where: { $0.id == device.id }) {
-            scannedDevices[index] = device
-        } else {
-            scannedDevices.append(device)
-        }
+        if let index = scannedDevices.firstIndex(where: { $0.id == device.id }) { scannedDevices[index] = device } else { scannedDevices.append(device) }
         scannedDevices.sort { $0.displayName < $1.displayName }
     }
-
-    func removeDevice(device: Device) {
-        scannedDevices.removeAll { $0.id == device.id }
-    }
-
+    func removeDevice(device: Device) { scannedDevices.removeAll { $0.id == device.id } }
     func updateRSSI(rssi: Int?, active: Bool) {
-        self.lastRSSI = rssi
-        guard let currentRSSI = rssi else { status = "Searching for device..."; return }
-        let unlockThreshold = settings.settings.bluetoothUnlockUnlockRSSI
-        let lockThreshold = settings.settings.bluetoothUnlockLockRSSI
-        if currentRSSI >= unlockThreshold { status = "Monitoring (Device is Near)" }
-        else if currentRSSI < lockThreshold { status = "Monitoring (Device is Far)" }
-        else { status = "Monitoring (In Safe Zone)" }
+        self.lastRSSI = rssi; guard let rssi = rssi else { status = "Searching..."; return }; let unlock = settings.settings.bluetoothUnlockUnlockRSSI, lock = settings.settings.bluetoothUnlockLockRSSI
+        if rssi >= unlock { status = "Monitoring (Near)" } else if rssi < lock { status = "Monitoring (Far)" } else { status = "Monitoring (Safe Zone)" }
     }
-
-    func bluetoothPowerWarn() { status = "Bluetooth is powered off!" }
-
-    func updatePresence(presence: Bool, reason: String) {
-        guard isEnabled && isBluetoothAuthenticating else { return }
-        presence ? handleUnlock() : handleLock()
-    }
-
+    func bluetoothPowerWarn() { status = "Bluetooth is off!" }
+    func updatePresence(presence: Bool, reason: String) { if isEnabled && isBluetoothAuthenticating { presence ? handleUnlock() : handleLock() } }
     private func handleLock() {
         if !isScreenLocked {
             if settings.settings.bluetoothUnlockPauseMusicOnLock { MusicManager.shared.pause() }
             settings.settings.bluetoothUnlockUseScreensaver ? startScreenSaver() : (_ = SACLockScreenImmediate())
-            if settings.settings.bluetoothUnlockTurnOffScreenOnLock {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    (NSApp.delegate as? AppDelegate)?.sleepDisplay()
-                }
-            }
+            if settings.settings.bluetoothUnlockTurnOffScreenOnLock { DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { (NSApp.delegate as? AppDelegate)?.sleepDisplay() } }
         }
     }
-
-    private func startScreenSaver() {
-        let process = Process()
-        process.launchPath = "/usr/bin/open"; process.arguments = ["-a", "ScreenSaverEngine"]
-        try? process.run()
-    }
-
+    private func startScreenSaver() { let p = Process(); p.launchPath = "/usr/bin/open"; p.arguments = ["-a", "ScreenSaverEngine"]; try? p.run() }
     private func savePasswordToKeychain(_ password: String) -> Bool {
         guard let data = password.data(using: .utf8), let encrypted = CryptoManager.shared.encrypt(data: data) else { return false }
         return KeychainManager.shared.save(key: encrypted, for: passwordAccount)
     }
-
-    private func showPasswordPrompt() {
-        NotificationCenter.default.post(name: .init("SapphireShowPasswordPrompt"), object: nil)
-    }
+    private func showPasswordPrompt() { NotificationCenter.default.post(name: .init("SapphireShowPasswordPrompt"), object: nil) }
 }

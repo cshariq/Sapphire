@@ -4,19 +4,100 @@
 //
 //  Created by Shariq Charolia on 2025-05-08.
 //
-//
 
 import SwiftUI
 import AppKit
+import CoreGraphics
+
+private enum NotchDeviceClass: String {
+    case macBookPro14
+    case macBookPro16
+    case macBookAir13
+    case macBookAir15
+    case unknown
+}
+
+public enum DisplayDetection {
+
+    public enum DeviceClass {
+        case macBookPro14
+        case macBookPro16
+        case macBookAir13
+        case macBookAir15
+        case unknown
+    }
+
+    public static func detectDeviceClass() -> DeviceClass {
+        guard let model = getModelIdentifier() else {
+            return .unknown
+        }
+
+        switch model {
+        case "MacBookPro18,3", "MacBookPro18,4", "Mac14,5", "Mac14,9", "Mac15,3", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,1", "Mac16,6", "Mac16,8":
+            return .macBookPro14
+
+        case "MacBookPro18,1", "MacBookPro18,2", "Mac14,6", "Mac14,10", "Mac15,7", "Mac15,9", "Mac15,11", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,5", "Mac16,7":
+            return .macBookPro16
+
+        case "MacBookAir10,1", "Mac14,2", "Mac15,12", "Mac16,12":
+            return .macBookAir13
+
+        case "Mac14,15", "Mac15,13", "Mac16,13":
+            return .macBookAir15
+
+        default:
+            return .unknown
+        }
+    }
+}
 
 struct NotchConfiguration {
+    // MARK: - Device-based Base Notch Sizes
+    private static func baseNotchSize() -> (width: CGFloat, height: CGFloat) {
+        switch DisplayDetection.detectDeviceClass() {
+        case .macBookPro14:
+            return (width: 205, height: 34)
+        case .macBookPro16:
+            return (width: 195, height: 32)
+        case .macBookAir13:
+            return (width: 190, height: 30)
+        case .macBookAir15:
+            return (width: 205, height: 32)
+        case .unknown:
+            return (width: 195, height: 32)
+        }
+    }
+
+    private static func deviceBaselineLogicalResolution() -> CGSize {
+        switch DisplayDetection.detectDeviceClass() {
+        case .macBookPro14:
+            return CGSize(width: 1512, height: 982)
+        case .macBookPro16:
+            return CGSize(width: 1728, height: 1117)
+        case .macBookAir13:
+            return CGSize(width: 1470, height: 956)
+        case .macBookAir15:
+            return CGSize(width: 1710, height: 1107)
+        case .unknown:
+            return CGSize(width: 1728, height: 1117)
+        }
+    }
     // MARK: - Screen Size Adjustments
-    static var screenWidthAdjustment: CGFloat = (NSScreen.main?.frame.size.width ?? 1728) / 1728
-    static var screenHeightAdjustment: CGFloat = (NSScreen.main?.frame.size.height ?? 1117) / 1117
+    static var screenWidthAdjustment: CGFloat {
+        let baseline = deviceBaselineLogicalResolution()
+        let currentWidth = NSScreen.main?.frame.size.width ?? baseline.width
+        return currentWidth / baseline.width
+    }
+
+    static var screenHeightAdjustment: CGFloat {
+        let baseline = deviceBaselineLogicalResolution()
+        let currentHeight = NSScreen.main?.frame.size.height ?? baseline.height
+        return currentHeight / baseline.height
+    }
 
     // MARK: - Basic Size Configuration
-    static var universalWidth: CGFloat = 195 * screenWidthAdjustment
-    static var universalHeight: CGFloat = 32 * screenHeightAdjustment
+    static var universalWidth: CGFloat { baseNotchSize().width * screenWidthAdjustment }
+    static var universalHeight: CGFloat { baseNotchSize().height * screenHeightAdjustment }
     static var initialSize: CGSize { CGSize(width: universalWidth, height: universalHeight) }
     static var initialCornerRadius: CGFloat = 10 * screenHeightAdjustment
 

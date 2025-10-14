@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-07-10.
 //
-//
 
 import SwiftUI
 import Charts
@@ -2386,14 +2385,13 @@ struct ProximityUnlockSettingsView: View {
     @ObservedObject private var authManager = AuthenticationManager.shared
 
     @State private var showPasswordPrompt = false
-    @State private var showFaceIDRegistration = false
-    @State private var faceProfileToRegister: String?
     @State private var showUnnamedDevices = false
     @State private var isFindingByDistance = false
     @State private var isCalibratingRSSI = false
 
     private let deviceRowHeight: CGFloat = 38
     private let maxDeviceListHeight: CGFloat = 228
+
     private var isBluetoothEnabled: Binding<Bool> {
         Binding<Bool>(
             get: { settings.settings.bluetoothUnlockEnabled },
@@ -2415,10 +2413,6 @@ struct ProximityUnlockSettingsView: View {
                 if newValue {
                     if !authManager.isPasswordSet {
                         showPasswordPrompt = true
-                    } else if authManager.cameraController.faceDataStore.getRegisteredProfileNames().isEmpty {
-                        self.faceProfileToRegister = "Primary Face"
-                        settings.settings.faceIDUnlockEnabled = true
-                        showFaceIDRegistration = true
                     } else {
                         settings.settings.faceIDUnlockEnabled = true
                     }
@@ -2436,11 +2430,7 @@ struct ProximityUnlockSettingsView: View {
     }
 
     private var filteredScannedDevices: [Device] {
-        if showUnnamedDevices {
-            return authManager.scannedDevices
-        } else {
-            return authManager.scannedDevices.filter { $0.displayName != "Unnamed Device" }
-        }
+        return showUnnamedDevices ? authManager.scannedDevices : authManager.scannedDevices.filter { $0.displayName != "Unnamed Device" }
     }
 
     // MARK: - Body
@@ -2448,14 +2438,11 @@ struct ProximityUnlockSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
-
                 InfoContainer(text: "WARNING: All these features are in development and may not work as expected. They might cause unexpected unlocks on your mac. Use at your own risk.", iconName: "exclamationmark.triangle.fill", color: .red)
-
                 authenticationSection
                 faceIDSection
                 bluetoothUnlockSection
                 actionsSection
-
             }
             .padding(25)
         }
@@ -2466,18 +2453,19 @@ struct ProximityUnlockSettingsView: View {
                 }
             }
         }
-        .sheet(isPresented: $showFaceIDRegistration) {
+        .sheet(item: $authManager.faceRegistrationController, onDismiss: {
+            authManager.completeFaceRegistration()
+        }) { controller in
             FaceIDRegistrationView(
-                cameraController: authManager.cameraController,
-                profileName: faceProfileToRegister ?? "Face"
+                cameraController: controller,
+                profileName: authManager.profileNameToRegister
             )
         }
         .sheet(isPresented: $isFindingByDistance) {
             FindDeviceByDistanceWizard()
         }
         .sheet(isPresented: $isCalibratingRSSI) {
-            CalibrateRSSIView()
-                .environmentObject(settings)
+            CalibrateRSSIView().environmentObject(settings)
         }
     }
 
@@ -2499,7 +2487,6 @@ struct ProximityUnlockSettingsView: View {
     private var authenticationSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Authentication").font(.headline).padding([.horizontal, .top])
-
             if authManager.isPasswordSet {
                 HStack {
                     Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
@@ -2511,16 +2498,14 @@ struct ProximityUnlockSettingsView: View {
                         settings.settings.bluetoothUnlockEnabled = false
                         settings.settings.faceIDUnlockEnabled = false
                     }
-                }
-                .padding([.horizontal, .bottom])
+                }.padding([.horizontal, .bottom])
             } else {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.yellow)
                     Text("To enable Face ID or Bluetooth Unlock, you must first provide your Mac's login password.")
                     Spacer()
                     Button("Set Password") { showPasswordPrompt = true }
-                }
-                .padding([.horizontal, .bottom])
+                }.padding([.horizontal, .bottom])
             }
         }.modifier(SettingsContainerModifier())
     }
@@ -2534,12 +2519,10 @@ struct ProximityUnlockSettingsView: View {
             if settings.settings.faceIDUnlockEnabled {
                 Divider().padding(.leading, 20)
 
-                let registeredFaces = authManager.cameraController.faceDataStore.getRegisteredProfileNames()
+                let registeredFaces = authManager.registeredFaceProfiles
                 if registeredFaces.isEmpty {
-                    Text("No faces registered. Enable Face ID to add one.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding()
+                    Text("No faces registered. Add a face to begin using Face ID.")
+                        .font(.caption).foregroundColor(.secondary).padding()
                 } else {
                     ForEach(registeredFaces, id: \.self) { profileName in
                         HStack {
@@ -2547,12 +2530,10 @@ struct ProximityUnlockSettingsView: View {
                             Text(profileName)
                             Spacer()
                             Button("Re-Register") {
-                                self.faceProfileToRegister = profileName
-                                showFaceIDRegistration = true
+                                authManager.beginFaceRegistration(profileName: profileName)
                             }
                             Button("Delete", role: .destructive) {
-                                authManager.cameraController.faceDataStore.deleteProfile(name: profileName)
-                                authManager.objectWillChange.send()
+                                authManager.deleteFaceProfile(name: profileName)
                             }
                         }.padding()
                     }
@@ -2562,8 +2543,8 @@ struct ProximityUnlockSettingsView: View {
                     HStack {
                         Spacer()
                         Button(action: {
-                            self.faceProfileToRegister = registeredFaces.isEmpty ? "Primary Face" : "Secondary Face"
-                            showFaceIDRegistration = true
+                            let profileName = registeredFaces.isEmpty ? "Primary Face" : "Secondary Face"
+                            authManager.beginFaceRegistration(profileName: profileName)
                         }) { Label("Add Face", systemImage: "plus.circle.fill") }
                         .buttonStyle(.borderedProminent)
                         Spacer()
@@ -2580,7 +2561,6 @@ struct ProximityUnlockSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             ToggleRow(title: "Enable Bluetooth Unlock", description: "Automatically lock and unlock your Mac using a trusted Bluetooth device.", isOn: isBluetoothEnabled)
                 .disabled(!authManager.isPasswordSet)
-
             Group {
                 if settings.settings.bluetoothUnlockEnabled {
                     Divider().padding(.leading, 20)
@@ -2590,8 +2570,7 @@ struct ProximityUnlockSettingsView: View {
                     Divider().padding(.horizontal)
                     advancedSection
                 }
-            }
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            }.transition(.opacity.combined(with: .move(edge: .top)))
         }
         .modifier(SettingsContainerModifier())
         .opacity(authManager.isPasswordSet ? 1.0 : 0.6)
@@ -2601,13 +2580,10 @@ struct ProximityUnlockSettingsView: View {
     @ViewBuilder
     private var deviceSelectionSection: some View {
         let listHeight = min(maxDeviceListHeight, CGFloat(filteredScannedDevices.count) * deviceRowHeight)
-
         VStack(alignment: .leading, spacing: 10) {
             Text("Trusted Device").font(.subheadline).bold().padding(.horizontal)
-
             if let device = selectedDevice {
-                DeviceRowView(device: device, isSelected: true) {}
-                    .padding(.horizontal)
+                DeviceRowView(device: device, isSelected: true) {}.padding(.horizontal)
                 HStack {
                     pairingStatusView
                     Spacer()
@@ -2618,24 +2594,15 @@ struct ProximityUnlockSettingsView: View {
                 VStack(spacing: 12) {
                     HStack {
                         Button(authManager.isScanning ? "Stop Scanning" : "Scan for Devices") {
-                            if authManager.isScanning { authManager.stopScan() }
-                            else { authManager.startScan(includeUnnamed: showUnnamedDevices) }
+                            if authManager.isScanning { authManager.stopScan() } else { authManager.startScan(includeUnnamed: showUnnamedDevices) }
                         }
                         if authManager.isScanning { ProgressView().scaleEffect(0.8).padding(.leading) }
                     }
-
                     Toggle(isOn: $showUnnamedDevices) { Text("Show unnamed devices") }
-                        .onChange(of: showUnnamedDevices) { _, newValue in
-                            authManager.updateScanFilter(includeUnnamed: newValue)
-                        }
-
+                        .onChange(of: showUnnamedDevices) { _, newValue in authManager.updateScanFilter(includeUnnamed: newValue) }
                     if showUnnamedDevices && authManager.isScanning {
-                        Button("Find by Distance...") { isFindingByDistance = true }
-                            .font(.caption)
-                            .padding(.top, 5)
-                            .transition(.opacity)
+                        Button("Find by Distance...") { isFindingByDistance = true }.font(.caption).padding(.top, 5).transition(.opacity)
                     }
-
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             if authManager.scannedDevices.isEmpty && authManager.isScanning {
@@ -2655,9 +2622,7 @@ struct ProximityUnlockSettingsView: View {
                     .background(Color.black.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .animation(.spring(), value: listHeight)
-                }
-                .padding(.horizontal)
-                .animation(.default, value: showUnnamedDevices)
+                }.padding(.horizontal).animation(.default, value: showUnnamedDevices)
             }
         }.padding(.vertical)
     }
@@ -2670,11 +2635,9 @@ struct ProximityUnlockSettingsView: View {
                 if authManager.selectedDeviceID != nil {
                     Spacer()
                     let rssiString = authManager.lastRSSI.map { "\($0) dBm" } ?? "N/A"
-                    Text("Current Signal: \(rssiString)")
-                        .font(.caption).foregroundColor(.secondary)
+                    Text("Current Signal: \(rssiString)").font(.caption).foregroundColor(.secondary)
                 }
             }.padding(.horizontal)
-
             VStack(spacing: 0) {
                 CustomSliderRowView(label: "Unlock RSSI", value: Binding(get: { Double(settings.settings.bluetoothUnlockUnlockRSSI) }, set: { settings.settings.bluetoothUnlockUnlockRSSI = Int($0) }), range: -100...0, specifier: "%.0f dBm")
                 Divider().padding(.leading, 20)
@@ -4584,11 +4547,13 @@ struct EyeBreakSettingsView: View {
                 label: "Work Interval",
                 value: $settings.settings.eyeBreakWorkInterval,
                 range: 5...60,
-                specifier: "%.0f min"
+                specifier: "%.0f min",
+                onEditingChanged: { isEditing in
+                    if !isEditing {
+                        eyeBreakManager.dismissBreak()
+                    }
+                }
             )
-            .onChange(of: settings.settings.eyeBreakWorkInterval) {
-                eyeBreakManager.dismissBreak()
-            }
 
             Divider().padding(.leading, 20)
 
@@ -4596,11 +4561,13 @@ struct EyeBreakSettingsView: View {
                 label: "Break Duration",
                 value: $settings.settings.eyeBreakBreakDuration,
                 range: 10...60,
-                specifier: "%.0f sec"
+                specifier: "%.0f sec",
+                onEditingChanged: { isEditing in
+                    if !isEditing {
+                        eyeBreakManager.dismissBreak()
+                    }
+                }
             )
-            .onChange(of: settings.settings.eyeBreakBreakDuration) {
-                eyeBreakManager.dismissBreak()
-            }
 
             Divider().padding(.leading, 20)
 

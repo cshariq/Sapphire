@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 2025-09-15
 //
-//
 
 import Vision
 import CoreML
@@ -22,54 +21,38 @@ enum RegistrationStep: CaseIterable, Equatable {
         }
     }
 }
+enum CameraState: Equatable { case idle, registering(RegistrationStep), registeredAndIdle, detecting, recognized, authenticating }
 
-enum CameraState: Equatable {
-    case idle, registering(RegistrationStep), registeredAndIdle, detecting, recognized, authenticating
-}
+class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate, Identifiable {
 
-class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-
+    let id = UUID()
     @Published var appState: CameraState = .idle
     @Published var userInstruction: String = "Press 'Register' to begin."
-    @Published var faceIsRecognized: Bool = false
     @Published var smoothedBoundingBox: CGRect?
     @Published var processedAuthImage: NSImage? = nil
     @Published var processedRegImage: NSImage? = nil
-    @Published var currentDepthScore: Double = 0.0
-    @Published var currentMetricsScore: Double = 0.0
-    @Published var cameraError: String? = nil
     @Published var registrationProgress: Double = 0.0
-
-    private var isAuthenticating = false
 
     let captureSession = AVCaptureSession()
 
+    private var isAuthenticating = false
     private let videoDataOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "com.cshariq.Sapphire.sessionQueue", qos: .userInteractive)
     private let visionQueue = DispatchQueue(label: "com.cshariq.Sapphire.visionQueue", qos: .userInitiated)
-
-    public var faceDataStore = FaceDataStore()
     private let spoofDetector = SpoofDetector()
-
     private var currentRegistrationStep: RegistrationStep = .preparingFace
     private var sampleCounter = 0
     private let totalSamplesToCapture = 32
     private let registrationQualityThreshold: Float = 0.5
-
     private var stableFrameCounter = 0
-    private var requiredStableFrames = 3
+    private let requiredStableFrames = 3
     private var registrationSamples: [(observation: VNFaceObservation, buffer: CVPixelBuffer)] = []
-
-    private var captureCooldown = 0
-    private let captureCooldownFrames = 2
-
-    @Published var isRegistrationMode = false
     private var profileForRegistration: String?
 
     override init() {
         super.init()
         setupSession()
-        if faceDataStore.hasRegisteredFaceprints() {
+        if FaceDataStore.shared.hasRegisteredFaceprints() {
             DispatchQueue.main.async {
                 self.appState = .registeredAndIdle
                 self.userInstruction = "Registered! Press Authenticate."
@@ -77,68 +60,57 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
         }
     }
 
-    func startCameraSession() {
-        sessionQueue.async {
-            if !self.captureSession.isRunning { self.captureSession.startRunning() }
+    deinit {
+        print("LOG (Memory): CameraController deinitializing.")
+        videoDataOutput.setSampleBufferDelegate(nil, queue: nil)
+        if captureSession.isRunning {
+            captureSession.stopRunning()
         }
     }
 
-    func stopCameraSession() {
-        sessionQueue.async {
-            if self.captureSession.isRunning { self.captureSession.stopRunning() }
+    func teardown() {
+        print("LOG (AV): Tearing down CameraController explicitly...")
+
+        sessionQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            if self.videoDataOutput.sampleBufferDelegate != nil {
+                print("LOG (AV): Nullifying sample buffer delegate.")
+                self.videoDataOutput.setSampleBufferDelegate(nil, queue: nil)
+            }
+
+            if self.captureSession.isRunning {
+                print("LOG (AV): Stopping capture session.")
+                self.captureSession.beginConfiguration()
+                self.captureSession.inputs.forEach { self.captureSession.removeInput($0) }
+                self.captureSession.outputs.forEach { self.captureSession.removeOutput($0) }
+                self.captureSession.commitConfiguration()
+                self.captureSession.stopRunning()
+                print("LOG (AV): Capture session stopped and torn down.")
+            }
         }
     }
 
     func startAuthentication() {
         guard !isAuthenticating else { return }
+        MLModelManager.shared.loadModels()
         isAuthenticating = true
-        DispatchQueue.main.async {
-            self.appState = .authenticating
-            self.userInstruction = "Looking for your face..."
-        }
-        startCameraSession()
+        DispatchQueue.main.async { self.appState = .authenticating; self.userInstruction = "Looking for your face..." }
+        sessionQueue.async { if !self.captureSession.isRunning { self.captureSession.startRunning() } }
     }
 
     func startRegistration(forProfile name: String) {
-        isRegistrationMode = true
-        self.profileForRegistration = name
-        registrationSamples.removeAll()
-        sampleCounter = 0
-        stableFrameCounter = 0
-
+        MLModelManager.shared.loadModels()
+        profileForRegistration = name
+        isAuthenticating = false
+        registrationSamples.removeAll(); sampleCounter = 0; stableFrameCounter = 0
         DispatchQueue.main.async {
             self.registrationProgress = 0.0
             self.currentRegistrationStep = .preparingFace
             self.appState = .registering(self.currentRegistrationStep)
             self.updateInstruction()
         }
-        startCameraSession()
-    }
-
-    func reset() {
-        isAuthenticating = false
-        faceDataStore.reset()
-        registrationSamples.removeAll()
-        sampleCounter = 0
-        stableFrameCounter = 0
-        DispatchQueue.main.async {
-            self.appState = .idle
-            self.userInstruction = "Press 'Register' to begin."
-            self.registrationProgress = 0.0
-        }
-    }
-
-    func startSession() { startAuthentication() }
-    func stopSession() { isAuthenticating = false; stopCameraSession() }
-    func handleManualUnlock() {
-        isAuthenticating = false
-        if captureSession.isRunning { stopCameraSession() }
-        DispatchQueue.main.async {
-            if [.authenticating, .detecting, .recognized].contains(self.appState) {
-                self.appState = .registeredAndIdle
-                self.userInstruction = "Authentication stopped"
-            }
-        }
+        sessionQueue.async { if !self.captureSession.isRunning { self.captureSession.startRunning() } }
     }
 
     private func setupSession() {
@@ -146,8 +118,8 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
             self.captureSession.beginConfiguration()
             guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified) else { return }
             do {
-                let deviceInput = try AVCaptureDeviceInput(device: videoDevice)
-                if self.captureSession.canAddInput(deviceInput) { self.captureSession.addInput(deviceInput) }
+                let input = try AVCaptureDeviceInput(device: videoDevice)
+                if self.captureSession.canAddInput(input) { self.captureSession.addInput(input) }
             } catch { print("Camera setup failed: \(error)") }
             if self.captureSession.canSetSessionPreset(.hd1280x720) { self.captureSession.sessionPreset = .hd1280x720 }
             self.videoDataOutput.alwaysDiscardsLateVideoFrames = true
@@ -160,210 +132,79 @@ class CameraController: NSObject, ObservableObject, AVCaptureVideoDataOutputSamp
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard isAuthenticating || isRegistrationMode, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-
+        guard isAuthenticating || profileForRegistration != nil, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let request = VNDetectFaceLandmarksRequest()
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
-
         do {
             try handler.perform([request])
             guard let observation = request.results?.first else {
-                DispatchQueue.main.async { self.smoothedBoundingBox = nil }
-                return
+                DispatchQueue.main.async { self.smoothedBoundingBox = nil }; return
             }
-
-            processFaceObservation(observation, pixelBuffer: pixelBuffer)
-
-        } catch {
-            print("Error performing face detection: \(error)")
-        }
-    }
-
-    private func processFaceObservation(_ observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
-        let newBox = observation.boundingBox
-        DispatchQueue.main.async {
-            if self.smoothedBoundingBox == nil { self.smoothedBoundingBox = newBox }
-            else { self.smoothedBoundingBox = self.smoothedBoundingBox!.lerp(to: newBox, alpha: 0.2) }
-        }
-
-        if isRegistrationMode {
-            handleSimplifiedRegistration(observation: observation, pixelBuffer: pixelBuffer)
-        } else if isAuthenticating {
-            Task {
-                await performAuthenticationChecks(observation: observation, pixelBuffer: pixelBuffer)
+            if profileForRegistration != nil {
+                handleSimplifiedRegistration(observation: observation, pixelBuffer: pixelBuffer)
+            } else if isAuthenticating {
+                Task { await performAuthenticationChecks(observation: observation, pixelBuffer: pixelBuffer) }
             }
-        }
+        } catch { print("Face detection error: \(error)") }
     }
 
     private func handleSimplifiedRegistration(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
-        if captureCooldown > 0 { captureCooldown -= 1; return }
-
         let quality = observation.faceCaptureQuality ?? observation.confidence
-        guard quality >= registrationQualityThreshold else {
-            if currentRegistrationStep == .preparingFace {
-                DispatchQueue.main.async { self.userInstruction = "Please improve lighting or move closer." }
-            }
-            return
-        }
-
+        guard quality >= registrationQualityThreshold else { return }
         switch currentRegistrationStep {
         case .preparingFace:
             let boxCenter = CGPoint(x: observation.boundingBox.midX, y: observation.boundingBox.midY)
-            let isCentered = sqrt(pow(boxCenter.x - 0.5, 2) + pow(boxCenter.y - 0.5, 2)) < 0.1
-            let isFacingForward = abs(observation.yaw?.doubleValue ?? 0) < 0.2 && abs(observation.pitch?.doubleValue ?? 0) < 0.2
-            if isCentered && isFacingForward { stableFrameCounter += 1 } else { stableFrameCounter = 0 }
-
-            DispatchQueue.main.async {
-                self.userInstruction = self.stableFrameCounter > 0 ? "Hold position..." : "Please center your face and look forward."
-            }
-
+            if sqrt(pow(boxCenter.x - 0.5, 2) + pow(boxCenter.y - 0.5, 2)) < 0.1 { stableFrameCounter += 1 } else { stableFrameCounter = 0 }
             if stableFrameCounter >= requiredStableFrames {
-                DispatchQueue.main.async {
-                    self.currentRegistrationStep = .capturingFace
-                    self.appState = .registering(.capturingFace)
-                    self.sampleCounter = 0
-                    self.updateInstruction()
-                }
+                DispatchQueue.main.async { self.currentRegistrationStep = .capturingFace; self.sampleCounter = 0; self.updateInstruction() }
             }
-
         case .capturingFace:
-            captureSample(observation, pixelBuffer)
-            if sampleCounter >= totalSamplesToCapture {
-                advanceToCompletion()
-            }
-        }
-    }
-
-    private func captureSample(_ observation: VNFaceObservation, _ buffer: CVPixelBuffer) {
-        sampleCounter += 1
-        registrationSamples.append((observation, buffer))
-        captureCooldown = captureCooldownFrames
-
-        DispatchQueue.main.async {
-            self.registrationProgress = Double(self.sampleCounter) / Double(self.totalSamplesToCapture)
-            self.updateInstruction()
-        }
-
-        if let preparedImage = FaceProcessor.shared.prepareImage(from: buffer, faceObservation: observation) {
-            DispatchQueue.main.async { self.processedRegImage = preparedImage }
+            if sampleCounter < totalSamplesToCapture {
+                registrationSamples.append((observation, pixelBuffer)); sampleCounter += 1
+                DispatchQueue.main.async { self.registrationProgress = Double(self.sampleCounter) / Double(self.totalSamplesToCapture) }
+            } else { advanceToCompletion() }
         }
     }
 
     private func advanceToCompletion() {
-        guard let profileName = self.profileForRegistration else {
-            print(" CRITICAL: Tried to complete registration without a profile name.")
-            return
-        }
+        guard let profileName = profileForRegistration else { return }
         DispatchQueue.main.async { self.userInstruction = "Processing..." }
-        faceDataStore.register(faceSamples: self.registrationSamples, forProfile: profileName)
+        FaceDataStore.shared.register(faceSamples: self.registrationSamples, forProfile: profileName)
+        registrationSamples.removeAll(); profileForRegistration = nil
+        DispatchQueue.main.async { self.appState = .registeredAndIdle; self.userInstruction = "Registration Complete!" }
+    }
+
+    private func performAuthenticationChecks(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) async {
+        guard isAuthenticating, let preparedImage = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) else { return }
+        let faceScore = FaceDataStore.shared.getSimilarityScore(for: preparedImage)
+        if faceScore >= 0.90 { FaceDataStore.shared.learnNewFaceprint(faceImage: preparedImage) }
+        guard faceScore >= 0.75 else { return }
+        let depthScore = await FaceDataStore.shared.getDepthSimilarity(for: pixelBuffer)
+        let metricsScore = FacialMetricsCalculator.calculateMetrics(from: observation).map { FaceDataStore.shared.getMetricsSimilarity(for: $0) } ?? 0.0
+        if faceScore >= 0.8 && depthScore >= 0.75 && metricsScore >= 0.85 {
+            await MainActor.run { self.completeAuthentication(reason: "Fast Lane Match") }; return
+        }
+        let spoofConfidence = spoofDetector.getSpoofConfidence(observation: observation, depthScore: depthScore, metricsScore: metricsScore, faceSimilarity: faceScore)
+        if spoofConfidence != .low && (faceScore >= 0.85 || spoofConfidence == .high) {
+            await MainActor.run { self.completeAuthentication(reason: "Confident Match") }
+        }
+    }
+
+    private func completeAuthentication(reason: String) {
+        guard isAuthenticating else { return }
+        isAuthenticating = false
+        print(" AUTHENTICATION SUCCESSFUL! Reason: \(reason)")
         DispatchQueue.main.async {
-            self.appState = .registeredAndIdle
-            self.userInstruction = "Registration Complete!"
-            self.isRegistrationMode = false
-            self.profileForRegistration = nil
-            self.stopCameraSession()
+            self.appState = .recognized; self.userInstruction = "Authenticated!"
+            AuthenticationManager.shared.handleUnlock()
         }
     }
 
     private func updateInstruction() {
         DispatchQueue.main.async {
-            if case .registering(let step) = self.appState {
-                self.userInstruction = step == .capturingFace ? "Capturing... \(self.sampleCounter)/\(self.totalSamplesToCapture)" : step.instruction
+            if self.profileForRegistration != nil {
+                self.userInstruction = self.currentRegistrationStep == .capturingFace ? "Capturing... \(self.sampleCounter)/\(self.totalSamplesToCapture)" : self.currentRegistrationStep.instruction
             }
         }
-    }
-
-    private func performAuthenticationChecks(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) async {
-        guard isAuthenticating, let preparedImage = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) else { return }
-
-        let faceScore = faceDataStore.getSimilarityScore(for: preparedImage)
-
-        if faceScore >= 0.90 {
-            print(" High-confidence match (\(String(format: "%.2f", faceScore * 100))%). Learning face variation.")
-            faceDataStore.learnNewFaceprint(faceImage: preparedImage)
-        }
-
-        let mediumConfidenceThreshold: Double = 0.75
-        guard faceScore >= mediumConfidenceThreshold else { return }
-
-        let depthScore = await faceDataStore.getDepthSimilarity(for: pixelBuffer)
-        let metricsScore = FacialMetricsCalculator.calculateMetrics(from: observation).map { faceDataStore.getMetricsSimilarity(for: $0) } ?? 0.0
-
-        let excellentFaceScoreThreshold: Double = 0.8
-        let excellentDepthScoreThreshold: Double = 0.75
-        let excellentmetricsScoreThreshold: Double = 0.85
-
-        if faceScore >= excellentFaceScoreThreshold && depthScore >= excellentDepthScoreThreshold && metricsScore >= excellentmetricsScoreThreshold{
-            await MainActor.run {
-                self.completeAuthentication(reason: "Fast Lane Match", faceScore: faceScore, metricsScore: metricsScore, depthScore: depthScore)
-            }
-            return
-        }
-
-        let spoofConfidence = spoofDetector.getSpoofConfidence(observation: observation, depthScore: depthScore, metricsScore: metricsScore, faceSimilarity: faceScore)
-        let highConfidenceThreshold: Double = 0.85
-
-        var authenticated = false
-        var reason = "No Match"
-
-        if spoofConfidence != .low {
-            if faceScore >= highConfidenceThreshold {
-                authenticated = true
-                reason = "Excellent Match"
-            } else if spoofConfidence == .high {
-                authenticated = true
-                reason = "Confident Match (Verified)"
-            }
-        } else {
-            reason = "Spoof Detected"
-        }
-
-        await MainActor.run {
-            guard self.isAuthenticating else { return }
-            self.currentMetricsScore = metricsScore
-            self.currentDepthScore = depthScore
-            self.processedAuthImage = preparedImage
-
-            if authenticated {
-                self.completeAuthentication(reason: reason, faceScore: faceScore, metricsScore: metricsScore, depthScore: depthScore)
-            } else {
-                let scoreStr = String(format: "Face: %.2f", faceScore)
-                self.userInstruction = "Verifying... (\(scoreStr))"
-            }
-        }
-    }
-
-    private func completeAuthentication(reason: String, faceScore: Double, metricsScore: Double, depthScore: Double) {
-        guard isAuthenticating else { return }
-        isAuthenticating = false
-
-        print(" AUTHENTICATION SUCCESSFUL!")
-        print("   - Reason: \(reason)")
-        print("   - Final Scores:")
-        print(String(format: "     - Face Similarity: %.3f", faceScore))
-        print(String(format: "     - Facial Metrics:  %.3f", metricsScore))
-        print(String(format: "     - Depth Score:     %.3f", depthScore))
-        print("-------------------------------------------------")
-
-        DispatchQueue.main.async {
-            self.appState = .recognized
-            self.faceIsRecognized = true
-            self.userInstruction = "Authenticated!"
-            AuthenticationManager.shared.handleUnlock()
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.stopCameraSession()
-            }
-        }
-    }
-}
-
-extension CGRect {
-    func lerp(to other: CGRect, alpha: CGFloat) -> CGRect {
-        let x = self.origin.x + (other.origin.x - self.origin.x) * alpha
-        let y = self.origin.y + (other.origin.y - self.origin.y) * alpha
-        let width = self.width + (other.width - self.width) * alpha
-        let height = self.height + (other.height - self.height) * alpha
-        return CGRect(x: x, y: y, width: width, height: height)
     }
 }

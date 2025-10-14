@@ -4,7 +4,6 @@
 //
 //  Created by Shariq Charolia on 205-07-06.
 //
-//
 
 import SwiftUI
 import NearbyShare
