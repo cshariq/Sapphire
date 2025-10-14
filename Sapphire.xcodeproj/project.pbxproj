@@ -119,6 +119,7 @@
 		DABC6CDF2E17458500A5CF83 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49B92E15DB160049937A /* UserNotifications.framework */; };
 		DABC6CE12E17458600A5CF83 /* UserNotificationsUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49B82E15DB160049937A /* UserNotificationsUI.framework */; };
 		DABC6CE32E1749CA00A5CF83 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DABC6CD72E17455F00A5CF83 /* CoreGraphics.framework */; };
+		DAC019172E9E9E3100CA587F /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = DAC019162E9E9E3100CA587F /* FirebaseCrashlytics */; };
 		DACA665D2E8B5FCE0056ED60 /* sharing_enums.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACA665B2E8B5FCE0056ED60 /* sharing_enums.pb.swift */; };
 		DACA665E2E8B5FCE0056ED60 /* SymmetricKey+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACA665C2E8B5FCE0056ED60 /* SymmetricKey+Extensions.swift */; };
 		DACA66622E8B70E60056ED60 /* QRCode in Frameworks */ = {isa = PBXBuildFile; productRef = DACA66612E8B70E60056ED60 /* QRCode */; };
@@ -566,6 +567,7 @@
 				DABC6CDD2E17457A00A5CF83 /* IOKit.framework in Frameworks */,
 				DA8FB0532E7D898F00C9BD1A /* MobileTimerSupport.framework in Frameworks */,
 				DA9709EE2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport in Frameworks */,
+				DAC019172E9E9E3100CA587F /* FirebaseCrashlytics in Frameworks */,
 				DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */,
 				DA8FB0512E7D898F00C9BD1A /* MobileTimer.framework in Frameworks */,
 			);
@@ -981,6 +983,7 @@
 				DAF7D8AC2E207C5100AB0820 /* CopyFiles */,
 				DA96308D2E8F33D000605F05 /* CopyFiles */,
 				DA343DDF2E550A7700B675ED /* Copy Captcha Solver Framework */,
+				DAC019182E9EA03E00CA587F /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -1000,6 +1003,7 @@
 				DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */,
 				DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */,
 				DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */,
+				DAC019162E9E9E3100CA587F /* FirebaseCrashlytics */,
 			);
 			productName = DynamicNotch;
 			productReference = DA46CF762DCBCA0000F00EC5 /* Sapphire.app */;
@@ -1308,6 +1312,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "# This script finds and force-signs third-party binaries in the app's Resources folder.\n# It first removes any invalid existing signatures before applying the new one.\n\n# Define the path to the directory we need to sign inside the built app product.\nRESOURCE_DIR_TO_SIGN=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/libimobiledevice\"\n\necho \"Signing directory: ${RESOURCE_DIR_TO_SIGN}\"\n\n# Check if the directory actually exists.\nif [ -d \"$RESOURCE_DIR_TO_SIGN\" ]; then\n  # Find all dylibs and any other file with an execute permission bit.\n  # Loop through each found file.\n  find \"$RESOURCE_DIR_TO_SIGN\" -type f \\( -name \"*.dylib\" -o -perm +111 \\) | while read -r file; do\n    echo \"Processing file: $file\"\n    # Step 1: Remove any existing invalid signature.\n    codesign --remove-signature \"$file\" || true # The '|| true' prevents the script from failing if there's no signature to remove.\n    \n    # Step 2: Apply the new, valid signature.\n    echo \"Signing with identity: ${EXPANDED_CODE_SIGN_IDENTITY}\"\n    codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp --options=runtime \"$file\"\n  done\nelse\n  echo \"Warning: Directory to sign not found.\"\nfi\n";
+		};
+		DAC019182E9EA03E00CA587F /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1797,6 +1823,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = P6PV2R9443;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -2283,6 +2310,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAnalyticsIdentitySupport;
+		};
+		DAC019162E9E9E3100CA587F /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
 		};
 		DACA66612E8B70E60056ED60 /* QRCode */ = {
 			isa = XCSwiftPackageProductDependency;

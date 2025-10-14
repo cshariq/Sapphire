@@ -16,6 +16,7 @@ import IOBluetooth
 import ServiceManagement
 import Firebase
 import FirebaseAnalytics
+import FirebaseCrashlytics
 import Network
 
 @MainActor

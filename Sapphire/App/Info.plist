@@ -17,6 +17,8 @@
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict/>
+	<key>NSApplicationCrashOnExceptions</key>
+	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSScreenCaptureUsageDescription</key>

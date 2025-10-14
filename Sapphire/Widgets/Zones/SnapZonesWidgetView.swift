@@ -45,6 +45,8 @@ struct SnapZonesWidgetView: View {
     @State private var previewUpdateTask: Task<Void, Never>?
     @Environment(\.isFileDropTargeted) private var isFileDropTargeted: Binding<Bool>
 
+    private let hoverInset: CGFloat = 8.0
+
     private var viewConfiguration: (layouts: [SnapLayout], isSingleMode: Bool) {
         let allAvailableLayouts = LayoutTemplate.allTemplates + settings.settings.customSnapLayouts
         let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
@@ -189,7 +191,12 @@ struct SnapZonesWidgetView: View {
                 if let layout = viewConfiguration.layouts.first(where: { $0.id == layoutID }) {
                     let localPoint = CGPoint(x: globalMousePoint.x - frame.minX, y: globalMousePoint.y - frame.minY)
                     if let zone = layout.zones.first(where: {
-                        let zoneFrame = CGRect(x: frame.width * $0.x, y: frame.height * $0.y, width: frame.width * $0.width, height: frame.height * $0.height)
+                        let zoneFrame = CGRect(
+                            x: frame.width * $0.x,
+                            y: frame.height * $0.y,
+                            width: frame.width * $0.width,
+                            height: frame.height * $0.height
+                        ).insetBy(dx: hoverInset, dy: hoverInset)
                         return zoneFrame.contains(localPoint)
                     }) {
                         newHover = HoverState(layoutID: layoutID, zoneID: zone.id)
