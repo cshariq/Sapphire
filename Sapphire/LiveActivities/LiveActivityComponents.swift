@@ -437,23 +437,32 @@ struct FilledBatteryIcon: View {
 
 struct BatteryRingView: View {
     let level: Int
+    var color: Color?
 
-    private var color: Color {
-        if level <= 10 { return .red }
-        if level <= 25 { return .yellow }
-        return .green
+    private var setColor: Color {
+        if let unwrappedColor = color {
+            return unwrappedColor
+        } else {
+            if level <= 10 {
+                return .red
+            } else if level <= 25 {
+                return .yellow
+            }
+            return .green
+        }
     }
 
     var body: some View {
         ZStack {
-            Circle().stroke(Color.white.opacity(0.2), lineWidth: 4)
+            Circle().stroke(Color.accentColor.opacity(0.3), lineWidth: 3)
             Circle()
                 .trim(from: 0, to: CGFloat(level) / 100.0)
-                .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .stroke(setColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.easeOut, value: level)
         }
-        .frame(width: 15, height: 15)
+        .frame(width: 14, height: 14)
+        .padding(3)
     }
 }
 

@@ -337,7 +337,7 @@ class SystemHUDManager: ObservableObject {
                         self.currentSpotifyVolumeForAction = Float(spotifyState.volumePercent ?? 0)
                         self.lastCommittedSpotifyVolume = self.currentSpotifyVolumeForAction
                     }
-                    let isFineTuningForSpotify = currentModifiers.contains([.shift, .option])
+                    let isFineTuningForSpotify = currentModifiers.contains(.option) || currentModifiers.contains(.shift)
                     performSpotifyVolumeChange(action: action, isFineTuning: isFineTuningForSpotify)
 
                 } else if isFetchingSpotifyState {
@@ -456,7 +456,7 @@ class SystemHUDManager: ObservableObject {
         guard let currentVolume = self.currentSpotifyVolumeForAction else { return }
 
         let changeDirection: Float = action == .volumeUp ? 1 : -1
-        let step: Float = isFineTuning ? 1.0 : 5.0
+        let step: Float = isFineTuning ? 1.0 : Float(settings.settings.volumesliderstep)
 
         let newSpotifyVolume = (currentVolume + (step * changeDirection)).clamped(to: 0...100)
         self.currentSpotifyVolumeForAction = newSpotifyVolume
@@ -538,6 +538,20 @@ class SystemHUDManager: ObservableObject {
             }
         }
     }
+
+    @MainActor
+    func updateCurrentHUD(to newHUD: HUDType) {
+        self.currentHUD = newHUD
+
+        self.hudDismissalTimer?.invalidate()
+        self.hudDismissalTimer = Timer.scheduledTimer(withTimeInterval: self.settings.settings.hudDuration, repeats: false) { [weak self] _ in
+            self?.currentHUD = nil
+            self?.spotifyStateForAction = nil
+            self?.currentSpotifyVolumeForAction = nil
+            self?.lastCommittedSpotifyVolume = nil
+            self?.isControllingSpotify = false
+        }
+    }
 }
 
 struct SystemHUDView: View {
@@ -611,6 +625,26 @@ struct SystemHUDView: View {
                 level: level,
                 onChanged: { newLevel in
                     SystemControl.setVolume(to: newLevel)
+                    if newLevel == 0.0 {
+                        SystemControl.setMuted(to: true)
+                    } else {
+                        SystemControl.setMuted(to: false)
+                    }
+
+                    if isControllingExternal {
+                        if case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, _, let isControlling, let canControl) = hudManager.currentHUD {
+                            hudManager.updateCurrentHUD(to: .externalDeviceVolume(
+                                deviceName: deviceName,
+                                deviceIcon: deviceIcon,
+                                deviceVolume: deviceVolume,
+                                systemVolume: newLevel,
+                                isControllingExternal: isControlling,
+                                canControlVolume: canControl
+                            ))
+                        }
+                    } else {
+                        hudManager.updateCurrentHUD(to: .volume(level: newLevel, device: device))
+                    }
                 }
             )
             .frame(height: 14)
@@ -657,6 +691,8 @@ struct SystemHUDView: View {
                         SystemControl.setBrightness(to: deNormalizedLevel)
                         SettingsModel.shared.settings.brightness = deNormalizedLevel
                     }
+
+                    hudManager.updateCurrentHUD(to: .brightness(level: deNormalizedLevel))
                 }
             ).frame(height: 14)
 
@@ -681,6 +717,8 @@ struct SystemHUDView: View {
                 level: level,
                 onChanged: { newLevel in
                     SystemControl.setKeyboardBrightness(to: newLevel)
+
+                    hudManager.updateCurrentHUD(to: .keyboardBrightness(level: newLevel))
                 }
             )
             .frame(height: 14)
@@ -756,7 +794,6 @@ struct DynamicSliderIndicator: View {
     @State private var level: Float
     let externalLevel: Float
     var onChanged: ((Float) -> Void)?
-    private let debouncer = Debouncer(delay: 0.05)
     @EnvironmentObject var settings: SettingsModel
     @StateObject private var hudManager = SystemHUDManager.shared
 
@@ -836,7 +873,7 @@ struct DynamicSliderIndicator: View {
             .gesture(DragGesture(minimumDistance: 0).onChanged { value in
                 let newLevel = Float(value.location.x / totalWidth).clamped(to: 0...1)
                 self.level = newLevel
-                debouncer.debounce { onChanged?(newLevel) }
+                onChanged?(newLevel)
             })
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: level)
             .animation(.easeInOut(duration: 0.2), value: indicatorColor)

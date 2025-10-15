@@ -222,7 +222,7 @@ struct NotchController: View {
     }
 
     private var activeScaleFactor: CGFloat {
-        guard let config = config, notchState == .hoverExpanded && !isFullViewActivity else { return 1.0 }
+        guard let config = config, notchState == .hoverExpanded else { return 1.0 }
         return config.scaleFactor
     }
 
@@ -997,7 +997,7 @@ struct NotchController: View {
                     navigationStack = [.fileShelf]
                     notchState = .clickExpanded
                 }
-            } else if settings.settings.expandOnHover {
+        } else if settings.settings.expandOnHover && !isFullViewActivity {
                 if notchState != .clickExpanded {
                     NSApp.activate(ignoringOtherApps: true)
                     notchWindow?.makeKeyAndOrderFront(nil)

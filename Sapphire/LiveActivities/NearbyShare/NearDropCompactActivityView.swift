@@ -23,7 +23,8 @@ struct NearDropCompactActivityView {
         ZStack {
             switch payload.state {
             case .inProgress:
-                FileCircularProgressIndicator(progress: payload.progress ?? 0, size: 15, lineWidth: 3.0)
+                let progressPercentage = Int((payload.progress ?? 0) * 100)
+                BatteryRingView(level: progressPercentage, color: .accentColor)
                     .transition(.opacity.combined(with: .scale(scale: 0.8)))
 
             case .finished:

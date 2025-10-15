@@ -60,7 +60,7 @@ struct NotchConfiguration {
         case .macBookPro16:
             return (width: 195, height: 32)
         case .macBookAir13:
-            return (width: 190, height: 30)
+            return (width: 190, height: 32.5)
         case .macBookAir15:
             return (width: 205, height: 32)
         case .unknown:
@@ -110,11 +110,11 @@ struct NotchConfiguration {
     static var autoExpandedCornerRadius: CGFloat = 13 * screenWidthAdjustment
     static var autoExpandedTallHeight: CGFloat = 80 * screenHeightAdjustment
 
-    static var autoExpandedContentVerticalPadding: CGFloat = 8 * screenWidthAdjustment
+    static var autoExpandedContentVerticalPadding: CGFloat = 8
 
-    static var clickExpandedCornerRadius: CGFloat = 40 * screenWidthAdjustment
+    static var clickExpandedCornerRadius: CGFloat = 40
 
-    static var liveActivityBottomCornerRadius: CGFloat = 18 * screenWidthAdjustment
+    static var liveActivityBottomCornerRadius: CGFloat = 18
 
     static var collapseAnimationDelay: TimeInterval = 0.07
     static var initialOpenCollapseDelay: TimeInterval = 1.5

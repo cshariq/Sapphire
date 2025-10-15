@@ -115,18 +115,19 @@ class EyeBreakManager: ObservableObject {
         isDoneButtonEnabled = false
         timeRemainingInBreak = 0
         currentWorkSessionStartDate = Date()
-
         timer?.invalidate()
-        timeUntilNextBreak = workInterval
+        if settingsModel.settings.eyeBreakLiveActivityEnabled {
+            timeUntilNextBreak = workInterval
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
 
-            if self.timeUntilNextBreak > 0 {
-                self.timeUntilNextBreak -= 1
-            } else {
-                self.recordWorkSession()
-                self.startBreakTimer()
+                if self.timeUntilNextBreak > 0 {
+                    self.timeUntilNextBreak -= 1
+                } else {
+                    self.recordWorkSession()
+                    self.startBreakTimer()
+                }
             }
         }
     }

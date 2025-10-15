@@ -21,6 +21,7 @@ extension EnvironmentValues {
 struct SettingsView: View {
     @StateObject private var settings = SettingsModel.shared
     @State private var selectedSection: SettingsSection? = .widgets
+    @State private var nsWindow: NSWindow? = nil
 
     var body: some View {
 
@@ -41,7 +42,28 @@ struct SettingsView: View {
                 .zIndex(2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(WindowFinder { window in
+            self.nsWindow = window
+            if let w = window {
+                w.isReleasedWhenClosed = true
+                w.titleVisibility = .hidden
+                w.titlebarAppearsTransparent = true
+                w.isOpaque = false
+                w.backgroundColor = .clear
+                w.standardWindowButton(.closeButton)?.isHidden = true
+                w.standardWindowButton(.miniaturizeButton)?.isHidden = true
+                w.standardWindowButton(.zoomButton)?.isHidden = true
+            }
+        })
         .environmentObject(settings)
+        .environment(\.window, nsWindow)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification, object: nil)) { notification in
+            guard let closingWindow = notification.object as? NSWindow else { return }
+            if closingWindow == nsWindow {
+                closingWindow.orderOut(nil)
+                nsWindow = nil
+            }
+        }
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
@@ -71,5 +93,23 @@ struct WindowDragHandle: View {
             Spacer()
         }
         .zIndex(1)
+    }
+}
+
+private struct WindowFinder: NSViewRepresentable {
+    let callback: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { [weak view] in
+            callback(view?.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { [weak nsView] in
+            callback(nsView?.window)
+        }
     }
 }

@@ -601,6 +601,7 @@ struct WidgetsSettingsView: View {
 
 struct LiveActivitiesSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
+    @StateObject private var eyeBreakManager = EyeBreakManager.shared
 
     private func hideInFullScreenBinding(for type: LiveActivityType) -> Binding<Bool> {
         return Binding(
@@ -694,6 +695,9 @@ struct LiveActivitiesSettingsView: View {
                         LiveActivityRowView(activityType: activity)
                     }
                     .modifier(SettingsContainerModifier())
+                }
+                .onChange(of: settings.settings.eyeBreakLiveActivityEnabled) {
+                    eyeBreakManager.dismissBreak()
                 }
 
                 RequiredPermissionsView(section: .liveActivities)
@@ -1509,24 +1513,6 @@ struct LockScreenSettingsView: View {
                         description: "Display an authentication status activity in the notch on the lock screen.",
                         isOn: $settings.settings.lockScreenLiveActivityEnabled
                     )
-
-                    if notchsettingsHaveChanged {
-                        VStack(spacing: 15) {
-                            Button(action: restartApp) {
-                                Text("Restart to Apply Changes")
-                                    .fontWeight(.semibold)
-                                    .frame(width: 180, height: 10)
-                                    .padding()
-                                    .background(Color.accentColor.gradient)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(100)
-                                    .shadow(color: .accentColor.opacity(0.4), radius: 8, y: 4)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                        .padding(10)
-                    }
                 }
                 .modifier(SettingsContainerModifier())
             }
@@ -1534,14 +1520,6 @@ struct LockScreenSettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onChange(of: settings.settings.lockScreenShowNotch) {notchsettingsHaveChanged = true}
         }
-    }
-
-    private func restartApp() {
-        let task = Process()
-        task.launchPath = "/bin/sh"
-        task.arguments = ["-c", "sleep 1 && open \"\(Bundle.main.bundlePath)\""]
-        try? task.run()
-        NSApp.terminate(nil)
     }
 }
 
@@ -4382,6 +4360,9 @@ struct EyeBreakSettingsView: View {
                         description: "Receive live activities reminding you to take breaks.",
                         isOn: $settings.settings.eyeBreakLiveActivityEnabled
                     )
+                    .onChange(of: settings.settings.eyeBreakLiveActivityEnabled) {
+                        eyeBreakManager.dismissBreak()
+                    }
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -4546,7 +4527,7 @@ struct EyeBreakSettingsView: View {
             CustomSliderRowView(
                 label: "Work Interval",
                 value: $settings.settings.eyeBreakWorkInterval,
-                range: 5...60,
+                range: 0...60,
                 specifier: "%.0f min",
                 onEditingChanged: { isEditing in
                     if !isEditing {
@@ -5013,24 +4994,6 @@ struct NeardropSettingsView: View {
                                     .foregroundStyle(.white)
                                     .font(.system(size: 13))
                                     .disabled(!settings.settings.neardropEnabled)
-
-                                if settingsHaveChanged {
-                                    VStack(spacing: 15) {
-
-                                        Button(action: restartApp) {
-                                            Text("Restart to Apply Changes")
-                                                .fontWeight(.semibold)
-                                                .frame(width: 180, height: 10)
-                                                .padding()
-                                                .background(Color.accentColor.gradient)
-                                                .foregroundColor(.white)
-                                                .cornerRadius(100)
-                                                .shadow(color: .accentColor.opacity(0.4), radius: 8, y: 4)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
-                                }
                             }
 
                             VStack(alignment: .leading, spacing: 8) {
@@ -5115,15 +5078,6 @@ struct NeardropSettingsView: View {
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
         return exists && isDirectory.boolValue
-    }
-
-    private func restartApp() {
-        let task = Process()
-        task.launchPath = "/bin/sh"
-        task.arguments = ["-c", "sleep 1 && open \"\(Bundle.main.bundlePath)\""]
-        task.launch()
-
-        NSApp.terminate(nil)
     }
 }
 
