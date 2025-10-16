@@ -11,10 +11,10 @@ import AppKit
 
 struct LockScreenConfiguration {
 
-    // MARK: - General Layout (Using base values that look good on most screens)
+    // MARK: - General Layout
     static let widgetSpacing: CGFloat = 24
-    static let cornerRadius: CGFloat = 24
-    static let backgroundPadding: CGFloat = 15
+    static let cornerRadius: CGFloat = 40
+    static let backgroundPadding: CGFloat = 17
     static let backgroundStrokeWidth: CGFloat = 1.5
     static let backgroundStrokeBlur: CGFloat = 1
 

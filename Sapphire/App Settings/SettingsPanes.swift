@@ -4527,7 +4527,7 @@ struct EyeBreakSettingsView: View {
             CustomSliderRowView(
                 label: "Work Interval",
                 value: $settings.settings.eyeBreakWorkInterval,
-                range: 0...60,
+                range: 5...60,
                 specifier: "%.0f min",
                 onEditingChanged: { isEditing in
                     if !isEditing {
