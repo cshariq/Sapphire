@@ -205,9 +205,9 @@ struct SnapZonesWidgetView: View {
             }
         }
 
-        if activeHover != newHover {
-            activeHover = newHover
-        }
+        guard activeHover != newHover else { return }
+
+        activeHover = newHover
     }
 }
 

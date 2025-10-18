@@ -326,10 +326,6 @@ struct NotchController: View {
                             .blur(radius: activityBlurRadius)
                             .scaleEffect(activityContentScale)
                             .id(liveActivityManager.currentActivity)
-                            .transition(.asymmetric(
-                                insertion: .opacity.animation(config.activityOpacityAnimation),
-                                removal: .opacity.animation(config.activityOpacityAnimation)
-                            ))
                             .animation(liveActivityManager.activityHasBottomContent ?
                                        config.bottomContentTransitionAnimation :
                                         config.activityToActivityAnimation,
@@ -997,7 +993,7 @@ struct NotchController: View {
                     navigationStack = [.fileShelf]
                     notchState = .clickExpanded
                 }
-            } else if settings.settings.expandOnHover && !isFullViewActivity {
+        } else if settings.settings.expandOnHover && !isFullViewActivity {
                 if notchState != .clickExpanded {
                     NSApp.activate(ignoringOtherApps: true)
                     notchWindow?.makeKeyAndOrderFront(nil)

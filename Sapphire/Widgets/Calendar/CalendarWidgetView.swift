@@ -269,6 +269,7 @@ struct DynamicDayView: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(finalColor)
             }
+            .drawingGroup()
             .scaleEffect(scale)
             .blur(radius: blur)
             .opacity(opacity)

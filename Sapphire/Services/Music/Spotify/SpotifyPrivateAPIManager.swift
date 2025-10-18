@@ -526,21 +526,38 @@ class SpotifyPrivateAPIManager: ObservableObject {
         guard let jsPackURL = self.jsPackURL else { throw SpotAPIError.missingData("jsPackURL not found.") }
 
         guard let mainJsUrl = URL(string: jsPackURL) else { throw SpotAPIError.urlConstructionFailed(jsPackURL) }
-        let (mainJsData, _) = try await URLSession.shared.data(from: mainJsUrl); guard let mainJsContent = String(data: mainJsData, encoding: .utf8) else { throw SpotAPIError.authenticationFailed("Could not parse main js_pack content.") }
-        self.rawHashes = mainJsContent
-        let components = mainJsContent.components(separatedBy: "clientVersion:\""); if components.count > 1, let versionPart = components.last, let version = versionPart.components(separatedBy: "\"").first { self.clientVersion = version }
 
-        func fetchAndAppendExtraJs(content: String, xpuiName: String) async throws {
-            let searchString = ":\"\(xpuiName)\""; guard let range = content.range(of: searchString) else { return }
-            let prefix = String(content[..<range.lowerBound]); guard let routeNum = prefix.components(separatedBy: ",").last else { return }
-            let hashPattern = try Regex("\(routeNum):\"([a-f0-9]+)\""); guard let match = content.firstMatch(of: hashPattern) else { return }
-            let routeHash = String(match.output[1].substring!)
-            let extraJsUrlString = "https://open.spotifycdn.com/cdn/build/web-player/\(xpuiName).\(routeHash).js"; guard let extraJsUrl = URL(string: extraJsUrlString) else { return }
-            let (extraJsData, _) = try await URLSession.shared.data(from: extraJsUrl); if let extraJsContent = String(data: extraJsData, encoding: .utf8) { self.rawHashes?.append(extraJsContent) }
-        }
-        try await fetchAndAppendExtraJs(content: mainJsContent, xpuiName: "xpui-routes-search");
-        try await fetchAndAppendExtraJs(content: mainJsContent, xpuiName: "xpui-routes-track-v2")
-        try await fetchAndAppendExtraJs(content: mainJsContent, xpuiName: "xpui-routes-collection")
+        let (mainJsData, _) = try await URLSession.shared.data(from: mainJsUrl)
+
+        let (processedHashes, clientVersion) = try await Task.detached(priority: .userInitiated) { () -> (String, String?) in
+            guard let mainJsContent = String(data: mainJsData, encoding: .utf8) else {
+                throw SpotAPIError.authenticationFailed("Could not parse main js_pack content.")
+            }
+
+            var combinedHashes = mainJsContent
+
+            func fetchAndAppendExtraJs(content: String, xpuiName: String) async throws -> String {
+                let searchString = ":\"\(xpuiName)\""; guard let range = content.range(of: searchString) else { return "" }
+                let prefix = String(content[..<range.lowerBound]); guard let routeNum = prefix.components(separatedBy: ",").last else { return "" }
+                let hashPattern = try Regex("\(routeNum):\"([a-f0-9]+)\""); guard let match = content.firstMatch(of: hashPattern) else { return "" }
+                let routeHash = String(match.output[1].substring!)
+                let extraJsUrlString = "https://open.spotifycdn.com/cdn/build/web-player/\(xpuiName).\(routeHash).js"; guard let extraJsUrl = URL(string: extraJsUrlString) else { return "" }
+                let (extraJsData, _) = try await URLSession.shared.data(from: extraJsUrl)
+                return String(data: extraJsData, encoding: .utf8) ?? ""
+            }
+
+            combinedHashes += try await fetchAndAppendExtraJs(content: mainJsContent, xpuiName: "xpui-routes-search")
+            combinedHashes += try await fetchAndAppendExtraJs(content: mainJsContent, xpuiName: "xpui-routes-track-v2")
+            combinedHashes += try await fetchAndAppendExtraJs(content: mainJsContent, xpuiName: "xpui-routes-collection")
+
+            var version: String? = nil
+            let components = mainJsContent.components(separatedBy: "clientVersion:\""); if components.count > 1, let versionPart = components.last, let foundVersion = versionPart.components(separatedBy: "\"").first { version = foundVersion }
+
+            return (combinedHashes, version)
+        }.value
+
+        self.rawHashes = processedHashes
+        self.clientVersion = clientVersion
 
         let (totp, totpVer) = await TotpGenerator.generateTotp()
         let accessTokenResponse = try await getAccessToken(totp: totp, totpVer: totpVer)

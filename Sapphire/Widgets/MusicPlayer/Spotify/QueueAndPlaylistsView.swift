@@ -440,36 +440,48 @@ struct ActiveDeviceView: View {
 fileprivate struct Marquee<Content: View>: View {
     @ViewBuilder var content: Content
 
-    @State private var isAnimating = false
+    @State private var animate = false
+    @State private var containerWidth: CGFloat = 0
     @State private var contentWidth: CGFloat = 0
 
-    var body: some View {
-        GeometryReader { geometry in
-            let containerWidth = geometry.size.width
-            let isOverflowing = contentWidth > containerWidth
+    private var isOverflowing: Bool {
+        contentWidth > containerWidth
+    }
 
-            HStack(spacing: isOverflowing ? 20 : 0) {
-                content
-                if isOverflowing {
-                    content
+    private var animation: Animation {
+        .linear(duration: contentWidth / 30)
+        .delay(1.5)
+        .repeatForever(autoreverses: false)
+    }
+
+    var body: some View {
+        let base = content
+            .fixedSize(horizontal: true, vertical: false)
+            .background(GeometryReader { proxy in
+                Color.clear.onAppear { contentWidth = proxy.size.width }
+            })
+
+        GeometryReader { proxy in
+            HStack(spacing: 0) {
+                if isOverflowing && animate {
+                    base
+                        .offset(x: -contentWidth)
+                        .onAppear {
+                            withAnimation(animation.delay(0)) {
+                                animate = false
+                            }
+                        }
+                }
+                base
+            }
+            .offset(x: animate ? contentWidth : 0)
+            .onAppear {
+                containerWidth = proxy.size.width
+                guard isOverflowing else { return }
+                withAnimation(animation) {
+                    animate = true
                 }
             }
-            .background(
-                GeometryReader { contentGeometry in
-                    Color.clear.onAppear {
-                        contentWidth = contentGeometry.size.width
-                        if isOverflowing {
-                            isAnimating = true
-                        }
-                    }
-                }
-            )
-            .offset(x: isAnimating ? -contentWidth - 20 : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .animation(
-                isAnimating ? .linear(duration: contentWidth / 30).repeatForever(autoreverses: false) : .default,
-                value: isAnimating
-            )
         }
         .clipped()
     }

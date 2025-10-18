@@ -31,7 +31,10 @@ struct FaceIDRegistrationView: View {
     }
 
     private var overlayColor: Color {
-        isRegistered ? .green : .blue
+        if case .registering(let step) = cameraController.appState {
+            return step == .finalizing ? .purple : .blue
+        }
+        return isRegistered ? .green : .blue
     }
 
     var body: some View {
@@ -53,10 +56,8 @@ struct FaceIDRegistrationView: View {
                     Button(action: { presentationMode.wrappedValue.dismiss() }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.black)
-                            .padding(10)
-                            .background(Color.white.opacity(0.6))
-                            .clipShape(Circle())
+                            .foregroundStyle(.white)
+                            .background(Color.clear)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -114,6 +115,9 @@ struct FaceIDRegistrationView: View {
         .onAppear {
             cameraController.startRegistration(forProfile: profileName)
             isPulsating = true
+        }
+        .onDisappear {
+            cameraController.cancelCurrentOperation()
         }
         .onChange(of: isRegistered) { registered in
             if registered {

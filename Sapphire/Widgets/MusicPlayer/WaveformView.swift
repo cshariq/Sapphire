@@ -8,13 +8,22 @@
 import SwiftUI
 import Combine
 
-struct CoreAnimationWaveformView: NSViewRepresentable {
+struct CoreAnimationWaveformView: NSViewRepresentable, Equatable {
     var isPlaying: Bool
     var barCount: Int
     var volumeScale: CGFloat
     var barThickness: CGFloat
     var leftGradientColor: Color
     var rightGradientColor: Color
+
+    static func == (lhs: CoreAnimationWaveformView, rhs: CoreAnimationWaveformView) -> Bool {
+        return lhs.isPlaying == rhs.isPlaying &&
+               lhs.barCount == rhs.barCount &&
+               lhs.volumeScale == rhs.volumeScale &&
+               lhs.barThickness == rhs.barThickness &&
+               lhs.leftGradientColor == rhs.leftGradientColor &&
+               lhs.rightGradientColor == rhs.rightGradientColor
+    }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -25,7 +34,8 @@ struct CoreAnimationWaveformView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.update(isPlaying: isPlaying, with: context)
+        context.coordinator.parent = self
+        context.coordinator.update(isPlaying: isPlaying)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -35,12 +45,16 @@ struct CoreAnimationWaveformView: NSViewRepresentable {
     class Coordinator {
         var parent: CoreAnimationWaveformView
         var maskLayers: [CAShapeLayer] = []
+        private var hasSetup = false
 
         init(_ parent: CoreAnimationWaveformView) {
             self.parent = parent
         }
 
         func setupLayers(in parentLayer: CALayer, with context: Context) {
+            guard !hasSetup else { return }
+            hasSetup = true
+
             let totalSpacing = CGFloat(parent.barCount - 1) * 3.0
             let totalWidth = CGFloat(parent.barCount) * parent.barThickness + totalSpacing
             var xOffset = (parentLayer.bounds.width - totalWidth) / 2.0
@@ -71,9 +85,7 @@ struct CoreAnimationWaveformView: NSViewRepresentable {
             }
         }
 
-        func update(isPlaying: Bool, with context: Context) {
-            self.parent = context.environment.coreAnimationWaveformView
-
+        func update(isPlaying: Bool) {
             let minHeight = parent.barThickness
 
             for (index, maskLayer) in maskLayers.enumerated() {
@@ -129,17 +141,6 @@ struct CoreAnimationWaveformView: NSViewRepresentable {
                 }
             }
         }
-    }
-}
-
-private struct CoreAnimationWaveformViewKey: EnvironmentKey {
-    static let defaultValue: CoreAnimationWaveformView = CoreAnimationWaveformView(isPlaying: false, barCount: 0, volumeScale: 0, barThickness: 0, leftGradientColor: .white, rightGradientColor: .white)
-}
-
-extension EnvironmentValues {
-    var coreAnimationWaveformView: CoreAnimationWaveformView {
-        get { self[CoreAnimationWaveformViewKey.self] }
-        set { self[CoreAnimationWaveformViewKey.self] = newValue }
     }
 }
 
@@ -238,7 +239,7 @@ struct WaveformView: View {
     }
 
     private var animatedWaveformBody: some View {
-        let view = CoreAnimationWaveformView(
+        CoreAnimationWaveformView(
             isPlaying: musicManager.isPlaying,
             barCount: barCount,
             volumeScale: volumeScale,
@@ -246,7 +247,6 @@ struct WaveformView: View {
             leftGradientColor: musicManager.leftGradientColor,
             rightGradientColor: musicManager.rightGradientColor
         )
-        return view.environment(\.coreAnimationWaveformView, view)
     }
 
     private var staticWaveformBody: some View {

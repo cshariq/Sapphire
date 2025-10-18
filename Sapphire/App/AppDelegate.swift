@@ -27,7 +27,7 @@ final class LockScreenState: ObservableObject {
     @Published var isBluetoothUnlockEnabled: Bool = false
 }
 
-final class DynamicFocusWindow: NSWindow {
+final class DynamicFocusWindow: NSPanel {
     var isFocusable: Bool = false
 
     override var canBecomeKey: Bool {
@@ -159,7 +159,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func initializeCoreManagers() {
         let managers: [Any] = [
-            musicManager, systemHUDManager, notificationManager, desktopManager, focusModeManager,
+            musicManager, notificationManager, desktopManager, focusModeManager,
             calendarService, batteryMonitor, batteryManager, bluetoothManager, audioDeviceManager,
             multiAudioManager, eyeBreakManager, timerManager, weatherActivityViewModel,
             contentPickerHelper, geminiLiveManager, settingsModel, activeAppMonitor,
@@ -531,7 +531,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let windowOriginX = screenFrame.minX, windowOriginY = screenFrame.maxY - paddedWindowHeight
         let windowRect = NSRect(x: windowOriginX, y: windowOriginY, width: paddedWindowWidth, height: paddedWindowHeight)
 
-        let newWindow = DynamicFocusWindow(contentRect: windowRect, styleMask: .borderless, backing: .buffered, defer: false)
+        let newWindow = DynamicFocusWindow(contentRect: windowRect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
 
         self.notchWindow = newWindow
         guard let window = self.notchWindow else { return }

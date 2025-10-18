@@ -28,26 +28,22 @@ class SpoofDetector {
 
         let naturalMovementScore = calculateNaturalMovement(observation: observation)
 
-        let depthWeight = 0.0
-        let metricsWeight = 0.5
-        let movementWeight = 0.5
+        let depthWeight = 0.4
+        let metricsWeight = 0.3
         let similarityWeight = 0.5
         var finalScore = 0.0
-        print(metricsScore)
-        print(naturalMovementScore)
-        if depthScore >= 0.9 && naturalMovementScore >= 0 {
+
+        if depthScore >= 0.9 || naturalMovementScore > 0.15 {
             finalScore = (depthScore * depthWeight) + (metricsScore * metricsWeight) + (faceSimilarity * similarityWeight)
-        }
-        else {
+        } else {
             finalScore = (depthScore * 0.5) + (metricsScore * 0.25) + (naturalMovementScore * 0.25)
         }
 
         print("Combined Score: \(String(format: "%.2f", finalScore)) (Depth: \(String(format: "%.2f", depthScore)), Metrics: \(String(format: "%.2f", metricsScore)), Similarity: \(String(format: "%.2f", faceSimilarity)), Movement: \(String(format: "%.2f", naturalMovementScore)))")
 
         if finalScore > 0.8 {
-
             return .high
-        } else if finalScore > 0.8 {
+        } else if finalScore > 0.65 {
             return .medium
         } else {
             print(" SPOOF WARNING: Low combined anti-spoof score (\(String(format: "%.2f", finalScore))).")

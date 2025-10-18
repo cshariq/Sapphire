@@ -2,60 +2,55 @@
 //  MLModelManager.swift
 //  Sapphire
 //
-//  Created by Shariq Charolia on 2025-10-14.
+//  Created by Shariq Charolia on 2025-10-17.
 //
 
-import Foundation
 import CoreML
 import Vision
 
 class MLModelManager {
+    private let queue = DispatchQueue(label: "MLModelManager.queue", attributes: .concurrent)
     static let shared = MLModelManager()
 
-    private(set) var arcFaceModel: ArcFace?
-    private(set) var depthAnythingModel: DepthAnythingV2?
+    private var depthModel: VNCoreMLModel?
+    private var faceModel: ArcFace?
 
-    private(set) var depthVisionModel: VNCoreMLModel?
-
-    private init() {}
-
-    func loadModels() {
-        let cpuOnlyConfig = MLModelConfiguration()
-        cpuOnlyConfig.computeUnits = .cpuOnly
-
-        print("LOG (ML): Using CPU-Only configuration to ensure memory is released.")
-
-        if arcFaceModel == nil {
-            do {
-                print("LOG (ML): Loading ArcFace model...")
-                arcFaceModel = try ArcFace(configuration: cpuOnlyConfig)
-                print("LOG (ML): ArcFace model loaded.")
-            } catch {
-                print("ERROR (ML): Failed to load ArcFace model: \(error)")
+    func getDepthModel() throws -> VNCoreMLModel {
+        return try queue.sync {
+            if let model = depthModel {
+                return model
             }
+            print("LOG (ML): Loading DepthAnythingV2 model...")
+            let model = try VNCoreMLModel(for: DepthAnythingV2().model)
+            queue.async(flags: .barrier) { [weak self] in
+                self?.depthModel = model
+            }
+            return model
         }
+    }
 
-        if depthAnythingModel == nil {
-            do {
-                print("LOG (ML): Loading DepthAnythingV2 model...")
-                let model = try DepthAnythingV2(configuration: cpuOnlyConfig)
-                self.depthAnythingModel = model
-                print("LOG (ML): DepthAnythingV2 model loaded.")
-
-                print("LOG (ML): Creating and caching Vision wrapper for depth model...")
-                self.depthVisionModel = try VNCoreMLModel(for: model.model)
-                print("LOG (ML): Vision wrapper cached.")
-
-            } catch {
-                print("ERROR (ML): Failed to load or create Vision wrapper for DepthAnythingV2 model: \(error)")
+    func getFaceModel() throws -> ArcFace {
+        return try queue.sync {
+            if let model = faceModel {
+                return model
             }
+            print("LOG (ML): Loading ArcFace model...")
+            let model = try ArcFace()
+            queue.async(flags: .barrier) { [weak self] in
+                self?.faceModel = model
+            }
+            return model
         }
     }
 
     func unloadModels() {
-        print("LOG (ML): Unloading Core ML models and Vision wrappers to conserve memory.")
-        arcFaceModel = nil
-        depthAnythingModel = nil
-        depthVisionModel = nil
+        queue.sync(flags: .barrier) { [weak self] in
+            guard let self = self else { return }
+            autoreleasepool {
+                self.depthModel = nil
+                self.faceModel = nil
+            }
+            print("LOG (ML): Unloaded Core ML models from memory.")
+        }
     }
 }
