@@ -76,7 +76,7 @@ class UniversalFileTransferManager {
             directoryMonitors.append(monitor)
         }
 
-        progressUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        progressUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.updateTasks()
         }
 
