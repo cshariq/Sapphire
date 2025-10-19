@@ -26,7 +26,7 @@ extension Notification.Name {
 
 enum HUDType: Hashable {
     case volume(level: Float, device: AudioDevice?)
-    case brightness(level: Float, subzeroLevel: Float, displayName: String?)
+    case brightness(level: Float)
     case keyboardBrightness(level: Float)
     case externalDeviceVolume(deviceName: String, deviceIcon: String, deviceVolume: Float, systemVolume: Float, isControllingExternal: Bool, canControlVolume: Bool)
 
@@ -36,10 +36,8 @@ enum HUDType: Hashable {
         case .volume(let level, let device):
             hasher.combine(level)
             hasher.combine(device)
-        case .brightness(let level, let subzeroLevel, let displayName):
+        case .brightness(let level):
             hasher.combine(level)
-            hasher.combine(subzeroLevel)
-            hasher.combine(displayName)
         case .keyboardBrightness(let level):
             hasher.combine(level)
         case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, let systemVolume, let isControllingExternal, let canControlVolume):
@@ -73,8 +71,9 @@ class SystemHUDManager: ObservableObject {
 
     @Published private(set) var currentHUD: HUDType?
     @Published private(set) var glowIntensity: Double = 0.0
+    @Published var isXDREnabled = false
 
-    private let displayController = DisplayController.shared
+    private let brightnessManager = BrightnessManager.shared
     private let settings = SettingsModel.shared
     private let musicManager = MusicManager.shared
 
@@ -97,7 +96,6 @@ class SystemHUDManager: ObservableObject {
     private var isControllingSpotify = false
 
     private init() {
-
         setupEventTap()
         verificationTimer = Timer.scheduledTimer(
             timeInterval: 5.0,
@@ -115,14 +113,13 @@ class SystemHUDManager: ObservableObject {
         eventTap = nil
 
         let eventsToMonitor: CGEventMask = (1 << NX_SYSDEFINED)
-        let selfAsUnsafeMutableRawPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
         eventTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: eventsToMonitor,
             callback: eventTapCallback,
-            userInfo: selfAsUnsafeMutableRawPointer
+            userInfo: nil
         )
 
         guard let eventTap = eventTap else {
@@ -142,6 +139,13 @@ class SystemHUDManager: ObservableObject {
     }
 
     @objc func verifyAndReinstateEventTap() {
+        let windowCount = NSApp.windows.count
+        if windowCount > 10 {
+             print("[WindowMonitor] WARNING: High window count detected: \(windowCount)")
+        } else {
+             print("[WindowMonitor] Current window count: \(windowCount)")
+        }
+
         guard let tap = self.eventTap, CGEvent.tapIsEnabled(tap: tap) else {
             print("[SystemHUDManager] Event tap is not active or missing. Attempting to reinstate...")
             DispatchQueue.main.async {
@@ -222,6 +226,31 @@ class SystemHUDManager: ObservableObject {
     @MainActor private func startContinuousChange(for action: MediaKeyAction) {
         currentAction = action
         isInitialKeyPress = true
+
+        if action == .volumeUp || action == .volumeDown {
+            if settings.settings.showSpotifyVolumeHUD, let cachedState = self.lastKnownSpotifyState {
+                self.spotifyStateForAction = cachedState
+                self.updateVolumeHUD()
+            }
+
+            if settings.settings.showSpotifyVolumeHUD && !isFetchingSpotifyState {
+                isFetchingSpotifyState = true
+                Task { @MainActor in
+                    defer { self.isFetchingSpotifyState = false }
+                    if let freshState = await musicManager.fetchActiveSpotifyDeviceState() {
+                        self.spotifyStateForAction = freshState
+                        self.lastKnownSpotifyState = freshState
+                        if self.currentHUD != nil {
+                            self.updateVolumeHUD()
+                        }
+                    } else {
+                        self.spotifyStateForAction = nil
+                        self.lastKnownSpotifyState = nil
+                    }
+                }
+            }
+        }
+
         performChange()
 
         withAnimation(.spring()) {
@@ -248,6 +277,14 @@ class SystemHUDManager: ObservableObject {
                 let finalVolumeInt = Int(finalVolume.rounded())
                 Task {
                     _ = await self.musicManager.setSpotifyVolume(percent: finalVolumeInt)
+                }
+            }
+
+            if settings.settings.volumeHUDSoundEnabled {
+                if let soundURL = Bundle.main.url(forResource: "Media Keys", withExtension: "aif") {
+                    NSSound(contentsOf: soundURL, byReference: true)?.play()
+                } else {
+                    NSSound(named: "Tink")?.play()
                 }
             }
         }
@@ -317,20 +354,38 @@ class SystemHUDManager: ObservableObject {
             self.updateVolumeHUD()
 
         case .brightnessUp, .brightnessDown:
-             if currentModifiers.contains(.option) {
+             if currentModifiers.contains(.option) && !currentModifiers.contains(.shift) {
                 let changeDirection: Float = action == .brightnessUp ? 1 : -1
                 let percentageStep = Float(settings.settings.brightnessliderstep)
                 let coarseStep = (percentageStep / 100.0).clamped(to: 0.01...1.0)
                 let fineStep: Float = 0.01
 
-                let step = currentModifiers.contains(.shift) ? fineStep : coarseStep
-                let currentKB = SystemControl.getKeyboardBrightness()
-                let newKB = (currentKB + (step * changeDirection)).clamped(to: 0...1)
+                let snapAndChange = { (currentLevel: Float) -> Float in
+                    if NSEvent.modifierFlags.contains([.shift, .option]) {
+                        return (currentLevel + (fineStep * changeDirection)).clamped(to: 0...1)
+                    } else {
+                        let currentStepNum = round(currentLevel / coarseStep)
+                        let nextStepNum = currentStepNum + changeDirection
+                        return (nextStepNum * coarseStep).clamped(to: 0...1)
+                    }
+                }
 
-                SystemControl.setKeyboardBrightness(to: newKB)
-                showHUD(for: .keyboardBrightness(level: newKB))
+                let newKeyboardBrightness = snapAndChange(SystemControl.getKeyboardBrightness())
+                SystemControl.setKeyboardBrightness(to: newKeyboardBrightness)
+                showHUD(for: .keyboardBrightness(level: newKeyboardBrightness))
             } else {
-                changeMonitorBrightness(action: action)
+                if action == .brightnessUp {
+                    let isXDRLocked = settings.settings.xdrBrightnessLock && !currentModifiers.contains(.command)
+                    let currentBrightness = self.settings.settings.brightness
+
+                    if isXDRLocked && currentBrightness >= 1.0 {
+                        showHUD(for: .brightness(level: currentBrightness))
+                        return
+                    }
+                    changeBrightness(direction: 1)
+                } else {
+                    changeBrightness(direction: -1)
+                }
             }
         }
 
@@ -339,56 +394,62 @@ class SystemHUDManager: ObservableObject {
         }
     }
 
-    @MainActor private func changeMonitorBrightness(action: MediaKeyAction) {
-        let isFineTune = NSEvent.modifierFlags.contains([.shift, .option])
-        let coarseStep: Float = (Float(settings.settings.brightnessliderstep) / 100.0).clamped(to: 0.01...1.0)
-        let fineStep: Float = 0.01
-
-        let direction: Float = (action == .brightnessUp) ? 1.0 : -1.0
-        let step = isFineTune ? fineStep : coarseStep
-
-        guard let display = displayController.getCursorDisplay(), !display.isBuiltin else {
-            let currentBrightness = SystemControl.getBrightness()
-            let newLevel = (currentBrightness + (step * direction)).clamped(to: 0...1)
-            SystemControl.setBrightness(to: newLevel)
-            showHUD(for: .brightness(level: newLevel, subzeroLevel: 1.0, displayName: "Built-in Display"))
-            return
-        }
-
-        let hardwareBrightness = display.brightness
-        let softwareBrightness = display.softwareBrightness
+    @MainActor private func changeBrightness(direction: Float) {
+        let xdrBrightness = self.settings.settings.brightness
+        let maxBrightness = self.settings.settings.xdrBrightnessLevel
+        let systemBrightness = SystemControl.getBrightness()
 
         if direction > 0 {
-            if softwareBrightness < 1.0 {
-                let newSoftwareLevel = (softwareBrightness + step).clamped(to: 0...1)
-                display.softwareBrightness = newSoftwareLevel
+            if isXDREnabled {
+                let newXDRLevel = min(maxBrightness, xdrBrightness + 0.05)
+                self.settings.settings.brightness = newXDRLevel
+                showHUD(for: .brightness(level: newXDRLevel))
+            } else if systemBrightness >= 1.0 && self.settings.settings.enableXDRBrightness {
+                isXDREnabled = true
+                brightnessManager.activate()
+                let initialXDRLevel: Float = 1.05
+                self.settings.settings.brightness = initialXDRLevel
+                showHUD(for: .brightness(level: initialXDRLevel))
             } else {
-                let oldValue = hardwareBrightness
-                let currentStepNum = round(oldValue / (coarseStep * 100))
-                let nextStepNum = currentStepNum + direction
-                let newHardwareLevel = (nextStepNum * (coarseStep * 100)).clamped(to: 0...100)
-
-                if display.control?.setBrightness(newHardwareLevel, oldValue: oldValue) == true {
-                    display.brightness = newHardwareLevel
-                }
+                let newLevel = calculateNewStandardBrightness(currentLevel: systemBrightness, direction: 1)
+                SystemControl.setBrightness(to: newLevel)
+                self.settings.settings.brightness = newLevel
+                showHUD(for: .brightness(level: newLevel))
             }
         } else {
-            if hardwareBrightness > 0 {
-                let oldValue = hardwareBrightness
-                let currentStepNum = round(oldValue / (coarseStep * 100))
-                let nextStepNum = currentStepNum + direction
-                let newHardwareLevel = (nextStepNum * (coarseStep * 100)).clamped(to: 0...100)
-
-                if display.control?.setBrightness(newHardwareLevel, oldValue: oldValue) == true {
-                    display.brightness = newHardwareLevel
+            if isXDREnabled {
+                let newXDRLevel = xdrBrightness - 0.05
+                if newXDRLevel <= 1.0 {
+                    isXDREnabled = false
+                    brightnessManager.deactivate()
+                    SystemControl.setBrightness(to: 1.0)
+                    self.settings.settings.brightness = 1.0
+                    showHUD(for: .brightness(level: 1.0))
+                } else {
+                    self.settings.settings.brightness = newXDRLevel
+                    showHUD(for: .brightness(level: newXDRLevel))
                 }
             } else {
-                let newSoftwareLevel = (softwareBrightness + (step * direction)).clamped(to: 0...1)
-                display.softwareBrightness = newSoftwareLevel
+                let newLevel = calculateNewStandardBrightness(currentLevel: systemBrightness, direction: -1)
+                SystemControl.setBrightness(to: newLevel)
+                self.settings.settings.brightness = newLevel
+                showHUD(for: .brightness(level: newLevel))
             }
         }
+    }
 
-        showHUD(for: .brightness(level: display.brightness / 100.0, subzeroLevel: display.softwareBrightness, displayName: display.name))
+    private func calculateNewStandardBrightness(currentLevel: Float, direction: Float) -> Float {
+        let percentageStep = Float(settings.settings.brightnessliderstep)
+        let coarseStep = (percentageStep / 100.0).clamped(to: 0.01...1.0)
+        let fineStep: Float = 0.01
+
+        if NSEvent.modifierFlags.contains([.shift, .option]) {
+            return (currentLevel + (fineStep * direction)).clamped(to: 0...1)
+        } else {
+            let currentStepNum = round(Double(currentLevel) / Double(coarseStep))
+            let nextStepNum = currentStepNum + Double(direction)
+            return Float(nextStepNum * Double(coarseStep)).clamped(to: 0...1)
+        }
     }
 
     @MainActor private func performSpotifyVolumeChange(action: MediaKeyAction, isFineTuning: Bool) {
@@ -438,6 +499,7 @@ class SystemHUDManager: ObservableObject {
         } else {
             SystemControl.setMuted(to: false)
         }
+
     }
 
     @MainActor
@@ -445,7 +507,9 @@ class SystemHUDManager: ObservableObject {
         let systemVolume = SystemControl.getVolume()
 
         if settings.settings.showSpotifyVolumeHUD, let spotifyState = self.spotifyStateForAction {
+
             let spotifyVolumePercent = self.currentSpotifyVolumeForAction ?? Float(spotifyState.volumePercent ?? 75)
+
             let hud = HUDType.externalDeviceVolume(
                 deviceName: spotifyState.name,
                 deviceIcon: spotifyState.iconName,
@@ -478,6 +542,7 @@ class SystemHUDManager: ObservableObject {
     @MainActor
     func updateCurrentHUD(to newHUD: HUDType) {
         self.currentHUD = newHUD
+
         self.hudDismissalTimer?.invalidate()
         self.hudDismissalTimer = Timer.scheduledTimer(withTimeInterval: self.settings.settings.hudDuration, repeats: false) { [weak self] _ in
             self?.currentHUD = nil
@@ -499,13 +564,19 @@ struct SystemHUDView: View {
                 switch type {
                 case .volume(let level, let device):
                     systemVolumeContent(level: level, device: device)
-                case .brightness(let level, let subzeroLevel, let displayName):
-                    brightnessContent(level: level, subzeroLevel: subzeroLevel, displayName: displayName)
+                case .brightness(let level):
+                    brightnessContent(level: level)
                 case .keyboardBrightness(let level):
                     keyboardBrightnessContent(level: level)
                 case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, let systemVolume, let isControllingExternal, let canControlVolume):
                     let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
-                    systemVolumeContent(level: systemVolume, device: systemDevice, isControllingExternal: isControllingExternal)
+
+                    systemVolumeContent(
+                        level: systemVolume,
+                        device: systemDevice,
+                        isControllingExternal: isControllingExternal
+                    )
+
                     ExternalDeviceIndicatorHUD(level: deviceVolume, deviceName: deviceName, deviceIcon: deviceIcon, canControlVolume: canControlVolume)
                         .transition(.opacity.combined(with: .offset(y: 5)))
                 }
@@ -529,7 +600,11 @@ struct SystemHUDView: View {
     }
 
     @ViewBuilder
-    private func systemVolumeContent(level: Float, device: AudioDevice?, isControllingExternal: Bool = false) -> some View {
+    private func systemVolumeContent(
+        level: Float,
+        device: AudioDevice?,
+        isControllingExternal: Bool = false
+    ) -> some View {
         HStack(spacing: 12) {
             let icon: String = {
                 if settings.settings.volumeHUDShowDeviceIcon, let dev = device {
@@ -550,10 +625,22 @@ struct SystemHUDView: View {
                 level: level,
                 onChanged: { newLevel in
                     SystemControl.setVolume(to: newLevel)
-                    if newLevel == 0.0 { SystemControl.setMuted(to: true) } else { SystemControl.setMuted(to: false) }
+                    if newLevel == 0.0 {
+                        SystemControl.setMuted(to: true)
+                    } else {
+                        SystemControl.setMuted(to: false)
+                    }
+
                     if isControllingExternal {
                         if case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, _, let isControlling, let canControl) = hudManager.currentHUD {
-                            hudManager.updateCurrentHUD(to: .externalDeviceVolume(deviceName: deviceName, deviceIcon: deviceIcon, deviceVolume: deviceVolume, systemVolume: newLevel, isControllingExternal: isControlling, canControlVolume: canControl))
+                            hudManager.updateCurrentHUD(to: .externalDeviceVolume(
+                                deviceName: deviceName,
+                                deviceIcon: deviceIcon,
+                                deviceVolume: deviceVolume,
+                                systemVolume: newLevel,
+                                isControllingExternal: isControlling,
+                                canControlVolume: canControl
+                            ))
                         }
                     } else {
                         hudManager.updateCurrentHUD(to: .volume(level: newLevel, device: device))
@@ -572,74 +659,48 @@ struct SystemHUDView: View {
     }
 
     @ViewBuilder
-    private func brightnessContent(level: Float, subzeroLevel: Float, displayName: String?) -> some View {
-        let isSubzero = subzeroLevel < 1.0
+    private func brightnessContent(level: Float) -> some View {
+        let isXDR = level > 1.0
+        let currentDisplayScaleMax = hudManager.isXDREnabled ? settings.settings.xdrBrightnessLevel : 1.0
+        let normalizedDisplayLevel = level / currentDisplayScaleMax
         let percentageText = "\(Int(roundf(level * 100)))%"
 
-        VStack(alignment: .center, spacing: 8) {
-            if let name = displayName {
-                Text(name)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-            }
+        HStack(spacing: 12) {
+            Image(systemName: isXDR ? "sun.max.trianglebadge.exclamationmark.fill" : "sun.max.fill")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(isXDR ? .orange : .white.opacity(0.8))
+                .frame(width: 40, alignment: .center)
 
-            HStack(spacing: 12) {
-                Image(systemName: isSubzero ? "moon.fill" : "sun.max.fill")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(isSubzero ? .purple.opacity(0.8) : .white.opacity(0.8))
-                    .frame(width: 40, alignment: .center)
+            DynamicSliderIndicator(
+                level: normalizedDisplayLevel,
+                isXDR: isXDR,
+                onChanged: { normalizedNewLevel in
+                    let deNormalizedLevel = normalizedNewLevel * currentDisplayScaleMax
 
-                DynamicSliderIndicator(
-                    level: level,
-                    onChanged: { newLevel in
-                        if let name = displayName, let display = DisplayController.shared.displays.first(where: { $0.name == name }) {
-                            if display.control?.setBrightness(newLevel * 100, oldValue: display.brightness) == true {
-                                display.brightness = newLevel * 100
-                                if display.softwareBrightness < 1.0 { display.softwareBrightness = 1.0 }
-                                hudManager.updateCurrentHUD(to: .brightness(level: newLevel, subzeroLevel: 1.0, displayName: name))
-                            }
-                        } else {
-                            SystemControl.setBrightness(to: newLevel)
-                            hudManager.updateCurrentHUD(to: .brightness(level: newLevel, subzeroLevel: 1.0, displayName: displayName))
+                    if deNormalizedLevel > 1.0 {
+                        if !hudManager.isXDREnabled {
+                            hudManager.isXDREnabled = true
+                            BrightnessManager.shared.activate()
                         }
-                    }
-                ).frame(height: 14)
-
-                if settings.settings.hudShowPercentage {
-                    Text(percentageText)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.6))
-                        .frame(width: 40)
-                }
-            }
-
-            if isSubzero {
-                HStack(spacing: 12) {
-                    Image(systemName: "moon.stars.fill")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.purple.opacity(0.6))
-                        .frame(width: 40, alignment: .center)
-
-                    DynamicSliderIndicator(
-                        level: subzeroLevel,
-                        isSubzero: true,
-                        onChanged: { newLevel in
-                            if let name = displayName, let display = DisplayController.shared.displays.first(where: { $0.name == name }) {
-                                display.softwareBrightness = newLevel
-                                hudManager.updateCurrentHUD(to: .brightness(level: display.brightness / 100, subzeroLevel: newLevel, displayName: name))
-                            }
+                        SettingsModel.shared.settings.brightness = deNormalizedLevel
+                    } else {
+                        if hudManager.isXDREnabled {
+                            hudManager.isXDREnabled = false
+                            BrightnessManager.shared.deactivate()
                         }
-                    ).frame(height: 10)
-
-                    if settings.settings.hudShowPercentage {
-                         Text("\(Int(subzeroLevel * 100))%")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.5))
-                            .frame(width: 40)
+                        SystemControl.setBrightness(to: deNormalizedLevel)
+                        SettingsModel.shared.settings.brightness = deNormalizedLevel
                     }
+
+                    hudManager.updateCurrentHUD(to: .brightness(level: deNormalizedLevel))
                 }
-                .transition(.opacity.combined(with: .offset(y: 5)))
+            ).frame(height: 14)
+
+            if settings.settings.hudShowPercentage {
+                Text(percentageText)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+                    .frame(width: 40)
             }
         }
     }
@@ -656,6 +717,7 @@ struct SystemHUDView: View {
                 level: level,
                 onChanged: { newLevel in
                     SystemControl.setKeyboardBrightness(to: newLevel)
+
                     hudManager.updateCurrentHUD(to: .keyboardBrightness(level: newLevel))
                 }
             )
@@ -734,35 +796,56 @@ struct DynamicSliderIndicator: View {
     var onChanged: ((Float) -> Void)?
     @EnvironmentObject var settings: SettingsModel
     @StateObject private var hudManager = SystemHUDManager.shared
-    let isSubzero: Bool
 
-    init(level: Float, isSubzero: Bool = false, onChanged: ((Float) -> Void)? = nil) {
+    let forceGreen: Bool
+    let isXDR: Bool
+    let showInternalXDRText: Bool
+
+    init(level: Float, forceGreen: Bool = false, isXDR: Bool = false, showInternalXDRText: Bool = true, onChanged: ((Float) -> Void)? = nil) {
         self.externalLevel = level
         self._level = State(initialValue: level)
         self.onChanged = onChanged
-        self.isSubzero = isSubzero
+        self.forceGreen = forceGreen
+        self.isXDR = isXDR
+        self.showInternalXDRText = showInternalXDRText
     }
 
     @ViewBuilder
     private func sliderFill() -> some View {
-        if isSubzero {
-            LinearGradient(gradient: Gradient(colors: [.purple, .blue]), startPoint: .leading, endPoint: .trailing)
+        if isXDR {
+            LinearGradient(
+                gradient: Gradient(colors: [.purple, .blue]),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
         } else {
             indicatorColor
         }
     }
 
     private var indicatorColor: Color {
-        .white
+        if forceGreen { return .green }
+        switch settings.settings.hudVisualStyle {
+        case .white: return .white.opacity(0.7)
+        case .color: return settings.settings.hudCustomColor?.color ?? .accentColor
+        case .adaptive:
+            if level >= 0.9 { return .red }
+            if level > 0.6 { return .yellow }
+            return .white
+        }
     }
 
     private var shadowColor: Color {
-        if isSubzero { return .blue }
+        if isXDR { return .blue }
         return indicatorColor
     }
 
     private var glowRadius: CGFloat {
-        hudManager.glowIntensity * 10
+        if settings.settings.hudVisualStyle == .adaptive {
+            return CGFloat(level * 10)
+        } else {
+            return hudManager.glowIntensity * 10
+        }
     }
 
     var body: some View {
@@ -771,9 +854,18 @@ struct DynamicSliderIndicator: View {
 
             ZStack(alignment: .leading) {
                 Capsule().fill(.gray.opacity(0.3))
+
                 sliderFill()
                     .frame(width: totalWidth * CGFloat(level))
                     .clipShape(Capsule())
+
+                if isXDR && showInternalXDRText {
+                    Text("XDR")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundColor(Color.orange)
+                        .padding(.leading, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .clipShape(Capsule())
             .contentShape(Rectangle())
@@ -811,48 +903,123 @@ struct SystemHUDSlimActivityView {
                         .frame(width: 20, height: 20)
                 } else {
                     Image(systemName: IconMapper.icon(for: dev))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
                 }
             } else {
                 Image(systemName: volumeIconName(for: level))
-            }
-        case .brightness(let level, let subzeroLevel, _):
-            if subzeroLevel < 1.0 {
-                Image(systemName: "moon.stars.fill")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.purple)
+                    .foregroundColor(.white)
+                    .frame(width: 20, height: 20)
+            }
+
+        case .brightness(let level):
+            if level > 1.0 {
+                HStack(spacing: 4) {
+                    Image(systemName: "sun.max.trianglebadge.exclamationmark.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("XDR")
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                }
+                .foregroundColor(.orange)
+                .frame(height: 20)
             } else {
                 Image(systemName: "sun.max.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 20, height: 20)
             }
+
         case .keyboardBrightness:
             Image(systemName: "keyboard.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.white)
+                .frame(width: 20, height: 20)
+
         case .externalDeviceVolume(_, let deviceIcon, _, let systemVolume, let controllingExternal, _):
             if controllingExternal {
                 Image(systemName: deviceIcon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.green)
+                    .frame(width: 20, height: 20)
             } else {
-                Image(systemName: volumeIconName(for: systemVolume))
+                let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
+                if settings.settings.volumeHUDShowDeviceIcon, let dev = systemDevice {
+                     if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {
+                        Image(systemName: volumeIconName(for: systemVolume))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 20, height: 20)
+                    } else {
+                        Image(systemName: IconMapper.icon(for: dev))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 20, height: 20)
+                    }
+                } else {
+                    Image(systemName: volumeIconName(for: systemVolume))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                }
             }
         }
     }
 
     static func right(type: HUDType, settings: SettingsModel) -> some View {
-        let (level, isExternalControl, isSubzero) = { () -> (Float, Bool, Bool) in
-            switch type {
-            case .volume(let l, _): return (l, false, false)
-            case .brightness(let l, let sl, _): return (sl < 1.0 ? sl : l, false, sl < 1.0)
-            case .keyboardBrightness(let l): return (l, false, false)
-            case .externalDeviceVolume(_, _, let d, let s, let c, _): return (c ? d : s, c, false)
-            }
-        }()
+        let level: Float
+        let isExternalControl: Bool
+        let isXDR: Bool
 
-        let percentageText = "\(Int(level * 100))%"
+        switch type {
+        case .volume(let l, _):
+            level = l; isExternalControl = false; isXDR = false
+        case .brightness(let l):
+            level = l; isExternalControl = false; isXDR = l > 1.0
+        case .keyboardBrightness(let l):
+            level = l; isExternalControl = false; isXDR = false
+        case .externalDeviceVolume(_, _, let deviceVolume, let systemVolume, let controllingExternal, _):
+            level = controllingExternal ? deviceVolume : systemVolume
+            isExternalControl = controllingExternal
+            isXDR = false
+        }
+
+        let displayLevel: Float
+        let percentageText: String
+        let percentageFrameWidth: CGFloat
+
+        if isXDR {
+            let maxLevel = settings.settings.xdrBrightnessLevel
+            displayLevel = level / maxLevel
+            percentageText = "\(Int(roundf(level * 100)))%"
+            percentageFrameWidth = 40
+        } else {
+            displayLevel = level
+            percentageText = "\(Int(level * 100))%"
+            percentageFrameWidth = 30
+        }
 
         return HStack(spacing: 6) {
-            DynamicSliderIndicator(level: level, isSubzero: isSubzero)
-                .frame(width: settings.settings.hudShowPercentage ? 70 : 100, height: 6)
+            DynamicSliderIndicator(
+                level: displayLevel,
+                forceGreen: isExternalControl,
+                isXDR: isXDR,
+                showInternalXDRText: false,
+                onChanged: nil
+            )
+            .frame(width: settings.settings.hudShowPercentage ? 70 : 100, height: 6)
+            .fixedSize()
+
             if settings.settings.hudShowPercentage {
                 Text(percentageText)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+                    .frame(width: percentageFrameWidth, alignment: .leading)
+                    .transition(.opacity.combined(with: .offset(x: -5)))
             }
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: settings.settings.hudShowPercentage)
     }
 }
 
@@ -869,7 +1036,8 @@ fileprivate struct BoldPillSlider: View {
 
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.gray.opacity(0.25))
-                Capsule().fill(Color.green).frame(width: progressWidth)
+                Capsule().fill(Color.green)
+                    .frame(width: progressWidth)
             }
             .clipShape(Capsule())
             .contentShape(Capsule())

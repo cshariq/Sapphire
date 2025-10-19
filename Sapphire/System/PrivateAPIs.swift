@@ -43,15 +43,9 @@ internal func CoreDockSendNotification(_ notification: CFString, _ unknown: CInt
 
 // MARK: - DisplayServices Private APIs
 @_silgen_name("DisplayServicesGetBrightness")
-internal func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
+private func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
 @_silgen_name("DisplayServicesSetBrightness")
-internal func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
-
-@_silgen_name("DisplayServicesCanChangeBrightness")
-internal func DisplayServicesCanChangeBrightness(_ display: CGDirectDisplayID) -> Bool
-
-@_silgen_name("DisplayServicesSetBrightnessSmooth")
-internal func DisplayServicesSetBrightnessSmooth(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
+private func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
 
 // MARK: - SwiftUI Private APIs
 @_silgen_name("$s7SwiftUI5ImageV19_internalSystemNameACSS_tcfC")
@@ -123,7 +117,10 @@ class OSDManager {
 struct SystemControl {
     private static var brightnessAnimationTask: Task<Void, Never>?
 
+    private static let keyboardManager = KeyboardBacklightManager.sharedManager() as! KeyboardBacklightManager
+
     static func configureKeyboardBacklight() {
+        Self.keyboardManager.configure()
     }
 
     static func getVolume() -> Float {
@@ -140,8 +137,16 @@ struct SystemControl {
 
     static func setVolume(to level: Float) {
         let cleanLevel = max(0.0, min(1.0, level))
-        let scriptVolume = Int((cleanLevel * 100).rounded())
+
+        let scriptVolume: Int
+        if cleanLevel < 0.05 {
+            scriptVolume = Int(ceil(cleanLevel * 100))
+        } else {
+            scriptVolume = Int((cleanLevel * 100).rounded(.toNearestOrAwayFromZero))
+        }
+
         let scriptSource = "set volume output volume \(scriptVolume)"
+
         if let script = NSAppleScript(source: scriptSource) {
             var error: NSDictionary?
             script.executeAndReturnError(&error)
@@ -197,18 +202,24 @@ struct SystemControl {
 
     static func setBrightnessSmoothly(to targetBrightness: Float, duration: TimeInterval = 0.2) {
         brightnessAnimationTask?.cancel()
+
         brightnessAnimationTask = Task {
             let startBrightness = getBrightness()
             let startTime = Date()
             let endTime = startTime.addingTimeInterval(duration)
+
             while Date() < endTime {
                 if Task.isCancelled { break }
+
                 let elapsed = Date().timeIntervalSince(startTime)
                 let progress = min(1.0, elapsed / duration)
+
                 let interpolatedBrightness = startBrightness + (targetBrightness - startBrightness) * Float(progress)
                 setBrightness(to: interpolatedBrightness)
+
                 try? await Task.sleep(for: .milliseconds(16))
             }
+
             if !Task.isCancelled {
                 setBrightness(to: targetBrightness)
             }
@@ -216,26 +227,32 @@ struct SystemControl {
     }
 
     static func getKeyboardBrightness() -> Float {
-        return 0.5
+        return Self.keyboardManager.getBrightness()
     }
 
     static func setKeyboardBrightness(to level: Float) {
+        let clampedLevel = level.clamped(to: 0...1)
+        Self.keyboardManager.setBrightness(clampedLevel)
     }
 }
 
 // MARK: - CGS Desktop Helper
 struct CGSHelper {
     private static let connection = _CGSDefaultConnection()
+
     static func getActiveDesktopNumber() -> Int? {
         let activeSpaceID = CGSGetActiveSpace(connection)
+
         guard let displaySpaces = CGSCopyManagedDisplaySpaces(connection) as? [[String: Any]],
               let mainDisplay = displaySpaces.first,
               let spacesForMainDisplay = mainDisplay["Spaces"] as? [[String: Any]] else {
             return nil
         }
+
         if let index = spacesForMainDisplay.firstIndex(where: { ($0["id64"] as? CGSSpaceID) == activeSpaceID }) {
             return index + 1
         }
+
         return nil
     }
 }
