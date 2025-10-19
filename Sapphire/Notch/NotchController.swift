@@ -1360,7 +1360,9 @@ struct NotchController: View {
 
     private func updateFPS() {
         guard let layer = notchWindow?.contentView?.layer else { return }
-        let targetFPS = isLiveActivityActive ? 60 : 120
+        // Use 60 FPS when idle/showing live activities (sufficient for smooth display)
+        // Use 120 FPS during click-expanded state for ultra-smooth widget interactions
+        let targetFPS = notchState == .clickExpanded ? 120 : 60
         if #available(macOS 12.0, *) {
             let key = "preferredFrameRateRange"
             let rateRange = CAFrameRateRange(minimum: 0, maximum: Float(targetFPS), preferred: Float(targetFPS))
