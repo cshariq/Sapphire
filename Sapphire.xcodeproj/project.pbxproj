@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		DA17EA162E9B74E500C83AC6 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; };
+		DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262ADF2EA4841B0027CA69 /* OSD.framework */; };
+		DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AE52EA485150027CA69 /* CoreDisplay.framework */; };
+		DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */; };
 		DA2A74402E9CD8910084C657 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DA343DA22E55068300B675ED /* CaptchaSolver.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343D972E55068200B675ED /* CaptchaSolver.framework */; };
 		DA343DC92E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
@@ -261,6 +264,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		DA262ADF2EA4841B0027CA69 /* OSD.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OSD.framework; path = ../../../../System/Library/PrivateFrameworks/OSD.framework; sourceTree = "<group>"; };
+		DA262AE22EA484A70027CA69 /* Sapphire.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Sapphire.xcodeproj; sourceTree = "<group>"; };
+		DA262AE52EA485150027CA69 /* CoreDisplay.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreDisplay.framework; path = ../../../../System/Library/Frameworks/CoreDisplay.framework; sourceTree = "<group>"; };
+		DA262AF02EA5D1940027CA69 /* MultitouchSessionFilterSupport.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MultitouchSessionFilterSupport.framework; path = ../../../../System/Library/PrivateFrameworks/MultitouchSessionFilterSupport.framework; sourceTree = "<group>"; };
+		DA262AF32EA5D1A20027CA69 /* PrivateFrameworks */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PrivateFrameworks; path = ../../../../System/Library/PrivateFrameworks; sourceTree = "<group>"; };
+		DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MultitouchSupport.framework; path = ../../../../System/Library/PrivateFrameworks/MultitouchSupport.framework; sourceTree = "<group>"; };
 		DA343D972E55068200B675ED /* CaptchaSolver.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = CaptchaSolver.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA343DA12E55068300B675ED /* CaptchaSolverTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CaptchaSolverTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = CaptchaSolverInterface.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -381,8 +390,8 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"Bridging-Header.h",
-				NDNotificationCenterHackery.h,
-				NDNotificationCenterHackery.m,
+				Miscellaneous/NDNotificationCenterHackery.h,
+				Miscellaneous/NDNotificationCenterHackery.m,
 				PrivateAPI.h,
 			);
 			target = DA7C497F2E15CCA50049937A /* NearbyShare */;
@@ -390,7 +399,7 @@
 		DA8FAEEA2E7CA06700C9BD1A /* Exceptions for "ObjC" folder in "Sapphire" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				NDNotificationCenterHackery.m,
+				Miscellaneous/NDNotificationCenterHackery.m,
 			);
 			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
 		};
@@ -423,11 +432,11 @@
 		DAE1B6832E5AA3E600E710F9 /* Exceptions for "ObjC" folder in "SapphireTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				KBPAnimation.m,
-				KBPAnimator.m,
-				KBPProfile.m,
-				KBPPulseManager.m,
-				KeyboardBacklightManager.m,
+				HUD/KBPAnimation.m,
+				HUD/KBPAnimator.m,
+				HUD/KBPProfile.m,
+				HUD/KBPPulseManager.m,
+				HUD/KeyboardBacklightManager.m,
 			);
 			target = DA46CF862DCBCA0100F00EC5 /* SapphireTests */;
 		};
@@ -438,16 +447,16 @@
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = DA46CF742DCBCA0000F00EC5 /* Resources */;
 			membershipExceptions = (
-				lowlevel.c,
-				lowlevel.h,
+				Miscellaneous/lowlevel.c,
+				Miscellaneous/lowlevel.h,
 			);
 		};
 		DA7AFB342E75359B00DCEAED /* Exceptions for "ObjC" folder in "Copy Bundle Resources" phase from "SapphireTests" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = DA46CF852DCBCA0100F00EC5 /* Resources */;
 			membershipExceptions = (
-				lowlevel.c,
-				lowlevel.h,
+				Miscellaneous/lowlevel.c,
+				Miscellaneous/lowlevel.h,
 			);
 		};
 		DA91BDAC2E75DDE2001E7836 /* Exceptions for "Sapphire" folder in "Copy Bundle Resources" phase from "Sapphire" target */ = {
@@ -554,9 +563,12 @@
 				DABC6CE32E1749CA00A5CF83 /* CoreGraphics.framework in Frameworks */,
 				DA17EA162E9B74E500C83AC6 /* MediaRemoteAdapter in Frameworks */,
 				DABC6CE12E17458600A5CF83 /* UserNotificationsUI.framework in Frameworks */,
+				DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */,
 				DA8FB0442E7CBE9000C9BD1A /* TelephonyUtilities.framework in Frameworks */,
 				DA8FB04A2E7CBE9500C9BD1A /* IDS.framework in Frameworks */,
 				DA8FB04D2E7CC1B100C9BD1A /* IMCore.framework in Frameworks */,
+				DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */,
+				DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */,
 				DABC6CDF2E17458500A5CF83 /* UserNotifications.framework in Frameworks */,
 				DA9709EC2E99E9CF00F34217 /* FirebaseAnalyticsCore in Frameworks */,
 				DAF7D8AB2E207BBC00AB0820 /* SwiftProtobufPluginLibrary in Frameworks */,
@@ -609,6 +621,11 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		DA262AE32EA484A70027CA69 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
+			sourceTree = "<group>";
+		};
 		DA46CF6D2DCBCA0000F00EC5 = {
 			isa = PBXGroup;
 			children = (
@@ -649,6 +666,12 @@
 		DA46CFCE2DCE7B9E00F00EC5 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */,
+				DA262AF32EA5D1A20027CA69 /* PrivateFrameworks */,
+				DA262AF02EA5D1940027CA69 /* MultitouchSessionFilterSupport.framework */,
+				DA262AE52EA485150027CA69 /* CoreDisplay.framework */,
+				DA262AE22EA484A70027CA69 /* Sapphire.xcodeproj */,
+				DA262ADF2EA4841B0027CA69 /* OSD.framework */,
 				DA69D6282E8442F5007FD12D /* dylib1.o */,
 				DA8FB04F2E7D898F00C9BD1A /* MobileTimer.framework */,
 				DA8FB0502E7D898F00C9BD1A /* MobileTimerSupport.framework */,
@@ -1160,6 +1183,12 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DA46CF772DCBCA0000F00EC5 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = DA262AE32EA484A70027CA69 /* Products */;
+					ProjectRef = DA262AE22EA484A70027CA69 /* Sapphire.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				DA46CF752DCBCA0000F00EC5 /* Sapphire */,
@@ -1749,6 +1778,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
@@ -1807,6 +1837,7 @@
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;

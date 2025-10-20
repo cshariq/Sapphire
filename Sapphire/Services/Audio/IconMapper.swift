@@ -57,7 +57,7 @@ struct IconMapper {
     }
 
     private static let universalDeviceMap: [(keywords: [String], icon: String, hasBattery: Bool)] = [
-        (["macbook"], "macbook", true),
+        (["macbook"], "macbook", false),
         (["imac"], "desktopcomputer", false),
         (["mac mini"], "macmini.fill", false),
         (["mac studio"], "macstudio.fill", false),
@@ -66,10 +66,10 @@ struct IconMapper {
 
         (["studio display", "apple display"], "display", false),
 
-        (["iphone"], "iphone", true),
-        (["ipad"], "ipad", true),
-        (["apple watch"], "applewatch", true),
-        (["vision pro"], "visionpro", true),
+        (["iphone"], "iphone", false),
+        (["ipad"], "ipad", false),
+        (["apple watch"], "applewatch", false),
+        (["vision pro"], "visionpro", false),
 
         (["magic keyboard"], "keyboard.fill", true),
         (["magic mouse"], "magicmouse.fill", true),

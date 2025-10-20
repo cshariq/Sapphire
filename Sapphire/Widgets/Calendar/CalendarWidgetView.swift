@@ -34,13 +34,13 @@ struct CenterDatePreferenceKey: PreferenceKey {
     }
 }
 
-@available(macOS 14.0, *)
 struct CalendarWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
     @ObservedObject var viewModel: InteractiveCalendarViewModel
     @EnvironmentObject var calendarService: CalendarService
 
     @State private var hasScrolledInitially = false
+    @State private var selectionWorkItem: DispatchWorkItem?
 
     private var combinedScheduleItems: [ScheduleItem] {
         let events = calendarService.eventsForSelectedDate.compactMap { event -> ScheduleItem? in
@@ -122,7 +122,7 @@ struct CalendarWidgetView: View {
                             )
                             .id(date)
                             .onTapGesture {
-                                HapticManager.perform(.generic)
+                                HapticManager.shared.perform(HapticFeedbackType.medium)
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                                     viewModel.selectDate(date)
                                     proxy.scrollTo(date, anchor: .center)
@@ -139,14 +139,21 @@ struct CalendarWidgetView: View {
                     }
                 }
                 .onPreferenceChange(CenterDatePreferenceKey.self) { centerInfo in
-                    guard hasScrolledInitially else { return }
+                    guard hasScrolledInitially, let newDate = centerInfo?.date else { return }
 
-                    if let newDate = centerInfo?.date, !newDate.isSameDay(as: viewModel.selectedDate) {
-                        HapticManager.perform(.alignment)
-                        withAnimation(.easeInOut(duration: 0.1)) {
-                            viewModel.selectDate(newDate)
+                    selectionWorkItem?.cancel()
+
+                    let workItem = DispatchWorkItem {
+                        if !newDate.isSameDay(as: viewModel.selectedDate) {
+                            HapticManager.shared.perform(HapticFeedbackType.weak)
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                viewModel.selectDate(newDate)
+                            }
                         }
                     }
+
+                    selectionWorkItem = workItem
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
                 }
             }
             .frame(height: 36)

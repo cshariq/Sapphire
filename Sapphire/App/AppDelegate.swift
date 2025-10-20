@@ -91,6 +91,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private var networkMonitor: NWPathMonitor?
 
+    private var previouslyFrontmostApp: NSRunningApplication?
+
     lazy var liveActivityManager: LiveActivityManager = LiveActivityManager(
         systemHUDManager: self.systemHUDManager, notificationManager: self.notificationManager, desktopManager: self.desktopManager,
         focusModeManager: self.focusModeManager, musicWidget: self.musicManager, calendarService: self.calendarService,
@@ -159,7 +161,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func initializeCoreManagers() {
         let managers: [Any] = [
-            musicManager, notificationManager, desktopManager, focusModeManager,
+            musicManager, systemHUDManager, notificationManager, desktopManager, focusModeManager,
             calendarService, batteryMonitor, batteryManager, bluetoothManager, audioDeviceManager,
             multiAudioManager, eyeBreakManager, timerManager, weatherActivityViewModel,
             contentPickerHelper, geminiLiveManager, settingsModel, activeAppMonitor,
@@ -243,7 +245,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         liveActivityManager.fileShelfManager = self.fileShelfManager
 
-        OSDManager.disableSystemHUD()
         SystemControl.configureKeyboardBacklight()
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURL), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         setupSessionObservers()
@@ -422,7 +423,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
-        OSDManager.enableSystemHUD()
         NSAppleEventManager.shared().removeEventHandler(forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         cgsSpace = nil
         NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -567,6 +567,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func makeNotchWindowFocusable() {
         guard let window = notchWindow as? DynamicFocusWindow else { return }
 
+        if previouslyFrontmostApp == nil {
+            let currentFrontmost = NSWorkspace.shared.frontmostApplication
+            if currentFrontmost?.bundleIdentifier != Bundle.main.bundleIdentifier {
+                previouslyFrontmostApp = currentFrontmost
+            }
+        }
+
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
@@ -590,6 +597,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         if NSApp.activationPolicy() != .accessory {
             NSApp.setActivationPolicy(.accessory)
+        }
+
+        if let appToReactivate = previouslyFrontmostApp {
+            appToReactivate.activate(options: [.activateIgnoringOtherApps])
+            previouslyFrontmostApp = nil
         }
     }
 

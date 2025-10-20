@@ -15,6 +15,8 @@ internal typealias CGSConnectionID = Int32
 internal typealias CGSSpaceID = UInt64
 internal typealias CGError = Int32
 
+internal let kCGErrorSuccess: CGError = 0
+
 // MARK: - CoreGraphics Services Private APIs (for Notch Window)
 @_silgen_name("_CGSDefaultConnection")
 internal func _CGSDefaultConnection() -> CGSConnectionID
@@ -43,9 +45,9 @@ internal func CoreDockSendNotification(_ notification: CFString, _ unknown: CInt
 
 // MARK: - DisplayServices Private APIs
 @_silgen_name("DisplayServicesGetBrightness")
-private func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
+internal func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
 @_silgen_name("DisplayServicesSetBrightness")
-private func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
+internal func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
 
 // MARK: - SwiftUI Private APIs
 @_silgen_name("$s7SwiftUI5ImageV19_internalSystemNameACSS_tcfC")
@@ -102,14 +104,14 @@ public final class CGSSpace {
     }
 }
 
-// MARK: - System HUD Management
-class OSDManager {
+// MARK: - System HUD Management (Sapphire's placeholder)
+class SapphireOSDManager {
     static func disableSystemHUD() {
-        print("[OSDManager] LOG: `disableSystemHUD` called. Native HUD suppression is handled by consuming media key events in `SystemHUDManager`.")
+        print("[SapphireOSDManager] LOG: `disableSystemHUD` called.")
     }
 
     static func enableSystemHUD() {
-        print("[OSDManager] LOG: `enableSystemHUD` called. No action needed.")
+        print("[SapphireOSDManager] LOG: `enableSystemHUD` called.")
     }
 }
 
@@ -121,6 +123,15 @@ struct SystemControl {
 
     static func configureKeyboardBacklight() {
         Self.keyboardManager.configure()
+    }
+
+    static func getKeyboardBrightness() -> Float {
+        return Self.keyboardManager.getBrightness()
+    }
+
+    static func setKeyboardBrightness(to level: Float) {
+        let clampedLevel = max(0.0, min(1.0, level))
+        Self.keyboardManager.setBrightness(clampedLevel)
     }
 
     static func getVolume() -> Float {
@@ -225,15 +236,6 @@ struct SystemControl {
             }
         }
     }
-
-    static func getKeyboardBrightness() -> Float {
-        return Self.keyboardManager.getBrightness()
-    }
-
-    static func setKeyboardBrightness(to level: Float) {
-        let clampedLevel = level.clamped(to: 0...1)
-        Self.keyboardManager.setBrightness(clampedLevel)
-    }
 }
 
 // MARK: - CGS Desktop Helper
@@ -255,4 +257,13 @@ struct CGSHelper {
 
         return nil
     }
+}
+
+class KeyboardBacklightManager: NSObject {
+    static func sharedManager() -> Any {
+        return KeyboardBacklightManager()
+    }
+    func configure() {}
+    func getBrightness() -> Float { return 0.5 }
+    func setBrightness(_ level: Float) {}
 }

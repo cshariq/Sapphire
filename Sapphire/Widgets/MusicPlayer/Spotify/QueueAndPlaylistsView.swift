@@ -36,13 +36,16 @@ struct QueueAndPlaylistsView: View {
 
     @State private var queueRefreshTimer: Timer?
 
+    var isLockScreenMode: Bool = false
+
     private let lastSelectedPaneKey = "lastSelectedMusicPane"
     private var isAppleMusic: Bool { musicManager.lastKnownBundleID == "com.apple.Music" }
     private var isLoggedIn: Bool { musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated }
 
-    init(navigationStack: Binding<[NotchWidgetMode]>) {
+    init(navigationStack: Binding<[NotchWidgetMode]>, isLockScreenMode: Bool = false) {
         self._navigationStack = navigationStack
         self._selection = State(initialValue: UserDefaults.standard.integer(forKey: lastSelectedPaneKey))
+        self.isLockScreenMode = isLockScreenMode
     }
 
     var body: some View {
@@ -244,7 +247,7 @@ struct QueueAndPlaylistsView: View {
                 if !currentPlaylists.isEmpty {
                     ForEach(currentPlaylists) { playlist in
                         let isPlaying = playlist.uri == musicManager.spotifyPrivateAPI.currentContextURI
-                        FullPlaylistRow(playlist: playlist, navigationStack: $navigationStack, isPlaying: isPlaying)
+                        FullPlaylistRow(playlist: playlist, navigationStack: $navigationStack, isPlaying: isPlaying, isLockScreenMode: isLockScreenMode)
                     }
                 } else { CustomUnavailableView(title: "No Playlists Found", systemImage: "music.mic") }
             }.padding(.horizontal)
@@ -367,7 +370,10 @@ struct FullPlaylistRow: View {
     let playlist: SpotifyPlaylist
     @Binding var navigationStack: [NotchWidgetMode]
     let isPlaying: Bool
+    let isLockScreenMode: Bool
+    @EnvironmentObject var navigationManager: LockScreenNavigationManager
     @State private var isHovered = false
+
     var body: some View {
         HStack(spacing: 15) {
             CachedAsyncImage(url: playlist.imageURL) { $0.resizable() } placeholder: { ZStack { Color.secondary.opacity(0.3); Image(systemName: "music.note.list") } }
@@ -383,11 +389,15 @@ struct FullPlaylistRow: View {
         }
         .padding(10).background(Color.white.opacity(isHovered ? 0.15 : 0.1)).cornerRadius(12)
         .onHover { hovering in self.isHovered = hovering }
-        .onTapGesture { navigationStack.append(.musicPlaylistDetail(playlist)) }
+        .onTapGesture {
+            if isLockScreenMode {
+                navigationManager.navigateTo(.playlistDetail(playlist))
+            } else {
+                navigationStack.append(.musicPlaylistDetail(playlist))
+            }
+        }
         .animation(.easeInOut(duration: 0.15), value: isHovered)
-
     }
-
 }
 
 struct NowPlayingInfoView: View {

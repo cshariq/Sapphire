@@ -8,10 +8,69 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Optimized Subviews for High-Frequency Updates
+
+private struct TimeLabel: View {
+    @EnvironmentObject var musicManager: MusicManager
+    let isRemainingTime: Bool
+
+    private func formatTime(_ seconds: Double) -> String {
+        let cleanSeconds = seconds.isNaN || seconds.isInfinite ? 0 : seconds
+        let (minutes, seconds) = (Int(cleanSeconds) / 60, Int(cleanSeconds) % 60)
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    var body: some View {
+        Text(isRemainingTime ? "-\(formatTime(musicManager.totalDuration - musicManager.currentElapsedTime))" : formatTime(musicManager.currentElapsedTime))
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .foregroundColor(.secondary)
+            .onReceive(musicManager.playbackTimePublisher) { _ in
+            }
+    }
+}
+
+private struct LyricTextView: View {
+    @EnvironmentObject var musicManager: MusicManager
+    @EnvironmentObject var navigationManager: LockScreenNavigationManager
+    @Binding var navigationStack: [NotchWidgetMode]
+    let isLockScreenMode: Bool
+
+    @State private var currentLyricText: String?
+
+    var body: some View {
+        Group {
+            if let lyricText = currentLyricText, !lyricText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(lyricText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(musicManager.accentColor)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(minHeight: 35, alignment: .center)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+                    .id("lyric-\(lyricText)")
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if isLockScreenMode {
+                            navigationManager.navigateTo(.lyrics)
+                        } else {
+                            navigationStack.append(.musicLyrics)
+                        }
+                    }
+            }
+        }
+        .onReceive(musicManager.currentLyricPublisher) { newLyric in
+            self.currentLyricText = newLyric?.translatedText ?? newLyric?.text
+        }
+    }
+}
+
+// MARK: - Main MusicPlayerView
+
 struct MusicPlayerView: View {
     @Binding var navigationStack: [NotchWidgetMode]
     @EnvironmentObject var musicManager: MusicManager
     @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var navigationManager: LockScreenNavigationManager
 
     var isLockScreenMode: Bool = false
 
@@ -22,8 +81,6 @@ struct MusicPlayerView: View {
     @State private var showTemporaryLikedGlow = false
 
     @State private var currentProgress: Double = 0.0
-    @State private var elapsedTime: TimeInterval = 0.0
-    @State private var currentLyricText: String?
 
     @State private var isPressingPlaylists = false
     @State private var isPressingDevices = false
@@ -81,12 +138,6 @@ struct MusicPlayerView: View {
         return .repeat
     }
 
-    private func formatTime(_ seconds: Double) -> String {
-        let cleanSeconds = seconds.isNaN || seconds.isInfinite ? 0 : seconds
-        let (minutes, seconds) = (Int(cleanSeconds) / 60, Int(cleanSeconds) % 60)
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-
     var body: some View {
         VStack(spacing: 3) {
             HStack(spacing: 12) {
@@ -127,30 +178,29 @@ struct MusicPlayerView: View {
                         }
                     }
                 }
-                .buttonStyle(.plain).disabled(isLockScreenMode)
+                .buttonStyle(.plain)
 
                 Spacer()
-                WaveformView().environmentObject(musicManager).scaleEffect(1.3)
+
+                WaveformView()
+                    .environmentObject(musicManager)
+                    .scaleEffect(1.3)
+                    .compositingGroup()
             }
             .padding(.top, 10)
 
             if musicManager.isPlaying || musicManager.totalDuration > 0 {
                 VStack(spacing: 3) {
                     HStack(alignment: .center, spacing: 8) {
-                        Text(formatTime(elapsedTime))
+                        TimeLabel(isRemainingTime: false)
                         InteractiveProgressBar(value: $currentProgress, gradient: Gradient(colors: [musicManager.leftGradientColor, musicManager.rightGradientColor]), onSeek: { newProgress in
                             let seekTime = newProgress * musicManager.totalDuration
                             if seekTime.isFinite && musicManager.totalDuration > 0 { musicManager.seek(to: seekTime) }
                         }).frame(height: 30).shadow(color: musicManager.accentColor.opacity(0.5), radius: 8, y: 3)
-                        Text("-\(formatTime(musicManager.totalDuration - elapsedTime))")
-                    }.font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(.secondary)
-
-                    if let lyricText = currentLyricText, !lyricText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(lyricText).font(.system(size: 12, weight: .medium)).foregroundColor(musicManager.accentColor)
-                            .multilineTextAlignment(.center).lineLimit(2).frame(minHeight: 35, alignment: .center)
-                            .transition(.opacity.animation(.easeInOut(duration: 0.3))).id("lyric-\(lyricText)")
-                            .contentShape(Rectangle()).onTapGesture { if !isLockScreenMode { navigationStack.append(.musicLyrics) } }
+                        TimeLabel(isRemainingTime: true)
                     }
+
+                    LyricTextView(navigationStack: $navigationStack, isLockScreenMode: isLockScreenMode)
 
                     HStack {
                         MusicPlayerActionButton(type: primaryButtons.first, size: .primary)
@@ -164,8 +214,8 @@ struct MusicPlayerView: View {
                         MusicPlayerActionButton(type: primaryButtons.dropFirst().first, size: .primary)
                     }
                     .buttonStyle(PlainButtonStyle()).font(.system(size: 22)).foregroundColor(.primary)
-                    .padding(.top, (currentLyricText == nil && accessoryButtons.isEmpty) ? 10 : 0)
-                    .padding(.bottom, currentLyricText == nil ? 5 : 0)
+                    .padding(.top, (musicManager.currentLyric == nil && accessoryButtons.isEmpty) ? 10 : 0)
+                    .padding(.bottom, musicManager.currentLyric == nil ? 5 : 0)
 
                     if !accessoryButtons.isEmpty {
                         HStack(spacing: 25) { ForEach(accessoryButtons) { buttonType in MusicPlayerActionButton(type: buttonType, size: .accessory) } }
@@ -175,20 +225,13 @@ struct MusicPlayerView: View {
             }
         }
         .frame(width: 400).padding(10)
-        .animation(.easeInOut(duration: 0.3), value: currentLyricText)
         .animation(.easeInOut(duration: 0.4), value: musicManager.isPlaying)
         .animation(.default, value: enabledButtons)
         .onAppear {
             self.currentProgress = musicManager.playbackProgress
-            self.elapsedTime = musicManager.currentElapsedTime
-            self.currentLyricText = musicManager.currentLyric?.translatedText ?? musicManager.currentLyric?.text
         }
-        .onReceive(musicManager.playbackTimePublisher) { (newElapsedTime, newProgress) in
+        .onReceive(musicManager.playbackTimePublisher) { (_, newProgress) in
             self.currentProgress = newProgress
-            self.elapsedTime = newElapsedTime
-        }
-        .onReceive(musicManager.currentLyricPublisher) { newLyric in
-            self.currentLyricText = newLyric?.translatedText ?? newLyric?.text
         }
         .onChange(of: musicManager.isLiked) { isLiked in
             if isLiked {
@@ -204,11 +247,33 @@ struct MusicPlayerView: View {
     }
 
     private func handleButtonTap(for targetMode: NotchWidgetMode) {
-        guard !isLockScreenMode else { return }
-        if !musicManager.isPrivateAPIAuthenticated && !musicManager.isOfficialAPIAuthenticated && musicManager.lastKnownBundleID != "com.apple.Music" {
-            if targetMode != .musicDevices { navigationStack.append(.musicLoginPrompt); return }
+        if isLockScreenMode {
+            let destination: LockScreenMusicView
+            switch targetMode {
+            case .musicQueueAndPlaylists:
+                destination = .queueAndPlaylists
+            case .musicDevices:
+                destination = .devices
+            case .musicLoginPrompt:
+                destination = .loginPrompt
+            default:
+                return
+            }
+
+            if !musicManager.isPrivateAPIAuthenticated && !musicManager.isOfficialAPIAuthenticated && musicManager.lastKnownBundleID != "com.apple.Music" {
+                if targetMode != .musicDevices {
+                    navigationManager.navigateTo(.loginPrompt)
+                    return
+                }
+            }
+            navigationManager.navigateTo(destination)
+
+        } else {
+            if !musicManager.isPrivateAPIAuthenticated && !musicManager.isOfficialAPIAuthenticated && musicManager.lastKnownBundleID != "com.apple.Music" {
+                if targetMode != .musicDevices { navigationStack.append(.musicLoginPrompt); return }
+            }
+            navigationStack.append(targetMode)
         }
-        navigationStack.append(targetMode)
     }
 
     private func triggerHapticFeedback() { NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now) }
@@ -246,14 +311,13 @@ struct MusicPlayerView: View {
                         longPressTask?.cancel(); longPressTask = nil
                         if !didTriggerLongPress {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { isPressingPlaylists = false }
-                            if !isLockScreenMode { handleButtonTap(for: .musicQueueAndPlaylists) }
+                            handleButtonTap(for: .musicQueueAndPlaylists)
                         } else {
                             isPressingPlaylists = false
                         }
                         playlistsFeedbackType = nil; didTriggerLongPress = false
                     }
                 ZStack {
-                    // MARK: - Fix: Correctly show all 3 repeat states
                     Image(systemName: musicManager.repeatState == .track ? "repeat.1" : "repeat").font(.system(size: iconSize)).opacity(playlistsFeedbackType == .repeat ? 1 : 0)
                     Image(systemName: "shuffle").font(.system(size: iconSize)).opacity(playlistsFeedbackType == .shuffle ? 1 : 0)
                     Image(systemName: type.systemImage).font(.system(size: iconSize + 2)).opacity(playlistsFeedbackType != nil ? 0 : 1)
@@ -288,7 +352,7 @@ struct MusicPlayerView: View {
                         longPressTask?.cancel(); longPressTask = nil
                         if !didTriggerLongPress {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { isPressingDevices = false }
-                            if !isLockScreenMode { handleButtonTap(for: .musicDevices) }
+                            handleButtonTap(for: .musicDevices)
                         } else {
                             isPressingDevices = false
                         }

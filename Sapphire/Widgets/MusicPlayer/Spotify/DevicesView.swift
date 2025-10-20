@@ -47,6 +47,8 @@ struct DevicesView: View {
 
     @State private var isLoading = true
 
+    var isLockScreenMode: Bool = false
+
     private let volumeThrottler = Throttler(delay: 0.1)
 
     private let lastSelectedTabKey = "lastSelectedDeviceTab"
@@ -59,10 +61,11 @@ struct DevicesView: View {
         musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated
     }
 
-    init(navigationStack: Binding<[NotchWidgetMode]>) {
+    init(navigationStack: Binding<[NotchWidgetMode]>, isLockScreenMode: Bool = false) {
         self._navigationStack = navigationStack
         let savedTab = UserDefaults.standard.integer(forKey: lastSelectedTabKey)
         self._selectedTab = State(initialValue: DeviceTab(rawValue: savedTab) ?? .spotify)
+        self.isLockScreenMode = isLockScreenMode
     }
 
     private func sendVolumeUpdate() {

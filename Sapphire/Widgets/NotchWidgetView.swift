@@ -56,7 +56,6 @@ struct NotchWidgetView: View {
         self.weatherWidgetView = WeatherWidgetView()
         self.calendarWidgetView = CalendarWidgetView(viewModel: calendarViewModel)
         self.shortcutWidgetView = ShortcutWidgetView()
-
     }
 
     private var currentMode: NotchWidgetMode {
@@ -83,8 +82,15 @@ struct NotchWidgetView: View {
     var body: some View {
         ZStack {
             contentSwitch
-                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: currentMode)
+                .id(currentMode)
+                .transition(.asymmetric(
+                    insertion: .offset(y: -200)
+                               .combined(with: .scale(scale: 0.8, anchor: .top))
+                               .combined(with: .opacity),
+                    removal: .opacity.animation(.easeIn(duration: 0.15))
+                ))
         }
+        .animation(NotchConfiguration.contentTransitionAnimation, value: currentMode)
         .padding(.top, NotchConfiguration.universalHeight - 10)
         .notchHorizontalPadding(cornerRadius: cornerRadius)
     }
@@ -107,10 +113,8 @@ struct NotchWidgetView: View {
             }
         case .musicApiKeysMissing:
             ApiKeysMissingView(navigationStack: navigationStack)
-                .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .scale(scale: 0.9).combined(with: .opacity)))
         case .geminiApiKeysMissing:
             GeminiApiKeysMissingView(navigationStack: navigationStack)
-                .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .scale(scale: 0.9).combined(with: .opacity)))
         case .musicPlayer:
             MusicPlayerView(navigationStack: navigationStack)
         case .musicLoginPrompt:
@@ -172,7 +176,7 @@ struct NotchWidgetView: View {
                     if settings.settings.musicOpenOnClick {
                         Task {
                             try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
-                            navigationStack.wrappedValue.append(.musicPlayer)
+                            navigationStack.wrappedValue.append(NotchWidgetMode.musicPlayer)
                         }
                     }
                 }
@@ -182,7 +186,7 @@ struct NotchWidgetView: View {
                     if settings.settings.weatherOpenOnClick {
                         Task {
                             try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
-                            navigationStack.wrappedValue.append(.weatherPlayer)
+                            navigationStack.wrappedValue.append(NotchWidgetMode.weatherPlayer)
                         }
                     }
                 }
@@ -192,7 +196,7 @@ struct NotchWidgetView: View {
                     if settings.settings.calendarOpenOnClick {
                         Task {
                             try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
-                            navigationStack.wrappedValue.append(.calendarPlayer)
+                            navigationStack.wrappedValue.append(NotchWidgetMode.calendarPlayer)
                         }
                     }
                 }

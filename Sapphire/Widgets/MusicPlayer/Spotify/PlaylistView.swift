@@ -63,6 +63,7 @@ class TrackViewModel: ObservableObject, Identifiable {
 
 struct PlaylistView: View {
     let playlist: SpotifyPlaylist
+    let isLockScreenMode: Bool
 
     @StateObject private var spotifyPrivateAPI = SpotifyPrivateAPIManager.shared
     @EnvironmentObject private var musicManager: MusicManager
@@ -100,6 +101,11 @@ struct PlaylistView: View {
     @State private var indexingProgress: Double = 0.0
 
     private let playlistSortStateKey = "playlistSortDescriptors"
+
+    init(playlist: SpotifyPlaylist, isLockScreenMode: Bool = false) {
+        self.playlist = playlist
+        self.isLockScreenMode = isLockScreenMode
+    }
 
     private var sortedViewModels: [TrackViewModel] {
         if sortOption == .defaultOrder {

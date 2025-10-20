@@ -58,7 +58,6 @@ struct MusicWidgetView: View {
             .shadow(color: musicManager.accentColor.opacity(0.7), radius: 8, y: 5)
             .onHover { hovering in
                 self.isHoveringArtwork = hovering
-                if hovering { HapticManager.perform(.alignment) }
             }
     }
 

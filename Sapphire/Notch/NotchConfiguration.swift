@@ -120,8 +120,7 @@ struct NotchConfiguration {
     static var initialOpenCollapseDelay: TimeInterval = 1.5
     static var widgetSwitchCollapseDelay: TimeInterval = 3.0
 
-    // MARK: - Animation Configurations
-
+    // MARK: - Animation Configurations (Represents the 'Snappy' default)
     static var expandAnimation = Animation.spring(response: 0.45, dampingFraction: 0.68, blendDuration: 0)
     static var swipeOpenAnimation = Animation.spring(response: 0.5, dampingFraction: 0.85, blendDuration: 0)
     static var collapseAnimation = Animation.spring(response: 0.3, dampingFraction: 0.98, blendDuration: 0)
@@ -139,7 +138,6 @@ struct NotchConfiguration {
     static var immediateAnimation = Animation.linear(duration: 0)
 
     // MARK: - Blur Animation Configurations
-
     static var blurAnimation = Animation.easeIn(duration: 0.1)
     static var blurRemovalAnimation = Animation.easeOut(duration: 0.22)
     static var widgetBlurRadiusMax: CGFloat = 30
@@ -275,13 +273,19 @@ struct ResolvedNotchConfiguration {
     let expandAnimation: Animation
     let swipeOpenAnimation: Animation
     let collapseAnimation: Animation
-    let autoExpandAnimation = NotchConfiguration.autoExpandAnimation
-    let hoverAnimation = NotchConfiguration.hoverAnimation
-    let contentTransitionAnimation = NotchConfiguration.contentTransitionAnimation
-    let activityToActivityAnimation = NotchConfiguration.activityToActivityAnimation
-    let bottomContentAnimation = NotchConfiguration.bottomContentAnimation
-    let bottomContentTransitionAnimation = NotchConfiguration.bottomContentTransitionAnimation
-    let activityOpacityAnimation = NotchConfiguration.activityOpacityAnimation
+    let autoExpandAnimation: Animation
+    let hoverAnimation: Animation
+    let contentTransitionAnimation: Animation
+    let activityToActivityAnimation: Animation
+    let activityMorphAnimation: Animation
+    let bottomContentAnimation: Animation
+    let heightIncreaseAnimation: Animation
+    let heightDecreaseAnimation: Animation
+    let largeMenuAnimation: Animation
+
+    let bottomContentTransitionAnimation: Animation
+    let activityOpacityAnimation: Animation
+    let immediateAnimation: Animation
 
     // MARK: - Blur Animation Configurations
     let blurAnimation = NotchConfiguration.blurAnimation
@@ -339,10 +343,6 @@ struct ResolvedNotchConfiguration {
             self.widgetSwitchCollapseDelay = custom.widgetSwitchCollapseDelay
             self.dragActivationCollapseDelay = custom.dragActivationCollapseDelay
 
-            self.expandAnimation = .spring(response: custom.expandAnimationResponse, dampingFraction: custom.expandAnimationDamping)
-            self.swipeOpenAnimation = .spring(response: custom.swipeOpenAnimationResponse, dampingFraction: custom.swipeOpenAnimationDamping)
-            self.collapseAnimation = .spring(response: custom.collapseAnimationResponse, dampingFraction: custom.collapseAnimationDamping)
-
             self.widgetBlurRadiusMax = custom.widgetBlurRadiusMax
             self.activityBlurRadiusMax = custom.activityBlurRadiusMax
             self.expandedShadowRadius = custom.expandedShadowRadius
@@ -368,9 +368,6 @@ struct ResolvedNotchConfiguration {
             self.initialOpenCollapseDelay = NotchConfiguration.initialOpenCollapseDelay
             self.widgetSwitchCollapseDelay = NotchConfiguration.widgetSwitchCollapseDelay
             self.dragActivationCollapseDelay = NotchConfiguration.dragActivationCollapseDelay
-            self.expandAnimation = NotchConfiguration.expandAnimation
-            self.swipeOpenAnimation = NotchConfiguration.swipeOpenAnimation
-            self.collapseAnimation = NotchConfiguration.collapseAnimation
             self.widgetBlurRadiusMax = NotchConfiguration.widgetBlurRadiusMax
             self.activityBlurRadiusMax = NotchConfiguration.activityBlurRadiusMax
             self.expandedShadowRadius = NotchConfiguration.expandedShadowRadius
@@ -379,5 +376,70 @@ struct ResolvedNotchConfiguration {
             self.contentBottomPadding = NotchConfiguration.contentBottomPadding
             self.contentHorizontalPadding = NotchConfiguration.contentHorizontalPadding
         }
+
+        let profile = settings.animationProfile
+        let customAnim = settings.customAnimationConfiguration
+
+        switch profile {
+        case .snappy:
+            self.expandAnimation = .spring(response: 0.45, dampingFraction: 0.68)
+            self.swipeOpenAnimation = .spring(response: 0.5, dampingFraction: 0.85)
+            self.collapseAnimation = .spring(response: 0.3, dampingFraction: 0.98)
+            self.autoExpandAnimation = .spring(response: 0.42, dampingFraction: 0.92)
+            self.hoverAnimation = .spring(response: 0.38, dampingFraction: 0.96)
+            self.contentTransitionAnimation = .spring(response: 0.35, dampingFraction: 0.9)
+            self.activityToActivityAnimation = .spring(response: 0.4, dampingFraction: 0.98)
+            self.activityMorphAnimation = .spring(response: 0.5, dampingFraction: 0.88)
+            self.bottomContentAnimation = .spring(response: 0.42, dampingFraction: 0.999)
+            self.heightIncreaseAnimation = .spring(response: 0.38, dampingFraction: 0.995)
+            self.heightDecreaseAnimation = .spring(response: 0.36, dampingFraction: 0.999)
+            self.largeMenuAnimation = .spring(response: 0.5, dampingFraction: 0.97)
+
+        case .bouncy:
+            self.expandAnimation = .spring(response: 0.4, dampingFraction: 0.65)
+            self.swipeOpenAnimation = .spring(response: 0.35, dampingFraction: 0.45)
+            self.collapseAnimation = .spring(response: 0.3, dampingFraction: 0.98)
+            self.autoExpandAnimation = .spring(response: 0.42, dampingFraction: 0.92)
+            self.hoverAnimation = .spring(response: 0.25, dampingFraction: 0.45)
+            self.contentTransitionAnimation = .spring(response: 0.55, dampingFraction: 0.85)
+            self.activityToActivityAnimation = .spring(response: 0.4, dampingFraction: 0.98)
+            self.activityMorphAnimation = .spring(response: 0.5, dampingFraction: 0.88)
+            self.bottomContentAnimation = .spring(response: 0.42, dampingFraction: 0.999)
+            self.heightIncreaseAnimation = .spring(response: 0.35, dampingFraction: 0.6)
+            self.heightDecreaseAnimation = .spring(response: 0.32, dampingFraction: 0.6)
+            self.largeMenuAnimation = .spring(response: 0.38, dampingFraction: 0.55)
+
+        case .calm:
+            self.expandAnimation = .spring(response: 0.7, dampingFraction: 0.9)
+            self.swipeOpenAnimation = .spring(response: 0.7, dampingFraction: 0.9)
+            self.collapseAnimation = .spring(response: 0.5, dampingFraction: 0.95)
+            self.autoExpandAnimation = .spring(response: 0.6, dampingFraction: 0.95)
+            self.hoverAnimation = .spring(response: 0.5, dampingFraction: 1.0)
+            self.contentTransitionAnimation = .spring(response: 0.75, dampingFraction: 0.9)
+            self.activityToActivityAnimation = .spring(response: 0.6, dampingFraction: 0.98)
+            self.activityMorphAnimation = .spring(response: 0.7, dampingFraction: 0.95)
+            self.bottomContentAnimation = .spring(response: 0.6, dampingFraction: 0.98)
+            self.heightIncreaseAnimation = .spring(response: 0.55, dampingFraction: 0.98)
+            self.heightDecreaseAnimation = .spring(response: 0.55, dampingFraction: 0.98)
+            self.largeMenuAnimation = .spring(response: 0.75, dampingFraction: 0.95)
+
+        case .custom:
+            self.expandAnimation = .spring(response: customAnim.expandResponse, dampingFraction: customAnim.expandDamping)
+            self.swipeOpenAnimation = .spring(response: customAnim.swipeOpenResponse, dampingFraction: customAnim.swipeOpenDamping)
+            self.collapseAnimation = .spring(response: customAnim.collapseResponse, dampingFraction: customAnim.collapseDamping)
+            self.autoExpandAnimation = .spring(response: customAnim.autoExpandResponse, dampingFraction: customAnim.autoExpandDamping)
+            self.hoverAnimation = .spring(response: customAnim.hoverResponse, dampingFraction: customAnim.hoverDamping)
+            self.contentTransitionAnimation = .spring(response: customAnim.contentTransitionResponse, dampingFraction: customAnim.contentTransitionDamping)
+            self.activityToActivityAnimation = .spring(response: customAnim.activityToActivityResponse, dampingFraction: customAnim.activityToActivityDamping)
+            self.activityMorphAnimation = .spring(response: customAnim.activityMorphResponse, dampingFraction: customAnim.activityMorphDamping)
+            self.bottomContentAnimation = .spring(response: customAnim.bottomContentResponse, dampingFraction: customAnim.bottomContentDamping)
+            self.heightIncreaseAnimation = .spring(response: customAnim.heightIncreaseResponse, dampingFraction: customAnim.heightIncreaseDamping)
+            self.heightDecreaseAnimation = .spring(response: customAnim.heightDecreaseResponse, dampingFraction: customAnim.heightDecreaseDamping)
+            self.largeMenuAnimation = .spring(response: customAnim.largeMenuResponse, dampingFraction: customAnim.largeMenuDamping)
+        }
+
+        self.bottomContentTransitionAnimation = NotchConfiguration.bottomContentTransitionAnimation
+        self.activityOpacityAnimation = NotchConfiguration.activityOpacityAnimation
+        self.immediateAnimation = NotchConfiguration.immediateAnimation
     }
 }

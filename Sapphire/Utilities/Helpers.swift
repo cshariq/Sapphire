@@ -32,10 +32,16 @@ public class Debouncer {
     }
 
     func flush() {
-            workItem?.perform()
-            workItem?.cancel()
-            workItem = nil
-        }
+        workItem?.perform()
+        workItem?.cancel()
+        workItem = nil
+    }
+}
+
+public func haptic(strength: HapticFeedbackType = .strong) {
+    if SettingsModel.shared.settings.hapticFeedbackEnabled {
+        HapticManager.shared.perform(strength)
+    }
 }
 
 struct SizeLoggingViewModifier: ViewModifier {
@@ -53,12 +59,6 @@ struct SizeLoggingViewModifier: ViewModifier {
                         }
                 }
             )
-    }
-}
-
-struct HapticManager {
-    static func perform(_ pattern: NSHapticFeedbackManager.FeedbackPattern) {
-        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
     }
 }
 

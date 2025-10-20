@@ -201,7 +201,7 @@ class LiveActivityManager: ObservableObject {
             switch hudType {
             case .volume, .externalDeviceVolume:
                 hudStyle = settingsModel.settings.volumeHUDStyle
-            case .brightness, .keyboardBrightness:
+            case .brightness, .keyboardBrightness, .multiDisplayBrightness:
                 hudStyle = settingsModel.settings.brightnessHUDStyle
             }
 
@@ -664,7 +664,7 @@ class LiveActivityManager: ObservableObject {
     // MARK: - Public Control Functions
     func dismissCurrentActivity() {
         guard currentActivity != .none else { return }
-        if settingsModel.settings.hapticFeedbackEnabled { HapticManager.perform(.alignment) }
+        if settingsModel.settings.hapticFeedbackEnabled { haptic() }
 
         if let appDelegate = NSApp.delegate as? AppDelegate {
             appDelegate.revertNotchWindowFocus()

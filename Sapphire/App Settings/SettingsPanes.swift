@@ -213,6 +213,7 @@ struct GeneralSettingsView: View {
                 Text("General")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
+
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Behavior").font(.headline).padding([.top, .horizontal])
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -250,10 +251,128 @@ struct GeneralSettingsView: View {
                         }.labelsHidden().frame(width: 200)
                     }.padding()
 
-                    Divider().padding(.leading, 20)
-
                 }
                 .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Widget Transitions")
+                        .font(.headline)
+                        .padding([.top, .horizontal])
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text("Control the visual effects when switching between widgets inside the expanded notch.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom, 5)
+
+                    Toggle("Enable Fade Effect", isOn: $settings.settings.enableWidgetSwitchFade)
+                        .padding()
+                    Divider().padding(.leading, 20)
+                    Toggle("Enable Slide Effect", isOn: $settings.settings.enableWidgetSwitchSlide)
+                        .padding()
+                    Divider().padding(.leading, 20)
+                    Toggle("Enable Bounce Effect", isOn: $settings.settings.enableWidgetSwitchBounce)
+                        .padding()
+                }
+                .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Animation Profile")
+                        .font(.headline)
+                        .padding([.horizontal, .top])
+
+                    Text(descriptionForCurrentProfile())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom, 5)
+
+                    Picker("Animation Profile", selection: $settings.settings.animationProfile) {
+                        ForEach(AnimationProfile.allCases) { profile in
+                            Text(profile.displayName).tag(profile)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.bottom)
+
+                    if settings.settings.animationProfile == .custom {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("Custom Animation Values")
+                                    .font(.subheadline.bold())
+                                Spacer()
+                                Button("Reset to Defaults") {
+                                    withAnimation {
+                                        settings.settings.customAnimationConfiguration = .init()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.accentColor)
+                                .help("Reset all custom animation values to the 'Snappy' defaults.")
+                            }
+
+                            Text("Response: How long the animation takes (lower is faster).\nDamping: How much bounce (1.0 is no bounce).")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.bottom, 5)
+
+                            Group {
+                                Text("Main Transitions").font(.caption.bold()).foregroundColor(.secondary)
+                                AnimationSliderRow(title: "Expand Response", description: "Opening the main widget view.", value: $settings.settings.customAnimationConfiguration.expandResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Expand Damping", description: "", value: $settings.settings.customAnimationConfiguration.expandDamping, range: 0.4...1.0)
+                                Divider()
+                                AnimationSliderRow(title: "Collapse Response", description: "Closing the main widget view.", value: $settings.settings.customAnimationConfiguration.collapseResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Collapse Damping", description: "", value: $settings.settings.customAnimationConfiguration.collapseDamping, range: 0.4...1.0)
+                                Divider()
+                                AnimationSliderRow(title: "Swipe Open Response", description: "Opening the widget with a trackpad swipe.", value: $settings.settings.customAnimationConfiguration.swipeOpenResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Swipe Open Damping", description: "", value: $settings.settings.customAnimationConfiguration.swipeOpenDamping, range: 0.4...1.0)
+                            }
+
+                            Group {
+                                Text("Dynamic States").font(.caption.bold()).foregroundColor(.secondary).padding(.top)
+                                AnimationSliderRow(title: "Hover Response", description: "The small expansion when hovering over the notch.", value: $settings.settings.customAnimationConfiguration.hoverResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Hover Damping", description: "", value: $settings.settings.customAnimationConfiguration.hoverDamping, range: 0.4...1.0)
+                                Divider()
+                                AnimationSliderRow(title: "Auto-Expand Response", description: "When a Live Activity appears automatically.", value: $settings.settings.customAnimationConfiguration.autoExpandResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Auto-Expand Damping", description: "", value: $settings.settings.customAnimationConfiguration.autoExpandDamping, range: 0.4...1.0)
+                            }
+
+                            Group {
+                                Text("Content & Activities").font(.caption.bold()).foregroundColor(.secondary).padding(.top)
+                                AnimationSliderRow(title: "Content Transition Response", description: "How widgets appear inside the expanded view.", value: $settings.settings.customAnimationConfiguration.contentTransitionResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Content Transition Damping", description: "", value: $settings.settings.customAnimationConfiguration.contentTransitionDamping, range: 0.4...1.0)
+                                Divider()
+                                AnimationSliderRow(title: "Activity Switch Response", description: "Transitioning between different Live Activities.", value: $settings.settings.customAnimationConfiguration.activityToActivityResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Activity Switch Damping", description: "", value: $settings.settings.customAnimationConfiguration.activityToActivityDamping, range: 0.4...1.0)
+                                Divider()
+                                AnimationSliderRow(title: "Activity Morph Response", description: "Smoothly changing the shape of a Live Activity.", value: $settings.settings.customAnimationConfiguration.activityMorphResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Activity Morph Damping", description: "", value: $settings.settings.customAnimationConfiguration.activityMorphDamping, range: 0.4...1.0)
+                            }
+
+                            Group {
+                                Text("Fine-Tuning").font(.caption.bold()).foregroundColor(.secondary).padding(.top)
+                                AnimationSliderRow(title: "Bottom Content Response", description: "Appearance of lyrics or other bottom content.", value: $settings.settings.customAnimationConfiguration.bottomContentResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Bottom Content Damping", description: "", value: $settings.settings.customAnimationConfiguration.bottomContentDamping, range: 0.4...1.0)
+                                Divider()
+                                AnimationSliderRow(title: "Height Increase Response", description: "When the notch gets taller.", value: $settings.settings.customAnimationConfiguration.heightIncreaseResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Height Increase Damping", description: "", value: $settings.settings.customAnimationConfiguration.heightIncreaseDamping, range: 0.4...1.0)
+                                Divider()
+                                AnimationSliderRow(title: "Height Decrease Response", description: "When the notch gets shorter.", value: $settings.settings.customAnimationConfiguration.heightDecreaseResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Height Decrease Damping", description: "", value: $settings.settings.customAnimationConfiguration.heightDecreaseDamping, range: 0.4...1.0)
+                                Divider()
+                                AnimationSliderRow(title: "Large Menu Response", description: "Animations for larger menus like the music player.", value: $settings.settings.customAnimationConfiguration.largeMenuResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: "Large Menu Damping", description: "", value: $settings.settings.customAnimationConfiguration.largeMenuDamping, range: 0.4...1.0)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+                .animation(.default, value: settings.settings.animationProfile)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Advanced Customization").font(.headline).padding([.top, .horizontal])
@@ -293,7 +412,50 @@ struct GeneralSettingsView: View {
     private func binding(for setting: GeneralSettingType) -> Binding<Bool> {
         switch setting {
         case .expandOnHover: return $settings.settings.expandOnHover
+        case .swipeToSwitchWidgets: return $settings.settings.swipeToSwitchWidgets
+        case .enableOpeningBounce: return $settings.settings.enableOpeningBounce
         }
+    }
+
+    private func descriptionForCurrentProfile() -> String {
+        switch settings.settings.animationProfile {
+        case .snappy:
+            return "The default. A quick and responsive feel with minimal bounce."
+        case .bouncy:
+            return "A playful and energetic animation with noticeable bounce."
+        case .calm:
+            return "A slower, more graceful animation with a very gentle ease."
+        case .custom:
+            return "Fine-tune every animation parameter to your exact liking."
+        }
+    }
+}
+
+fileprivate struct AnimationSliderRow: View {
+    let title: String
+    let description: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(title)
+                    if !description.isEmpty {
+                        Text(description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+                Text(String(format: "%.2f", value))
+                    .font(.body.monospacedDigit())
+                    .foregroundColor(.secondary)
+            }
+            Slider(value: $value, in: range)
+        }
+        .padding(.vertical, 8)
     }
 }
 

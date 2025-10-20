@@ -8,7 +8,7 @@
 import CoreML
 import Vision
 
-class MLModelManager {
+final class MLModelManager {
     private let queue = DispatchQueue(label: "MLModelManager.queue", attributes: .concurrent)
     static let shared = MLModelManager()
 
@@ -16,39 +16,64 @@ class MLModelManager {
     private var faceModel: ArcFace?
 
     func getDepthModel() throws -> VNCoreMLModel {
-        return try queue.sync {
-            if let model = depthModel {
-                return model
-            }
-            print("LOG (ML): Loading DepthAnythingV2 model...")
-            let model = try VNCoreMLModel(for: DepthAnythingV2().model)
-            queue.async(flags: .barrier) { [weak self] in
-                self?.depthModel = model
-            }
-            return model
+        if let existing = queue.sync(execute: { depthModel }) {
+            return existing
         }
+
+        var result: VNCoreMLModel?
+        var thrownError: Error?
+
+        queue.sync(flags: .barrier) {
+            if let cached = depthModel {
+                result = cached
+                return
+            }
+            do {
+                print("LOG (ML): Loading DepthAnythingV2 model...")
+                let model = try VNCoreMLModel(for: DepthAnythingV2().model)
+                depthModel = model
+                result = model
+            } catch {
+                thrownError = error
+            }
+        }
+
+        if let error = thrownError { throw error }
+        return result!
     }
 
     func getFaceModel() throws -> ArcFace {
-        return try queue.sync {
-            if let model = faceModel {
-                return model
-            }
-            print("LOG (ML): Loading ArcFace model...")
-            let model = try ArcFace()
-            queue.async(flags: .barrier) { [weak self] in
-                self?.faceModel = model
-            }
-            return model
+        if let existing = queue.sync(execute: { faceModel }) {
+            return existing
         }
+
+        var result: ArcFace?
+        var thrownError: Error?
+
+        queue.sync(flags: .barrier) {
+            if let cached = faceModel {
+                result = cached
+                return
+            }
+            do {
+                print("LOG (ML): Loading ArcFace model...")
+                let model = try ArcFace()
+                faceModel = model
+                result = model
+            } catch {
+                thrownError = error
+            }
+        }
+
+        if let error = thrownError { throw error }
+        return result!
     }
 
     func unloadModels() {
-        queue.sync(flags: .barrier) { [weak self] in
-            guard let self = self else { return }
+        queue.sync(flags: .barrier) {
             autoreleasepool {
-                self.depthModel = nil
-                self.faceModel = nil
+                depthModel = nil
+                faceModel = nil
             }
             print("LOG (ML): Unloaded Core ML models from memory.")
         }

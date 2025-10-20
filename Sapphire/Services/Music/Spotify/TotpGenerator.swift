@@ -70,7 +70,7 @@ class TotpGenerator {
                 return getLatestFallbackSecret()
             }
 
-            let secretData = Data(secretList.map { UInt8($0) })
+            let secretData = Data(secretList.compactMap { UInt8(exactly: $0) })
             secretCache = (latestVersion, secretData)
             cacheExpiry = Date().addingTimeInterval(cacheTTL)
             print("[TotpGenerator] Successfully fetched and cached secret version: \(latestVersion)")

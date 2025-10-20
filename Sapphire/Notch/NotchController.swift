@@ -92,7 +92,7 @@ struct NotchController: View {
     private let notchWidget: NotchWidgetView
     private static var renderCounter: Int = 0
 
-    enum NotchState {
+    enum NotchState: Hashable {
         case initial, autoExpanded, hoverExpanded, clickExpanded
     }
 
@@ -131,7 +131,6 @@ struct NotchController: View {
     @State private var measuredClickContentSize: CGSize = .zero
     @State private var measuredAutoContentSize: CGSize = .zero
     @State private var navigationStack: [NotchWidgetMode] = [.defaultWidgets]
-    @State private var clickContentOpacity: Double = 0
     @State private var autoContentOpacity: Double = 0
     @State private var activityBlurRadius: CGFloat = 0
     @State private var widgetBlurRadius: CGFloat = 0
@@ -302,7 +301,6 @@ struct NotchController: View {
 
         if let config = config {
             ZStack(alignment: .top) {
-                // MARK: - Custom Gradient Shadow for Gemini
                 if isGeminiActive {
                     let isShadowVisible = (notchState != .initial)
                     let shadowRadius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
@@ -347,6 +345,11 @@ struct NotchController: View {
                     }
                 }
             }
+            .shadow(
+                color: isGeminiActive ? .clear : config.expandedShadowColor.opacity(shadowOpacity),
+                radius: notchState == .clickExpanded ? config.expandedShadowRadius : 12,
+                y: notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
+            )
             .frame(width: animatedWidth, height: animatedHeight)
             .contentShape(activeShape)
             .onHover(perform: handleHover)
@@ -399,7 +402,7 @@ struct NotchController: View {
         let appearance = activeAppearanceSettings
         ZStack {
             Color.clear
-            if #available(macOS 26, *), appearance.liquidGlassLook {
+            if #available(macOS 26.0, *), appearance.liquidGlassLook {
                 activeShape
                     .fill(.clear)
                     .glassEffect(.clear, in: activeShape)
@@ -414,11 +417,6 @@ struct NotchController: View {
         }
         .contentShape(activeShape)
         .clipShape(activeShape)
-        .shadow(
-            color: isGeminiActive ? .clear : config?.expandedShadowColor.opacity(shadowOpacity) ?? .clear,
-            radius: notchState == .clickExpanded ? config?.expandedShadowRadius ?? 0 : 12,
-            y: notchState == .clickExpanded ? config?.expandedShadowOffsetY ?? 0 : 6
-        )
         .onTapGesture(perform: handleTap)
     }
 
@@ -465,9 +463,16 @@ struct NotchController: View {
                 .padding(.top, config.contentTopPadding)
                 .padding(.bottom, config.contentBottomPadding)
                 .padding(.horizontal, config.contentHorizontalPadding)
-                .opacity(clickContentOpacity)
                 .frame(width: animatedWidth, height: animatedHeight)
                 .clipped()
+                .id(notchState)
+                .transition(.asymmetric(
+                    insertion: .offset(y: -1000)
+                               .combined(with: .scale(scale: 0.8, anchor: .top))
+                               .combined(with: .opacity)
+                               .animation(config.contentTransitionAnimation.delay(0.05)),
+                    removal: .opacity.animation(.easeInOut(duration: 0.15))
+                ))
                 .allowsHitTesting(true)
         } else {
             EmptyView()
@@ -1011,7 +1016,7 @@ struct NotchController: View {
             } else {
                 if notchState == .initial || notchState == .autoExpanded {
                     notchState = .hoverExpanded
-                    if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                    haptic()
                 }
             }
         } else {
@@ -1080,7 +1085,6 @@ struct NotchController: View {
                 if wasShowingActivity { self.isAnimatingActivityOut = false }
                 self.activityBlurRadius = 0; self.activityContentScale = 1.0
             }
-            withAnimation(.easeOut(duration: 0.1)) { clickContentOpacity = 0 }
 
         case .hoverExpanded:
             isAnimatingActivityOut = false; self.canRenderAutoContent = true
@@ -1094,7 +1098,6 @@ struct NotchController: View {
                 if isLiveActivityActive { autoContentOpacity = 1 }
                 shadowOpacity = 1
             }
-            withAnimation(.easeOut(duration: 0.1)) { clickContentOpacity = 0 }
 
         case .clickExpanded:
             isAnimatingActivityOut = false; self.canRenderAutoContent = false
@@ -1102,10 +1105,18 @@ struct NotchController: View {
             if isLiveActivityActive && (oldState == .autoExpanded || oldState == .hoverExpanded) {
                 withAnimation(config.activityBlurAnimation) { activityBlurRadius = config.activityBlurRadiusMax; autoContentOpacity = 0; activityContentScale = 1.05 }
             }
-            withAnimation(self.expansionAnimation) { autoContentOpacity = 0; shadowOpacity = 1; clickContentOpacity = 0.1 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + config.contentUpdateDelay) {
-                withAnimation(config.focusPullAnimation) { self.widgetBlurRadius = 0; self.clickContentOpacity = 1; self.activityContentScale = 1.0 }
+
+            withAnimation(self.expansionAnimation) {
+                autoContentOpacity = 0
+                shadowOpacity = 1
             }
+             DispatchQueue.main.asyncAfter(deadline: .now() + config.contentUpdateDelay) {
+                withAnimation(config.focusPullAnimation) {
+                    self.widgetBlurRadius = 0
+                    self.activityContentScale = 1.0
+                }
+            }
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.expansionAnimation = config.expandAnimation
             }
@@ -1115,7 +1126,7 @@ struct NotchController: View {
             let isCollapsingFromClick = (oldState == .clickExpanded)
             if isCollapsingFromClick {
                 self.canRenderAutoContent = false
-                withAnimation(config.blurAnimation) { widgetBlurRadius = 20; clickContentOpacity = 0.3; activityContentScale = 0.92; activityBlurRadius = config.activityBlurRadiusMax * 1.5 }
+                withAnimation(config.blurAnimation) { widgetBlurRadius = 20; activityContentScale = 0.92; activityBlurRadius = config.activityBlurRadiusMax * 1.5 }
             } else {
                 self.canRenderAutoContent = true; self.autoContentOpacity = 1
             }
@@ -1241,12 +1252,11 @@ struct NotchController: View {
 
     private func handleTrackpadSwipe(vector: CGVector) {
         guard let config = config else { return }
-
-        if (notchState == .initial || notchState == .hoverExpanded) && !isLiveActivityActive {
-            let verticalThreshold: CGFloat = 20.0
-            let isVerticalSwipe = abs(vector.dy) > abs(vector.dx) * 1.5
+        if (notchState == .initial || notchState == .hoverExpanded) {
+            let verticalThreshold: CGFloat = 10.0
+            let isVerticalSwipe = abs(vector.dy) > abs(vector.dx)
             if isVerticalSwipe && abs(vector.dy) > verticalThreshold {
-                if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                haptic()
                 self.expansionAnimation = config.swipeOpenAnimation
                 measuredClickContentSize = .zero
                 if settings.settings.clickToOpenFileShelf && !FileShelfManager.shared.files.isEmpty {
@@ -1256,6 +1266,24 @@ struct NotchController: View {
                 }
                 notchState = .clickExpanded
                 return
+            }
+        }
+        else if notchState == .clickExpanded {
+            if abs(vector.dx) > abs(vector.dy) {
+                let isSwipeRight = vector.dx > 0
+                let invert = settings.settings.invertMusicGestures
+                let shouldGoBackward = (!isSwipeRight && !invert) || (isSwipeRight && invert)
+                if shouldGoBackward {
+                    haptic()
+                    navigationStack = [.fileShelf]
+                } else {
+
+                    if navigationStack.count > 1 {
+                        navigationStack.removeLast()
+                    } else {
+                        navigationStack = [.defaultWidgets]
+                    }
+                }
             }
         }
 
@@ -1269,14 +1297,14 @@ struct NotchController: View {
                 let shouldGoBackward = (!isSwipeRight && !invert) || (isSwipeRight && invert)
 
                 if shouldSkipForward && settings.settings.swipeToSkipMusic {
-                    if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                    haptic()
                     musicWidget.transientIcon = .skippedForward
                     musicWidget.nextTrack()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         if musicWidget.transientIcon == .skippedForward { musicWidget.transientIcon = nil }
                     }
                 } else if shouldGoBackward && settings.settings.swipeToRewindMusic {
-                    if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                    haptic()
                     musicWidget.transientIcon = .skippedBackward
                     musicWidget.previousTrack()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -1284,17 +1312,17 @@ struct NotchController: View {
                     }
                 }
             } else if settings.settings.swipeToDismissLiveActivity {
-                if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+                haptic()
                 liveActivityManager.dismissCurrentActivity()
             }
         }
     }
 
     private func handleTrackpadTwoFingerTap() {
-        guard isLiveActivityActive && (notchState == .autoExpanded || notchState == .hoverExpanded) else { return }
+        guard (notchState == .autoExpanded || notchState == .hoverExpanded) else { return }
 
         if settings.settings.twoFingerTapToPauseMusic {
-            if settings.settings.hapticFeedbackEnabled { HapticManager.perform(.generic) }
+            haptic()
             musicWidget.transientIcon = musicWidget.isPlaying ? .paused : .played
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 if musicWidget.transientIcon == .paused || musicWidget.transientIcon == .played {
@@ -1360,12 +1388,10 @@ struct NotchController: View {
 
     private func updateFPS() {
         guard let layer = notchWindow?.contentView?.layer else { return }
-        let targetFPS = isLiveActivityActive ? 60 : 120
-        if #available(macOS 12.0, *) {
+        let targetFPS = isLiveActivityActive ? 120 : 60
             let key = "preferredFrameRateRange"
             let rateRange = CAFrameRateRange(minimum: 0, maximum: Float(targetFPS), preferred: Float(targetFPS))
             layer.setValue(rateRange, forKey: key)
-        }
     }
 
     private func updateAutoContentSize() {
@@ -1432,11 +1458,11 @@ struct NotchController: View {
             }
         }
     }
+}
 
-    final class KeyWindow: NSWindow {
-        override var canBecomeKey: Bool { true }
-        override var canBecomeMain: Bool { true }
-    }
+final class KeyWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }
 
 fileprivate struct SubtleIconButton: View {
