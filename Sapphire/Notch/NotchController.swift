@@ -1388,11 +1388,10 @@ struct NotchController: View {
 
     private func updateFPS() {
         guard let layer = notchWindow?.contentView?.layer else { return }
-        let targetFPS = isLiveActivityActive ? 120 : 60
-            let key = "preferredFrameRateRange"
-            let rateRange = CAFrameRateRange(minimum: 0, maximum: Float(targetFPS), preferred: Float(targetFPS))
-            layer.setValue(rateRange, forKey: key)
-    }
+        let targetFPS = isLiveActivityActive ? 60 : 102
+        let key = "preferredFrameRateRange"
+        let rateRange = CAFrameRateRange(minimum: 0, maximum: Float(targetFPS), preferred: Float(targetFPS))
+        layer.setValue(rateRange, forKey: key)
 
     private func updateAutoContentSize() {
         guard let config = config, notchState == .autoExpanded || (notchState == .hoverExpanded && isLiveActivityActive) else { return }
