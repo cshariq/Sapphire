@@ -496,16 +496,15 @@ class SystemHUDManager: ObservableObject {
         let maxBrightness = self.settings.settings.xdrBrightnessLevel
         let systemBrightness = SystemControl.getBrightness()
         var finalLevel: Float = systemBrightness
-
         if direction > 0 {
             if isXDREnabled {
-                let newXDRLevel = min(maxBrightness, xdrBrightness + (Float(settings.settings.brightnessliderstep)/100))
+                let newXDRLevel = min(maxBrightness, xdrBrightness + Float(settings.settings.brightnessliderstep) / 100.0)
                 self.settings.settings.brightness = newXDRLevel
                 finalLevel = newXDRLevel
             } else if systemBrightness >= 1.0 && self.settings.settings.enableXDRBrightness {
                 isXDREnabled = true
                 brightnessManager.activate()
-                let initialXDRLevel: Float = (1.00 + (Float(settings.settings.brightnessliderstep)/100))
+                let initialXDRLevel: Float = (1.00 + Float(settings.settings.brightnessliderstep) / 100.0)
                 self.settings.settings.brightness = initialXDRLevel
                 finalLevel = initialXDRLevel
             } else {
@@ -516,7 +515,7 @@ class SystemHUDManager: ObservableObject {
             }
         } else {
             if isXDREnabled {
-                let newXDRLevel = xdrBrightness - (Float(settings.settings.brightnessliderstep)/100)
+                let newXDRLevel = xdrBrightness - Float(settings.settings.brightnessliderstep) / 100.0
                 if newXDRLevel <= 1.0 {
                     isXDREnabled = false
                     brightnessManager.deactivate()

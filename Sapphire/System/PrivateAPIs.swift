@@ -258,12 +258,3 @@ struct CGSHelper {
         return nil
     }
 }
-
-class KeyboardBacklightManager: NSObject {
-    static func sharedManager() -> Any {
-        return KeyboardBacklightManager()
-    }
-    func configure() {}
-    func getBrightness() -> Float { return 0.5 }
-    func setBrightness(_ level: Float) {}
-}

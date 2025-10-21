@@ -87,18 +87,13 @@ struct LockScreenMainWidgetContainerView: View {
     @State private var dummyStack: [NotchWidgetMode] = []
 
     var body: some View {
-        HStack(spacing: LockScreenConfiguration.widgetSpacing) {
-            let _ = print("[Layout Debug - Main] Rebuilding view with max height: \(Int(maxMainWidgetHeight))")
+        HStack(alignment: .top, spacing: LockScreenConfiguration.widgetSpacing) {
             ForEach(settings.settings.lockScreenMainWidgets, id: \.self) { widgetType in
                 widgetView(for: widgetType)
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: navigationManager.currentView)
-
-        .frame(height: maxMainWidgetHeight > 0 ? maxMainWidgetHeight : nil)
-
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: maxMainWidgetHeight)
-
         .background(
             VStack(spacing: 0) {
                 ForEach(settings.settings.lockScreenMainWidgets, id: \.self) { widgetType in
@@ -107,17 +102,15 @@ struct LockScreenMainWidgetContainerView: View {
             }
             .onPreferenceChange(SizePreferenceKey.self) { sizes in
                 let maxHeight = sizes.map { $0.height }.max() ?? 0
-                print("[Layout Debug - Main] Measure active widgets -> \(sizes.map { Int($0.height) }) max=\(Int(maxHeight))")
+                let viewName = String(describing: navigationManager.currentView)
                 if self.maxMainWidgetHeight != maxHeight {
                     self.maxMainWidgetHeight = maxHeight
-                    print("[Layout Debug - Main] ---> UPDATED maxMainWidgetHeight=\(Int(maxHeight))")
                 }
             }
             .opacity(0)
             .allowsHitTesting(false)
         )
         .environment(\.lockScreenWidgetHeight, maxMainWidgetHeight > 0 ? maxMainWidgetHeight : nil)
-        .frame(minHeight: maxMainWidgetHeight > 0 ? maxMainWidgetHeight : 1)
         .environmentObject(settings)
         .environmentObject(musicManager)
         .environmentObject(calendarService)
@@ -197,25 +190,25 @@ struct LockScreenMainWidgetContainerView: View {
                 case .player:
                     LockScreenView().measureSize()
                 case .queueAndPlaylists:
-                    LockScreenPaddedBackground {
-                        QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
-                    }.measureSize()
+                    QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
+                        .padding(LockScreenConfiguration.backgroundPadding)
+                        .measureSize()
                 case .playlistDetail(let playlist):
-                    LockScreenPaddedBackground {
-                        PlaylistView(playlist: playlist, isLockScreenMode: true)
-                    }.measureSize()
+                    PlaylistView(playlist: playlist, isLockScreenMode: true)
+                        .padding(LockScreenConfiguration.backgroundPadding)
+                        .measureSize()
                 case .devices:
-                    LockScreenPaddedBackground {
-                        DevicesView(navigationStack: $dummyStack, isLockScreenMode: true)
-                    }.measureSize()
+                    DevicesView(navigationStack: $dummyStack, isLockScreenMode: true)
+                        .padding(LockScreenConfiguration.backgroundPadding)
+                        .measureSize()
                 case .lyrics:
-                    LockScreenPaddedBackground {
-                        LyricsView()
-                    }.measureSize()
+                    LyricsView()
+                        .padding(LockScreenConfiguration.backgroundPadding)
+                        .measureSize()
                 case .loginPrompt:
-                    LockScreenPaddedBackground {
-                        LoginPromptView(navigationStack: $dummyStack)
-                    }.measureSize()
+                    LoginPromptView(navigationStack: $dummyStack)
+                        .padding(LockScreenConfiguration.backgroundPadding)
+                        .measureSize()
                 }
             } else {
                 EmptyView().measureSize()
@@ -241,7 +234,7 @@ struct LockScreenPaddedBackground<Content: View>: View {
     var body: some View {
         content
             .padding(LockScreenConfiguration.backgroundPadding)
-            .frame(height: _lockScreenWidgetHeight)
+            .frame(minHeight: _lockScreenWidgetHeight, alignment: .top)
             .background(backgroundMaterial)
     }
 
@@ -324,7 +317,7 @@ struct LockScreenWeatherView: View {
     var body: some View {
         WeatherPlayerView()
             .padding(LockScreenConfiguration.backgroundPadding)
-            .frame(height: _lockScreenWidgetHeight)
+            .frame(minHeight: _lockScreenWidgetHeight, alignment: .top)
             .background(LockScreenPaddedBackground { EmptyView() })
     }
 }
@@ -336,7 +329,7 @@ struct LockScreenCalendarView: View {
     var body: some View {
         CalendarDetailView()
             .padding(LockScreenConfiguration.backgroundPadding)
-            .frame(height: _lockScreenWidgetHeight)
+            .frame(minHeight: _lockScreenWidgetHeight, alignment: .top)
             .background(LockScreenPaddedBackground { EmptyView() })
     }
 }

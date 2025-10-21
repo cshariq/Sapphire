@@ -31,9 +31,7 @@ struct QueueAndPlaylistsView: View {
     @State private var officialQueue: SpotifyQueue?
     @State private var playlists: [SpotifyPlaylist] = []
 
-    @State private var isLoading = true
     @State private var showSpotifyNotOpenAlert = false
-
     @State private var queueRefreshTimer: Timer?
 
     var isLockScreenMode: Bool = false
@@ -41,6 +39,14 @@ struct QueueAndPlaylistsView: View {
     private let lastSelectedPaneKey = "lastSelectedMusicPane"
     private var isAppleMusic: Bool { musicManager.lastKnownBundleID == "com.apple.Music" }
     private var isLoggedIn: Bool { musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated }
+
+    private var animationTriggerValue: String {
+        let nowPlayingId = musicManager.isPrivateAPIAuthenticated ? musicManager.nowPlayingTrack?.uri : officialQueue?.currentlyPlaying?.uri
+        let nativeQueueIds = musicManager.nativeQueue.map(\.uid).joined(separator: ",")
+        let officialQueueIds = officialQueue?.queue.map(\.uri).joined(separator: ",") ?? ""
+
+        return "\(nowPlayingId ?? "none")-\(nativeQueueIds)-\(officialQueueIds)"
+    }
 
     init(navigationStack: Binding<[NotchWidgetMode]>, isLockScreenMode: Bool = false) {
         self._navigationStack = navigationStack
@@ -69,19 +75,18 @@ struct QueueAndPlaylistsView: View {
                     if musicManager.isOfficialAPIAuthenticated { Button("Log out") { Task { await musicManager.spotifyOfficialAPI.logout() } }.buttonStyle(.plain).font(.caption).foregroundColor(.secondary) }
                 }
 
-                if isLoading { ProgressView().frame(maxHeight: .infinity)
-                } else {
-                    ZStack {
-                        if selection == 0 && !isAppleMusic {
-                            queueView.transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity)))
-                        } else {
-                            playlistsView.transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
-                        }
-                    }.animation(.easeInOut(duration: 0.2), value: selection)
+                ZStack {
+                    if selection == 0 && !isAppleMusic {
+                        queueView.transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity)))
+                    } else {
+                        playlistsView.transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
+                    }
                 }
+                .animation(.easeInOut(duration: 0.2), value: selection)
+                .animation(.easeInOut(duration: 0.5), value: animationTriggerValue)
             }
         }
-        .padding()
+        .padding([.top, .horizontal])
         .frame(width: 800, height: 350)
         .task { await fetchData() }
         .onAppear(perform: startQueueRefreshTimer)
@@ -92,8 +97,14 @@ struct QueueAndPlaylistsView: View {
 
     }
 
+    private func refreshData() {
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await fetchData()
+        }
+    }
+
     private func fetchData() async {
-        isLoading = true
         if isAppleMusic {
             self.playlists = musicManager.appleMusic.fetchPlaylists()
             self.selection = 1
@@ -106,7 +117,6 @@ struct QueueAndPlaylistsView: View {
                 self.playlists = await musicManager.spotifyOfficialAPI.fetchPlaylists()
             }
         }
-        self.isLoading = false
     }
 
     private func startQueueRefreshTimer() {
@@ -146,7 +156,7 @@ struct QueueAndPlaylistsView: View {
                         .frame(width: 80, height: 80)
                         .cornerRadius(8).shadow(color: .black.opacity(0.4), radius: 6, y: 3)
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Marquee {
                             Text(nowPlaying.metadata?.title ?? "Unknown Track")
                                 .font(.headline.bold())
@@ -161,16 +171,23 @@ struct QueueAndPlaylistsView: View {
                         }
                     }
 
-                    HStack(spacing: 12) {
-                        if let playCount = musicManager.playCount { NowPlayingInfoView(systemName: "play.circle.fill", text: playCount) }
-                        if let popularity = musicManager.popularity { NowPlayingInfoView(systemName: "flame.fill", text: "\(popularity)%") }
+                    HStack(spacing: 8) {
+                        if let playCountString = musicManager.playCount, let playCountInt = Int(playCountString.replacingOccurrences(of: "K", with: "000").replacingOccurrences(of: "M", with: "000000")) {
+                            PlayCountIndicator(playCount: playCountInt)
+                        } else if let popularity = musicManager.popularity {
+                            PopularityIndicator(popularity: popularity)
+                        } else if let fetchedPopularity = musicManager.fetchedSpotifyPopularity {
+                            PopularityIndicator(popularity: fetchedPopularity)
+                        }
                     }
 
                     Spacer(minLength: 0)
-                    ActionButtonsView()
+                    ActionButtonsView(onAction: refreshData)
                 }
                 .frame(width: 150)
+                .padding(.bottom, 10)
                 .id(nowPlaying.uri)
+                .transition(.opacity)
 
                 VStack(alignment: .leading, spacing: 0) {
                     SectionHeader(title: "Next Up").padding(.bottom, 5)
@@ -182,6 +199,7 @@ struct QueueAndPlaylistsView: View {
                                     NativeQueueTrackRow(track: track, onPlay: handlePlaybackResult)
                                 }
                             }
+                            .padding(.bottom, 30)
                         }
                         .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.95), .init(color: .clear, location: 1.0)]), startPoint: .top, endPoint: .bottom))
                     } else { CustomUnavailableView(title: "Queue is Empty", systemImage: "music.note.list") }
@@ -199,12 +217,13 @@ struct QueueAndPlaylistsView: View {
                         .frame(width: 80, height: 80)
                         .cornerRadius(8).shadow(color: .black.opacity(0.4), radius: 6, y: 3)
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Marquee {
                             Text(nowPlaying.name)
                                 .font(.headline.bold())
                                 .lineLimit(1)
                         }
+
                         Marquee {
                             Text(nowPlaying.artists.map(\.name).joined(separator: ", "))
                                 .font(.subheadline)
@@ -213,16 +232,23 @@ struct QueueAndPlaylistsView: View {
                         }
                     }
 
-                    HStack(spacing: 12) {
-                        if let playCount = musicManager.playCount { NowPlayingInfoView(systemName: "play.circle.fill", text: playCount) }
-                        if let popularity = musicManager.popularity { NowPlayingInfoView(systemName: "flame.fill", text: "\(popularity)%") }
+                    HStack(spacing: 8) {
+                        if let playCountString = musicManager.playCount, let playCountInt = Int(playCountString.replacingOccurrences(of: "K", with: "000").replacingOccurrences(of: "M", with: "000000")) {
+                            PlayCountIndicator(playCount: playCountInt)
+                        } else if let popularity = musicManager.popularity {
+                            PopularityIndicator(popularity: popularity)
+                        } else if let fetchedPopularity = musicManager.fetchedSpotifyPopularity {
+                            PopularityIndicator(popularity: fetchedPopularity)
+                        }
                     }
 
                     Spacer(minLength: 0)
-                    ActionButtonsView()
+                    ActionButtonsView(onAction: refreshData)
                 }
                 .frame(width: 150)
+                .padding(.bottom, 10)
                 .id(nowPlaying.uri)
+                .transition(.opacity)
 
                 VStack(alignment: .leading, spacing: 0) {
                     SectionHeader(title: "Next Up").padding(.bottom, 5)
@@ -231,6 +257,7 @@ struct QueueAndPlaylistsView: View {
                             LazyVStack(alignment: .leading, spacing: 8) {
                                 ForEach(queue.queue) { track in QueueTrackRow(track: track, onPlay: handlePlaybackResult) }
                             }
+                            .padding(.bottom, 30)
                         }
                         .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.95), .init(color: .clear, location: 1.0)]), startPoint: .top, endPoint: .bottom))
                     } else { CustomUnavailableView(title: "No Songs Up Next", systemImage: "music.note.list", description: "Add songs to your queue to see them here.") }
@@ -250,13 +277,16 @@ struct QueueAndPlaylistsView: View {
                         FullPlaylistRow(playlist: playlist, navigationStack: $navigationStack, isPlaying: isPlaying, isLockScreenMode: isLockScreenMode)
                     }
                 } else { CustomUnavailableView(title: "No Playlists Found", systemImage: "music.mic") }
-            }.padding(.horizontal)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 30)
         }
         .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.9), .init(color: .clear, location: 1.0)]), startPoint: .top, endPoint: .bottom))
     }
 
     private func handlePlaybackResult(_ result: PlaybackResult) {
         if case .requiresSpotifyAppOpen = result { showSpotifyNotOpenAlert = true }
+        refreshData()
     }
 
 }
@@ -265,23 +295,44 @@ struct QueueAndPlaylistsView: View {
 
 struct ActionButtonsView: View {
     @EnvironmentObject var musicManager: MusicManager
+    let onAction: () -> Void
+
+    private func performAction(_ action: @escaping () -> Void) {
+        action()
+        onAction()
+    }
+
     var body: some View {
-        HStack {
-            HStack(spacing: 24) {
-                Button(action: musicManager.toggleLike) { Image(systemName: musicManager.isLiked ? "heart.fill" : "heart") }
-                    .foregroundColor(musicManager.isLiked ? .pink : .primary)
-
-                Button(action: { musicManager.toggleShuffle() }) { Image(systemName: "shuffle") }
-                    .foregroundColor(musicManager.shuffleState ? .green : .primary)
-
-                Button(action: musicManager.cycleRepeatMode) { Image(systemName: musicManager.repeatState == .track ? "repeat.1" : "repeat") }
-                    .foregroundColor(musicManager.repeatState != .off ? .green : .primary)
+        VStack(spacing: 15) {
+            HStack(spacing: 30) {
+                Button(action: { performAction(musicManager.previousTrack) }) {
+                    Image(systemName: "backward.fill")
+                }
+                Button(action: { performAction(musicManager.isPlaying ? musicManager.pause : musicManager.play) }) {
+                    Image(systemName: musicManager.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 20))
+                }
+                Button(action: { performAction(musicManager.nextTrack) }) {
+                    Image(systemName: "forward.fill")
+                }
+                Spacer()
             }
             .font(.system(size: 16))
-            .buttonStyle(.plain)
 
-            Spacer()
+            HStack(spacing: 28) {
+                Button(action: { performAction(musicManager.toggleLike) }) { Image(systemName: musicManager.isLiked ? "heart.fill" : "heart") }
+                    .foregroundColor(musicManager.isLiked ? .pink : .primary)
+
+                Button(action: { performAction(musicManager.toggleShuffle) }) { Image(systemName: "shuffle") }
+                    .foregroundColor(musicManager.shuffleState ? .green : .primary)
+
+                Button(action: { performAction(musicManager.cycleRepeatMode) }) { Image(systemName: musicManager.repeatState == .track ? "repeat.1" : "repeat") }
+                    .foregroundColor(musicManager.repeatState != .off ? .green : .primary)
+                Spacer()
+            }
+            .font(.system(size: 14))
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -356,7 +407,8 @@ struct QueueTrackRow: View {
             Spacer()
             Text(formatDuration(ms: track.durationMs)).font(.caption.monospacedDigit()).foregroundColor(.secondary)
         }
-        .padding(.vertical, 6).padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
         .background(Color.white.opacity(isHovered ? 0.15 : 0.1)).cornerRadius(10)
         .onHover { hovering in self.isHovered = hovering }
         .onTapGesture { Task { onPlay(await musicManager.play(trackUri: track.uri, contextUri: nil, trackUid: nil, trackIndex: nil)) }}
@@ -387,7 +439,8 @@ struct FullPlaylistRow: View {
             if isPlaying { Image(systemName: "speaker.wave.2.fill").foregroundColor(.green).font(.headline) }
             Image(systemName: "chevron.right").foregroundColor(.secondary)
         }
-        .padding(10).background(Color.white.opacity(isHovered ? 0.15 : 0.1)).cornerRadius(12)
+        .padding(10)
+        .background(Color.white.opacity(isHovered ? 0.15 : 0.1)).cornerRadius(12)
         .onHover { hovering in self.isHovered = hovering }
         .onTapGesture {
             if isLockScreenMode {

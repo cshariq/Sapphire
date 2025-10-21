@@ -133,7 +133,6 @@ struct NotchController: View {
     @State private var navigationStack: [NotchWidgetMode] = [.defaultWidgets]
     @State private var autoContentOpacity: Double = 0
     @State private var activityBlurRadius: CGFloat = 0
-    @State private var widgetBlurRadius: CGFloat = 0
     @State private var contentBlurOpacity: Double = 0
     @State private var activityContentScale: CGFloat = 1.0
     @State private var canRenderAutoContent: Bool = false
@@ -334,7 +333,6 @@ struct NotchController: View {
                             .allowsHitTesting(isHovered)
                     } else {
                         contentView
-                            .blur(radius: widgetBlurRadius)
                             .mask(activeShape)
                     }
 
@@ -466,13 +464,6 @@ struct NotchController: View {
                 .frame(width: animatedWidth, height: animatedHeight)
                 .clipped()
                 .id(notchState)
-                .transition(.asymmetric(
-                    insertion: .offset(y: -1000)
-                               .combined(with: .scale(scale: 0.8, anchor: .top))
-                               .combined(with: .opacity)
-                               .animation(config.contentTransitionAnimation.delay(0.05)),
-                    removal: .opacity.animation(.easeInOut(duration: 0.15))
-                ))
                 .allowsHitTesting(true)
         } else {
             EmptyView()
@@ -1101,7 +1092,6 @@ struct NotchController: View {
 
         case .clickExpanded:
             isAnimatingActivityOut = false; self.canRenderAutoContent = false
-            widgetBlurRadius = config.widgetBlurRadiusMax
             if isLiveActivityActive && (oldState == .autoExpanded || oldState == .hoverExpanded) {
                 withAnimation(config.activityBlurAnimation) { activityBlurRadius = config.activityBlurRadiusMax; autoContentOpacity = 0; activityContentScale = 1.05 }
             }
@@ -1112,7 +1102,6 @@ struct NotchController: View {
             }
              DispatchQueue.main.asyncAfter(deadline: .now() + config.contentUpdateDelay) {
                 withAnimation(config.focusPullAnimation) {
-                    self.widgetBlurRadius = 0
                     self.activityContentScale = 1.0
                 }
             }
@@ -1126,7 +1115,7 @@ struct NotchController: View {
             let isCollapsingFromClick = (oldState == .clickExpanded)
             if isCollapsingFromClick {
                 self.canRenderAutoContent = false
-                withAnimation(config.blurAnimation) { widgetBlurRadius = 20; activityContentScale = 0.92; activityBlurRadius = config.activityBlurRadiusMax * 1.5 }
+                withAnimation(config.blurAnimation) { activityContentScale = 0.92; activityBlurRadius = config.activityBlurRadiusMax * 1.5 }
             } else {
                 self.canRenderAutoContent = true; self.autoContentOpacity = 1
             }
@@ -1138,7 +1127,6 @@ struct NotchController: View {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + config.activitySizeChangeDelay) {
                 withAnimation(config.blurRemovalAnimation) {
-                    if isCollapsingFromClick { self.widgetBlurRadius = 0 }
                     self.activityBlurRadius = 0; self.activityContentScale = 1.0
                 }
             }
@@ -1191,6 +1179,7 @@ struct NotchController: View {
         collapseTask?.cancel()
         isCollapseTimerActive = false
         if isDragging {
+            (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
             dragState.didJustDrop = false
             awaitingDropCompletion = false
             self.awaitingDropCompletion = true
@@ -1203,6 +1192,7 @@ struct NotchController: View {
                 notchState = .clickExpanded
             }
         } else {
+            (NSApp.delegate as? AppDelegate)?.revertNotchWindowFocus()
             if dragState.didJustDrop { return }
             if awaitingDropCompletion { return }
             draggedAppBundleID = nil
@@ -1388,10 +1378,11 @@ struct NotchController: View {
 
     private func updateFPS() {
         guard let layer = notchWindow?.contentView?.layer else { return }
-        let targetFPS = isLiveActivityActive ? 60 : 102
+        let targetFPS = isLiveActivityActive ? 120 : 30
         let key = "preferredFrameRateRange"
         let rateRange = CAFrameRateRange(minimum: 0, maximum: Float(targetFPS), preferred: Float(targetFPS))
         layer.setValue(rateRange, forKey: key)
+    }
 
     private func updateAutoContentSize() {
         guard let config = config, notchState == .autoExpanded || (notchState == .hoverExpanded && isLiveActivityActive) else { return }

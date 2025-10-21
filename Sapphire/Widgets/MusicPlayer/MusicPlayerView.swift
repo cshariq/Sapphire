@@ -35,9 +35,9 @@ private struct LyricTextView: View {
     @Binding var navigationStack: [NotchWidgetMode]
     let isLockScreenMode: Bool
 
-    @State private var currentLyricText: String?
-
     var body: some View {
+        let currentLyricText = musicManager.currentLyric?.translatedText ?? musicManager.currentLyric?.text
+
         Group {
             if let lyricText = currentLyricText, !lyricText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(lyricText)
@@ -57,9 +57,6 @@ private struct LyricTextView: View {
                         }
                     }
             }
-        }
-        .onReceive(musicManager.currentLyricPublisher) { newLyric in
-            self.currentLyricText = newLyric?.translatedText ?? newLyric?.text
         }
     }
 }
@@ -411,42 +408,5 @@ struct PressableButton: ViewModifier {
             .scaleEffect(isPressing ? 0.9 : 1.0)
             .blur(radius: isPressing ? 2 : 0)
             .animation(.interpolatingSpring(stiffness: 300, damping: 15), value: isPressing)
-    }
-}
-
-private struct PlayCountIndicator: View {
-    let playCount: Int
-    private var metrics: (color: Color, bars: [CGFloat]) {
-        if playCount > 500_000_000 { return (.green, [5, 7, 9, 11]) }
-        if playCount > 100_000_000 { return (.yellow, [5, 7, 9, 7]) }
-        if playCount > 10_000_000 { return (.secondary, [5, 7, 7, 5]) }
-        return (.secondary.opacity(0.3), [5, 5, 5, 5])
-    }
-    private func formatNumber(_ n: Int) -> String {
-        let num = Double(n)
-        if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }
-        if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }
-        if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }
-        return "\(n)"
-    }
-    var body: some View {
-        let TMetrics = metrics
-        HStack(spacing: 4) {
-            HStack(alignment: .bottom, spacing: 2) { ForEach(0..<4) { index in Capsule().fill(TMetrics.bars.indices.contains(index) ? TMetrics.color : Color.clear).frame(width: 3, height: TMetrics.bars.indices.contains(index) ? TMetrics.bars[index] : 5) } }
-            Text(formatNumber(playCount)).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(TMetrics.color.opacity(0.8))
-        }.help("Total Plays: \(playCount.formatted())")
-    }
-}
-
-private struct PopularityIndicator: View {
-    let popularity: Int
-    private var color: Color { if popularity >= 75 { return .green }; if popularity >= 40 { return .yellow }; return .secondary }
-    private var estimatedPlays: Int { let p = Double(popularity); let basePlays = pow(p / 10, 4) * 100; let randomFactor = Double.random(in: 0.8...1.2); return Int(basePlays * randomFactor) }
-    private func formatNumber(_ n: Int) -> String { let num = Double(n); if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }; if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }; if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }; return "\(n)" }
-    var body: some View {
-        HStack(spacing: 4) {
-            HStack(alignment: .bottom, spacing: 2) { ForEach(0..<4) { index in Capsule().fill(popularity > (index * 25) ? color : Color.secondary.opacity(0.3)).frame(width: 3, height: CGFloat(index * 2 + 5)) } }
-            Text(formatNumber(estimatedPlays)).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(color.opacity(0.8))
-        }.help("Popularity Score: \(popularity)/100")
     }
 }

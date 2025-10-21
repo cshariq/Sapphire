@@ -35,6 +35,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var isBluetoothAuthenticating = false
     private var isFaceIDAuthenticating = false
+    private var isUnlockInProgress = false
     private let passwordAccount = "SapphireUserPassword"
 
     private override init() {
@@ -69,7 +70,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func startFaceIDAuthentication() {
-        guard !isFaceIDAuthenticating, settings.settings.faceIDUnlockEnabled, settings.settings.hasRegisteredFaceID, self.cameraController == nil else { return }
+        guard !isUnlockInProgress, !isFaceIDAuthenticating, settings.settings.faceIDUnlockEnabled, settings.settings.hasRegisteredFaceID, self.cameraController == nil else { return }
         print("LOG (FaceID): Creating new CameraController instance for authentication.")
         isFaceIDAuthenticating = true
         self.cameraController = CameraController()
@@ -82,7 +83,6 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         isFaceIDAuthenticating = false
 
         cameraController?.teardown()
-
         cameraController = nil
 
         MLModelManager.shared.unloadModels()
@@ -98,12 +98,27 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func handleUnlock() {
+        guard !isUnlockInProgress else { return }
+        isUnlockInProgress = true
+
         if settings.settings.bluetoothUnlockWakeOnProximity { (NSApp.delegate as? AppDelegate)?.wakeDisplay() }
         if settings.settings.bluetoothUnlockWakeWithoutUnlocking { return }
+
         if isFaceIDAuthenticating {
-            tearDownFaceID()
+            cameraController?.stopCameraSession()
         }
+
         self.unlockWithPassword()
+
+        if isFaceIDAuthenticating {
+            DispatchQueue.main.async {
+                self.tearDownFaceID()
+            }
+        }
+    }
+
+    func didCompleteUnlock() {
+        isUnlockInProgress = false
     }
 
     private func setupBindings() {
@@ -249,7 +264,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     private func startScreenSaver() {
-        let p = Process(); p.launchPath = "/usr/bin/open"; p.arguments = ["-a", "ScreenSaverEngine"]; try? p.run()
+        let p = Process(); p.launchPath = "/usr-bin/open"; p.arguments = ["-a", "ScreenSaverEngine"]; try? p.run()
     }
 
     private func savePasswordToKeychain(_ password: String) -> Bool {

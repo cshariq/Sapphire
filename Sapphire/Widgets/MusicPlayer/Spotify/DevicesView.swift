@@ -118,12 +118,14 @@ struct DevicesView: View {
                 .frame(minHeight: 200)
             }
         }
-        .padding(20)
+        .padding([.top, .horizontal], 20)
         .frame(width: 700)
         .frame(maxHeight: 350)
         .fixedSize(horizontal: false, vertical: true)
-        .task {
-            await fetchInitialData()
+        .onAppear {
+            Task.detached(priority: .userInitiated) {
+                await fetchInitialData()
+            }
         }
         .onChange(of: selectedTab) { _, newValue in
             UserDefaults.standard.set(newValue.rawValue, forKey: lastSelectedTabKey)
@@ -172,7 +174,9 @@ struct DevicesView: View {
                         )
                     }
                 }
+                .padding(.bottom, 30)
             }
+            .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.9), .init(color: .clear, location: 1.0)]), startPoint: .top, endPoint: .bottom))
         }
     }
 
@@ -202,7 +206,7 @@ struct DevicesView: View {
                             isActive: device.deviceId == musicManager.spotifyPrivateAPI.activePlayerDeviceID,
                             volume: $spotifyVolume,
                             onTransfer: {
-                                Task {
+                                Task.detached(priority: .userInitiated) {
                                     _ = await musicManager.transferSpotifyPlayback(to: device.deviceId)
                                     try? await Task.sleep(for: .seconds(1))
                                     await fetchInitialData()
@@ -219,7 +223,7 @@ struct DevicesView: View {
                             volume: $spotifyVolume,
                             onTransfer: {
                                 guard let deviceId = device.id else { return }
-                                Task {
+                                Task.detached(priority: .userInitiated) {
                                     _ = await musicManager.transferSpotifyPlayback(to: deviceId)
                                     try? await Task.sleep(for: .seconds(1))
                                     await fetchInitialData()
@@ -230,7 +234,9 @@ struct DevicesView: View {
                     }
                 }
             }
+            .padding(.bottom, 30)
         }
+        .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.9), .init(color: .clear, location: 1.0)]), startPoint: .top, endPoint: .bottom))
         .onChange(of: spotifyVolume) { _, _ in
             volumeThrottler.throttle { sendVolumeUpdate() }
         }
@@ -239,30 +245,47 @@ struct DevicesView: View {
     // MARK: - Data Fetching
 
     private func fetchInitialData() async {
-        isLoading = true
+        await MainActor.run {
+            isLoading = true
+        }
 
         await musicManager.updateAirPlayDevices()
+
+        var fetchedNativeDevices: [SpotifyNativeDevice] = []
+        var fetchedOfficialDevices: [SpotifyDevice] = []
 
         if isLoggedIn {
             if musicManager.isPrivateAPIAuthenticated {
                 try? await musicManager.spotifyPrivateAPI.refreshPlayerAndDeviceState()
-                self.spotifyNativeDevices = musicManager.spotifyPrivateAPI.devices
+                fetchedNativeDevices = musicManager.spotifyPrivateAPI.devices
             }
             if musicManager.isOfficialAPIAuthenticated {
-                 self.spotifyOfficialDevices = await musicManager.spotifyOfficialAPI.fetchDevices()
+                 fetchedOfficialDevices = await musicManager.spotifyOfficialAPI.fetchDevices()
             }
 
+            var newVolume: Double?
             if let activeNativeID = musicManager.spotifyPrivateAPI.activePlayerDeviceID,
-               let activeNativeDevice = spotifyNativeDevices.first(where: { $0.deviceId == activeNativeID }) {
-                self.spotifyVolume = (Double(activeNativeDevice.volume ?? 65535) / 65535.0) * 100.0
-            } else if let activeOfficial = spotifyOfficialDevices.first(where: { $0.isActive }), let currentVolume = activeOfficial.volumePercent {
-                self.spotifyVolume = Double(currentVolume)
+               let activeNativeDevice = fetchedNativeDevices.first(where: { $0.deviceId == activeNativeID }) {
+                newVolume = (Double(activeNativeDevice.volume ?? 65535) / 65535.0) * 100.0
+            } else if let activeOfficial = fetchedOfficialDevices.first(where: { $0.isActive }), let currentVolume = activeOfficial.volumePercent {
+                newVolume = Double(currentVolume)
             } else if let localVolume = musicManager.spotifyAppleScript.getLocalVolume() {
-                self.spotifyVolume = Double(localVolume)
+                newVolume = Double(localVolume)
+            }
+
+            await MainActor.run {
+                self.spotifyNativeDevices = fetchedNativeDevices
+                self.spotifyOfficialDevices = fetchedOfficialDevices
+                if let newVolume = newVolume {
+                    self.spotifyVolume = newVolume
+                }
+                self.isLoading = false
+            }
+        } else {
+            await MainActor.run {
+                self.isLoading = false
             }
         }
-
-        isLoading = false
     }
 }
 
@@ -322,6 +345,10 @@ fileprivate struct SpotifyDeviceRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 15) {
+                Image(systemName: iconName(for: device.type))
+                    .font(.title2)
+                    .frame(width: 30)
+                    .foregroundColor(device.isActive ? .green : .primary)
                 Text(device.name).fontWeight(.medium)
                 Spacer()
                 if device.isActive { Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green).transition(.opacity.combined(with: .scale(scale: 0.8))) }
@@ -335,6 +362,21 @@ fileprivate struct SpotifyDeviceRow: View {
         .padding(.horizontal, 20).padding(.vertical, 16).background(.gray.opacity(0.13)).clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous)).contentShape(Rectangle())
         .onTapGesture { guard !device.isActive else { return }; onTransfer() }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: device.isActive)
+    }
+
+    private func iconName(for type: String) -> String {
+        switch type.lowercased() {
+        case "computer": return "desktopcomputer"
+        case "speaker": return "hifispeaker.fill"
+        case "smartphone": return "iphone"
+        case "tv": return "tv.fill"
+        case "avr", "stb", "castvideo": return "tv.inset.filled"
+        case "gameconsole": return "gamecontroller.fill"
+        case "automobile": return "car.fill"
+        case "tablet": return "ipad"
+        case "castaudio", "audiodongle": return "hifispeaker.2.fill"
+        default: return "speaker.wave.2.fill"
+        }
     }
 }
 

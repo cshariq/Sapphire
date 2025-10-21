@@ -375,13 +375,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard isScreenLocked else { return }
 
         isScreenLocked = false
+        isAuthenticating = false
+
         lockScreenState.isUnlocked = true
         lockScreenState.isAuthenticating = false
 
-        stopAuthentication()
-
         lockScreenManager.hideAndDestroyWindows()
         liveActivityManager.finishLockScreenActivity()
+        authManager.didCompleteUnlock()
 
         if let notchWindow = notchWindow, let cgsSpace = cgsSpace {
             lockScreenManager.removeWindow(notchWindow)
@@ -392,7 +393,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func startAuthentication() {
         guard isScreenLocked, !isAuthenticating else { return }
-
         isAuthenticating = true
         lockScreenState.isAuthenticating = true
 
@@ -403,15 +403,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if settingsModel.settings.faceIDUnlockEnabled && settingsModel.settings.hasRegisteredFaceID {
             authManager.startFaceIDAuthentication()
         }
-    }
-
-    private func stopAuthentication() {
-        guard isAuthenticating else { return }
-
-        isAuthenticating = false
-        lockScreenState.isAuthenticating = false
-
-        authManager.stopAllAuthentication()
     }
 
     private func transitionToAgentApp() {

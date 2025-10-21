@@ -104,7 +104,6 @@ class LyricsFetcher {
     }
 
     func translate(lyrics: inout [LyricLine], from sourceLanguage: String, to targetLanguage: String) async {
-
         struct UnofficialGoogleTranslateResponse: Decodable {
             let translatedText: String?
             init(from decoder: Decoder) throws {
@@ -119,8 +118,11 @@ class LyricsFetcher {
         }
 
         for i in 0..<lyrics.count {
-            let originalText = lyrics[i].text
-            if originalText.isEmpty { continue }
+            let originalText = lyrics[i].text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if originalText.isEmpty {
+                lyrics[i].translatedText = ""
+                continue
+            }
 
             var components = URLComponents(string: "https://translate.googleapis.com/translate_a/single")!
             components.queryItems = [
@@ -131,16 +133,24 @@ class LyricsFetcher {
                 URLQueryItem(name: "q", value: originalText)
             ]
 
-            guard let url = components.url else { continue }
+            guard let url = components.url else {
+                lyrics[i].translatedText = originalText
+                continue
+            }
 
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
                 let unofficialResponse = try JSONDecoder().decode(UnofficialGoogleTranslateResponse.self, from: data)
-                if let translatedText = unofficialResponse.translatedText {
+                if let translatedText = unofficialResponse.translatedText, !translatedText.isEmpty {
                     lyrics[i].translatedText = translatedText
+                } else {
+                    lyrics[i].translatedText = originalText
                 }
             } catch {
+                lyrics[i].translatedText = originalText
             }
+
+            try? await Task.sleep(nanoseconds: 120_000_000)
         }
     }
 }

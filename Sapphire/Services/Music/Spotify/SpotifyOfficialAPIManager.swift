@@ -91,10 +91,16 @@ class SpotifyOfficialAPIManager: ObservableObject {
         request.httpBody = components.query?.data(using: .utf8)
         let authHeader = "\(clientId):\(clientSecret)".data(using: .utf8)!.base64EncodedString()
         request.setValue("Basic \(authHeader)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/x-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                let errorBody = String(data: data, encoding: .utf8) ?? "No response body"
+                print("[SpotifyOfficialAPIManager] Token exchange failed with status code \((response as? HTTPURLResponse)?.statusCode ?? 0). Response: \(errorBody)")
+                return
+            }
+
             let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
 
             self.accessToken = tokenResponse.accessToken
@@ -132,7 +138,7 @@ class SpotifyOfficialAPIManager: ObservableObject {
         request.httpBody = components.query?.data(using: .utf8)
         let authHeader = "\(clientId):\(clientSecret)".data(using: .utf8)!.base64EncodedString()
         request.setValue("Basic \(authHeader)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/x-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
         do {
             let (data, _) = try await URLSession.shared.data(for: request)
@@ -148,13 +154,13 @@ class SpotifyOfficialAPIManager: ObservableObject {
                 await self.fetchUserProfile()
             } else if let errorResponse = try? decoder.decode(TokenErrorResponse.self, from: data) {
                 print("[SpotifyOfficialAPIManager] Refresh token error: \(errorResponse.error_description)")
-                await self.logout()
+                await logout()
             } else {
                 throw URLError(.cannotDecodeContentData)
             }
         } catch {
             print("[SpotifyOfficialAPIManager] Refresh token request failed: \(error)")
-            await self.logout()
+            await logout()
         }
     }
 
@@ -290,9 +296,28 @@ class SpotifyOfficialAPIManager: ObservableObject {
     }
 
     func fetchPlaylistTracks(playlistID: String) async -> [SpotifyTrack]? {
-        guard isAuthenticated, let url = URL(string: "https://api.spotify.com/v1/playlists/\(playlistID)/tracks") else { return nil }
-        let response: PlaylistTracksResponse? = await makeAPIRequest(url: url)
-        return response?.items.map { $0.track }
+        guard isAuthenticated else { return nil }
+
+        struct PlaylistTrackItem: Decodable { let track: SpotifyTrack? }
+        struct PlaylistTracksResponse: Decodable {
+            let items: [PlaylistTrackItem]
+            let next: String?
+        }
+
+        var allTracks: [SpotifyTrack] = []
+        var nextUrlString: String? = "https://api.spotify.com/v1/playlists/\(playlistID)/tracks"
+
+        while let urlString = nextUrlString, let url = URL(string: urlString) {
+            let response: PlaylistTracksResponse? = await makeAPIRequest(url: url)
+
+            if let items = response?.items {
+                allTracks.append(contentsOf: items.compactMap { $0.track })
+            }
+
+            nextUrlString = response?.next
+        }
+
+        return allTracks
     }
 
     // MARK: - Generic API Helper
@@ -310,26 +335,38 @@ class SpotifyOfficialAPIManager: ObservableObject {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else { return nil }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("[SpotifyOfficialAPIManager] Invalid response type.")
+                return nil
+            }
 
             if httpResponse.statusCode == 204 {
                 return (true as? T)
             }
 
             if httpResponse.statusCode == 401 {
+                print("[SpotifyOfficialAPIManager] Access token expired. Refreshing...")
                 await refreshTokenIfNeeded()
-                return await makeAPIRequest(url: url, method: method, body: body)
+                if self.isAuthenticated {
+                    return await makeAPIRequest(url: url, method: method, body: body)
+                } else {
+                    return nil
+                }
             }
 
             guard (200...299).contains(httpResponse.statusCode) else {
+                let errorBody = String(data: data, encoding: .utf8) ?? "No response body"
+                print("[SpotifyOfficialAPIManager] API Request failed for URL \(url) with status code \(httpResponse.statusCode). Response: \(errorBody)")
                 return nil
             }
 
             if data.isEmpty, T.self == Bool.self {
                 return true as? T
             }
+
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
+            print("[SpotifyOfficialAPIManager] Decoding failed for URL \(url): \(error)")
             return nil
         }
     }

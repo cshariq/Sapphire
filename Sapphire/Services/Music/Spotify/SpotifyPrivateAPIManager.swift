@@ -149,7 +149,6 @@ class SpotifyPrivateAPIManager: ObservableObject {
     private let controllerDeviceIDKey = "spotAPIControllerDeviceID"
 
     private var queueHydrationTask: Task<Void, Never>?
-    private var playlistLoadingTask: Task<Void, Never>?
 
     private let apiCache = FileAPICache()
 
@@ -348,77 +347,69 @@ class SpotifyPrivateAPIManager: ObservableObject {
         }
     }
 
-    func loadPlaylist(playlistId: String) {
+    func loadPlaylist(playlistId: String) async {
         guard !playlistId.contains(":collection") && playlistId != "tracks" else { return }
-        playlistLoadingTask?.cancel()
+        isPlaylistLoading = true
+        defer { isPlaylistLoading = false }
 
-        playlistLoadingTask = Task {
-            isPlaylistLoading = true
-            defer { isPlaylistLoading = false }
+        do {
+            let initialVariables: [String: Any] = ["uri": "spotify:playlist:\(playlistId)", "offset": 0, "limit": 100, "enableWatchFeedEntrypoint": false]
+            let freshResponse: SpotifyPlaylistDetailsResponse = try await pathfinderQuery(operationName: "fetchPlaylist", variables: initialVariables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData, useV2Endpoint: true)
 
-            do {
-                let initialVariables: [String: Any] = ["uri": "spotify:playlist:\(playlistId)", "offset": 0, "limit": 100, "enableWatchFeedEntrypoint": false]
-                let freshResponse: SpotifyPlaylistDetailsResponse = try await pathfinderQuery(operationName: "fetchPlaylist", variables: initialVariables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData, useV2Endpoint: true)
+            guard var freshPlaylistData = freshResponse.data?.playlistV2 else { throw SpotAPIError.missingData("Initial PlaylistV2 data was missing.") }
+            if Task.isCancelled { return }
 
-                guard var freshPlaylistData = freshResponse.data?.playlistV2 else { throw SpotAPIError.missingData("Initial PlaylistV2 data was missing.") }
-                if Task.isCancelled { return }
+            freshPlaylistData.uri = "spotify:playlist:\(playlistId)"
+            self.selectedPlaylist = freshPlaylistData
+            self.playlistTrackViewModels = freshPlaylistData.content.items.map { TrackViewModel(playlistItem: $0) }
 
-                freshPlaylistData.uri = "spotify:playlist:\(playlistId)"
-                self.selectedPlaylist = freshPlaylistData
-                self.playlistTrackViewModels = freshPlaylistData.content.items.map { TrackViewModel(playlistItem: $0) }
+            var currentOffset = freshPlaylistData.content.items.count
+            let totalTracks = freshPlaylistData.content.totalCount
 
-                var currentOffset = freshPlaylistData.content.items.count
-                let totalTracks = freshPlaylistData.content.totalCount
+            while currentOffset < totalTracks {
+                if Task.isCancelled { break }
+                let pageVariables: [String: Any] = ["uri": "spotify:playlist:\(playlistId)", "offset": currentOffset, "limit": 200, "enableWatchFeedEntrypoint": false]
+                let pageResponse: SpotifyPlaylistDetailsResponse = try await pathfinderQuery(operationName: "fetchPlaylist", variables: pageVariables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData, useV2Endpoint: true)
 
-                while currentOffset < totalTracks {
-                    if Task.isCancelled { break }
-                    let pageVariables: [String: Any] = ["uri": "spotify:playlist:\(playlistId)", "offset": currentOffset, "limit": 200, "enableWatchFeedEntrypoint": false]
-                    let pageResponse: SpotifyPlaylistDetailsResponse = try await pathfinderQuery(operationName: "fetchPlaylist", variables: pageVariables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData, useV2Endpoint: true)
-
-                    if let newItems = pageResponse.data?.playlistV2?.content.items, !newItems.isEmpty {
-                        self.selectedPlaylist?.content.items.append(contentsOf: newItems)
-                        let newViewModels = newItems.map { TrackViewModel(playlistItem: $0) }
-                        self.playlistTrackViewModels.append(contentsOf: newViewModels)
-                        currentOffset += newItems.count
-                    } else {
-                        break
-                    }
+                if let newItems = pageResponse.data?.playlistV2?.content.items, !newItems.isEmpty {
+                    self.selectedPlaylist?.content.items.append(contentsOf: newItems)
+                    let newViewModels = newItems.map { TrackViewModel(playlistItem: $0) }
+                    self.playlistTrackViewModels.append(contentsOf: newViewModels)
+                    currentOffset += newItems.count
+                } else {
+                    break
                 }
-            } catch {
-                if !(error is CancellationError) {
-                    print("[SpotifyPrivateAPIManager] Error loading playlist: \(error.localizedDescription)")
-                    self.selectedPlaylist = nil
-                }
+            }
+        } catch {
+            if !(error is CancellationError) {
+                print("[SpotifyPrivateAPIManager] Error loading playlist: \(error.localizedDescription)")
+                self.selectedPlaylist = nil
             }
         }
     }
 
-    func loadLikedSongs(for playlist: SpotifyPlaylist) {
-        playlistLoadingTask?.cancel()
+    func loadLikedSongs(for playlist: SpotifyPlaylist) async {
+        isPlaylistLoading = true
+        defer { isPlaylistLoading = false }
 
-        playlistLoadingTask = Task {
-            isPlaylistLoading = true
-            defer { isPlaylistLoading = false }
+        do {
+            let variables: [String: Any] = ["offset": 0, "limit": 500]
+            let response: LikedSongsResponse = try await pathfinderQuery(operationName: "fetchLibraryTracks", variables: variables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData)
+            if Task.isCancelled { return }
 
-            do {
-                let variables: [String: Any] = ["offset": 0, "limit": 500]
-                let response: LikedSongsResponse = try await pathfinderQuery(operationName: "fetchLibraryTracks", variables: variables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData)
-                if Task.isCancelled { return }
+            let likedItems = response.data.me.library.tracks.items
+            let playlistItems = likedItems.map { likedItem -> SpotifyPlaylistDetailsResponse.PlaylistItem in
+                var mutableItemData = likedItem.track.data
+                mutableItemData.uri = likedItem.track.uri
+                return SpotifyPlaylistDetailsResponse.PlaylistItem(uid: likedItem.track.uri, itemV2: .init(data: mutableItemData), addedAtInfo: likedItem.addedAtInfo)
+            }
 
-                let likedItems = response.data.me.library.tracks.items
-                let playlistItems = likedItems.map { likedItem -> SpotifyPlaylistDetailsResponse.PlaylistItem in
-                    var mutableItemData = likedItem.track.data
-                    mutableItemData.uri = likedItem.track.uri
-                    return SpotifyPlaylistDetailsResponse.PlaylistItem(uid: likedItem.track.uri, itemV2: .init(data: mutableItemData), addedAtInfo: likedItem.addedAtInfo)
-                }
-
-                self.selectedPlaylist = SpotifyPlaylistDetailsResponse.PlaylistV2(name: playlist.name, uri: playlist.uri, content: .init(totalCount: response.data.me.library.tracks.totalCount, items: playlistItems))
-                self.playlistTrackViewModels = playlistItems.map { TrackViewModel(playlistItem: $0) }
-            } catch {
-                if !(error is CancellationError) {
-                    print("[SpotifyPrivateAPIManager] Error loading liked songs: \(error.localizedDescription)")
-                    self.selectedPlaylist = nil
-                }
+            self.selectedPlaylist = SpotifyPlaylistDetailsResponse.PlaylistV2(name: playlist.name, uri: playlist.uri, content: .init(totalCount: response.data.me.library.tracks.totalCount, items: playlistItems))
+            self.playlistTrackViewModels = playlistItems.map { TrackViewModel(playlistItem: $0) }
+        } catch {
+            if !(error is CancellationError) {
+                print("[SpotifyPrivateAPIManager] Error loading liked songs: \(error.localizedDescription)")
+                self.selectedPlaylist = nil
             }
         }
     }

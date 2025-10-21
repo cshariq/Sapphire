@@ -121,21 +121,23 @@ struct NotchConfiguration {
     static var widgetSwitchCollapseDelay: TimeInterval = 3.0
 
     // MARK: - Animation Configurations (Represents the 'Snappy' default)
-    static var expandAnimation = Animation.spring(response: 0.45, dampingFraction: 0.68, blendDuration: 0)
-    static var swipeOpenAnimation = Animation.spring(response: 0.5, dampingFraction: 0.85, blendDuration: 0)
+    static var expandAnimation = Animation.spring(response: 0.4, dampingFraction: 0.65, blendDuration: 0)
+    static var swipeOpenAnimation = Animation.spring(response: 0.35, dampingFraction: 0.45, blendDuration: 0)
     static var collapseAnimation = Animation.spring(response: 0.3, dampingFraction: 0.98, blendDuration: 0)
     static var autoExpandAnimation = Animation.spring(response: 0.42, dampingFraction: 0.92, blendDuration: 0)
-    static var hoverAnimation = Animation.spring(response: 0.38, dampingFraction: 0.96, blendDuration: 0)
-    static var contentTransitionAnimation = Animation.spring(response: 0.35, dampingFraction: 0.9, blendDuration: 0)
+    static var hoverAnimation = Animation.spring(response: 0.25, dampingFraction: 0.45, blendDuration: 0)
+    static var contentTransitionAnimation = Animation.spring(response: 0.55, dampingFraction: 0.85, blendDuration: 0)
     static var activityToActivityAnimation = Animation.spring(response: 0.4, dampingFraction: 0.98, blendDuration: 0)
     static var activityMorphAnimation = Animation.spring(response: 0.5, dampingFraction: 0.88, blendDuration: 0)
     static var bottomContentAnimation = Animation.spring(response: 0.42, dampingFraction: 0.999, blendDuration: 0)
     static var heightIncreaseAnimation = Animation.spring(response: 0.38, dampingFraction: 0.995, blendDuration: 0)
-    static var heightDecreaseAnimation = Animation.spring(response: 0.36, dampingFraction: 0.999, blendDuration: 0)
-    static var largeMenuAnimation = Animation.spring(response: 0.5, dampingFraction: 0.97, blendDuration: 0)
+    static var heightDecreaseAnimation = Animation.spring(response: 0.32, dampingFraction: 0.6, blendDuration: 0)
+    static var largeMenuAnimation = Animation.spring(response: 0.38, dampingFraction: 0.55, blendDuration: 0)
     static var bottomContentTransitionAnimation = Animation.easeInOut(duration: 0.3)
     static var activityOpacityAnimation = Animation.easeInOut(duration: 0.2)
     static var immediateAnimation = Animation.linear(duration: 0)
+
+    static var contentEntryAnimation = Animation.spring(response: 0.7, dampingFraction: 0.8)
 
     // MARK: - Blur Animation Configurations
     static var blurAnimation = Animation.easeIn(duration: 0.1)
@@ -286,6 +288,7 @@ struct ResolvedNotchConfiguration {
     let bottomContentTransitionAnimation: Animation
     let activityOpacityAnimation: Animation
     let immediateAnimation: Animation
+    let contentEntryAnimation: Animation
 
     // MARK: - Blur Animation Configurations
     let blurAnimation = NotchConfiguration.blurAnimation
@@ -382,18 +385,18 @@ struct ResolvedNotchConfiguration {
 
         switch profile {
         case .snappy:
-            self.expandAnimation = .spring(response: 0.45, dampingFraction: 0.68)
-            self.swipeOpenAnimation = .spring(response: 0.5, dampingFraction: 0.85)
-            self.collapseAnimation = .spring(response: 0.3, dampingFraction: 0.98)
-            self.autoExpandAnimation = .spring(response: 0.42, dampingFraction: 0.92)
-            self.hoverAnimation = .spring(response: 0.38, dampingFraction: 0.96)
-            self.contentTransitionAnimation = .spring(response: 0.35, dampingFraction: 0.9)
-            self.activityToActivityAnimation = .spring(response: 0.4, dampingFraction: 0.98)
-            self.activityMorphAnimation = .spring(response: 0.5, dampingFraction: 0.88)
-            self.bottomContentAnimation = .spring(response: 0.42, dampingFraction: 0.999)
-            self.heightIncreaseAnimation = .spring(response: 0.38, dampingFraction: 0.995)
-            self.heightDecreaseAnimation = .spring(response: 0.36, dampingFraction: 0.999)
-            self.largeMenuAnimation = .spring(response: 0.5, dampingFraction: 0.97)
+            self.expandAnimation = NotchConfiguration.expandAnimation
+            self.swipeOpenAnimation = NotchConfiguration.swipeOpenAnimation
+            self.collapseAnimation = NotchConfiguration.collapseAnimation
+            self.autoExpandAnimation = NotchConfiguration.autoExpandAnimation
+            self.hoverAnimation = NotchConfiguration.hoverAnimation
+            self.contentTransitionAnimation = NotchConfiguration.contentTransitionAnimation
+            self.activityToActivityAnimation = NotchConfiguration.activityToActivityAnimation
+            self.activityMorphAnimation = NotchConfiguration.activityMorphAnimation
+            self.bottomContentAnimation = NotchConfiguration.bottomContentAnimation
+            self.heightIncreaseAnimation = NotchConfiguration.heightIncreaseAnimation
+            self.heightDecreaseAnimation = NotchConfiguration.heightDecreaseAnimation
+            self.largeMenuAnimation = NotchConfiguration.largeMenuAnimation
 
         case .bouncy:
             self.expandAnimation = .spring(response: 0.4, dampingFraction: 0.65)
@@ -441,5 +444,6 @@ struct ResolvedNotchConfiguration {
         self.bottomContentTransitionAnimation = NotchConfiguration.bottomContentTransitionAnimation
         self.activityOpacityAnimation = NotchConfiguration.activityOpacityAnimation
         self.immediateAnimation = NotchConfiguration.immediateAnimation
+        self.contentEntryAnimation = NotchConfiguration.contentEntryAnimation
     }
 }

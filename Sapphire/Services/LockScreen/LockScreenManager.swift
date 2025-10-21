@@ -35,6 +35,41 @@ struct LockScreenConfiguration {
 
     // MARK: - Manager Positioning
     static let spacingMainAboveMini: CGFloat = 24
+
+    // MARK: - Device-Specific Vertical Insets
+    private struct LockScreenOffsets {
+        let withoutAvatarInset: CGFloat
+        let withAvatarInset: CGFloat
+        let withTextInset: CGFloat
+    }
+
+    private static func deviceLockScreenOffsets() -> LockScreenOffsets {
+        switch DisplayDetection.detectDeviceClass() {
+        case .macBookPro14:
+            return LockScreenOffsets(withoutAvatarInset: 240, withAvatarInset: 210, withTextInset: 280)
+        case .macBookPro16:
+            return LockScreenOffsets(withoutAvatarInset: 260, withAvatarInset: 230, withTextInset: 300)
+        case .macBookAir13:
+            return LockScreenOffsets(withoutAvatarInset: 220, withAvatarInset: 190, withTextInset: 260)
+        case .macBookAir15:
+            return LockScreenOffsets(withoutAvatarInset: 250, withAvatarInset: 220, withTextInset: 290)
+        case .unknown:
+            return LockScreenOffsets(withoutAvatarInset: 260, withAvatarInset: 230, withTextInset: 300)
+        }
+    }
+
+    static func getBottomInset() -> CGFloat {
+        let offsets = deviceLockScreenOffsets()
+        let loginPrefs = UserDefaults.standard.persistentDomain(forName: "/Library/Preferences/com.apple.loginwindow.plist")
+
+        let loginText = loginPrefs?["LoginwindowText"] as? String ?? ""
+        if !loginText.isEmpty {
+            return offsets.withTextInset
+        }
+
+        let isAvatarHidden = loginPrefs?["HideUserAvatarAndName"] as? Bool ?? false
+        return isAvatarHidden ? offsets.withoutAvatarInset : offsets.withAvatarInset
+    }
 }
 
 private final class UnfocusableWindow: NSWindow {
@@ -162,10 +197,6 @@ public class LockScreenManager {
         _ = SLSRemoveWindowsFromSpaces(connection, [window.windowNumber] as CFArray, [space] as CFArray)
     }
 
-    private func isUserInfoVisibleOnLockScreen() -> Bool {
-        return UserDefaults.standard.persistentDomain(forName: "/Library/Preferences/com.apple.loginwindow.plist")?["HideUserAvatarAndName"] as? Bool ?? true
-    }
-
     public func setupAndShowWindows(configs: [LockScreenWidgetConfig], on screen: NSScreen) {
         hideAndDestroyWindows()
 
@@ -183,13 +214,14 @@ public class LockScreenManager {
 
     func calculateMainWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
         let x = screen.visibleFrame.midX - (size.width / 2)
+        let miniWidgetsAreActive = windows.keys.contains { $0.hasPrefix(MINI_ID_PREFIX) }
 
-        if let miniSize = activeMiniSize(), miniSize.height > 10 {
+        if miniWidgetsAreActive, let miniSize = activeMiniSize(), miniSize.height > 10 {
             let miniFrame = calculateMiniWidgetFrame(size: miniSize, screen: screen)
             let y = miniFrame.maxY + LockScreenConfiguration.spacingMainAboveMini
             return NSRect(x: x, y: y, width: size.width, height: size.height)
         } else {
-            let bottomInset = screen.visibleFrame.height * (isUserInfoVisibleOnLockScreen() ? 0.22 : 0.30)
+            let bottomInset = LockScreenConfiguration.getBottomInset()
             let y = screen.visibleFrame.minY + bottomInset
             return NSRect(x: x, y: y, width: size.width, height: size.height)
         }
@@ -198,10 +230,8 @@ public class LockScreenManager {
     func calculateMiniWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
         let vis = screen.visibleFrame
         let x = vis.midX - (size.width / 2)
-
-        let verticalOffset = vis.height * (isUserInfoVisibleOnLockScreen() ? 0.22 : 0.28)
-        let y = vis.minY + verticalOffset - (size.height / 2)
-
+        let bottomInset = LockScreenConfiguration.getBottomInset()
+        let y = vis.minY + bottomInset
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 

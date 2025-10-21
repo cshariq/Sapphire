@@ -100,7 +100,7 @@ struct LockScreenMiniWidgetView: View {
     var body: some View {
         let fadeTransition = AnyTransition.opacity
 
-        HStack(spacing: LockScreenConfiguration.widgetSpacing) {
+        HStack(alignment: .top, spacing: LockScreenConfiguration.widgetSpacing) {
             ForEach(settings.settings.lockScreenMiniWidgets, id: \.self) { widgetType in
                 switch widgetType {
                 case .weather:
@@ -108,7 +108,7 @@ struct LockScreenMiniWidgetView: View {
                         WeatherWidgetView()
                             .environment(\.navigationStack, $dummyNavigationStack)
                     }
-                    .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .calendar:
@@ -117,7 +117,7 @@ struct LockScreenMiniWidgetView: View {
                             .environmentObject(calendarService)
                             .environment(\.navigationStack, $dummyNavigationStack)
                     }
-                    .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .music:
@@ -128,19 +128,19 @@ struct LockScreenMiniWidgetView: View {
                                 .environmentObject(settings)
                                 .environment(\.navigationStack, $dummyNavigationStack)
                         }
-                        .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                        .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                         .transition(fadeTransition)
                     }
                 case .battery:
                     LockScreenWidgetBackground {
                         BatteryMiniWidget()
                     }
-                    .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .none:
                     EmptyView()
-                        .frame(height: maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
+                        .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                 }
             }
         }

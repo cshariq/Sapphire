@@ -32,6 +32,26 @@ extension EnvironmentValues {
     }
 }
 
+private struct BlurAndOpacityModifier: ViewModifier {
+    let radius: CGFloat
+    let opacity: Double
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: radius)
+            .opacity(opacity)
+    }
+}
+
+private extension AnyTransition {
+    static var blurAndFadeIn: AnyTransition {
+        .modifier(
+            active: BlurAndOpacityModifier(radius: 20, opacity: 0),
+            identity: BlurAndOpacityModifier(radius: 0, opacity: 1)
+        )
+    }
+}
+
 struct NotchWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
     @Environment(\.activeDropZone) var activeDropZone
@@ -50,6 +70,7 @@ struct NotchWidgetView: View {
     @Environment(\.notchCornerRadius) private var cornerRadius
 
     @StateObject private var dragState = DragStateManager.shared
+    @State private var hasAppeared: Bool = false
 
     init(navigationStack: Binding<[NotchWidgetMode]>, activeDropZone: Binding<DropZone?>, isFileDropTargeted: Binding<Bool>, calendarViewModel: InteractiveCalendarViewModel) {
         self.musicWidgetView = MusicWidgetView()
@@ -81,14 +102,21 @@ struct NotchWidgetView: View {
 
     var body: some View {
         ZStack {
-            contentSwitch
-                .id(currentMode)
-                .transition(.asymmetric(
-                    insertion: .offset(y: -200)
-                               .combined(with: .scale(scale: 0.8, anchor: .top))
-                               .combined(with: .opacity),
-                    removal: .opacity.animation(.easeIn(duration: 0.15))
-                ))
+            if hasAppeared {
+                contentSwitch
+                    .id(currentMode)
+                    .transition(.asymmetric(
+                        insertion: .offset(y: -50)
+                                   .combined(with: .scale(scale: 0.8, anchor: .top))
+                                   .combined(with: .blurAndFadeIn),
+                        removal: .opacity.animation(.easeIn(duration: 0.15))
+                    ))
+            }
+        }
+        .onAppear {
+            withAnimation() {
+                hasAppeared = true
+            }
         }
         .animation(NotchConfiguration.contentTransitionAnimation, value: currentMode)
         .padding(.top, NotchConfiguration.universalHeight - 10)

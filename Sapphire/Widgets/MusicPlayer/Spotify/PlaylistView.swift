@@ -24,25 +24,67 @@ fileprivate let displayDateFormatter: DateFormatter = {
 }()
 
 class TrackViewModel: ObservableObject, Identifiable {
-    let playlistItem: SpotifyPlaylistDetailsResponse.PlaylistItem
+    // MARK: - Properties
+    let id = UUID()
+
+    let name: String
+    let artists: String
+    let albumName: String
+    let imageURL: URL?
+    let uri: String
+    let uid: String?
+
+    let dateAdded: TimeInterval?
+    let playCount: Int?
+    let publicationYear: Int?
+    let publicationDateISO: String?
+
     @Published var trackDetails: SpotifyTrackDetailsResponse.TrackUnion?
     private var isHydrating = false
+    private let canHydrate: Bool
 
-    var id: String { playlistItem.uid }
+    // MARK: - Initializers
 
     init(playlistItem: SpotifyPlaylistDetailsResponse.PlaylistItem) {
-        self.playlistItem = playlistItem
+        self.uid = playlistItem.uid
+        self.name = playlistItem.itemV2.data.name
+        self.artists = playlistItem.itemV2.data.artists.items.map { $0.profile.name }.joined(separator: ", ")
+        self.albumName = playlistItem.itemV2.data.albumOfTrack.name
+        self.imageURL = playlistItem.itemV2.data.imageURL
+        self.uri = playlistItem.itemV2.data.uri ?? ""
+        self.dateAdded = playlistItem.addedAt.map { $0 / 1000.0 }
+        self.playCount = playlistItem.itemV2.data.playcountInt
+        self.publicationYear = nil
+        self.publicationDateISO = nil
+        self.canHydrate = true
     }
 
+    init(track: SpotifyTrack) {
+        self.uid = nil
+        self.name = track.name
+        self.artists = track.artists.map { $0.name }.joined(separator: ", ")
+        self.albumName = track.album.name
+        self.imageURL = track.album.images.first.flatMap { URL(string: $0.url) }
+        self.uri = track.uri
+        self.dateAdded = nil
+        self.playCount = nil
+        self.publicationYear = nil
+        self.publicationDateISO = nil
+        self.canHydrate = false
+    }
+
+    // MARK: - Hydration
+
     func hydrate(completion: (() -> Void)? = nil) {
-        guard !isHydrating, trackDetails == nil else {
+        guard canHydrate, !isHydrating, trackDetails == nil else {
             completion?()
             return
         }
         isHydrating = true
 
         Task {
-            guard let trackUri = playlistItem.itemV2.data.uri, let trackId = trackUri.components(separatedBy: ":").last else {
+            let trackId = uri.components(separatedBy: ":").last ?? ""
+            guard !trackId.isEmpty else {
                 await MainActor.run {
                     self.isHydrating = false
                     completion?()
@@ -67,6 +109,9 @@ struct PlaylistView: View {
 
     @StateObject private var spotifyPrivateAPI = SpotifyPrivateAPIManager.shared
     @EnvironmentObject private var musicManager: MusicManager
+
+    @State private var viewModels: [TrackViewModel] = []
+    @State private var isLoading = false
 
     @State private var showSpotifyNotOpenAlert = false
 
@@ -100,6 +145,8 @@ struct PlaylistView: View {
     @State private var isIndexing: Bool = false
     @State private var indexingProgress: Double = 0.0
 
+    @State private var isUsingPrivateAPI = true
+
     private let playlistSortStateKey = "playlistSortDescriptors"
 
     init(playlist: SpotifyPlaylist, isLockScreenMode: Bool = false) {
@@ -107,29 +154,31 @@ struct PlaylistView: View {
         self.isLockScreenMode = isLockScreenMode
     }
 
+    private var availableSortOptions: [SortOption] {
+        if isUsingPrivateAPI {
+            return SortOption.allCases
+        } else {
+            return [.defaultOrder, .title, .artist, .album]
+        }
+    }
+
     private var sortedViewModels: [TrackViewModel] {
         if sortOption == .defaultOrder {
-            return sortDirection == .ascending ? spotifyPrivateAPI.playlistTrackViewModels : spotifyPrivateAPI.playlistTrackViewModels.reversed()
+            return sortDirection == .ascending ? viewModels : viewModels.reversed()
         }
 
-        return spotifyPrivateAPI.playlistTrackViewModels.sorted { lhs, rhs in
+        return viewModels.sorted { lhs, rhs in
             let result: ComparisonResult = {
                 switch sortOption {
                 case .title:
-                    let l = lhs.trackDetails?.name ?? lhs.playlistItem.itemV2.data.name
-                    let r = rhs.trackDetails?.name ?? rhs.playlistItem.itemV2.data.name
-                    return l.localizedStandardCompare(r)
+                    return lhs.name.localizedStandardCompare(rhs.name)
                 case .artist:
-                    let l = lhs.trackDetails?.artists.items.first?.profile.name ?? lhs.playlistItem.itemV2.data.artists.items.first?.profile.name ?? ""
-                    let r = rhs.trackDetails?.artists.items.first?.profile.name ?? rhs.playlistItem.itemV2.data.artists.items.first?.profile.name ?? ""
-                    return l.localizedStandardCompare(r)
+                    return lhs.artists.localizedStandardCompare(rhs.artists)
                 case .album:
-                    let l = lhs.trackDetails?.albumOfTrack.name ?? lhs.playlistItem.itemV2.data.albumOfTrack.name
-                    let r = rhs.trackDetails?.albumOfTrack.name ?? rhs.playlistItem.itemV2.data.albumOfTrack.name
-                    return l.localizedStandardCompare(r)
+                    return lhs.albumName.localizedStandardCompare(rhs.albumName)
                 case .dateAdded:
-                    let l = lhs.playlistItem.addedAt ?? 0
-                    let r = rhs.playlistItem.addedAt ?? 0
+                    let l = lhs.dateAdded ?? 0
+                    let r = rhs.dateAdded ?? 0
                     return l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
                 case .publicationDate:
                     let l = lhs.trackDetails?.albumOfTrack.publishDate?.year ?? 0
@@ -138,8 +187,8 @@ struct PlaylistView: View {
                     if l != 0 && r == 0 { return .orderedAscending }
                     return l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
                 case .playCount:
-                    let l = lhs.trackDetails?.playcountInt ?? lhs.playlistItem.itemV2.data.playcountInt ?? 0
-                    let r = rhs.trackDetails?.playcountInt ?? rhs.playlistItem.itemV2.data.playcountInt ?? 0
+                    let l = lhs.playCount ?? 0
+                    let r = rhs.playCount ?? 0
                     return l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
                 case .defaultOrder:
                     return .orderedSame
@@ -157,6 +206,7 @@ struct PlaylistView: View {
                 sortOption: $sortOption,
                 sortDirection: $sortDirection,
                 isIndexing: isIndexing,
+                availableSortOptions: availableSortOptions,
                 onPlay: handlePlaybackResult
             )
 
@@ -176,8 +226,8 @@ struct PlaylistView: View {
             }
 
             ZStack {
-                if spotifyPrivateAPI.playlistTrackViewModels.isEmpty {
-                    if spotifyPrivateAPI.isPlaylistLoading {
+                if viewModels.isEmpty {
+                    if isLoading {
                         ProgressView().progressViewStyle(CircularProgressViewStyle()).scaleEffect(1.5).frame(maxHeight: .infinity)
                     } else {
                         Text("This playlist is empty.").foregroundColor(.secondary).frame(maxHeight: .infinity)
@@ -202,13 +252,7 @@ struct PlaylistView: View {
         }
         .frame(width: 800, height: 350)
         .task(id: playlist.id) {
-            spotifyPrivateAPI.playlistTrackViewModels = []
-            if playlist.uri.contains(":collection") || playlist.uri.contains(":tracks") {
-                await spotifyPrivateAPI.loadLikedSongs(for: playlist)
-            } else {
-                await spotifyPrivateAPI.loadPlaylist(playlistId: playlist.id)
-            }
-            loadSortState()
+            await loadPlaylistContent()
         }
         .alert("Spotify App Is Not Open", isPresented: $showSpotifyNotOpenAlert) {
             Button("OK", role: .cancel) { }
@@ -223,6 +267,35 @@ struct PlaylistView: View {
             saveSortState()
         }
         .animation(.default, value: isIndexing)
+    }
+
+    private func loadPlaylistContent() async {
+        isLoading = true
+        self.viewModels = []
+
+        if spotifyPrivateAPI.isLoggedIn {
+            isUsingPrivateAPI = true
+            spotifyPrivateAPI.playlistTrackViewModels = []
+            if playlist.uri.contains(":collection") || playlist.uri.contains(":tracks") {
+                await spotifyPrivateAPI.loadLikedSongs(for: playlist)
+            } else {
+                await spotifyPrivateAPI.loadPlaylist(playlistId: playlist.id)
+            }
+            self.viewModels = spotifyPrivateAPI.playlistTrackViewModels
+        } else if musicManager.spotifyOfficialAPI.isAuthenticated {
+            isUsingPrivateAPI = false
+            if !(playlist.uri.contains(":collection") || playlist.uri.contains(":tracks")) {
+                if let tracks = await musicManager.spotifyOfficialAPI.fetchPlaylistTracks(playlistID: playlist.id) {
+                    self.viewModels = tracks.map { TrackViewModel(track: $0) }
+                }
+            }
+        }
+
+        isLoading = false
+        loadSortState()
+        if !availableSortOptions.contains(sortOption) {
+            sortOption = .defaultOrder
+        }
     }
 
     private func handlePlaybackResult(_ result: PlaybackResult) {
@@ -255,9 +328,8 @@ struct PlaylistView: View {
     }
 
     private func startIndexingIfNeeded(for sortOption: SortOption) {
-        guard sortOption.requiresHydration, !isIndexing else { return }
+        guard isUsingPrivateAPI, sortOption.requiresHydration, !isIndexing else { return }
 
-        let viewModels = spotifyPrivateAPI.playlistTrackViewModels
         isIndexing = true
         indexingProgress = 0.0
 
@@ -302,6 +374,7 @@ private struct PlaylistHeaderView: View {
     @Binding var sortOption: PlaylistView.SortOption
     @Binding var sortDirection: PlaylistView.SortDirection
     let isIndexing: Bool
+    let availableSortOptions: [PlaylistView.SortOption]
     let onPlay: (PlaybackResult) -> Void
 
     @EnvironmentObject private var musicManager: MusicManager
@@ -359,7 +432,7 @@ private struct PlaylistHeaderView: View {
 
                     Menu {
                         Picker("Sort by", selection: $sortOption) {
-                            ForEach(PlaylistView.SortOption.allCases) { option in
+                            ForEach(availableSortOptions) { option in
                                 Text(option.rawValue).tag(option)
                             }
                         }
@@ -408,37 +481,32 @@ private struct UnifiedTrackRow: View {
     @State private var isHovered = false
     @EnvironmentObject var musicManager: MusicManager
 
-    private var name: String { viewModel.trackDetails?.name ?? viewModel.playlistItem.itemV2.data.name }
-    private var artists: String {
-        let allArtists = (viewModel.trackDetails?.artists.items ?? []) + (viewModel.trackDetails?.otherArtists.items ?? [])
-        if !allArtists.isEmpty { return allArtists.map { $0.profile.name }.joined(separator: ", ") }
-        return viewModel.playlistItem.itemV2.data.artists.items.map { $0.profile.name }.joined(separator: ", ")
-    }
-    private var imageURL: URL? { viewModel.trackDetails?.albumOfTrack.coverArt.bestImageURL ?? viewModel.playlistItem.itemV2.data.imageURL }
-    private var uri: String { viewModel.trackDetails?.uri ?? viewModel.playlistItem.itemV2.data.uri! }
-    private var playCount: Int? { viewModel.trackDetails?.playcountInt ?? viewModel.playlistItem.itemV2.data.playcountInt }
-
     private var dateAddedString: String? {
-        guard let timestamp = viewModel.playlistItem.addedAt else { return nil }
+        guard let timestamp = viewModel.dateAdded else { return nil }
         return timestamp.timeAgoDisplay()
     }
 
     private var albumName: String? {
-        viewModel.trackDetails?.albumOfTrack.name
+        viewModel.trackDetails?.albumOfTrack.name ?? viewModel.albumName
     }
 
     private var formattedPublicationDate: String? {
-        guard let isoString = viewModel.trackDetails?.albumOfTrack.publishDate?.isoString,
-              let date = isoDateFormatter.date(from: isoString) else {
-            return viewModel.trackDetails?.albumOfTrack.publishDate?.year.map { String($0) }
+        guard let isoString = viewModel.trackDetails?.albumOfTrack.publishDate?.isoString else {
+            return viewModel.publicationYear.map { String($0) } ??
+                   (viewModel.trackDetails?.albumOfTrack.publishDate?.year.map { String($0) })
         }
+        guard let date = isoDateFormatter.date(from: isoString) else { return nil }
         return displayDateFormatter.string(from: date)
+    }
+
+    private var finalPlayCount: Int? {
+        viewModel.trackDetails?.playcountInt ?? viewModel.playCount
     }
 
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                CachedAsyncImage(url: imageURL) { $0.resizable() } placeholder: { ZStack { Color.secondary.opacity(0.3); Image(systemName: "music.note") } }
+                CachedAsyncImage(url: viewModel.imageURL) { $0.resizable() } placeholder: { ZStack { Color.secondary.opacity(0.3); Image(systemName: "music.note") } }
                     .frame(width: 40, height: 40)
                     .cornerRadius(6)
 
@@ -453,8 +521,8 @@ private struct UnifiedTrackRow: View {
             .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(name).fontWeight(.medium).lineLimit(1)
-                Text(artists).font(.subheadline).foregroundColor(.secondary).lineLimit(1)
+                Text(viewModel.name).fontWeight(.medium).lineLimit(1)
+                Text(viewModel.artists).font(.subheadline).foregroundColor(.secondary).lineLimit(1)
 
                 if let albumName = albumName {
                     HStack(spacing: 4) {
@@ -482,7 +550,7 @@ private struct UnifiedTrackRow: View {
                         .help("Date Added")
                 }
 
-                if let count = playCount {
+                if let count = finalPlayCount {
                     PlayCountIndicator(playCount: count)
                         .frame(width: 80, alignment: .trailing)
                 }
@@ -499,63 +567,15 @@ private struct UnifiedTrackRow: View {
 
     private func performPlayback() {
         Task {
+            let index = musicManager.spotifyPrivateAPI.selectedPlaylist?.content.items.firstIndex(where: { $0.uid == viewModel.uid })
             let result = await musicManager.play(
-                trackUri: self.uri,
+                trackUri: viewModel.uri,
                 contextUri: self.contextUri,
-                trackUid: viewModel.id,
-                trackIndex: musicManager.spotifyPrivateAPI.selectedPlaylist?.content.items.firstIndex(where: { $0.uid == viewModel.id })
+                trackUid: viewModel.uid,
+                trackIndex: index
             )
             onPlay(result)
         }
-    }
-}
-
-fileprivate struct PlayCountIndicator: View {
-    let playCount: Int
-
-    private var metrics: (color: Color, bars: [CGFloat]) {
-        if playCount > 500_000_000 { return (.green, [5, 7, 9, 11]) }
-        if playCount > 100_000_000 { return (.yellow, [5, 7, 9, 7]) }
-        if playCount > 10_000_000 { return (.secondary, [5, 7, 7, 5]) }
-        return (.secondary.opacity(0.3), [5, 5, 5, 5])
-    }
-
-    private func formatNumber(_ n: Int) -> String {
-        let num = Double(n)
-        if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }
-        if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }
-        if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }
-        return "\(n)"
-    }
-
-    var body: some View {
-        let TMetrics = metrics
-        HStack(spacing: 4) {
-            HStack(alignment: .bottom, spacing: 2) {
-                ForEach(0..<4) { index in
-                    Capsule()
-                        .fill(TMetrics.bars.indices.contains(index) ? TMetrics.color : Color.clear)
-                        .frame(width: 3, height: TMetrics.bars.indices.contains(index) ? TMetrics.bars[index] : 5)
-                }
-            }
-            Text(formatNumber(playCount))
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundColor(TMetrics.color.opacity(0.8))
-        }
-        .help("Total Plays: \(playCount.formatted())")
-    }
-}
-
-fileprivate struct PopularityIndicator: View {
-    let popularity: Int
-    private var color: Color { if popularity >= 75 { return .green }; if popularity >= 40 { return .yellow }; return .secondary }
-    private var estimatedPlays: Int { let p = Double(popularity); let basePlays = pow(p / 10, 4) * 100; let randomFactor = Double.random(in: 0.8...1.2); return Int(basePlays * randomFactor) }
-    private func formatNumber(_ n: Int) -> String { let num = Double(n); if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }; if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }; if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }; return "\(n)" }
-    var body: some View {
-        HStack(spacing: 4) {
-            HStack(alignment: .bottom, spacing: 2) { ForEach(0..<4) { index in Capsule().fill(popularity > (index * 25) ? color : Color.secondary.opacity(0.3)).frame(width: 3, height: CGFloat(index * 2 + 5)) } }
-            Text(formatNumber(estimatedPlays)).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(color.opacity(0.8))
-        }.help("Popularity Score: \(popularity)/100")
     }
 }
 

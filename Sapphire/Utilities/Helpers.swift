@@ -173,3 +173,40 @@ struct VisualEffectView: NSViewRepresentable {
         nsView.blendingMode = blendingMode
     }
 }
+
+struct PlayCountIndicator: View {
+    let playCount: Int
+    private var metrics: (color: Color, bars: [CGFloat]) {
+        if playCount > 500_000_000 { return (.green, [5, 7, 9, 11]) }
+        if playCount > 100_000_000 { return (.yellow, [5, 7, 9, 7]) }
+        if playCount > 10_000_000 { return (.secondary, [5, 7, 7, 5]) }
+        return (.secondary.opacity(0.3), [5, 5, 5, 5])
+    }
+    private func formatNumber(_ n: Int) -> String {
+        let num = Double(n)
+        if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }
+        if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }
+        if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }
+        return "\(n)"
+    }
+    var body: some View {
+        let TMetrics = metrics
+        HStack(spacing: 4) {
+            HStack(alignment: .bottom, spacing: 2) { ForEach(0..<4) { index in Capsule().fill(TMetrics.bars.indices.contains(index) ? TMetrics.color : Color.clear).frame(width: 3, height: TMetrics.bars.indices.contains(index) ? TMetrics.bars[index] : 5) } }
+            Text(formatNumber(playCount)).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(TMetrics.color.opacity(0.8))
+        }.help("Total Plays: \(playCount.formatted())")
+    }
+}
+
+struct PopularityIndicator: View {
+    let popularity: Int
+    private var color: Color { if popularity >= 75 { return .green }; if popularity >= 40 { return .yellow }; return .secondary }
+    private var estimatedPlays: Int { let p = Double(popularity); let basePlays = pow(p / 10, 4) * 100; let randomFactor = Double.random(in: 0.8...1.2); return Int(basePlays * randomFactor) }
+    private func formatNumber(_ n: Int) -> String { let num = Double(n); if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }; if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }; if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }; return "\(n)" }
+    var body: some View {
+        HStack(spacing: 4) {
+            HStack(alignment: .bottom, spacing: 2) { ForEach(0..<4) { index in Capsule().fill(popularity > (index * 25) ? color : Color.secondary.opacity(0.3)).frame(width: 3, height: CGFloat(index * 2 + 5)) } }
+            Text(formatNumber(estimatedPlays)).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(color.opacity(0.8))
+        }.help("Popularity Score: \(popularity)/100")
+    }
+}
