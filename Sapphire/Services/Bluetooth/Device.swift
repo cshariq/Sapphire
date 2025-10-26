@@ -205,8 +205,12 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
 
         if peripheral.identifier == monitoredUUID {
-            if central.isScanning && !isScanningContinuously { central.stopScan() }
-            if monitoredPeripheral == nil { monitoredPeripheral = peripheral }
+            if central.isScanning && !isScanningContinuously {
+                 central.stopScan()
+            }
+            if monitoredPeripheral == nil {
+                monitoredPeripheral = peripheral
+            }
 
             if let device = self.devices[peripheral.identifier] {
                 device.peripheral = peripheral
@@ -220,7 +224,9 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
             if activeModeTimer == nil {
                 updateMonitoredPeripheral(RSSI.intValue)
-                if !passiveMode { connectMonitoredPeripheral() }
+                if !passiveMode {
+                    connectMonitoredPeripheral()
+                }
             }
         } else if isScanningContinuously {
             processDiscoveredPeripheral(peripheral, rssi: RSSI, advertisementData: advertisementData)
@@ -255,7 +261,10 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             activeModeTimer?.invalidate(); activeModeTimer = nil
             lastReadAt = 0
             if !passiveMode {
-                connectMonitoredPeripheral()
+                print("[BLE] Monitored peripheral disconnected. Reconnecting in 1 second...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    self?.connectMonitoredPeripheral()
+                }
             }
         }
 
@@ -335,18 +344,171 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard peripheral.identifier == monitoredUUID, error == nil else { return }
         lastReadAt = Date().timeIntervalSince1970
         let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
+
+        if let device = self.devices[peripheral.identifier] {
+            device.rssi = rssi
+            self.delegate?.updateDevice(device: device)
+        }
+
         updateMonitoredPeripheral(rssi)
     }
 
     // MARK: - Monitoring Logic
 
-    func setPassiveMode(_ mode: Bool) { passiveMode = mode; if passiveMode { activeModeTimer?.invalidate(); activeModeTimer = nil; if let p = monitoredPeripheral { centralMgr.cancelPeripheralConnection(p) }; if monitoredPeripheral?.state != .connected { scanForPeripherals(withDuplicates: false) } } }
-    func startMonitor(uuid: UUID) { if let p = monitoredPeripheral, p.identifier != uuid { centralMgr.cancelPeripheralConnection(p) }; monitoredUUID = uuid; monitoredPeripheral = devices[uuid]?.peripheral ?? centralMgr.retrievePeripherals(withIdentifiers: [uuid]).first; proximityTimer?.invalidate(); resetSignalTimer(); activeModeTimer?.invalidate(); activeModeTimer = nil; if let p = monitoredPeripheral, p.state == .connected { if !passiveMode { startActiveMode(peripheral: p) } } else { if !passiveMode { connectMonitoredPeripheral() } else { scanForPeripherals(withDuplicates: false) } } }
-    func resetSignalTimer() { signalTimer?.invalidate(); signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { _ in Task { @MainActor in self.delegate?.updateRSSI(rssi: nil, active: false); self.delegate?.updatePresence(presence: false, reason: "lost") }; self.scanForPeripherals(withDuplicates: false) }); if let timer = signalTimer { RunLoop.main.add(timer, forMode: .common) } }
-    func connectMonitoredPeripheral() { guard let p = monitoredPeripheral else { return }; if p.state == .disconnected { Task { @MainActor in self.delegate?.monitoredPeripheralState = .connecting }; centralMgr.connect(p, options: nil); connectionTimer?.invalidate(); connectionTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false, block: { _ in if p.state == .connecting { self.centralMgr.cancelPeripheralConnection(p) } }); if let timer = connectionTimer { RunLoop.main.add(timer, forMode: .common) } } }
-    private func getEstimatedRSSI(rssi: Int) -> Int { if latestRSSIs.count >= latestN { latestRSSIs.removeFirst() }; latestRSSIs.append(Double(rssi)); var mean: Double = 0.0; vDSP_meanvD(latestRSSIs, 1, &mean, vDSP_Length(latestRSSIs.count)); return Int(mean) }
-    @MainActor private func updateMonitoredPeripheral(_ rssi: Int) { let estimatedRSSI = getEstimatedRSSI(rssi: rssi); Task { @MainActor in self.delegate?.updateRSSI(rssi: estimatedRSSI, active: self.activeModeTimer != nil) }; if estimatedRSSI >= unlockRSSI { Task { @MainActor in self.delegate?.updatePresence(presence: true, reason: "close") }; proximityTimer?.invalidate(); proximityTimer = nil; latestRSSIs.removeAll() } else if estimatedRSSI < lockRSSI { if proximityTimer == nil { proximityTimer = Timer.scheduledTimer(withTimeInterval: proximityTimeout, repeats: false, block: { _ in Task { @MainActor in self.delegate?.updatePresence(presence: false, reason: "away") }; self.proximityTimer = nil; self.latestRSSIs.removeAll() }); if let timer = proximityTimer { RunLoop.main.add(timer, forMode: .common) } } } else if estimatedRSSI >= lockRSSI { if proximityTimer != nil { proximityTimer?.invalidate(); proximityTimer = nil } }; resetSignalTimer() }
-    private func startActiveMode(peripheral: CBPeripheral) { guard activeModeTimer == nil, !passiveMode else { return }; if centralMgr.isScanning { centralMgr.stopScan() }; activeModeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { [weak self] _ in guard let self = self else { return }; if Date().timeIntervalSince1970 > self.lastReadAt + 10 && self.lastReadAt != 0 { self.centralMgr.cancelPeripheralConnection(peripheral); self.activeModeTimer?.invalidate(); self.activeModeTimer = nil; self.scanForPeripherals(withDuplicates: false) } else if peripheral.state == .connected { peripheral.readRSSI() } else { self.connectMonitoredPeripheral() } }); if let timer = activeModeTimer { RunLoop.main.add(timer, forMode: .common) } }
+    func startMonitor(uuid: UUID) {
+        if let p = monitoredPeripheral, p.identifier != uuid {
+            centralMgr.cancelPeripheralConnection(p)
+        }
+
+        monitoredUUID = uuid
+        monitoredPeripheral = devices[uuid]?.peripheral ?? centralMgr.retrievePeripherals(withIdentifiers: [uuid]).first
+
+        proximityTimer?.invalidate(); proximityTimer = nil
+        activeModeTimer?.invalidate(); activeModeTimer = nil
+        connectionTimer?.invalidate(); connectionTimer = nil
+        resetSignalTimer()
+
+        if let p = monitoredPeripheral {
+            if p.state == .connected && !passiveMode {
+                print("[BLE] Monitored peripheral already connected. Starting active mode.")
+                startActiveMode(peripheral: p)
+            } else {
+                print("[BLE] Monitored peripheral found. Attempting to connect for monitoring.")
+                connectMonitoredPeripheral()
+            }
+        } else {
+            print("[BLE] Monitored peripheral not found in cache or system registry. Scanning to discover...")
+            scanForPeripherals(withDuplicates: true)
+        }
+    }
+
+    func stopMonitor() {
+        if let p = monitoredPeripheral, p.identifier == monitoredUUID {
+            if p.state == .connected || p.state == .connecting {
+                centralMgr.cancelPeripheralConnection(p)
+            }
+        }
+        monitoredUUID = nil
+        monitoredPeripheral = nil
+        proximityTimer?.invalidate(); proximityTimer = nil
+        signalTimer?.invalidate(); signalTimer = nil
+        activeModeTimer?.invalidate(); activeModeTimer = nil
+
+        if !isScanningContinuously && centralMgr.isScanning {
+            centralMgr.stopScan()
+        }
+        print("[BLE] Monitoring has been stopped.")
+    }
+
+    func setPassiveMode(_ mode: Bool) {
+        passiveMode = mode
+        if passiveMode {
+            activeModeTimer?.invalidate()
+            activeModeTimer = nil
+            if let p = monitoredPeripheral {
+                centralMgr.cancelPeripheralConnection(p)
+            }
+            if monitoredPeripheral?.state != .connected {
+                scanForPeripherals(withDuplicates: false)
+            }
+        }
+    }
+
+    func connectMonitoredPeripheral() {
+        guard let p = monitoredPeripheral else {
+            print("[BLE] Cannot connect: monitoredPeripheral is nil. A scan should be in progress.")
+            return
+        }
+
+        guard p.state == .disconnected || p.state == .disconnecting else {
+            print("[BLE] Connection attempt ignored, peripheral state is not disconnected (current: \(p.state.rawValue))")
+            return
+        }
+
+        Task { @MainActor in self.delegate?.monitoredPeripheralState = .connecting }
+        print("[BLE] Attempting to connect to peripheral: \(p.identifier)")
+        centralMgr.connect(p, options: nil)
+
+        connectionTimer?.invalidate()
+        let connectionTimeout = 10.0
+        connectionTimer = Timer.scheduledTimer(withTimeInterval: connectionTimeout, repeats: false, block: { [weak self] _ in
+            guard let self = self, let p = self.monitoredPeripheral, p.state == .connecting else { return }
+            print("[BLE] Connection timed out for peripheral: \(p.identifier). Cancelling.")
+            self.centralMgr.cancelPeripheralConnection(p)
+        })
+        if let timer = connectionTimer { RunLoop.main.add(timer, forMode: .common) }
+    }
+
+    private func resetSignalTimer() {
+        signalTimer?.invalidate()
+        signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { _ in
+            Task { @MainActor in
+                self.delegate?.updateRSSI(rssi: nil, active: false)
+                self.delegate?.updatePresence(presence: false, reason: "lost")
+            }
+            self.scanForPeripherals(withDuplicates: false)
+        })
+        if let timer = signalTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    private func getEstimatedRSSI(rssi: Int) -> Int {
+        if latestRSSIs.count >= latestN { latestRSSIs.removeFirst() }
+        latestRSSIs.append(Double(rssi))
+        var mean: Double = 0.0
+        vDSP_meanvD(latestRSSIs, 1, &mean, vDSP_Length(latestRSSIs.count))
+        return Int(mean)
+    }
+
+    @MainActor private func updateMonitoredPeripheral(_ rssi: Int) {
+        let estimatedRSSI = getEstimatedRSSI(rssi: rssi)
+
+        Task { @MainActor in self.delegate?.updateRSSI(rssi: estimatedRSSI, active: self.activeModeTimer != nil) }
+
+        if estimatedRSSI >= unlockRSSI {
+            Task { @MainActor in self.delegate?.updatePresence(presence: true, reason: "close") }
+            proximityTimer?.invalidate()
+            proximityTimer = nil
+            latestRSSIs.removeAll()
+        } else if estimatedRSSI < lockRSSI {
+            if proximityTimer == nil {
+                proximityTimer = Timer.scheduledTimer(withTimeInterval: proximityTimeout, repeats: false, block: { _ in
+                    Task { @MainActor in self.delegate?.updatePresence(presence: false, reason: "away") }
+                    self.proximityTimer = nil
+                    self.latestRSSIs.removeAll()
+                })
+                if let timer = proximityTimer { RunLoop.main.add(timer, forMode: .common) }
+            }
+        } else if estimatedRSSI >= lockRSSI {
+            if proximityTimer != nil {
+                proximityTimer?.invalidate()
+                proximityTimer = nil
+            }
+        }
+        resetSignalTimer()
+    }
+
+    private func startActiveMode(peripheral: CBPeripheral) {
+        guard activeModeTimer == nil, !passiveMode else { return }
+        if centralMgr.isScanning { centralMgr.stopScan() }
+
+        activeModeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { [weak self] _ in
+            guard let self = self else { return }
+
+            if Date().timeIntervalSince1970 > self.lastReadAt + 10 && self.lastReadAt != 0 {
+                self.centralMgr.cancelPeripheralConnection(peripheral)
+                self.activeModeTimer?.invalidate()
+                self.activeModeTimer = nil
+                self.scanForPeripherals(withDuplicates: false)
+            } else if peripheral.state == .connected {
+                peripheral.readRSSI()
+            } else {
+                self.connectMonitoredPeripheral()
+            }
+        })
+        if let timer = activeModeTimer { RunLoop.main.add(timer, forMode: .common) }
+    }
 }
 
 // MARK: - Apple Device Name Lookup Dictionary

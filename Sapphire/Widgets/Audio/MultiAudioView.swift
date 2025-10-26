@@ -54,7 +54,7 @@ fileprivate struct DeviceListView: View {
                     }
                 }
             }
-            .frame(maxHeight: 400)
+            .frame(maxHeight: 200)
         }
         .frame(width: 600)
         .padding(.top, 10)

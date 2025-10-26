@@ -21,80 +21,82 @@ struct BatteryLogEntry: Codable, Identifiable, Hashable {
     let temperature: Double
     let timeToEmpty: Int
     let timeToFull: Int
+    let managementState: ManagementState
+    let ledColor: Int
+    let hardwareCharge: Int
+    let isSleeping: Bool
 
-    var estimatedTimeRemaining: Int {
-        isCharging ? timeToFull : timeToEmpty
-    }
+    var estimatedTimeRemaining: Int { isCharging ? timeToFull : timeToEmpty }
 }
 
 // MARK: - Data Logger Service
 @MainActor
 class BatteryDataLogger {
     static let shared = BatteryDataLogger()
-
-    private var loggingTimer: Timer?
     private let logFileURL: URL
 
     private init() {
         let fileManager = FileManager.default
-        let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            fatalError("Could not find Application Support directory.")
+        }
         let logDirURL = appSupportURL.appendingPathComponent("Sapphire/BatteryLogs")
 
-        try? fileManager.createDirectory(at: logDirURL, withIntermediateDirectories: true, attributes: nil)
-
+        do {
+            try fileManager.createDirectory(at: logDirURL, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            print("[BatteryDataLogger] FATAL: Could not create log directory: \(error)")
+        }
         self.logFileURL = logDirURL.appendingPathComponent("battery_log.json")
         print("[BatteryDataLogger] Logging to: \(logFileURL.path)")
-    }
 
-    func startLogging() {
-        stopLogging()
-
-        logCurrentState()
-
-        loggingTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            self?.logCurrentState()
+        if !fileManager.fileExists(atPath: logFileURL.path) {
+            print("[BatteryDataLogger] Log file does not exist. Creating a new empty log file.")
+            writeLogFile(entries: [])
         }
-        print("[BatteryDataLogger] Started periodic logging every 5 minutes.")
     }
 
-    func stopLogging() {
-        loggingTimer?.invalidate()
-        loggingTimer = nil
-        print("[BatteryDataLogger] Stopped periodic logging.")
-    }
-
-    private func logCurrentState() {
+    func logCurrentState() {
         Task(priority: .background) {
             guard let entry = await createLogEntry() else { return }
-
             var existingLogs = readLogFile()
             existingLogs.append(entry)
-
             let oneMonthAgo = Calendar.current.date(byAdding: .month, value: -1, to: Date())!
             let recentLogs = existingLogs.filter { $0.timestamp >= oneMonthAgo }
-
             writeLogFile(entries: recentLogs)
-
-            print("[BatteryDataLogger] Logged new entry. Total entries: \(recentLogs.count)")
+            print("[BatteryDataLogger] Logged new entry. Total entries now: \(recentLogs.count)")
         }
     }
 
     func readLogFile() -> [BatteryLogEntry] {
         do {
             let data = try Data(contentsOf: logFileURL)
-            let entries = try JSONDecoder().decode([BatteryLogEntry].self, from: data)
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+
+            let entries = try decoder.decode([BatteryLogEntry].self, from: data)
             return entries
         } catch {
+            print("[BatteryDataLogger] -------------------------------------------------")
+            print("[BatteryDataLogger] ERROR: Could not read or decode log file.")
+            print("[BatteryDataLogger] Error: \(error)")
+            if let decodingError = error as? DecodingError {
+                print("[BatteryDataLogger] Decoding Error Details: \(decodingError)")
+            }
+            print("[BatteryDataLogger] -------------------------------------------------")
             return []
         }
     }
 
     private func writeLogFile(entries: [BatteryLogEntry]) {
         do {
-            let data = try JSONEncoder().encode(entries)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(entries)
             try data.write(to: logFileURL, options: .atomic)
         } catch {
-            print("[BatteryDataLogger] Error writing to log file: \(error)")
+            print("[BatteryDataLogger] ERROR writing to log file: \(error)")
         }
     }
 
@@ -112,10 +114,12 @@ class BatteryDataLogger {
         let timeToEmpty = info[kIOPSTimeToEmptyKey] as? Int ?? 0
         let timeToFull = info[kIOPSTimeToFullChargeKey] as? Int ?? 0
         let temp = await BatteryManager.shared.getBatteryTemperature()
-
         let displayIsAsleep = CGDisplayIsAsleep(CGMainDisplayID()) != 0
 
-        let entry = BatteryLogEntry(
+        let status = BatteryStatusManager.shared.currentState
+        let hardwareCharge = BatteryManager.shared.getHardwareBatteryPercentage()
+
+        return BatteryLogEntry(
             timestamp: Date(),
             charge: charge,
             isCharging: isCharging,
@@ -124,8 +128,11 @@ class BatteryDataLogger {
             isLowPowerMode: PowerModeManager.shared.isLowPowerModeEnabled(),
             temperature: temp,
             timeToEmpty: timeToEmpty,
-            timeToFull: timeToFull
+            timeToFull: timeToFull,
+            managementState: status.managementState,
+            ledColor: status.ledColor,
+            hardwareCharge: hardwareCharge,
+            isSleeping: status.isSleeping
         )
-        return entry
     }
 }

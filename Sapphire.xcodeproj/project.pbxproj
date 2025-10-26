@@ -8,12 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		DA17EA162E9B74E500C83AC6 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; };
+		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in CopyFiles */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262ADF2EA4841B0027CA69 /* OSD.framework */; };
 		DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AE52EA485150027CA69 /* CoreDisplay.framework */; };
 		DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */; };
 		DA2A74402E9CD8910084C657 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		DA343DA22E55068300B675ED /* CaptchaSolver.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343D972E55068200B675ED /* CaptchaSolver.framework */; };
-		DA343DC92E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
 		DA343DD32E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
 		DA343DD42E55098000B675ED /* CaptchaSolverInterface.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		DA343DE12E550AC300B675ED /* CaptchaSolver.framework in Copy Captcha Solver Framework */ = {isa = PBXBuildFile; fileRef = DA343D972E55068200B675ED /* CaptchaSolver.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -132,34 +131,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		DA343DA32E55068300B675ED /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DA343D962E55068200B675ED;
-			remoteInfo = CaptchaSolver;
-		};
-		DA343DA52E55068300B675ED /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DA46CF752DCBCA0000F00EC5;
-			remoteInfo = Sapphire;
-		};
-		DA343DCA2E55098000B675ED /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DA343DBD2E55098000B675ED;
-			remoteInfo = CaptchaSolverInterface;
-		};
-		DA343DCC2E55098000B675ED /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DA46CF752DCBCA0000F00EC5;
-			remoteInfo = Sapphire;
-		};
 		DA343DD12E55098000B675ED /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
@@ -174,20 +145,6 @@
 			remoteGlobalIDString = DA343DBD2E55098000B675ED;
 			remoteInfo = CaptchaSolverInterface;
 		};
-		DA46CF882DCBCA0100F00EC5 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DA46CF752DCBCA0000F00EC5;
-			remoteInfo = DynamicNotch;
-		};
-		DA46CF922DCBCA0100F00EC5 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DA46CF752DCBCA0000F00EC5;
-			remoteInfo = DynamicNotch;
-		};
 		DA7C49AF2E15D3800049937A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
@@ -198,6 +155,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		DA262B242EA942750027CA69 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 12;
+			dstPath = Contents/Library/LaunchServices;
+			dstSubfolderSpec = 1;
+			files = (
+				DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA343DDF2E550A7700B675ED /* Copy Captcha Solver Framework */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -220,14 +187,14 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DA96308D2E8F33D000605F05 /* CopyFiles */ = {
+		DA452EAD2EAA57C90070E5C9 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
-			dstPath = Contents/Library/LaunchDaemons;
-			dstSubfolderSpec = 1;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
+			runOnlyForDeploymentPostprocessing = 1;
 		};
 		DAA7D9D22E8633B20032748B /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -237,6 +204,16 @@
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 1;
+		};
+		DACE9E0F2EADC9D000D01379 /* Embed System Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(SYSTEM_EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			name = "Embed System Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAE70B782E12300B001F0890 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -271,12 +248,9 @@
 		DA262AF32EA5D1A20027CA69 /* PrivateFrameworks */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PrivateFrameworks; path = ../../../../System/Library/PrivateFrameworks; sourceTree = "<group>"; };
 		DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MultitouchSupport.framework; path = ../../../../System/Library/PrivateFrameworks/MultitouchSupport.framework; sourceTree = "<group>"; };
 		DA343D972E55068200B675ED /* CaptchaSolver.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = CaptchaSolver.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		DA343DA12E55068300B675ED /* CaptchaSolverTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CaptchaSolverTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = CaptchaSolverInterface.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		DA343DC82E55098000B675ED /* CaptchaSolverInterfaceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CaptchaSolverInterfaceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = com.shariq.sapphireHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA46CF762DCBCA0000F00EC5 /* Sapphire.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sapphire.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		DA46CF912DCBCA0100F00EC5 /* SapphireUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA5256782E162B9F00D8F42E /* NearDropDisplayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearDropDisplayState.swift; sourceTree = "<group>"; };
 		DA52567A2E162FA900D8F42E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		DA52567C2E162FBE00D8F42E /* DeviceListCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceListCell.swift; sourceTree = "<group>"; };
@@ -374,6 +348,9 @@
 		DA9385432E17B2A4006C5361 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
 		DA9385452E17B443006C5361 /* DisplayServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DisplayServices.framework; path = ../../../../System/Library/PrivateFrameworks/DisplayServices.framework; sourceTree = "<group>"; };
 		DAA7D9D42E8633B20032748B /* abt */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = abt; sourceTree = BUILT_PRODUCTS_DIR; };
+		DAB112522EAAE7EB007AEA73 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		DAB112542EAAE7F3007AEA73 /* CoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreServices.framework; path = System/Library/Frameworks/CoreServices.framework; sourceTree = SDKROOT; };
+		DAB112562EAAEA32007AEA73 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.7.sdk/System/Library/Frameworks/IOKit.framework; sourceTree = DEVELOPER_DIR; };
 		DABC6CBC2E16F53E00A5CF83 /* TransferDirection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferDirection.swift; sourceTree = "<group>"; };
 		DABC6CCF2E173F0600A5CF83 /* BezelServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BezelServices.framework; path = ../../../../System/Library/PrivateFrameworks/BezelServices.framework; sourceTree = "<group>"; };
 		DABC6CD72E17455F00A5CF83 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
@@ -381,11 +358,23 @@
 		DABC6D012E177F6100A5CF83 /* ApplicationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ApplicationServices.framework; path = System/Library/Frameworks/ApplicationServices.framework; sourceTree = SDKROOT; };
 		DACA665B2E8B5FCE0056ED60 /* sharing_enums.pb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = sharing_enums.pb.swift; sourceTree = "<group>"; };
 		DACA665C2E8B5FCE0056ED60 /* SymmetricKey+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SymmetricKey+Extensions.swift"; sourceTree = "<group>"; };
+		DACE9E002EADC9D000D01379 /* DriverKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DriverKit.framework; path = System/Library/Frameworks/DriverKit.framework; sourceTree = SDKROOT; };
 		DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = SwiftProtobuf_SwiftProtobuf.bundle; sourceTree = "<group>"; };
 		DAF9CD382E54EA4600348E9F /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		DA1D1AB22EAA74CB00E7F1B4 /* Exceptions for "com.shariq.sapphireHelper" folder in "Sapphire" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Constants.swift,
+				HelperError.swift,
+				HelperProtocol.swift,
+				Protocols.swift,
+				SensorNameMap.swift,
+			);
+			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
+		};
 		DA7C49BE2E15DC180049937A /* Exceptions for "ObjC" folder in "NearbyShare" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -429,31 +418,12 @@
 			);
 			target = DAA7D9D32E8633B20032748B /* abt */;
 		};
-		DAE1B6832E5AA3E600E710F9 /* Exceptions for "ObjC" folder in "SapphireTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				HUD/KBPAnimation.m,
-				HUD/KBPAnimator.m,
-				HUD/KBPProfile.m,
-				HUD/KBPPulseManager.m,
-				HUD/KeyboardBacklightManager.m,
-			);
-			target = DA46CF862DCBCA0100F00EC5 /* SapphireTests */;
-		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 		DA7AFB332E75359B00DCEAED /* Exceptions for "ObjC" folder in "Copy Bundle Resources" phase from "Sapphire" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = DA46CF742DCBCA0000F00EC5 /* Resources */;
-			membershipExceptions = (
-				Miscellaneous/lowlevel.c,
-				Miscellaneous/lowlevel.h,
-			);
-		};
-		DA7AFB342E75359B00DCEAED /* Exceptions for "ObjC" folder in "Copy Bundle Resources" phase from "SapphireTests" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = DA46CF852DCBCA0100F00EC5 /* Resources */;
 			membershipExceptions = (
 				Miscellaneous/lowlevel.c,
 				Miscellaneous/lowlevel.h,
@@ -499,13 +469,19 @@
 			path = CaptchaSolverInterfaceTests;
 			sourceTree = "<group>";
 		};
+		DA452EB02EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				DA1D1AB22EAA74CB00E7F1B4 /* Exceptions for "com.shariq.sapphireHelper" folder in "Sapphire" target */,
+			);
+			path = com.shariq.sapphireHelper;
+			sourceTree = "<group>";
+		};
 		DA7C49B62E15D7360049937A /* ObjC */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				DA8FAEEA2E7CA06700C9BD1A /* Exceptions for "ObjC" folder in "Sapphire" target */,
 				DA7AFB332E75359B00DCEAED /* Exceptions for "ObjC" folder in "Copy Bundle Resources" phase from "Sapphire" target */,
-				DAE1B6832E5AA3E600E710F9 /* Exceptions for "ObjC" folder in "SapphireTests" target */,
-				DA7AFB342E75359B00DCEAED /* Exceptions for "ObjC" folder in "Copy Bundle Resources" phase from "SapphireTests" target */,
 				DA7C49BE2E15DC180049937A /* Exceptions for "ObjC" folder in "NearbyShare" target */,
 			);
 			path = ObjC;
@@ -532,14 +508,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DA343D9E2E55068300B675ED /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				DA343DA22E55068300B675ED /* CaptchaSolver.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA343DBB2E55098000B675ED /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -547,11 +515,10 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DA343DC52E55098000B675ED /* Frameworks */ = {
+		DA452EAC2EAA57C90070E5C9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DA343DC92E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -582,20 +549,6 @@
 				DAC019172E9E9E3100CA587F /* FirebaseCrashlytics in Frameworks */,
 				DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */,
 				DA8FB0512E7D898F00C9BD1A /* MobileTimer.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		DA46CF842DCBCA0100F00EC5 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		DA46CF8E2DCBCA0100F00EC5 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -637,6 +590,7 @@
 				DA343DBF2E55098000B675ED /* CaptchaSolverInterface */,
 				DA343DCE2E55098000B675ED /* CaptchaSolverInterfaceTests */,
 				DAA7D9D52E8633B20032748B /* abt */,
+				DA452EB02EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
 				DA46CFCE2DCE7B9E00F00EC5 /* Frameworks */,
 				DA46CF772DCBCA0000F00EC5 /* Products */,
 				DA7C498E2E15D33A0049937A /* Nearby */,
@@ -651,14 +605,11 @@
 			isa = PBXGroup;
 			children = (
 				DA46CF762DCBCA0000F00EC5 /* Sapphire.app */,
-				DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */,
-				DA46CF912DCBCA0100F00EC5 /* SapphireUITests.xctest */,
 				DA7C49802E15CCA50049937A /* libNearbyShare.dylib */,
 				DA343D972E55068200B675ED /* CaptchaSolver.framework */,
-				DA343DA12E55068300B675ED /* CaptchaSolverTests.xctest */,
 				DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */,
-				DA343DC82E55098000B675ED /* CaptchaSolverInterfaceTests.xctest */,
 				DAA7D9D42E8633B20032748B /* abt */,
+				DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -666,6 +617,9 @@
 		DA46CFCE2DCE7B9E00F00EC5 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				DAB112562EAAEA32007AEA73 /* IOKit.framework */,
+				DAB112542EAAE7F3007AEA73 /* CoreServices.framework */,
+				DAB112522EAAE7EB007AEA73 /* CoreFoundation.framework */,
 				DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */,
 				DA262AF32EA5D1A20027CA69 /* PrivateFrameworks */,
 				DA262AF02EA5D1940027CA69 /* MultitouchSessionFilterSupport.framework */,
@@ -690,6 +644,7 @@
 				DABC6CCF2E173F0600A5CF83 /* BezelServices.framework */,
 				DA7C49B92E15DB160049937A /* UserNotifications.framework */,
 				DA7C49B82E15DB160049937A /* UserNotificationsUI.framework */,
+				DACE9E002EADC9D000D01379 /* DriverKit.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -923,30 +878,6 @@
 			productReference = DA343D972E55068200B675ED /* CaptchaSolver.framework */;
 			productType = "com.apple.product-type.framework";
 		};
-		DA343DA02E55068300B675ED /* CaptchaSolverTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DA343DB12E55068300B675ED /* Build configuration list for PBXNativeTarget "CaptchaSolverTests" */;
-			buildPhases = (
-				DA343D9D2E55068300B675ED /* Sources */,
-				DA343D9E2E55068300B675ED /* Frameworks */,
-				DA343D9F2E55068300B675ED /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				DA343DA42E55068300B675ED /* PBXTargetDependency */,
-				DA343DA62E55068300B675ED /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				DA343DA72E55068300B675ED /* CaptchaSolverTests */,
-			);
-			name = CaptchaSolverTests;
-			packageProductDependencies = (
-			);
-			productName = CaptchaSolverTests;
-			productReference = DA343DA12E55068300B675ED /* CaptchaSolverTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 		DA343DBD2E55098000B675ED /* CaptchaSolverInterface */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DA343DD52E55098000B675ED /* Build configuration list for PBXNativeTarget "CaptchaSolverInterface" */;
@@ -970,29 +901,27 @@
 			productReference = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */;
 			productType = "com.apple.product-type.framework";
 		};
-		DA343DC72E55098000B675ED /* CaptchaSolverInterfaceTests */ = {
+		DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = DA343DD82E55098000B675ED /* Build configuration list for PBXNativeTarget "CaptchaSolverInterfaceTests" */;
+			buildConfigurationList = DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */;
 			buildPhases = (
-				DA343DC42E55098000B675ED /* Sources */,
-				DA343DC52E55098000B675ED /* Frameworks */,
-				DA343DC62E55098000B675ED /* Resources */,
+				DA452EAB2EAA57C90070E5C9 /* Sources */,
+				DA452EAC2EAA57C90070E5C9 /* Frameworks */,
+				DA452EAD2EAA57C90070E5C9 /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				DA343DCB2E55098000B675ED /* PBXTargetDependency */,
-				DA343DCD2E55098000B675ED /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				DA343DCE2E55098000B675ED /* CaptchaSolverInterfaceTests */,
+				DA452EB02EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
 			);
-			name = CaptchaSolverInterfaceTests;
+			name = com.shariq.sapphireHelper;
 			packageProductDependencies = (
 			);
-			productName = CaptchaSolverInterfaceTests;
-			productReference = DA343DC82E55098000B675ED /* CaptchaSolverInterfaceTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
+			productName = SapphireHelper;
+			productReference = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */;
+			productType = "com.apple.product-type.tool";
 		};
 		DA46CF752DCBCA0000F00EC5 /* Sapphire */ = {
 			isa = PBXNativeTarget;
@@ -1004,9 +933,10 @@
 				DA46CF742DCBCA0000F00EC5 /* Resources */,
 				DAE70B782E12300B001F0890 /* Embed Frameworks */,
 				DAF7D8AC2E207C5100AB0820 /* CopyFiles */,
-				DA96308D2E8F33D000605F05 /* CopyFiles */,
 				DA343DDF2E550A7700B675ED /* Copy Captcha Solver Framework */,
 				DAC019182E9EA03E00CA587F /* ShellScript */,
+				DA262B242EA942750027CA69 /* CopyFiles */,
+				DACE9E0F2EADC9D000D01379 /* Embed System Extensions */,
 			);
 			buildRules = (
 			);
@@ -1031,46 +961,6 @@
 			productName = DynamicNotch;
 			productReference = DA46CF762DCBCA0000F00EC5 /* Sapphire.app */;
 			productType = "com.apple.product-type.application";
-		};
-		DA46CF862DCBCA0100F00EC5 /* SapphireTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DA46CF9E2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */;
-			buildPhases = (
-				DA46CF832DCBCA0100F00EC5 /* Sources */,
-				DA46CF842DCBCA0100F00EC5 /* Frameworks */,
-				DA46CF852DCBCA0100F00EC5 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				DA46CF892DCBCA0100F00EC5 /* PBXTargetDependency */,
-			);
-			name = SapphireTests;
-			packageProductDependencies = (
-			);
-			productName = DynamicNotchTests;
-			productReference = DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		DA46CF902DCBCA0100F00EC5 /* SapphireUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DA46CFA12DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireUITests" */;
-			buildPhases = (
-				DA46CF8D2DCBCA0100F00EC5 /* Sources */,
-				DA46CF8E2DCBCA0100F00EC5 /* Frameworks */,
-				DA46CF8F2DCBCA0100F00EC5 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				DA46CF932DCBCA0100F00EC5 /* PBXTargetDependency */,
-			);
-			name = SapphireUITests;
-			packageProductDependencies = (
-			);
-			productName = DynamicNotchUITests;
-			productReference = DA46CF912DCBCA0100F00EC5 /* SapphireUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		DA7C497F2E15CCA50049937A /* NearbyShare */ = {
 			isa = PBXNativeTarget;
@@ -1131,27 +1021,15 @@
 					DA343D962E55068200B675ED = {
 						CreatedOnToolsVersion = 16.4;
 					};
-					DA343DA02E55068300B675ED = {
-						CreatedOnToolsVersion = 16.4;
-						TestTargetID = DA46CF752DCBCA0000F00EC5;
-					};
 					DA343DBD2E55098000B675ED = {
 						CreatedOnToolsVersion = 16.4;
 					};
-					DA343DC72E55098000B675ED = {
-						CreatedOnToolsVersion = 16.4;
-						TestTargetID = DA46CF752DCBCA0000F00EC5;
+					DA452EAE2EAA57C90070E5C9 = {
+						CreatedOnToolsVersion = 26.0.1;
+						LastSwiftMigration = 2600;
 					};
 					DA46CF752DCBCA0000F00EC5 = {
 						CreatedOnToolsVersion = 16.3;
-					};
-					DA46CF862DCBCA0100F00EC5 = {
-						CreatedOnToolsVersion = 16.3;
-						TestTargetID = DA46CF752DCBCA0000F00EC5;
-					};
-					DA46CF902DCBCA0100F00EC5 = {
-						CreatedOnToolsVersion = 16.3;
-						TestTargetID = DA46CF752DCBCA0000F00EC5;
 					};
 					DA7C497F2E15CCA50049937A = {
 						CreatedOnToolsVersion = 16.4;
@@ -1192,14 +1070,11 @@
 			projectRoot = "";
 			targets = (
 				DA46CF752DCBCA0000F00EC5 /* Sapphire */,
-				DA46CF862DCBCA0100F00EC5 /* SapphireTests */,
-				DA46CF902DCBCA0100F00EC5 /* SapphireUITests */,
 				DA7C497F2E15CCA50049937A /* NearbyShare */,
 				DA343D962E55068200B675ED /* CaptchaSolver */,
-				DA343DA02E55068300B675ED /* CaptchaSolverTests */,
 				DA343DBD2E55098000B675ED /* CaptchaSolverInterface */,
-				DA343DC72E55098000B675ED /* CaptchaSolverInterfaceTests */,
 				DAA7D9D32E8633B20032748B /* abt */,
+				DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
 			);
 		};
 /* End PBXProject section */
@@ -1212,21 +1087,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DA343D9F2E55068300B675ED /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA343DBC2E55098000B675ED /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		DA343DC62E55098000B675ED /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -1308,20 +1169,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DA46CF852DCBCA0100F00EC5 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		DA46CF8F2DCBCA0100F00EC5 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -1374,13 +1221,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DA343D9D2E55068300B675ED /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA343DBA2E55098000B675ED /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1388,7 +1228,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DA343DC42E55098000B675ED /* Sources */ = {
+		DA452EAB2EAA57C90070E5C9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -1396,20 +1236,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF722DCBCA0000F00EC5 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		DA46CF832DCBCA0100F00EC5 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		DA46CF8D2DCBCA0100F00EC5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -1450,26 +1276,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		DA343DA42E55068300B675ED /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DA343D962E55068200B675ED /* CaptchaSolver */;
-			targetProxy = DA343DA32E55068300B675ED /* PBXContainerItemProxy */;
-		};
-		DA343DA62E55068300B675ED /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
-			targetProxy = DA343DA52E55068300B675ED /* PBXContainerItemProxy */;
-		};
-		DA343DCB2E55098000B675ED /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DA343DBD2E55098000B675ED /* CaptchaSolverInterface */;
-			targetProxy = DA343DCA2E55098000B675ED /* PBXContainerItemProxy */;
-		};
-		DA343DCD2E55098000B675ED /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
-			targetProxy = DA343DCC2E55098000B675ED /* PBXContainerItemProxy */;
-		};
 		DA343DD22E55098000B675ED /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DA343DBD2E55098000B675ED /* CaptchaSolverInterface */;
@@ -1479,16 +1285,6 @@
 			isa = PBXTargetDependency;
 			target = DA343DBD2E55098000B675ED /* CaptchaSolverInterface */;
 			targetProxy = DA343DE42E550B1200B675ED /* PBXContainerItemProxy */;
-		};
-		DA46CF892DCBCA0100F00EC5 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
-			targetProxy = DA46CF882DCBCA0100F00EC5 /* PBXContainerItemProxy */;
-		};
-		DA46CF932DCBCA0100F00EC5 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
-			targetProxy = DA46CF922DCBCA0100F00EC5 /* PBXContainerItemProxy */;
 		};
 		DA7C49B02E15D3800049937A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1572,42 +1368,6 @@
 			};
 			name = Release;
 		};
-		DA343DB22E55068300B675ED /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = P6PV2R9443;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = shariq.CaptchaSolverTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sapphire";
-			};
-			name = Debug;
-		};
-		DA343DB32E55068300B675ED /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = P6PV2R9443;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = shariq.CaptchaSolverTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sapphire";
-			};
-			name = Release;
-		};
 		DA343DD62E55098000B675ED /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1682,39 +1442,86 @@
 			};
 			name = Release;
 		};
-		DA343DD92E55098000B675ED /* Debug */ = {
+		DA452EB42EAA57C90070E5C9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AUTOMATION_APPLE_EVENTS = NO;
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				DEVELOPMENT_TEAM = P6PV2R9443;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				FRAMEWORK_SEARCH_PATHS = "";
+				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
+				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = shariq.CaptchaSolverInterfaceTests;
+				OTHER_LDFLAGS = (
+					"-sectcreate",
+					__TEXT,
+					__launchd_plist,
+					"$(SRCROOT)/$(TARGET_NAME)/launchd.plist",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "com.shariq.sapphireHelper/SapphireHelper-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sapphire";
 			};
 			name = Debug;
 		};
-		DA343DDA2E55098000B675ED /* Release */ = {
+		DA452EB52EAA57C90070E5C9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AUTOMATION_APPLE_EVENTS = NO;
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				DEVELOPMENT_TEAM = P6PV2R9443;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				FRAMEWORK_SEARCH_PATHS = "";
+				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
+				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = shariq.CaptchaSolverInterfaceTests;
+				OTHER_LDFLAGS = (
+					"-sectcreate",
+					__TEXT,
+					__launchd_plist,
+					"$(SRCROOT)/$(TARGET_NAME)/launchd.plist",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "com.shariq.sapphireHelper/SapphireHelper-Bridging-Header.h";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sapphire";
 			};
 			name = Release;
 		};
@@ -2005,78 +1812,6 @@
 			};
 			name = Release;
 		};
-		DA46CF9F2DCBCA0100F00EC5 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = P6PV2R9443;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = shariq.SapphireTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sapphire";
-			};
-			name = Debug;
-		};
-		DA46CFA02DCBCA0100F00EC5 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = P6PV2R9443;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = shariq.SapphireTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Sapphire";
-			};
-			name = Release;
-		};
-		DA46CFA22DCBCA0100F00EC5 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = P6PV2R9443;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = shariq.DynamicNotchUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = DynamicNotch;
-			};
-			name = Debug;
-		};
-		DA46CFA32DCBCA0100F00EC5 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = P6PV2R9443;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = shariq.DynamicNotchUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = DynamicNotch;
-			};
-			name = Release;
-		};
 		DA7C49872E15CCA50049937A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2151,15 +1886,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DA343DB12E55068300B675ED /* Build configuration list for PBXNativeTarget "CaptchaSolverTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA343DB22E55068300B675ED /* Debug */,
-				DA343DB32E55068300B675ED /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		DA343DD52E55098000B675ED /* Build configuration list for PBXNativeTarget "CaptchaSolverInterface" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -2169,11 +1895,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DA343DD82E55098000B675ED /* Build configuration list for PBXNativeTarget "CaptchaSolverInterfaceTests" */ = {
+		DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA343DD92E55098000B675ED /* Debug */,
-				DA343DDA2E55098000B675ED /* Release */,
+				DA452EB42EAA57C90070E5C9 /* Debug */,
+				DA452EB52EAA57C90070E5C9 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -2192,24 +1918,6 @@
 			buildConfigurations = (
 				DA46CF9C2DCBCA0100F00EC5 /* Debug */,
 				DA46CF9D2DCBCA0100F00EC5 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		DA46CF9E2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA46CF9F2DCBCA0100F00EC5 /* Debug */,
-				DA46CFA02DCBCA0100F00EC5 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		DA46CFA12DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA46CFA22DCBCA0100F00EC5 /* Debug */,
-				DA46CFA32DCBCA0100F00EC5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

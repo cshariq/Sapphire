@@ -6,241 +6,301 @@
 //
 
 import Foundation
-import IOKit
 import IOKit.ps
 import Combine
+import ServiceManagement
+import AppKit
 
 @MainActor
 class PowerStateController: ObservableObject {
     private let settings = SettingsModel.shared
     private let batteryMonitor = BatteryMonitor.shared
     private let batteryManager = BatteryManager.shared
+    private let caffeineManager = CaffeineManager.shared
+    private let statusManager = BatteryStatusManager.shared
+    private let fanManager = FanManager.shared
 
     private var cancellables = Set<AnyCancellable>()
     private var heatProtectionHysteresisTimer: Timer?
 
-    init() {
-        let settingsPublisher = settings.objectWillChange.map { _ in () }
-        let batteryPublisher = batteryMonitor.$currentState.map { _ in () }
+    @Published var isDischargingForAutomation = false
 
-        Publishers.Merge(settingsPublisher, batteryPublisher)
-            .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
-            .sink { [weak self] in self?.evaluateState() }
-            .store(in: &cancellables)
+    private var isAppleSilicon: Bool {
+        var sysinfo = utsname()
+        uname(&sysinfo)
+        return withUnsafePointer(to: &sysinfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) { ptr in
+                String(cString: ptr).starts(with: "arm64")
+            }
+        }
+    }
+
+    init() {
+        Publishers.Merge3(
+            settings.objectWillChange.map { _ in "Settings Change" },
+            batteryMonitor.$currentState.map { _ in "Battery State Change" },
+            $isDischargingForAutomation.map { _ in "Discharge Toggle Change" }
+        )
+        .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
+        .sink { [weak self] source in
+            self?.evaluateState()
+        }
+        .store(in: &cancellables)
 
         Timer.publish(every: 15.0, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.evaluateState() }
             .store(in: &cancellables)
+
+        let workspaceNC = NSWorkspace.shared.notificationCenter
+        workspaceNC.addObserver(self, selector: #selector(systemWillSleep), name: NSWorkspace.willSleepNotification, object: nil)
+        workspaceNC.addObserver(self, selector: #selector(systemDidWake), name: NSWorkspace.didWakeNotification, object: nil)
+    }
+
+    @objc private func systemWillSleep() {
+        statusManager.updateState(isSleeping: true)
+        if settings.settings.stopChargingWhenSleeping {
+            batteryManager.enableCharging(false)
+        }
+    }
+
+    @objc private func systemDidWake() {
+        statusManager.updateState(isSleeping: false)
+        evaluateState()
+    }
+
+    public func setAutomatedDischarge(to limit: Int) {
+        settings.settings.batteryChargeLimit = limit
+        self.isDischargingForAutomation = true
     }
 
     private func evaluateState() {
+        if CalibrationManager.shared.isActive {
+            statusManager.updateState(managementState: .calibrating)
+            return
+        }
+
         guard let batteryState = batteryMonitor.currentState else { return }
 
         let settings = self.settings.settings
         let chargeLimit = settings.batteryChargeLimit
-        let currentCharge = settings.useHardwareBatteryPercentage ?
-            batteryManager.getHardwareBatteryPercentage() : batteryState.level
+        let currentCharge = settings.useHardwareBatteryPercentage ? batteryManager.getHardwareBatteryPercentage() : batteryState.level
 
-        var isChargingInhibited = false
+        var shouldCharge = true
+        var shouldDischarge = self.isDischargingForAutomation
+        var currentManagementState: ManagementState = .charging
 
-        if settings.heatProtectionEnabled && batteryState.isCharging {
-            Task {
-                let temp = await batteryManager.getBatteryTemperature()
-                if temp >= settings.heatProtectionThreshold {
-                    isChargingInhibited = true
-
-                    heatProtectionHysteresisTimer?.invalidate()
-                    heatProtectionHysteresisTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in
-                        self?.evaluateState()
-                    }
+        if shouldDischarge {
+            currentManagementState = .discharging
+            shouldCharge = false
+            if settings.preventSleepDuringDischarge && !caffeineManager.isActive { caffeineManager.start() }
+            if currentCharge <= chargeLimit {
+                self.isDischargingForAutomation = false
+                if settings.preventSleepDuringDischarge { caffeineManager.stop() }
+            }
+        } else {
+            if caffeineManager.isActive && settings.preventSleepDuringDischarge { caffeineManager.stop() }
+            if settings.sailingModeEnabled {
+                let sailingLowerBound = chargeLimit - settings.sailingModeLowerLimit
+                if currentCharge >= chargeLimit {
+                    shouldCharge = false
+                    currentManagementState = .inhibited
+                } else if currentCharge < sailingLowerBound {
+                    shouldCharge = true
+                } else {
+                    shouldCharge = batteryState.isCharging
+                    if !shouldCharge { currentManagementState = .sailing }
+                }
+            } else {
+                if currentCharge >= chargeLimit {
+                    shouldCharge = false
+                    currentManagementState = .inhibited
                 }
             }
         }
 
-        if settings.automaticDischargeEnabled && batteryState.isPluggedIn && currentCharge > chargeLimit {
-            isChargingInhibited = true
+        if settings.heatProtectionEnabled && batteryState.isCharging && shouldCharge {
+            Task {
+                let temp = await batteryManager.getBatteryTemperature()
+                if temp >= settings.heatProtectionThreshold {
+                    shouldCharge = false
+                    currentManagementState = .heatProtection
+                    heatProtectionHysteresisTimer?.invalidate()
+                    heatProtectionHysteresisTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in self?.evaluateState() }
+                }
+            }
         }
 
-        else if settings.sailingModeEnabled && batteryState.isPluggedIn {
-             let sailingLowerBound = chargeLimit - settings.sailingModeLowerLimit
-             if currentCharge >= chargeLimit {
-                 isChargingInhibited = true
-             } else if currentCharge < sailingLowerBound {
-                 isChargingInhibited = false
-             }
-        }
+        if isAppleSilicon { batteryManager.enableCharging(shouldCharge) }
+        else { batteryManager.setChargeLimit(shouldCharge ? 100 : chargeLimit) }
 
-        batteryManager.setDischarge(isChargingInhibited)
-        batteryManager.setChargeLimit(chargeLimit)
-        updateMagSafeLED(chargeState: batteryState, inhibited: isChargingInhibited)
+        batteryManager.setDischarge(shouldDischarge)
+
+        let inhibited = !shouldCharge || shouldDischarge
+        let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: inhibited)
+        batteryManager.setMagSafeLED(color: ledColor)
+
+        statusManager.updateState(managementState: currentManagementState, ledColor: ledColor)
     }
 
-    private func updateMagSafeLED(chargeState: BatteryState, inhibited: Bool) {
-        guard settings.settings.controlMagSafeLEDEnabled else { return }
+    private func calculateMagSafeLEDColor(chargeState: BatteryState, inhibited: Bool) -> Int {
+        let settings = self.settings.settings
+        guard settings.controlMagSafeLEDEnabled else { return -1 }
 
-        if settings.settings.magSafeLEDSetting == .off && !settings.settings.magSafeGreenAtLimit {
-            batteryManager.setMagSafeLED(color: 0)
-            return
+        let ledOff = 0, ledGreen = 3, ledAmber = 4
+
+        switch settings.magSafeLEDSetting {
+        case .off:
+            if !settings.magSafeGreenAtLimit || (settings.magSafeGreenAtLimit && chargeState.level < settings.batteryChargeLimit) {
+                return ledOff
+            }
+        case .alwaysOn:
+            break
         }
 
-        let limitReached = chargeState.level >= settings.settings.batteryChargeLimit
-
-        if limitReached && settings.settings.magSafeGreenAtLimit {
-            batteryManager.setMagSafeLED(color: 1)
-            return
+        if chargeState.level >= settings.batteryChargeLimit && settings.magSafeGreenAtLimit {
+            return ledGreen
         }
-
-        if chargeState.isCharging && !inhibited {
-            batteryManager.setMagSafeLED(color: 2)
-        } else if inhibited {
-            batteryManager.setMagSafeLED(color: settings.settings.magSafeLEDBlinkOnDischarge ? 2 : 0)
+        if inhibited {
+            return settings.magSafeLEDBlinkOnDischarge && self.isDischargingForAutomation ? ledAmber : ledGreen
+        } else if chargeState.isCharging {
+            return ledAmber
         } else {
-            batteryManager.setMagSafeLED(color: 0)
+            return ledGreen
         }
     }
 }
 
 class BatteryManager {
     static let shared = BatteryManager()
+    private var helperConnection: NSXPCConnection?
+    private let connectionLock = NSLock()
 
-    private lazy var isAppleSilicon: Bool = {
-        var sysinfo = utsname()
-        uname(&sysinfo)
-        let machine = withUnsafePointer(to: &sysinfo.machine) {
-            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
-                String(cString: $0)
-            }
-        }
-        return machine.starts(with: "arm64")
-    }()
-
-    private func executeSMC(args: [String]) -> String? {
-        print("[BatteryManager] STUB: executeSMC called with args \(args). Returning nil.")
-        return nil
+    private init() {
+        setupHelperConnection()
     }
 
+    private func setupHelperConnection() {
+        connectionLock.lock()
+        defer { connectionLock.unlock() }
+
+        guard self.helperConnection == nil else {
+            return
+        }
+
+        let connection = NSXPCConnection(machServiceName: Constant.helperMachLabel, options: .privileged)
+        connection.remoteObjectInterface = NSXPCInterface(with: HelperProtocol.self)
+
+        connection.invalidationHandler = { [weak self] in
+            print("[BatteryManager] Helper connection invalidated.")
+            self?.connectionLock.withLock {
+                self?.helperConnection = nil
+            }
+        }
+
+        connection.interruptionHandler = { [weak self] in
+            print("[BatteryManager] Helper connection interrupted.")
+            self?.connectionLock.withLock {
+                self?.helperConnection = nil
+            }
+        }
+
+        connection.resume()
+        self.helperConnection = connection
+        print("[BatteryManager] New helper connection established.")
+    }
+
+    func getHelper() -> HelperProtocol? {
+        connectionLock.lock()
+        if self.helperConnection == nil {
+            connectionLock.unlock()
+            setupHelperConnection()
+            connectionLock.lock()
+        }
+
+        let proxy = self.helperConnection?.remoteObjectProxyWithErrorHandler { [weak self] error in
+            print("[BatteryManager] Helper connection proxy error: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self?.connectionLock.withLock {
+                    self?.helperConnection?.invalidate()
+                    self?.helperConnection = nil
+                }
+            }
+        } as? HelperProtocol
+
+        connectionLock.unlock()
+        return proxy
+    }
+
+    // MARK: - Public API to Helper
+
     func setChargeLimit(_ limit: Int) {
-        let hexLimit = String(max(20, min(100, limit)), radix: 16)
-        print("[BatteryManager] STUB: Setting charge limit to \(limit)% (Hex: \(hexLimit))")
+        getHelper()?.setChargeLimit(limit) { error in
+            if let error = error { print("[BatteryManager] Error setting charge limit: \(error.localizedDescription)") }
+        }
+    }
+
+    func enableCharging(_ enabled: Bool) {
+        getHelper()?.enableCharging(enabled) { error in
+            if let error = error { print("[BatteryManager] Error setting charging state: \(error.localizedDescription)") }
+        }
     }
 
     func setDischarge(_ discharging: Bool) {
-        print("[BatteryManager] STUB: Setting discharge mode to: \(discharging)")
+        getHelper()?.setDischarge(discharging) { error in
+            if let error = error { print("[BatteryManager] Error setting discharge mode: \(error.localizedDescription)") }
+        }
+    }
+
+    func setMagSafeLED(color: Int) {
+        getHelper()?.setMagSafeLED(color: color) { error in
+            if let error = error { print("[BatteryManager] Error setting MagSafe LED: \(error.localizedDescription)") }
+        }
+    }
+
+    @MainActor func startCalibration() {
+        print("[BatteryManager] Starting calibration process via CalibrationManager.")
+        CalibrationManager.shared.start()
+    }
+
+    // MARK: - Data Fetching
+
+    func getHardwareBatteryPercentage() -> Int {
+        let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue()
+        let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef]
+
+        guard let sources = sources, let powerSource = sources.first else {
+            print("[BatteryManager] Failed to get power sources for hardware percentage.")
+            return 80
+        }
+
+        let info = IOPSGetPowerSourceDescription(snapshot, powerSource)?.takeUnretainedValue() as? [String: AnyObject]
+
+        guard let currentCapacity = info?[kIOPSCurrentCapacityKey] as? Int else {
+            print("[BatteryManager] Could not read current capacity key.")
+            return 80
+        }
+
+        let rawCurrentCapacity = info?["AppleRawCurrentCapacity"] as? Double ?? Double(currentCapacity)
+        let rawMaxCapacity = info?["AppleRawMaxCapacity"] as? Double ?? 100.0
+
+        if rawMaxCapacity == 0 {
+            print("[BatteryManager] Raw max capacity is zero, cannot calculate percentage.")
+            return currentCapacity
+        }
+
+        let percentage = (rawCurrentCapacity / rawMaxCapacity) * 100.0
+
+        let finalPercentage = Int(round(max(0.0, min(100.0, percentage))))
+
+        return finalPercentage
     }
 
     @MainActor
     func getBatteryTemperature() async -> Double {
-        let temperatureFromSMC = getSMCBatteryTemperature()
-        if temperatureFromSMC > 0 {
-            return temperatureFromSMC
-        }
-        return getSimulatedTemperature()
-    }
-
-    private func getSMCBatteryTemperature() -> Double {
-        let temperatureKey = "TB0T"
-
-        let conn = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
-        guard conn != IO_OBJECT_NULL else {
-            print("[BatteryManager] Failed to connect to SMC. This is expected on some systems.")
-            return -1
-        }
-        defer { IOServiceClose(conn) }
-
-        var input = SMCKeyData_t()
-        var output = SMCKeyData_t()
-
-        let key = stringToKey(temperatureKey)
-        input.key = key
-        input.data8 = UInt8(kSMCGetKeyInfo)
-
-        var inputSize = MemoryLayout<SMCKeyData_t>.size
-        var outputSize = MemoryLayout<SMCKeyData_t>.size
-        guard IOConnectCallStructMethod(conn, UInt32(kSMCHandleYPCEvent), &input, inputSize, &output, &outputSize) == kIOReturnSuccess else {
-            print("[BatteryManager] Error getting SMC key info")
-            return -1
-        }
-
-        input.key = key
-        input.data8 = UInt8(kSMCReadKey)
-        input.keyInfo.dataSize = output.keyInfo.dataSize
-
-        guard IOConnectCallStructMethod(conn, UInt32(kSMCHandleYPCEvent), &input, inputSize, &output, &outputSize) == kIOReturnSuccess else {
-            print("[BatteryManager] Error reading SMC key")
-            return -1
-        }
-
-        let integerPart = Double(output.bytes[0])
-        let fractionalPart = Double(output.bytes[1]) / 256.0
-        let temperatureC = integerPart + fractionalPart
-
-        print("[BatteryManager] Battery temperature: \(temperatureC)°C")
-        return temperatureC
-    }
-
-    @MainActor
-    private func getSimulatedTemperature() -> Double {
-        if let state = BatteryMonitor.shared.currentState {
-            let baseTemp = 25.0
-            let chargingFactor = state.isCharging ? 5.0 : 0.0
-            let loadFactor = state.level < 20 ? 2.0 : 0.0
-
-            return baseTemp + chargingFactor + loadFactor + Double.random(in: -1.0...1.0)
-        }
-        return 30.0
-    }
-
-    private func stringToKey(_ key: String) -> UInt32 {
-        var ans: UInt32 = 0
-        for (i, byte) in key.utf8.enumerated() where i < 4 {
-            ans += UInt32(byte) << (8 * (3 - i))
-        }
-        return ans
-    }
-
-    private struct SMCKeyData_t {
-        var key: UInt32 = 0
-        var versCode: UInt8 = 0
-        var reserved1: UInt8 = 0
-        var dataSize: UInt16 = 0
-        var dataType: UInt32 = 0
-        var bytes: [UInt8] = Array(repeating: 0, count: 32)
-
-        var data8: UInt8 {
-            get { bytes[0] }
-            set { bytes[0] = newValue }
-        }
-
-        var keyInfo: KeyInfo {
-            get { KeyInfo(dataSize: dataSize, dataType: dataType) }
-            set {
-                dataSize = newValue.dataSize
-                dataType = newValue.dataType
+        return await withCheckedContinuation { continuation in
+            getHelper()?.getBatteryTemperature { temperature in
+                continuation.resume(returning: temperature)
             }
         }
-
-        struct KeyInfo {
-            var dataSize: UInt16 = 0
-            var dataType: UInt32 = 0
-        }
-    }
-
-    private let kSMCGetKeyInfo: UInt8 = 9
-    private let kSMCReadKey: UInt8 = 5
-    private let kIOReturnSuccess: kern_return_t = 0
-    private let kSMCHandleYPCEvent: UInt32 = 2
-
-    func setMagSafeLED(color: Int) {
-        let hexColor = String(color, radix: 16, uppercase: true)
-        print("[BatteryManager] STUB: Setting MagSafe LED color to \(hexColor)")
-    }
-
-    func startCalibration() {
-        print("[BatteryManager] STUB: Starting calibration cycle.")
-    }
-
-    func getHardwareBatteryPercentage() -> Int {
-        print("[BatteryManager] STUB: getHardwareBatteryPercentage called. Returning 80.")
-        return 80
     }
 }

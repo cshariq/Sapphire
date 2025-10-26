@@ -381,3 +381,40 @@ struct SettingsDetailRow<Content: View>: View {
         }.padding(.vertical, 10)
     }
 }
+
+struct ToggleRow: View {
+    let title: String
+    let description: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                if !description.isEmpty {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding()
+    }
+}
+
+extension Int {
+    func formattedMinutes() -> String {
+        let interval = TimeInterval(self * 60)
+        return interval.formatted()
+    }
+}
+
+struct IdentifiableInt: Identifiable {
+    let id: Int
+}

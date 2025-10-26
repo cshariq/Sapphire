@@ -25,7 +25,7 @@ class CaffeineManager: ObservableObject {
         }
     }
 
-    private func start() {
+    func start() {
         guard !isActive else { return }
 
         caffeineTask = Process()
@@ -43,7 +43,7 @@ class CaffeineManager: ObservableObject {
         }
     }
 
-    private func stop() {
+    func stop() {
         guard isActive, let task = caffeineTask else { return }
         task.terminate()
         caffeineTask = nil

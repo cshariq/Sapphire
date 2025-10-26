@@ -522,7 +522,7 @@ struct Settings: Codable, Equatable {
     var stopChargingWhenAppClosed: Bool = false
     var magSafeLEDBlinkOnDischarge: Bool = false
     var magSafeLEDSetting: MagSafeLEDSetting = .alwaysOn
-    var preventSleepDuringCalibration: Bool = true
+    var preventSleepDuringCalibration: Bool = false
     var preventSleepDuringDischarge: Bool = true
     var enableBiweeklyCalibration: Bool = false
     var magSafeGreenAtLimit: Bool = true

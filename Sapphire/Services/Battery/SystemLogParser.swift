@@ -87,9 +87,13 @@ class SystemLogParser {
             isPluggedIn: isCharging,
             isScreenOn: isScreenOn,
             isLowPowerMode: isLowPowerMode,
-            temperature: -1,
+            temperature: -1.0,
             timeToEmpty: -1,
-            timeToFull: -1
+            timeToFull: -1,
+            managementState: isCharging ? .charging : .discharging,
+            ledColor: -1,
+            hardwareCharge: charge,
+            isSleeping: false
         )
     }
 

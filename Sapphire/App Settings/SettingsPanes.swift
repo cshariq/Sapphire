@@ -3210,6 +3210,8 @@ fileprivate struct CalibrateRSSIView: View {
 
 struct BatterySettingsView: View {
     @EnvironmentObject var settings: SettingsModel
+    @StateObject private var powerStateController = PowerStateController()
+    @StateObject private var calibrationManager = CalibrationManager.shared
     @State private var showingScheduleSheet = false
 
     var body: some View {
@@ -3221,9 +3223,13 @@ struct BatterySettingsView: View {
 
                 BatteryHistoryView()
 
+                // MARK: - Notifications Section
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Notifications & Live Activity").font(.headline).padding([.top, .horizontal])
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    InfoContainer(text: "Configure alerts for important battery events and customize what you see in the persistent battery live activity.", iconName: "bell.badge.fill", color: .purple)
+                        .padding()
 
                     CustomSliderRowView(
                         label: "Notify when battery is below",
@@ -3236,7 +3242,7 @@ struct BatterySettingsView: View {
 
                     ToggleRow(
                         title: "Play Sound for Low Battery Alert",
-                        description: "",
+                        description: "Get an audible alert when your battery is running low.",
                         isOn: $settings.settings.lowBatteryNotificationSoundEnabled
                     )
 
@@ -3270,27 +3276,34 @@ struct BatterySettingsView: View {
                 }
                 .modifier(SettingsContainerModifier())
 
-                InfoContainer(text: "All battery management features are in development.", iconName: "info.circle.fill", color: .yellow)
-
+                // MARK: - Core Features Section
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Features").font(.headline).padding([.top, .horizontal])
+                    Text("Core Features").font(.headline).padding([.top, .horizontal])
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    InfoContainer(text: "These features actively manage your Mac's charging behavior to improve battery longevity and health.", iconName: "sparkles", color: .accentColor)
+                        .padding()
+
                     CustomSliderRowView(label: "Charge Limit", value: Binding(get: { Double(settings.settings.batteryChargeLimit) }, set: { settings.settings.batteryChargeLimit = Int($0) }), range: 20...100, specifier: "%.0f %%")
+
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Sailing Mode", description: "Prevent micro-charging by setting a lower charging threshold.", isOn: $settings.settings.sailingModeEnabled)
+
+                    ToggleRow(title: "Sailing Mode", description: "Prevents battery wear from constant micro-charging cycles by only resuming charging when the battery drops significantly below the limit.", isOn: $settings.settings.sailingModeEnabled)
                     if settings.settings.sailingModeEnabled {
                          CustomSliderRowView(
-                            label: "Discharge below limit by",
+                            label: "Resume charging below",
                             value: Binding(get: { Double(settings.settings.sailingModeLowerLimit) }, set: { settings.settings.sailingModeLowerLimit = Int($0) }),
                             range: 5...20,
-                            specifier: "%.0f %%"
+                            specifier: "%.0f%% below limit"
                         )
                     }
+
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Heat Protection", description: "Pause charging when the battery gets too hot.", isOn: $settings.settings.heatProtectionEnabled)
+
+                    ToggleRow(title: "Heat Protection", description: "Automatically pauses charging if the battery temperature gets too high, preventing heat-related damage.", isOn: $settings.settings.heatProtectionEnabled)
                     if settings.settings.heatProtectionEnabled {
                          CustomSliderRowView(
-                            label: "Temperature Limit",
+                            label: "Pause charging above",
                             value: $settings.settings.heatProtectionThreshold,
                             range: 35...50,
                             specifier: "%.0f °C"
@@ -3301,45 +3314,84 @@ struct BatterySettingsView: View {
                 .animation(.default, value: settings.settings.sailingModeEnabled)
                 .animation(.default, value: settings.settings.heatProtectionEnabled)
 
+                // MARK: - Automatic Discharge Section
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Automatic Discharge").font(.headline).padding([.top, .horizontal])
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    InfoContainer(text: "Force your Mac to run on battery power, even while plugged in. Useful for calibrating or reducing charge level without unplugging.", iconName: "battery.0", color: .orange)
+                        .padding()
+
+                    ToggleRow(title: "Enable Automatic Discharge", description: "When enabled, your Mac will stop using AC power and discharge to the level set by the 'Charge Limit' slider.", isOn: $powerStateController.isDischargingForAutomation)
+                }
+                .modifier(SettingsContainerModifier())
+
+                // MARK: - Charging & Sleep Section
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Charging & Sleep").font(.headline).padding([.top, .horizontal])
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    ToggleRow(title: "Stop charging when sleeping", description: "Prevents charging to 100% overnight.", isOn: $settings.settings.stopChargingWhenSleeping)
+
+                    ToggleRow(title: "Stop charging when sleeping", description: "Prevents your Mac from sitting at 100% charge overnight if you leave it plugged in.", isOn: $settings.settings.stopChargingWhenSleeping)
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Stop charging when app closed", description: "Maintains charge limit even if Sapphire isn't running.", isOn: $settings.settings.stopChargingWhenAppClosed)
+
+                    ToggleRow(title: "Stop charging when app closed", description: "This feature is handled by the privileged helper tool and is always active to maintain your charge limit.", isOn: .constant(true))
+                        .disabled(true)
+
                     Divider().padding(.leading, 20)
                     ToggleRow(title: "Disable Sleep until Charge Limit", description: "Keeps your Mac awake to reach the charge limit, even with the lid closed.", isOn: $settings.settings.disableSleepUntilChargeLimit)
                 }
                 .modifier(SettingsContainerModifier())
 
+                // MARK: - Scheduling & Calibration Section
                 VStack(alignment: .leading, spacing: 0) {
+                    Text("Scheduling & Calibration").font(.headline).padding([.top, .horizontal])
+
+                    InfoContainer(text: "Automate charging behaviors and perform maintenance cycles to keep your battery readings accurate.", iconName: "calendar.badge.clock", color: .cyan)
+                        .padding()
+
+                    CalibrationProgressView()
+                        .environmentObject(calibrationManager)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+
                     Divider().padding(.horizontal)
 
-                    VStack(alignment: .leading) {
-                        Text("Scheduling").font(.headline)
-                        Text("Automate charging behaviors like Calibration and Top Up.").font(.caption).foregroundColor(.secondary)
-                        Button("Manage Schedule") { showingScheduleSheet = true }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(8)
-                            .padding(.top, 4)
+                    HStack {
+                        Text("Manage Schedule").font(.subheadline.bold())
+                        Spacer()
+                        Button("Open Scheduler") { showingScheduleSheet = true }
+                            .buttonStyle(.bordered)
                     }
                     .padding()
 
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Enable bi-weekly automatic calibration", description: "Automatically run a calibration cycle every two weeks.", isOn: $settings.settings.enableBiweeklyCalibration)
+                    ToggleRow(title: "Enable bi-weekly automatic calibration", description: "Automatically run a calibration cycle every two weeks in the background.", isOn: $settings.settings.enableBiweeklyCalibration)
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Prevent sleep during Calibration", description: "Ensures the calibration cycle completes without interruption.", isOn: $settings.settings.preventSleepDuringCalibration)
-                    Divider().padding(.leading, 20)
-                    ToggleRow(title: "Prevent sleep during Discharge", description: "Ensures discharging in clamshell mode works correctly.", isOn: $settings.settings.preventSleepDuringDischarge)
 
+                    ToggleRow(title: "Prevent sleep during Calibration", description: "Ensures the long calibration cycle can complete without interruption.", isOn: $settings.settings.preventSleepDuringCalibration)
+                    if settings.settings.preventSleepDuringCalibration {
+                        InfoContainer(text: "Warning: Preventing sleep for extended periods will increase energy consumption.", iconName: "exclamationmark.triangle.fill", color: .yellow)
+                            .padding([.horizontal, .bottom])
+                            .transition(.opacity)
+                    }
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(title: "Prevent sleep during Discharge", description: "Ensures that manual or scheduled discharging works correctly in clamshell mode.", isOn: $settings.settings.preventSleepDuringDischarge)
+                    if !settings.settings.preventSleepDuringDischarge {
+                        InfoContainer(text: "Warning: This setting is necessary for discharging with the lid closed", iconName: "exclamationmark.triangle.fill", color: .red)
+                            .padding()
+                            .transition(.opacity)
+                    }
                 }
                 .modifier(SettingsContainerModifier())
+                .animation(.default, value: settings.settings.preventSleepDuringCalibration)
+                .animation(.default, value: settings.settings.preventSleepDuringDischarge)
                 .sheet(isPresented: $showingScheduleSheet) {
+                    ScheduleView().environmentObject(settings)
                 }
 
+                // MARK: - Advanced Section
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Advanced").font(.headline).padding([.top, .horizontal])
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3347,30 +3399,23 @@ struct BatterySettingsView: View {
                     VStack(alignment: .leading) {
                         Text("MagSafe LED").font(.subheadline).padding([.top, .horizontal])
                         HStack {
-                            Text("LED Setting")
+                            Text("LED Behavior")
                             Spacer()
                             Picker("", selection: $settings.settings.magSafeLEDSetting) {
                                 ForEach(MagSafeLEDSetting.allCases) { setting in
                                     Text(setting.displayName).tag(setting)
                                 }
                             }.labelsHidden().frame(width: 150)
-                        }.padding(.horizontal)
+                        }.padding([.horizontal, .bottom])
 
-                        ToggleRow(title: "Green when Charge Limit is reached", description: "Overrides 'Always Off' to indicate a full charge.", isOn: $settings.settings.magSafeGreenAtLimit)
-                        ToggleRow(title: "Blink Orange during Discharge", description: "", isOn: $settings.settings.magSafeLEDBlinkOnDischarge)
+                        ToggleRow(title: "Green when Charge Limit is reached", description: "Overrides other settings to signal when the target charge is reached.", isOn: $settings.settings.magSafeGreenAtLimit)
+                        ToggleRow(title: "Amber during Discharge", description: "Show a solid amber light when the battery is discharging automatically.", isOn: $settings.settings.magSafeLEDBlinkOnDischarge)
 
-                        HStack {
-                            Text("Set LED Now:")
-                            Spacer()
-                            Button("Green") { BatteryManager.shared.setMagSafeLED(color: 1) }.buttonStyle(.bordered)
-                            Button("Amber") { BatteryManager.shared.setMagSafeLED(color: 2) }.buttonStyle(.bordered)
-                            Button("Off") { BatteryManager.shared.setMagSafeLED(color: 0) }.buttonStyle(.bordered)
-                        }.padding()
                     }.padding(.bottom)
 
                     Divider().padding(.horizontal, 20)
 
-                    ToggleRow(title: "Use Hardware Battery Percentage", description: "Read the 'true' percentage from the hardware.", isOn: $settings.settings.useHardwareBatteryPercentage)
+                    ToggleRow(title: "Use Hardware Battery Percentage", description: "Reads the 'true' charge from the battery controller for more accurate limiting.", isOn: $settings.settings.useHardwareBatteryPercentage)
                     Divider().padding(.leading, 20)
                     HStack {
                         Text("Low Power Mode")
@@ -3383,6 +3428,8 @@ struct BatterySettingsView: View {
                     }.padding()
                 }
                 .modifier(SettingsContainerModifier())
+
+                FanControlSectionView()
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -3390,10 +3437,281 @@ struct BatterySettingsView: View {
     }
 }
 
+struct FanControlSectionView: View {
+    @StateObject private var fanManager = FanManager.shared
+    @State private var fanToEditID: Int?
+
+    private var isSheetPresented: Binding<Bool> {
+        Binding<Bool>(
+            get: { self.fanToEditID != nil },
+            set: { isShowing in
+                if !isShowing {
+                    self.fanToEditID = nil
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Fan Control").font(.headline).padding([.top, .horizontal])
+
+            InfoContainer(text: "Manually control your Mac's fans. Forcing high RPMs for extended periods may increase wear. Reverting to 'Auto' is recommended for daily use.", iconName: "fanblades.fill", color: .blue)
+                .padding()
+
+            if fanManager.fans.isEmpty {
+                Text("No fans detected on this system.")
+                    .foregroundColor(.secondary)
+                    .padding()
+            } else {
+                ForEach($fanManager.fans) { $fan in
+                    FanRowView(fan: $fan, onCustomize: { fanToEditID = fan.id })
+                    if fan.id != fanManager.fans.last?.id {
+                        Divider().padding(.leading, 20)
+                    }
+                }
+            }
+        }
+        .modifier(SettingsContainerModifier())
+        .sheet(isPresented: isSheetPresented) {
+            if let id = fanToEditID, let fanIndex = fanManager.fans.firstIndex(where: { $0.id == id }) {
+                FanControlSheetView(fan: $fanManager.fans[fanIndex], availableSensors: fanManager.sensors)
+                    .environmentObject(fanManager)
+            }
+        }
+        .environmentObject(fanManager)
+    }
+}
+
+struct FanRowView: View {
+    @Binding var fan: FanInfo
+    let onCustomize: () -> Void
+    @EnvironmentObject var fanManager: FanManager
+
+    private var modeString: String {
+        switch fanManager.fanModes[fan.id] {
+        case .auto: return "Auto"
+        case .constant(let rpm): return "Constant \(rpm) RPM"
+        case .sensor(let key, _, _):
+            let name = SensorNameMap.name(for: key)
+            return "Sensor: \(name)"
+        case nil: return "Auto"
+        }
+    }
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(fan.name.contains("Fan") ? "Fan \(fan.id + 1)" : fan.name)
+                    .font(.headline)
+
+                Text("Min: \(fan.minRPM) | Current: \(fan.currentRPM) | Max: \(fan.maxRPM) RPM")
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.secondary)
+
+                Text(modeString)
+                    .font(.caption)
+                    .foregroundColor(.accentColor)
+            }
+            Spacer()
+            Button("Custom...") { onCustomize() }
+        }
+        .padding()
+    }
+}
+
+struct FanControlSheetView: View {
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var fanManager: FanManager
+    @Binding var fan: FanInfo
+    let availableSensors: [TemperatureSensor]
+
+    @State private var selectedMode: Int
+    @State private var constantRPM: Double
+    @State private var sensorKey: String
+    @State private var minTemp: Double
+    @State private var maxTemp: Double
+
+    init(fan: Binding<FanInfo>, availableSensors: [TemperatureSensor]) {
+        self._fan = fan
+        self.availableSensors = availableSensors
+
+        let initialMode = FanManager.shared.fanModes[fan.wrappedValue.id] ?? .auto
+
+        switch initialMode {
+        case .auto:
+            _selectedMode = State(initialValue: 0)
+            _constantRPM = State(initialValue: Double(fan.wrappedValue.minRPM))
+            _sensorKey = State(initialValue: availableSensors.first?.key ?? "")
+            _minTemp = State(initialValue: 40)
+            _maxTemp = State(initialValue: 75)
+        case .constant(let rpm):
+            _selectedMode = State(initialValue: 1)
+            _constantRPM = State(initialValue: Double(rpm))
+            _sensorKey = State(initialValue: availableSensors.first?.key ?? "")
+            _minTemp = State(initialValue: 40)
+            _maxTemp = State(initialValue: 75)
+        case .sensor(let key, let minT, let maxT):
+            _selectedMode = State(initialValue: 2)
+            _constantRPM = State(initialValue: Double(fan.wrappedValue.minRPM))
+            _sensorKey = State(initialValue: key)
+            _minTemp = State(initialValue: Double(minT))
+            _maxTemp = State(initialValue: Double(maxT))
+        }
+    }
+
+    private var selectedSensorValueString: String {
+        if let sensor = availableSensors.first(where: { $0.key == sensorKey }) {
+            return String(format: "%.1f°C", sensor.value)
+        }
+        return "N/A"
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Change Fan Control for '\(fan.name.contains("Fan") ? "Fan \(fan.id + 1)" : fan.name)'")
+                .font(.title2.bold())
+
+            Picker("Control Mode", selection: $selectedMode) {
+                Text("Automatic").tag(0)
+                Text("Constant RPM").tag(1)
+                Text("Sensor-based").tag(2)
+            }
+            .pickerStyle(.segmented)
+            .padding(.bottom)
+
+            if selectedMode == 1 {
+                VStack {
+                    CustomSliderRowView(label: "Fan Speed", value: $constantRPM, range: Double(fan.minRPM)...Double(fan.maxRPM), specifier: "%.0f RPM")
+                }
+            } else if selectedMode == 2 {
+                VStack(spacing: 15) {
+                    HStack {
+                        Text("Based on Sensor:")
+                        Spacer()
+                        Picker("Sensor", selection: $sensorKey) {
+                            ForEach(availableSensors) { sensor in
+                                HStack {
+                                    Text(sensor.name)
+                                    Spacer()
+                                    Text(String(format: "%.1f°C", sensor.value))
+                                        .foregroundColor(.secondary)
+                                }.tag(sensor.key)
+                            }
+                        }
+                        Text(selectedSensorValueString)
+                            .font(.body.monospacedDigit())
+                            .foregroundColor(.secondary)
+                            .frame(width: 60, alignment: .trailing)
+                    }
+
+                    CustomSliderRowView(label: "Start increasing from:", value: $minTemp, range: 20...100, specifier: "%.0f °C")
+                        .onChange(of: minTemp) {
+                            if minTemp > maxTemp {
+                                maxTemp = minTemp
+                            }
+                        }
+
+                    CustomSliderRowView(label: "Maximum temperature:", value: $maxTemp, range: 20...100, specifier: "%.0f °C")
+                        .onChange(of: maxTemp) {
+                            if maxTemp < minTemp {
+                                minTemp = maxTemp
+                            }
+                        }
+                }
+            } else {
+                Text("The fan will be controlled automatically by macOS.")
+                    .foregroundColor(.secondary)
+                    .frame(minHeight: 150, alignment: .center)
+            }
+
+            Spacer()
+
+            HStack {
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("OK") {
+                    saveAndDismiss()
+                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(30)
+        .frame(width: 550)
+        .frame(minHeight: 350)
+    }
+
+    private func saveAndDismiss() {
+        let newMode: FanControlMode
+        switch selectedMode {
+        case 1:
+            newMode = .constant(rpm: Int(constantRPM))
+        case 2:
+            newMode = .sensor(sensorKey: sensorKey, minTemp: Int(minTemp), maxTemp: Int(maxTemp))
+        default:
+            newMode = .auto
+        }
+        fanManager.setFanMode(for: fan.id, to: newMode)
+        dismiss()
+    }
+}
+
+// MARK: - Live Calibration Progress View
+struct CalibrationProgressView: View {
+    @EnvironmentObject var calibrationManager: CalibrationManager
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("Calibration Status").font(.subheadline.bold())
+
+            if calibrationManager.state == .idle {
+                Text("Calibration is not currently running.").font(.caption).foregroundColor(.secondary)
+
+                Button(action: {
+                    let alert = NSAlert()
+                    alert.messageText = "Start Battery Calibration?"
+                    alert.informativeText = "This is a long process that can take several hours. Your Mac will be kept awake if the setting is enabled. It is recommended to start this overnight. Are you sure you want to begin?"
+                    alert.addButton(withTitle: "Start Calibration")
+                    alert.addButton(withTitle: "Cancel")
+                    alert.alertStyle = .warning
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        calibrationManager.start()
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "play.circle.fill")
+                        Text("Start Manual Calibration")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.accentColor)
+                .padding(.top, 5)
+
+            } else {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text(calibrationManager.state.description).font(.headline)
+                        Spacer()
+                        ProgressView().controlSize(.small)
+                    }
+
+                    ProgressView(value: calibrationManager.progress, total: 1.0)
+                        .progressViewStyle(LinearProgressViewStyle(tint: .accentColor))
+
+                    Button("Cancel Calibration", role: .destructive) {
+                        calibrationManager.cancel()
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Main History View
 struct BatteryHistoryView: View {
     @StateObject private var viewModel = BatteryHistoryViewModel()
     @State private var selectedEntry: BatteryLogEntry?
-    @State private var rulePosition: CGPoint?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -3405,11 +3723,12 @@ struct BatteryHistoryView: View {
                     .frame(height: 250)
                     .frame(maxWidth: .infinity)
             } else if viewModel.chartData.isEmpty {
-                Text("No battery history available for this period.")
+                Text("No battery history recorded yet. Data is logged every 5 minutes while the app is running.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .frame(height: 250)
                     .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
             } else {
                 chart
             }
@@ -3423,6 +3742,9 @@ struct BatteryHistoryView: View {
         .modifier(SettingsContainerModifier())
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: selectedEntry)
         .animation(.easeInOut, value: viewModel.isLoading)
+        .onAppear {
+            viewModel.fetchHistory()
+        }
     }
 
     private var header: some View {
@@ -3444,7 +3766,7 @@ struct BatteryHistoryView: View {
     private var summaryStats: some View {
         HStack {
             StatView(value: viewModel.summaryStats.screenOnTime.formatted(), label: "Screen On", color: .blue)
-            StatView(value: String(format: "%.1f cycles", viewModel.summaryStats.chargeCycles), label: "Charge Cycles", color: .green)
+            StatView(value: String(format: "%.1f", viewModel.summaryStats.chargeCycles), label: "Cycles Used", color: .green)
             StatView(value: viewModel.summaryStats.avgTemp > 0 ? String(format: "%.1f°C", viewModel.summaryStats.avgTemp) : "N/A", label: "Avg. Temp", color: .orange)
         }
     }
@@ -3453,43 +3775,23 @@ struct BatteryHistoryView: View {
         Chart {
             ForEach(viewModel.chartData) { entry in
                 if entry.isCharging {
-                    RectangleMark(
-                        x: .value("Time", entry.timestamp),
-                        yStart: .value("Min", 0),
-                        yEnd: .value("Max", 100)
-                    )
-                    .foregroundStyle(Color.green.opacity(0.1))
+                    RectangleMark(x: .value("Time", entry.timestamp), yStart: .value("Min", 0), yEnd: .value("Max", 100))
+                        .foregroundStyle(Color.green.opacity(0.1))
                 }
-
                 if entry.isLowPowerMode {
-                    RectangleMark(
-                        x: .value("Time", entry.timestamp),
-                        yStart: .value("Min", 0),
-                        yEnd: .value("Max", 100)
-                    )
-                    .foregroundStyle(Color.yellow.opacity(0.1))
+                    RectangleMark(x: .value("Time", entry.timestamp), yStart: .value("Min", 0), yEnd: .value("Max", 100))
+                        .foregroundStyle(Color.yellow.opacity(0.1))
                 }
             }
-
             ForEach(viewModel.chartData) { entry in
-                LineMark(
-                    x: .value("Time", entry.timestamp),
-                    y: .value("Charge", entry.charge)
-                )
-                .foregroundStyle(.green)
-                .interpolationMethod(.catmullRom)
+                LineMark(x: .value("Time", entry.timestamp), y: .value("Charge", entry.charge))
+                    .foregroundStyle(.green).interpolationMethod(.catmullRom)
             }
-
             if let entry = selectedEntry {
                 RuleMark(x: .value("Selected", entry.timestamp))
-                    .foregroundStyle(.secondary)
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .foregroundStyle(.secondary).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .annotation(position: .top, alignment: .leading) {
-                        Text("\(entry.charge)%")
-                            .font(.caption.bold())
-                            .padding(4)
-                            .background(.background)
-                            .cornerRadius(4)
+                        Text("\(entry.charge)%").font(.caption.bold()).padding(4).background(.background).cornerRadius(4)
                     }
             }
         }
@@ -3503,24 +3805,11 @@ struct BatteryHistoryView: View {
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 Rectangle().fill(.clear).contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                let location = value.location
-                                rulePosition = location
-                                if let date: Date = proxy.value(atX: location.x) {
-                                    let closestEntry = viewModel.chartData.min {
-                                        abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date))
-                                    }
-                                    if let entry = closestEntry {
-                                        selectedEntry = entry
-                                    }
-                                }
-                            }
-                            .onEnded { _ in
-                                rulePosition = nil
-                            }
-                    )
+                    .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                        if let date: Date = proxy.value(atX: value.location.x) {
+                            selectedEntry = viewModel.chartData.min { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) }
+                        }
+                    })
             }
         }
         .frame(height: 250)
@@ -3529,70 +3818,80 @@ struct BatteryHistoryView: View {
     @ViewBuilder
     private func detailsPanel(for entry: BatteryLogEntry) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Details at \(entry.timestamp, style: .time)")
-                    .font(.headline)
-                Spacer()
-            }
+            Text("Details at \(entry.timestamp, style: .time)").font(.headline)
 
             HStack(spacing: 0) {
-                InfoColumn(title: "Status", value: entry.isCharging ? "Charging" : "Discharging", color: entry.isCharging ? .green : .primary)
-                InfoColumn(title: "Screen", value: entry.isScreenOn ? "On" : "Off", color: entry.isScreenOn ? .blue : .secondary)
-                InfoColumn(title: "Low Power Mode", value: entry.isLowPowerMode ? "On" : "Off", color: entry.isLowPowerMode ? .yellow : .secondary)
+                InfoColumn(title: "Charge", value: "\(entry.charge)%", color: .green, icon: "percent")
+                InfoColumn(title: "Hardware", value: "\(entry.hardwareCharge)%", color: .cyan, icon: "cpu")
 
                 if entry.temperature > 0 {
-                    InfoColumn(title: "Temp", value: String(format: "%.1f°C", entry.temperature), color: .orange)
+                    InfoColumn(title: "Temp", value: String(format: "%.1f°C", entry.temperature), color: .orange, icon: "thermometer.medium")
                 }
 
                 if entry.estimatedTimeRemaining > 0 {
-                    let timeLabel = entry.isCharging ? "to Full" : "to Empty"
-                    InfoColumn(title: timeLabel, value: entry.estimatedTimeRemaining.formattedMinutes(), color: .cyan)
+                    let timeLabel = entry.isCharging ? "To Full" : "To Empty"
+                    InfoColumn(title: timeLabel, value: entry.estimatedTimeRemaining.formattedMinutes(), color: .teal, icon: "hourglass")
                 }
             }
+            .padding(.bottom, 8)
+
+            HStack(spacing: 0) {
+                InfoColumn(title: "State", value: entry.managementState.rawValue, color: .primary, icon: "gearshape.2")
+
+                let ledInfo = ledDetails(for: entry.ledColor)
+                InfoColumn(title: "MagSafe", value: ledInfo.text, color: ledInfo.color, icon: "light.max")
+
+                InfoColumn(title: "Screen", value: entry.isScreenOn ? "On" : "Off", color: entry.isScreenOn ? .blue : .secondary, icon: "display")
+
+                let sleepIcon = entry.isSleeping ? "moon.zzz.fill" : "sun.max.fill"
+                let sleepColor = entry.isSleeping ? Color.indigo : Color.secondary
+                InfoColumn(title: "System", value: entry.isSleeping ? "Sleeping" : "Awake", color: sleepColor, icon: sleepIcon)
+            }
         }
-        .padding()
-        .background(Color.secondary.opacity(0.1))
-        .cornerRadius(12)
+        .padding().background(Color.secondary.opacity(0.1)).cornerRadius(12)
+    }
+
+    private func ledDetails(for colorCode: Int) -> (text: String, color: Color) {
+        switch colorCode {
+        case 3: return ("Green", .green)
+        case 4: return ("Amber", .orange)
+        case 0: return ("Off", .secondary)
+        default: return ("Default", .secondary)
+        }
     }
 }
 
-fileprivate struct StatView: View {
-    let value: String
-    let label: String
-    let color: Color
+// MARK: - Component & Helper Views
 
+fileprivate struct StatView: View {
+    let value: String, label: String, color: Color
     var body: some View {
         VStack {
-            Text(value)
-                .font(.system(.title3, design: .rounded).bold())
-                .foregroundColor(color)
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
+            Text(value).font(.system(.title3, design: .rounded).bold()).foregroundColor(color)
+            Text(label).font(.caption).foregroundColor(.secondary)
+        }.frame(maxWidth: .infinity)
     }
 }
 
 fileprivate struct InfoColumn: View {
-    let title: String
-    let value: String
-    let color: Color
-
+    let title: String, value: String, color: Color, icon: String
     var body: some View {
-        VStack(alignment: .leading) {
-            Text(title)
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            Text(value)
-                .font(.subheadline.bold())
+        HStack {
+            Image(systemName: icon)
+                .font(.caption)
                 .foregroundColor(color)
+                .frame(width: 15, alignment: .center)
+
+            VStack(alignment: .leading) {
+                Text(title).font(.caption2).foregroundColor(.secondary)
+                Text(value).font(.subheadline.bold()).foregroundColor(color)
+            }
         }
-        .frame(minWidth: 80, alignment: .leading)
+        .frame(minWidth: 100, alignment: .leading)
     }
 }
 
-extension TimeInterval {
+fileprivate extension TimeInterval {
     func formatted() -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute]
@@ -3601,140 +3900,58 @@ extension TimeInterval {
     }
 }
 
-extension Int {
-    func formattedMinutes() -> String {
-        let interval = TimeInterval(self * 60)
-        return interval.formatted()
-    }
-}
-
-struct ToggleRow: View {
-    let title: String
-    let description: String
-    @Binding var isOn: Bool
-
+fileprivate struct CalibrationStepView: View {
+    let icon: String, label: String
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                if !description.isEmpty {
-                    Text(description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer()
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding()
-    }
-}
-
-struct CalibrationView: View {
-    var body: some View {
-        VStack(alignment: .leading) {
-            Text("Calibration Mode").font(.headline)
-            Text("Recalibrate your battery to ensure accurate capacity readings.").font(.caption).foregroundColor(.secondary)
-
-            HStack {
-                Spacer()
-                CalibrationStepView(icon: "battery.100.bolt", label: "Charge to 100%")
-                Image(systemName: "arrow.right").foregroundColor(.secondary)
-                CalibrationStepView(icon: "battery.0", label: "Discharge to 10%")
-                Image(systemName: "arrow.right").foregroundColor(.secondary)
-                CalibrationStepView(icon: "battery.100.bolt", label: "Charge to 100%")
-                Image(systemName: "arrow.right").foregroundColor(.secondary)
-                CalibrationStepView(icon: "pause.circle", label: "Hold for 1h")
-                Image(systemName: "arrow.right").foregroundColor(.secondary)
-                CalibrationStepView(icon: "battery.75", label: "Discharge to 80%")
-                Spacer()
-            }.padding(.vertical)
-
-            Button(action: { BatteryManager.shared.startCalibration() }) {
-                HStack {
-                    Image(systemName: "play.circle")
-                    Text("Start Calibration")
-                }
-            }
-        }
-        .padding()
-    }
-}
-
-struct CalibrationStepView: View {
-    let icon: String
-    let label: String
-
-    var body: some View {
-        VStack {
-            Image(systemName: icon).font(.title2).foregroundColor(.accentColor)
+        VStack(spacing: 8) {
+            Image(systemName: icon).font(.title).foregroundColor(.accentColor).symbolRenderingMode(.hierarchical)
             Text(label).font(.caption).multilineTextAlignment(.center).frame(height: 30)
-        }.frame(width: 70)
+        }.frame(width: 80)
     }
 }
 
 struct ScheduleView: View {
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var settings: SettingsModel
     @StateObject private var scheduleManager = ScheduleManager.shared
     @State private var showingAddTask = false
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Schedule").font(.largeTitle.bold())
+            Text("Schedule Automation").font(.largeTitle.bold())
 
             VStack {
                 HStack {
-                    Text("Tasks").font(.headline)
+                    Text("Scheduled Tasks").font(.headline)
                     Spacer()
                     Button(action: { showingAddTask = true }) { Image(systemName: "plus") }
-                }
-                .padding([.horizontal, .top])
+                }.padding([.horizontal, .top])
 
                 if settings.settings.scheduledTasks.isEmpty {
                     Text("No tasks scheduled.").foregroundColor(.secondary).padding()
                 } else {
                     List {
                         ForEach($settings.settings.scheduledTasks) { $task in
-                            TaskRowView(task: $task)
-                                .listRowBackground(Color.clear)
-                        }
-                        .onDelete { indexSet in
-                            settings.settings.scheduledTasks.remove(atOffsets: indexSet)
-                        }
-                    }
-                    .listStyle(.plain)
-                    .background(Color.clear)
+                            TaskRowView(task: $task).listRowBackground(Color.clear)
+                        }.onDelete { indexSet in settings.settings.scheduledTasks.remove(atOffsets: indexSet) }
+                    }.listStyle(.plain).background(Color.clear)
                 }
-            }
-            .modifier(SettingsContainerModifier())
+            }.modifier(SettingsContainerModifier())
 
             VStack(alignment: .leading) {
                  Text("Task History").font(.headline).padding([.horizontal, .top])
                  List(scheduleManager.taskHistory) { event in
                      HStack {
-                         Text(event.taskDescription)
-                         Spacer()
-                         Text(event.timestamp, style: .time)
-                     }
-                     .listRowBackground(Color.clear)
-                 }
-                 .listStyle(.plain)
-                 .background(Color.clear)
-            }
-            .modifier(SettingsContainerModifier())
+                         Text(event.taskDescription); Spacer(); Text(event.timestamp, style: .time)
+                     }.listRowBackground(Color.clear)
+                 }.listStyle(.plain).background(Color.clear)
+            }.modifier(SettingsContainerModifier())
 
-            Button("Done") { presentationMode.wrappedValue.dismiss() }
+            Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
         }
-        .padding(30)
-        .frame(minWidth: 500, minHeight: 600)
-        .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
+        .padding(30).frame(minWidth: 500, minHeight: 600)
         .sheet(isPresented: $showingAddTask) {
-            AddTaskView()
+            AddTaskView().environmentObject(settings)
         }
     }
 }
@@ -3746,8 +3963,21 @@ struct TaskRowView: View {
         HStack {
             VStack(alignment: .leading) {
                 Text(task.action.displayName).font(.headline)
-                Text("Repeats: \(task.repeatInterval.displayName) at \(task.startTime, style: .time)")
-                    .font(.caption).foregroundColor(.secondary)
+
+                switch task.action {
+                case .setChargeLimit, .dischargeTo:
+                    Text("Target: \(task.chargeLimit)% | Repeats: \(task.repeatInterval.displayName) at \(task.startTime, style: .time)")
+                        .font(.caption).foregroundColor(.secondary)
+                case .setFanConstant:
+                    Text("Speed: \(task.fanSpeed) RPM | Repeats: \(task.repeatInterval.displayName) at \(task.startTime, style: .time)")
+                        .font(.caption).foregroundColor(.secondary)
+                case .setFanSensorBased:
+                    Text("Sensor: \(SensorNameMap.name(for: task.sensorKey)) (\(task.minTemp)°C-\(task.maxTemp)°C) | Repeats: \(task.repeatInterval.displayName) at \(task.startTime, style: .time)")
+                        .font(.caption).foregroundColor(.secondary)
+                default:
+                    Text("Repeats: \(task.repeatInterval.displayName) at \(task.startTime, style: .time)")
+                        .font(.caption).foregroundColor(.secondary)
+                }
             }
             Spacer()
             Toggle("", isOn: $task.isActive).labelsHidden()
@@ -3756,47 +3986,73 @@ struct TaskRowView: View {
 }
 
 struct AddTaskView: View {
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var settings: SettingsModel
+    @StateObject private var fanManager = FanManager.shared
     @State private var newTask = ScheduledTask()
+
+    private var firstFan: FanInfo? { fanManager.fans.first }
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("New Task").font(.title.bold())
+            Text("New Scheduled Task").font(.title.bold())
+
             VStack(spacing: 15) {
                 Picker("Action:", selection: $newTask.action) {
-                    ForEach(TaskAction.allCases) { action in
-                        Text(action.displayName).tag(action)
+                    ForEach(TaskAction.allCases) { Text($0.displayName).tag($0) }
+                }
+                .onChange(of: newTask.action) {
+                    if newTask.action == .setFanSensorBased, newTask.sensorKey.isEmpty {
+                        newTask.sensorKey = fanManager.sensors.first?.key ?? ""
                     }
                 }
 
-                if newTask.action == .setChargeLimit || newTask.action == .dischargeTo {
-                    CustomBatterySlider(value: Binding(get: { Double(newTask.chargeLimit) }, set: { newTask.chargeLimit = Int($0) }), range: 20...100)
-                        .frame(height: 50)
+                if [.setChargeLimit, .dischargeTo].contains(newTask.action) {
+                    CustomSliderRowView(label: "Target Charge", value: Binding(get: { Double(newTask.chargeLimit) }, set: { newTask.chargeLimit = Int($0) }), range: 20...100, specifier: "%.0f%%")
+                        .transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity)))
+                }
+
+                if newTask.action == .setFanConstant {
+                    if let fan = firstFan {
+                        CustomSliderRowView(label: "Target Speed", value: Binding(get: { Double(newTask.fanSpeed) }, set: { newTask.fanSpeed = Int($0) }), range: Double(fan.minRPM)...Double(fan.maxRPM), specifier: "%.0f RPM")
+                            .transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity)))
+                    }
+                }
+
+                if newTask.action == .setFanSensorBased {
+                    VStack(spacing: 15) {
+                        Picker("Based on Sensor:", selection: $newTask.sensorKey) {
+                            ForEach(fanManager.sensors) { sensor in
+                                Text(sensor.name).tag(sensor.key)
+                            }
+                        }
+
+                        CustomSliderRowView(label: "Start increasing from:", value: Binding(get: { Double(newTask.minTemp) }, set: { newTask.minTemp = Int($0) }), range: 20...90, specifier: "%.0f °C")
+
+                        CustomSliderRowView(label: "Maximum temperature:", value: Binding(get: { Double(newTask.maxTemp) }, set: { newTask.maxTemp = Int($0) }), range: Double(newTask.minTemp)...100, specifier: "%.0f °C")
+                    }
+                    .transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity)))
                 }
 
                 Picker("Repeat:", selection: $newTask.repeatInterval) {
-                    ForEach(RepeatInterval.allCases) { interval in
-                        Text(interval.displayName).tag(interval)
-                    }
+                    ForEach(RepeatInterval.allCases) { Text($0.displayName).tag($0) }
                 }
 
                 DatePicker("Time:", selection: $newTask.startTime, displayedComponents: .hourAndMinute)
             }
-            .padding()
-            .modifier(SettingsContainerModifier())
+            .padding().modifier(SettingsContainerModifier())
+            .animation(.default, value: newTask.action)
 
             HStack {
-                Button("Cancel") { presentationMode.wrappedValue.dismiss() }
+                Button("Cancel", role: .cancel) { dismiss() }
+                Spacer()
                 Button("Add Task") {
                     settings.settings.scheduledTasks.append(newTask)
-                    presentationMode.wrappedValue.dismiss()
-                }
+                    dismiss()
+                }.keyboardShortcut(.defaultAction)
             }
         }
-        .padding(30)
-        .frame(width: 400)
-        .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
+        .padding(30).frame(width: 450)
     }
 }
 

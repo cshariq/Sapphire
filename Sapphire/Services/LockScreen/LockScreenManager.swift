@@ -48,7 +48,7 @@ struct LockScreenConfiguration {
         case .macBookPro14:
             return LockScreenOffsets(withoutAvatarInset: 240, withAvatarInset: 210, withTextInset: 280)
         case .macBookPro16:
-            return LockScreenOffsets(withoutAvatarInset: 260, withAvatarInset: 230, withTextInset: 300)
+            return LockScreenOffsets(withoutAvatarInset: 130, withAvatarInset: 230, withTextInset: 300)
         case .macBookAir13:
             return LockScreenOffsets(withoutAvatarInset: 220, withAvatarInset: 190, withTextInset: 260)
         case .macBookAir15:

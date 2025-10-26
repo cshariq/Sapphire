@@ -15,8 +15,10 @@ class BatteryMonitor: ObservableObject {
     static let shared = BatteryMonitor()
     private var runLoopSource: CFRunLoopSource?
 
+    private var lastLoggedLevel: Int?
+
     private init() {
-        print("[BatteryMonitor LOG] Initializing and setting up notifications.")
+        print("[BatteryMonitor] Initializing and setting up notifications.")
         setupBatteryChangeNotification()
         updateBatteryState()
     }
@@ -24,18 +26,14 @@ class BatteryMonitor: ObservableObject {
     deinit {
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
-            print("[BatteryMonitor LOG] Deinitialized and removed run loop source.")
+            print("[BatteryMonitor] Deinitialized and removed run loop source.")
         }
     }
 
     private func setupBatteryChangeNotification() {
         let callback: IOPowerSourceCallbackType = { context in
-            print("[BatteryMonitor LOG] OS Power Source Callback Fired!")
-
-            guard let context = context else {
-                print("[BatteryMonitor ERROR] Callback context was nil.")
-                return
-            }
+            print("[BatteryMonitor] OS Power Source Callback Fired!")
+            guard let context = context else { return }
             let unsafeSelf = Unmanaged<BatteryMonitor>.fromOpaque(context).takeUnretainedValue()
 
             Task { @MainActor in
@@ -48,9 +46,9 @@ class BatteryMonitor: ObservableObject {
         if let source = IOPSNotificationCreateRunLoopSource(callback, context)?.takeRetainedValue() {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
             self.runLoopSource = source
-            print("[BatteryMonitor LOG] Successfully attached to main run loop.")
+            print("[BatteryMonitor] Successfully attached to main run loop for power source events.")
         } else {
-            print("[BatteryMonitor ERROR] Failed to create run loop source.")
+            print("[BatteryMonitor] ERROR: Failed to create run loop source.")
         }
     }
 
@@ -73,8 +71,15 @@ class BatteryMonitor: ObservableObject {
             isPluggedIn: sourceState == kIOPSACPowerValue
         )
 
-        if newState != currentState {
+        if newState != self.currentState {
             self.currentState = newState
+        }
+
+        if level != self.lastLoggedLevel {
+            print("[BatteryMonitor] Battery level changed from \(lastLoggedLevel ?? -1)% to \(level)%. Triggering data logger.")
+            self.lastLoggedLevel = level
+
+            BatteryDataLogger.shared.logCurrentState()
         }
     }
 }

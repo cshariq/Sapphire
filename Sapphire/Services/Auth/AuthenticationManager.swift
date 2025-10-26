@@ -189,10 +189,23 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     private func updateMonitoringConfig(enabled: Bool, deviceID: String?) {
-        if enabled, self.isPasswordSet, deviceID != nil {
-            if !isBluetoothAuthenticating { status = "Ready to monitor" }
+        if enabled, self.isPasswordSet, let id = deviceID, let uuid = UUID(uuidString: id) {
+            if isBluetoothAuthenticating && ble.monitoredUUID == uuid {
+                print("[AuthManager] Already monitoring \(id). No change needed.")
+                return
+            }
+            print("[AuthManager] Starting/updating proximity monitoring for device \(id).")
+            isBluetoothAuthenticating = true
+            ble.startMonitor(uuid: uuid)
+            status = "Monitoring for device..."
         } else {
-            status = "Disabled"; self.monitoredPeripheralState = .disconnected
+            if isBluetoothAuthenticating {
+                isBluetoothAuthenticating = false
+                ble.stopMonitor()
+                status = "Disabled"
+                self.monitoredPeripheralState = .disconnected
+                print("[AuthManager] Proximity monitoring stopped because it was disabled or device was forgotten.")
+            }
         }
     }
 

@@ -74,6 +74,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     lazy var scheduleManager: ScheduleManager = .shared
     lazy var keyboardShortcutManager: KeyboardShortcutManager = .shared
     lazy var globalDragManager: GlobalDragManager = .shared
+    lazy var batteryDataLogger: BatteryDataLogger = .shared
     lazy var fileShelfManager: FileShelfManager = .shared
     lazy var authManager: AuthenticationManager = AuthenticationManager.shared
     private lazy var lockScreenState = LockScreenState()
@@ -236,11 +237,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func startMainApp() {
         Analytics.logEvent("main_app_started", parameters: nil)
+        guard let auth = Util.askAuthorization() else {
+              fatalError("Authorization not acquired.")
+          }
+
+          Util.blessHelper(label: Constant.helperMachLabel, authorization: auth)
 
         createNotchWindow()
         setupStatusBarItem()
         transitionToAgentApp()
-
         initializeBackgroundServices()
 
         liveActivityManager.fileShelfManager = self.fileShelfManager
@@ -421,7 +426,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         networkMonitor?.cancel()
 
         UpdateChecker.shared.stopPeriodicChecks()
-
+        MultiAudioManager.shared.cleanup()
         teardownLaunchpad()
 
         DistributedNotificationCenter.default().removeObserver(self)

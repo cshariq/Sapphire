@@ -19,13 +19,20 @@ struct DeviceAdjustView: View {
         _settings = State(initialValue: MultiAudioManager.shared.deviceSettings[device.id] ?? AudioDeviceSettings())
     }
 
+    private var delayInMilliseconds: Binding<Double> {
+        Binding(
+            get: { settings.delay * 1000 },
+            set: { settings.delay = $0 / 1000 }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
 
             ScrollView {
                 VStack(spacing: 40) {
                     BoldPillSlider(label: "Volume", value: $settings.volume, range: 0...1, specifier: "%.0f %%")
-                    BoldPillSlider(label: "Delay", value: $settings.delay, range: 0...0.5, specifier: "%.0f ms")
+                    BoldPillSlider(label: "Delay", value: delayInMilliseconds, range: 0...500, specifier: "%.0f ms")
                     BoldPillSlider(label: "Balance", value: $settings.balance, range: -1...1, specifier: "%.1f")
                 }
                 .padding(.top, 20)
@@ -52,8 +59,6 @@ fileprivate struct BoldPillSlider: View {
         let finalValue: Double
         if label == "Volume" {
             finalValue = value * 100
-        } else if label == "Delay" {
-            finalValue = value * 1000
         } else {
             finalValue = value
         }
@@ -97,7 +102,7 @@ fileprivate struct BoldPillSlider: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
                         let percentage = (gesture.location.x / width).clamped(to: 0...1)
-                        let newValue = (range.upperBound - range.lowerBound) * percentage + range.lowerBound
+                        let newValue = (range.upperBound - range.lowerBound) * Double(percentage) + range.lowerBound
                         self.value = newValue.clamped(to: range)
                     }
             )
