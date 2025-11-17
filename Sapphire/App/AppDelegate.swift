@@ -665,11 +665,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         let hosting = NSHostingView(rootView: root)
         window.contentView = hosting
-        window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(hosting)
-        NSApp.activate(ignoringOtherApps: true)
         window.delegate = self
         settingsWindow = window
+
+        DispatchQueue.main.async {
+            self.settingsWindow?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     func windowWillClose(_ notification: Notification) {

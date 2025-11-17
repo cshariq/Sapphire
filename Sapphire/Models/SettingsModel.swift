@@ -412,6 +412,7 @@ struct Settings: Codable, Equatable {
     var customAnimationConfiguration: CustomizableAnimationConfiguration = .init()
     var widgetSwitchEffect: WidgetSwitchEffect = .smooth
     var widgetSwitchTransition: WidgetSwitchTransition = .slide
+    
     var swipeToSwitchWidgets: Bool = true
     var enableWidgetSwitchFade: Bool = true
     var enableWidgetSwitchSlide: Bool = true

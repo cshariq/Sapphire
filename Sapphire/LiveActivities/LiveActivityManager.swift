@@ -584,7 +584,11 @@ class LiveActivityManager: ObservableObject {
 
         if isLow && !hasShownLowBatteryAlert {
             if settings.lowBatteryNotificationSoundEnabled {
-                NSSound(named: "Tink")?.play()
+                if let soundURL = Bundle.main.url(forResource: "head_gestures_double_shake", withExtension: "caf") {
+                    NSSound(contentsOf: soundURL, byReference: true)?.play()
+                } else {
+                    NSSound(named: "Tink")?.play()
+                }
             }
             self.hasShownLowBatteryAlert = true
 
