@@ -34,14 +34,14 @@ class PowerStateController: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var heatProtectionHysteresisTimer: Timer?
 
-    private var isAppleSilicon: Bool {
+    private lazy var isAppleSilicon: Bool = {
         var sysinfo = utsname()
         uname(&sysinfo)
         let machine = withUnsafePointer(to: &sysinfo.machine) {
             $0.withMemoryRebound(to: CChar.self, capacity: 1) { ptr in String(cString: ptr) }
         }
         return machine.starts(with: "arm64")
-    }
+    }()
 
     init() {
         Publishers.Merge3(
@@ -177,14 +177,14 @@ class BatteryManager {
     private let connectionLock = NSLock()
     private var batteryService: io_connect_t = 0
 
-    private var isARM: Bool {
+    private lazy var isARM: Bool = {
         var sysinfo = utsname()
         uname(&sysinfo)
         let machine = withUnsafePointer(to: &sysinfo.machine) {
             $0.withMemoryRebound(to: CChar.self, capacity: 1) { ptr in String(cString: ptr) }
         }
         return machine.starts(with: "arm64")
-    }
+    }()
 
     private init() {
         setupHelperConnection()
@@ -221,6 +221,10 @@ class BatteryManager {
     }
 
     func getHelper() -> HelperProtocol? {
+        if let connection = self.helperConnection, connection.remoteObjectProxy != nil {
+            return connection.remoteObjectProxy as? HelperProtocol
+        }
+
         connectionLock.lock()
         defer { connectionLock.unlock() }
 
@@ -230,11 +234,11 @@ class BatteryManager {
 
         let proxy = self.helperConnection?.remoteObjectProxyWithErrorHandler { [weak self] error in
             print("[BatteryManager] XPC remote object error: \(error.localizedDescription)")
-            DispatchQueue.main.async {
-                self?.connectionLock.withLock {
-                    self?.helperConnection?.invalidate()
-                    self?.helperConnection = nil
-                }
+            DispatchQueue.global().async {
+                self?.connectionLock.lock()
+                self?.helperConnection?.invalidate()
+                self?.helperConnection = nil
+                self?.connectionLock.unlock()
             }
         } as? HelperProtocol
 
@@ -353,7 +357,9 @@ class BatteryManager {
         guard let currentCapacity = info[kIOPSCurrentCapacityKey] as? Int else { return 80 }
         let rawCurrentCapacity = info["AppleRawCurrentCapacity"] as? Double ?? Double(currentCapacity)
         let rawMaxCapacity = info["AppleRawMaxCapacity"] as? Double ?? 100.0
+
         if rawMaxCapacity == 0 { return currentCapacity }
+
         let percentage = (rawCurrentCapacity / rawMaxCapacity) * 100.0
         return Int(round(max(0.0, min(100.0, percentage))))
     }

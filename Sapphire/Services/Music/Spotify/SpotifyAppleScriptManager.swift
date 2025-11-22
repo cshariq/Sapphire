@@ -48,6 +48,27 @@ class SpotifyAppleScriptManager {
         return success ? .success : .failure(reason: "AppleScript command failed.")
     }
 
+    func launchAndPlay() async {
+        if isAppRunning() {
+            let script = "tell application \"Spotify\" to play"
+            _ = await runAppleScriptInBackground(script)
+        } else {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") {
+                NSWorkspace.shared.open(url)
+
+                for _ in 0..<10 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if isAppRunning() {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        let script = "tell application \"Spotify\" to play"
+                        _ = await runAppleScriptInBackground(script)
+                        return
+                    }
+                }
+            }
+        }
+    }
+
     func setVolume(percent: Int) async -> PlaybackResult {
         if isAppRunning() {
             let script = "tell application \"Spotify\" to set sound volume to \(percent)"

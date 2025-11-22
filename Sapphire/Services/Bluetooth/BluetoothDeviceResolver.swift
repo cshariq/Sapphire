@@ -13,13 +13,28 @@ class BluetoothDeviceResolver {
 
     private var db_paired: OpaquePointer?
     private var db_other: OpaquePointer?
+
+    private var stmt_paired: OpaquePointer?
+    private var stmt_other: OpaquePointer?
+
     private var didInitializeDBs = false
 
-    private init() {}
+    private let queue = DispatchQueue(label: "com.sapphire.resolver", qos: .userInitiated)
+
+    private init() {
+        connectToDatabases()
+    }
+
+    deinit {
+        if let stmt = stmt_paired { sqlite3_finalize(stmt) }
+        if let stmt = stmt_other { sqlite3_finalize(stmt) }
+        if let db = db_paired { sqlite3_close(db) }
+        if let db = db_other { sqlite3_close(db) }
+    }
 
     private func connectToDatabases() {
         guard !didInitializeDBs else { return }
-        defer { didInitializeDBs = true }
+        didInitializeDBs = true
 
         let pairedDBPath = "/Library/Bluetooth/com.apple.MobileBluetooth.ledevices.paired.db"
         let otherDBPath = "/Library/Bluetooth/com.apple.MobileBluetooth.ledevices.other.db"
@@ -33,32 +48,45 @@ class BluetoothDeviceResolver {
             print("[Resolver] Could not open other devices database at \(otherDBPath)")
             db_other = nil
         }
+
+        let queryPaired = "SELECT Name, Address, ResolvedAddress FROM PairedDevices WHERE Uuid=? LIMIT 1"
+        if let db = db_paired {
+            if sqlite3_prepare_v2(db, queryPaired, -1, &stmt_paired, nil) != SQLITE_OK {
+                print("[Resolver] Failed to prepare paired statement")
+            }
+        }
+
+        let queryOther = "SELECT Name, Address, ResolvedAddress FROM OtherDevices WHERE Uuid=? LIMIT 1"
+        if let db = db_other {
+            if sqlite3_prepare_v2(db, queryOther, -1, &stmt_other, nil) != SQLITE_OK {
+                print("[Resolver] Failed to prepare other statement")
+            }
+        }
     }
 
     func getLEDeviceInfo(from uuid: String) -> (name: String?, macAddr: String?)? {
-        connectToDatabases()
+        return queue.sync {
+            connectToDatabases()
 
-        if let pairedInfo = queryDatabase(db_paired, uuid: uuid, table: "PairedDevices") {
-            return pairedInfo
-        }
-        if let otherInfo = queryDatabase(db_other, uuid: uuid, table: "OtherDevices") {
-            return otherInfo
-        }
+            if let pairedInfo = executeQuery(stmt: stmt_paired, uuid: uuid) {
+                return pairedInfo
+            }
+            if let otherInfo = executeQuery(stmt: stmt_other, uuid: uuid) {
+                return otherInfo
+            }
 
-        return nil
-    }
-
-    private func queryDatabase(_ db: OpaquePointer?, uuid: String, table: String) -> (name: String?, macAddr: String?)? {
-        guard let db = db else { return nil }
-
-        var stmt: OpaquePointer?
-        let queryString = "SELECT Name, Address, ResolvedAddress FROM \(table) WHERE Uuid='\(uuid)' LIMIT 1"
-
-        guard sqlite3_prepare_v2(db, queryString, -1, &stmt, nil) == SQLITE_OK else {
-            print("[Resolver] Failed to prepare statement for \(table)")
             return nil
         }
-        defer { sqlite3_finalize(stmt) }
+    }
+
+    private func executeQuery(stmt: OpaquePointer?, uuid: String) -> (name: String?, macAddr: String?)? {
+        guard let stmt = stmt else { return nil }
+
+        sqlite3_reset(stmt)
+
+        guard sqlite3_bind_text(stmt, 1, uuid, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) == SQLITE_OK else {
+            return nil
+        }
 
         guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
 
@@ -82,6 +110,8 @@ class BluetoothDeviceResolver {
 
     private func parseMAC(from addressString: String?) -> String? {
         guard let addr = addressString else { return nil }
+        if addr.count < 10 { return nil }
+
         let parts = addr.split(separator: " ")
         if let macPart = parts.last {
             return String(macPart)

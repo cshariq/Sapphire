@@ -9,6 +9,10 @@ import Foundation
 
 class LyricsFetcher {
 
+    private static let decoder: JSONDecoder = {
+        return JSONDecoder()
+    }()
+
     func fetchSyncedLyrics(for title: String, artist: String, album: String) async -> [LyricLine]? {
 
         var components = URLComponents(string: "https://lrclib.net/api/get")!
@@ -27,7 +31,7 @@ class LyricsFetcher {
                 let syncedLyrics: String?
             }
 
-            let response = try JSONDecoder().decode(LrcLibResponse.self, from: data)
+            let response = try Self.decoder.decode(LrcLibResponse.self, from: data)
 
             if let lrcString = response.syncedLyrics, !lrcString.isEmpty {
                 return parseLRC(lrcString)
@@ -94,7 +98,7 @@ class LyricsFetcher {
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            let unofficialResponse = try JSONDecoder().decode(UnofficialGoogleDetectionResponse.self, from: data)
+            let unofficialResponse = try Self.decoder.decode(UnofficialGoogleDetectionResponse.self, from: data)
             if let lang = unofficialResponse.detectedLanguage {
                 return lang
             }
@@ -117,40 +121,48 @@ class LyricsFetcher {
             }
         }
 
-        for i in 0..<lyrics.count {
-            let originalText = lyrics[i].text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if originalText.isEmpty {
-                lyrics[i].translatedText = ""
-                continue
-            }
-
-            var components = URLComponents(string: "https://translate.googleapis.com/translate_a/single")!
-            components.queryItems = [
-                URLQueryItem(name: "client", value: "gtx"),
-                URLQueryItem(name: "sl", value: sourceLanguage),
-                URLQueryItem(name: "tl", value: targetLanguage),
-                URLQueryItem(name: "dt", value: "t"),
-                URLQueryItem(name: "q", value: originalText)
-            ]
-
-            guard let url = components.url else {
-                lyrics[i].translatedText = originalText
-                continue
-            }
-
-            do {
-                let (data, _) = try await URLSession.shared.data(from: url)
-                let unofficialResponse = try JSONDecoder().decode(UnofficialGoogleTranslateResponse.self, from: data)
-                if let translatedText = unofficialResponse.translatedText, !translatedText.isEmpty {
-                    lyrics[i].translatedText = translatedText
-                } else {
-                    lyrics[i].translatedText = originalText
+        await withTaskGroup(of: (Int, String?).self) { group in
+            for i in 0..<lyrics.count {
+                let originalText = lyrics[i].text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if originalText.isEmpty {
+                    continue
                 }
-            } catch {
-                lyrics[i].translatedText = originalText
+
+                group.addTask {
+                    var components = URLComponents(string: "https://translate.googleapis.com/translate_a/single")!
+                    components.queryItems = [
+                        URLQueryItem(name: "client", value: "gtx"),
+                        URLQueryItem(name: "sl", value: sourceLanguage),
+                        URLQueryItem(name: "tl", value: targetLanguage),
+                        URLQueryItem(name: "dt", value: "t"),
+                        URLQueryItem(name: "q", value: originalText)
+                    ]
+
+                    guard let url = components.url else { return (i, nil) }
+
+                    do {
+                        let (data, _) = try await URLSession.shared.data(from: url)
+                        let unofficialResponse = try Self.decoder.decode(UnofficialGoogleTranslateResponse.self, from: data)
+                        return (i, unofficialResponse.translatedText)
+                    } catch {
+                        return (i, nil)
+                    }
+                }
             }
 
-            try? await Task.sleep(nanoseconds: 120_000_000)
+            for await (index, translatedText) in group {
+                if let translatedText = translatedText, !translatedText.isEmpty {
+                    lyrics[index].translatedText = translatedText
+                } else {
+                    lyrics[index].translatedText = lyrics[index].text
+                }
+            }
+        }
+
+        for i in 0..<lyrics.count {
+            if lyrics[i].translatedText == nil {
+                lyrics[i].translatedText = ""
+            }
         }
     }
 }

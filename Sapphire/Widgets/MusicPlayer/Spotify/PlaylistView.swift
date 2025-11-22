@@ -40,7 +40,8 @@ class TrackViewModel: ObservableObject, Identifiable {
     let publicationDateISO: String?
 
     @Published var trackDetails: SpotifyTrackDetailsResponse.TrackUnion?
-    private var isHydrating = false
+
+    private var hydrationTask: Task<Void, Never>?
     private let canHydrate: Bool
 
     // MARK: - Initializers
@@ -76,30 +77,40 @@ class TrackViewModel: ObservableObject, Identifiable {
     // MARK: - Hydration
 
     func hydrate(completion: (() -> Void)? = nil) {
-        guard canHydrate, !isHydrating, trackDetails == nil else {
+        guard canHydrate, trackDetails == nil, hydrationTask == nil else {
             completion?()
             return
         }
-        isHydrating = true
 
-        Task {
-            let trackId = uri.components(separatedBy: ":").last ?? ""
+        hydrationTask = Task { [weak self] in
+            guard let self = self else { return }
+
+            let trackId = self.uri.components(separatedBy: ":").last ?? ""
             guard !trackId.isEmpty else {
                 await MainActor.run {
-                    self.isHydrating = false
                     completion?()
+                    self.hydrationTask = nil
                 }
                 return
             }
 
+            if Task.isCancelled { return }
+
             let details = await SpotifyPrivateAPIManager.shared.fetchTrackDetails(trackId: trackId)
 
-            await MainActor.run {
-                self.trackDetails = details
-                self.isHydrating = false
-                completion?()
+            if !Task.isCancelled {
+                await MainActor.run {
+                    self.trackDetails = details
+                    completion?()
+                    self.hydrationTask = nil
+                }
             }
         }
+    }
+
+    func cancelHydration() {
+        hydrationTask?.cancel()
+        hydrationTask = nil
     }
 }
 
@@ -242,6 +253,7 @@ struct PlaylistView: View {
                                     onPlay: handlePlaybackResult
                                 )
                                 .onAppear { viewModel.hydrate() }
+                                .onDisappear { viewModel.cancelHydration() }
                             }
                         }
                         .padding(.horizontal, 20)

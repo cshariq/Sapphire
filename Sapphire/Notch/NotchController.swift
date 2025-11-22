@@ -128,6 +128,8 @@ struct NotchController: View {
     @State private var animatedHeight: CGFloat = 0
     @State private var animatedCornerRadius: CGFloat = 0
     @State private var animatedBottomCornerRadius: CGFloat = 0
+    @State private var animatedContentScale: CGFloat = 1.0
+
     @State private var shadowOpacity: Double = 0
     @State private var measuredClickContentSize: CGSize = .zero
     @State private var measuredAutoContentSize: CGSize = .zero
@@ -348,8 +350,7 @@ struct NotchController: View {
                                         config.activityToActivityAnimation,
                                        value: liveActivityManager.contentUpdateID)
                             .opacity(autoContentOpacity)
-                            .scaleEffect(activeScaleFactor)
-                            .animation(config.hoverAnimation, value: notchState)
+                            .scaleEffect(animatedContentScale)
                             .allowsHitTesting(isHovered)
                     } else {
                         contentView
@@ -363,10 +364,11 @@ struct NotchController: View {
                     }
                 }
             }
+            // MARK: - SHADOW LOGIC
             .shadow(
                 color: isGeminiActive ? .clear : config.expandedShadowColor.opacity(shadowOpacity),
-                radius: notchState == .clickExpanded ? config.expandedShadowRadius : 12,
-                y: notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
+                radius: isGeminiActive ? 0 : (notchState == .clickExpanded ? config.expandedShadowRadius : (notchState == .hoverExpanded ? 12 : 0)),
+                y: isGeminiActive ? 0 : (notchState == .clickExpanded ? config.expandedShadowOffsetY : (notchState == .hoverExpanded ? 6 : 0))
             )
             .frame(width: animatedWidth, height: animatedHeight)
             .contentShape(activeShape)
@@ -584,7 +586,6 @@ struct NotchController: View {
                 .frame(width: maxActivityContentWidth * 2 + config.initialSize.width)
                 .frame(height: config.initialSize.height)
                 .padding(.horizontal, liveActivityHorizontalPadding)
-                .animation(config.activityToActivityAnimation, value: liveActivityHorizontalPadding)
 
                 if let bottomView = getBottomView(for: data) {
                     VStack {
@@ -592,7 +593,6 @@ struct NotchController: View {
                             .padding(.bottom, config.activityContentBottomPadding)
                     }
                     .padding(.horizontal, liveActivityHorizontalPadding)
-                    .animation(config.activityToActivityAnimation, value: liveActivityHorizontalPadding)
                 }
             }
         }
@@ -1099,7 +1099,8 @@ struct NotchController: View {
             animation = config.bottomContentAnimation
         } else {
             switch newState {
-            case .initial: animation = config.collapseAnimation
+            case .initial:
+                animation = .spring(response: 0.12, dampingFraction: 1.0)
             case .hoverExpanded: animation = config.hoverAnimation
             case .clickExpanded: animation = self.expansionAnimation
             case .autoExpanded: animation = (oldState == .clickExpanded) ? config.collapseAnimation : config.activityToActivityAnimation
@@ -1121,10 +1122,13 @@ struct NotchController: View {
             if wasShowingActivity { isAnimatingActivityOut = true }
             self.canRenderAutoContent = false
             collapseTask?.cancel(); isCollapseTimerActive = false
-            withAnimation(config.collapseAnimation) {
+
+            withAnimation(.spring(response: 0.12, dampingFraction: 1.0)) {
+                shadowOpacity = 0
                 if wasShowingActivity { activityBlurRadius = 20; activityContentScale = 0.9; autoContentOpacity = 0 }
                 animatedWidth = config.initialSize.width; animatedHeight = config.initialSize.height
-                shadowOpacity = 0; isPinned = false
+                animatedContentScale = 1.0
+                isPinned = false
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + config.activityAnimationOutDelay) {
                 guard self.notchState == .initial else { return }
@@ -1134,26 +1138,31 @@ struct NotchController: View {
 
         case .hoverExpanded:
             isAnimatingActivityOut = false; self.canRenderAutoContent = true
+
             let scale = activeScaleFactor
             let rawWidth = isLiveActivityActive ? measuredAutoContentSize.width * scale : config.hoverExpandedSize.width
             let rawHeight = isLiveActivityActive ? measuredAutoContentSize.height * scale : config.hoverExpandedSize.height
             let targetWidth = max(rawWidth, config.initialSize.width)
             let targetHeight = max(rawHeight, config.initialSize.height)
+
             withAnimation(config.hoverAnimation) {
                 animatedWidth = targetWidth; animatedHeight = targetHeight
                 if isLiveActivityActive { autoContentOpacity = 1 }
+                animatedContentScale = scale
                 shadowOpacity = 1
             }
 
         case .clickExpanded:
             isAnimatingActivityOut = false; self.canRenderAutoContent = false
+
+            shadowOpacity = 0
+
             if isLiveActivityActive && (oldState == .autoExpanded || oldState == .hoverExpanded) {
                 withAnimation(config.activityBlurAnimation) { activityBlurRadius = config.activityBlurRadiusMax; autoContentOpacity = 0; activityContentScale = 1.05 }
             }
 
             withAnimation(self.expansionAnimation) {
                 autoContentOpacity = 0
-                shadowOpacity = 1
             }
              DispatchQueue.main.asyncAfter(deadline: .now() + config.contentUpdateDelay) {
                 withAnimation(config.focusPullAnimation) {
@@ -1163,6 +1172,12 @@ struct NotchController: View {
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.expansionAnimation = config.expandAnimation
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if self.notchState == .clickExpanded {
+                    withAnimation(.easeIn(duration: 0.2)) { self.shadowOpacity = 1 }
+                }
             }
 
         case .autoExpanded:
@@ -1175,10 +1190,13 @@ struct NotchController: View {
                 self.canRenderAutoContent = true; self.autoContentOpacity = 1
             }
             let animationToUse = isCollapsingFromClick ? config.collapseAnimation : config.activityToActivityAnimation
+
+            shadowOpacity = 0
+
             withAnimation(animationToUse) {
                 animatedWidth = max(measuredAutoContentSize.width, config.initialSize.width)
                 animatedHeight = max(measuredAutoContentSize.height, config.initialSize.height)
-                shadowOpacity = 0
+                animatedContentScale = 1.0
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + config.activitySizeChangeDelay) {
                 withAnimation(config.blurRemovalAnimation) {
@@ -1209,6 +1227,10 @@ struct NotchController: View {
 
     private func handleNavigationStackChange(oldStack: [NotchWidgetMode], newStack: [NotchWidgetMode]) {
         guard let config = config else { return }
+        if oldStack.contains(.snapZones) && !newStack.contains(.snapZones) {
+            SnapPreviewManager.shared.hidePreview()
+        }
+
         if notchState == .clickExpanded && oldStack != newStack {
             self.expansionAnimation = config.widgetSwitchAnimation
         }
@@ -1221,7 +1243,8 @@ struct NotchController: View {
                 }
             }
         }
-        if notchState == .clickExpanded && oldStack.last != .defaultWidgets && oldStack != newStack && newStack != [.defaultWidgets] {
+
+        if notchState == .clickExpanded && oldStack != newStack && newStack != [.defaultWidgets] {
             scheduleCollapse(after: config.widgetSwitchCollapseDelay)
         }
     }
@@ -1458,7 +1481,7 @@ struct NotchController: View {
     // MARK: - Helper Methods
     private func startHoverDetection() {
         stopHoverDetection()
-        hoverDetectionTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
+        hoverDetectionTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             let newActiveZone = self.determineActiveDropZone()
             if self.activeDropZone != newActiveZone {
                 self.activeDropZone = newActiveZone

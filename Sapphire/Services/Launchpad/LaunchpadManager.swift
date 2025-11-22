@@ -34,7 +34,7 @@ class LaunchpadGestureMonitor {
     private init() {}
     func startMonitoring() {
         guard !isMonitoring else { return }; isMonitoring = true
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: .magnify) { [weak self] event in self?.handleMagnifyEvent(event) }
+//        monitor = NSEvent.addGlobalMonitorForEvents(matching: .magnify) { [weak self] event in self?.handleMagnifyEvent(event) }
     }
     func stopMonitoring() {
         if let monitor = monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }; isMonitoring = false

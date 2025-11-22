@@ -250,18 +250,19 @@ struct WaveformView: View {
     }
 
     private var staticWaveformBody: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { _ in
-                let barFill = settingsModel.settings.waveformUseGradient ?
-                    AnyShapeStyle(waveformGradient) :
-                    AnyShapeStyle(musicManager.accentColor)
+        let barFill = settingsModel.settings.waveformUseGradient ?
+            AnyShapeStyle(waveformGradient) :
+            AnyShapeStyle(musicManager.accentColor)
 
+        return HStack(spacing: 3) {
+            ForEach(0..<barCount, id: \.self) { _ in
                 Capsule()
                     .fill(barFill)
                     .frame(width: settingsModel.settings.waveformBarThickness, height: minHeight)
             }
         }
         .frame(width: 18, height: 22)
+        .drawingGroup()
         .transition(.opacity)
     }
 

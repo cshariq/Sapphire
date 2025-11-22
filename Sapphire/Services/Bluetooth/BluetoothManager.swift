@@ -36,7 +36,6 @@ class BluetoothManager: NSObject, ObservableObject {
     private let btdBattery = BTDBattery()
     private var periodicPollingTimer: Timer?
 
-    // MARK: - New properties for scan suppression
     private var cancellables = Set<AnyCancellable>()
     private var isProximityScanActive = false
 
@@ -47,7 +46,6 @@ class BluetoothManager: NSObject, ObservableObject {
         SPBluetoothDataModel.shared.refeshData { [weak self] _ in
             guard let self = self else { return }
             self.bleBattery.startScan()
-
             self.checkForInitiallyConnectedDevices()
         }
 
@@ -78,9 +76,7 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func handleAirPodsUpdate(_ notification: Notification) {
-        guard !isProximityScanActive else {
-            return
-        }
+        guard !isProximityScanActive else { return }
 
         guard let userInfo = notification.userInfo,
               let bleName = userInfo["name"] as? String,
@@ -189,6 +185,23 @@ class BluetoothManager: NSObject, ObservableObject {
     private func findBatteryLevel(for device: IOBluetoothDevice) async -> Int? {
         guard let name = device.name else { return nil }
 
+        if device.isMultiBatteryDevice {
+            let l = device.batteryPercentLeft
+            let r = device.batteryPercentRight
+            let valid = [l, r].filter { $0 > 0 && $0 <= 100 }
+            if !valid.isEmpty { return valid.reduce(0, +) / valid.count }
+        } else {
+            if let single = device.batteryPercentSingle as? Int, single > 0 && single <= 100 {
+                return single
+            }
+        }
+
+        MagicBattery.shared.getIOBTBattery()
+        if let cachedDevice = AirBatteryModel.getByName(name),
+           cachedDevice.batteryLevel > 0 && cachedDevice.batteryLevel <= 100 {
+            return cachedDevice.batteryLevel
+        }
+
         await withCheckedContinuation { continuation in
             SPBluetoothDataModel.shared.refeshData { _ in
                 continuation.resume()
@@ -197,24 +210,9 @@ class BluetoothManager: NSObject, ObservableObject {
             }
         }
 
-        let timeout = 5.0
-        let interval: UInt64 = 500_000_000
-        let startTime = Date()
-
-        while Date().timeIntervalSince(startTime) < timeout {
-            MagicBattery.shared.getIOBTBattery()
-
-            if let batteryDevice = AirBatteryModel.getByName(name), batteryDevice.batteryLevel > 0 && batteryDevice.batteryLevel <= 100 {
-                print("[BluetoothManager] Found battery level: \(batteryDevice.batteryLevel)%")
-                return batteryDevice.batteryLevel
-            }
-
-            try? await Task.sleep(nanoseconds: interval)
-        }
-
         MagicBattery.shared.getIOBTBattery()
         if let batteryDevice = AirBatteryModel.getByName(name), batteryDevice.batteryLevel > 0 && batteryDevice.batteryLevel <= 100 {
-            print("[BluetoothManager] Found battery level for [\(name)] on final check: \(batteryDevice.batteryLevel)%")
+            print("[BluetoothManager] Found battery level for [\(name)]: \(batteryDevice.batteryLevel)%")
             return batteryDevice.batteryLevel
         }
 

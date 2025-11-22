@@ -19,6 +19,8 @@ class CalendarService: ObservableObject {
 
     private var currentlyTrackedDate: Date = Date()
 
+    private let workQueue = DispatchQueue(label: "com.sapphire.calendarQueue", qos: .userInitiated)
+
     init() {
         NotificationCenter.default.addObserver(
             self,
@@ -67,41 +69,50 @@ class CalendarService: ObservableObject {
 
     func fetchEvents(for date: Date) {
         self.currentlyTrackedDate = date
-        let calendars = eventStore.calendars(for: .event)
-        let calendar = Calendar.current
-        let startDate = calendar.startOfDay(for: date)
-        guard let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) else { return }
 
-        let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
+        workQueue.async { [weak self] in
+            guard let self = self else { return }
 
-        let fetchedEvents = eventStore.events(matching: predicate)
-            .sorted {
-                if $0.isAllDay && !$1.isAllDay {
-                    return true
+            let calendars = self.eventStore.calendars(for: .event)
+            let calendar = Calendar.current
+            let startDate = calendar.startOfDay(for: date)
+            guard let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) else { return }
+
+            let predicate = self.eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
+
+            let fetchedEvents = self.eventStore.events(matching: predicate)
+                .sorted {
+                    if $0.isAllDay && !$1.isAllDay {
+                        return true
+                    }
+                    if !$0.isAllDay && $1.isAllDay {
+                        return false
+                    }
+                    return $0.startDate < $1.startDate
                 }
-                if !$0.isAllDay && $1.isAllDay {
-                    return false
-                }
-                return $0.startDate < $1.startDate
+
+            DispatchQueue.main.async {
+                self.eventsForSelectedDate = fetchedEvents
             }
-
-        DispatchQueue.main.async {
-            self.eventsForSelectedDate = fetchedEvents
         }
     }
 
     private func fetchAllUpcomingEvents() {
-        let calendars = eventStore.calendars(for: .event)
-        let now = Date()
-        guard let twoDaysFromNow = Calendar.current.date(byAdding: .hour, value: 48, to: now) else { return }
+        workQueue.async { [weak self] in
+            guard let self = self else { return }
 
-        let predicate = eventStore.predicateForEvents(withStart: now, end: twoDaysFromNow, calendars: calendars)
-        let fetchedEvents = eventStore.events(matching: predicate)
-            .filter { !$0.isAllDay }
-            .sorted { $0.startDate < $1.startDate }
+            let calendars = self.eventStore.calendars(for: .event)
+            let now = Date()
+            guard let twoDaysFromNow = Calendar.current.date(byAdding: .hour, value: 48, to: now) else { return }
 
-        DispatchQueue.main.async {
-            self.upcomingEvents = fetchedEvents
+            let predicate = self.eventStore.predicateForEvents(withStart: now, end: twoDaysFromNow, calendars: calendars)
+            let fetchedEvents = self.eventStore.events(matching: predicate)
+                .filter { !$0.isAllDay }
+                .sorted { $0.startDate < $1.startDate }
+
+            DispatchQueue.main.async {
+                self.upcomingEvents = fetchedEvents
+            }
         }
     }
 
@@ -112,15 +123,19 @@ class CalendarService: ObservableObject {
 
         let predicate = eventStore.predicateForIncompleteReminders(withDueDateStarting: startDate, ending: endDate, calendars: nil)
 
-        eventStore.fetchReminders(matching: predicate) { reminders in
-            let sortedReminders = reminders?.sorted(by: {
-                let date1 = $0.dueDateComponents?.date ?? .distantFuture
-                let date2 = $1.dueDateComponents?.date ?? .distantFuture
-                return date1 < date2
-            }) ?? []
+        eventStore.fetchReminders(matching: predicate) { [weak self] reminders in
+            guard let self = self else { return }
 
-            DispatchQueue.main.async {
-                self.remindersForSelectedDate = sortedReminders
+            self.workQueue.async {
+                let sortedReminders = reminders?.sorted(by: {
+                    let date1 = $0.dueDateComponents?.date ?? .distantFuture
+                    let date2 = $1.dueDateComponents?.date ?? .distantFuture
+                    return date1 < date2
+                }) ?? []
+
+                DispatchQueue.main.async {
+                    self.remindersForSelectedDate = sortedReminders
+                }
             }
         }
     }
@@ -131,15 +146,19 @@ class CalendarService: ObservableObject {
 
         let predicate = eventStore.predicateForIncompleteReminders(withDueDateStarting: now, ending: twoDaysFromNow, calendars: nil)
 
-        eventStore.fetchReminders(matching: predicate) { reminders in
-            let sortedReminders = reminders?.sorted(by: {
-                let date1 = $0.dueDateComponents?.date ?? .distantFuture
-                let date2 = $1.dueDateComponents?.date ?? .distantFuture
-                return date1 < date2
-            }) ?? []
+        eventStore.fetchReminders(matching: predicate) { [weak self] reminders in
+            guard let self = self else { return }
 
-            DispatchQueue.main.async {
-                self.upcomingReminders = sortedReminders
+            self.workQueue.async {
+                let sortedReminders = reminders?.sorted(by: {
+                    let date1 = $0.dueDateComponents?.date ?? .distantFuture
+                    let date2 = $1.dueDateComponents?.date ?? .distantFuture
+                    return date1 < date2
+                }) ?? []
+
+                DispatchQueue.main.async {
+                    self.upcomingReminders = sortedReminders
+                }
             }
         }
     }

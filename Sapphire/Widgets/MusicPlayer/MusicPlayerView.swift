@@ -8,9 +8,9 @@
 import SwiftUI
 import AppKit
 
-private struct TimeLabel: View {
+private struct PlayerProgressView: View {
     @EnvironmentObject var musicManager: MusicManager
-    let isRemainingTime: Bool
+    @State private var currentProgress: Double = 0.0
 
     private func formatTime(_ seconds: Double) -> String {
         let cleanSeconds = seconds.isNaN || seconds.isInfinite ? 0 : seconds
@@ -19,11 +19,34 @@ private struct TimeLabel: View {
     }
 
     var body: some View {
-        Text(isRemainingTime ? "-\(formatTime(musicManager.totalDuration - musicManager.currentElapsedTime))" : formatTime(musicManager.currentElapsedTime))
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundColor(.secondary)
-            .onReceive(musicManager.playbackTimePublisher) { _ in
-            }
+        HStack(alignment: .center, spacing: 8) {
+            Text(formatTime(musicManager.currentElapsedTime))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+
+            InteractiveProgressBar(
+                value: $currentProgress,
+                gradient: Gradient(colors: [musicManager.leftGradientColor, musicManager.rightGradientColor]),
+                onSeek: { newProgress in
+                    let seekTime = newProgress * musicManager.totalDuration
+                    if seekTime.isFinite && musicManager.totalDuration > 0 {
+                        musicManager.seek(to: seekTime)
+                    }
+                }
+            )
+            .frame(height: 30)
+            .shadow(color: musicManager.accentColor.opacity(0.5), radius: 8, y: 3)
+
+            Text("-\(formatTime(musicManager.totalDuration - musicManager.currentElapsedTime))")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+        }
+        .onAppear {
+            self.currentProgress = musicManager.playbackProgress
+        }
+        .onReceive(musicManager.playbackTimePublisher) { (_, newProgress) in
+            self.currentProgress = newProgress
+        }
     }
 }
 
@@ -72,8 +95,6 @@ struct MusicPlayerView: View {
 
     @State private var showLikeAnimation = false
     @State private var showTemporaryLikedGlow = false
-
-    @State private var currentProgress: Double = 0.0
 
     @State private var isPressingPlaylists = false
     @State private var isPressingDevices = false
@@ -147,6 +168,7 @@ struct MusicPlayerView: View {
                         .scaleEffect(showLikeAnimation ? 1.0 : 0.5).opacity(showLikeAnimation ? 1.0 : 0.0)
                         .shadow(radius: 5)
                 }
+                .drawingGroup()
                 .animation(.easeInOut, value: showTemporaryLikedGlow)
                 .onTapGesture(count: 2) {
                     guard isSpotifyOrAppleMusic else { return }
@@ -184,14 +206,7 @@ struct MusicPlayerView: View {
 
             if musicManager.isPlaying || musicManager.totalDuration > 0 {
                 VStack(spacing: 3) {
-                    HStack(alignment: .center, spacing: 8) {
-                        TimeLabel(isRemainingTime: false)
-                        InteractiveProgressBar(value: $currentProgress, gradient: Gradient(colors: [musicManager.leftGradientColor, musicManager.rightGradientColor]), onSeek: { newProgress in
-                            let seekTime = newProgress * musicManager.totalDuration
-                            if seekTime.isFinite && musicManager.totalDuration > 0 { musicManager.seek(to: seekTime) }
-                        }).frame(height: 30).shadow(color: musicManager.accentColor.opacity(0.5), radius: 8, y: 3)
-                        TimeLabel(isRemainingTime: true)
-                    }
+                    PlayerProgressView()
 
                     LyricTextView(navigationStack: $navigationStack, isLockScreenMode: isLockScreenMode)
 
@@ -220,12 +235,6 @@ struct MusicPlayerView: View {
         .frame(width: 400).padding(10)
         .animation(.easeInOut(duration: 0.4), value: musicManager.isPlaying)
         .animation(.default, value: enabledButtons)
-        .onAppear {
-            self.currentProgress = musicManager.playbackProgress
-        }
-        .onReceive(musicManager.playbackTimePublisher) { (_, newProgress) in
-            self.currentProgress = newProgress
-        }
         .onChange(of: musicManager.isLiked) { isLiked in
             if isLiked {
                 showTemporaryLikedGlow = true

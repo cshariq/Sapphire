@@ -544,7 +544,7 @@ class MusicManager: ObservableObject {
                 self.updateCurrentLyric(for: elapsedTime)
             }
         }
-        mediaController.onListenerTerminated = { print("[MusicManager] Error: The media listener process was terminated.") }
+        mediaController.onListenerTerminated = { print("[MusicManager] The media listener process was terminated.") }
         mediaController.onDecodingError = { error, data in print("[MusicManager] Decoding Error: \(error)") }
     }
 
@@ -578,48 +578,35 @@ class MusicManager: ObservableObject {
     func openInSourceApp() {
         let browserBundleIDs = ["com.google.Chrome", "com.microsoft.edgemac", "company.thebrowser.Browser", "com.apple.Safari"]
 
-        print("[MusicManager] LOG: openInSourceApp triggered.")
-
         guard let bundleId = lastKnownBundleID else {
-            print("[MusicManager] ERROR: lastKnownBundleID is nil, cannot open source app.")
             return
         }
-        print("[MusicManager] LOG: Found bundle ID: \(bundleId)")
 
         if bundleId == "com.apple.Music" {
-            print("[MusicManager] LOG: Source is Apple Music. Revealing track.")
             appleMusic.revealCurrentTrack()
             return
         }
 
         if browserBundleIDs.contains(bundleId) {
-            print("[MusicManager] LOG: Source is a supported browser.")
             guard let trackTitle = self.title else {
-                print("[MusicManager] LOG: No track title available for browser. Activating app as fallback.")
+                print("[MusicManager] No track title available for browser. Activating app as fallback.")
                 if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
                     NSWorkspace.shared.open(appURL)
                 }
                 return
             }
-            print("[MusicManager] LOG: Calling browser manager to focus tab with title: '\(trackTitle)'")
             browserAppleScript.focusTab(for: bundleId, with: trackTitle)
             return
         }
 
         if let uriString = self.uri, let url = URL(string: uriString) {
-            print("[MusicManager] LOG: Source has a URI: \(uriString). Attempting to open it.")
             if NSWorkspace.shared.open(url) {
-                print("[MusicManager] LOG: Successfully opened URI.")
                 return
             }
-            print("[MusicManager] LOG: Failed to open URI directly.")
         }
 
-        print("[MusicManager] LOG: Using final fallback: activating app with bundle ID.")
         if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
             NSWorkspace.shared.open(appURL)
-        } else {
-            print("[MusicManager] ERROR: Could not find application URL for bundle ID \(bundleId)")
         }
     }
 
@@ -702,7 +689,25 @@ class MusicManager: ObservableObject {
         self.accentColor = defaultAccent; self.leftGradientColor = defaultAccent; self.rightGradientColor = defaultAccent.opacity(0.7)
     }
 
-    @objc private func handleMediaKeyPlayPause() {}
+    @objc private func handleMediaKeyPlayPause() {
+        if settingsModel.settings.defaultMusicPlayer == .spotify && !isPlaying {
+            Task { @MainActor in
+                if !spotifyAppleScript.isAppRunning() {
+                    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") {
+                        NSWorkspace.shared.open(url)
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    }
+                }
+
+                let script = "tell application \"Spotify\" to play"
+                var error: NSDictionary?
+                if let scriptObject = NSAppleScript(source: script) {
+                    scriptObject.executeAndReturnError(&error)
+                }
+            }
+        }
+    }
+
     @objc private func handleMediaKeyNext() { showTransientIcon(for: .skippedForward) }
     @objc private func handleMediaKeyPrevious() { showTransientIcon(for: .skippedBackward) }
 

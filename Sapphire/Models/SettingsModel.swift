@@ -2,8 +2,7 @@
 //  SettingsModel.swift
 //  Sapphire
 //
-//  Created by Shariq Charolia on 2025-10-07
-//
+//  Created by Shariq Charolia on 2025-11-22
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -412,7 +411,7 @@ struct Settings: Codable, Equatable {
     var customAnimationConfiguration: CustomizableAnimationConfiguration = .init()
     var widgetSwitchEffect: WidgetSwitchEffect = .smooth
     var widgetSwitchTransition: WidgetSwitchTransition = .slide
-    
+
     var swipeToSwitchWidgets: Bool = true
     var enableWidgetSwitchFade: Bool = true
     var enableWidgetSwitchSlide: Bool = true
@@ -549,7 +548,7 @@ struct Settings: Codable, Equatable {
     var customSnapLayouts: [SnapLayout] = []
     var snapZoneLayoutOptions: [UUID] = [LayoutTemplate.columns.id, LayoutTemplate.splitscreen.id, LayoutTemplate.focus.id]
     var planes: [Plane] = []
-    var batteryChargeLimit: Int = 80
+    var batteryChargeLimit: Int = 100
     var lowBatteryNotificationPercentage: Int = 20
     var lowBatteryNotificationSoundEnabled: Bool = true
     var batteryNotificationStyle: BatteryNotificationStyle = .default
@@ -730,6 +729,7 @@ enum ControlItemIconStyle: String, Codable, CaseIterable, Identifiable {
         return symbolName(isHidden: false)
     }
 }
+
 // MARK: - SettingsModel Class
 class SettingsModel: ObservableObject {
     static let shared = SettingsModel()
@@ -741,7 +741,6 @@ class SettingsModel: ObservableObject {
     }
 
     private let defaults = UserDefaults.standard
-    private let settingsKey = "com.shariq.sapphire.appSettings"
     private let settingsAccessQueue = DispatchQueue(label: "com.shariq.sapphire.settings.sync.queue")
 
     private init() {
@@ -750,30 +749,40 @@ class SettingsModel: ObservableObject {
 
     private func loadSettings() {
         settingsAccessQueue.sync {
-            guard let data = defaults.data(forKey: settingsKey) else {
+            let defaultSettings = Settings()
+
+            guard let data = try? JSONEncoder().encode(defaultSettings),
+                  var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return
             }
 
+            for key in dict.keys {
+                if let savedValue = defaults.object(forKey: key) {
+                    dict[key] = savedValue
+                }
+            }
+
             do {
-                let decoder = PropertyListDecoder()
-                let loadedSettings = try decoder.decode(Settings.self, from: data)
+                let mergedData = try JSONSerialization.data(withJSONObject: dict)
+                let loadedSettings = try JSONDecoder().decode(Settings.self, from: mergedData)
                 DispatchQueue.main.async {
                     self.settings = loadedSettings
                 }
             } catch {
-                print("Error: Failed to decode settings from UserDefaults. \(error)")
+                print("Error: Failed to decode settings. Using defaults. \(error)")
             }
         }
     }
 
     private func saveSettings() {
         settingsAccessQueue.async {
-            do {
-                let encoder = PropertyListEncoder()
-                let data = try encoder.encode(self.settings)
-                self.defaults.set(data, forKey: self.settingsKey)
-            } catch {
-                print("Error: Failed to encode settings for UserDefaults. \(error)")
+            guard let data = try? JSONEncoder().encode(self.settings),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return
+            }
+
+            for (key, value) in dict {
+                self.defaults.set(value, forKey: key)
             }
         }
     }

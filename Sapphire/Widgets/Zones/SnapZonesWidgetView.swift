@@ -127,6 +127,8 @@ struct SnapZonesWidgetView: View {
                 do {
                     try await Task.sleep(for: .milliseconds(50))
 
+                    guard !Task.isCancelled else { return }
+
                     if let hover = newHover,
                        let layout = viewConfiguration.layouts.first(where: { $0.id == hover.layoutID }),
                        let zone = layout.zones.first(where: { $0.id == hover.zoneID }) {
@@ -154,7 +156,7 @@ struct SnapZonesWidgetView: View {
             self.stopMonitoring()
         }
 
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
             self.updateActiveState()
         }
     }
@@ -180,6 +182,14 @@ struct SnapZonesWidgetView: View {
 
         let mouseLocation = NSEvent.mouseLocation
         let globalMousePoint = CGPoint(x: mouseLocation.x, y: screen.frame.height - mouseLocation.y)
+
+        if !layoutFrames.isEmpty {
+            let totalWidgetFrame = layoutFrames.values.reduce(CGRect.null) { $0.union($1) }
+            if !totalWidgetFrame.insetBy(dx: -50, dy: -50).contains(globalMousePoint) {
+                if activeHover != nil { activeHover = nil }
+                return
+            }
+        }
 
         var newHover: HoverState? = nil
 

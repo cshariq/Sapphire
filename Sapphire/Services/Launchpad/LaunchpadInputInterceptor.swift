@@ -40,15 +40,15 @@ class LaunchpadInputInterceptor {
         isMonitoring = true
         isAwaitingFirstTypingKey = true
 
-        let eventTypes: [CGEventType] = [
-            .keyDown, .keyUp, .flagsChanged,
-            .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
-            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .scrollWheel
-        ]
-        let eventsToMonitor = eventTypes.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
+//        let eventTypes: [CGEventType] = [
+//            .keyDown, .keyUp, .flagsChanged,
+//            .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+//            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .scrollWheel
+//        ]
+//        let eventsToMonitor = eventTypes.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
         let selfAsUnsafeMutableRawPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
-        eventTap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: eventsToMonitor, callback: launchpadEventTapCallback, userInfo: selfAsUnsafeMutableRawPointer)
+//        eventTap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: eventsToMonitor, callback: launchpadEventTapCallback, userInfo: selfAsUnsafeMutableRawPointer)
 
         guard let eventTap = eventTap else {
             print("[LaunchpadInputInterceptor] FATAL ERROR: Failed to create event tap.")
@@ -57,7 +57,7 @@ class LaunchpadInputInterceptor {
 
         let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: eventTap, enable: true)
+//        CGEvent.tapEnable(tap: eventTap, enable: true)
         print("[LaunchpadInputInterceptor] Smart event filter enabled.")
     }
 

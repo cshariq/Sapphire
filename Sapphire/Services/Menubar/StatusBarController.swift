@@ -25,7 +25,14 @@ final class StatusBarController {
     private var screenCornerManager: ScreenCornerManager?
 
     // MARK: - State
-    private var isCollapsed = true
+    private var isCollapsed: Bool {
+        didSet {
+            UserDefaults.standard.set(isCollapsed, forKey: "SapphireIsCollapsed")
+        }
+    }
+
+    private var isAlwaysHiddenExpanded = true
+
     private var isEditing = false
 
     private var autoCollapseTimer: Timer?
@@ -42,7 +49,9 @@ final class StatusBarController {
     private enum AutosaveKeys { static let expandCollapse = "SapphireExpandCollapseItem"; static let separator = "SapphireSeparatorItem"; static let alwaysHidden = "SapphireAlwaysHiddenItem" }
 
     init() {
-        StatusBarController.seedItemPositionsIfNeeded()
+        self.isCollapsed = UserDefaults.standard.object(forKey: "SapphireIsCollapsed") as? Bool ?? false
+
+        self.isAlwaysHiddenExpanded = !self.isCollapsed
 
         expandCollapseItem = NSStatusBar.system.statusItem(withLength: Lengths.standard)
         expandCollapseItem.autosaveName = AutosaveKeys.expandCollapse
@@ -65,25 +74,6 @@ final class StatusBarController {
         appearanceManager = nil
         screenCornerManager = nil
         print("[StatusBarController] Deinitialized and items removed.")
-    }
-
-    private static func preferredPositionKey(for autosaveName: String) -> String { "NSStatusItem Preferred Position \(autosaveName)" }
-
-    private static func seedItemPositionsIfNeeded() {
-        let defaults = UserDefaults.standard
-        let alwaysHiddenKey = preferredPositionKey(for: AutosaveKeys.alwaysHidden)
-        if defaults.object(forKey: alwaysHiddenKey) == nil {
-            defaults.set(0, forKey: alwaysHiddenKey)
-        }
-        let separatorKey = preferredPositionKey(for: AutosaveKeys.separator)
-        if defaults.object(forKey: separatorKey) == nil {
-            defaults.set(1, forKey: separatorKey)
-        }
-        let expandCollapseKey = preferredPositionKey(for: AutosaveKeys.expandCollapse)
-        if defaults.object(forKey: expandCollapseKey) == nil {
-            defaults.set(1_000_000, forKey: expandCollapseKey)
-        }
-        print("[StatusBarController] Item positions seeded successfully.")
     }
 
     // MARK: - Setup
@@ -122,12 +112,11 @@ final class StatusBarController {
             guard alwaysHiddenItem == nil else { return }
             alwaysHiddenItem = NSStatusBar.system.statusItem(withLength: Lengths.collapsed)
             alwaysHiddenItem?.autosaveName = AutosaveKeys.alwaysHidden
-            print("[StatusBarController] Always Hidden item created.")
+            if !isCollapsed { isAlwaysHiddenExpanded = true }
         } else {
             guard let item = alwaysHiddenItem else { return }
             NSStatusBar.system.removeStatusItem(item)
             alwaysHiddenItem = nil
-            print("[StatusBarController] Always Hidden item removed.")
         }
         updateItems()
     }
@@ -140,7 +129,14 @@ final class StatusBarController {
                 expandCollapseItem.popUpMenu(createChevronContextMenu())
             } else {
                 (NSApp.delegate as? AppDelegate)?.interactionManager?.temporarilyDisable(for: 0.5)
-                if event.modifierFlags.contains(.option) { enterEditMode() } else { isCollapsed ? expand() : collapse() }
+
+                if event.modifierFlags.contains(.option) {
+                    enterEditMode()
+                } else if event.modifierFlags.contains(.command) {
+                    toggleAlwaysHidden()
+                } else {
+                    isCollapsed ? expand() : collapse()
+                }
             }
         }
     }
@@ -149,6 +145,7 @@ final class StatusBarController {
         guard isCollapsed else { return }
         print("[StatusBarController] Expanding Hidden section.")
         isCollapsed = false
+        isAlwaysHiddenExpanded = true
         isEditing = false
         updateItems()
         configureAutoRehide()
@@ -157,15 +154,22 @@ final class StatusBarController {
     private func collapse() {
         print("[StatusBarController] Collapsing all sections.")
         isCollapsed = true
+        isAlwaysHiddenExpanded = false
         isEditing = false
         updateItems()
         stopAutoRehide()
+    }
+
+    private func toggleAlwaysHidden() {
+        isAlwaysHiddenExpanded.toggle()
+        updateItems()
     }
 
     @objc private func enterEditMode() {
         print("[StatusBarController] Entering Edit Mode.")
         isEditing = true
         isCollapsed = false
+        isAlwaysHiddenExpanded = true
         updateItems()
         stopAutoRehide()
     }
@@ -190,16 +194,24 @@ final class StatusBarController {
             separatorItem.button?.image = image
             alwaysHiddenItem?.length = Lengths.separator
             alwaysHiddenItem?.button?.image = image
+
         } else if isCollapsed {
             separatorItem.length = Lengths.collapsed
             separatorItem.button?.image = showDividers ? image : nil
             alwaysHiddenItem?.length = Lengths.collapsed
             alwaysHiddenItem?.button?.image = nil
+
         } else {
             separatorItem.length = showDividers ? Lengths.separator : 0
             separatorItem.button?.image = showDividers ? image : nil
-            alwaysHiddenItem?.length = Lengths.collapsed
-            alwaysHiddenItem?.button?.image = nil
+
+            if isAlwaysHiddenExpanded {
+                alwaysHiddenItem?.length = showDividers ? Lengths.separator : 0
+                alwaysHiddenItem?.button?.image = showDividers ? image : nil
+            } else {
+                alwaysHiddenItem?.length = Lengths.collapsed
+                alwaysHiddenItem?.button?.image = nil
+            }
         }
 
         updateExpandCollapseIcon()
@@ -225,19 +237,14 @@ final class StatusBarController {
         switch strategy {
         case "timed":
             let interval = SettingsModel.shared.settings.tempShowInterval
-            print("[StatusBarController] Starting timed rehide: \(interval)s")
             autoCollapseTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
                 self?.collapse()
             }
 
         case "smart":
-            print("[StatusBarController] Starting smart rehide monitoring")
-            smartRehideMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
-                self?.handleSmartRehideMouseMove()
-            }
+            break
 
         case "focusedApp":
-            print("[StatusBarController] Starting focused app rehide monitoring")
             appFocusObserver = NotificationCenter.default.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.collapse()
             }
@@ -250,45 +257,10 @@ final class StatusBarController {
     private func stopAutoRehide() {
         autoCollapseTimer?.invalidate()
         autoCollapseTimer = nil
-
-        if let monitor = smartRehideMonitor {
-            NSEvent.removeMonitor(monitor)
-            smartRehideMonitor = nil
-        }
-
         smartRehideTimer?.invalidate()
         smartRehideTimer = nil
-
-        if let observer = appFocusObserver {
-            NotificationCenter.default.removeObserver(observer)
-            appFocusObserver = nil
-        }
-    }
-
-    private func handleSmartRehideMouseMove() {
-        if isMouseInMenuBar() {
-            if smartRehideTimer != nil {
-                print("[StatusBarController] Mouse re-entered, cancelling rehide")
-                smartRehideTimer?.invalidate()
-                smartRehideTimer = nil
-            }
-        } else {
-            if smartRehideTimer == nil {
-                smartRehideTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-                    print("[StatusBarController] Smart rehide triggered")
-                    self?.collapse()
-                }
-            }
-        }
-    }
-
-    private func isMouseInMenuBar() -> Bool {
-        let mouseLocation = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) else { return false }
-
-        let boundary = screen.visibleFrame.maxY - 10
-
-        return mouseLocation.y > boundary
+        if let monitor = smartRehideMonitor { NSEvent.removeMonitor(monitor); smartRehideMonitor = nil }
+        if let observer = appFocusObserver { NotificationCenter.default.removeObserver(observer); appFocusObserver = nil }
     }
 
     // MARK: - Context Menus

@@ -246,22 +246,22 @@ private struct HelperInstallationStepView: View {
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
             .padding(.horizontal, 50)
 
-            Spacer()
-
-            if let player = player {
-                VideoPlayer(player: player)
-                    .disabled(true)
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    .shadow(color: .black.opacity(0.2), radius: 10)
-                    .padding(.horizontal, 60)
-            } else {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .fill(.black.opacity(0.2))
-                    .overlay(ProgressView().tint(.white))
-                    .aspectRatio(16/9, contentMode: .fit)
-                    .padding(.horizontal, 60)
-            }
+//            Spacer()
+//
+//            if let player = player {
+//                VideoPlayer(player: player)
+//                    .disabled(true)
+//                    .aspectRatio(16/9, contentMode: .fit)
+//                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+//                    .shadow(color: .black.opacity(0.2), radius: 10)
+//                    .padding(.horizontal, 60)
+//            } else {
+//                RoundedRectangle(cornerRadius: 15, style: .continuous)
+//                    .fill(.black.opacity(0.2))
+//                    .overlay(ProgressView().tint(.white))
+//                    .aspectRatio(16/9, contentMode: .fit)
+//                    .padding(.horizontal, 60)
+//            }
 
             Spacer()
 

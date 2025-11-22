@@ -17,6 +17,8 @@ fileprivate struct PlayCountResponse: Codable {
 class PlayCountFetcher {
     static let shared = PlayCountFetcher()
 
+    private static let decoder = JSONDecoder()
+
     private init() {}
 
     func getPlayCount(for trackID: String) async -> String? {
@@ -28,7 +30,7 @@ class PlayCountFetcher {
 
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            let response = try JSONDecoder().decode(PlayCountResponse.self, from: data)
+            let response = try Self.decoder.decode(PlayCountResponse.self, from: data)
             if let count = response.playcount {
                 return Self.formatPlayCount(count)
             }

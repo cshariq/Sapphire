@@ -6494,7 +6494,7 @@ struct EyeBreakRecommendationsView: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .center, spacing: 20) {
                     recommendationCard(
                         title: "The 20-20-20 Rule",
                         description: "Every 20 minutes, take a 20-second break to look at something 20 feet away. This helps reduce eye strain and gives eye muscles a break.",
@@ -6538,7 +6538,7 @@ struct EyeBreakRecommendationsView: View {
             .buttonStyle(.borderedProminent)
             .frame(maxWidth: .infinity)
         }
-        .padding(30)
+        .padding()
         .frame(width: 500, height: 600)
     }
 
@@ -6562,7 +6562,7 @@ struct EyeBreakRecommendationsView: View {
         }
         .padding()
         .background(Color.secondary.opacity(0.05))
-        .frame(width: 400)
+        .frame(minWidth: 400)
         .cornerRadius(12)
     }
 }

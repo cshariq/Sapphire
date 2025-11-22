@@ -641,8 +641,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func openSettingsWindow() {
         if let window = settingsWindow {
-            window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            window.center()
             return
         }
 
@@ -671,6 +672,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         DispatchQueue.main.async {
             self.settingsWindow?.makeKeyAndOrderFront(nil)
+            self.settingsWindow?.center()
             NSApp.activate(ignoringOtherApps: true)
         }
     }
