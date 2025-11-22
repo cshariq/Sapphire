@@ -244,7 +244,7 @@ public class LockScreenManager {
         let vis = screen.visibleFrame
         let x = vis.midX - (size.width / 2)
 
-        let topInset = vis.height * 0.22
+        let topInset = vis.height * 0.23
         let y = vis.maxY - topInset - size.height
 
         return NSRect(x: x, y: y, width: size.width, height: size.height)
