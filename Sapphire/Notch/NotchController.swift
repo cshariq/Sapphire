@@ -1244,7 +1244,7 @@ struct NotchController: View {
             }
         }
 
-        if notchState == .clickExpanded && oldStack != newStack && newStack != [.defaultWidgets] {
+        if notchState == .clickExpanded && newStack != [.defaultWidgets] {
             scheduleCollapse(after: config.widgetSwitchCollapseDelay)
         }
     }
@@ -1305,11 +1305,16 @@ struct NotchController: View {
             awaitingDropCompletion = false
 
             startHoverDetection()
-            navigationStack = [.fileShelfLanding]
-            if settings.settings.snapOnWindowDragEnabled {
-                let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
-                self.draggedAppBundleID = frontmostApp?.bundleIdentifier
-                self.navigationStack = [.snapZones]
+
+            if isFileDropTargeted {
+                navigationStack = [.fileShelfLanding]
+            } else {
+                navigationStack = [.fileShelfLanding]
+                if settings.settings.snapOnWindowDragEnabled {
+                    let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
+                    self.draggedAppBundleID = frontmostApp?.bundleIdentifier
+                    self.navigationStack = [.snapZones]
+                }
             }
 
             if notchState != .clickExpanded {
@@ -1337,6 +1342,7 @@ struct NotchController: View {
 
     private func handleFileDropTargetChange(isTargeted: Bool) {
         if isTargeted {
+            SnapPreviewManager.shared.hidePreview()
             if navigationStack.last != .fileShelfLanding {
                 navigationStack = [.fileShelfLanding]
             }

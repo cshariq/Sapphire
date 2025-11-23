@@ -33,6 +33,9 @@ struct QueueAndPlaylistsView: View {
 
     @State private var showSpotifyNotOpenAlert = false
     @State private var queueRefreshTimer: Timer?
+    
+    // MARK: - Animation State
+    @Namespace private var namespace
 
     var isLockScreenMode: Bool = false
 
@@ -66,23 +69,36 @@ struct QueueAndPlaylistsView: View {
                     Spacer()
 
                     if !isAppleMusic {
-                        HStack(spacing: 10) {
-                            TabButton(title: "Queue", systemImage: "list.bullet.rectangle", isSelected: selection == 0) { selection = 0 }
-                            TabButton(title: "Playlists", systemImage: "music.note.list", isSelected: selection == 1) { selection = 1 }
-                        }.padding(6).background(Color.black.opacity(0.2)).clipShape(Capsule())
+                        // MARK: - Animated Tab Bar
+                        HStack(spacing: 0) {
+                            TabButton(title: "Queue", systemImage: "list.bullet.rectangle", isSelected: selection == 0) {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { selection = 0 }
+                            }
+                            TabButton(title: "Playlists", systemImage: "music.note.list", isSelected: selection == 1) {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { selection = 1 }
+                            }
+                        }
+                        .padding(4)
+                        .background(Color.black.opacity(0.2))
+                        .clipShape(Capsule())
                     }
 
                     if musicManager.isOfficialAPIAuthenticated { Button("Log out") { Task { await musicManager.spotifyOfficialAPI.logout() } }.buttonStyle(.plain).font(.caption).foregroundColor(.secondary) }
                 }
 
-                ZStack {
+                // MARK: - Content View with Better Transitions
+                ZStack(alignment: .top) {
                     if selection == 0 && !isAppleMusic {
-                        queueView.transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity)))
+                        queueView
+                            .transition(slideTransition(edge: .leading))
                     } else {
-                        playlistsView.transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
+                        playlistsView
+                            .transition(slideTransition(edge: .trailing))
                     }
                 }
-                .animation(.easeInOut(duration: 0.2), value: selection)
+                // Using a smooth spring for view switching
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selection)
+                // Using standard animation for data updates inside the view
                 .animation(.easeInOut(duration: 0.5), value: animationTriggerValue)
             }
         }
@@ -94,7 +110,18 @@ struct QueueAndPlaylistsView: View {
         .onChange(of: selection) { _, newValue in
             UserDefaults.standard.set(newValue, forKey: lastSelectedPaneKey)
         }
+    }
 
+    // MARK: - Custom Transitions
+    private func slideTransition(edge: Edge) -> AnyTransition {
+        // Creates a "depth" effect where the leaving view scales down slightly and fades,
+        // while the entering view slides in.
+        let oppositeEdge: Edge = (edge == .leading) ? .trailing : .leading
+        
+        return .asymmetric(
+            insertion: .move(edge: edge).combined(with: .opacity),
+            removal: .move(edge: oppositeEdge).combined(with: .scale(scale: 0.95)).combined(with: .opacity)
+        )
     }
 
     private func refreshData() {

@@ -21,8 +21,8 @@ enum RegistrationStep: CaseIterable, Equatable {
     var instruction: String {
         switch self {
         case .preparingFace: return "Position your face in the center of the frame."
-        case .turnHeadLeft: return "Slowly turn your head to the left."
-        case .turnHeadRight: return "Now, slowly turn your head to the right."
+        case .turnHeadLeft: return "Slowly turn your head to the right."
+        case .turnHeadRight: return "Now, slowly turn your head to the left."
         case .finalizing: return "Processing your facial data..."
         }
     }
