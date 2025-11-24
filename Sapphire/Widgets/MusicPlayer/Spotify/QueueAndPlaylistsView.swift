@@ -33,7 +33,7 @@ struct QueueAndPlaylistsView: View {
 
     @State private var showSpotifyNotOpenAlert = false
     @State private var queueRefreshTimer: Timer?
-    
+
     // MARK: - Animation State
     @Namespace private var namespace
 
@@ -96,9 +96,7 @@ struct QueueAndPlaylistsView: View {
                             .transition(slideTransition(edge: .trailing))
                     }
                 }
-                // Using a smooth spring for view switching
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selection)
-                // Using standard animation for data updates inside the view
                 .animation(.easeInOut(duration: 0.5), value: animationTriggerValue)
             }
         }
@@ -114,10 +112,8 @@ struct QueueAndPlaylistsView: View {
 
     // MARK: - Custom Transitions
     private func slideTransition(edge: Edge) -> AnyTransition {
-        // Creates a "depth" effect where the leaving view scales down slightly and fades,
-        // while the entering view slides in.
         let oppositeEdge: Edge = (edge == .leading) ? .trailing : .leading
-        
+
         return .asymmetric(
             insertion: .move(edge: edge).combined(with: .opacity),
             removal: .move(edge: oppositeEdge).combined(with: .scale(scale: 0.95)).combined(with: .opacity)

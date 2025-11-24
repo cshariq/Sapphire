@@ -1921,6 +1921,11 @@ struct SnapZonesSettingsView: View {
                     ToggleRow(
                         title: "Activate on Drag",
                         description: "Show Snap Zones when dragging near the notch.",
+                        isOn: $settings.settings.snapDragEnabled
+                    )
+                    ToggleRow(
+                        title: "Activate on Window Drag",
+                        description: "Show Snap Zones when dragging a window.",
                         isOn: $settings.settings.snapOnWindowDragEnabled
                     )
                 }
@@ -5516,7 +5521,6 @@ struct BatteryConfigurationView: View {
     @ViewBuilder private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Notifications & Live Activity").font(.headline).padding([.top, .horizontal])
-            InfoContainer(text: "Configure alerts for important battery events and customize what's shown in the persistent battery live activity.", iconName: "bell.badge.fill", color: .purple).padding()
             CustomSliderRowView(label: "Notify when battery is below", value: Binding(get: { Double(settings.settings.lowBatteryNotificationPercentage) }, set: { settings.settings.lowBatteryNotificationPercentage = Int($0) }), range: 10...50, specifier: "%.0f %%")
             Divider().padding(.leading, 20)
             ToggleRow(title: "Play Sound for Low Battery Alert", description: "Get an audible alert when your battery is running low.", isOn: $settings.settings.lowBatteryNotificationSoundEnabled)
@@ -7627,7 +7631,7 @@ struct MenuBarHidingSettingsView: View {
                 }.modifier(SettingsContainerModifier())
 
                 VStack(alignment: .leading, spacing: 0) {
-                    InfoContainer(text: "To customize the shown icons, right click on the menu bar and select 'Customize Menu Bar'. The icons placed in between the dot and expansion icon will always be shown, the icons placed in between the two dots will be hidden when the menu is collapsed, and the icons after the dot will always be hidden.", iconName: "info.circle", color: Color.mint).padding()
+                    InfoContainer(text: "To customize the shown icons, right click on the menu bar and select 'Edit Menu Bar Items'. The icons placed in between the dot and expansion icon will always be shown, the icons placed in between the two dots will be hidden when the menu is collapsed, and the icons after the dot will always be hidden.", iconName: "info.circle", color: Color.mint).padding()
 
                     Image("MenubarDemo")
                         .resizable()

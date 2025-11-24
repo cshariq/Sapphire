@@ -542,11 +542,12 @@ struct Settings: Codable, Equatable {
     var volumesliderstep: Int = 6
     var brightnessliderstep: Int = 6
     var snapZoneViewMode: SnapZoneViewMode = .multi
+    var snapDragEnabled: Bool = true
     var snapOnWindowDragEnabled: Bool = true
     var defaultSnapLayout: SnapLayout = LayoutTemplate.columns
     var appSpecificLayoutConfigurations: [String: AppSnapLayoutConfiguration] = [:]
     var customSnapLayouts: [SnapLayout] = []
-    var snapZoneLayoutOptions: [UUID] = [LayoutTemplate.columns.id, LayoutTemplate.splitscreen.id, LayoutTemplate.focus.id]
+    var snapZoneLayoutOptions: [UUID] = [LayoutTemplate.fancy.id, LayoutTemplate.quarters.id, LayoutTemplate.splitscreen.id, LayoutTemplate.focus.id, LayoutTemplate.fullscreen.id]
     var planes: [Plane] = []
     var batteryChargeLimit: Int = 100
     var lowBatteryNotificationPercentage: Int = 20

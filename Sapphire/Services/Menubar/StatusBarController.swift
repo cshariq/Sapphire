@@ -31,18 +31,14 @@ final class StatusBarController {
         }
     }
 
-    private var isAlwaysHiddenExpanded = true
-
+    private var isAlwaysHiddenExpanded = false
     private var isEditing = false
 
     private var autoCollapseTimer: Timer?
     private var smartRehideTimer: Timer?
-    private var smartRehideMonitor: Any?
     private var appFocusObserver: NSObjectProtocol?
 
     private var cancellables = Set<AnyCancellable>()
-
-    private var isUsingLTRLanguage: Bool { NSApp.userInterfaceLayoutDirection == .leftToRight }
 
     // MARK: - Constants
     private enum Lengths { static let standard: CGFloat = 24; static let separator: CGFloat = 8; static let collapsed: CGFloat = 10_000 }
@@ -51,7 +47,8 @@ final class StatusBarController {
     init() {
         self.isCollapsed = UserDefaults.standard.object(forKey: "SapphireIsCollapsed") as? Bool ?? false
 
-        self.isAlwaysHiddenExpanded = !self.isCollapsed
+        self.isAlwaysHiddenExpanded = false
+        self.isEditing = false
 
         expandCollapseItem = NSStatusBar.system.statusItem(withLength: Lengths.standard)
         expandCollapseItem.autosaveName = AutosaveKeys.expandCollapse
@@ -61,8 +58,6 @@ final class StatusBarController {
 
         setupItems()
         setupObservers()
-
-        print("[StatusBarController] Initializing sub-managers.")
         self.appearanceManager = MenuBarAppearanceManager()
         self.screenCornerManager = ScreenCornerManager()
     }
@@ -73,7 +68,6 @@ final class StatusBarController {
         if let alwaysHiddenItem = alwaysHiddenItem { NSStatusBar.system.removeStatusItem(alwaysHiddenItem) }
         appearanceManager = nil
         screenCornerManager = nil
-        print("[StatusBarController] Deinitialized and items removed.")
     }
 
     // MARK: - Setup
@@ -112,7 +106,6 @@ final class StatusBarController {
             guard alwaysHiddenItem == nil else { return }
             alwaysHiddenItem = NSStatusBar.system.statusItem(withLength: Lengths.collapsed)
             alwaysHiddenItem?.autosaveName = AutosaveKeys.alwaysHidden
-            if !isCollapsed { isAlwaysHiddenExpanded = true }
         } else {
             guard let item = alwaysHiddenItem else { return }
             NSStatusBar.system.removeStatusItem(item)
@@ -143,16 +136,16 @@ final class StatusBarController {
 
     func expand() {
         guard isCollapsed else { return }
-        print("[StatusBarController] Expanding Hidden section.")
         isCollapsed = false
-        isAlwaysHiddenExpanded = true
         isEditing = false
+
+        isAlwaysHiddenExpanded = false
+
         updateItems()
         configureAutoRehide()
     }
 
     private func collapse() {
-        print("[StatusBarController] Collapsing all sections.")
         isCollapsed = true
         isAlwaysHiddenExpanded = false
         isEditing = false
@@ -166,7 +159,6 @@ final class StatusBarController {
     }
 
     @objc private func enterEditMode() {
-        print("[StatusBarController] Entering Edit Mode.")
         isEditing = true
         isCollapsed = false
         isAlwaysHiddenExpanded = true
@@ -242,7 +234,7 @@ final class StatusBarController {
             }
 
         case "smart":
-            break
+            startSmartRehideMonitoring()
 
         case "focusedApp":
             appFocusObserver = NotificationCenter.default.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
@@ -254,13 +246,36 @@ final class StatusBarController {
         }
     }
 
+    private func startSmartRehideMonitoring() {
+        smartRehideTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+
+            let mouseLoc = NSEvent.mouseLocation
+
+            guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) else {
+                return
+            }
+
+            let menuBarBottom = screen.visibleFrame.maxY
+            let buffer: CGFloat = 50.0
+
+            if mouseLoc.y < (menuBarBottom - buffer) {
+                self.collapse()
+            }
+        }
+    }
+
     private func stopAutoRehide() {
         autoCollapseTimer?.invalidate()
         autoCollapseTimer = nil
+
         smartRehideTimer?.invalidate()
         smartRehideTimer = nil
-        if let monitor = smartRehideMonitor { NSEvent.removeMonitor(monitor); smartRehideMonitor = nil }
-        if let observer = appFocusObserver { NotificationCenter.default.removeObserver(observer); appFocusObserver = nil }
+
+        if let observer = appFocusObserver {
+            NotificationCenter.default.removeObserver(observer)
+            appFocusObserver = nil
+        }
     }
 
     // MARK: - Context Menus
@@ -269,7 +284,7 @@ final class StatusBarController {
         let menu = NSMenu()
         menu.addItem(withTitle: "Edit Menu Bar Items", action: #selector(enterEditMode), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Open Sapphire Settings…", action: #selector(openPreferences), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Open Sapphire Setting", action: #selector(openPreferences), keyEquivalent: ",").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Sapphire", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
@@ -281,7 +296,7 @@ final class StatusBarController {
             menu.addItem(withTitle: "Edit Menu Bar Items", action: #selector(enterEditMode), keyEquivalent: "").target = self
             menu.addItem(.separator())
         }
-        menu.addItem(withTitle: "Preferences…", action: #selector(openPreferences), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Preferences", action: #selector(openPreferences), keyEquivalent: ",").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Sapphire", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu

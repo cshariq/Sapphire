@@ -154,5 +154,13 @@ struct LayoutTemplate {
         ]
     )
 
-    static let allTemplates: [SnapLayout] = [columns, rows, focus, fancy, quarters, splitscreen]
+    static let fullscreen = SnapLayout(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000007")!,
+        name: "Full Screen",
+        zones: [
+            .init(id: UUID(uuidString: "00000007-0001-0000-0000-000000000001")!, x: 0.0, y: 0.0, width: 1.0, height: 1.0),
+        ]
+    )
+
+    static let allTemplates: [SnapLayout] = [columns, rows, focus, fancy, quarters, splitscreen, fullscreen]
 }

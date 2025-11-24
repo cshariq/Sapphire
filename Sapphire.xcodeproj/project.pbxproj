@@ -1620,6 +1620,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				AUTOMATION_APPLE_EVENTS = YES;
 				CODE_SIGN_ENTITLEMENTS = Sapphire/Sapphire.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -1657,6 +1658,7 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Needed to provide live weather updates";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sapphire needs this to enable Gemini Live";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Sapphire needs this to provide nearby share functionality";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Sapphire needs this to show upcoming reminders";
 				INFOPLIST_KEY_NSRemindersUsageDescription = "Needed to show reminders";
@@ -1702,6 +1704,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				AUTOMATION_APPLE_EVENTS = YES;
 				CODE_SIGN_ENTITLEMENTS = Sapphire/Sapphire.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -1738,6 +1741,7 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Needed to provide live weather updates";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sapphire needs this to enable Gemini Live";
+				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Sapphire needs this to provide nearby share functionality";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Sapphire needs this to show upcoming reminders";
 				INFOPLIST_KEY_NSRemindersUsageDescription = "Needed to show reminders";

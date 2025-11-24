@@ -114,6 +114,8 @@ struct NotchController: View {
     @StateObject private var caffeineManager = CaffeineManager.shared
     @StateObject private var calendarViewModel = InteractiveCalendarViewModel()
 
+    @ObservedObject private var activeAppMonitor = ActiveAppMonitor.shared
+
     // MARK: - State Properties
     @State private var config: ResolvedNotchConfiguration?
     @State private var notchState: NotchState = .initial
@@ -181,7 +183,7 @@ struct NotchController: View {
     }
 
     private var isInteractive: Bool {
-        notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone
+        notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || activeAppMonitor.isWindowDragging
     }
 
     private var shouldHideWindowForSharing: Bool {
@@ -392,6 +394,11 @@ struct NotchController: View {
                     await handleDragActivationChange(isDragging: isDragging)
                 }
             }
+            .onChange(of: activeAppMonitor.isWindowDragging) { _, isDragging in
+                if settings.settings.snapOnWindowDragEnabled {
+                    handleWindowDragChange(isDragging: isDragging)
+                }
+            }
             .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
             .onChange(of: measuredClickContentSize) { _, newSize in handleSizeChange(newSize, for: .clickExpanded) }
             .onChange(of: measuredAutoContentSize) { _, newSize in handleSizeChange(newSize, for: .autoExpanded) }
@@ -497,6 +504,12 @@ struct NotchController: View {
                 .environment(\.isCalendarHovered, $isCalendarHovered)
                 .environment(\.onSnapDragEnd, {
                     GlobalDragManager.shared.endDrag()
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(100))
+                        if !isPinned {
+                            notchState = isLiveActivityActive ? .autoExpanded : .initial
+                        }
+                    }
                 })
                 .padding(.top, config.contentTopPadding)
                 .padding(.bottom, config.contentBottomPadding)
@@ -610,6 +623,12 @@ struct NotchController: View {
                         .environment(\.isFileDropTargeted, $isFileDropTargeted)
                         .environment(\.onSnapDragEnd, {
                             GlobalDragManager.shared.endDrag()
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(100))
+                                if !isPinned {
+                                    notchState = isLiveActivityActive ? .autoExpanded : .initial
+                                }
+                            }
                         })
                         .padding(.top, config.contentTopPadding)
                         .padding(.bottom, config.contentBottomPadding)
@@ -1301,27 +1320,25 @@ struct NotchController: View {
 
             dragState.didJustDrop = false
 
-            (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
             awaitingDropCompletion = false
 
             startHoverDetection()
 
             if isFileDropTargeted {
+                (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
+                let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
+                self.draggedAppBundleID = frontmostApp?.bundleIdentifier
+                notchState = .clickExpanded
                 navigationStack = [.fileShelfLanding]
+                
             } else {
-                navigationStack = [.fileShelfLanding]
-                if settings.settings.snapOnWindowDragEnabled {
-                    let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
-                    self.draggedAppBundleID = frontmostApp?.bundleIdentifier
+                if settings.settings.snapDragEnabled {
                     self.navigationStack = [.snapZones]
+                    notchState = .clickExpanded
                 }
             }
 
-            if notchState != .clickExpanded {
-                notchState = .clickExpanded
-            }
         } else {
-
             try? await Task.sleep(for: .milliseconds(50))
             stopHoverDetection()
             (NSApp.delegate as? AppDelegate)?.revertNotchWindowFocus()
@@ -1340,11 +1357,39 @@ struct NotchController: View {
         }
     }
 
+    private func handleWindowDragChange(isDragging: Bool) {
+        collapseTask?.cancel()
+        isCollapseTimerActive = false
+
+        if isDragging {
+            if isPinned {
+                isPinned = false
+            }
+            
+            self.navigationStack = [.snapZones]
+            if notchState != .clickExpanded {
+                notchState = .clickExpanded
+            }
+            
+        } else {
+            (NSApp.delegate as? AppDelegate)?.revertNotchWindowFocus()
+
+            draggedAppBundleID = nil
+            if !self.isHovered && !self.dragManager.isDraggingInActivationZone {
+                self.notchState = isLiveActivityActive ? .autoExpanded : .initial
+            }
+        }
+    }
+
     private func handleFileDropTargetChange(isTargeted: Bool) {
         if isTargeted {
             SnapPreviewManager.shared.hidePreview()
             if navigationStack.last != .fileShelfLanding {
+                (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
+                let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
+                self.draggedAppBundleID = frontmostApp?.bundleIdentifier
                 navigationStack = [.fileShelfLanding]
+                notchState = .clickExpanded
             }
         }
     }
@@ -1631,7 +1676,7 @@ struct NotchController: View {
             do {
                 try await Task.sleep(for: .milliseconds(Int(delay * 1000)))
                 guard !Task.isCancelled else { return }
-                if !self.isHovered && !self.dragManager.isDraggingInActivationZone {
+                if !self.isHovered && !self.dragManager.isDraggingInActivationZone && !self.activeAppMonitor.isWindowDragging {
                     self.notchState = isLiveActivityActive ? .autoExpanded : .initial
                 }
                 self.isCollapseTimerActive = false
