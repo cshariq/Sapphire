@@ -18,6 +18,11 @@
 
 Sapphire is a sleek notch app that displays current activities neatly around the notch on newer MacBooks. It also includes a suite of convenient features, from nearby share compatibility for easy file transfers to a versatile window snapping system.
 
+## Known Issues
+  - **High CPU Usage in certain scenarios**
+  - **Unexpected Collapse when opening the music widget**
+**Note:** Multi-Audio functionality is in development, as a result most of its embded function aren't functional
+
 ## Installation
 
 1.  **Download:** Get the latest pre-release version from the [releases page](https://github.com/cshariq/Sapphire/releases/tag/Release).
