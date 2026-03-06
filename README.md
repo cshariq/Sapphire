@@ -21,6 +21,7 @@ Sapphire is a sleek notch app that displays current activities neatly around the
 ## Known Issues
   - **High CPU Usage in certain scenarios**
   - **Unexpected Collapse when opening the music widget**
+    
 **Note:** Multi-Audio functionality is in development, as a result most of its embded function aren't functional
 
 ## Installation
