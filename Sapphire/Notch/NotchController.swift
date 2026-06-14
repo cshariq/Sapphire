@@ -1202,7 +1202,7 @@ struct NotchController: View {
             if activityType == .music, settings.settings.musicOpenOnClick { initiateWidgetView(.musicPlayer); return }
             if activityType == .weather, settings.settings.weatherOpenOnClick { initiateWidgetView(.weatherPlayer); return }
             if activityType == .calendar, settings.settings.calendarOpenOnClick { initiateWidgetView(.calendarPlayer); return }
-            if activityType == .sports, settings.settings.sportsOpenOnClick { initiateWidgetView(.sportsPlayer); return }
+            if activityType == .sports, settings.settings.sportsOpenOnClick, SubscriptionManager.shared.hasAccess(to: .sportsWidget) { initiateWidgetView(.sportsPlayer); return }
             if activityType == .finance, settings.settings.financeOpenOnClick { initiateWidgetView(.financePlayer); return }
             if activityType == .fileShelf, settings.settings.clickToOpenFileShelf { initiateWidgetView(.fileShelf); return }
             if activityType == .timer, settings.settings.clickToShowTimerView { initiateWidgetView(.timerDetailView); return }

@@ -279,7 +279,7 @@ struct NotchWidgetView: View {
         case .sports:
             SportsWidgetView()
                 .onTapGesture {
-                    if settings.settings.sportsOpenOnClick {
+                    if settings.settings.sportsOpenOnClick, SubscriptionManager.shared.hasAccess(to: .sportsWidget) {
                         Task {
                             try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
                             navigationStack.wrappedValue.append(NotchWidgetMode.sportsPlayer)

@@ -35,29 +35,23 @@ while ps -p $PID > /dev/null; do
 done
 echo "Application has quit." >> "$LOG_FILE"
 
-# 2. Remove the old application bundle contents, preserving the .app wrapper.
-#    Using ditto to overlay instead of rm+mv preserves the wrapper's inode,
-#    creation date, and extended attributes — preventing macOS from treating
-#    the update as a brand-new app that needs all permissions re-granted.
-echo "Removing old Contents at $OLD_APP_PATH/Contents..." >> "$LOG_FILE"
-rm -rf "$OLD_APP_PATH/Contents"
+# 2. Remove the old application bundle.
+echo "Removing old application at $OLD_APP_PATH..." >> "$LOG_FILE"
+rm -rf "$OLD_APP_PATH"
 if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to remove old application Contents." >> "$LOG_FILE"
+    echo "ERROR: Failed to remove old application." >> "$LOG_FILE"
     exit 1
 fi
-echo "Old Contents removed." >> "$LOG_FILE"
+echo "Old application removed." >> "$LOG_FILE"
 
-# 3. Overlay the new application into the preserved wrapper.
-echo "Overlaying new application into existing wrapper..." >> "$LOG_FILE"
-/usr/bin/ditto "$NEW_APP_PATH" "$OLD_APP_PATH"
+# 3. Move the new application from the temporary directory to the original location.
+echo "Moving new application into place..." >> "$LOG_FILE"
+mv "$NEW_APP_PATH" "$OLD_APP_PATH"
 if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to overlay new application." >> "$LOG_FILE"
+    echo "ERROR: Failed to move new application into place." >> "$LOG_FILE"
     exit 1
 fi
-echo "New application overlaid." >> "$LOG_FILE"
-
-# Clean up the temporary new app bundle.
-rm -rf "$NEW_APP_PATH"
+echo "New application moved." >> "$LOG_FILE"
 
 # 4. Relaunch the new, updated application.
 # 'open' command should be run as the logged-in user, not as root.

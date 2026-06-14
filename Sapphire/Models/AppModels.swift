@@ -269,6 +269,21 @@ struct SportsPayload: Equatable, Hashable {
     let status: String  // "Live", "Final", "Scheduled", etc.
     let time: String    // Current time or game time
     let league_logo: String?  // URL or system image name
+    let homeLogoURL: URL?
+    let awayLogoURL: URL?
+
+    init(league: String, homeTeam: String, awayTeam: String, homeScore: Int, awayScore: Int, status: String, time: String, league_logo: String? = nil, homeLogoURL: URL? = nil, awayLogoURL: URL? = nil) {
+        self.league = league
+        self.homeTeam = homeTeam
+        self.awayTeam = awayTeam
+        self.homeScore = homeScore
+        self.awayScore = awayScore
+        self.status = status
+        self.time = time
+        self.league_logo = league_logo
+        self.homeLogoURL = homeLogoURL
+        self.awayLogoURL = awayLogoURL
+    }
 }
 
 struct ESPNLeagueRoute: Hashable, Codable {

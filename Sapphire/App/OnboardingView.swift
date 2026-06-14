@@ -208,8 +208,15 @@ private struct HelperInstallationStepView: View {
                 .font(.system(size: 32, weight: .bold, design: .rounded))
                 .padding(.top, 40).padding(.bottom, 10)
 
-            Text("Sapphire uses a helper for advanced features like battery management and system integrations. This requires administrator approval to install.")
+            Text("Sapphire uses a helper for advanced features like battery management and system integrations.")
                 .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 50)
+                .padding(.bottom, 4)
+
+            Text("Tap \"Install\". Then through the notification, allow Sapphire to run in the background. A System Prompt will open asking for authentication. Once done you can continue! Alternatively, if you don't see the notifcation, you can also go to Settings --> General --> Login Items --> Background Activity --> Enable Sapphire.")
+                .font(.subheadline)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 50)
@@ -226,7 +233,7 @@ private struct HelperInstallationStepView: View {
                     VStack(alignment: .leading) {
                         Text("Approval Required")
                             .font(.headline)
-                        Text("Please enable in System Settings > Login Items.")
+                        Text("Find \"Sapphire Helper\" in the list, toggle it on, then authenticate.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
