@@ -1,5 +1,6 @@
 <div align="center">
-<img width="630" height="630" alt="Group 28" src="https://github.com/user-attachments/assets/c50e3d25-4769-48db-8eeb-f8130243694b" />
+<img width="220" height="220" alt="Group 31" src="https://github.com/user-attachments/assets/1e3ef88f-9849-4896-88d2-5294841a0062" />
+
   <h1>Sapphire</h1>
   <p><b>The all-in-one mac app that redefines the notch</b></p>
   <a href="https://cshariq.github.io/Sapphire-Website/" style="text-decoration: none; margin-right: 10px;">
