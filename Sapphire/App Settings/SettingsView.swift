@@ -7,28 +7,46 @@
 
 import SwiftUI
 
+private final class WeakWindowBox {
+    weak var window: NSWindow?
+    init(_ window: NSWindow) { self.window = window }
+}
+
 private struct WindowKey: EnvironmentKey {
-    static let defaultValue: NSWindow? = nil
+    static let defaultValue: WeakWindowBox? = nil
 }
 
 extension EnvironmentValues {
     var window: NSWindow? {
-        get { self[WindowKey.self] }
-        set { self[WindowKey.self] = newValue }
+        get { self[WindowKey.self]?.window }
+        set {
+            if let newValue {
+                self[WindowKey.self] = WeakWindowBox(newValue)
+            } else {
+                self[WindowKey.self] = nil
+            }
+        }
     }
 }
 
 struct SettingsView: View {
     @StateObject private var settings = SettingsModel.shared
-    @State private var selectedSection: SettingsSection? = .widgets
+    @State private var selectedSection: SettingsSection? = .general
+    @State private var showAccountPane = true // Track Account pane visibility (Enabled by default like System Settings)
 
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-                SettingsSidebarView(selectedSection: $selectedSection)
-                    .frame(width: 190, height: 880)
+                // Pass showAccountPane and selectedSection bindings to handle mutual exclusion
+                SettingsSidebarView(selectedSection: $selectedSection, showAccountPane: $showAccountPane)
+                    .frame(width: 250, height: 1000)
 
-                SettingsDetailView(selectedSection: selectedSection)
+                if showAccountPane {
+                    AccountSettingsView()
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    SettingsDetailView(selectedSection: selectedSection)
+                }
             }
 
             WindowDragHandle()
@@ -43,6 +61,12 @@ struct SettingsView: View {
         .environmentObject(settings)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenAccountPane)) { _ in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                showAccountPane = true
+                selectedSection = nil
+            }
+        }
     }
 }
 

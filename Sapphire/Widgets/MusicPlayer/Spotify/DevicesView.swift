@@ -75,12 +75,10 @@ struct DevicesView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack() {
             if isAppleMusic {
-                Text("AirPlay Devices").font(.title2.bold())
                 contentBody(for: .airplay)
             } else if !isLoggedIn {
-                Text("AirPlay Devices").font(.title2.bold())
                 contentBody(for: .airplay)
             } else {
                 HStack {
@@ -90,10 +88,20 @@ struct DevicesView: View {
                         Text("Welcome, \(nativeUser.profile.username)").font(.caption.bold()).foregroundColor(.secondary)
                     }
                     Spacer()
-
                     HStack(spacing: 10) {
                         TabButton(title: "Spotify", systemImage: "music.note", isSelected: selectedTab == .spotify) { selectedTab = .spotify }
                         TabButton(title: "AirPlay", systemImage: "airplayaudio", isSelected: selectedTab == .airplay) { selectedTab = .airplay }
+                        Button {
+                            navigationStack.append(.multiAudio)
+                        } label: {
+                            Label("Audio Control", systemImage: "hifispeaker.and.homepod.mini.fill")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.08))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }.padding(6).background(Color.black.opacity(0.2)).clipShape(Capsule())
 
                     if musicManager.isOfficialAPIAuthenticated {
@@ -118,7 +126,8 @@ struct DevicesView: View {
                 .frame(minHeight: 200)
             }
         }
-        .padding([.top, .horizontal], 20)
+        .padding(.horizontal, 20)
+        .padding(.top, 0)
         .frame(width: 700)
         .frame(maxHeight: 350)
         .fixedSize(horizontal: false, vertical: true)

@@ -31,9 +31,8 @@ class BluetoothManager: NSObject, ObservableObject {
     private var recentlyConnectedDebounceSet: Set<String> = []
 
     private let iDeviceBattery = IDeviceBattery.shared
-    private let bleBattery = BLEBattery()
     private let magicBattery = MagicBattery.shared
-    private let btdBattery = BTDBattery()
+    private let batteryReader = BluetoothBatteryReader.shared
     private var periodicPollingTimer: Timer?
 
     private var cancellables = Set<AnyCancellable>()
@@ -45,8 +44,11 @@ class BluetoothManager: NSObject, ObservableObject {
 
         SPBluetoothDataModel.shared.refeshData { [weak self] _ in
             guard let self = self else { return }
-            self.bleBattery.startScan()
             self.checkForInitiallyConnectedDevices()
+        }
+
+        Task {
+            await batteryReader.refreshAllBatteries()
         }
 
         self.connectionNotification = IOBluetoothDevice.register(
@@ -216,6 +218,17 @@ class BluetoothManager: NSObject, ObservableObject {
             return batteryDevice.batteryLevel
         }
 
+        let sysProfileBatteries = BluetoothBatteryReader.getSystemProfileBatteries()
+        if let match = sysProfileBatteries.first(where: { $0.name == name }), match.level > 0, match.level <= 100 {
+            print("[BluetoothManager] System profile battery for [\(name)]: \(match.level)%")
+            return match.level
+        }
+
+        await batteryReader.refreshAllBatteries()
+        if let cached = AirBatteryModel.getByName(name), cached.batteryLevel > 0, cached.batteryLevel <= 100 {
+            return cached.batteryLevel
+        }
+
         return nil
     }
 
@@ -276,6 +289,7 @@ class BluetoothManager: NSObject, ObservableObject {
 
     private func pollForIDeviceUpdates() {
         iDeviceBattery.scanDevices()
+        Task { await batteryReader.refreshAllBatteries() }
     }
 
     private func isContinuityDevice(name: String) -> Bool {

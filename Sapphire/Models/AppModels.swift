@@ -25,6 +25,8 @@ enum NotchWidgetMode: Hashable {
     case musicPlayer
     case weatherPlayer
     case calendarPlayer
+    case sportsPlayer
+    case financePlayer
 
     case musicQueueAndPlaylists
     case musicDevices
@@ -39,11 +41,12 @@ enum NotchWidgetMode: Hashable {
     case multiAudio
     case multiAudioDeviceAdjust(AudioDevice)
     case multiAudioEQ(AudioDevice)
-
+    case multiAudioAppEQ(bundleID: String, appName: String)
     case musicApiKeysMissing
     case geminiApiKeysMissing
     case musicLoginPrompt
     case timerDetailView
+    case agentS
     func hash(into hasher: inout Hasher) {
         switch self {
         case .defaultWidgets:
@@ -58,6 +61,10 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(4)
         case .calendarPlayer:
             hasher.combine(5)
+        case .sportsPlayer:
+            hasher.combine(23)
+        case .financePlayer:
+            hasher.combine(24)
         case .musicQueueAndPlaylists:
             hasher.combine(6)
         case .musicDevices:
@@ -91,6 +98,10 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(19)
         case .timerDetailView:
             hasher.combine(20)
+        case .multiAudioAppEQ:
+            hasher.combine(21)
+        case .agentS:
+            hasher.combine(22)
         }
     }
 }
@@ -118,6 +129,11 @@ enum MusicBottomContentType: Equatable {
     case none
     case peek(title: String, artist: String?)
     case lyrics(text: String, id: UUID)
+}
+
+enum SportsBottomContentType: Equatable {
+    case none
+    case commentary(text: String, id: String)
 }
 
 public struct StatsPayload: Equatable, Hashable {
@@ -163,6 +179,7 @@ public struct StatsPayload: Equatable, Hashable {
 
 enum StandardActivityData: Equatable {
     case music(bottom: MusicBottomContentType)
+    case intelligenceAgent(status: String, current: Int, total: Int)
     case weather(data: ProcessedWeatherData)
     case calendar(event: EKEvent)
     case battery(state: BatteryState, style: BatteryNotificationStyle, timeRemaining: String?, systemState: BatterySystemState)
@@ -174,6 +191,7 @@ enum StandardActivityData: Equatable {
     case bluetooth(device: BluetoothDeviceState)
     case audioSwitch(event: AudioSwitchEvent)
     case geminiLive(payload: GeminiPayload)
+    case microphone(payload: MicrophonePayload)
     case nearDrop(payload: NearDropPayload)
     case hud(type: HUDType)
     case reminder(reminder: EKReminder)
@@ -181,6 +199,8 @@ enum StandardActivityData: Equatable {
     case unlocked
     case updateAvailable(version: String)
     case stats(payload: StatsPayload)
+    case sports(payload: SportsPayload, bottom: SportsBottomContentType = .none)
+    case finance(payload: FinancePayload)
 
     static func == (lhs: StandardActivityData, rhs: StandardActivityData) -> Bool {
         switch (lhs, rhs) {
@@ -198,12 +218,15 @@ enum StandardActivityData: Equatable {
         case let (.bluetooth(a), .bluetooth(b)): return a == b
         case let (.audioSwitch(a), .audioSwitch(b)): return a == b
         case let (.geminiLive(a), .geminiLive(b)): return a == b
+        case let (.microphone(a), .microphone(b)): return a == b
         case let (.nearDrop(a), .nearDrop(b)): return a == b
         case let (.hud(a), .hud(b)): return a == b
         case (.lockScreen, .lockScreen): return true
         case (.unlocked, .unlocked): return true
         case let (.updateAvailable(a), .updateAvailable(b)): return a == b
         case let (.stats(a), .stats(b)): return a == b
+        case let (.sports(a, bottomA), .sports(b, bottomB)): return a == b && bottomA == bottomB
+        case let (.finance(a), .finance(b)): return a == b
         default: return false
         }
     }
@@ -222,6 +245,12 @@ struct GeminiPayload: Identifiable, Hashable {
     let id = UUID(); var state: GeminiLiveState = .active; var isMicMuted: Bool = true
 }
 
+struct MicrophonePayload: Identifiable, Equatable, Hashable {
+    let id = UUID()
+    var isMuted: Bool
+    var audioLevel: Float
+}
+
 struct LyricLine: Identifiable, Hashable {
     let id = UUID(); let text: String; let timestamp: TimeInterval; var translatedText: String?
 }
@@ -229,4 +258,127 @@ struct LyricLine: Identifiable, Hashable {
 struct BatteryState: Equatable, Hashable {
     let level: Int, isCharging: Bool, isPluggedIn: Bool
     var isLow: Bool { level <= 20 && !isCharging }
+}
+
+struct SportsPayload: Equatable, Hashable {
+    let league: String  // NFL, NBA, MLB, NHL, etc.
+    let homeTeam: String
+    let awayTeam: String
+    let homeScore: Int
+    let awayScore: Int
+    let status: String  // "Live", "Final", "Scheduled", etc.
+    let time: String    // Current time or game time
+    let league_logo: String?  // URL or system image name
+}
+
+struct ESPNLeagueRoute: Hashable, Codable {
+    let sport: String
+    let league: String
+    let displayName: String
+    let shortName: String?
+
+    init(sport: String, league: String, displayName: String, shortName: String? = nil) {
+        self.sport = sport
+        self.league = league
+        self.displayName = displayName
+        self.shortName = shortName
+    }
+}
+
+struct LiveSportsEvent: Equatable {
+    let eventId: String
+    let homeTeam: String
+    let awayTeam: String
+    let homeScore: Int
+    let awayScore: Int
+    let homeScoreDisplay: String
+    let awayScoreDisplay: String
+    let status: String
+    let clock: String
+    let homeLogoURL: URL?
+    let awayLogoURL: URL?
+    let leagueRoute: ESPNLeagueRoute
+    let isLive: Bool
+    let dataSource: String
+
+    init(
+        eventId: String,
+        homeTeam: String,
+        awayTeam: String,
+        homeScore: Int,
+        awayScore: Int,
+        homeScoreDisplay: String? = nil,
+        awayScoreDisplay: String? = nil,
+        status: String,
+        clock: String,
+        homeLogoURL: URL?,
+        awayLogoURL: URL?,
+        leagueRoute: ESPNLeagueRoute,
+        isLive: Bool,
+        dataSource: String = "ESPN"
+    ) {
+        self.eventId = eventId
+        self.homeTeam = homeTeam
+        self.awayTeam = awayTeam
+        self.homeScore = homeScore
+        self.awayScore = awayScore
+        self.homeScoreDisplay = homeScoreDisplay ?? String(homeScore)
+        self.awayScoreDisplay = awayScoreDisplay ?? String(awayScore)
+        self.status = status
+        self.clock = clock
+        self.homeLogoURL = homeLogoURL
+        self.awayLogoURL = awayLogoURL
+        self.leagueRoute = leagueRoute
+        self.isLive = isLive
+        self.dataSource = dataSource
+    }
+}
+
+struct SportsComment: Identifiable, Equatable {
+    let id: String
+    let text: String
+    let clock: String?
+    let period: String?
+}
+
+struct FinancePayload: Equatable, Hashable {
+    let symbol: String  // AAPL, BTC/USD, etc.
+    let price: String
+    let change: String  // "+1.25" or "-2.30"
+    let changePercent: String  // "+1.2%" or "-2.3%"
+    let isPositive: Bool
+    let name: String    // "Apple Inc." etc.
+    let isAfterHours: Bool
+    let closingPrice: String?  // Last regular-session close when after hours
+
+    var unitPrice: Double {
+        Double(price.replacingOccurrences(of: "$", with: "")) ?? 0
+    }
+
+    var changeValue: Double {
+        Double(change.replacingOccurrences(of: "+", with: "")) ?? 0
+    }
+}
+
+struct PortfolioPositionStats: Equatable {
+    let invested: String?
+    let current: String?
+    let totalPL: String?
+    let dailyPL: String?
+    let openPL: String?
+    let holdingPeriod: String?
+    let isTotalPLPositive: Bool
+    let isDailyPLPositive: Bool
+    let isOpenPLPositive: Bool
+}
+
+enum SportLayoutKind: CaseIterable {
+    case football, basketball, hockey, baseball, soccer
+    case cricket, tennis, racing, combat, golf, rugby
+    case volleyball, lacrosse, olympics, esports, australianFootball, fieldSports
+    case generic
+
+    static func from(league: String) -> SportLayoutKind {
+        SportLayoutRegistry.resolve(league: league)
+    }
 }

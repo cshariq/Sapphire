@@ -163,9 +163,9 @@ struct PlayerState: Decodable {
     let playOrigin: PlayOrigin?
 
     struct Options: Decodable {
-        let shufflingContext: Bool
-        let repeatingContext: Bool
-        let repeatingTrack: Bool
+        let shufflingContext: Bool?
+        let repeatingContext: Bool?
+        let repeatingTrack: Bool?
     }
 
     struct Track: Decodable, Hashable {

@@ -194,7 +194,8 @@ class DownloadMonitor: ObservableObject {
         }
         print("[DM] Starting monitoring on directory: \(downloadDirectory.path)")
 
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        // Increased from 0.5s to 1.0s to reduce file system polling
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.checkDownloads()
         }
 

@@ -16,7 +16,10 @@
 		</dict>
 	</array>
 	<key>NSAppTransportSecurity</key>
-	<dict/>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSApplicationCrashOnExceptions</key>
 	<true/>
 	<key>NSHighResolutionCapable</key>
@@ -63,5 +66,44 @@
 	<string>D30C25BD-E0C1-44C8-830A-964F27DAD4BA</string>
 	<key>PayloadVersion</key>
 	<integer>1</integer>
+	<key>SapphireSubscriptionAPIKey</key>
+	<string>$(SAPPHIRE_SUBSCRIPTION_API_KEY)</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Sapphire Settings Backup</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.shariq.sapphire.settings-backup</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sapphirebackup</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Sapphire Launchpad Item</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.shariq.sapphire.launchpaditem</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sapphirelaunchpaditem</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

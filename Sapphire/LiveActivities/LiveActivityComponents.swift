@@ -369,6 +369,37 @@ struct FileProgressLiveActivityView {
     }
 }
 
+struct IntelligenceAgentActivityView {
+    static func left() -> some View {
+        Image(systemName: "sparkle")
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [.purple, .blue],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+    }
+
+    static func right(status: String, current: Int, total: Int) -> some View {
+        HStack(spacing: 8) {
+            Text(status)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+
+            if total > 0 {
+                Text("\(current)/\(total)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .frame(maxWidth: 300)
+            }
+        }
+        .foregroundColor(.white.opacity(0.9))
+    }
+}
+
 struct FileCircularProgressIndicator: View {
     let progress: Double
     let size: CGFloat
@@ -408,7 +439,8 @@ struct AlbumArtView: View {
         .aspectRatio(contentMode: .fill)
         .frame(width: 20, height: 20)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .id(musicWidget.artwork?.hash)
+        .id(musicWidget.currentTrackArtworkToken)
+        .animation(nil, value: musicWidget.currentTrackArtworkToken)
         .onHover { isHovering in
             musicWidget.isHoveringAlbumArt = isHovering
         }
@@ -1543,7 +1575,7 @@ struct CalibrationActivityView: View {
                 Image(systemName: "battery.100.bolt")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(.cyan)
-                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
+//                    .symbolEffect(.vintelligencebleColor.iterative.reversing, options: .repeating)
 
                 Text("Battery Calibration")
                     .font(.system(size: 22, weight: .bold, design: .rounded))

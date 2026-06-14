@@ -11,6 +11,7 @@ import AppKit
 private struct PlayerProgressView: View {
     @EnvironmentObject var musicManager: MusicManager
     @State private var currentProgress: Double = 0.0
+    @State private var displayElapsed: TimeInterval = 0
 
     private func formatTime(_ seconds: Double) -> String {
         let cleanSeconds = seconds.isNaN || seconds.isInfinite ? 0 : seconds
@@ -20,7 +21,7 @@ private struct PlayerProgressView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            Text(formatTime(musicManager.currentElapsedTime))
+            Text(formatTime(displayElapsed))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
 
@@ -37,15 +38,13 @@ private struct PlayerProgressView: View {
             .frame(height: 30)
             .shadow(color: musicManager.accentColor.opacity(0.5), radius: 8, y: 3)
 
-            Text("-\(formatTime(musicManager.totalDuration - musicManager.currentElapsedTime))")
+            Text("-\(formatTime(musicManager.totalDuration - displayElapsed))")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
         }
-        .onAppear {
-            self.currentProgress = musicManager.playbackProgress
-        }
-        .onReceive(musicManager.playbackTimePublisher) { (_, newProgress) in
-            self.currentProgress = newProgress
+        .onReceive(musicManager.playbackTimePublisher) { (elapsed, progress) in
+            displayElapsed = elapsed
+            currentProgress = progress
         }
     }
 }
@@ -126,34 +125,55 @@ struct MusicPlayerView: View {
     private var primaryButtons: [MusicPlayerButtonType] { Array(enabledButtons.prefix(2)) }
     private var accessoryButtons: [MusicPlayerButtonType] { Array(enabledButtons.dropFirst(2)) }
 
-    private var playlistsLongPressAction: MusicPlayerButtonType? {
-        let isShufflePrimary = primaryButtons.contains(.shuffle)
-        let isRepeatPrimary = primaryButtons.contains(.repeat)
-        let isPlaylistsPrimary = primaryButtons.contains(.playlists)
-        let isDevicesPrimary = primaryButtons.contains(.devices)
-
-        if isDevicesPrimary && isRepeatPrimary { return nil }
-        if isDevicesPrimary && isShufflePrimary { return nil }
-        if isPlaylistsPrimary && isShufflePrimary { return enabledButtons.contains(.repeat) ? nil : .repeat }
-        if enabledButtons.contains(.shuffle) { return nil }
-        return .shuffle
-    }
-
-    private var devicesLongPressAction: MusicPlayerButtonType? {
-        let isShufflePrimary = primaryButtons.contains(.shuffle)
-        let isRepeatPrimary = primaryButtons.contains(.repeat)
-        let isPlaylistsPrimary = primaryButtons.contains(.playlists)
-        let isDevicesPrimary = primaryButtons.contains(.devices)
-
-        if isPlaylistsPrimary && isShufflePrimary { return nil }
-        if isPlaylistsPrimary && isRepeatPrimary { return nil }
-        if isDevicesPrimary && isRepeatPrimary { return enabledButtons.contains(.shuffle) ? nil : .shuffle }
-        if enabledButtons.contains(.repeat) { return nil }
-        return .repeat
-    }
-
     var body: some View {
         VStack(spacing: 3) {
+            
+            // Native Multi-source Tab Switcher
+            if musicManager.activeMediaSources.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(musicManager.activeMediaSources.keys.sorted()), id: \.self) { key in
+                            if let track = musicManager.activeMediaSources[key] {
+                                let appName = musicManager.appName(for: track.payload.bundleIdentifier)
+                                let isSelected = musicManager.currentSourceKey == key
+
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        musicManager.selectSource(key: key)
+                                    }
+                                }) {
+                                    HStack(spacing: 6) {
+                                        if isSelected {
+                                            Circle()
+                                                .fill(musicManager.accentColor)
+                                                .frame(width: 6, height: 6)
+                                        }
+                                        Text(appName)
+                                            .font(.system(size: 11, weight: isSelected ? .bold : .semibold))
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(isSelected ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(isSelected ? musicManager.accentColor.opacity(0.5) : Color.clear, lineWidth: 1)
+                                    )
+                                    .foregroundColor(isSelected ? .primary : .secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                }
+                .frame(height: 35)
+                .padding(.bottom, 6)
+            }
+            
             HStack(spacing: 12) {
                 ZStack {
                     Image(nsImage: musicManager.artwork ?? musicManager.appIcon ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art")!)
@@ -202,7 +222,7 @@ struct MusicPlayerView: View {
                     .scaleEffect(1.3)
                     .compositingGroup()
             }
-            .padding(.top, 10)
+            .padding(.top, musicManager.activeMediaSources.count > 1 ? 0 : 10)
 
             if musicManager.isPlaying || musicManager.totalDuration > 0 {
                 VStack(spacing: 3) {
@@ -235,6 +255,8 @@ struct MusicPlayerView: View {
         .frame(width: 400).padding(10)
         .animation(.easeInOut(duration: 0.4), value: musicManager.isPlaying)
         .animation(.default, value: enabledButtons)
+        .onAppear { musicManager.setDetailPlayerOpen(true) }
+        .onDisappear { musicManager.setDetailPlayerOpen(false) }
         .onChange(of: musicManager.isLiked) { isLiked in
             if isLiked {
                 showTemporaryLikedGlow = true
@@ -252,24 +274,15 @@ struct MusicPlayerView: View {
         if isLockScreenMode {
             let destination: LockScreenMusicView
             switch targetMode {
-            case .musicQueueAndPlaylists:
-                destination = .queueAndPlaylists
-            case .musicDevices:
-                destination = .devices
-            case .musicLoginPrompt:
-                destination = .loginPrompt
-            default:
-                return
+            case .musicQueueAndPlaylists: destination = .queueAndPlaylists
+            case .musicDevices: destination = .devices
+            case .musicLoginPrompt: destination = .loginPrompt
+            default: return
             }
-
             if !musicManager.isPrivateAPIAuthenticated && !musicManager.isOfficialAPIAuthenticated && musicManager.lastKnownBundleID != "com.apple.Music" {
-                if targetMode != .musicDevices {
-                    navigationManager.navigateTo(.loginPrompt)
-                    return
-                }
+                if targetMode != .musicDevices { navigationManager.navigateTo(.loginPrompt); return }
             }
             navigationManager.navigateTo(destination)
-
         } else {
             if !musicManager.isPrivateAPIAuthenticated && !musicManager.isOfficialAPIAuthenticated && musicManager.lastKnownBundleID != "com.apple.Music" {
                 if targetMode != .musicDevices { navigationStack.append(.musicLoginPrompt); return }
@@ -292,20 +305,11 @@ struct MusicPlayerView: View {
                     .onChanged { _ in
                         guard longPressTask == nil else { return }
                         isPressingPlaylists = true
-                        guard let action = playlistsLongPressAction else { return }
-                        didTriggerLongPress = false
                         longPressTask = Task {
                             do {
                                 try await Task.sleep(for: .seconds(0.5))
                                 guard !Task.isCancelled, isSpotifyOrAppleMusic else { return }
                                 didTriggerLongPress = true; isPressingPlaylists = false
-                                withAnimation { playlistsFeedbackType = action }
-                                while !Task.isCancelled {
-                                    triggerHapticFeedback()
-                                    if action == .shuffle { musicManager.toggleShuffle() }
-                                    else if action == .repeat { musicManager.cycleRepeatMode() }
-                                    try await Task.sleep(for: .seconds(1.0))
-                                }
                             } catch {}
                         }
                     }
@@ -314,18 +318,14 @@ struct MusicPlayerView: View {
                         if !didTriggerLongPress {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { isPressingPlaylists = false }
                             handleButtonTap(for: .musicQueueAndPlaylists)
-                        } else {
-                            isPressingPlaylists = false
-                        }
+                        } else { isPressingPlaylists = false }
                         playlistsFeedbackType = nil; didTriggerLongPress = false
                     }
                 ZStack {
-                    Image(systemName: musicManager.repeatState == .track ? "repeat.1" : "repeat").font(.system(size: iconSize)).opacity(playlistsFeedbackType == .repeat ? 1 : 0)
-                    Image(systemName: "shuffle").font(.system(size: iconSize)).opacity(playlistsFeedbackType == .shuffle ? 1 : 0)
                     Image(systemName: type.systemImage).font(.system(size: iconSize + 2)).opacity(playlistsFeedbackType != nil ? 0 : 1)
                 }
                 .modifier(PressableButton(isPressing: $isPressingPlaylists, size: size))
-                .foregroundColor( (playlistsFeedbackType == .shuffle && musicManager.shuffleState) || (playlistsFeedbackType == .repeat && musicManager.repeatState != .off) ? .green : .secondary)
+                .foregroundColor(.secondary)
                 .frame(width: frameSize, height: frameSize).contentShape(Rectangle()).gesture(gesture)
 
             case .devices:
@@ -333,20 +333,11 @@ struct MusicPlayerView: View {
                     .onChanged { _ in
                         guard longPressTask == nil else { return }
                         isPressingDevices = true
-                        guard let action = devicesLongPressAction else { return }
-                        didTriggerLongPress = false
                         longPressTask = Task {
                             do {
                                 try await Task.sleep(for: .seconds(0.5))
                                 guard !Task.isCancelled, isSpotifyOrAppleMusic else { return }
                                 didTriggerLongPress = true; isPressingDevices = false
-                                withAnimation { devicesFeedbackType = action }
-                                while !Task.isCancelled {
-                                    triggerHapticFeedback()
-                                    if action == .shuffle { musicManager.toggleShuffle() }
-                                    else if action == .repeat { musicManager.cycleRepeatMode() }
-                                    try await Task.sleep(for: .seconds(1.0))
-                                }
                             } catch {}
                         }
                     }
@@ -355,9 +346,7 @@ struct MusicPlayerView: View {
                         if !didTriggerLongPress {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { isPressingDevices = false }
                             handleButtonTap(for: .musicDevices)
-                        } else {
-                            isPressingDevices = false
-                        }
+                        } else { isPressingDevices = false }
                         devicesFeedbackType = nil; didTriggerLongPress = false
                     }
 
@@ -366,12 +355,10 @@ struct MusicPlayerView: View {
                     return type.systemImage
                 }()
                 ZStack {
-                    Image(systemName: "shuffle").font(.system(size: iconSize)).opacity(devicesFeedbackType == .shuffle ? 1 : 0)
-                    Image(systemName: musicManager.repeatState == .track ? "repeat.1" : "repeat").font(.system(size: iconSize)).opacity(devicesFeedbackType == .repeat ? 1 : 0)
                     Image(systemName: deviceIcon).font(.system(size: iconSize)).opacity(devicesFeedbackType != nil ? 0 : 1)
                 }
                 .modifier(PressableButton(isPressing: $isPressingDevices, size: size))
-                .foregroundColor( (devicesFeedbackType == .shuffle && musicManager.shuffleState) || (devicesFeedbackType == .repeat && musicManager.repeatState != .off) ? .green : .secondary)
+                .foregroundColor(.secondary)
                 .frame(width: frameSize, height: frameSize).contentShape(Rectangle()).gesture(gesture)
 
             case .like:

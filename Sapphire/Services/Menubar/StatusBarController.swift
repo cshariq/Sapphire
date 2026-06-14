@@ -138,7 +138,6 @@ final class StatusBarController {
         guard isCollapsed else { return }
         isCollapsed = false
         isEditing = false
-
         isAlwaysHiddenExpanded = false
 
         updateItems()
@@ -247,7 +246,7 @@ final class StatusBarController {
     }
 
     private func startSmartRehideMonitoring() {
-        smartRehideTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        smartRehideTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
 
             let mouseLoc = NSEvent.mouseLocation

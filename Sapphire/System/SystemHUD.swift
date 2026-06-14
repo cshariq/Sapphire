@@ -10,6 +10,13 @@ import AppKit
 import Combine
 
 fileprivate func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        DispatchQueue.main.async {
+            SystemHUDManager.shared.handleEventTapDisabled()
+        }
+        return Unmanaged.passRetained(event)
+    }
+
     if type.rawValue == NX_SYSDEFINED {
         if SystemHUDManager.shared.handleMediaKeyEvent(event) {
             return nil
@@ -38,6 +45,7 @@ enum HUDType: Hashable {
     case multiDisplayBrightness(displays: [DisplayBrightnessInfo])
     case keyboardBrightness(level: Float)
     case externalDeviceVolume(deviceName: String, deviceIcon: String, deviceVolume: Float, systemVolume: Float, isControllingExternal: Bool, canControlVolume: Bool)
+    case appVolume(appName: String, appIcon: NSImage?, appVolume: Float)
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(self.caseIdentifier)
@@ -58,6 +66,13 @@ enum HUDType: Hashable {
             hasher.combine(systemVolume)
             hasher.combine(isControllingExternal)
             hasher.combine(canControlVolume)
+        case .appVolume(let appName, let appIcon, let appVolume):
+            hasher.combine(appName)
+            // NSImage is not Hashable, so we hash its TIFF representation
+            if let imageData = appIcon?.tiffRepresentation {
+                hasher.combine(imageData)
+            }
+            hasher.combine(appVolume)
         }
     }
 
@@ -68,9 +83,10 @@ enum HUDType: Hashable {
         case .multiDisplayBrightness: return .multiDisplayBrightness
         case .keyboardBrightness: return .keyboardBrightness
         case .externalDeviceVolume: return .externalDeviceVolume
+        case .appVolume: return .appVolume
         }
     }
-    enum CaseIdentifier { case volume, brightness, multiDisplayBrightness, keyboardBrightness, externalDeviceVolume }
+    enum CaseIdentifier { case volume, brightness, multiDisplayBrightness, keyboardBrightness, externalDeviceVolume, appVolume }
 }
 
 private enum MediaKeyAction {
@@ -91,6 +107,7 @@ class SystemHUDManager: ObservableObject {
     private let displayManager = DisplayManager.shared
 
     private var eventTap: CFMachPort?
+    private var eventTapRunLoopSource: CFRunLoopSource?
     private var hudDismissalTimer: Timer?
     private var keyRepeatTimer: Timer?
     private var currentAction: MediaKeyAction?
@@ -107,9 +124,18 @@ class SystemHUDManager: ObservableObject {
     private var lastCommittedSpotifyVolume: Float?
     private var isFetchingSpotifyState = false
     private var isControllingSpotify = false
+    private var spotifyFetchRequestID = UUID()
+    
+    // App volume control properties
+    private var currentAppBundleID: String?
+    private var currentAppVolume: Float = 0.5
+    private var lastCommittedAppVolume: Float?
+    private var isControllingAppVolume = false
+    var currentAppIcon: NSImage?
 
     private init() {
         setupEventTap()
+        startVerificationTimer()
 
         NotificationCenter.default.addObserver(
             self,
@@ -137,6 +163,10 @@ class SystemHUDManager: ObservableObject {
     }
 
     private func setupEventTap() {
+        if let existingSource = eventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), existingSource, .commonModes)
+            eventTapRunLoopSource = nil
+        }
         if let existingTap = eventTap {
             CGEvent.tapEnable(tap: existingTap, enable: false)
         }
@@ -157,8 +187,35 @@ class SystemHUDManager: ObservableObject {
         }
 
         let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+        eventTapRunLoopSource = runLoopSource
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: eventTap, enable: true)
+    }
+
+    private func startVerificationTimer() {
+        verificationTimer?.invalidate()
+        verificationTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.ensureEventTapIsEnabled()
+        }
+    }
+
+    fileprivate func handleEventTapDisabled() {
+        ensureEventTapIsEnabled(forceRebuild: true)
+    }
+
+    private func ensureEventTapIsEnabled(forceRebuild: Bool = false) {
+        guard let eventTap else {
+            setupEventTap()
+            return
+        }
+
+        if forceRebuild || !CGEvent.tapIsEnabled(tap: eventTap) {
+            CGEvent.tapEnable(tap: eventTap, enable: true)
+
+            if !CGEvent.tapIsEnabled(tap: eventTap) {
+                setupEventTap()
+            }
+        }
     }
 
     fileprivate func handleMediaKeyEvent(_ cgEvent: CGEvent) -> Bool {
@@ -234,7 +291,11 @@ class SystemHUDManager: ObservableObject {
         isInitialKeyPress = true
 
         if action == .volumeUp || action == .volumeDown {
-            if settings.settings.showSpotifyVolumeHUD, let cachedState = self.lastKnownSpotifyState {
+            let requestID = UUID()
+            spotifyFetchRequestID = requestID
+
+            // Use cached spotify state only if MusicManager indicates Spotify is the current now-playing source
+            if settings.settings.showSpotifyVolumeHUD, let cachedState = self.lastKnownSpotifyState, musicManager.lastKnownBundleID == "com.spotify.client", musicManager.isPlaying {
                 self.spotifyStateForAction = cachedState
                 self.updateVolumeHUD()
             }
@@ -244,12 +305,14 @@ class SystemHUDManager: ObservableObject {
                 Task { @MainActor in
                     defer { self.isFetchingSpotifyState = false }
                     if let freshState = await musicManager.fetchActiveSpotifyDeviceState() {
+                        guard self.spotifyFetchRequestID == requestID, self.currentAction == action else { return }
                         self.spotifyStateForAction = freshState
                         self.lastKnownSpotifyState = freshState
                         if self.currentHUD != nil {
                             self.updateVolumeHUD()
                         }
                     } else {
+                        guard self.spotifyFetchRequestID == requestID, self.currentAction == action else { return }
                         self.spotifyStateForAction = nil
                         self.lastKnownSpotifyState = nil
                     }
@@ -273,36 +336,45 @@ class SystemHUDManager: ObservableObject {
         )
     }
 
-    private func stopContinuousChange() {
-        if let lastAction = currentAction, (lastAction == .volumeUp || lastAction == .volumeDown) {
-            if isControllingSpotify,
-               let finalVolume = self.currentSpotifyVolumeForAction,
-               let lastCommitted = self.lastCommittedSpotifyVolume,
-               Int(finalVolume.rounded()) != Int(lastCommitted.rounded()) {
+     private func stopContinuousChange() {
+         if let lastAction = currentAction, (lastAction == .volumeUp || lastAction == .volumeDown) {
+             if isControllingSpotify,
+                let finalVolume = self.currentSpotifyVolumeForAction,
+                let lastCommitted = self.lastCommittedSpotifyVolume,
+                Int(finalVolume.rounded()) != Int(lastCommitted.rounded()) {
 
-                let finalVolumeInt = Int(finalVolume.rounded())
-                Task {
-                    _ = await self.musicManager.setSpotifyVolume(percent: finalVolumeInt)
-                }
-            }
+                 let finalVolumeInt = Int(finalVolume.rounded())
+                 Task {
+                     _ = await self.musicManager.setSpotifyVolume(percent: finalVolumeInt)
+                 }
+             }
 
-            if settings.settings.volumeHUDSoundEnabled {
-                if let soundURL = Bundle.main.url(forResource: "Media Keys", withExtension: "aif") {
-                    NSSound(contentsOf: soundURL, byReference: true)?.play()
-                } else {
-                    NSSound(named: "Tink")?.play()
-                }
-            }
-        }
+             if isControllingAppVolume,
+                let bundleID = self.currentAppBundleID,
+                let lastCommitted = self.lastCommittedAppVolume {
+                 // App volume has already been set via PerAppAudioController.shared.setVolume
+                 // Just update the last committed value
+                 self.lastCommittedAppVolume = self.currentAppVolume
+             }
 
-        keyRepeatTimer?.invalidate()
-        keyRepeatTimer = nil
-        currentAction = nil
+             if settings.settings.volumeHUDSoundEnabled {
+                 if let soundURL = Bundle.main.url(forResource: "Media Keys", withExtension: "aif") {
+                     NSSound(contentsOf: soundURL, byReference: true)?.play()
+                 } else {
+                     NSSound(named: "Tink")?.play()
+                 }
+             }
+         }
 
-        withAnimation(.spring()) {
-            glowIntensity = 0.0
-        }
-    }
+         keyRepeatTimer?.invalidate()
+         keyRepeatTimer = nil
+         currentAction = nil
+         spotifyFetchRequestID = UUID()
+
+         withAnimation(.spring()) {
+             glowIntensity = 0.0
+         }
+     }
 
     @objc private func startRepeatingChange() {
         keyRepeatTimer?.invalidate()
@@ -329,35 +401,47 @@ class SystemHUDManager: ObservableObject {
 
         let currentModifiers = NSEvent.modifierFlags
 
-        switch action {
-        case .volumeUp, .volumeDown:
-            let isSystemFineTune = currentModifiers.contains([.option, .shift]) && !currentModifiers.contains(.command)
-            let isSpotifyModifierPressed = currentModifiers.contains(.option) || currentModifiers.contains(.command)
-            let isSpotifyControlAttempt = settings.settings.showSpotifyVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune
+          switch action {
+          case .volumeUp, .volumeDown:
+              let isSystemFineTune = currentModifiers.contains([.option, .shift]) && !currentModifiers.contains(.command)
+              let isSpotifyModifierPressed = currentModifiers.contains(.option) || currentModifiers.contains(.command)
+              let isSpotifyControlAttempt = settings.settings.showSpotifyVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune
 
-            if isSpotifyControlAttempt {
-                if let spotifyState = self.spotifyStateForAction, spotifyState.canControlVolume {
-                    self.isControllingSpotify = true
+               if isSpotifyControlAttempt {
+                   if let spotifyState = self.spotifyStateForAction, spotifyState.canControlVolume {
+                       self.isControllingSpotify = true
+                       self.isControllingAppVolume = false
 
-                    if self.currentSpotifyVolumeForAction == nil {
-                        self.currentSpotifyVolumeForAction = Float(spotifyState.volumePercent ?? 0)
-                        self.lastCommittedSpotifyVolume = self.currentSpotifyVolumeForAction
-                    }
-                    let isFineTuningForSpotify = currentModifiers.contains(.option) || currentModifiers.contains(.shift)
-                    performSpotifyVolumeChange(action: action, isFineTuning: isFineTuningForSpotify)
+                       if self.currentSpotifyVolumeForAction == nil {
+                           self.currentSpotifyVolumeForAction = Float(spotifyState.volumePercent ?? 0)
+                           self.lastCommittedSpotifyVolume = self.currentSpotifyVolumeForAction
+                       }
+                       let isFineTuningForSpotify = currentModifiers.contains(.option) || currentModifiers.contains(.shift)
+                       performSpotifyVolumeChange(action: action, isFineTuning: isFineTuningForSpotify)
 
-                } else if isFetchingSpotifyState {
-                    return
-                } else {
-                    self.isControllingSpotify = false
-                    self.changeSystemVolume(action: action, isFineTuning: isSystemFineTune)
-                }
-            } else {
-                self.isControllingSpotify = false
-                self.changeSystemVolume(action: action, isFineTuning: isSystemFineTune)
-            }
+                   } else if settings.settings.showAppVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune {
+                       // Prefer to show app volume immediately when Option+Volume is pressed
+                       // This ensures a single press will change app volume even if Spotify fetch is pending
+                       self.isControllingSpotify = false
+                       self.performAppVolumeChange(action: action)
+                   } else if isFetchingSpotifyState {
+                       return
+                   } else {
+                       self.isControllingSpotify = false
+                       self.isControllingAppVolume = false
+                       self.changeSystemVolume(action: action, isFineTuning: isSystemFineTune)
+                   }
+              } else if settings.settings.showAppVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune {
+                  // App volume when Spotify HUD is disabled but app volume is enabled with Option modifier
+                  self.isControllingSpotify = false
+                  self.performAppVolumeChange(action: action)
+              } else {
+                  self.isControllingSpotify = false
+                  self.isControllingAppVolume = false
+                  self.changeSystemVolume(action: action, isFineTuning: isSystemFineTune)
+              }
 
-            self.updateVolumeHUD()
+             self.updateVolumeHUD()
 
         case .brightnessUp, .brightnessDown:
             if currentModifiers.contains(.option) && !currentModifiers.contains(.shift) {
@@ -520,7 +604,9 @@ class SystemHUDManager: ObservableObject {
         guard let currentVolume = self.currentSpotifyVolumeForAction else { return }
 
         let changeDirection: Float = action == .volumeUp ? 1 : -1
-        let step: Float = isFineTuning ? 1.0 : Float(settings.settings.volumesliderstep)
+        // Use per-device override when available (falls back to global slider step)
+        let currentDevice = AudioDeviceManager().getCurrentOutputDevice()
+        let step: Float = isFineTuning ? 1.0 : Float(settings.volumeSliderStep(forDeviceUID: currentDevice?.uid))
 
         let newSpotifyVolume = (currentVolume + (step * changeDirection)).clamped(to: 0...100)
         self.currentSpotifyVolumeForAction = newSpotifyVolume
@@ -539,79 +625,230 @@ class SystemHUDManager: ObservableObject {
         }
     }
 
-    @MainActor
-    private func changeSystemVolume(action: MediaKeyAction, isFineTuning: Bool) {
-        let changeDirection: Float = action == .volumeUp ? 1 : -1
-        let percentageStep = Float(settings.settings.volumesliderstep)
-        let coarseStep = (percentageStep / 100.0).clamped(to: 0.01...1.0)
-        let fineStep: Float = 0.01
+       @MainActor
+       private func performAppVolumeChange(action: MediaKeyAction) {
+                  // Determine target app bundle id. Prefer the app we previously detected/showed in HUD
+                  let targetBundleID: String
+                  if let existing = self.currentAppBundleID {
+                      targetBundleID = existing
+                  } else if let frontmostApp = NSWorkspace.shared.frontmostApplication, let b = frontmostApp.bundleIdentifier {
+                      targetBundleID = b
+                  } else {
+                      return
+                  }
 
-        let currentVolume = SystemControl.getVolume()
-        let newVolume: Float
-        if isFineTuning {
-            newVolume = (currentVolume + (fineStep * changeDirection)).clamped(to: 0...1)
-        } else {
-            let currentStepNum = round(currentVolume / coarseStep)
-            let nextStepNum = currentStepNum + changeDirection
-            newVolume = (nextStepNum * coarseStep).clamped(to: 0...1)
-        }
+                  // Skip Spotify and Apple Music - they have their own volume control
+                  if targetBundleID == "com.spotify.client" || targetBundleID == "com.apple.Music" {
+                      return
+                  }
 
-        SystemControl.setVolume(to: newVolume)
-
-        if newVolume == 0.0 {
-            SystemControl.setMuted(to: true)
-        } else {
-            SystemControl.setMuted(to: false)
-        }
-    }
-
-    @MainActor
-    private func updateVolumeHUD() {
-        let systemVolume = SystemControl.getVolume()
-
-        if settings.settings.showSpotifyVolumeHUD, let spotifyState = self.spotifyStateForAction {
-            let spotifyVolumePercent = self.currentSpotifyVolumeForAction ?? Float(spotifyState.volumePercent ?? 75)
-            let hud = HUDType.externalDeviceVolume(
-                deviceName: spotifyState.name,
-                deviceIcon: spotifyState.iconName,
-                deviceVolume: spotifyVolumePercent / 100.0,
-                systemVolume: systemVolume,
-                isControllingExternal: isControllingSpotify,
-                canControlVolume: spotifyState.canControlVolume
-            )
-            showHUD(for: hud)
-        } else {
-            let device = AudioDeviceManager().getCurrentOutputDevice()
-            showHUD(for: .volume(level: systemVolume, device: device))
-        }
-    }
-
-    private func showHUD(for hudType: HUDType) {
-        DispatchQueue.main.async {
-            self.currentHUD = hudType
-            self.hudDismissalTimer?.invalidate()
-            self.hudDismissalTimer = Timer.scheduledTimer(withTimeInterval: self.settings.settings.hudDuration, repeats: false) { [weak self] _ in
-                self?.currentHUD = nil
-                self?.spotifyStateForAction = nil
-                self?.currentSpotifyVolumeForAction = nil
-                self?.lastCommittedSpotifyVolume = nil
-                self?.isControllingSpotify = false
+                  // Skip Sapphire itself
+                  if targetBundleID == Bundle.main.bundleIdentifier {
+                      return
+                  }
+           
+           // Initialize app volume on first press
+            if self.currentAppBundleID != targetBundleID || self.lastCommittedAppVolume == nil {
+                let storedVolume = Float(PerAppAudioController.shared.volume(for: targetBundleID))
+                self.currentAppBundleID = targetBundleID
+                self.currentAppVolume = storedVolume
+                self.lastCommittedAppVolume = storedVolume
             }
-        }
-    }
+           
+           self.isControllingAppVolume = true
+           
+           // Calculate new volume
+            let changeDirection: Float = action == .volumeUp ? 1 : -1
+            // Use per-device override when available
+            let currentDevice = AudioDeviceManager().getCurrentOutputDevice()
+            let percentageStep = Float(settings.volumeSliderStep(forDeviceUID: currentDevice?.uid))
+            let coarseStep = (percentageStep / 100.0).clamped(to: 0.01...1.0)
+           
+           let newVolume: Float = (self.currentAppVolume + (coarseStep * changeDirection)).clamped(to: 0...1)
+           self.currentAppVolume = newVolume
+           
+           // Set the new volume
+            PerAppAudioController.shared.setVolume(Double(newVolume), for: targetBundleID)
 
-    @MainActor
-    func updateCurrentHUD(to newHUD: HUDType) {
-        self.currentHUD = newHUD
-        self.hudDismissalTimer?.invalidate()
-        self.hudDismissalTimer = Timer.scheduledTimer(withTimeInterval: self.settings.settings.hudDuration, repeats: false) { [weak self] _ in
-            self?.currentHUD = nil
-            self?.spotifyStateForAction = nil
-            self?.currentSpotifyVolumeForAction = nil
-            self?.lastCommittedSpotifyVolume = nil
-            self?.isControllingSpotify = false
-        }
-    }
+            // Get app name and app icon for display (prefer running application info)
+            let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == targetBundleID })
+            let appName = runningApp?.localizedName ?? NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown App"
+            let iconImage = runningApp?.icon ?? self.currentAppIcon
+            self.currentAppIcon = iconImage
+
+            // Show HUD with app volume. If the HUD was already showing a combined system+app view
+            // (represented as .externalDeviceVolume), keep that combined view and update the app's
+            // deviceVolume so the UI remains system+app instead of switching to the dedicated app view.
+            if let current = self.currentHUD {
+                switch current {
+                case .externalDeviceVolume(let deviceName, let deviceIcon, _, let systemVolume, _, _):
+                    // Update existing combined HUD to reflect new app volume and mark as controlling
+                    showHUD(for: .externalDeviceVolume(
+                        deviceName: deviceName,
+                        deviceIcon: deviceIcon,
+                        deviceVolume: newVolume,
+                        systemVolume: systemVolume,
+                        isControllingExternal: true,
+                        canControlVolume: true
+                    ))
+                default:
+                    showHUD(for: .appVolume(appName: appName, appIcon: iconImage, appVolume: newVolume))
+                }
+            } else {
+                showHUD(for: .appVolume(appName: appName, appIcon: iconImage, appVolume: newVolume))
+            }
+       }
+
+     @MainActor
+     private func changeSystemVolume(action: MediaKeyAction, isFineTuning: Bool) {
+          let changeDirection: Float = action == .volumeUp ? 1 : -1
+          // Determine step using per-device override (if configured) otherwise use global setting
+          let currentDevice = AudioDeviceManager().getCurrentOutputDevice()
+          let percentageStep = Float(settings.volumeSliderStep(forDeviceUID: currentDevice?.uid))
+          let coarseStep = (percentageStep / 100.0).clamped(to: 0.01...1.0)
+          let fineStep: Float = 0.01
+
+         let currentVolume = SystemControl.getVolume()
+         let newVolume: Float
+         if isFineTuning {
+             newVolume = (currentVolume + (fineStep * changeDirection)).clamped(to: 0...1)
+         } else {
+             let currentStepNum = round(currentVolume / coarseStep)
+             let nextStepNum = currentStepNum + changeDirection
+             newVolume = (nextStepNum * coarseStep).clamped(to: 0...1)
+         }
+
+         SystemControl.setVolume(to: newVolume)
+
+         if newVolume == 0.0 {
+             SystemControl.setMuted(to: true)
+         } else {
+             SystemControl.setMuted(to: false)
+         }
+     }
+
+      @MainActor
+       private func updateVolumeHUD() {
+            let systemVolume = SystemControl.getVolume()
+
+            // If spotify is no longer the now-playing source, clear cached spotify state to avoid stale HUDs
+            if self.spotifyStateForAction != nil && (musicManager.lastKnownBundleID != "com.spotify.client" || !musicManager.isPlaying) {
+                self.spotifyStateForAction = nil
+            }
+
+            // Only show Spotify device HUD if MusicManager reports Spotify as the current now-playing source
+            if settings.settings.showSpotifyVolumeHUD, let spotifyState = self.spotifyStateForAction, musicManager.lastKnownBundleID == "com.spotify.client", musicManager.isPlaying {
+                let spotifyVolumePercent = self.currentSpotifyVolumeForAction ?? Float(spotifyState.volumePercent ?? 75)
+                let hud = HUDType.externalDeviceVolume(
+                    deviceName: spotifyState.name,
+                    deviceIcon: spotifyState.iconName,
+                    deviceVolume: spotifyVolumePercent / 100.0,
+                    systemVolume: systemVolume,
+                    isControllingExternal: isControllingSpotify,
+                    canControlVolume: spotifyState.canControlVolume
+                )
+                showHUD(for: hud)
+            } else if isControllingAppVolume, let bundleID = self.currentAppBundleID {
+                // Show app volume HUD (when controlling with Option + Volume)
+                // Prefer stored currentAppIcon/name when available (we populate these when showing app in normal HUD)
+                let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID })
+                let appName = runningApp?.localizedName ?? "Unknown App"
+                let appIconImage = self.currentAppIcon ?? runningApp?.icon
+                showHUD(for: .appVolume(appName: appName, appIcon: appIconImage, appVolume: self.currentAppVolume))
+            } else {
+                let device = AudioDeviceManager().getCurrentOutputDevice()
+                
+                // Check if we should show app volume indicator in normal HUD
+                if settings.settings.showAppVolumeHUD && settings.settings.showAppVolumeInNormalHUD {
+                    // Try to get the currently playing app from MusicManager first
+                    let musicManager = MusicManager.shared
+                    
+                    // Check if there's a currently playing app with active audio
+                    var appBundleID: String?
+                    var appName: String?
+                    var appIcon: NSImage?
+                    
+                    // Prefer now-playing info from MusicManager (media adapter) when available
+                    if musicManager.isPlaying, let bundleID = musicManager.lastKnownBundleID,
+                       bundleID != "com.spotify.client" && bundleID != "com.apple.Music" && bundleID != Bundle.main.bundleIdentifier {
+                        appBundleID = bundleID
+                        appName = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID })?.localizedName ?? musicManager.title ?? "Unknown App"
+                        appIcon = musicManager.appIcon ?? NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID })?.icon
+                    } else {
+                        // Fallback: check if frontmost app has active audio taps
+                        if let frontmostApp = NSWorkspace.shared.frontmostApplication,
+                           let bundleID = frontmostApp.bundleIdentifier,
+                           bundleID != "com.spotify.client" && bundleID != "com.apple.Music" && bundleID != Bundle.main.bundleIdentifier {
+                            let hasActiveTaps = MultiAudioManager.shared.activeTaps[bundleID] != nil && !MultiAudioManager.shared.activeTaps[bundleID]!.isEmpty
+                            if hasActiveTaps {
+                                appBundleID = bundleID
+                                appName = frontmostApp.localizedName ?? "Unknown App"
+                                appIcon = frontmostApp.icon
+                            }
+                        }
+                    }
+                    
+                    // If we found an app with active audio, show it
+                    if let bundleID = appBundleID, let name = appName {
+                        let appVolume = Float(PerAppAudioController.shared.volume(for: bundleID))
+                        // Persist the detected playing app so Option+Volume targets it even when it's not frontmost
+                        self.currentAppBundleID = bundleID
+                        self.currentAppVolume = appVolume
+                        self.lastCommittedAppVolume = appVolume
+                        self.currentAppIcon = appIcon
+
+                        // Show app volume HUD as external device volume (like Spotify)
+                        showHUD(for: .externalDeviceVolume(
+                            deviceName: name,
+                            deviceIcon: "app.fill",
+                            deviceVolume: appVolume,
+                            systemVolume: systemVolume,
+                            isControllingExternal: false,  // Not being controlled from this view
+                            canControlVolume: true  // Show as compatible but controlled via Option+Volume
+                        ))
+                    } else {
+                        showHUD(for: .volume(level: systemVolume, device: device))
+                    }
+                } else {
+                    showHUD(for: .volume(level: systemVolume, device: device))
+                }
+            }
+       }
+
+     private func showHUD(for hudType: HUDType) {
+         DispatchQueue.main.async {
+             self.currentHUD = hudType
+             self.hudDismissalTimer?.invalidate()
+             self.hudDismissalTimer = Timer.scheduledTimer(withTimeInterval: self.settings.settings.hudDuration, repeats: false) { [weak self] _ in
+                 self?.currentHUD = nil
+                 self?.spotifyStateForAction = nil
+                 self?.currentSpotifyVolumeForAction = nil
+                 self?.lastCommittedSpotifyVolume = nil
+                 self?.isControllingSpotify = false
+                 self?.currentAppBundleID = nil
+                 self?.currentAppVolume = 0.5
+                 self?.lastCommittedAppVolume = nil
+                 self?.isControllingAppVolume = false
+             }
+         }
+     }
+
+     @MainActor
+     func updateCurrentHUD(to newHUD: HUDType) {
+         self.currentHUD = newHUD
+         self.hudDismissalTimer?.invalidate()
+         self.hudDismissalTimer = Timer.scheduledTimer(withTimeInterval: self.settings.settings.hudDuration, repeats: false) { [weak self] _ in
+             self?.currentHUD = nil
+             self?.spotifyStateForAction = nil
+             self?.currentSpotifyVolumeForAction = nil
+             self?.lastCommittedSpotifyVolume = nil
+             self?.isControllingSpotify = false
+             self?.currentAppBundleID = nil
+             self?.currentAppVolume = 0.5
+             self?.lastCommittedAppVolume = nil
+             self?.isControllingAppVolume = false
+         }
+     }
 }
 
 struct SystemHUDView: View {
@@ -619,38 +856,40 @@ struct SystemHUDView: View {
     @EnvironmentObject var settings: SettingsModel
 
     var body: some View {
-        if let type = hudManager.currentHUD {
-            VStack(spacing: 8) {
-                switch type {
-                case .volume(let level, let device):
-                    systemVolumeContent(level: level, device: device)
-                case .brightness(let level):
-                    brightnessContent(level: level)
-                case .multiDisplayBrightness(let displays):
-                    multiDisplayBrightnessContent(displays: displays)
-                case .keyboardBrightness(let level):
-                    keyboardBrightnessContent(level: level)
-                case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, let systemVolume, let isControllingExternal, let canControlVolume):
-                    let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
-                    systemVolumeContent(
-                        level: systemVolume,
-                        device: systemDevice,
-                        isControllingExternal: isControllingExternal
-                    )
-                    ExternalDeviceIndicatorHUD(level: deviceVolume, deviceName: deviceName, deviceIcon: deviceIcon, canControlVolume: canControlVolume)
-                        .transition(.opacity.combined(with: .offset(y: 5)))
-                }
-            }
-            .id(type)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(width: 280)
-            .shadow(color: .black.opacity(0.3), radius: 15, y: 5)
-            .padding(.top, 30)
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: type)
-        }
-    }
+         if let type = hudManager.currentHUD {
+             VStack(spacing: 8) {
+                 switch type {
+                 case .volume(let level, let device):
+                     systemVolumeContent(level: level, device: device)
+                 case .brightness(let level):
+                     brightnessContent(level: level)
+                 case .multiDisplayBrightness(let displays):
+                     multiDisplayBrightnessContent(displays: displays)
+                 case .keyboardBrightness(let level):
+                     keyboardBrightnessContent(level: level)
+                  case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, let systemVolume, let isControllingExternal, let canControlVolume):
+                      let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
+                      systemVolumeContent(
+                          level: systemVolume,
+                          device: systemDevice,
+                          isControllingExternal: isControllingExternal
+                      )
+                      ExternalDeviceIndicatorHUD(level: deviceVolume, deviceName: deviceName, deviceIcon: deviceIcon, appIcon: hudManager.currentAppIcon, canControlVolume: canControlVolume)
+                          .transition(.opacity.combined(with: .offset(y: 5)))
+                 case .appVolume(let appName, let appIcon, let appVolume):
+                     appVolumeContent(appName: appName, appIcon: appIcon, appVolume: appVolume)
+                 }
+             }
+             .id(type)
+             .padding(.horizontal, 16)
+             .padding(.vertical, 12)
+             .frame(width: 280)
+             .shadow(color: .black.opacity(0.3), radius: 15, y: 5)
+             .padding(.top, 30)
+             .transition(.opacity.combined(with: .move(edge: .bottom)))
+             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: type)
+         }
+     }
 
     private func volumeIconName(for level: Float) -> String {
         if level == 0 { return "speaker.slash.fill" }
@@ -796,37 +1035,78 @@ struct SystemHUDView: View {
         }
     }
 
-    @ViewBuilder
-    private func keyboardBrightnessContent(level: Float) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "keyboard.fill")
-                .font(.system(size: 20, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
-                .frame(width: 40, alignment: .center)
+     @ViewBuilder
+     private func keyboardBrightnessContent(level: Float) -> some View {
+         HStack(spacing: 12) {
+             Image(systemName: "keyboard.fill")
+                 .font(.system(size: 20, weight: .medium))
+                 .foregroundColor(.white.opacity(0.8))
+                 .frame(width: 40, alignment: .center)
 
-            DynamicSliderIndicator(
-                level: level,
-                onChanged: { newLevel in
-                    SystemControl.setKeyboardBrightness(to: newLevel)
-                    hudManager.updateCurrentHUD(to: .keyboardBrightness(level: newLevel))
-                }
-            )
-            .frame(height: 14)
+             DynamicSliderIndicator(
+                 level: level,
+                 onChanged: { newLevel in
+                     SystemControl.setKeyboardBrightness(to: newLevel)
+                     hudManager.updateCurrentHUD(to: .keyboardBrightness(level: newLevel))
+                 }
+             )
+             .frame(height: 14)
 
-            if settings.settings.hudShowPercentage {
-                Text("\(Int(level * 100))%")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.6))
-                    .frame(width: 40)
-            }
-        }
-    }
-}
+             if settings.settings.hudShowPercentage {
+                 Text("\(Int(level * 100))%")
+                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                     .foregroundColor(.white.opacity(0.6))
+                     .frame(width: 40)
+             }
+         }
+     }
+
+      @ViewBuilder
+       private func appVolumeContent(appName: String, appIcon: NSImage?, appVolume: Float) -> some View {
+          HStack(spacing: 12) {
+              // Prefer explicit NSImage from hud manager if available
+              if let nsIcon = hudManager.currentAppIcon ?? appIcon {
+                  Image(nsImage: nsIcon)
+                      .resizable()
+                      .renderingMode(.original)
+                      .scaledToFit()
+                      .frame(width: 32, height: 32)
+                      .clipShape(RoundedRectangle(cornerRadius: 6))
+                      .frame(width: 40, alignment: .center)
+              } else {
+                  Image(systemName: "app.fill")
+                      .font(.system(size: 16, weight: .medium))
+                      .foregroundColor(.white.opacity(0.8))
+                      .frame(width: 40, alignment: .center)
+              }
+
+              VStack(alignment: .leading, spacing: 2) {
+                  Text(appName)
+                      .font(.system(size: 12, weight: .semibold))
+                      .lineLimit(1)
+                
+                  DynamicSliderIndicator(
+                      level: appVolume,
+                      onChanged: { _ in }
+                  )
+                  .frame(height: 14)
+              }
+
+              if settings.settings.hudShowPercentage {
+                  Text("\(Int(appVolume * 100))%")
+                      .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                      .foregroundColor(.white.opacity(0.6))
+                      .frame(width: 40)
+              }
+          }
+      }
+ }
 
 struct ExternalDeviceIndicatorHUD: View {
     @State var level: Float
     let deviceName: String
     let deviceIcon: String
+    var appIcon: NSImage? = nil
     var canControlVolume: Bool = true
     var isBrightness: Bool = false
     var showName: Bool = true
@@ -836,10 +1116,21 @@ struct ExternalDeviceIndicatorHUD: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                Image(systemName: deviceIcon)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(isBrightness ? .white.opacity(0.8) : .green)
-                    .frame(width: 40, alignment: .center)
+                // Display app icon if provided, otherwise use system icon
+                if let appIcon = appIcon {
+                    Image(nsImage: appIcon)
+                        .resizable()
+                        .renderingMode(.original)
+                        .scaledToFit()
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .frame(width: 40, alignment: .center)
+                } else {
+                    Image(systemName: deviceIcon)
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(isBrightness ? .white.opacity(0.8) : .green)
+                        .frame(width: 40, alignment: .center)
+                }
 
                 VStack(alignment: .leading, spacing: 4) {
                     if showName {
@@ -1019,144 +1310,160 @@ struct SystemHUDSlimActivityView {
         return "speaker.wave.3.fill"
     }
 
-    @ViewBuilder
-    static func left(type: HUDType, settings: SettingsModel) -> some View {
-        switch type {
-        case .volume(let level, let device):
-            if settings.settings.volumeHUDShowDeviceIcon, let dev = device {
-                if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {
-                    Image(systemName: volumeIconName(for: level))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                } else {
-                    Image(systemName: IconMapper.icon(for: dev))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                }
-            } else {
-                Image(systemName: volumeIconName(for: level))
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 20, height: 20)
-            }
-        case .brightness(let level):
-            if level > 1.0 {
-                HStack(spacing: 4) {
-                    Image(systemName: "sun.max.trianglebadge.exclamationmark.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("XDR")
-                        .font(.system(size: 12, weight: .heavy, design: .rounded))
-                }
-                .foregroundColor(.orange)
-                .frame(height: 20)
-            } else {
-                Image(systemName: "sun.max.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 20, height: 20)
-            }
+     @ViewBuilder
+     static func left(type: HUDType, settings: SettingsModel) -> some View {
+         switch type {
+         case .volume(let level, let device):
+             if settings.settings.volumeHUDShowDeviceIcon, let dev = device {
+                 if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {
+                     Image(systemName: volumeIconName(for: level))
+                         .font(.system(size: 14, weight: .semibold))
+                         .foregroundColor(.white)
+                         .frame(width: 20, height: 20)
+                 } else {
+                     Image(systemName: IconMapper.icon(for: dev))
+                         .font(.system(size: 14, weight: .semibold))
+                         .foregroundColor(.white)
+                         .frame(width: 20, height: 20)
+                 }
+             } else {
+                 Image(systemName: volumeIconName(for: level))
+                     .font(.system(size: 14, weight: .semibold))
+                     .foregroundColor(.white)
+                     .frame(width: 20, height: 20)
+             }
+         case .brightness(let level):
+             if level > 1.0 {
+                 HStack(spacing: 4) {
+                     Image(systemName: "sun.max.trianglebadge.exclamationmark.fill")
+                         .font(.system(size: 14, weight: .semibold))
+                     Text("XDR")
+                         .font(.system(size: 12, weight: .heavy, design: .rounded))
+                 }
+                 .foregroundColor(.orange)
+                 .frame(height: 20)
+             } else {
+                 Image(systemName: "sun.max.fill")
+                     .font(.system(size: 14, weight: .semibold))
+                     .foregroundColor(.white)
+                     .frame(width: 20, height: 20)
+             }
 
-        case .multiDisplayBrightness:
-            Image(systemName: "display.2")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(width: 20, height: 20)
+         case .multiDisplayBrightness:
+             Image(systemName: "display.2")
+                 .font(.system(size: 14, weight: .semibold))
+                 .foregroundColor(.white)
+                 .frame(width: 20, height: 20)
 
-        case .keyboardBrightness:
-            Image(systemName: "keyboard.fill")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(width: 20, height: 20)
+         case .keyboardBrightness:
+             Image(systemName: "keyboard.fill")
+                 .font(.system(size: 14, weight: .semibold))
+                 .foregroundColor(.white)
+                 .frame(width: 20, height: 20)
 
-        case .externalDeviceVolume(_, let deviceIcon, _, let systemVolume, let controllingExternal, _):
-            if controllingExternal {
-                Image(systemName: deviceIcon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.green)
-                    .frame(width: 20, height: 20)
-            } else {
-                let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
-                if settings.settings.volumeHUDShowDeviceIcon, let dev = systemDevice {
-                     if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {
-                        Image(systemName: volumeIconName(for: systemVolume))
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 20, height: 20)
-                    } else {
-                        Image(systemName: IconMapper.icon(for: dev))
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 20, height: 20)
-                    }
-                } else {
-                    Image(systemName: volumeIconName(for: systemVolume))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                }
-            }
-        }
-    }
+         case .externalDeviceVolume(_, let deviceIcon, _, let systemVolume, let controllingExternal, _):
+             if controllingExternal {
+                 Image(systemName: deviceIcon)
+                     .font(.system(size: 14, weight: .semibold))
+                     .foregroundColor(.green)
+                     .frame(width: 20, height: 20)
+             } else {
+                 let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
+                 if settings.settings.volumeHUDShowDeviceIcon, let dev = systemDevice {
+                      if settings.settings.excludeBuiltInSpeakersFromHUDIcon && dev.name.lowercased().contains("macbook") {
+                         Image(systemName: volumeIconName(for: systemVolume))
+                             .font(.system(size: 14, weight: .semibold))
+                             .foregroundColor(.white)
+                             .frame(width: 20, height: 20)
+                     } else {
+                         Image(systemName: IconMapper.icon(for: dev))
+                             .font(.system(size: 14, weight: .semibold))
+                             .foregroundColor(.white)
+                             .frame(width: 20, height: 20)
+                     }
+                 } else {
+                     Image(systemName: volumeIconName(for: systemVolume))
+                         .font(.system(size: 14, weight: .semibold))
+                         .foregroundColor(.white)
+                         .frame(width: 20, height: 20)
+                 }
+             }
+          case .appVolume(_, let appIcon, _):
+              if let ns = appIcon {
+                  Image(nsImage: ns)
+                      .resizable()
+                      .renderingMode(.original)
+                      .scaledToFit()
+                      .frame(width: 18, height: 18)
+                      .frame(width: 20, height: 20)
+              } else {
+                  Image(systemName: "app.fill")
+                      .font(.system(size: 14, weight: .semibold))
+                      .foregroundColor(.white)
+                      .frame(width: 20, height: 20)
+              }
+         }
+     }
 
-    static func right(type: HUDType, settings: SettingsModel) -> some View {
-        let level: Float
-        let isExternalControl: Bool
-        let isXDR: Bool
+     static func right(type: HUDType, settings: SettingsModel) -> some View {
+         let level: Float
+         let isExternalControl: Bool
+         let isXDR: Bool
 
-        switch type {
-        case .volume(let l, _):
-            level = l; isExternalControl = false; isXDR = false
-        case .brightness(let l):
-            level = l; isExternalControl = false; isXDR = l > 1.0
-        case .multiDisplayBrightness(let displays):
-            level = displays.first(where: { $0.isPrimary })?.level ?? displays.first?.level ?? 0
-            isExternalControl = false; isXDR = false
-        case .keyboardBrightness(let l):
-            level = l; isExternalControl = false; isXDR = false
-        case .externalDeviceVolume(_, _, let deviceVolume, let systemVolume, let controllingExternal, _):
-            level = controllingExternal ? deviceVolume : systemVolume
-            isExternalControl = controllingExternal
-            isXDR = false
-        }
+         switch type {
+         case .volume(let l, _):
+             level = l; isExternalControl = false; isXDR = false
+         case .brightness(let l):
+             level = l; isExternalControl = false; isXDR = l > 1.0
+         case .multiDisplayBrightness(let displays):
+             level = displays.first(where: { $0.isPrimary })?.level ?? displays.first?.level ?? 0
+             isExternalControl = false; isXDR = false
+         case .keyboardBrightness(let l):
+             level = l; isExternalControl = false; isXDR = false
+         case .externalDeviceVolume(_, _, let deviceVolume, let systemVolume, let controllingExternal, _):
+             level = controllingExternal ? deviceVolume : systemVolume
+             isExternalControl = controllingExternal
+             isXDR = false
+         case .appVolume(_, _, let appVolume):
+             level = appVolume; isExternalControl = false; isXDR = false
+         }
 
-        let displayLevel: Float
-        let percentageText: String
-        let percentageFrameWidth: CGFloat
+         let displayLevel: Float
+         let percentageText: String
+         let percentageFrameWidth: CGFloat
 
-        if isXDR {
-            let maxLevel = settings.settings.xdrBrightnessLevel
-            displayLevel = level / maxLevel
-            percentageText = "\(Int(roundf(level * 100)))%"
-            percentageFrameWidth = 40
-        } else {
-            displayLevel = level
-            percentageText = "\(Int(level * 100))%"
-            percentageFrameWidth = 30
-        }
+         if isXDR {
+             let maxLevel = settings.settings.xdrBrightnessLevel
+             displayLevel = level / maxLevel
+             percentageText = "\(Int(roundf(level * 100)))%"
+             percentageFrameWidth = 40
+         } else {
+             displayLevel = level
+             percentageText = "\(Int(level * 100))%"
+             percentageFrameWidth = 30
+         }
 
-        return HStack(spacing: 6) {
-            DynamicSliderIndicator(
-                level: displayLevel,
-                forceGreen: isExternalControl,
-                isXDR: isXDR,
-                showInternalXDRText: false,
-                onChanged: nil
-            )
-            .frame(width: settings.settings.hudShowPercentage ? 70 : 100, height: 6)
-            .fixedSize()
+         return HStack(spacing: 6) {
+             DynamicSliderIndicator(
+                 level: displayLevel,
+                 forceGreen: isExternalControl,
+                 isXDR: isXDR,
+                 showInternalXDRText: false,
+                 onChanged: nil
+             )
+             .frame(width: settings.settings.hudShowPercentage ? 70 : 100, height: 6)
+             .fixedSize()
 
-            if settings.settings.hudShowPercentage {
-                Text(percentageText)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.6))
-                    .frame(width: percentageFrameWidth, alignment: .leading)
-                    .transition(.opacity.combined(with: .offset(x: -5)))
-            }
-        }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: settings.settings.hudShowPercentage)
-    }
+             if settings.settings.hudShowPercentage {
+                 Text(percentageText)
+                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                     .foregroundColor(.white.opacity(0.6))
+                     .frame(width: percentageFrameWidth, alignment: .leading)
+                     .transition(.opacity.combined(with: .offset(x: -5)))
+             }
+         }
+         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: settings.settings.hudShowPercentage)
+     }
 }
 
 extension Comparable {

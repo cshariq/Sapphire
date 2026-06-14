@@ -275,7 +275,9 @@ class TimerManager: ObservableObject {
 
     private func startInternalTimer() {
         guard internalTimer == nil || !(internalTimer!.isValid) else { return }
-        internalTimer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(updateDisplayedTime), userInfo: nil, repeats: true)
+        internalTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.updateDisplayedTime()
+        }
     }
 
     private func stopInternalTimer() {

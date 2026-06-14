@@ -10,6 +10,7 @@ import Combine
 import AppKit
 import CoreBluetooth
 import Security
+import ApplicationServices
 import os.log
 
 @MainActor
@@ -37,6 +38,11 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private var isFaceIDAuthenticating = false
     private var isUnlockInProgress = false
     private let passwordAccount = "SapphireUserPassword"
+
+    private var rssiUpdateWorkItem: DispatchWorkItem?
+    private var pendingStatus: String?
+    private var statusUpdateWorkItem: DispatchWorkItem?
+    private let statusUpdateQueue = DispatchQueue(label: "auth.status.update", qos: .utility)
 
     private override init() {
         super.init()
@@ -90,7 +96,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     func stopAllAuthentication() {
         if isBluetoothAuthenticating {
-            isBluetoothAuthenticating = false; ble.monitoredUUID = nil; status = "Disabled"; self.monitoredPeripheralState = .disconnected
+            isBluetoothAuthenticating = false; ble.monitoredUUID = nil; setStatusThrottled("Disabled"); self.monitoredPeripheralState = .disconnected
         }
         if isFaceIDAuthenticating {
             tearDownFaceID()
@@ -108,8 +114,12 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             return
         }
 
-        if settings.settings.bluetoothUnlockWakeOnProximity { (NSApp.delegate as? AppDelegate)?.wakeDisplay() }
-        if settings.settings.bluetoothUnlockWakeWithoutUnlocking {
+        // Always wake the display before typing (Face ID path especially needs this)
+        if settings.settings.bluetoothUnlockWakeOnProximity || isFaceIDAuthenticating {
+            (NSApp.delegate as? AppDelegate)?.wakeDisplay()
+        }
+
+        if settings.settings.bluetoothUnlockWakeWithoutUnlocking && !isFaceIDAuthenticating {
             isUnlockInProgress = false
             return
         }
@@ -118,11 +128,26 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             cameraController?.stopCameraSession()
         }
 
-        self.unlockWithPassword()
+        // Ensure we have Accessibility permission to post keyboard events
+        if !hasAccessibilityPermission(promptIfNeeded: true) {
+            print("[AuthManager] Accessibility permission is required to type the password. Prompting user.")
+            setStatusThrottled("Enable Accessibility in System Settings to allow auto-unlock.")
+            isUnlockInProgress = false
+            stopAllAuthentication()
+            return
+        }
 
-        if isFaceIDAuthenticating {
-            DispatchQueue.main.async {
-                self.tearDownFaceID()
+        setStatusThrottled("Unlocking...")
+
+        // Give the system a brief moment to wake/focus the password field
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self else { return }
+            self.unlockWithPassword()
+
+            if self.isFaceIDAuthenticating {
+                DispatchQueue.main.async {
+                    self.tearDownFaceID()
+                }
             }
         }
     }
@@ -147,24 +172,28 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func handleDisplayWillSleep() {
-        cameraController?.stopCameraSession()
+        if isFaceIDAuthenticating {
+            cameraController?.stopCameraSession()
+        }
     }
 
     func handleDisplayDidWake() {
         if isFaceIDAuthenticating {
-            cameraController?.startAuthentication()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.cameraController?.startAuthentication()
+            }
         }
     }
 
     func startBluetoothAuthentication() {
         guard !isBluetoothAuthenticating, isEnabled, isPasswordSet, let deviceID = selectedDeviceID, let uuid = UUID(uuidString: deviceID) else { return }
-        isBluetoothAuthenticating = true; ble.startMonitor(uuid: uuid); status = "Monitoring for device..."
+        isBluetoothAuthenticating = true; ble.startMonitor(uuid: uuid); setStatusThrottled("Monitoring for device...")
     }
 
     func startScan(includeUnnamed: Bool) {
-        guard ble.centralMgr.state == .poweredOn else { status = "Bluetooth is off"; return }
+        guard ble.centralMgr.state == .poweredOn else { setStatusThrottled("Bluetooth is off"); return }
         ble.thresholdRSSI = settings.settings.bluetoothUnlockMinScanRSSI; scannedDevices.removeAll(); ble.devices.removeAll()
-        isScanning = true; status = "Scanning..."; ble.startScanning(includeUnnamed: includeUnnamed)
+        isScanning = true; setStatusThrottled("Scanning..."); ble.startScanning(includeUnnamed: includeUnnamed)
     }
 
     func updateScanFilter(includeUnnamed: Bool) {
@@ -172,7 +201,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func stopScan() {
-        isScanning = false; status = isEnabled ? "Monitoring" : "Idle"; ble.stopScanning()
+        isScanning = false; setStatusThrottled(isEnabled ? "Monitoring" : "Idle"); ble.stopScanning()
     }
 
     func selectDevice(uuid: UUID) {
@@ -207,12 +236,12 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             print("[AuthManager] Starting/updating proximity monitoring for device \(id).")
             isBluetoothAuthenticating = true
             ble.startMonitor(uuid: uuid)
-            status = "Monitoring for device..."
+            setStatusThrottled("Monitoring for device...")
         } else {
             if isBluetoothAuthenticating {
                 isBluetoothAuthenticating = false
                 ble.stopMonitor()
-                status = "Disabled"
+                setStatusThrottled("Disabled")
                 self.monitoredPeripheralState = .disconnected
                 print("[AuthManager] Proximity monitoring stopped because it was disabled or device was forgotten.")
             }
@@ -223,19 +252,61 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         (NSApp.delegate as? AppDelegate)?.isScreenLocked ?? false
     }
 
+    private func hasAccessibilityPermission(promptIfNeeded: Bool) -> Bool {
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [promptKey: promptIfNeeded] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+
     private func unlockWithPassword() {
-        guard let encrypted = KeychainManager.shared.load(for: passwordAccount), let decrypted = CryptoManager.shared.decrypt(data: encrypted), let password = String(data: decrypted, encoding: .utf8) else {
-            showPasswordPrompt(); return
+        // Verify Accessibility permission once more (no prompt here to avoid showing over lock screen)
+        guard hasAccessibilityPermission(promptIfNeeded: false) else {
+            setStatusThrottled("Accessibility permission required")
+            return
         }
-        status = "Unlocking..."; guard let source = CGEventSource(stateID: .hidSystemState) else { status = "Unlock failed"; return }; let tapLocation = CGEventTapLocation.cghidEventTap
-        let utf16chars = Array(password.utf16); var offset = 0
-        while offset < utf16chars.count {
-            var chunk = Array(utf16chars[offset..<min(offset + 20, utf16chars.count)])
-            let pwEvent = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
-            pwEvent?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk); pwEvent?.post(tap: tapLocation); offset += 20
+
+        guard let encrypted = KeychainManager.shared.load(for: passwordAccount),
+              let decrypted = CryptoManager.shared.decrypt(data: encrypted),
+              let password = String(data: decrypted, encoding: .utf8) else {
+            setStatusThrottled("Password not set")
+            showPasswordPrompt()
+            return
         }
-        let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true); let retUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
-        retDown?.post(tap: tapLocation); retUp?.post(tap: tapLocation); status = "Unlocked"
+
+        guard let source = CGEventSource(stateID: .hidSystemState) else {
+            setStatusThrottled("Unlock failed")
+            return
+        }
+
+        let tapLocation = CGEventTapLocation.cghidEventTap
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let utf16chars = Array(password.utf16)
+            var offset = 0
+            let chunkSize = 20
+
+            while offset < utf16chars.count {
+                var chunk = Array(utf16chars[offset..<min(offset + chunkSize, utf16chars.count)])
+                if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
+                    pwDown.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+                    pwDown.post(tap: tapLocation)
+                }
+                if let pwUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
+                    pwUp.post(tap: tapLocation)
+                }
+                offset += chunkSize
+                usleep(12_000) // brief gap between chunks to avoid event coalescing
+            }
+
+            // Press Return to submit
+            let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
+            let retUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
+            retDown?.post(tap: tapLocation)
+            usleep(20_000)
+            retUp?.post(tap: tapLocation)
+
+            self.setStatusThrottled("Unlocked")
+        }
     }
 
     func newDevice(device: Device) {
@@ -256,23 +327,42 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func updateRSSI(rssi: Int?, active: Bool) {
-        self.lastRSSI = rssi; guard let rssi = rssi else { status = "Searching..."; return }; let unlock = settings.settings.bluetoothUnlockUnlockRSSI, lock = settings.settings.bluetoothUnlockLockRSSI
-        if rssi >= unlock {
-            status = "Monitoring (Near)"
-        } else if rssi < lock {
-            status = "Monitoring (Far)"
-        } else {
-            status = "Monitoring (Safe Zone)"
+        self.lastRSSI = rssi
+        // Throttle UI/status updates to at most ~5 Hz
+        rssiUpdateWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            guard let rssi = rssi else {
+                self.setStatusThrottled("Searching...")
+                return
+            }
+            let unlock = self.settings.settings.bluetoothUnlockUnlockRSSI
+            let lock = self.settings.settings.bluetoothUnlockLockRSSI
+            let newStatus: String
+            if rssi >= unlock {
+                newStatus = "Monitoring (Near)"
+            } else if rssi < lock {
+                newStatus = "Monitoring (Far)"
+            } else {
+                newStatus = "Monitoring (Safe Zone)"
+            }
+            self.setStatusThrottled(newStatus)
         }
+        rssiUpdateWorkItem = work
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
     func bluetoothPowerWarn() {
-        status = "Bluetooth is off!"
+        setStatusThrottled("Bluetooth is off!")
     }
 
     func updatePresence(presence: Bool, reason: String) {
         if isEnabled && isBluetoothAuthenticating {
-            presence ? handleUnlock() : handleLock()
+            if presence {
+                if !isUnlockInProgress { handleUnlock() }
+            } else {
+                handleLock()
+            }
         }
     }
 
@@ -287,7 +377,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     private func startScreenSaver() {
-        let p = Process(); p.launchPath = "/usr-bin/open"; p.arguments = ["-a", "ScreenSaverEngine"]; try? p.run()
+        let p = Process(); p.launchPath = "/usr/bin/open"; p.arguments = ["-a", "ScreenSaverEngine"]; try? p.run()
     }
 
     private func savePasswordToKeychain(_ password: String) -> Bool {
@@ -298,4 +388,22 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private func showPasswordPrompt() {
         NotificationCenter.default.post(name: .init("SapphireShowPasswordPrompt"), object: nil)
     }
+
+    private func setStatusThrottled(_ newStatus: String, throttle: TimeInterval = 0.2) {
+        // Avoid redundant updates
+        if status == newStatus { return }
+        pendingStatus = newStatus
+        statusUpdateWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, let pending = self.pendingStatus else { return }
+            DispatchQueue.main.async {
+                if self.status != pending {
+                    self.status = pending
+                }
+            }
+        }
+        statusUpdateWorkItem = work
+        statusUpdateQueue.asyncAfter(deadline: .now() + throttle, execute: work)
+    }
 }
+

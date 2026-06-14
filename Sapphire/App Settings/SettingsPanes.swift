@@ -6,15 +6,29 @@
 //
 
 import SwiftUI
+import Combine
 import Charts
 import CaptchaSolverInterface
 import CoreBluetooth
+import UniformTypeIdentifiers
 
 struct SettingsDetailView: View {
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     var selectedSection: SettingsSection?
+
+    private var isSelectedSectionLocked: Bool {
+        guard let selectedSection else { return false }
+        return selectedSection.isPremiumLocked(
+            for: subscriptionManager.activeTier,
+            features: subscriptionManager.entitlements.features
+        )
+    }
 
     var body: some View {
         VStack {
+            if let selectedSection, isSelectedSectionLocked {
+                LockedSettingsSectionView(section: selectedSection)
+            } else {
             switch selectedSection {
             case .general: GeneralSettingsView()
             case .widgets: WidgetsSettingsView()
@@ -24,6 +38,7 @@ struct SettingsDetailView: View {
             case .bluetoothUnlock: ProximityUnlockSettingsView()
             case .shortcuts: ShortcutsSettingsView()
             case .snapZones: SnapZonesSettingsView()
+            case .audio: AudioSettingsView()
             case .battery: BatterySettingsView()
             case .bluetooth: BluetoothSettingsView()
             case .hud: HUDSettingsView()
@@ -34,7 +49,9 @@ struct SettingsDetailView: View {
             case .weather: WeatherSettingsView()
             case .calendar: CalendarSettingsView()
             case .eyeBreak: EyeBreakSettingsView()
-            case .gemini: GeminiSettingsView()
+            case .intelligence: IntelligenceSettingsView()
+            case .sports: SportsSettingsView()
+            case .finance: FinanceSettingsView()
             case .about: AboutSettingsView()
             case nil:
                 VStack {
@@ -47,8 +64,44 @@ struct SettingsDetailView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            }
         }
         .animation(.easeOut(duration: 0.15), value: selectedSection)
+        .animation(.easeOut(duration: 0.15), value: subscriptionManager.activeTier)
+    }
+}
+
+struct LockedSettingsSectionView: View {
+    let section: SettingsSection
+
+    private var requiredTierName: String {
+        guard let tier = section.minimumRequiredTier else { return "Premium" }
+        return SubscriptionFeatureCatalog.tierDisplayName(tier)
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Text("\(section.label) requires Sapphire \(requiredTierName)")
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+
+            Text("Upgrade from Account to unlock this section.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+
+            Button("Open Account Settings") {
+                NotificationCenter.default.post(name: .sapphireOpenAccountPane, object: nil)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.purple)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -230,16 +283,25 @@ struct GeneralSettingsView: View {
                     Text("System").font(.headline).padding([.top, .horizontal])
                         .frame(maxWidth: .infinity, alignment: .leading)
 
+                    InfoContainer(
+                        text: "Use “Hide from Screen Sharing” when you never want Sapphire captured. Use “Hide notch when inactive” when you only want the notch hidden while it is idle.",
+                        iconName: "questionmark.circle",
+                        color: .blue
+                    )
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 10)
+
                     ToggleRow(title: "Launch at Login", description: "Start Sapphire automatically when you log in to your Mac.", isOn: $settings.settings.launchAtLogin)
                     Divider().padding(.leading, 20)
 
                     ToggleRow(title: "Enable Haptic Feedback", description: "Provide tactile feedback for certain interactions.", isOn: $settings.settings.hapticFeedbackEnabled)
                     Divider().padding(.leading, 20)
 
-                    ToggleRow(title: "Hide from Screen Sharing", description: "Prevent the notch UI from appearing in screenshots or screen recordings.", isOn: $settings.settings.hideFromScreenSharing)
+                    ToggleRow(title: "Hide from Screen Sharing", description: "Never include Sapphire in screen sharing, screenshots, or screen recordings.", isOn: $settings.settings.hideFromScreenSharing)
                     Divider().padding(.leading, 20)
 
-                    ToggleRow(title: "Hide notch when no content is being displayed", description: "Prevent the notch UI from being visible in screenshots or screen recordings when no content is displayed.", isOn: $settings.settings.hideNotchWhenInactive)
+                    ToggleRow(title: "Hide Notch When Inactive", description: "Hide the notch entirely whenever Sapphire is idle and not showing content.", isOn: $settings.settings.hideNotchWhenInactive)
                     Divider().padding(.leading, 20)
 
                     HStack {
@@ -251,6 +313,12 @@ struct GeneralSettingsView: View {
                             }
                         }.labelsHidden().frame(width: 200)
                     }.padding()
+
+                    Text("Choose which display Sapphire should attach to when multiple screens are connected.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom)
 
                 }
                 .modifier(SettingsContainerModifier())
@@ -382,8 +450,13 @@ struct GeneralSettingsView: View {
                         NotchButtonRowView(buttonType: buttonType)
                     }
 
-                    ToggleRow(title: "Keep display on while caffinated", description: "Prevent the laptop to go to sleep wihle caffinated and in clamshell mode", isOn: $settings.settings.sleepInClamshell)
+                    ToggleRow(title: "Prevent Sleep in Clamshell Mode", description: "Keep your Mac awake while Sapphire's caffeinate mode is active, even with the lid closed.", isOn: $settings.settings.sleepInClamshell)
                     Divider().padding(.leading, 20)
+
+                    ToggleRow(title: "Keep Caffeinate Enabled After Clamshell", description: "Continue preventing sleep after leaving clamshell mode instead of turning caffeinate off automatically.", isOn: $settings.settings.persistentCaffeinateAfterClamshell)
+                    Divider().padding(.leading, 20)
+
+                    LidAngleCaffeineSettingsView()
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -708,6 +781,8 @@ struct WidgetsSettingsView: View {
         if settings.settings.weatherWidgetEnabled { count += 1 }
         if settings.settings.calendarWidgetEnabled { count += 1 }
         if settings.settings.shortcutsWidgetEnabled { count += 1 }
+        if settings.settings.sportsWidgetEnabled { count += 1 }
+        if settings.settings.financeWidgetEnabled { count += 1 }
         return count
     }
 
@@ -736,9 +811,12 @@ struct WidgetsSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Widget Visibility & Order").font(.headline).padding([.horizontal, .top])
-                    Text("Enable, disable, and reorder the widgets that appear in the notch.").font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 5)
+                    Text("Enable, disable, and reorder the widgets that appear in the notch. Space is limited by your display width.")
+                        .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 5)
                     ReorderableVStack(items: $settings.settings.widgetOrder) { widget in
-                        WidgetRowView(widgetType: widget, enabledWidgetCount: enabledWidgetCount)
+                        if widget != .agent {
+                            WidgetRowView(widgetType: widget, enabledWidgetCount: enabledWidgetCount)
+                        }
                     }
                     .modifier(SettingsContainerModifier())
                 }
@@ -982,9 +1060,9 @@ struct StatThresholdRow: View {
 fileprivate struct SensorSelectionView: View {
     @Binding var selectedStats: [StatType]
     @Binding var selectedSensorKeys: [String]
-    let allSensors: [Sensor_p]
+    let allSensors: [any Sensor_p]
 
-    private var groupedSensors: [SensorGroup: [Sensor_p]] {
+    private var groupedSensors: [SensorGroup: [any Sensor_p]] {
         Dictionary(grouping: allSensors, by: { $0.group })
     }
 
@@ -2884,6 +2962,13 @@ struct ProximityUnlockSettingsView: View {
                         Spacer()
                     }.padding(.bottom)
                 }
+
+                Divider().padding(.horizontal)
+                ToggleRow(title: "Use Modern Face Model", description: "Use the bundled ModernFace Core ML model for Face ID. Turning this off will disable Face ID until another model is provided.", isOn: Binding(get: { settings.settings.useModernFaceModel }, set: { settings.settings.useModernFaceModel = $0 }))
+                Text("Switching face models changes the embedding space. For best results, re-register existing Face ID profiles after enabling this.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
             }
         }
         .modifier(SettingsContainerModifier())
@@ -3176,13 +3261,13 @@ fileprivate struct FindDeviceByDistanceWizard: View {
     }
 
     private func startCountdown() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if self.countdown > 0 {
-                self.countdown -= 1
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
+            if countdown > 0 {
+                countdown -= 1
             } else {
-                self.timer?.invalidate()
-                self.calculateResults()
-                self.wizardStep = 3
+                timer?.invalidate()
+                calculateResults()
+                wizardStep = 3
             }
         }
     }
@@ -3378,22 +3463,22 @@ fileprivate struct CalibrateRSSIView: View {
         rssiReadings.removeAll()
         countdown = 5
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if let rssi = self.currentDeviceRSSI {
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
+            if let rssi = currentDeviceRSSI {
                 rssiReadings.append(rssi)
             }
 
-            if self.countdown > 1 {
-                self.countdown -= 1
+            if countdown > 1 {
+                countdown -= 1
             } else {
-                self.timer?.invalidate()
-                self.isMeasuring = false
+                timer?.invalidate()
+                isMeasuring = false
 
                 if !rssiReadings.isEmpty {
                     let average = rssiReadings.reduce(0, +) / rssiReadings.count
                     completion(average)
                 } else {
-                    completion(self.currentDeviceRSSI ?? -75)
+                    completion(currentDeviceRSSI ?? -75)
                 }
             }
         }
@@ -3681,6 +3766,130 @@ struct CalibrationView: View {
             .padding(.bottom)
         }
         .modifier(SettingsContainerModifier())
+    }
+}
+
+struct LidAngleCaffeineSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+    @ObservedObject private var lidAngleSensor = LidAngleSensor.shared
+
+    private var caffeineTriggerAngleBinding: Binding<Double> {
+        $settings.settings.caffeinateLidAngleTrigger
+    }
+
+    private var currentAngleText: String {
+        guard lidAngleSensor.isAvailable else { return "Unavailable" }
+        return "\(Int(lidAngleSensor.angle.rounded()))°"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ToggleRow(
+                title: "Black out display using lid angle",
+                description: "While caffeinated, set brightness to zero when the lid reaches the trigger angle. This does not put the display to sleep.",
+                isOn: $settings.settings.caffeinateTurnOffScreenUsingLidAngle
+            )
+
+            Divider().padding(.leading, 20)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Current Lid Angle")
+                    Text(lidAngleSensor.statusMessage)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Text(currentAngleText)
+                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .foregroundColor(lidAngleSensor.isAvailable ? .primary : .secondary)
+            }
+            .padding()
+
+            if settings.settings.caffeinateTurnOffScreenUsingLidAngle {
+                Divider().padding(.leading, 20)
+                CustomSliderRowView(
+                    label: "Trigger Angle",
+                    value: caffeineTriggerAngleBinding,
+                    range: 0...140,
+                    specifier: "%.0f°"
+                )
+            }
+
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Pause media when nearly closed",
+                description: "Automatically pause now playing media and resume when the lid opens back up.",
+                isOn: $settings.settings.lidAnglePauseMediaEnabled
+            )
+
+            if settings.settings.lidAnglePauseMediaEnabled {
+                Divider().padding(.leading, 20)
+                CustomSliderRowView(
+                    label: "Pause Media Trigger",
+                    value: $settings.settings.lidAnglePauseMediaTrigger,
+                    range: 0...140,
+                    specifier: "%.0f°"
+                )
+            }
+
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Mute system audio when nearly closed",
+                description: "Mute all system output as the lid closes, then unmute when it opens past the threshold.",
+                isOn: $settings.settings.lidAngleMuteAudioEnabled
+            )
+
+            if settings.settings.lidAngleMuteAudioEnabled {
+                Divider().padding(.leading, 20)
+                CustomSliderRowView(
+                    label: "Mute Audio Trigger",
+                    value: $settings.settings.lidAngleMuteAudioTrigger,
+                    range: 0...140,
+                    specifier: "%.0f°"
+                )
+            }
+
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Sleep display when nearly closed",
+                description: "Put the display into real macOS display sleep when the lid drops below the chosen angle, then wake it again when reopened. This will attempt to keep caffinate activated while the display is sleeping.",
+                isOn: $settings.settings.lidAngleSleepDisplayEnabled
+            )
+
+            if settings.settings.lidAngleSleepDisplayEnabled {
+                Divider().padding(.leading, 20)
+                CustomSliderRowView(
+                    label: "Display Sleep Trigger",
+                    value: $settings.settings.lidAngleSleepDisplayTrigger,
+                    range: 0...140,
+                    specifier: "%.0f°"
+                )
+            }
+
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Enable Low Power Mode as lid closes",
+                description: "Force Low Power Mode while the lid is partially closed and restore the previous state when reopened.",
+                isOn: $settings.settings.lidAngleLowPowerModeEnabled
+            )
+
+            if settings.settings.lidAngleLowPowerModeEnabled {
+                Divider().padding(.leading, 20)
+                CustomSliderRowView(
+                    label: "Low Power Trigger",
+                    value: $settings.settings.lidAngleLowPowerModeTrigger,
+                    range: 0...140,
+                    specifier: "%.0f°"
+                )
+            }
+        }
+        .onAppear {
+            lidAngleSensor.acquire(.settingsPreview)
+        }
+        .onDisappear {
+            lidAngleSensor.release(.settingsPreview)
+        }
     }
 }
 
@@ -4084,11 +4293,7 @@ struct ModernBatteryStatsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Spacer()
-                    DateRangePickerView(selection: $selectedTimeRange)
-                }
-
+                DateRangePickerView(selection: $selectedTimeRange)
                 HStack(spacing: 15) {
                     switch helperManager.status {
                     case .enabled:
@@ -4867,14 +5072,16 @@ struct BatteryHistoryView: View {
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let location):
-                        let plotAreaFrame = geometry[proxy.plotAreaFrame]
-                        if plotAreaFrame.contains(location) {
-                            let translatedX = location.x - plotAreaFrame.minX
-                            if let date: Date = proxy.value(atX: translatedX),
-                               let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
-                                hoveredEntry = entry
-                                if let xPos = proxy.position(forX: entry.timestamp), let yPos = proxy.position(forY: entry.charge) {
-                                    hoverAnchor = CGPoint(x: plotAreaFrame.minX + xPos, y: plotAreaFrame.minY + yPos)
+                        if let plotFrame = proxy.plotFrame {
+                            let plotAreaFrame = geometry[plotFrame]
+                            if plotAreaFrame.contains(location) {
+                                let translatedX = location.x - plotAreaFrame.minX
+                                if let date: Date = proxy.value(atX: translatedX),
+                                   let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
+                                    hoveredEntry = entry
+                                    if let xPos = proxy.position(forX: entry.timestamp), let yPos = proxy.position(forY: entry.charge) {
+                                        hoverAnchor = CGPoint(x: plotAreaFrame.minX + xPos, y: plotAreaFrame.minY + yPos)
+                                    }
                                 }
                             }
                         } else {
@@ -4885,14 +5092,16 @@ struct BatteryHistoryView: View {
                     }
                 }
                 .onTapGesture { location in
-                    let plotAreaFrame = geometry[proxy.plotAreaFrame]
-                    if plotAreaFrame.contains(location) {
-                        let translatedX = location.x - plotAreaFrame.minX
-                        if let date: Date = proxy.value(atX: translatedX),
-                           let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
-                            selectedEntry = entry
-                            hoveredEntry = nil
-                            showDetailPopover = true
+                    if let plotFrame = proxy.plotFrame {
+                        let plotAreaFrame = geometry[plotFrame]
+                        if plotAreaFrame.contains(location) {
+                            let translatedX = location.x - plotAreaFrame.minX
+                            if let date: Date = proxy.value(atX: translatedX),
+                               let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
+                                selectedEntry = entry
+                                hoveredEntry = nil
+                                showDetailPopover = true
+                            }
                         }
                     }
                 }
@@ -5867,36 +6076,6 @@ struct AddTaskView: View {
     }
 }
 
-struct GeminiSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading) {
-                Text("Gemini")
-                    .font(.largeTitle.bold())
-                    .padding(.bottom)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Gemini API Key")
-                        .font(.system(size: 14, weight: .medium))
-
-                    SecureField("Enter your API key", text: $settings.settings.geminiApiKey)
-                        .textFieldStyle(.plain)
-                        .padding(8)
-                        .background(Color.black.opacity(0.2))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
-                }
-                .padding(25)
-                .modifier(SettingsContainerModifier())
-            }
-            .padding(25)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-    }
-}
-
 struct HUDSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
 
@@ -5927,6 +6106,22 @@ struct HUDSettingsView: View {
                         description: "Display a special HUD with the active device name when changing volume while Spotify is active.",
                         isOn: $settings.settings.showSpotifyVolumeHUD
                     )
+                    Divider().padding(.leading, 20)
+                    ToggleRow(
+                        title: "Show App Volume in HUD",
+                        description: "Press Option + Volume keys to adjust volume for the active app (excludes Spotify and Apple Music).",
+                        isOn: $settings.settings.showAppVolumeHUD
+                    )
+                    
+                    if settings.settings.showAppVolumeHUD {
+                        ToggleRow(
+                            title: "Show in Normal Volume HUD",
+                            description: "Display app volume in the normal volume HUD (like Spotify). When disabled, only shows with Option + Volume keys.",
+                            isOn: $settings.settings.showAppVolumeInNormalHUD
+                        )
+                        .padding(.leading, 20)
+                    }
+                    
                     Divider().padding(.leading, 20)
                     ToggleRow(
                         title: "Show Device Icon Instead of Speaker",
@@ -6014,9 +6209,60 @@ struct HUDSettingsView: View {
 
                     Divider()
 
-                    CustomSliderRowView(label: "Slider step", value: Binding(get: { Double(settings.settings.volumesliderstep) }, set: { settings.settings.volumesliderstep = Int($0) }), range: 1...10, specifier: "%.0f")
+                    ToggleRow(
+                        title: "Per-App Volume Uses System Volume Ceiling",
+                        description: "When enabled, 100% app volume is capped by current system output volume.",
+                        isOn: $settings.settings.perAppVolumeSystemDependent
+                    )
+                    .disabled(!settings.settings.enableVolumeHUD)
+                    .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
+
+                    Divider()
+
+                    CustomSliderRowView(label: "Slider step", value: Binding(get: { Double(settings.settings.volumesliderstep) }, set: { settings.settings.volumesliderstep = Int($0) }), range: 1...20, specifier: "%.0f")
                         .disabled(!settings.settings.enableVolumeHUD)
                         .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
+
+                    // Per-device overrides
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Per-device slider steps")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+
+                        ForEach(MultiAudioManager.shared.availableOutputDevices, id: \.uid) { device in
+                            HStack {
+                                Text(device.name)
+                                    .font(.system(size: 13))
+                                Spacer()
+
+                                // Picker for per-device step (falls back to global when not set)
+                                Picker("", selection: Binding(get: {
+                                    Double(settings.settings.volumesliderstepByDevice[device.uid] ?? settings.settings.volumesliderstep)
+                                }, set: { newVal in
+                                    settings.settings.volumesliderstepByDevice[device.uid] = Int(newVal)
+                                })) {
+                                    ForEach(1...20, id: \.self) { val in
+                                        Text("\(val)").tag(Double(val))
+                                    }
+                                }
+                                .labelsHidden()
+                                .frame(width: 120)
+
+                                // Reset override button
+                                Button(action: {
+                                    settings.settings.volumesliderstepByDevice.removeValue(forKey: device.uid)
+                                }) {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Reset to global slider step")
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .disabled(!settings.settings.enableVolumeHUD)
+                    .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
 
                 }
                 .padding()
@@ -7309,8 +7555,36 @@ struct NeardropSettingsView: View {
 }
 
 struct AboutSettingsView: View {
+    @EnvironmentObject var settingsModel: SettingsModel
     @ObservedObject private var updateChecker = UpdateChecker.shared
     @ObservedObject private var permissionsManager = PermissionsManager.shared
+    @State private var isExportingSettings = false
+    @State private var isImportingSettings = false
+    @State private var backupDocument = SettingsBackupDocument(settings: Settings())
+    @State private var backupStatusMessage: BackupStatusMessage?
+    @State private var showingResetConfirmation = false
+
+    private var displayedReleaseChannel: ReleaseChannel {
+        ReleaseChannelPolicy.displayedChannel(for: settingsModel.settings)
+    }
+
+    private var releaseChannelBinding: Binding<ReleaseChannel> {
+        Binding(
+            get: { displayedReleaseChannel },
+            set: { newValue in
+                guard ReleaseChannelPolicy.canChangePreferredChannel() else { return }
+                guard SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates) || newValue == .stable else { return }
+                settingsModel.settings.releaseChannel = newValue
+            }
+        )
+    }
+
+    private var versionLabel: String {
+        if BetaEntitlementRuntime.isBetaBuild {
+            return "Version \(currentAppVersion) Beta"
+        }
+        return "Version \(currentAppVersion)"
+    }
 
     var body: some View {
         ScrollView {
@@ -7321,7 +7595,7 @@ struct AboutSettingsView: View {
                     Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 100, height: 100).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous)).padding(.trailing, 10)
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Sapphire").font(.largeTitle.weight(.bold))
-                        Text("Version \(currentAppVersion)").foregroundStyle(.secondary).textSelection(.enabled)
+                        Text(versionLabel).foregroundStyle(.secondary).textSelection(.enabled)
 
                         HStack(spacing: 10) {
                             Link(destination: URL(string: "https://cshariq.github.io/Sapphire-Website/")!) {
@@ -7367,6 +7641,110 @@ struct AboutSettingsView: View {
 
                 ModernUpdateStatusView(updateChecker: updateChecker)
 
+                HStack(alignment: .top, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Settings Backup").font(.headline).padding([.horizontal, .top]).padding(.bottom, 10)
+
+                        HStack(spacing: 8) {
+                            Button {
+                                backupDocument = settingsModel.makeBackupDocument()
+                                isExportingSettings = true
+                            } label: {
+                                Label("Export", systemImage: "square.and.arrow.down")
+                                    .font(.subheadline)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .clipShape(Capsule())
+
+                            Button {
+                                isImportingSettings = true
+                            } label: {
+                                Label("Import", systemImage: "square.and.arrow.up")
+                                    .font(.subheadline)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.bordered)
+                            .clipShape(Capsule())
+
+                            Button {
+                                showingResetConfirmation = true
+                            } label: {
+                                Label("Reset", systemImage: "arrow.counterclockwise")
+                                    .font(.subheadline)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                            .clipShape(Capsule())
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+
+                        if let backupStatusMessage {
+                            HStack(spacing: 6) {
+                                Image(systemName: backupStatusMessage.icon)
+                                    .foregroundStyle(backupStatusMessage.color)
+                                Text(backupStatusMessage.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 10)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    Divider()
+                        .frame(maxHeight: 140)
+                        .padding(.vertical)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Release Channel").font(.headline).padding([.horizontal, .top])
+                        Text("Choose which update channel to receive releases from.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                            .padding(.bottom, 10)
+
+                        ModernChannelSwitcher(
+                            selection: releaseChannelBinding,
+                            hasBetaAccess: SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates),
+                            isLockedToRunningBuild: !ReleaseChannelPolicy.canChangePreferredChannel()
+                        )
+                        .padding(.horizontal)
+                        .padding(.bottom)
+
+                        if !ReleaseChannelPolicy.canChangePreferredChannel() {
+                            Text("You're running a beta build. Updates come from the beta channel.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
+                                .padding(.bottom, 8)
+                        } else if !SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "lock.fill").font(.caption2)
+                                Text("Beta access requires a Plus subscription or higher.")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    .onChange(of: settingsModel.settings.releaseChannel) { _, _ in
+                        updateChecker.checkForUpdatesMatchingCurrentChannel()
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Permissions Overview").font(.headline).padding([.horizontal, .top])
                     ForEach(permissionsManager.allPermissions) { permission in
@@ -7377,13 +7755,95 @@ struct AboutSettingsView: View {
 
                 Text("© 2025 Shariq Charolia. All rights reserved.").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .center).padding(.top, 20)
             }.padding(25).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .onAppear { updateChecker.checkForUpdates() }
+            .onAppear {
+                ReleaseChannelPolicy.reconcileStoredPreference(&settingsModel.settings)
+                updateChecker.checkForUpdatesMatchingCurrentChannel()
+            }
+        }
+        .fileExporter(
+            isPresented: $isExportingSettings,
+            document: backupDocument,
+            contentType: .sapphireSettingsBackup,
+            defaultFilename: backupFilename
+        ) { result in
+            switch result {
+            case .success:
+                backupStatusMessage = BackupStatusMessage(
+                    icon: "checkmark.circle.fill",
+                    color: .green,
+                    message: "Settings backup exported successfully."
+                )
+            case .failure(let error):
+                backupStatusMessage = BackupStatusMessage(
+                    icon: "xmark.octagon.fill",
+                    color: .red,
+                    message: "Export failed: \(error.localizedDescription)"
+                )
+            }
+        }
+        .fileImporter(
+            isPresented: $isImportingSettings,
+            allowedContentTypes: [.sapphireSettingsBackup, .json]
+        ) { result in
+            switch result {
+            case .success(let url):
+                do {
+                    try settingsModel.importSettings(from: url)
+                    backupStatusMessage = BackupStatusMessage(
+                        icon: "arrow.down.doc.fill",
+                        color: .green,
+                        message: "Imported settings from \(url.lastPathComponent)."
+                    )
+                } catch {
+                    backupStatusMessage = BackupStatusMessage(
+                        icon: "xmark.octagon.fill",
+                        color: .red,
+                        message: "Import failed: \(error.localizedDescription)"
+                    )
+                }
+            case .failure(let error):
+                backupStatusMessage = BackupStatusMessage(
+                    icon: "xmark.octagon.fill",
+                    color: .red,
+                    message: "Import failed: \(error.localizedDescription)"
+                )
+            }
+        }
+        .confirmationDialog(
+            "Reset all settings?",
+            isPresented: $showingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reset Settings", role: .destructive) {
+                settingsModel.resetAllSettings()
+                backupStatusMessage = BackupStatusMessage(
+                    icon: "arrow.counterclockwise.circle.fill",
+                    color: .orange,
+                    message: "All Sapphire settings were reset to defaults."
+                )
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will replace your current preferences across the app.")
         }
     }
 
     var currentAppVersion: String {
         return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "N/A"
     }
+
+    private var backupFilename: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmm"
+        return "Sapphire-Settings-\(formatter.string(from: .now))"
+    }
+}
+
+private struct BackupStatusMessage: Identifiable {
+    let id = UUID()
+    let icon: String
+    let color: Color
+    let message: String
 }
 
 fileprivate struct AboutLinkStyle: ViewModifier {
@@ -7519,6 +7979,47 @@ struct DownloadingView: View {
     }
 }
 
+struct ModernChannelSwitcher: View {
+    @Binding var selection: ReleaseChannel
+    let hasBetaAccess: Bool
+    var isLockedToRunningBuild: Bool = false
+    @Namespace private var namespace
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(ReleaseChannel.allCases, id: \.self) { channel in
+                Text(channel == .stable ? "Stable" : "Beta")
+                    .font(.subheadline.weight(selection == channel ? .semibold : .regular))
+                    .foregroundStyle(selection == channel ? .white : .secondary)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        ZStack {
+                            if selection == channel {
+                                Capsule()
+                                    .fill(Color.accentColor)
+                                    .matchedGeometryEffect(id: "channelPill", in: namespace)
+                            }
+                        }
+                    )
+                    .contentShape(Capsule())
+                    .onTapGesture {
+                        guard !isLockedToRunningBuild else { return }
+                        guard hasBetaAccess || channel == .stable else { return }
+                        withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.85)) {
+                            selection = channel
+                        }
+                    }
+                    .opacity(isLockedToRunningBuild && channel != selection ? 0.35 : ((channel == .beta && !hasBetaAccess) ? 0.4 : 1))
+            }
+        }
+        .background(Color.white.opacity(0.08))
+        .clipShape(Capsule())
+        .opacity(isLockedToRunningBuild ? 0.85 : 1)
+    }
+}
+
 fileprivate struct NotchButtonRowView: View {
     let buttonType: NotchButtonType
 
@@ -7526,19 +8027,21 @@ fileprivate struct NotchButtonRowView: View {
 
     private var isEnabledBinding: Binding<Bool> {
         switch buttonType {
-        case .settings, .spacer, .multiAudio:
+        case .settings, .spacer:
             return .constant(true)
         case .fileShelf: return $settings.settings.fileShelfIconEnabled
-        case .gemini: return $settings.settings.geminiEnabled
+        case .intelligenceLive: return $settings.settings.intelligenceEnabled
+        case .intelligence: return $settings.settings.intelligenceEnabled
         case .caffeine: return $settings.settings.caffeinateEnabled
-        case .battery: return $settings.settings.batteryEstimatorEnabled
+        case .battery: return $settings.settings.showMultiAudioIcon
+        case .multiAudio: return $settings.settings.showMultiAudioIcon
         case .pin: return $settings.settings.pinEnabled
         }
     }
 
     private var isToggleDisabled: Bool {
         switch buttonType {
-        case .settings, .spacer, .multiAudio:
+        case .settings, .spacer:
             return true
         default:
             return false
@@ -8055,3 +8558,827 @@ struct ModernSegmentedPicker: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
+
+typealias GeminiSettingsView = IntelligenceSettingsView
+
+// MARK: - Legacy Settings View Shims
+
+// MARK: - Task Runner Interface
+
+struct IntelligenceRunnerView: View {
+    let apiKey: String
+    var backend: LLMBackend = .gemini
+    var geminiSpeedMode: GeminiSpeedMode = .fast
+    @ObservedObject private var vm: IntelligenceNotchViewModel
+    @State private var isRunningScreenshotDebug = false
+
+    init(
+        apiKey: String,
+        backend: LLMBackend = .gemini,
+        geminiSpeedMode: GeminiSpeedMode = .fast,
+        vm: IntelligenceNotchViewModel? = nil
+    ) {
+        self.apiKey = apiKey
+        self.backend = backend
+        self.geminiSpeedMode = geminiSpeedMode
+        let resolvedVM = vm ?? (NSApp.delegate as? AppDelegate)?.intelligenceViewModel ?? IntelligenceNotchViewModel()
+        self._vm = ObservedObject(wrappedValue: resolvedVM)
+    }
+
+    private var isLaunchDisabled: Bool {
+        if vm.taskInput.trimmingCharacters(in: .whitespaces).isEmpty {
+            return true
+        }
+        switch backend {
+        case .gemini:
+            return apiKey.isEmpty
+        case .hackclub:
+            let hackKey = APIKeyManager.shared.hackClubAPIKey
+            return hackKey.isEmpty
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                TextField("Describe a task...", text: $vm.taskInput)
+                    .textFieldStyle(.plain)
+                    .padding(8)
+                    .background(Color.black.opacity(0.2))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15)))
+                    .onSubmit {
+                        if !vm.isRunning && !isLaunchDisabled {
+                            let activeKey = (backend == .hackclub) ? APIKeyManager.shared.hackClubAPIKey : apiKey
+                            vm.run(
+                                apiKey: activeKey,
+                                backend: backend,
+                                geminiSpeedMode: geminiSpeedMode
+                            )
+                        }
+                    }
+
+                if vm.isRunning {
+                    Button(action: vm.stop) {
+                        Image(systemName: "stop.fill")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 32, height: 32)
+                    .background(Color.red.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
+                    Button {
+                        let activeKey = (backend == .hackclub) ? APIKeyManager.shared.hackClubAPIKey : apiKey
+                        vm.run(
+                            apiKey: activeKey,
+                            backend: backend,
+                            geminiSpeedMode: geminiSpeedMode
+                        )
+                    } label: {
+                        Image(systemName: "play.fill")
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 32, height: 32)
+                    .background(isLaunchDisabled ? Color.gray.opacity(0.3) : Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .disabled(isLaunchDisabled)
+                }
+
+                Button {
+                    runScreenshotDebug()
+                } label: {
+                    Image(systemName: isRunningScreenshotDebug ? "camera.fill" : "camera")
+                        .foregroundStyle(isRunningScreenshotDebug ? .yellow : .white)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 32, height: 32)
+                .background(Color.orange.opacity(0.18))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .help("Capture 10 screenshots at 1.5 second intervals")
+                .disabled(isRunningScreenshotDebug)
+            }
+
+            if backend == .hackclub {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Hack Club AI Integration")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    
+                    HStack(spacing: 8) {
+                        SecureField("Hack Club API Key", text: Binding(
+                            get: { APIKeyManager.shared.hackClubAPIKey },
+                            set: { APIKeyManager.shared.hackClubAPIKey = $0 }
+                        ))
+                        .textFieldStyle(.plain)
+                        .padding(6)
+                        .background(Color.black.opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.12)))
+                        
+                        TextField("Model Name", text: Binding(
+                            get: { UserDefaults.standard.string(forKey: "hackClubModel") ?? "qwen/qwen3-32b" },
+                            set: { UserDefaults.standard.set($0, forKey: "hackClubModel") }
+                        ))
+                        .textFieldStyle(.plain)
+                        .padding(6)
+                        .background(Color.black.opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.12)))
+                    }
+                }
+                .padding(.top, 4)
+            }
+
+            if vm.isRunning && vm.subtaskProgress.total > 0 {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Subtask \(vm.subtaskProgress.current) of \(vm.subtaskProgress.total)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        ProgressView().scaleEffect(0.6)
+                    }
+                    ProgressView(value: Double(vm.subtaskProgress.current),
+                                 total: Double(vm.subtaskProgress.total))
+                        .tint(.blue)
+                }
+            }
+
+            if let result = vm.lastResult {
+                HStack(spacing: 6) {
+                    Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundStyle(result.success ? .green : .orange)
+                    Text(result.success ? "Completed" : "Partial")
+                        .font(.caption.bold())
+                    Text("· \(result.subtasksCompleted)/\(result.subtasksTotal) subtasks · \(result.actionsTaken) actions · \(String(format: "%.1fs", result.duration))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !vm.logEntries.isEmpty {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 3) {
+                        ForEach(vm.logEntries.reversed()) { line in
+                            Text(line.text)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(
+                                    line.isError ? Color.red :
+                                    line.isSubtask ? Color.orange :
+                                    Color.secondary
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(8)
+                }
+                .frame(maxHeight: 140)
+                .background(Color.black.opacity(0.25))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+    }
+
+    private func runScreenshotDebug() {
+        guard !isRunningScreenshotDebug else { return }
+        isRunningScreenshotDebug = true
+
+        Task { @MainActor in
+            defer { isRunningScreenshotDebug = false }
+
+            let perception = ScreenPerception()
+            vm.logEntries.append(.init(text: "📸 Screenshot debug started (10 captures / 1.5s)", isError: false, isSubtask: true))
+
+            for index in 1...10 {
+                let (image, elements) = await perception.captureAnnotatedScreen()
+                let imageNote = image == nil ? "no image" : "image ok"
+                vm.logEntries.append(.init(text: "📸 [\(index)/10] \(imageNote) · \(elements.count) elements", isError: false, isSubtask: true))
+                if index < 10 {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                }
+            }
+
+            vm.logEntries.append(.init(text: "📸 Screenshot debug finished", isError: false, isSubtask: true))
+        }
+    }
+}
+
+// MARK: - Intelligence Settings View (unified Gemini Live + Agent)
+
+struct IntelligenceSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+    @Environment(\.openURL) private var openURL
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
+
+    @State private var email: String = ""
+    @State private var password: String = ""
+    @State private var displayName: String = ""
+    @State private var statusMessage: String?
+    @State private var isBusy = false
+
+    // MARK: - Direct Tools Testing State
+    @State private var selectedTestTool = "click_element"
+    @State private var testElementId = 1
+    @State private var testAction = "click"
+    @State private var testText = ""
+    @State private var testKey = ""
+    @State private var testURL = "https://example.com"
+    @State private var testAppName = "Safari"
+    @State private var testScrollX = 500
+    @State private var testScrollY = 500
+    @State private var testScrollDelta = -3
+    @State private var testDragStartX = 200
+    @State private var testDragStartY = 200
+    @State private var testDragEndX = 800
+    @State private var testDragEndY = 800
+    
+    @State private var testCountdown = 0
+    @State private var testLog = ""
+    @State private var timerSubscription: AnyCancellable?
+
+    // Binds UserDefaults directly using clean computed properties to offload the Swift compiler type-solver
+    private var hackClubAPIKeyBinding: Binding<String> {
+        Binding(
+            get: { APIKeyManager.shared.hackClubAPIKey },
+            set: { APIKeyManager.shared.hackClubAPIKey = $0 }
+        )
+    }
+
+    private var hackClubModelBinding: Binding<String> {
+        Binding(
+            get: { UserDefaults.standard.string(forKey: "hackClubModel") ?? "qwen/qwen3-32b" },
+            set: { UserDefaults.standard.set($0, forKey: "hackClubModel") }
+        )
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+
+                // MARK: Header
+                HStack(spacing: 14) {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(.purple)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Intelligence")
+                            .font(.largeTitle.bold())
+                        Text("Real-time voice assistant and autonomous Mac agent")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.bottom, 4)
+
+                // MARK: API Key (shared by both Gemini Live and Intelligence Agent)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Gemini API Key")
+                        .font(.system(size: 14, weight: .medium))
+
+                    SecureField("AIza...", text: $settings.settings.geminiApiKey)
+                        .textFieldStyle(.plain)
+                        .padding(8)
+                        .background(Color.black.opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
+
+                    Text("Used by both Gemini Live (voice) and Intelligence Agent (automation). Get a key at [aistudio.google.com](https://aistudio.google.com/app/apikey)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(25)
+                .modifier(SettingsContainerModifier())
+
+                // MARK: Gemini Live
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.purple)
+                        Text("Gemini Live")
+                            .font(.headline)
+                    }
+                    .padding([.top, .horizontal])
+
+                    InfoContainer(
+                        text: "Gemini Live streams your screen and microphone to Gemini in real time, letting you have a live voice conversation about what's on your Mac. Requires Sapphire Basic.",
+                        iconName: "sparkle",
+                        color: .purple
+                    )
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+
+                    ToggleRow(
+                        title: "Show Intelligence Button in Notch",
+                        description: "Display the Intelligence button in the expanded notch for quick access to Live and Agent.",
+                        isOn: $settings.settings.intelligenceEnabled
+                    )
+                }
+                .modifier(SettingsContainerModifier())
+
+                // MARK: Intelligence Agent — Backend
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "cpu.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.blue)
+                        Text("Intelligence Agent")
+                            .font(.headline)
+                    }
+                    .padding([.top, .horizontal])
+
+                    Text("Autonomous agent that controls your Mac using vision and native Accessibility APIs.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                        .padding(.bottom, 8)
+
+                    Divider().padding(.leading, 20)
+
+                    Text("AI Backend")
+                        .font(.subheadline.weight(.semibold))
+                        .padding([.top, .horizontal])
+
+                    Picker("", selection: $settings.settings.intelligenceBackend) {
+                        ForEach(LLMBackend.allCases, id: \.self) { backend in
+                            Text(backend.rawValue).tag(backend)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding()
+
+                    Text(settings.settings.intelligenceBackend.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+
+                    // MARK: Clarification Question Policy segmented control
+                    Divider().padding(.leading, 20)
+
+                    Text("Clarification Question Policy")
+                        .font(.subheadline.weight(.semibold))
+                        .padding([.top, .horizontal])
+
+                    Picker("", selection: Binding(
+                        get: { AgentQuestionPolicy(rawValue: UserDefaults.standard.string(forKey: "intelligenceQuestionPolicy") ?? "Normal") ?? .normal },
+                        set: { UserDefaults.standard.set($0.rawValue, forKey: "intelligenceQuestionPolicy") }
+                    )) {
+                        ForEach(AgentQuestionPolicy.allCases) { policy in
+                            Text(policy.rawValue).tag(policy)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding()
+
+                    let currentPolicy = AgentQuestionPolicy(rawValue: UserDefaults.standard.string(forKey: "intelligenceQuestionPolicy") ?? "Normal") ?? .normal
+                    Text(currentPolicy.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+
+                    if settings.settings.intelligenceBackend == .gemini {
+                        Divider().padding(.leading, 20)
+
+                        Text("Gemini Speed Mode")
+                            .font(.subheadline.weight(.semibold))
+                            .padding([.top, .horizontal])
+
+                        Picker("", selection: $settings.settings.intelligenceGeminiSpeedMode) {
+                            ForEach(GeminiSpeedMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding()
+
+                        Text(settings.settings.intelligenceGeminiSpeedMode.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                            .padding(.bottom)
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+
+                // MARK: Hack Club AI Configuration
+                if settings.settings.intelligenceBackend == .hackclub {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.purple)
+                            Text("Hack Club AI Integration")
+                                .font(.headline)
+                        }
+                        .padding([.top, .horizontal])
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Configure private cloud task-execution using your Hack Club credentials.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Hack Club API Key")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                SecureField("Bearer hf_...", text: hackClubAPIKeyBinding)
+                                    .textFieldStyle(.plain)
+                                    .padding(8)
+                                    .background(Color.black.opacity(0.2))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15)))
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Model Name")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                TextField("e.g. qwen/qwen3-32b", text: hackClubModelBinding)
+                                    .textFieldStyle(.plain)
+                                    .padding(8)
+                                    .background(Color.black.opacity(0.2))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15)))
+                            }
+                        }
+                        .padding([.horizontal, .bottom])
+                    }
+                    .modifier(SettingsContainerModifier())
+                }
+
+                // MARK: Required permissions
+                RequiredPermissionsView(section: .intelligence)
+
+                // MARK: Direct Tools Testing Suite Card
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "wrench.and.screwdriver.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.orange)
+                        Text("Direct Tools Testing Suite")
+                            .font(.headline)
+                    }
+                    .padding([.top, .horizontal])
+
+                    Text("Directly test the execution of individual tools. Click 'Run Tool Test' and focus your target window—the tool will execute after a 5-second countdown.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Picker("Test Tool", selection: $selectedTestTool) {
+                            Text("Click Element").tag("click_element")
+                            Text("Click Coordinates").tag("click_coordinates")
+                            Text("Type Text").tag("type_text")
+                            Text("Open URL").tag("open_url")
+                            Text("Open App").tag("open_app")
+                            Text("Scroll Coordinates").tag("scroll_coordinates")
+                            Text("Drag Coordinates").tag("drag_coordinates")
+                        }
+                        .pickerStyle(.menu)
+                        .padding(.vertical, 4)
+                        
+                        Group {
+                            if selectedTestTool == "click_element" {
+                                HStack {
+                                    Text("Element ID:")
+                                    TextField("1", value: $testElementId, formatter: NumberFormatter())
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 80)
+                                    
+                                    Picker("Mouse Action", selection: $testAction) {
+                                        Text("Click").tag("click")
+                                        Text("Double Click").tag("double_click")
+                                        Text("Right Click").tag("right_click")
+                                    }
+                                    .pickerStyle(.segmented)
+                                }
+                            }
+                            
+                            if selectedTestTool == "click_coordinates" {
+                                HStack {
+                                    Text("Normalized X:")
+                                    TextField("500", value: $testScrollX, formatter: NumberFormatter())
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 80)
+                                    Text("Normalized Y:")
+                                    TextField("500", value: $testScrollY, formatter: NumberFormatter())
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 80)
+                                    
+                                    Picker("Mouse Action", selection: $testAction) {
+                                        Text("Click").tag("click")
+                                        Text("Double Click").tag("double_click")
+                                        Text("Right Click").tag("right_click")
+                                    }
+                                    .pickerStyle(.segmented)
+                                }
+                            }
+                            
+                            if selectedTestTool == "type_text" {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    TextField("Text Context to Type", text: $testText)
+                                        .textFieldStyle(.roundedBorder)
+                                    TextField("Action Key (Optional, e.g. enter)", text: $testKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+                            
+                            if selectedTestTool == "open_url" {
+                                TextField("Destination URL Link", text: $testURL)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            
+                            if selectedTestTool == "open_app" {
+                                TextField("Application Name", text: $testAppName)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            
+                            if selectedTestTool == "scroll_coordinates" {
+                                HStack {
+                                    Text("Scroll X:")
+                                    TextField("500", value: $testScrollX, formatter: NumberFormatter())
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 60)
+                                    Text("Scroll Y:")
+                                    TextField("500", value: $testScrollY, formatter: NumberFormatter())
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 60)
+                                    Text("Delta:")
+                                    TextField("-3", value: $testScrollDelta, formatter: NumberFormatter())
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 60)
+                                }
+                            }
+                            
+                            if selectedTestTool == "drag_coordinates" {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text("Start X:")
+                                        TextField("200", value: $testDragStartX, formatter: NumberFormatter())
+                                            .textFieldStyle(.roundedBorder)
+                                            .frame(width: 70)
+                                        Text("Start Y:")
+                                        TextField("200", value: $testDragStartY, formatter: NumberFormatter())
+                                            .textFieldStyle(.roundedBorder)
+                                            .frame(width: 70)
+                                    }
+                                    HStack {
+                                        Text("End X:")
+                                        TextField("800", value: $testDragEndX, formatter: NumberFormatter())
+                                            .textFieldStyle(.roundedBorder)
+                                            .frame(width: 70)
+                                        Text("End Y:")
+                                        TextField("800", value: $testDragEndY, formatter: NumberFormatter())
+                                            .textFieldStyle(.roundedBorder)
+                                            .frame(width: 70)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        
+                        HStack(spacing: 12) {
+                            Button(testCountdown > 0 ? "Starting in \(testCountdown)s…" : "Run Tool Test") {
+                                startToolTest()
+                            }
+                            .disabled(testCountdown > 0)
+                            
+                            if !testLog.isEmpty {
+                                Text(testLog)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
+                    .padding()
+                }
+                .modifier(SettingsContainerModifier())
+
+                // MARK: Quick Run
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Quick Run")
+                        .font(.headline)
+                        .padding([.top, .horizontal])
+
+                    Text("Test Intelligence Agent directly from Settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+
+                    // DYNAMIC BINDING: Respects selected backend configuration rather than locking to Gemini
+                    IntelligenceRunnerView(
+                        apiKey: settings.settings.geminiApiKey,
+                        backend: settings.settings.intelligenceBackend,
+                        geminiSpeedMode: settings.settings.intelligenceGeminiSpeedMode
+                    )
+                    .padding()
+                }
+                .modifier(SettingsContainerModifier())
+
+                // MARK: How it works
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("How Intelligence Agent Works")
+                        .font(.headline)
+                        .padding([.top, .horizontal])
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        IntelligenceStepRow(number: "1", title: "Native function calling",
+                                    detail: "All actions and tools are Gemini function declarations. The model calls them directly — no JSON parsing, no text extraction.")
+                        Divider().padding(.leading, 48)
+                        IntelligenceStepRow(number: "2", title: "Single persistent conversation",
+                                    detail: "One conversation thread per task. Screenshot + UI tree sent each step; model calls the next action function immediately.")
+                        Divider().padding(.leading, 48)
+                        IntelligenceStepRow(number: "3", title: "Default browser awareness",
+                                    detail: "Resolved via LaunchServices before the task starts — zero API calls. open_url always uses your actual default browser.")
+                        Divider().padding(.leading, 48)
+                        IntelligenceStepRow(number: "4", title: "Tool-augmented execution",
+                                    detail: "40+ tools exposed as function declarations: file system, shell, browser, clipboard, calendar, window management, and more.")
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom)
+                }
+                .modifier(SettingsContainerModifier())
+            }
+            .padding(25)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .task {
+                await subscriptionManager.bootstrap()
+            }
+        }
+        .onDisappear {
+            timerSubscription?.cancel()
+            timerSubscription = nil
+        }
+    }
+
+    private func login() {
+        isBusy = true
+        statusMessage = nil
+        Task {
+            do {
+                try await subscriptionManager.login(email: email, password: password)
+                statusMessage = "Logged in as \(email)."
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+            isBusy = false
+        }
+    }
+
+    private func register() {
+        isBusy = true
+        statusMessage = nil
+        Task {
+            do {
+                let trimmedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let finalDisplayName = trimmedDisplayName.isEmpty ? nil : trimmedDisplayName
+                try await subscriptionManager.register(email: email, password: password, displayName: finalDisplayName)
+                statusMessage = "Account created and signed in."
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+            isBusy = false
+        }
+    }
+
+    private func openCheckout(tier: SubscriptionTier, period: BillingPeriod) {
+        isBusy = true
+        statusMessage = nil
+        Task {
+            do {
+                let url = try await subscriptionManager.openCheckout(for: tier, period: period)
+                openURL(url)
+                statusMessage = "Checkout opened."
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+            isBusy = false
+        }
+    }
+
+
+
+    // MARK: - Direct Tools Testing Logic
+
+    private func startToolTest() {
+        testLog = "Focus your target window now..."
+        testCountdown = 5
+        
+        timerSubscription = Timer.publish(every: 1.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in
+                if self.testCountdown > 1 {
+                    self.testCountdown -= 1
+                } else {
+                    self.testCountdown = 0
+                    self.timerSubscription?.cancel()
+                    self.timerSubscription = nil
+                    self.executeDirectTool()
+                }
+            }
+    }
+    
+    private func executeDirectTool() {
+        testLog = "Executing tool..."
+        let executor = ActionExecutor()
+        
+        Task {
+            do {
+                let result: String
+                switch selectedTestTool {
+                case "click_element":
+                    // Fallback to center-screen coordinate simulation for clickElement testing
+                    let screen = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
+                    let action = AgentAction(type: testAction == "double_click" ? .doubleClick : (testAction == "right_click" ? .rightClick : .click), x: screen.width / 2, y: screen.height / 2)
+                    result = try await executor.execute(action)
+                    
+                case "click_coordinates":
+                    let screen = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
+                    let x = (Double(testScrollX) / 1000.0) * screen.width
+                    let y = (Double(testScrollY) / 1000.0) * screen.height
+                    let action = AgentAction(type: testAction == "double_click" ? .doubleClick : (testAction == "right_click" ? .rightClick : .click), x: x, y: y)
+                    result = try await executor.execute(action)
+                    
+                case "type_text":
+                    let keysList = testKey.isEmpty ? nil : [testKey]
+                    let action = AgentAction(type: .type, text: testText, keys: keysList)
+                    result = try await executor.execute(action)
+                    
+                case "open_url":
+                    let action = AgentAction(type: .openURL, text: testURL)
+                    result = try await executor.execute(action)
+                    
+                case "open_app":
+                    let action = AgentAction(type: .openApp, appName: testAppName)
+                    result = try await executor.execute(action)
+                    
+                case "scroll_coordinates":
+                    let screen = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
+                    let x = (Double(testScrollX) / 1000.0) * screen.width
+                    let y = (Double(testScrollY) / 1000.0) * screen.height
+                    let action = AgentAction(type: .scroll, x: x, y: y, scrollDelta: Double(testScrollDelta))
+                    result = try await executor.execute(action)
+                    
+                case "drag_coordinates":
+                    let screen = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
+                    let sx = (Double(testDragStartX) / 1000.0) * screen.width
+                    let sy = (Double(testDragStartY) / 1000.0) * screen.height
+                    let ex = (Double(testDragEndX) / 1000.0) * screen.width
+                    let ey = (Double(testDragEndY) / 1000.0) * screen.height
+                    let action = AgentAction(type: .drag, x: sx, y: sy, endX: ex, endY: ey)
+                    result = try await executor.execute(action)
+                    
+                default:
+                    result = "Unsupported test tool."
+                }
+                
+                await MainActor.run {
+                    self.testLog = "✓ Success: \(result)"
+                }
+            } catch {
+                await MainActor.run {
+                    self.testLog = "Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+}
+
+private struct IntelligenceStepRow: View {
+    let number: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text(number)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Color.purple.gradient)
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+

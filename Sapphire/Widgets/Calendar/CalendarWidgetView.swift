@@ -144,6 +144,9 @@ struct CalendarWidgetView: View {
                     selectionWorkItem?.cancel()
 
                     let workItem = DispatchWorkItem {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo(newDate, anchor: .center)
+                        }
                         if !newDate.isSameDay(as: viewModel.selectedDate) {
                             HapticManager.shared.perform(HapticFeedbackType.weak)
                             withAnimation(.easeInOut(duration: 0.2)) {
@@ -253,8 +256,7 @@ struct DynamicDayView: View {
 
             let scale = 0.7 + (focusFactor * 0.7)
             let opacity = 0.5 + (focusFactor * 0.5)
-            let blur = (1 - focusFactor) * 1.5
-            let rotationAngle = Angle.degrees(Double(distance / 10))
+            let rotationAngle = Angle.degrees(Double(distance / 12))
 
             let baseColor = date.isWeekend ? Color.red.opacity(0.8) : Color.white.opacity(0.8)
             let finalColor = baseColor.lerp(to: .blue, t: focusFactor)
@@ -276,11 +278,8 @@ struct DynamicDayView: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(finalColor)
             }
-            .drawingGroup()
             .scaleEffect(scale)
-            .blur(radius: blur)
             .opacity(opacity)
-            .rotation3DEffect(rotationAngle, axis: (x: 0, y: 1, z: 0), perspective: 0.5)
             .frame(width: itemProxy.size.width, height: itemProxy.size.height)
             .preference(key: CenterDatePreferenceKey.self, value: CenterDateInfo(date: date, distance: absDistance))
         }

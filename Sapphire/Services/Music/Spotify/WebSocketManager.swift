@@ -18,6 +18,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
 
     private var session: URLSession!
     private let delegateQueue = OperationQueue()
+    private var shouldReconnect = true
 
     private weak var privateAPIManager: SpotifyPrivateAPIManager?
 
@@ -30,6 +31,8 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
     var connectionIdPublisher: AnyPublisher<String, Never> {
         return connectionIdSubject.eraseToAnyPublisher()
     }
+    private(set) var latestConnectionID: String?
+    private var lastPublishedPlayerStateSignature: PlayerStateSignature?
 
     init(accessToken: String, client: SpotifyPrivateAPIManager, controllerDeviceID: String) {
         self.accessToken = accessToken
@@ -37,7 +40,12 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         self.controllerDeviceID = controllerDeviceID
 
         super.init()
-        self.session = URLSession(configuration: .default, delegate: self, delegateQueue: delegateQueue)
+        self.delegateQueue.maxConcurrentOperationCount = 1
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 60 * 60 * 24
+        configuration.timeoutIntervalForResource = 60 * 60 * 24
+        configuration.waitsForConnectivity = true
+        self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
     }
 
     deinit {
@@ -57,9 +65,11 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
             return
         }
 
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
+        shouldReconnect = true
         webSocketTask = createWebSocketTask()
         isConnecting = true
-        print("[WebSocketManager] Starting connection attempt with Controller ID: \(self.controllerDeviceID)")
         webSocketTask?.resume()
         receiveMessages()
     }
@@ -76,7 +86,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         self.isConnected = false
         self.isConnecting = false
         if let error = error {
-            print("[WebSocketManager] WebSocket Task COMPLETED WITH ERROR: \(error)")
+            guard !isTimeoutError(error) else { return }
             handleConnectionFailure()
         }
     }
@@ -97,7 +107,10 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
                 }
                 self.receiveMessages()
             case .failure(let error):
-                print("[WebSocketManager] Receive loop failed with error: \(error.localizedDescription)")
+                if self.isTimeoutError(error), self.isConnected {
+                    self.receiveMessages()
+                    return
+                }
                 self.handleConnectionFailure()
             }
         }
@@ -110,7 +123,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
                let headers = json["headers"] as? [String: String],
                let connId = headers["Spotify-Connection-Id"] {
 
-                print("[WebSocketManager] Received Connection ID: \(connId). Publishing...")
+                latestConnectionID = connId
                 connectionIdSubject.send(connId)
             }
         }
@@ -125,10 +138,13 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         do {
             let webSocketMessage = try JSONDecoder().decode(WebSocketMessage.self, from: data)
             if let playerState = webSocketMessage.payloads?.first?.cluster?.playerState ?? webSocketMessage.payloads?.first?.state {
+                let signature = PlayerStateSignature(playerState)
+                guard signature != lastPublishedPlayerStateSignature else { return }
+                lastPublishedPlayerStateSignature = signature
                 playerStateSubject.send(playerState)
             }
         } catch {
-            print("[WebSocketManager] FAILED to decode WebSocketMessage JSON: \(error)")
+            return
         }
     }
 
@@ -141,7 +157,7 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
                 guard let self = self, self.isConnected else { return }
                 self.webSocketTask?.send(.string("{\"type\":\"ping\"}")) { error in
                     if let error = error {
-                        print("[WebSocketManager] Ping failed: \(error)")
+                        guard !self.isTimeoutError(error) else { return }
                         self.handleConnectionFailure()
                     }
                 }
@@ -149,31 +165,82 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         }
     }
 
-    func disconnect() {
+    func disconnect(shouldReconnect: Bool = false) {
+        self.shouldReconnect = shouldReconnect
         pingTimer?.invalidate(); pingTimer = nil
         reconnectTimer?.invalidate(); reconnectTimer = nil
-        if isConnected || isConnecting {
-            webSocketTask?.cancel(with: .goingAway, reason: nil)
-            isConnected = false; isConnecting = false
-            print("[WebSocketManager] Disconnected.")
-        }
+        webSocketTask?.cancel(with: .goingAway, reason: nil)
+        webSocketTask = nil
+        latestConnectionID = nil
+        lastPublishedPlayerStateSignature = nil
+        isConnected = false
+        isConnecting = false
     }
 
     private var reconnectTimer: Timer?
 
     private func handleConnectionFailure() {
+        guard shouldReconnect else { return }
         reconnect(delay: 5.0)
     }
 
     private func reconnect(delay: TimeInterval) {
-        guard !isConnecting else { return }
-        disconnect()
-        print("[WebSocketManager] Attempting to reconnect in \(delay) seconds...")
+        guard shouldReconnect, !isConnecting, reconnectTimer == nil else { return }
+        disconnect(shouldReconnect: true)
         DispatchQueue.main.async {
             self.reconnectTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-                self?.privateAPIManager?.reestablishSession()
+                guard let self else { return }
+                self.reconnectTimer = nil
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.privateAPIManager?.requestSessionReestablishment(from: self)
+                }
             }
         }
+    }
+
+    private func isTimeoutError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain && nsError.code == URLError.timedOut.rawValue {
+            return true
+        }
+        return false
+    }
+}
+
+private struct PlayerStateSignature: Equatable {
+    let trackURI: String?
+    let trackUID: String?
+    let trackTitle: String?
+    let trackArtist: String?
+    let trackAlbum: String?
+    let trackImage: String?
+    let hiddenFlag: String?
+    let isPlaying: Bool?
+    let isPaused: Bool?
+    let contextURI: String?
+    let shuffle: Bool?
+    let repeatingContext: Bool?
+    let repeatingTrack: Bool?
+    let previousTrackUIDs: [String]
+    let nextTrackUIDs: [String]
+
+    init(_ state: PlayerState) {
+        trackURI = state.track?.uri
+        trackUID = state.track?.uid
+        trackTitle = state.track?.metadata?.title
+        trackArtist = state.track?.metadata?.artistName
+        trackAlbum = state.track?.metadata?.albumTitle
+        trackImage = state.track?.metadata?.imageUrl ?? state.track?.metadata?.imageLargeUrl ?? state.track?.metadata?.imageSmallUrl ?? state.track?.metadata?.imageXlargeUrl
+        hiddenFlag = state.track?.metadata?.hidden
+        isPlaying = state.isPlaying
+        isPaused = state.isPaused
+        contextURI = state.contextUri
+        shuffle = state.options?.shufflingContext
+        repeatingContext = state.options?.repeatingContext
+        repeatingTrack = state.options?.repeatingTrack
+        previousTrackUIDs = state.prevTracks?.map(\.uid) ?? []
+        nextTrackUIDs = state.nextTracks?.map(\.uid) ?? []
     }
 }
 

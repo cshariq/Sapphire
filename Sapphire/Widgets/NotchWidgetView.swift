@@ -55,15 +55,13 @@ struct NotchWidgetView: View {
     @Environment(\.isCalendarHovered) var isCalendarHovered
     @Environment(\.onSnapDragEnd) var onSnapDragEnd
 
-    private let musicWidgetView: MusicWidgetView
-    private let weatherWidgetView: WeatherWidgetView
-    private let calendarWidgetView: CalendarWidgetView
-    private let shortcutWidgetView: ShortcutWidgetView
+    private let calendarViewModel: InteractiveCalendarViewModel
 
     @EnvironmentObject var settings: SettingsModel
     @EnvironmentObject private var fileShelfState: FileShelfState
     @EnvironmentObject var musicWidget: MusicManager
     @EnvironmentObject private var calendarService: CalendarService
+    @EnvironmentObject var intelligenceVM: IntelligenceNotchViewModel
 
     @Environment(\.notchCornerRadius) private var cornerRadius
 
@@ -75,39 +73,52 @@ struct NotchWidgetView: View {
     @State private var displayedMode: NotchWidgetMode = .defaultWidgets
 
     @State private var blurRadius: CGFloat = 20
-
     @State private var isScaledIn: Bool = false
     @State private var isFadedIn: Bool = false
     @State private var isPositioned: Bool = false
 
-    init(navigationStack: Binding<[NotchWidgetMode]>, activeDropZone: Binding<DropZone?>, isFileDropTargeted: Binding<Bool>, calendarViewModel: InteractiveCalendarViewModel) {
-        self.musicWidgetView = MusicWidgetView()
-        self.weatherWidgetView = WeatherWidgetView()
-        self.calendarWidgetView = CalendarWidgetView(viewModel: calendarViewModel)
-        self.shortcutWidgetView = ShortcutWidgetView()
+    init(calendarViewModel: InteractiveCalendarViewModel) {
+        self.calendarViewModel = calendarViewModel
+    }
+
+    private var menuWidgetOrder: [WidgetType] {
+        settings.settings.widgetOrder.filter { $0 != .agent }
     }
 
     private var enabledAndOrderedWidgets: [WidgetType] {
-        let orderedTypes = settings.settings.widgetOrder
+        let orderedTypes = menuWidgetOrder
 
-        return orderedTypes.filter { widgetType in
+        let enabled = orderedTypes.filter { widgetType in
             switch widgetType {
             case .music:
                 return settings.settings.musicWidgetEnabled && (!settings.settings.hideMusicWidgetWhenNotPlaying || (musicWidget.title != nil && !musicWidget.title!.isEmpty))
             case .weather:
                 return settings.settings.weatherWidgetEnabled
+            case .sports:
+                return settings.settings.sportsWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .sportsWidget)
+            case .finance:
+                return settings.settings.financeWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .financeWidget)
             case .calendar:
                 return settings.settings.calendarWidgetEnabled
             case .shortcuts:
                 return settings.settings.shortcutsWidgetEnabled
+            case .agent:
+                return false
             }
         }
+
+        return WidgetLayoutPolicy.fittingWidgets(
+            from: enabled,
+            availableWidth: WidgetLayoutPolicy.availableBarWidth(),
+            showDividers: settings.settings.showDividersBetweenWidgets
+        )
     }
 
     var body: some View {
         ZStack {
             contentSwitch(for: displayedMode)
                 .id(displayedMode)
+                .compositingGroup()
                 .blur(radius: blurRadius)
                 .scaleEffect(isScaledIn ? 1.0 : 0.7, anchor: .top)
                 .opacity(isFadedIn ? 1.0 : 0.0)
@@ -127,7 +138,6 @@ struct NotchWidgetView: View {
                     self.isPositioned = true
                     self.isFadedIn = true
                 }
-
                 withAnimation(.easeOut(duration: 0.6)) {
                     self.blurRadius = 0
                 }
@@ -155,7 +165,6 @@ struct NotchWidgetView: View {
                 self.isPositioned = true
                 self.isFadedIn = true
             }
-
             withAnimation(.easeOut(duration: 0.6)) {
                 self.blurRadius = 0
             }
@@ -185,6 +194,10 @@ struct NotchWidgetView: View {
             GeminiApiKeysMissingView(navigationStack: navigationStack)
         case .musicPlayer:
             MusicPlayerView(navigationStack: navigationStack)
+        case .sportsPlayer:
+            SportsPlayerView(navigationStack: navigationStack)
+        case .financePlayer:
+            FinancePlayerView(navigationStack: navigationStack)
         case .musicLoginPrompt:
             LoginPromptView(navigationStack: navigationStack)
         case .musicQueueAndPlaylists:
@@ -228,10 +241,15 @@ struct NotchWidgetView: View {
             DeviceAdjustView(device: device)
         case .multiAudioEQ(let device):
             DeviceEQView(device: device)
+        case .multiAudioAppEQ(let bundleID, let appName):
+            AppEQView(bundleID: bundleID, appName: appName)
+            
         case .dragActivated:
             Color.clear
                 .frame(width: 300, height: 200)
                 .onDrop(of: [.fileURL], isTargeted: isFileDropTargeted) { _ in return false }
+        case .agentS:
+            IntelligenceNotchView(navigationStack: navigationStack)
         }
     }
 
@@ -239,7 +257,7 @@ struct NotchWidgetView: View {
     private func widgetView(for widgetType: WidgetType) -> some View {
         switch widgetType {
         case .music:
-            musicWidgetView
+            MusicWidgetView()
                 .onTapGesture {
                     if settings.settings.musicOpenOnClick {
                         Task {
@@ -249,7 +267,7 @@ struct NotchWidgetView: View {
                     }
                 }
         case .weather:
-            weatherWidgetView
+            WeatherWidgetView()
                 .onTapGesture {
                     if settings.settings.weatherOpenOnClick {
                         Task {
@@ -258,8 +276,28 @@ struct NotchWidgetView: View {
                         }
                     }
                 }
+        case .sports:
+            SportsWidgetView()
+                .onTapGesture {
+                    if settings.settings.sportsOpenOnClick {
+                        Task {
+                            try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
+                            navigationStack.wrappedValue.append(NotchWidgetMode.sportsPlayer)
+                        }
+                    }
+                }
+        case .finance:
+            FinanceWidgetView()
+                .onTapGesture {
+                    if settings.settings.financeOpenOnClick {
+                        Task {
+                            try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
+                            navigationStack.wrappedValue.append(NotchWidgetMode.financePlayer)
+                        }
+                    }
+                }
         case .calendar:
-            calendarWidgetView
+            CalendarWidgetView(viewModel: calendarViewModel)
                 .onTapGesture {
                     if settings.settings.calendarOpenOnClick {
                         Task {
@@ -272,7 +310,9 @@ struct NotchWidgetView: View {
                     self.isCalendarHovered.wrappedValue = hovering
                 }
         case .shortcuts:
-            shortcutWidgetView
+            ShortcutWidgetView()
+        case .agent:
+            EmptyView()
         }
     }
 }

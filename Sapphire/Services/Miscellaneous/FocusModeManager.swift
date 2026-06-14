@@ -61,27 +61,33 @@ class FocusModeManager: NSObject, ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var lastKnownModeIdentifier: String?
+    private var directoryMonitor: DirectoryMonitor?
 
     private let assertionsURL: URL
     private let modesURL: URL
+    private let monitorDirectoryURL: URL
 
     override init() {
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
         self.assertionsURL = homeDirectory.appendingPathComponent("Library/DoNotDisturb/DB/Assertions.json")
         self.modesURL = homeDirectory.appendingPathComponent("Library/DoNotDisturb/DB/ModeConfigurations.json")
+        self.monitorDirectoryURL = homeDirectory.appendingPathComponent("Library/DoNotDisturb/DB")
         super.init()
-        print("[FocusManager] LOG: Initializing Manager with continuous file polling.")
         loadInitialFocusStatus()
         setupFocusMonitoring()
     }
 
     private func setupFocusMonitoring() {
-        Timer.publish(every: 1.0, on: .main, in: .common)
-            .autoconnect()
+        let monitor = DirectoryMonitor(url: monitorDirectoryURL)
+        directoryMonitor = monitor
+
+        monitor.fileDidChangePublisher
             .sink { [weak self] _ in
                 self?.checkFocusFilesForChange()
             }
             .store(in: &cancellables)
+
+        monitor.start()
     }
 
     private func loadInitialFocusStatus() {
@@ -179,6 +185,7 @@ class FocusModeManager: NSObject, ObservableObject {
     }
 
     deinit {
+        directoryMonitor?.stop()
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
     }

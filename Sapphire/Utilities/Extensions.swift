@@ -36,32 +36,48 @@ extension Color {
     }
 }
 
-private let imageColorCache = NSCache<NSData, NSArray>()
+private enum ImageEdgeColorCache {
+    private static let cache: NSCache<NSData, NSArray> = {
+        let cache = NSCache<NSData, NSArray>()
+        cache.countLimit = 15
+        cache.totalCostLimit = 2 * 1024 * 1024
+        return cache
+    }()
+
+    static func object(forKey key: NSData) -> NSArray? {
+        cache.object(forKey: key)
+    }
+
+    static func setObject(_ object: NSArray, forKey key: NSData) {
+        cache.setObject(object, forKey: key)
+    }
+
+    static func trim() {
+        cache.removeAllObjects()
+    }
+}
+private let ciContext = CIContext(options: [.workingColorSpace: NSNull()])
 
 extension NSImage {
     func getEdgeColors() -> (left: Color, right: Color, accent: Color)? {
         guard let tiffData = self.tiffRepresentation as NSData? else { return nil }
 
-        if let cachedColors = imageColorCache.object(forKey: tiffData) as? [CGFloat], cachedColors.count == 9 {
-            let left = Color(red: cachedColors[0], green: cachedColors[1], blue: cachedColors[2])
-            let right = Color(red: cachedColors[3], green: cachedColors[4], blue: cachedColors[5])
-            let accent = Color(red: cachedColors[6], green: cachedColors[7], blue: cachedColors[8])
-            return (left, right, accent)
+        if let cachedColors = ImageEdgeColorCache.object(forKey: tiffData) as? [CGFloat], cachedColors.count == 9 {
+            return (Color(red: cachedColors[0], green: cachedColors[1], blue: cachedColors[2]),
+                    Color(red: cachedColors[3], green: cachedColors[4], blue: cachedColors[5]),
+                    Color(red: cachedColors[6], green: cachedColors[7], blue: cachedColors[8]))
         }
 
         guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
 
         let ciImage = CIImage(cgImage: cgImage)
         let extent = ciImage.extent
-        let context = CIContext()
 
         func getRawAverageNSColor(from rect: CGRect) -> NSColor? {
             let filter = CIFilter(name: "CIAreaAverage", parameters: [kCIInputImageKey: ciImage, kCIInputExtentKey: CIVector(cgRect: rect)])!
             guard let outputImage = filter.outputImage else { return nil }
-
             var bitmap = [UInt8](repeating: 0, count: 4)
-            context.render(outputImage, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
-
+            ciContext.render(outputImage, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
             return NSColor(red: CGFloat(bitmap[0]) / 255.0, green: CGFloat(bitmap[1]) / 255.0, blue: CGFloat(bitmap[2]) / 255.0, alpha: 1.0)
         }
 
@@ -70,31 +86,34 @@ extension NSImage {
         let rightRect = CGRect(x: extent.maxX - edgeWidth, y: extent.origin.y, width: edgeWidth, height: extent.height)
 
         guard var leftNSColor = getRawAverageNSColor(from: leftRect),
-              var rightNSColor = getRawAverageNSColor(from: rightRect) else {
-            return nil
-        }
+              var rightNSColor = getRawAverageNSColor(from: rightRect) else { return nil }
 
         if leftNSColor.isSimilar(to: rightNSColor, threshold: 0.05) {
             rightNSColor = rightNSColor.madeDistinct()
         }
 
         let accentNSColor = leftNSColor.withBrightness(increasedBy: 0.2)
+        let (rL, gL, bL) = leftNSColor.saturated(by: 0.3).withMinimumBrightness(0.55).rgb
+        let (rR, gR, bR) = rightNSColor.saturated(by: 0.3).withMinimumBrightness(0.55).rgb
+        let (rA, gA, bA) = accentNSColor.saturated(by: 0.3).withMinimumBrightness(0.75).rgb
 
-        let finalLeftColor = Color(leftNSColor.saturated(by: 0.3).withMinimumBrightness(0.55))
-        let finalRightColor = Color(rightNSColor.saturated(by: 0.3).withMinimumBrightness(0.55))
-        let finalAccentColor = Color(accentNSColor.saturated(by: 0.3).withMinimumBrightness(0.75))
+        let colorsToCache: NSArray = [rL, gL, bL, rR, gR, bR, rA, gA, bA]
+        ImageEdgeColorCache.setObject(colorsToCache, forKey: tiffData)
 
-        let leftComps = finalLeftColor.resolve(in: .init())
-        let rightComps = finalRightColor.resolve(in: .init())
-        let accentComps = finalAccentColor.resolve(in: .init())
-        let colorsToCache: NSArray = [
-            CGFloat(leftComps.red), CGFloat(leftComps.green), CGFloat(leftComps.blue),
-            CGFloat(rightComps.red), CGFloat(rightComps.green), CGFloat(rightComps.blue),
-            CGFloat(accentComps.red), CGFloat(accentComps.green), CGFloat(accentComps.blue)
-        ]
-        imageColorCache.setObject(colorsToCache, forKey: tiffData)
+        return (Color(red: rL, green: gL, blue: bL),
+                Color(red: rR, green: gR, blue: bR),
+                Color(red: rA, green: gA, blue: bA))
+    }
 
-        return (left: finalLeftColor, right: finalRightColor, accent: finalAccentColor)
+    static func trimEdgeColorCache() {
+        ImageEdgeColorCache.trim()
+    }
+}
+
+private extension NSColor {
+    var rgb: (CGFloat, CGFloat, CGFloat) {
+        guard let sRGB = usingColorSpace(.sRGB) else { return (0, 0, 0) }
+        return (sRGB.redComponent, sRGB.greenComponent, sRGB.blueComponent)
     }
 }
 

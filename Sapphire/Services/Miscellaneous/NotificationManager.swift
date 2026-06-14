@@ -220,7 +220,7 @@ class iMessageActionManager {
 
 class NotificationManager: ObservableObject {
     @Published var latestNotification: NotificationPayload?
-    private var frequency: TimeInterval = 2.0
+    private var frequency: TimeInterval = 5.0
     private var isSilent: Bool = true
     private var dbPath: String?
     private var dbConnection: Connection?
@@ -228,8 +228,15 @@ class NotificationManager: ObservableObject {
     private var lastNotificationId: Int64 = 0
     private var lastNotificationDate: Double = 0.0
     private let settingsModel = SettingsModel.shared
-    init(frequency: TimeInterval = 2.0, silent: Bool = true) { self.frequency = frequency; self.isSilent = silent; setupDatabaseConnection(); startScheduler() }
+    private var isStarted = false
+    init(frequency: TimeInterval = 5.0, silent: Bool = true) { self.frequency = frequency; self.isSilent = silent; setupDatabaseConnection() }
     deinit { timer?.invalidate() }
+    func start() {
+        guard !isStarted, dbConnection != nil else { return }
+        isStarted = true
+        check()
+        timer = Timer.scheduledTimer(withTimeInterval: frequency, repeats: true) { [weak self] _ in self?.check() }
+    }
     func dismissLatestNotification() { DispatchQueue.main.async { self.latestNotification = nil } }
     private func setupDatabaseConnection() {
         let fileManager = FileManager.default, homeDirectory = NSHomeDirectory(), sequoiaPath = "\(homeDirectory)/Library/Group Containers/group.com.apple.usernoted/db2/db"

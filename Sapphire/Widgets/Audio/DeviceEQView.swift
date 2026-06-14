@@ -6,21 +6,23 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct DeviceEQView: View {
     let device: AudioDevice
-
     @StateObject private var audioManager = MultiAudioManager.shared
+    @StateObject private var perAppStore = PerAppEQScopeStore()
 
-    private var eqPresetBinding: Binding<EQPreset> {
+    private var eqPresetBinding: Binding<EQPreset?> {
         Binding(
-            get: { audioManager.deviceSettings[device.id]?.equalizer ?? .flat },
+            get: {
+                let currentGains = audioManager.deviceSettings[device.id]?.customEQGains ?? Array(repeating: 0.0, count: 10)
+                return EQPreset.allCases.filter { $0 != .custom }.first { $0.gainValues == currentGains }
+            },
             set: { newPreset in
+                guard let preset = newPreset else { return }
                 var settings = audioManager.deviceSettings[device.id] ?? AudioDeviceSettings()
-                settings.equalizer = newPreset
-                if newPreset != .custom {
-                    settings.customEQGains = newPreset.gainValues
-                }
+                settings.customEQGains = preset.gainValues
                 audioManager.updateSettings(for: device.id, settings: settings)
             }
         )
@@ -28,13 +30,10 @@ struct DeviceEQView: View {
 
     private var customEQGainsBinding: Binding<[Double]> {
         Binding(
-            get: { audioManager.deviceSettings[device.id]?.customEQGains ?? EQPreset.flat.gainValues },
+            get: { audioManager.deviceSettings[device.id]?.customEQGains ?? Array(repeating: 0.0, count: 10) },
             set: { newGains in
                 var settings = audioManager.deviceSettings[device.id] ?? AudioDeviceSettings()
                 settings.customEQGains = newGains
-                if settings.equalizer != .custom {
-                    settings.equalizer = .custom
-                }
                 audioManager.updateSettings(for: device.id, settings: settings)
             }
         )
@@ -42,14 +41,31 @@ struct DeviceEQView: View {
 
     private let eqFrequencies = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+    private var applicableAppEQs: [PerAppEQScopeStore.AppEQScopeItem] {
+        perAppStore.items(for: device.uid)
+    }
 
-            // MARK: - Preset Selector List
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Master Equalizer")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    Text(device.name)
+                        .font(.system(size: 20, weight: .bold))
+                }
+                Spacer()
+                Image(systemName: "f_curve.curve.curve.right_filled")
+                    .font(.title)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 0)
+
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(EQPreset.allCases) { preset in
-                        PresetButton(
+                HStack(spacing: 8) {
+                    ForEach(EQPreset.allCases.filter { $0 != .custom }) { preset in
+                        ModernChip(
                             title: preset.displayName,
                             isSelected: eqPresetBinding.wrappedValue == preset
                         ) {
@@ -57,39 +73,138 @@ struct DeviceEQView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 24)
             }
-            .padding(.horizontal, -20)
+            .padding(.vertical, 16)
 
-            // MARK: - Waveform Equalizer
-            VStack {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if applicableAppEQs.isEmpty {
+                        ModernChip(title: "No App Overrides", isSelected: false) {}
+                            .disabled(true)
+                            .opacity(0.5)
+                    } else {
+                        ForEach(applicableAppEQs) { item in
+                            AppEQScopeChip(item: item)
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
+            }
+            .padding(.bottom, 14)
+
+            VStack(spacing: 12) {
                 WaveformEQView(
                     gains: customEQGainsBinding,
-                    range: -12.0...12.0
+                    range: -18.0...18.0
                 )
-                .frame(height: 160)
-                .padding(.top, 20)
-                .padding([.horizontal, .bottom])
-                .background(Color.gray.opacity(0.15))
-                .cornerRadius(12)
-
+                .frame(height: 180)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.black.opacity(0.2))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.1), lineWidth: 1))
+                )
+                
                 HStack {
                     ForEach(eqFrequencies, id: \.self) { freq in
                         Text(freq)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .frame(maxWidth: .infinity, alignment: .center)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
                     }
                 }
-                .padding(.horizontal, 5)
             }
-            .padding(.top)
+            .padding(.horizontal, 24)
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 20)
-        .frame(width: 600, height: 300)
-        .fixedSize(horizontal: false, vertical: true)
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: customEQGainsBinding.wrappedValue)
+        .frame(width: 600, height: 400)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: customEQGainsBinding.wrappedValue)
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: applicableAppEQs.count)
+    }
+}
+
+@MainActor
+fileprivate final class PerAppEQScopeStore: ObservableObject {
+    struct AppEQScopeItem: Identifiable {
+        let bundleID: String
+        let appName: String
+        let appliesToAllDevices: Bool
+
+        var id: String { bundleID }
+    }
+
+    private var observer: NSObjectProtocol?
+
+    init() {
+        observer = NotificationCenter.default.addObserver(
+            forName: .perAppAudioSettingsDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+    }
+
+    deinit {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    func items(for deviceUID: String) -> [AppEQScopeItem] {
+        let scopeEntries = PerAppAudioController.shared.appEQScopeEntries()
+        let appNameByBundleID: [String: String] = Dictionary(
+            NSWorkspace.shared.runningApplications.compactMap {
+                guard let bundleID = $0.bundleIdentifier else { return nil }
+                return (bundleID, $0.localizedName ?? bundleID)
+            },
+            uniquingKeysWith: { existing, _ in existing }
+        )
+
+        return scopeEntries.compactMap { entry in
+            if let targets = entry.targetDeviceUIDs, !targets.contains(deviceUID) {
+                return nil
+            }
+            return AppEQScopeItem(
+                bundleID: entry.bundleID,
+                appName: appNameByBundleID[entry.bundleID] ?? entry.bundleID,
+                appliesToAllDevices: entry.targetDeviceUIDs == nil
+            )
+        }
+        .sorted { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+    }
+}
+
+fileprivate struct AppEQScopeChip: View {
+    let item: PerAppEQScopeStore.AppEQScopeItem
+
+    var body: some View {
+        Text(item.appName)
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(item.appliesToAllDevices ? Color.orange.opacity(0.22) : Color.accentColor.opacity(0.22))
+            .foregroundColor(item.appliesToAllDevices ? .orange : .accentColor)
+            .clipShape(Capsule())
+    }
+}
+
+// MARK: - Reusable UI Components
+struct ModernChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(isSelected ? Color.accentColor : Color.white.opacity(0.1))
+                .foregroundColor(isSelected ? .white : .primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 

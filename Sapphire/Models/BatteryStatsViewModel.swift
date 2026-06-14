@@ -39,7 +39,8 @@ class BatteryStatsViewModel: ObservableObject {
     init() {
         setupBindings()
         fetchStats()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        // Reduced from 3s to 5s to lower CPU usage
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.fetchStats()
         }
     }

@@ -21,9 +21,10 @@ struct GitHubReleaseAsset: Codable, Equatable {
 struct GitHubRelease: Codable {
     let name: String
     let tagName: String
+    let prerelease: Bool
     let assets: [GitHubReleaseAsset]
     enum CodingKeys: String, CodingKey {
-        case name, tagName = "tag_name", assets
+        case name, tagName = "tag_name", prerelease, assets
     }
 }
 
@@ -83,8 +84,52 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }.resume()
     }
 
-    func startPeriodicChecks(interval: TimeInterval) {
+    func checkForBetaUpdates() {
+        if case .checking = status { return }
+        if case .downloading = status { return }
 
+        self.status = .checking
+        guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases?per_page=5") else {
+            self.status = .error("Invalid beta update URL"); return
+        }
+
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            DispatchQueue.main.async {
+                if let error = error { self.status = .error(error.localizedDescription); return }
+                guard let data = data else { self.status = .error("No data received."); return }
+                do {
+                    let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
+                    guard let betaRelease = releases.first(where: { $0.prerelease }) else {
+                        self.status = .upToDate
+                        return
+                    }
+                    let latestVersion = betaRelease.name.replacingOccurrences(of: "v", with: "")
+                    if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
+                        if let asset = betaRelease.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? betaRelease.assets.first(where: { $0.name.hasSuffix(".dmg") }) {
+                            self.status = .available(version: latestVersion, asset: asset)
+                        } else {
+                            self.status = .error("No suitable beta download file found.")
+                        }
+                    } else {
+                        self.status = .upToDate
+                    }
+                } catch {
+                    self.status = .error("Failed to parse beta update information.")
+                }
+            }
+        }.resume()
+    }
+
+    func checkForUpdatesMatchingCurrentChannel() {
+        let channel = ReleaseChannelPolicy.displayedChannel(for: SettingsModel.shared.settings)
+        if channel == .beta {
+            checkForBetaUpdates()
+        } else {
+            checkForUpdates()
+        }
+    }
+
+    func startPeriodicChecks(interval: TimeInterval) {
     }
 
     func stopPeriodicChecks() {

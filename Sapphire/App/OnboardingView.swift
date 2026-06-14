@@ -12,7 +12,7 @@ import AVKit
 // MARK: - Main Onboarding View
 struct OnboardingView: View {
     enum OnboardingStep {
-        case welcome, permissions, helperInstallation, privacyPolicy, musicChoice, spotifySetup, batterySetup, corePreferences, lockScreenSetup, finish
+        case welcome, permissions, helperInstallation, privacyPolicy, musicChoice, spotifySetup, batterySetup, corePreferences, lockScreenSetup, subscriptionOverview, finish
     }
 
     @State private var currentStep: OnboardingStep = .welcome
@@ -83,7 +83,11 @@ struct OnboardingView: View {
                         .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
 
                 case .lockScreenSetup:
-                    LockScreenSetupStepView(onNext: { currentStep = .finish })
+                    LockScreenSetupStepView(onNext: { currentStep = .subscriptionOverview })
+                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
+
+                case .subscriptionOverview:
+                    SubscriptionOverviewStepView(onNext: { currentStep = .finish })
                         .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
 
                 case .finish:
@@ -92,10 +96,12 @@ struct OnboardingView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.4), value: currentStep)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         }
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .frame(width: 1200, height: 900)
         .sheet(item: $spotifyPrivateAPI.loginChallenge) { _ in
             if let presenter = try? CaptchaLoader.shared.loadPresenter() {
                 presenter.loginView(
@@ -562,6 +568,284 @@ private struct LockScreenSetupStepView: View {
             Spacer()
             OnboardingButton(title: "Continue", action: onNext)
         }
+    }
+}
+
+private struct SubscriptionOverviewStepView: View {
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
+    var onNext: () -> Void
+
+    @State private var showUpgradeSheet = false
+    @State private var selectedCheckoutTier: SubscriptionTier = .basic
+
+    private var currentTier: SubscriptionTier {
+        subscriptionManager.activeTier
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            Text("Your Sapphire Plan")
+                .font(.system(size: 32, weight: .bold, design: .rounded))
+
+            Text("Link an account anytime in Settings to sync your subscription across devices.")
+                .font(.title3)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 50)
+
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [.purple.opacity(0.35), .indigo.opacity(0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                    Image(systemName: subscriptionManager.isSignedIn ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(subscriptionManager.isSignedIn ? subscriptionManager.userDisplayName : "Guest Mode")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    Text("Current plan: \(SubscriptionFeatureCatalog.tierDisplayName(currentTier))")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .padding(.horizontal, 50)
+
+            HStack(alignment: .top, spacing: 14) {
+                ForEach(SubscriptionFeatureCatalog.marketingTierHighlights(), id: \.tier) { highlight in
+                    OnboardingPlanCard(
+                        tier: highlight.tier,
+                        perks: highlight.features,
+                        isCurrent: highlight.tier == currentTier,
+                        onUpgrade: onboardingTierRank(highlight.tier) > onboardingTierRank(currentTier)
+                            ? { beginCheckout(for: highlight.tier) }
+                            : nil
+                    )
+                }
+            }
+            .padding(.horizontal, 50)
+            .frame(height: 390)
+
+            if currentTier == .free {
+                Text("Upgrade to Basic or higher for beta updates, Gemini Live, and more.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 50)
+
+                Link("Upgrade on website instead", destination: URL(string: "https://cshariq.github.io/Sapphire-Website/")!)
+                    .font(.caption)
+                    .foregroundStyle(.purple)
+            }
+
+            Spacer()
+
+            OnboardingButton(title: "Skip", action: onNext)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $showUpgradeSheet, onDismiss: {
+            Task { await subscriptionManager.bootstrap() }
+        }) {
+            NativePaymentSheetView(tier: selectedCheckoutTier, deviceCount: 1, isAddingOnly: false) {
+                showUpgradeSheet = false
+            }
+            .frame(width: 820, height: 750)
+        }
+        .onAppear {
+            Task { await subscriptionManager.bootstrap() }
+        }
+    }
+
+    private func beginCheckout(for tier: SubscriptionTier) {
+        selectedCheckoutTier = tier
+        showUpgradeSheet = true
+    }
+
+    private func onboardingTierRank(_ tier: SubscriptionTier) -> Int {
+        switch tier {
+        case .free: return 0
+        case .basic: return 1
+        case .pro: return 2
+        case .ultra: return 3
+        }
+    }
+}
+
+private struct OnboardingPlanCard: View {
+    let tier: SubscriptionTier
+    let perks: [String]
+    let isCurrent: Bool
+    var onUpgrade: (() -> Void)? = nil
+
+    private var accent: Color {
+        switch tier {
+        case .basic: return Color(red: 0.35, green: 0.62, blue: 1.0)
+        case .pro: return Color(red: 0.82, green: 0.45, blue: 0.98)
+        case .ultra: return Color(red: 1.0, green: 0.58, blue: 0.22)
+        default: return .gray
+        }
+    }
+
+    private var tierIcon: String {
+        switch tier {
+        case .basic: return "sparkles"
+        case .pro: return "bolt.fill"
+        case .ultra: return "crown.fill"
+        default: return "seal"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(accent.opacity(0.16))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: tierIcon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(accent)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(SubscriptionFeatureCatalog.tierDisplayName(tier))
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        if isCurrent {
+                            Text("CURRENT")
+                                .font(.system(size: 8, weight: .black))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(accent.opacity(0.22), in: Capsule())
+                                .foregroundStyle(accent)
+                        }
+                    }
+
+                    Text(SubscriptionFeatureCatalog.marketingSubtitle(for: tier))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [accent.opacity(0.45), accent.opacity(0.05)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(height: 1)
+
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(perks, id: \.self) { perk in
+                    HStack(alignment: .top, spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(accent.opacity(0.14))
+                                .frame(width: 18, height: 18)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 8, weight: .black))
+                                .foregroundStyle(accent)
+                        }
+                        .padding(.top, 1)
+
+                        Text(perk)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.78))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if let onUpgrade {
+                Button(action: onUpgrade) {
+                    Text("Get \(SubscriptionFeatureCatalog.tierDisplayName(tier))")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(
+                            LinearGradient(
+                                colors: [accent, accent.opacity(0.72)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        )
+                        .shadow(color: accent.opacity(0.35), radius: 10, y: 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    accent.opacity(isCurrent ? 0.14 : 0.06),
+                                    Color.black.opacity(0.08)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            accent.opacity(isCurrent ? 0.75 : 0.28),
+                            Color.white.opacity(0.06)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: isCurrent ? 1.5 : 1
+                )
+        }
+        .shadow(color: isCurrent ? accent.opacity(0.22) : Color.black.opacity(0.18), radius: isCurrent ? 16 : 8, y: 6)
     }
 }
 

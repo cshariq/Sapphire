@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct LyricLineView: View {
     let lyric: LyricLine
@@ -36,6 +37,7 @@ struct LyricLineView: View {
 
 struct LyricsView: View {
     @EnvironmentObject var musicManager: MusicManager
+    @State private var displayedElapsedTime: TimeInterval = 0
 
     private var lyrics: [LyricLine] { musicManager.lyrics }
     private var currentLyricID: UUID? { musicManager.currentLyric?.id }
@@ -47,57 +49,77 @@ struct LyricsView: View {
         GeometryReader { geometry in
             let computedOffset = calculateScrollOffset(fullViewHeight: geometry.size.height)
 
-            ZStack(alignment: .top) {
-                if lyrics.isEmpty {
-                    emptyLyricsView
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(lyrics) { lyric in
-                            LyricLineView(
-                                lyric: lyric,
-                                isCurrent: lyric.id == currentLyricID,
-                                accentColor: accentColor
-                            )
-                            .frame(height: lineSpacing)
+            ZStack(alignment: .topLeading) {
+                Group {
+                    if lyrics.isEmpty {
+                        emptyLyricsView
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(lyrics) { lyric in
+                                LyricLineView(
+                                    lyric: lyric,
+                                    isCurrent: lyric.id == currentLyricID,
+                                    accentColor: accentColor
+                                )
+                                .frame(height: lineSpacing)
+                            }
                         }
+                        .frame(width: geometry.size.width)
+                        .offset(y: computedOffset)
+                        .animation(.spring(response: 0.8, dampingFraction: 0.8), value: computedOffset)
                     }
-                    .frame(width: geometry.size.width)
-                    .offset(y: computedOffset)
-                    .animation(.spring(response: 0.8, dampingFraction: 0.8), value: computedOffset)
                 }
-            }
-            .mask {
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .mask {
 
-                let viewHeight = geometry.size.height
+                    let viewHeight = geometry.size.height
 
-                if viewHeight > 0 {
-                    let fadeLength: CGFloat = 5
-                    let fadePercentage = fadeLength / viewHeight
+                    if viewHeight > 0 {
+                        let topFadeLength: CGFloat = 10
+                        let bottomFadeLength: CGFloat = 18
+                        let topFadePercentage = topFadeLength / viewHeight
+                        let bottomFadePercentage = bottomFadeLength / viewHeight
 
-                    let solidStartLocation = min(fadePercentage, 0.5)
-                    let solidEndLocation = max(1.0 - fadePercentage, 0.5)
+                        let solidStartLocation = min(topFadePercentage, 0.5)
+                        let solidEndLocation = max(1.0 - bottomFadePercentage, 0.5)
 
-                    LinearGradient(
-                        gradient: Gradient(stops: [
+                        LinearGradient(
+                            gradient: Gradient(stops: [
 
-                            .init(color: .clear, location: 0.0),
+                                .init(color: .clear, location: 0.0),
 
-                            .init(color: .black, location: solidStartLocation),
+                                .init(color: .black, location: solidStartLocation),
 
-                            .init(color: .black, location: solidEndLocation),
+                                .init(color: .black, location: solidEndLocation),
 
-                            .init(color: .clear, location: 1.0)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                } else {
-                    Color.black
+                                .init(color: .clear, location: 1.0)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        Color.black
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
+
+                trackHeaderView
+                    .padding(.leading, 5)
             }
         }
         .frame(width: 550, height: 250)
+        .onAppear {
+            displayedElapsedTime = musicManager.currentElapsedTime
+            musicManager.setLyricsDetailOpen(true)
+        }
+        .onDisappear {
+            musicManager.setLyricsDetailOpen(false)
+        }
+        .onReceive(musicManager.playbackTimePublisher) { payload in
+            displayedElapsedTime = payload.elapsed
+        }
     }
 
     private func calculateScrollOffset(fullViewHeight: CGFloat) -> CGFloat {
@@ -114,5 +136,77 @@ struct LyricsView: View {
         Text("No lyrics available.")
             .font(.headline)
             .foregroundColor(.secondary)
+    }
+
+    private var trackHeaderView: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .center, spacing: 10) {
+                Group {
+                    if let artwork = musicManager.artwork {
+                        Image(nsImage: artwork)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        Image(systemName: "music.note")
+                            .resizable()
+                            .scaledToFit()
+                            .padding(8)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .background(.white.opacity(0.12))
+                    }
+                }
+                .frame(width: 25, height: 26)
+                
+                VStack(alignment: .leading, spacing: 0.5) {
+                    Text(displayTitle)
+                        .font(.system(size: 9, weight: .semibold))
+                    
+                    if let album = musicManager.album, !album.isEmpty {
+                        Text(album)
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    if let artist = musicManager.artist, !artist.isEmpty {
+                        Text(artist)
+                            .font(.system(size: 8, weight: .regular))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+            }
+            
+            Text("\(formatTime(displayedElapsedTime)) / \(formatTime(musicManager.totalDuration))")
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+
+            Button(action: openLyricsWindow) {
+                HStack(spacing: 4) {
+                    Image(systemName: "macwindow")
+                    Text("Open in Window")
+                }
+                .font(.system(size: 8, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        let clamped = max(0, seconds.isFinite ? seconds : 0)
+        let minutes = Int(clamped) / 60
+        let remainingSeconds = Int(clamped) % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+
+    private var displayTitle: String {
+        if let title = musicManager.title, !title.isEmpty {
+            return title
+        }
+        return "Not Playing"
+    }
+
+    private func openLyricsWindow() {
+        (NSApp.delegate as? AppDelegate)?.openLyricsWindow()
     }
 }

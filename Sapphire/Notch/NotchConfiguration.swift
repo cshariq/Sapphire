@@ -122,7 +122,7 @@ struct NotchConfiguration {
 
     // MARK: - Animation Configurations (Represents the 'Snappy' default)
     static var expandAnimation = Animation.spring(response: 0.4, dampingFraction: 0.55, blendDuration: 0)
-    static var widgetSwitchAnimation = Animation.spring(response: 0.4, dampingFraction: 0.85, blendDuration: 0)
+    static var widgetSwitchAnimation = Animation.spring(response: 0.4, dampingFraction: 0.95, blendDuration: 0)
     static var swipeOpenAnimation = Animation.spring(response: 0.35, dampingFraction: 0.45, blendDuration: 0)
     static var collapseAnimation = Animation.spring(response: 0.3, dampingFraction: 0.98, blendDuration: 0)
     static var hoverAnimation = Animation.spring(response: 0.25, dampingFraction: 0.55, blendDuration: 0)
@@ -226,7 +226,7 @@ struct NotchConfiguration {
     // MARK: - Menu Type Detection
     static func isLargeVerticalMenu(_ mode: NotchWidgetMode) -> Bool {
         switch mode {
-        case .musicPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing:
+        case .musicPlayer, .sportsPlayer, .financePlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS:
             return true
         default:
             return false
@@ -416,3 +416,4 @@ struct ResolvedNotchConfiguration {
         self.activityOpacityAnimation = NotchConfiguration.activityOpacityAnimation
     }
 }
+

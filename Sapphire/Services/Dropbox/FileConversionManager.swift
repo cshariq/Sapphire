@@ -29,6 +29,7 @@ class FileConversionManager {
             return []
         }
 
+        let hasAdvancedConversion = SubscriptionManager.shared.isFeatureEnabled(.advancedFileConversion)
         var formats: [ConversionFormat] = []
 
         if type.conforms(to: .image) {
@@ -41,22 +42,24 @@ class FileConversionManager {
             ])
         }
 
-        if type.conforms(to: .movie) {
-             formats.append(contentsOf: [
+        if type.conforms(to: .movie), hasAdvancedConversion {
+            formats.append(contentsOf: [
                 .init(id: "mov", displayName: "MOV", iconName: "video.fill", targetUTType: .quickTimeMovie),
                 .init(id: "mp4", displayName: "MP4", iconName: "video.fill", targetUTType: .mpeg4Movie)
             ])
         }
 
         if type.conforms(to: .compositeContent) || type.conforms(to: .text) {
-            formats.append(contentsOf: [
-                .init(id: "pdf", displayName: "PDF", iconName: "doc.richtext.fill", targetUTType: .pdf),
-                .init(id: "rtf", displayName: "RTF", iconName: "doc.richtext", targetUTType: .rtf),
-                .init(id: "txt", displayName: "TXT", iconName: "doc.text", targetUTType: .plainText)
-            ])
+            if hasAdvancedConversion {
+                formats.append(contentsOf: [
+                    .init(id: "pdf", displayName: "PDF", iconName: "doc.richtext.fill", targetUTType: .pdf),
+                    .init(id: "rtf", displayName: "RTF", iconName: "doc.richtext", targetUTType: .rtf)
+                ])
+            }
+            formats.append(.init(id: "txt", displayName: "TXT", iconName: "doc.text", targetUTType: .plainText))
         }
 
-        if type.conforms(to: .audio) {
+        if type.conforms(to: .audio), hasAdvancedConversion {
             formats.append(contentsOf: [
                 .init(id: "m4a", displayName: "M4A", iconName: "music.note", targetUTType: .mpeg4Audio)
             ])

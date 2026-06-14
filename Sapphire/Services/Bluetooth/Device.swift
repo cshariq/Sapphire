@@ -441,7 +441,8 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     private func resetSignalTimer() {
         signalTimer?.invalidate()
-        signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { _ in
+        signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
+            guard let self = self else { return }
             Task { @MainActor in
                 self.delegate?.updateRSSI(rssi: nil, active: false)
                 self.delegate?.updatePresence(presence: false, reason: "lost")
@@ -473,7 +474,8 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             latestRSSIs.removeAll()
         } else if estimatedRSSI < lockRSSI {
             if proximityTimer == nil {
-                proximityTimer = Timer.scheduledTimer(withTimeInterval: proximityTimeout, repeats: false, block: { _ in
+                proximityTimer = Timer.scheduledTimer(withTimeInterval: proximityTimeout, repeats: false, block: { [weak self] _ in
+                    guard let self = self else { return }
                     Task { @MainActor in self.delegate?.updatePresence(presence: false, reason: "away") }
                     self.proximityTimer = nil
                     self.latestRSSIs.removeAll()

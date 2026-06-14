@@ -7,10 +7,16 @@
 
 import SwiftUI
 
-fileprivate class FileImageCache {
+final class FileImageCache {
     static let shared = FileImageCache()
     private let fileManager = FileManager.default
     private let cacheDirectory: URL
+    private let memoryCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 12
+        cache.totalCostLimit = 4 * 1024 * 1024
+        return cache
+    }()
 
     private init() {
         let cacheBaseUrl = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
@@ -29,12 +35,21 @@ fileprivate class FileImageCache {
     }
 
     func get(forKey key: String) -> NSImage? {
+        let cacheKey = NSString(string: key)
+        if let cachedImage = memoryCache.object(forKey: cacheKey) {
+            return cachedImage
+        }
         guard let url = cacheUrl(forKey: key) else { return nil }
         guard fileManager.fileExists(atPath: url.path) else { return nil }
-        return NSImage(contentsOf: url)
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        memoryCache.setObject(image, forKey: cacheKey, cost: 1)
+        return image
     }
 
     func set(_ image: NSImage, forKey key: String) {
+        let cacheKey = NSString(string: key)
+        memoryCache.setObject(image, forKey: cacheKey, cost: 1)
+
         guard let url = cacheUrl(forKey: key) else { return }
 
         guard let tiffData = image.tiffRepresentation,
@@ -48,6 +63,10 @@ fileprivate class FileImageCache {
         } catch {
             print("Failed to write image to cache: \(error.localizedDescription)")
         }
+    }
+
+    func trimMemoryCache() {
+        memoryCache.removeAllObjects()
     }
 
     private func cleanupOldFiles() {

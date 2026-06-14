@@ -56,6 +56,7 @@ class LaunchpadWindowController: NSWindowController {
 
     private let inputInterceptor = LaunchpadInputInterceptor()
     private let gestureManager = LaunchpadGestureManager()
+    private var closeObserver: NSObjectProtocol?
 
     private var isVisible: Bool = false {
         didSet {
@@ -98,7 +99,7 @@ class LaunchpadWindowController: NSWindowController {
 
         super.init(window: window)
 
-        NotificationCenter.default.addObserver(forName: .requestCloseLaunchpad, object: nil, queue: .main) { [weak self] _ in
+        closeObserver = NotificationCenter.default.addObserver(forName: .requestCloseLaunchpad, object: nil, queue: .main) { [weak self] _ in
             self?.isVisible = false
         }
 
@@ -116,7 +117,9 @@ class LaunchpadWindowController: NSWindowController {
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self)
+        if let closeObserver {
+            NotificationCenter.default.removeObserver(closeObserver)
+        }
         LaunchInterceptor.shared.stopObserving()
         inputInterceptor.stop()
         let gestureManager = self.gestureManager

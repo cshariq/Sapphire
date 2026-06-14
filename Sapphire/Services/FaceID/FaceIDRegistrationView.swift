@@ -99,14 +99,21 @@ struct FaceIDRegistrationView: View {
                             .foregroundColor(.green)
                             .transition(.scale.combined(with: .opacity))
                     } else {
-                        Text(instructionText)
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                            .transition(.opacity)
+                        VStack(spacing: 16) {
+                            HStack(spacing: 20) {
+                                poseIndicator(label: "Center", key: "center")
+                                poseIndicator(label: "Left", key: "left")
+                                poseIndicator(label: "Right", key: "right")
+                            }
+                            Text(instructionText)
+                                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.center)
+                                .transition(.opacity)
+                        }
                     }
                 }
-                .frame(height: 100)
+                .frame(height: 120)
 
                 Spacer()
             }
@@ -125,6 +132,26 @@ struct FaceIDRegistrationView: View {
                     presentationMode.wrappedValue.dismiss()
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func poseIndicator(label: String, key: String) -> some View {
+        let captured = cameraController.registrationPoseCaptured.contains(key)
+        VStack(spacing: 6) {
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.25), lineWidth: 2)
+                    .frame(width: 36, height: 36)
+                if captured {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.green)
+                }
+            }
+            Text(label)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundColor(captured ? .green : .white.opacity(0.7))
         }
     }
 }

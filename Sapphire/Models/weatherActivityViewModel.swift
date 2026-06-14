@@ -16,7 +16,8 @@ class WeatherActivityViewModel: ObservableObject {
     init() {
         fetch()
 
-        Timer.scheduledTimer(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
+        // Increased from 10 min to 15 min to reduce network requests
+        Timer.scheduledTimer(withTimeInterval: 60 * 15, repeats: true) { [weak self] _ in
             self?.fetch()
         }
     }

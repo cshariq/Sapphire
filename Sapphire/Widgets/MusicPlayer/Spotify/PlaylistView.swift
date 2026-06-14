@@ -266,6 +266,10 @@ struct PlaylistView: View {
         .task(id: playlist.id) {
             await loadPlaylistContent()
         }
+        .onReceive(spotifyPrivateAPI.$playlistTrackViewModels.receive(on: DispatchQueue.main)) { newViewModels in
+            guard isUsingPrivateAPI else { return }
+            viewModels = newViewModels
+        }
         .alert("Spotify App Is Not Open", isPresented: $showSpotifyNotOpenAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -293,7 +297,6 @@ struct PlaylistView: View {
             } else {
                 await spotifyPrivateAPI.loadPlaylist(playlistId: playlist.id)
             }
-            self.viewModels = spotifyPrivateAPI.playlistTrackViewModels
         } else if musicManager.spotifyOfficialAPI.isAuthenticated {
             isUsingPrivateAPI = false
             if !(playlist.uri.contains(":collection") || playlist.uri.contains(":tracks")) {
@@ -579,7 +582,7 @@ private struct UnifiedTrackRow: View {
 
     private func performPlayback() {
         Task {
-            let index = musicManager.spotifyPrivateAPI.selectedPlaylist?.content.items.firstIndex(where: { $0.uid == viewModel.uid })
+            let index = viewModel.uid.flatMap { musicManager.spotifyPrivateAPI.playlistTrackIndexByUID[$0] }
             let result = await musicManager.play(
                 trackUri: viewModel.uri,
                 contextUri: self.contextUri,

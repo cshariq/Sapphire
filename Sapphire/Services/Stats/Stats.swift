@@ -397,6 +397,20 @@ public class StatsManager: ObservableObject {
     }
 }
 
+// MARK: - DispatchTimeInterval Helpers
+private extension DispatchTimeInterval {
+    var nanoseconds: Int {
+        switch self {
+        case .seconds(let s): return s * 1_000_000_000
+        case .milliseconds(let ms): return ms * 1_000_000
+        case .microseconds(let us): return us * 1_000
+        case .nanoseconds(let ns): return ns
+        case .never: return 0
+        @unknown default: return 0
+        }
+    }
+}
+
 // MARK: - Base Reader Class
 internal class Reader<T> {
     public var active: Bool = false
@@ -404,19 +418,22 @@ internal class Reader<T> {
     internal let callback: (T?) -> Void
     private let queue: DispatchQueue
     private let readerName: String
+    private var source: DispatchSourceTimer?
 
-    init(interval: DispatchTimeInterval = .seconds(1), callback: @escaping (T?) -> Void) {
+    init(interval: DispatchTimeInterval = .seconds(2), callback: @escaping (T?) -> Void) {
         self.interval = interval
         self.callback = callback
         self.readerName = String(describing: T.self)
-        self.queue = DispatchQueue(label: "com.shariq.sapphire.reader.\(readerName)", qos: .default)
+        self.queue = DispatchQueue(label: "com.shariq.sapphire.reader.\(readerName)", qos: .utility)
     }
 
     public func start() {
         guard !self.active else { return }
         self.active = true
-        self.queue.async {
+        self.queue.async { [weak self] in
+            guard let self else { return }
             self.setup()
+            self.startTimer()
             self.read()
         }
     }
@@ -424,14 +441,27 @@ internal class Reader<T> {
     public func stop() {
         guard self.active else { return }
         self.active = false
+        self.queue.async { [weak self] in
+            self?.source?.cancel()
+            self?.source = nil
+        }
     }
 
-    @objc func read() {
-        guard self.active else { return }
+    private func startTimer() {
+        source?.cancel()
+        let s = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
+        let nano = interval.nanoseconds
+        guard nano > 0 else { return }
+        let intervalTI = DispatchTimeInterval.nanoseconds(nano)
+        let leeway = DispatchTimeInterval.nanoseconds(Int(Double(nano) * 0.3))
+        s.schedule(deadline: .now() + intervalTI, repeating: intervalTI, leeway: leeway)
+        s.setEventHandler { [weak self] in self?.read() }
+        s.resume()
+        source = s
+    }
 
-        self.queue.asyncAfter(deadline: .now() + self.interval) { [weak self] in
-            self?.read()
-        }
+    func read() {
+        guard self.active else { return }
     }
 
     public func setup() {}
@@ -801,7 +831,8 @@ internal class SensorsStatsReader {
             }
             await self.read()
 
-            self.timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            // Increased from 2s to 3s to reduce sensor polling frequency
+            self.timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
                 Task {
                     await self?.read()
                 }
@@ -851,11 +882,26 @@ internal class SensorsStatsReader {
     private func read() async {
         guard initialized, let helper = BatteryManager.shared.getHelper() else { return }
 
-        var updatedSensors = self.list.sensors
-        for i in updatedSensors.indices {
-            let key = updatedSensors[i].key
-            let newValue = await helper.getSensorValue(key: key)
+        let sensors = self.list.sensors
+        let count = sensors.count
+        guard count > 0 else { return }
 
+        var results: [(Int, Double)] = []
+        results.reserveCapacity(count)
+        await withTaskGroup(of: (Int, Double).self) { group in
+            for i in 0..<count {
+                group.addTask { [key = sensors[i].key] in
+                    let value = await helper.getSensorValue(key: key)
+                    return (i, value)
+                }
+            }
+            for await result in group {
+                results.append(result)
+            }
+        }
+
+        var updatedSensors = self.list.sensors
+        for (i, newValue) in results {
             if newValue >= 0 {
                 if updatedSensors[i].type == .temperature && newValue < 10.0 {
                     continue
@@ -863,7 +909,6 @@ internal class SensorsStatsReader {
                 updatedSensors[i].value = newValue
             }
         }
-
         self.list.sensors = updatedSensors
 
         DispatchQueue.main.async {

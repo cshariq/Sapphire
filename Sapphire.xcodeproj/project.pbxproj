@@ -3,23 +3,20 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 100;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DA17EA162E9B74E500C83AC6 /* MediaRemoteAdapter in Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; };
 		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in CopyFiles */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262ADF2EA4841B0027CA69 /* OSD.framework */; };
 		DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AE52EA485150027CA69 /* CoreDisplay.framework */; };
 		DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */; };
-		DA2A74402E9CD8910084C657 /* MediaRemoteAdapter in Embed Frameworks */ = {isa = PBXBuildFile; productRef = DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DA343DD32E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
 		DA343DD42E55098000B675ED /* CaptchaSolverInterface.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		DA343DE12E550AC300B675ED /* CaptchaSolver.framework in Copy Captcha Solver Framework */ = {isa = PBXBuildFile; fileRef = DA343D972E55068200B675ED /* CaptchaSolver.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		DA343DE22E550B1200B675ED /* CaptchaSolverInterface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; };
 		DA343DE32E550B1200B675ED /* CaptchaSolverInterface.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = DA48B01A2E93DF9B0099BF74 /* SQLite */; };
-		DA4DCE642EC996160044A234 /* AXSwift in Frameworks */ = {isa = PBXBuildFile; productRef = DA4DCE632EC996160044A234 /* AXSwift */; };
 		DA6344C82E5AA816007EAB5F /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52567A2E162FA900D8F42E /* ShareViewController.swift */; };
 		DA7C49992E15D33A0049937A /* wire_format.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C49942E15D33A0049937A /* wire_format.pb.swift */; };
 		DA7C499A2E15D33A0049937A /* securemessage.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C49922E15D33A0049937A /* securemessage.pb.swift */; };
@@ -127,6 +124,9 @@
 		DACA665E2E8B5FCE0056ED60 /* SymmetricKey+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACA665C2E8B5FCE0056ED60 /* SymmetricKey+Extensions.swift */; };
 		DACA66622E8B70E60056ED60 /* QRCode in Frameworks */ = {isa = PBXBuildFile; productRef = DACA66612E8B70E60056ED60 /* QRCode */; };
 		DACBB01D2E20321D00740C9B /* libNearbyShare.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49802E15CCA50049937A /* libNearbyShare.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		DAD22F5A2ED3FEF1006CC3FF /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = DAD22F592ED3FEF1006CC3FF /* FirebaseCore */; };
+		DAD22F5C2ED3FEF1006CC3FF /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = DAD22F5B2ED3FEF1006CC3FF /* FirebaseDatabase */; };
+		DAD22F5E2ED3FEF1006CC3FF /* FirebasePerformance in Frameworks */ = {isa = PBXBuildFile; productRef = DAD22F5D2ED3FEF1006CC3FF /* FirebasePerformance */; };
 		DAF7D8AB2E207BBC00AB0820 /* SwiftProtobufPluginLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = DAF7D8AA2E207BBC00AB0820 /* SwiftProtobufPluginLibrary */; };
 		DAF7D8AE2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle in CopyFiles */ = {isa = PBXBuildFile; fileRef = DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -158,76 +158,62 @@
 /* Begin PBXCopyFilesBuildPhase section */
 		DA262B242EA942750027CA69 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 12;
 			dstPath = "";
-			dstSubfolderSpec = 6;
+			dstSubfolder = Executables;
 			files = (
 				DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in CopyFiles */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA343DDF2E550A7700B675ED /* Copy Captcha Solver Framework */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 10;
+			dstSubfolder = Frameworks;
 			files = (
 				DA343DE12E550AC300B675ED /* CaptchaSolver.framework in Copy Captcha Solver Framework */,
 			);
 			name = "Copy Captcha Solver Framework";
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA343DE62E550B1200B675ED /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 10;
+			dstSubfolder = Frameworks;
 			files = (
 				DA343DE32E550B1200B675ED /* CaptchaSolverInterface.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAA7D9D22E8633B20032748B /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = /usr/share/man/man1/;
-			dstSubfolderSpec = 0;
+			dstSubfolder = None;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
 		DABFA98B2EBFBA35000C5A8B /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = Contents/Library/LaunchDaemons;
-			dstSubfolderSpec = 1;
+			dstSubfolder = Wrapper;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAE70B782E12300B001F0890 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 10;
+			dstSubfolder = Frameworks;
 			files = (
 				DA343DD42E55098000B675ED /* CaptchaSolverInterface.framework in Embed Frameworks */,
-				DA2A74402E9CD8910084C657 /* MediaRemoteAdapter in Embed Frameworks */,
 				DACBB01D2E20321D00740C9B /* libNearbyShare.dylib in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAF7D8AC2E207C5100AB0820 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 10;
+			dstSubfolder = Frameworks;
 			files = (
 				DAF7D8AE2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle in CopyFiles */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
@@ -388,7 +374,9 @@
 		DA91BDAB2E75DDE2001E7836 /* Exceptions for "Sapphire" folder in "Sapphire" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				App/Info.plist,
 				Services/FaceID/ImageExtensions.swift,
+				Services/Music/MediaRemoteAdapter.framework,
 			);
 			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
 		};
@@ -415,6 +403,7 @@
 			buildPhase = DA46CF742DCBCA0000F00EC5 /* Resources */;
 			membershipExceptions = (
 				Services/FaceID/ImageExtensions.swift,
+				Services/Music/MediaRemoteAdapter.framework,
 			);
 		};
 		DABFA98F2EBFBA8B000C5A8B /* Exceptions for "com.shariq.sapphireHelper" folder in "Copy Files" phase from "Sapphire" target */ = {
@@ -469,6 +458,11 @@
 			path = com.shariq.sapphireHelper;
 			sourceTree = "<group>";
 		};
+		DA789CFA2FAFC26000EB906E /* Volume */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Volume;
+			sourceTree = "<group>";
+		};
 		DA7C49B62E15D7360049937A /* ObjC */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -494,33 +488,27 @@
 /* Begin PBXFrameworksBuildPhase section */
 		DA343D942E55068200B675ED /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				DA343DE22E550B1200B675ED /* CaptchaSolverInterface.framework in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA343DBB2E55098000B675ED /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA452EAC2EAA57C90070E5C9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF732DCBCA0000F00EC5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
+				DAD22F5C2ED3FEF1006CC3FF /* FirebaseDatabase in Frameworks */,
 				DA8FB0482E7CBE9400C9BD1A /* IMSharedUtilities.framework in Frameworks */,
+				DAD22F5E2ED3FEF1006CC3FF /* FirebasePerformance in Frameworks */,
 				DABC6CE32E1749CA00A5CF83 /* CoreGraphics.framework in Frameworks */,
-				DA17EA162E9B74E500C83AC6 /* MediaRemoteAdapter in Frameworks */,
 				DABC6CE12E17458600A5CF83 /* UserNotificationsUI.framework in Frameworks */,
 				DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */,
 				DA8FB0442E7CBE9000C9BD1A /* TelephonyUtilities.framework in Frameworks */,
@@ -529,6 +517,7 @@
 				DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */,
 				DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */,
 				DABC6CDF2E17458500A5CF83 /* UserNotifications.framework in Frameworks */,
+				DAD22F5A2ED3FEF1006CC3FF /* FirebaseCore in Frameworks */,
 				DA9709EC2E99E9CF00F34217 /* FirebaseAnalyticsCore in Frameworks */,
 				DAF7D8AB2E207BBC00AB0820 /* SwiftProtobufPluginLibrary in Frameworks */,
 				DA343DD32E55098000B675ED /* CaptchaSolverInterface.framework in Frameworks */,
@@ -539,15 +528,12 @@
 				DA8FB0532E7D898F00C9BD1A /* MobileTimerSupport.framework in Frameworks */,
 				DA9709EE2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport in Frameworks */,
 				DAC019172E9E9E3100CA587F /* FirebaseCrashlytics in Frameworks */,
-				DA4DCE642EC996160044A234 /* AXSwift in Frameworks */,
 				DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */,
 				DA8FB0512E7D898F00C9BD1A /* MobileTimer.framework in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA7C497E2E15CCA50049937A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				DACA66622E8B70E60056ED60 /* QRCode in Frameworks */,
 				DA7C49AC2E15D3660049937A /* protoc-gen-swift in Frameworks */,
@@ -555,14 +541,11 @@
 				DA7C49A52E15D34D0049937A /* SwiftECC in Frameworks */,
 				DA7C49A82E15D3660049937A /* SwiftProtobuf in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAA7D9D12E8633B20032748B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -591,6 +574,7 @@
 				DA7C49972E15D33A0049937A /* Util */,
 				DA7C49B62E15D7360049937A /* ObjC */,
 				DA8FB0272E7CB76B00C9BD1A /* PrivateHeaders */,
+				DA789CFA2FAFC26000EB906E /* Volume */,
 			);
 			sourceTree = "<group>";
 		};
@@ -824,24 +808,18 @@
 /* Begin PBXHeadersBuildPhase section */
 		DA343D922E55068200B675ED /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA343DB92E55098000B675ED /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA7C497C2E15CCA50049937A /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXHeadersBuildPhase section */
 
@@ -865,8 +843,6 @@
 				DA343D982E55068300B675ED /* CaptchaSolver */,
 			);
 			name = CaptchaSolver;
-			packageProductDependencies = (
-			);
 			productName = CaptchaSolver;
 			productReference = DA343D972E55068200B675ED /* CaptchaSolver.framework */;
 			productType = "com.apple.product-type.framework";
@@ -882,14 +858,10 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			fileSystemSynchronizedGroups = (
 				DA343DBF2E55098000B675ED /* CaptchaSolverInterface */,
 			);
 			name = CaptchaSolverInterface;
-			packageProductDependencies = (
-			);
 			productName = CaptchaSolverInterface;
 			productReference = DA343DBE2E55098000B675ED /* CaptchaSolverInterface.framework */;
 			productType = "com.apple.product-type.framework";
@@ -903,14 +875,10 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			fileSystemSynchronizedGroups = (
 				DA452EB02EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
 			);
 			name = com.shariq.sapphireHelper;
-			packageProductDependencies = (
-			);
 			productName = SapphireHelper;
 			productReference = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */;
 			productType = "com.apple.product-type.tool";
@@ -946,9 +914,10 @@
 				DA48B01A2E93DF9B0099BF74 /* SQLite */,
 				DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */,
 				DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */,
-				DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */,
 				DAC019162E9E9E3100CA587F /* FirebaseCrashlytics */,
-				DA4DCE632EC996160044A234 /* AXSwift */,
+				DAD22F592ED3FEF1006CC3FF /* FirebaseCore */,
+				DAD22F5B2ED3FEF1006CC3FF /* FirebaseDatabase */,
+				DAD22F5D2ED3FEF1006CC3FF /* FirebasePerformance */,
 			);
 			productName = DynamicNotch;
 			productReference = DA46CF762DCBCA0000F00EC5 /* Sapphire.app */;
@@ -963,8 +932,6 @@
 				DA7C497E2E15CCA50049937A /* Frameworks */,
 			);
 			buildRules = (
-			);
-			dependencies = (
 			);
 			name = NearbyShare;
 			packageProductDependencies = (
@@ -988,14 +955,10 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			fileSystemSynchronizedGroups = (
 				DAA7D9D52E8633B20032748B /* abt */,
 			);
 			name = abt;
-			packageProductDependencies = (
-			);
 			productName = abt;
 			productReference = DAA7D9D42E8633B20032748B /* abt */;
 			productType = "com.apple.product-type.tool";
@@ -1008,7 +971,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2600;
-				LastUpgradeCheck = 1640;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					DA343D962E55068200B675ED = {
 						CreatedOnToolsVersion = 16.4;
@@ -1048,10 +1011,8 @@
 				DACA66602E8B70E60056ED60 /* XCRemoteSwiftPackageReference "qrcode" */,
 				DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */,
 				DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
-				DA17EA142E9B74E500C83AC6 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */,
-				DA4DCE622EC995DA0044A234 /* XCRemoteSwiftPackageReference "AXSwift" */,
 			);
-			preferredProjectObjectVersion = 77;
+			preferredProjectObjectVersion = 100;
 			productRefGroup = DA46CF772DCBCA0000F00EC5 /* Products */;
 			projectDirPath = "";
 			projectReferences = (
@@ -1075,21 +1036,16 @@
 /* Begin PBXResourcesBuildPhase section */
 		DA343D952E55068200B675ED /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA343DBC2E55098000B675ED /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF742DCBCA0000F00EC5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				DAA7D9142E848D340032748B /* busy_tone_cept.caf in Resources */,
 				DA91BE342E773AC8001E7836 /* begin_record.caf in Resources */,
@@ -1160,18 +1116,12 @@
 				DA91BE762E773AC8001E7836 /* Media Keys.aif in Resources */,
 				DA91BE772E773AC8001E7836 /* drag to trash.aif in Resources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		DAC019182E9EA03E00CA587F /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
 			inputPaths = (
 				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
 				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
@@ -1179,48 +1129,38 @@
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
 				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
 			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\n";
+			shellScript = (
+				"# Type a script or drag a script file from your workspace to insert its path.",
+				"\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"",
+				"",
+			);
 		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		DA343D932E55068200B675ED /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA343DBA2E55098000B675ED /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA452EAB2EAA57C90070E5C9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA46CF722DCBCA0000F00EC5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DA7C497D2E15CCA50049937A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				DA7C49992E15D33A0049937A /* wire_format.pb.swift in Sources */,
 				DACA665D2E8B5FCE0056ED60 /* sharing_enums.pb.swift in Sources */,
@@ -1240,14 +1180,11 @@
 				DA7C49A22E15D33A0049937A /* offline_wire_formats.pb.swift in Sources */,
 				DA7C49A32E15D33A0049937A /* securegcm.pb.swift in Sources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		DAA7D9D02E8633B20032748B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
@@ -1270,14 +1207,14 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		DA343DAF2E55068300B675ED /* Debug */ = {
+		DA343DAF2E55068300B675ED /* Debug configuration for PBXNativeTarget "CaptchaSolver" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
@@ -1307,14 +1244,14 @@
 			};
 			name = Debug;
 		};
-		DA343DB02E55068300B675ED /* Release */ = {
+		DA343DB02E55068300B675ED /* Release configuration for PBXNativeTarget "CaptchaSolver" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
@@ -1344,14 +1281,14 @@
 			};
 			name = Release;
 		};
-		DA343DD62E55098000B675ED /* Debug */ = {
+		DA343DD62E55098000B675ED /* Debug configuration for PBXNativeTarget "CaptchaSolverInterface" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
@@ -1381,14 +1318,14 @@
 			};
 			name = Debug;
 		};
-		DA343DD72E55098000B675ED /* Release */ = {
+		DA343DD72E55098000B675ED /* Release configuration for PBXNativeTarget "CaptchaSolverInterface" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
@@ -1418,14 +1355,13 @@
 			};
 			name = Release;
 		};
-		DA452EB42EAA57C90070E5C9 /* Debug */ = {
+		DA452EB42EAA57C90070E5C9 /* Debug configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AUTOMATION_APPLE_EVENTS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
@@ -1447,6 +1383,7 @@
 				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "com.shariq.sapphireHelper/SapphireHelper-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -1455,14 +1392,13 @@
 			};
 			name = Debug;
 		};
-		DA452EB52EAA57C90070E5C9 /* Release */ = {
+		DA452EB52EAA57C90070E5C9 /* Release configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AUTOMATION_APPLE_EVENTS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
@@ -1484,6 +1420,7 @@
 				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "com.shariq.sapphireHelper/SapphireHelper-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -1491,7 +1428,7 @@
 			};
 			name = Release;
 		};
-		DA46CF992DCBCA0100F00EC5 /* Debug */ = {
+		DA46CF992DCBCA0100F00EC5 /* Debug configuration for PBXProject "Sapphire" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -1526,7 +1463,8 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
-				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1549,7 +1487,10 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CODE_SIGN_FLAGS = "--deep";
+				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -1557,7 +1498,7 @@
 			};
 			name = Debug;
 		};
-		DA46CF9A2DCBCA0100F00EC5 /* Release */ = {
+		DA46CF9A2DCBCA0100F00EC5 /* Release configuration for PBXProject "Sapphire" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -1593,6 +1534,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1608,14 +1550,17 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				OTHER_CODE_SIGN_FLAGS = "--deep";
+				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
-		DA46CF9C2DCBCA0100F00EC5 /* Debug */ = {
+		DA46CF9C2DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "Sapphire" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -1638,7 +1583,7 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
-				FRAMEWORK_SEARCH_PATHS = "";
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
 				INFOPLIST_FILE = Sapphire/App/Info.plist;
@@ -1678,11 +1623,13 @@
 					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
 					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
 					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
+					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 2.0;
 				OTHER_LDFLAGS = "";
-				PRODUCT_BUNDLE_IDENTIFIER = com.app.shariq.sapphire;
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -1699,7 +1646,7 @@
 			};
 			name = Debug;
 		};
-		DA46CF9D2DCBCA0100F00EC5 /* Release */ = {
+		DA46CF9D2DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "Sapphire" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -1721,7 +1668,7 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
-				FRAMEWORK_SEARCH_PATHS = "";
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
 				INFOPLIST_FILE = Sapphire/App/Info.plist;
@@ -1761,11 +1708,13 @@
 					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
 					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
 					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
+					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 2.0;
 				OTHER_LDFLAGS = "";
-				PRODUCT_BUNDLE_IDENTIFIER = com.app.shariq.sapphire;
+				OTHER_SWIFT_FLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -1782,11 +1731,10 @@
 			};
 			name = Release;
 		};
-		DA7C49872E15CCA50049937A /* Debug */ = {
+		DA7C49872E15CCA50049937A /* Debug configuration for PBXNativeTarget "NearbyShare" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "";
@@ -1799,11 +1747,10 @@
 			};
 			name = Debug;
 		};
-		DA7C49882E15CCA50049937A /* Release */ = {
+		DA7C49882E15CCA50049937A /* Release configuration for PBXNativeTarget "NearbyShare" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "";
@@ -1816,28 +1763,28 @@
 			};
 			name = Release;
 		};
-		DAA7D9D92E8633B20032748B /* Debug */ = {
+		DAA7D9D92E8633B20032748B /* Debug configuration for PBXNativeTarget "abt" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
-		DAA7D9DA2E8633B20032748B /* Release */ = {
+		DAA7D9DA2E8633B20032748B /* Release configuration for PBXNativeTarget "abt" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -1850,91 +1797,68 @@
 		DA343DAE2E55068300B675ED /* Build configuration list for PBXNativeTarget "CaptchaSolver" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA343DAF2E55068300B675ED /* Debug */,
-				DA343DB02E55068300B675ED /* Release */,
+				DA343DAF2E55068300B675ED /* Debug configuration for PBXNativeTarget "CaptchaSolver" */,
+				DA343DB02E55068300B675ED /* Release configuration for PBXNativeTarget "CaptchaSolver" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		DA343DD52E55098000B675ED /* Build configuration list for PBXNativeTarget "CaptchaSolverInterface" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA343DD62E55098000B675ED /* Debug */,
-				DA343DD72E55098000B675ED /* Release */,
+				DA343DD62E55098000B675ED /* Debug configuration for PBXNativeTarget "CaptchaSolverInterface" */,
+				DA343DD72E55098000B675ED /* Release configuration for PBXNativeTarget "CaptchaSolverInterface" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA452EB42EAA57C90070E5C9 /* Debug */,
-				DA452EB52EAA57C90070E5C9 /* Release */,
+				DA452EB42EAA57C90070E5C9 /* Debug configuration for PBXNativeTarget "com.shariq.sapphireHelper" */,
+				DA452EB52EAA57C90070E5C9 /* Release configuration for PBXNativeTarget "com.shariq.sapphireHelper" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		DA46CF712DCBCA0000F00EC5 /* Build configuration list for PBXProject "Sapphire" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA46CF992DCBCA0100F00EC5 /* Debug */,
-				DA46CF9A2DCBCA0100F00EC5 /* Release */,
+				DA46CF992DCBCA0100F00EC5 /* Debug configuration for PBXProject "Sapphire" */,
+				DA46CF9A2DCBCA0100F00EC5 /* Release configuration for PBXProject "Sapphire" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		DA46CF9B2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "Sapphire" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA46CF9C2DCBCA0100F00EC5 /* Debug */,
-				DA46CF9D2DCBCA0100F00EC5 /* Release */,
+				DA46CF9C2DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "Sapphire" */,
+				DA46CF9D2DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "Sapphire" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		DA7C49862E15CCA50049937A /* Build configuration list for PBXNativeTarget "NearbyShare" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DA7C49872E15CCA50049937A /* Debug */,
-				DA7C49882E15CCA50049937A /* Release */,
+				DA7C49872E15CCA50049937A /* Debug configuration for PBXNativeTarget "NearbyShare" */,
+				DA7C49882E15CCA50049937A /* Release configuration for PBXNativeTarget "NearbyShare" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		DAA7D9D82E8633B20032748B /* Build configuration list for PBXNativeTarget "abt" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				DAA7D9D92E8633B20032748B /* Debug */,
-				DAA7D9DA2E8633B20032748B /* Release */,
+				DAA7D9D92E8633B20032748B /* Debug configuration for PBXNativeTarget "abt" */,
+				DAA7D9DA2E8633B20032748B /* Release configuration for PBXNativeTarget "abt" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		DA17EA142E9B74E500C83AC6 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/otuerk/mediaremote-adapter";
-			requirement = {
-				branch = master;
-				kind = branch;
-			};
-		};
 		DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stephencelis/SQLite.swift";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.15.4;
-			};
-		};
-		DA4DCE622EC995DA0044A234 /* XCRemoteSwiftPackageReference "AXSwift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/tmandry/AXSwift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.3.2;
 			};
 		};
 		DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */ = {
@@ -1988,20 +1912,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		DA17EA152E9B74E500C83AC6 /* MediaRemoteAdapter */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA17EA142E9B74E500C83AC6 /* XCRemoteSwiftPackageReference "mediaremote-adapter" */;
-			productName = MediaRemoteAdapter;
-		};
 		DA48B01A2E93DF9B0099BF74 /* SQLite */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */;
 			productName = SQLite;
-		};
-		DA4DCE632EC996160044A234 /* AXSwift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA4DCE622EC995DA0044A234 /* XCRemoteSwiftPackageReference "AXSwift" */;
-			productName = AXSwift;
 		};
 		DA7C49A42E15D34D0049937A /* SwiftECC */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -2042,6 +1956,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DACA66602E8B70E60056ED60 /* XCRemoteSwiftPackageReference "qrcode" */;
 			productName = QRCode;
+		};
+		DAD22F592ED3FEF1006CC3FF /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		DAD22F5B2ED3FEF1006CC3FF /* FirebaseDatabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseDatabase;
+		};
+		DAD22F5D2ED3FEF1006CC3FF /* FirebasePerformance */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebasePerformance;
 		};
 		DAF7D8AA2E207BBC00AB0820 /* SwiftProtobufPluginLibrary */ = {
 			isa = XCSwiftPackageProductDependency;

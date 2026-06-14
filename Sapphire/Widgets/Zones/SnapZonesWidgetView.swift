@@ -7,6 +7,25 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
+
+extension NSWindow {
+    /// Matches SwiftUI's `.global` coordinate space for views hosted in an `NSHostingView`.
+    var swiftUIGlobalMouseLocation: CGPoint? {
+        guard let contentView else { return nil }
+        let mouseInWindow = mouseLocationOutsideOfEventStream
+        return CGPoint(
+            x: mouseInWindow.x,
+            y: contentView.bounds.height - mouseInWindow.y
+        )
+    }
+
+    static var visibleNotchWindow: NSWindow? {
+        NSApplication.shared.windows.first { window in
+            window is DynamicFocusWindow && window.isVisible
+        }
+    }
+}
 
 fileprivate struct LayoutFramePreferenceKey: PreferenceKey {
     typealias Value = [UUID: CGRect]
@@ -156,7 +175,7 @@ struct SnapZonesWidgetView: View {
             self.stopMonitoring()
         }
 
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { _ in
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { _ in
             self.updateActiveState()
         }
     }
@@ -178,10 +197,9 @@ struct SnapZonesWidgetView: View {
     }
 
     private func updateActiveState() {
-        guard let screen = NSScreen.main else { return }
-
-        let mouseLocation = NSEvent.mouseLocation
-        let globalMousePoint = CGPoint(x: mouseLocation.x, y: screen.frame.height - mouseLocation.y)
+        guard let globalMousePoint = (notchWindow ?? NSWindow.visibleNotchWindow)?.swiftUIGlobalMouseLocation else {
+            return
+        }
 
         if !layoutFrames.isEmpty {
             let totalWidgetFrame = layoutFrames.values.reduce(CGRect.null) { $0.union($1) }
@@ -193,39 +211,43 @@ struct SnapZonesWidgetView: View {
 
         var newHover: HoverState? = nil
 
-        var closestZone: (layoutID: UUID, zoneID: UUID, distance: CGFloat)? = nil
-
         for (layoutID, frame) in layoutFrames {
-            if frame.contains(globalMousePoint) {
-                if let layout = viewConfiguration.layouts.first(where: { $0.id == layoutID }) {
-                    let localPoint = CGPoint(x: globalMousePoint.x - frame.minX, y: globalMousePoint.y - frame.minY)
+            guard frame.contains(globalMousePoint) else { continue }
 
-                    for zone in layout.zones {
-                        let zoneFrame = CGRect(
-                            x: itemWidth * zone.x,
-                            y: itemHeight * zone.y,
-                            width: itemWidth * zone.width,
-                            height: itemHeight * zone.height
-                        )
-                        let zoneCenter = CGPoint(x: zoneFrame.midX, y: zoneFrame.midY)
+            guard let layout = viewConfiguration.layouts.first(where: { $0.id == layoutID }) else { continue }
 
-                        let distanceSquared = pow(localPoint.x - zoneCenter.x, 2) + pow(localPoint.y - zoneCenter.y, 2)
+            let localPoint = CGPoint(
+                x: globalMousePoint.x - frame.minX,
+                y: globalMousePoint.y - frame.minY
+            )
 
-                        if closestZone == nil || distanceSquared < closestZone!.distance {
-                            closestZone = (layoutID: layoutID, zoneID: zone.id, distance: distanceSquared)
-                        }
-                    }
+            // Ignore hovers over the layout name label below the zone grid.
+            guard localPoint.y >= 0, localPoint.y <= itemHeight else { continue }
+
+            for zone in layout.zones {
+                let zoneFrame = CGRect(
+                    x: itemWidth * zone.x,
+                    y: itemHeight * zone.y,
+                    width: itemWidth * zone.width,
+                    height: itemHeight * zone.height
+                )
+
+                if zoneFrame.contains(localPoint) {
+                    newHover = HoverState(layoutID: layoutID, zoneID: zone.id)
+                    break
                 }
             }
-        }
 
-        if let foundZone = closestZone {
-            newHover = HoverState(layoutID: foundZone.layoutID, zoneID: foundZone.zoneID)
+            if newHover != nil { break }
         }
 
         guard activeHover != newHover else { return }
 
         activeHover = newHover
+    }
+
+    private var notchWindow: NSWindow? {
+        NSWindow.visibleNotchWindow
     }
 }
 

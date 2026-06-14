@@ -646,7 +646,7 @@ static inline Class CHLoadClass_(CHClassDeclaration_ *declaration, Class value)
 __attribute__((unused)) CHInline
 static void *CHIvar_(id object, const char *name)
 {
-    Ivar ivar = class_getInstanceVariable(object_getClass(object), name);
+    Ivar ivar = class_getInstanceVintelligenceble(object_getClass(object), name);
     if (ivar)
 #ifdef CHHasARC
         return (void *)&((char *)(__bridge void *)object)[ivar_getOffset(ivar)];

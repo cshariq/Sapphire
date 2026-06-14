@@ -17,6 +17,7 @@ import Firebase
 import FirebaseAnalytics
 import FirebaseCrashlytics
 import Network
+import OSLog
 
 @MainActor
 final class LockScreenState: ObservableObject {
@@ -29,8 +30,154 @@ final class LockScreenState: ObservableObject {
 
 final class DynamicFocusWindow: NSPanel {
     var isFocusable: Bool = false
+    private var interactiveContentFrame: CGRect = .zero
+    private var diagnosticsTimer: Timer?
+    private var isHandlingMouseInteraction = false
+    private var lastPolledMousePoint: CGPoint?
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "NotchDiagnostics")
+    private var passthroughRefreshCount = 0
+    private var sendEventCount = 0
+    private var mouseMovedEventCount = 0
+    private var outsideInteractivePollCount = 0
+    private var ignoreStateFlipCount = 0
+    private var hitTestRejectCount = 0
+    private var droppedMoveEventCount = 0
+
     override var canBecomeKey: Bool { isFocusable }
     override var canBecomeMain: Bool { isFocusable }
+
+    override init(
+        contentRect: NSRect,
+        styleMask style: NSWindow.StyleMask,
+        backing bufferingType: NSWindow.BackingStoreType,
+        defer flag: Bool
+    ) {
+        super.init(contentRect: contentRect, styleMask: style, backing: bufferingType, defer: flag)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        diagnosticsTimer?.invalidate()
+    }
+
+    func updateInteractiveContentFrame(_ frame: CGRect) {
+        let normalizedFrame = frame.integral.insetBy(dx: -1, dy: -1)
+        let previousFrame = interactiveContentFrame
+
+        if !normalizedFrame.isNull, !normalizedFrame.isEmpty {
+            interactiveContentFrame = normalizedFrame
+        } else if let contentBounds = contentView?.bounds, !contentBounds.isEmpty {
+            // Falling back to the content bounds avoids a "windowless" notch state
+            // while SwiftUI is still settling size/position updates.
+            interactiveContentFrame = contentBounds
+        }
+
+        guard interactiveContentFrame != previousFrame else { return }
+        refreshMouseEventPassthrough(force: true)
+    }
+
+    func containsInteractivePoint(_ point: CGPoint) -> Bool {
+        interactiveContentFrame.contains(point)
+    }
+
+    func recordHitTestRejection(at point: CGPoint) {
+        guard contentView?.bounds.contains(point) == true else { return }
+        hitTestRejectCount += 1
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        sendEventCount += 1
+
+        if shouldDropPassivePointerEvent(event) {
+            droppedMoveEventCount += 1
+            return
+        }
+
+        switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            isHandlingMouseInteraction = true
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            isHandlingMouseInteraction = false
+        case .mouseMoved:
+            mouseMovedEventCount += 1
+        default:
+            break
+        }
+
+        super.sendEvent(event)
+
+        switch event.type {
+        case .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+                .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+                .otherMouseDown, .otherMouseUp, .otherMouseDragged,
+                .mouseMoved, .mouseEntered, .mouseExited:
+            refreshMouseEventPassthrough(force: true)
+        default:
+            break
+        }
+    }
+
+    private func refreshMouseEventPassthrough(force: Bool = false) {
+        guard contentView != nil else { return }
+        guard force || isHandlingMouseInteraction || isVisible else {
+            return
+        }
+        let mousePoint = mouseLocationOutsideOfEventStream
+        if !force, !isHandlingMouseInteraction, lastPolledMousePoint == mousePoint {
+            return
+        }
+
+        lastPolledMousePoint = mousePoint
+
+        let shouldReceiveMouseEvents: Bool
+        if isHandlingMouseInteraction {
+            shouldReceiveMouseEvents = true
+        } else {
+            let effectiveInteractiveFrame = interactiveContentFrame.isEmpty ? (contentView?.bounds ?? .zero) : interactiveContentFrame
+            shouldReceiveMouseEvents = effectiveInteractiveFrame.contains(mousePoint)
+        }
+
+        let shouldIgnoreMouseEvents = !shouldReceiveMouseEvents
+        if ignoresMouseEvents != shouldIgnoreMouseEvents {
+            ignoresMouseEvents = shouldIgnoreMouseEvents
+        }
+
+        let shouldAcceptMouseMovedEvents = shouldReceiveMouseEvents || isHandlingMouseInteraction
+        if acceptsMouseMovedEvents != shouldAcceptMouseMovedEvents {
+            acceptsMouseMovedEvents = shouldAcceptMouseMovedEvents
+        }
+    }
+
+    private func shouldDropPassivePointerEvent(_ event: NSEvent) -> Bool {
+        guard !isHandlingMouseInteraction else { return false }
+        let effectiveInteractiveFrame = interactiveContentFrame.isEmpty ? (contentView?.bounds ?? .zero) : interactiveContentFrame
+
+        switch event.type {
+        case .mouseMoved, .mouseEntered, .mouseExited:
+            return !effectiveInteractiveFrame.contains(event.locationInWindow)
+        default:
+            return false
+        }
+    }
+}
+
+final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let window = window as? DynamicFocusWindow else {
+            return super.hitTest(point)
+        }
+
+        guard window.containsInteractivePoint(point) else {
+            window.recordHitTestRejection(at: point)
+            return nil
+        }
+
+        return super.hitTest(point)
+    }
 }
 
 @MainActor
@@ -41,8 +188,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var cgsSpace: CGSSpace?
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
+    private var lyricsWindow: NSWindow?
+    private var betaBlockerWindow: NSWindow?
+    private var isMainAppRunning = false
+    private var subscriptionObservation: AnyCancellable?
 
     private lazy var lockScreenManager = LockScreenManager.shared
+    private lazy var lidAngleAutomationManager = LidAngleAutomationManager.shared
 
     lazy var musicManager: MusicManager = .shared
     lazy var systemHUDManager: SystemHUDManager = .shared
@@ -70,9 +222,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     lazy var batteryDataLogger: BatteryDataLogger = .shared
     lazy var fileShelfManager: FileShelfManager = .shared
     lazy var authManager: AuthenticationManager = .shared
+    lazy var intelligenceViewModel: IntelligenceNotchViewModel = IntelligenceNotchViewModel()
 
     var statusBarController: StatusBarController?
     var interactionManager: MenuBarInteractionManager?
+
+    func addWindowToNotchSpace(_ window: NSWindow) {
+        if cgsSpace == nil { cgsSpace = CGSSpace() }
+        cgsSpace?.windows.insert(window)
+    }
+
+    func removeWindowFromNotchSpace(_ window: NSWindow) {
+        cgsSpace?.windows.remove(window)
+    }
 
     private var appearanceManager: MenuBarAppearanceManager?
 
@@ -108,10 +270,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         settingsModel: settingsModel,
         activeAppMonitor: activeAppMonitor,
         batteryEstimator: batteryEstimator,
-        batteryStatusManager: BatteryStatusManager.shared
+        batteryStatusManager: BatteryStatusManager.shared,
+        intelligenceVM: intelligenceViewModel
     )
 
     // MARK: - Lifecycle
+
+    private func setupMemoryPressureHandler() {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical])
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            let event = source.data
+            print("[Memory] Pressure event: \(event == .critical ? "CRITICAL" : "WARNING")")
+            Task { @MainActor in
+                MemoryTrimSupport.trimUnderMemoryPressure(musicManager: self.musicManager)
+            }
+        }
+        source.resume()
+    }
 
     func unregisterHelper() {
         do {
@@ -122,13 +298,54 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        SapphireStandardMenu.installIfNeeded()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleHelperConnectionLost),
+            name: .sapphireHelperConnectionLost,
+            object: nil
+        )
+        UserDefaults.standard.register(defaults: ["NSApplicationCrashOnExceptions": true])
         FirebaseApp.configure()
+
+        if settingsModel.settings.sportsWidgetEnabled {
+            SportsAPIService.shared.bootstrapIfNeeded()
+        }
         NearbyConnectionManager.shared.deviceDisplayName = settingsModel.settings.neardropDeviceDisplayName
         observeSettings()
-        if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
-            startMainApp()
-        } else {
+
+        if ProcessInfo.processInfo.environment["PERFMON"] == "1" || UserDefaults.standard.bool(forKey: "enablePerfMonitor") {
+            ProcessCPUMonitor.shared.startPeriodicReporting(interval: 60)
+            print("[PerfMon] CPU performance monitor enabled. Report logs every 60s.")
+        }
+
+        setupMemoryPressureHandler()
+
+        // Bootstrap subscription FIRST, then route to the appropriate UI.
+        // This ensures entitlements are always known before any content is shown.
+        Task {
+            await SubscriptionManager.shared.bootstrap()
+            await MainActor.run {
+                self.routeAfterLaunch()
+            }
+        }
+    }
+
+    private func routeAfterLaunch() {
+        // Beta builds require a valid subscription with beta access.
+        // This check must happen before showing any app UI.
+        if BetaEntitlementRuntime.isBetaBuild {
+            let validator = BetaEntitlementRuntime.makeValidator()
+            if !validator.validateBetaEntitlement() {
+                showBetaBlocker()
+                return
+            }
+        }
+
+        if OnboardingLaunchPolicy.shouldShowOnboarding {
             showOnboardingWindow()
+        } else {
+            startMainApp()
         }
     }
 
@@ -180,6 +397,94 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 }
             }
             .store(in: &cancellables)
+
+        observeSubscriptionForBetaGate()
+    }
+
+    private func observeSubscriptionForBetaGate() {
+        subscriptionObservation = SubscriptionManager.shared.$entitlements
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handlePossibleBetaAccessLoss()
+            }
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSubscriptionEntitlementsDidChange(_:)),
+            name: .subscriptionEntitlementsDidChange,
+            object: nil
+        )
+    }
+
+    @objc private func handleSubscriptionEntitlementsDidChange(_ notification: Notification) {
+        guard BetaEntitlementRuntime.isBetaBuild, isMainAppRunning else { return }
+
+        let previousTier = notification.userInfo?["previousTier"] as? String
+        let newTier = notification.userInfo?["newTier"] as? String
+        let lostBetaAccess = notification.userInfo?["lostBetaAccess"] as? Bool ?? false
+
+        guard previousTier != newTier || lostBetaAccess else { return }
+        presentBetaBlockerStoppingMainApp()
+    }
+
+    private func handlePossibleBetaAccessLoss() {
+        guard BetaEntitlementRuntime.isBetaBuild, isMainAppRunning else { return }
+        guard !SubscriptionManager.shared.hasBetaSoftwareAccess else { return }
+        presentBetaBlockerStoppingMainApp()
+    }
+
+    private func presentBetaBlockerStoppingMainApp() {
+        stopMainApp()
+        showBetaBlocker()
+    }
+
+    private func stopMainApp() {
+        guard isMainAppRunning else { return }
+
+        AppSystemTeardown.restoreManagedSystemState(reason: "beta-access-revoked")
+
+        isMainAppRunning = false
+
+        UpdateChecker.shared.stopPeriodicChecks()
+
+        if let window = notchWindow {
+            cgsSpace?.windows.remove(window)
+            window.orderOut(nil)
+            window.close()
+            notchWindow = nil
+        }
+        cgsSpace = nil
+
+        settingsWindow?.orderOut(nil)
+        settingsWindow?.close()
+        settingsWindow = nil
+
+        onboardingWindow?.orderOut(nil)
+        onboardingWindow = nil
+
+        lyricsWindow?.orderOut(nil)
+        lyricsWindow = nil
+
+        teardownLaunchpad()
+
+        interactionManager?.stopMonitoring()
+        interactionManager = nil
+        statusBarController = nil
+        appearanceManager = nil
+
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        NotificationCenter.default.removeObserver(
+            self,
+            name: .subscriptionPaywallRequested,
+            object: nil
+        )
+
+        NSApp.setActivationPolicy(.accessory)
     }
 
     // MARK: - Onboarding
@@ -187,10 +492,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func showOnboardingWindow() {
         Analytics.logEvent("onboarding_started", parameters: nil)
 
-        NSApp.setActivationPolicy(.accessory)
-
         if onboardingWindow == nil {
-            let window = KeyableWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 900), styleMask: [.borderless, .resizable, .closable, .miniaturizable], backing: .buffered, defer: false)
+            let window = KeyableWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 900), styleMask: [.borderless, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.center()
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
@@ -201,15 +504,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             window.isMovableByWindowBackground = true
             window.isOpaque = false
             window.backgroundColor = .clear
+            window.minSize = NSSize(width: 1200, height: 900)
+            window.maxSize = NSSize(width: 1200, height: 900)
+            window.setContentSize(NSSize(width: 1200, height: 900))
             window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
-            let hostingView = NSHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() }).environmentObject(settingsModel).environmentObject(musicManager))
+            let hostingView = FocusableHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() }).environmentObject(settingsModel).environmentObject(musicManager))
             hostingView.wantsLayer = true
             hostingView.layer?.backgroundColor = NSColor.clear.cgColor
             window.contentView = hostingView
             onboardingWindow = window
         }
-        onboardingWindow?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if let onboardingWindow {
+            UtilityWindowPresenter.present(onboardingWindow)
+        }
     }
 
     func onboardingDidComplete() {
@@ -221,13 +528,60 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         DispatchQueue.main.async { self.openSettingsWindow() }
     }
 
+    private func showBetaBlocker() {
+        betaBlockerWindow?.orderOut(nil)
+        betaBlockerWindow = nil
+
+        let window = KeyableWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 660),
+            styleMask: [.borderless],
+            backing: .buffered, defer: false
+        )
+        window.center()
+        window.isMovableByWindowBackground = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        let hostingView = FocusableHostingView(
+            rootView: BetaBlockerView(onValidationComplete: { [weak self] in
+                Task { @MainActor in
+                    self?.dismissBetaBlockerAndContinue()
+                }
+            })
+                .environmentObject(settingsModel)
+        )
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.layer?.cornerRadius = 28
+        hostingView.layer?.masksToBounds = true
+        window.contentView = hostingView
+        betaBlockerWindow = window
+        UtilityWindowPresenter.present(window)
+    }
+
+    private func dismissBetaBlockerAndContinue() {
+        betaBlockerWindow?.orderOut(nil)
+        betaBlockerWindow = nil
+
+        // Re-bootstrap so we pick up any changes made during the beta blocker session
+        // (e.g., user just entered a valid license key), then re-route.
+        Task {
+            await SubscriptionManager.shared.bootstrap()
+            await MainActor.run { self.routeAfterLaunch() }
+        }
+    }
+
     func startMainApp() {
+        guard !isMainAppRunning else { return }
+        isMainAppRunning = true
+
         Analytics.logEvent("main_app_started", parameters: nil)
 
         HelperManager.shared.installIfNeeded()
         XPCClient.shared.start()
 
         createNotchWindow()
+        _ = lidAngleAutomationManager
         setupStatusBarItem()
         transitionToAgentApp()
         initializeBackgroundServices()
@@ -245,25 +599,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURL), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         setupSessionObservers()
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleSubscriptionPaywallRequest(_:)), name: .subscriptionPaywallRequested, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleSubscriptionSessionRevoked(_:)), name: .subscriptionSessionRevoked, object: nil)
         UNUserNotificationCenter.current().delegate = self
         NearbyConnectionManager.shared.mainAppDelegate = self
         UpdateChecker.shared.startPeriodicChecks(interval: 5 * 60 * 60)
         if settingsModel.settings.launchpadEnabled {
             setupLaunchpad()
         }
+
+        scheduleHelperHealthCheck()
+    }
+
+    private func scheduleHelperHealthCheck() {
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard isMainAppRunning else { return }
+            if await batteryManager.verifyHelperResponds() {
+                helperHasConnectedThisSession = true
+            }
+        }
     }
 
     private func initializeCoreManagers() {
-        _ = StatsManager.shared
-        _ = [musicManager, systemHUDManager, notificationManager, desktopManager, focusModeManager, calendarService, batteryMonitor, batteryManager, bluetoothManager, audioDeviceManager, multiAudioManager, eyeBreakManager, timerManager, weatherActivityViewModel, contentPickerHelper, geminiLiveManager, settingsModel, activeAppMonitor, powerStateController, scheduleManager, keyboardShortcutManager, globalDragManager, fileShelfManager, authManager, liveActivityManager].count
+        // Only initialize absolutely essential managers — everything else lazy
+        _ = settingsModel
+        _ = batteryMonitor
+        _ = batteryManager
     }
 
     private func initializeBackgroundServices() {
-        DispatchQueue.global(qos: .userInitiated).async {
+        // Changed from .userInitiated to .utility to reduce CPU priority
+        DispatchQueue.global(qos: .utility).async {
             self.initializeCoreManagers()
-            _ = IOBluetoothDevice.pairedDevices()
-            NearbyConnectionManager.shared.becomeVisible()
-            Task { _ = await self.batteryManager.getBatteryTemperature() }
+            // Defer non-critical initializations
+            DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 2.0) {
+                _ = IOBluetoothDevice.pairedDevices()
+                if self.settingsModel.settings.neardropEnabled {
+                    NearbyConnectionManager.shared.becomeVisible()
+                }
+                Task { _ = await self.batteryManager.getBatteryTemperature() }
+            }
         }
     }
 
@@ -281,19 +657,105 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleApplicationDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+
         networkMonitor = NWPathMonitor()
         networkMonitor?.pathUpdateHandler = { [weak self] path in
             guard path.status == .satisfied else { return }
             DispatchQueue.main.async {
                 print("[AppDelegate] Network connection re-established.")
                 self?.musicManager.spotifyPrivateAPI.checkAndReconnectIfNeeded()
+                Task {
+                    await SubscriptionManager.shared.validateSubscriptionStatus()
+                }
             }
         }
         networkMonitor?.start(queue: DispatchQueue(label: "NetworkMonitor"))
     }
 
+    private var hasPresentedHelperConnectionAlertThisSession = false
+    private var helperHasConnectedThisSession = false
+
     @objc private func systemDidWake(notification: NSNotification) {
+        batteryManager.reconnectHelper()
         musicManager.spotifyPrivateAPI.checkAndReconnectIfNeeded()
+        Task {
+            await SubscriptionManager.shared.validateSubscriptionStatus()
+        }
+    }
+
+    @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
+        Task {
+            await evaluateHelperConnection(showAlertOnFailure: true)
+            await SubscriptionManager.shared.validateSubscriptionStatus()
+        }
+    }
+
+    @objc private func handleHelperConnectionLost() {
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard isMainAppRunning else { return }
+            await evaluateHelperConnection(showAlertOnFailure: true)
+        }
+    }
+
+    private func evaluateHelperConnection(showAlertOnFailure: Bool) async {
+        if await batteryManager.verifyHelperResponds() {
+            helperHasConnectedThisSession = true
+            return
+        }
+
+        guard helperHasConnectedThisSession else { return }
+
+        batteryManager.reconnectHelper()
+        try? await Task.sleep(for: .seconds(1.5))
+
+        if await batteryManager.verifyHelperResponds() {
+            helperHasConnectedThisSession = true
+            return
+        }
+
+        if showAlertOnFailure {
+            presentHelperConnectionAlertIfNeeded()
+        }
+    }
+
+    private func presentHelperConnectionAlertIfNeeded() {
+        guard !hasPresentedHelperConnectionAlertThisSession else { return }
+        guard helperHasConnectedThisSession else { return }
+        hasPresentedHelperConnectionAlertThisSession = true
+
+        DispatchQueue.main.async {
+            HelperAlertPresenter.showHelperConnectionLost()
+        }
+    }
+
+    @objc private func handleSubscriptionSessionRevoked(_ notification: Notification) {
+        let reasonRaw = notification.userInfo?["reason"] as? String ?? SubscriptionRevocationReason.sessionExpired.rawValue
+        let reason = SubscriptionRevocationReason(rawValue: reasonRaw) ?? .sessionExpired
+
+        if BetaEntitlementRuntime.isBetaBuild {
+            presentBetaBlockerStoppingMainApp()
+            return
+        }
+
+        DispatchQueue.main.async {
+            HelperAlertPresenter.presentModal(
+                messageText: "Signed Out of Sapphire",
+                informativeText: reason.alertMessage,
+                alertStyle: .warning,
+                buttonTitles: ["Open Account Settings", "OK"]
+            ) { buttonIndex in
+                if buttonIndex == 0 {
+                    NotificationCenter.default.post(name: .sapphireOpenAccountPane, object: nil)
+                }
+            }
+        }
     }
 
     // MARK: - Lock Screen
@@ -418,16 +880,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Activation Policy
 
     private func transitionToAgentApp() {
-        DispatchQueue.main.async {
-            if NSApp.activationPolicy() != .accessory {
-                NSApp.setActivationPolicy(.accessory)
-            }
-        }
+        guard NSApp.activationPolicy() != .accessory else { return }
+        NSApp.setActivationPolicy(.accessory)
     }
 
     // MARK: - Termination
 
     func applicationWillTerminate(_ aNotification: Notification) {
+        if Thread.isMainThread {
+            AppSystemTeardown.restoreManagedSystemState(reason: "app-quit")
+        } else {
+            DispatchQueue.main.sync {
+                AppSystemTeardown.restoreManagedSystemState(reason: "app-quit")
+            }
+        }
+
         NSAppleEventManager.shared().removeEventHandler(
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
@@ -548,10 +1015,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         guard let mainScreen = targetScreen else { return }
         let screenFrame = mainScreen.frame
-        let paddedWidth = screenFrame.width
-        let paddedHeight: CGFloat = 400
+        let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings)
+        let paddedWidth = ceil(max(initialConfig.initialSize.width + 8, screenFrame.width * 0.72))
+        let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
         let rect = NSRect(
-            x: screenFrame.minX,
+            x: screenFrame.midX - (paddedWidth / 2),
             y: screenFrame.maxY - paddedHeight,
             width: paddedWidth,
             height: paddedHeight
@@ -578,11 +1046,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let controllerView = NotchController(notchWindow: window)
         let container = VStack(spacing: 0) {
             controllerView
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .frame(width: paddedWidth, height: paddedHeight)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-        let hosting = NSHostingView(
+        let hosting = PassthroughHostingView(
             rootView: container
                 .environmentObject(lockScreenState)
                 .environmentObject(systemHUDManager)
@@ -602,8 +1070,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(batteryEstimator)
                 .environmentObject(DragStateManager.shared)
                 .environmentObject(calendarService)
+                .environmentObject(intelligenceViewModel)
         )
-        hosting.frame = rect
+        hosting.frame = NSRect(origin: .zero, size: rect.size)
         hosting.autoresizingMask = [.width, .height]
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
@@ -641,9 +1110,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func openSettingsWindow() {
         if let window = settingsWindow {
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            window.center()
+            UtilityWindowPresenter.presentSettingsWindow(window)
             return
         }
 
@@ -664,27 +1131,84 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             .environment(\.window, window)
             .environmentObject(powerStateController)
 
-        let hosting = NSHostingView(rootView: root)
+        let hosting = FocusableHostingView(rootView: root)
         window.contentView = hosting
-        window.makeFirstResponder(hosting)
         window.delegate = self
         settingsWindow = window
 
-        DispatchQueue.main.async {
-            self.settingsWindow?.makeKeyAndOrderFront(nil)
-            self.settingsWindow?.center()
-            NSApp.activate(ignoringOtherApps: true)
+        UtilityWindowPresenter.presentSettingsWindow(window)
+    }
+
+    func openLyricsWindow() {
+        if let window = lyricsWindow {
+            UtilityWindowPresenter.presentSettingsWindow(window)
+            return
         }
+
+        let window = KeyableWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 620),
+            styleMask: [.titled, .resizable, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Lyrics"
+        window.isMovableByWindowBackground = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.isReleasedWhenClosed = true
+        window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+
+        let root = LyricsDetachedWindowView()
+            .environmentObject(musicManager)
+
+        let hosting = FocusableHostingView(rootView: root)
+        window.contentView = hosting
+        window.delegate = self
+        lyricsWindow = window
+
+        UtilityWindowPresenter.presentSettingsWindow(window)
     }
 
     func windowWillClose(_ notification: Notification) {
-        if (notification.object as? NSWindow) == settingsWindow {
-            settingsWindow = nil
-            transitionToAgentApp()
+        guard let window = notification.object as? NSWindow else { return }
+
+        let isSettings = window === settingsWindow
+        let isLyrics = window === lyricsWindow
+        guard isSettings || isLyrics else { return }
+
+        if isSettings { settingsWindow = nil }
+        if isLyrics { lyricsWindow = nil }
+
+        // Let AppKit release the window/content view (isReleasedWhenClosed).
+        // Only drop our delegate reference after this callback returns.
+        DispatchQueue.main.async { [weak window] in
+            window?.delegate = nil
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.finishClosingUserWindow()
         }
     }
 
+    private func finishClosingUserWindow() {
+        restoreAgentActivationIfNeeded()
+        MemoryTrimSupport.trimAfterUserWindowClose(musicManager: musicManager)
+    }
+
+    private func restoreAgentActivationIfNeeded() {
+        let hasUserWindow = [settingsWindow, lyricsWindow, onboardingWindow, betaBlockerWindow]
+            .compactMap { $0 }
+            .contains { $0.isVisible }
+        guard !hasUserWindow else { return }
+        transitionToAgentApp()
+    }
+
     // MARK: - Screen Parameters
+
+    @objc func handleSubscriptionPaywallRequest(_ notification: Notification) {
+        openSettingsWindow()
+    }
 
     @objc func screenParametersChanged(notification: Notification) {
         createNotchWindow()
@@ -711,6 +1235,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         notchWindow?.sharingType = sharingType
         onboardingWindow?.sharingType = sharingType
         settingsWindow?.sharingType = sharingType
+        lyricsWindow?.sharingType = sharingType
     }
 
     // MARK: - Display Power Control
@@ -781,4 +1306,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 class KeyableWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func becomeKey() {
+        super.becomeKey()
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }

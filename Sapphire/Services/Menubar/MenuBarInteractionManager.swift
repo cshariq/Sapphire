@@ -19,7 +19,7 @@ final class MenuBarInteractionManager {
 
     // MARK: - State
     private var hoverTriggerTimer: Timer?
-    private var isMonitoring = false
+    public var isMonitoring = false
     private var disabledUntil: Date?
     private var cancellables = Set<AnyCancellable>()
 
@@ -69,14 +69,16 @@ final class MenuBarInteractionManager {
         disabledUntil = Date().addingTimeInterval(duration)
     }
 
-    // MARK: - Hover Monitoring (Polling Implementation)
+    // MARK: - Hover Monitoring
 
     private func startHoverMonitoring() {
         guard pollingTimer == nil else { return }
 
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.checkMousePosition()
         }
+        timer.tolerance = 0.5
+        pollingTimer = timer
     }
 
     private func stopHoverMonitoring() {
@@ -99,7 +101,9 @@ final class MenuBarInteractionManager {
             if hoverTriggerTimer == nil {
                 let delay = SettingsModel.shared.settings.showOnHoverDelay
                 hoverTriggerTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-                    self?.showHiddenItems()
+                    DispatchQueue.main.async {
+                        self?.showHiddenItems()
+                    }
                 }
             }
         } else {

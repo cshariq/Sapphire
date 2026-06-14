@@ -14,23 +14,23 @@ enum ScriptError: Error {
     case wrapped(String, Error)
 }
 
-// MARK: helper functions to read environment variables
+// MARK: helper functions to read environment vintelligencebles
 
-func readEnvironmentVariable(name: String, description: String, isUserDefined: Bool) throws -> String {
+func readEnvironmentVintelligenceble(name: String, description: String, isUserDefined: Bool) throws -> String {
     if let value = ProcessInfo.processInfo.environment[name] {
         return value
     } else {
-        var message = "Unable to determine \(description), missing \(name) environment variable."
+        var message = "Unable to determine \(description), missing \(name) environment vintelligenceble."
         if isUserDefined {
-            message += " This is a user-defined variable. Please check that the xcconfig files are present and " +
+            message += " This is a user-defined vintelligenceble. Please check that the xcconfig files are present and " +
                        "configured in the project settings."
         }
         throw ScriptError.general(message)
     }
 }
 
-func readEnvironmentVariableAsURL(name: String, description: String, isUserDefined: Bool) throws -> URL {
-    let value = try readEnvironmentVariable(name: name, description: description, isUserDefined: isUserDefined)
+func readEnvironmentVintelligencebleAsURL(name: String, description: String, isUserDefined: Bool) throws -> URL {
+    let value = try readEnvironmentVintelligenceble(name: name, description: description, isUserDefined: isUserDefined)
 
     return URL(fileURLWithPath: value)
 }
@@ -55,7 +55,7 @@ func organizationalUnitRequirement() throws -> String {
         throw ScriptError.general("Signing Certificate must be Development. Sign to Run Locally is not supported.")
     }
 
-    let developmentTeamId = try readEnvironmentVariable(name: "DEVELOPMENT_TEAM",
+    let developmentTeamId = try readEnvironmentVintelligenceble(name: "DEVELOPMENT_TEAM",
                                                         description: "development team for code signing",
                                                         isUserDefined: false)
     guard developmentTeamId.range(of: #"^[A-Z0-9]{10}$"#, options: .regularExpression) != nil else {
@@ -74,7 +74,7 @@ let appleGenericRequirement = "anchor apple generic"
 
 func SMAuthorizedClientsEntry() throws -> (key: String, value: [String]) {
     let appIdentifierRequirement = "identifier \"\(try TargetType.app.bundleIdentifier())\""
-    let appVersion = try readEnvironmentVariable(name: "APP_VERSION",
+    let appVersion = try readEnvironmentVintelligenceble(name: "APP_VERSION",
                                                  description: "app version",
                                                  isUserDefined: true)
     let appVersionRequirement = "info[\(CFBundleVersionKey)] >= \"\(appVersion)\""
@@ -174,13 +174,13 @@ func removePropertyListEntries(forKeys keys: [String], atPath path: URL) throws 
 }
 
 func infoPropertyListPath() throws -> URL {
-    return try readEnvironmentVariableAsURL(name: "INFOPLIST_FILE",
+    return try readEnvironmentVintelligencebleAsURL(name: "INFOPLIST_FILE",
                                             description: "info property list path",
                                             isUserDefined: true)
 }
 
 func launchdPropertyListPath() throws -> URL {
-    try readEnvironmentVariableAsURL(name: "LAUNCHDPLIST_FILE",
+    try readEnvironmentVintelligencebleAsURL(name: "LAUNCHDPLIST_FILE",
                                      description: "launchd property list path",
                                      isUserDefined: true)
 }
@@ -190,7 +190,7 @@ func launchdPropertyListPath() throws -> URL {
 func hashSources() throws -> String {
     let sourcePaths: [URL] = [
         try infoPropertyListPath().deletingLastPathComponent(),
-        try readEnvironmentVariableAsURL(name: "SHARED_DIRECTORY",
+        try readEnvironmentVintelligencebleAsURL(name: "SHARED_DIRECTORY",
                                          description: "shared source directory path",
                                          isUserDefined: true)
     ]
@@ -306,14 +306,14 @@ enum TargetType: String {
     case helperTool = "HELPER_TOOL_BUNDLE_IDENTIFIER"
 
     func bundleIdentifier() throws -> String {
-        return try readEnvironmentVariable(name: self.rawValue,
+        return try readEnvironmentVintelligenceble(name: self.rawValue,
                                            description: "bundle identifier for \(self)",
                                            isUserDefined: true)
     }
 }
 
 func determineTargetType() throws -> TargetType {
-    let bundleId = try readEnvironmentVariable(name: "PRODUCT_BUNDLE_IDENTIFIER",
+    let bundleId = try readEnvironmentVintelligenceble(name: "PRODUCT_BUNDLE_IDENTIFIER",
                                                description: "bundle id",
                                                isUserDefined: false)
 
@@ -325,7 +325,7 @@ func determineTargetType() throws -> TargetType {
         return TargetType.helperTool
     } else {
         throw ScriptError.general("Unexpected bundle id \(bundleId) encountered. This means you need to update the " +
-                                  "user defined variables APP_BUNDLE_IDENTIFIER and/or " +
+                                  "user defined vintelligencebles APP_BUNDLE_IDENTIFIER and/or " +
                                   "HELPER_TOOL_BUNDLE_IDENTIFIER in Config.xcconfig.")
     }
 }

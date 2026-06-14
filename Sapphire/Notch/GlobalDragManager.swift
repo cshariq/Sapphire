@@ -22,7 +22,7 @@ class GlobalDragManager: ObservableObject {
     @MainActor private let dragState = DragStateManager.shared
 
     private var lastDragProcessTime: TimeInterval = 0
-    private let dragThrottleInterval: TimeInterval = 0.032
+    private let dragThrottleInterval: TimeInterval = 0.05
 
     private init() {}
 

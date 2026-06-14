@@ -25,7 +25,8 @@ class EnergyReader {
 
     func start() {
         read()
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        // Increased from 5s to 10s to reduce CPU usage from frequent process polling
+        timer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.read()
         }
     }

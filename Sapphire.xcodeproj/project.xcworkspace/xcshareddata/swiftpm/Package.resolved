@@ -1,5 +1,5 @@
 {
-  "originHash" : "6fb0bf413c8cdbbb93bbe7395d3843b7dcdc2b97df7ddc92f0a79d006051fb31",
+  "originHash" : "9c33ad88c9da2ba970d132f6b117a22daa912539c0312b9620a2bced9d0e6ca4",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -26,15 +26,6 @@
       "state" : {
         "revision" : "e38d1b8b43d8b53ffadde9836f34289176bb7a0c",
         "version" : "2.7.0"
-      }
-    },
-    {
-      "identity" : "axswift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/tmandry/AXSwift",
-      "state" : {
-        "revision" : "81dcc36aced905d6464cc25e35f8d13184bbf21c",
-        "version" : "0.3.2"
       }
     },
     {
@@ -143,15 +134,6 @@
       "state" : {
         "revision" : "a0bc79961d7be727d258d33d5a6b2f1023270ba1",
         "version" : "1.22.5"
-      }
-    },
-    {
-      "identity" : "mediaremote-adapter",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/otuerk/mediaremote-adapter",
-      "state" : {
-        "branch" : "master",
-        "revision" : "9ae9eb722b640d74c2030f8f5c9355f89ec2397c"
       }
     },
     {

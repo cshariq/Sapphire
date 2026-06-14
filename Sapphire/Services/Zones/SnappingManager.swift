@@ -56,12 +56,10 @@ class SnappingManager {
                 print("[SnappingManager] Fallback failed: Could not find any frontmost application.")
                 return
             }
-            print("[SnappingManager] Warning: Using fallback to identify frontmost app.")
             snap(app: frontmostApp, to: zone)
             return
         }
 
-        print("[SnappingManager] Snapping app '\(bundleID)' identified by ActiveAppMonitor.")
         snap(app: appToSnap, to: zone)
     }
 

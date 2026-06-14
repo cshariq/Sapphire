@@ -209,11 +209,17 @@ class BatteryManager {
         connection.invalidationHandler = { [weak self] in
             print("[BatteryManager] XPC connection invalidated.")
             self?.connectionLock.withLock { self?.helperConnection = nil }
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
+            }
         }
 
         connection.interruptionHandler = { [weak self] in
             print("[BatteryManager] XPC connection interrupted.")
             self?.connectionLock.withLock { self?.helperConnection = nil }
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
+            }
         }
 
         connection.resume()
@@ -243,6 +249,51 @@ class BatteryManager {
         } as? HelperProtocol
 
         return proxy
+    }
+
+    /// Re-establish the privileged helper connection after permission or lifecycle changes.
+    func reconnectHelper() {
+        connectionLock.lock()
+        if let connection = helperConnection {
+            connection.invalidationHandler = nil
+            connection.interruptionHandler = nil
+            connection.invalidate()
+        }
+        helperConnection = nil
+        connectionLock.unlock()
+        setupHelperConnection()
+    }
+
+    private func withHelperCallback<T>(
+        fallback: T,
+        timeout: TimeInterval = 5,
+        _ work: (HelperProtocol, @escaping (T) -> Void) -> Void
+    ) async -> T {
+        await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var resumed = false
+
+            func resumeOnce(_ value: T) {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: value)
+            }
+
+            guard let helper = getHelper() else {
+                resumeOnce(fallback)
+                return
+            }
+
+            work(helper) { value in
+                resumeOnce(value)
+            }
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                resumeOnce(fallback)
+            }
+        }
     }
 
     // MARK: - Public API to Helper
@@ -366,10 +417,18 @@ class BatteryManager {
 
     @MainActor
     func getBatteryTemperature() async -> Double {
-        await withCheckedContinuation { continuation in
-            getHelper()?.getBatteryTemperature { temperature in
-                continuation.resume(returning: temperature)
-            }
+        await withHelperCallback(fallback: 0) { helper, reply in
+            helper.getBatteryTemperature(reply: reply)
         }
+    }
+
+    private let helperPingTimeoutSentinel = "__sapphire_helper_timeout__"
+
+    func verifyHelperResponds() async -> Bool {
+        let version = await withHelperCallback(fallback: helperPingTimeoutSentinel) { helper, reply in
+            helper.getVersion(reply: reply)
+        }
+        // Any XPC reply (including "N/A" when the helper bundle has no short version) means the helper is alive.
+        return version != helperPingTimeoutSentinel
     }
 }

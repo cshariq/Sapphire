@@ -67,43 +67,135 @@ struct WidgetRowView: View {
     let widgetType: WidgetType
     let enabledWidgetCount: Int
     @EnvironmentObject var settings: SettingsModel
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
-    private var isEnabledBinding: Binding<Bool> {
+    private var availableBarWidth: CGFloat {
+        WidgetLayoutPolicy.availableBarWidth()
+    }
+
+    private var enabledWidgetTypes: [WidgetType] {
+        settings.settings.widgetOrder.filter { widget in
+            guard widget != .agent else { return false }
+            switch widget {
+            case .weather: return settings.settings.weatherWidgetEnabled
+            case .calendar: return settings.settings.calendarWidgetEnabled
+            case .shortcuts: return settings.settings.shortcutsWidgetEnabled
+            case .music: return settings.settings.musicWidgetEnabled
+            case .sports: return settings.settings.sportsWidgetEnabled
+            case .finance: return settings.settings.financeWidgetEnabled
+            case .agent: return false
+            }
+        }
+    }
+
+    private var isAtCapacity: Bool {
+        guard !isEnabledBinding.wrappedValue else { return false }
+        return !WidgetLayoutPolicy.canFit(
+            widgetType,
+            in: enabledWidgetTypes,
+            availableWidth: availableBarWidth,
+            showDividers: settings.settings.showDividersBetweenWidgets
+        )
+    }
+
+    private var requiredFeature: AppFeature? {
+        switch widgetType {
+        case .sports:
+            return .sportsWidget
+        case .finance:
+            return .financeWidget
+        default:
+            return nil
+        }
+    }
+
+    private var isPremiumLocked: Bool {
+        guard let requiredFeature else { return false }
+        return !subscriptionManager.hasAccess(to: requiredFeature)
+    }
+
+    private var baseEnabledBinding: Binding<Bool> {
         switch widgetType {
         case .weather: return $settings.settings.weatherWidgetEnabled
         case .calendar: return $settings.settings.calendarWidgetEnabled
         case .shortcuts: return $settings.settings.shortcutsWidgetEnabled
         case .music: return $settings.settings.musicWidgetEnabled
+        case .sports: return $settings.settings.sportsWidgetEnabled
+        case .finance: return $settings.settings.financeWidgetEnabled
+        case .agent: return .constant(false)
         }
     }
 
+    private var isEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { isPremiumLocked ? false : baseEnabledBinding.wrappedValue },
+            set: { newValue in
+                baseEnabledBinding.wrappedValue = isPremiumLocked ? false : newValue
+            }
+        )
+    }
+
     var body: some View {
-        HStack {
-            Text(widgetType.displayName)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white)
+        if widgetType == .agent {
+            EmptyView()
+        } else {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(widgetType.displayName)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                    if isAtCapacity {
+                        Text("Not enough notch space on this display.")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                }
 
-            Spacer()
+                Spacer()
 
-            Toggle("", isOn: isEnabledBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(isEnabledBinding.wrappedValue && enabledWidgetCount <= 1)
+                Toggle("", isOn: isEnabledBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(isPremiumLocked || (isEnabledBinding.wrappedValue && enabledWidgetCount <= 1) || isAtCapacity)
 
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.white.opacity(0.6))
-                .padding(.leading, 8)
+                if isPremiumLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.leading, 8)
+            }
+            .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
         }
-        .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
     }
 }
 
 struct LiveActivityRowView: View {
     let activityType: LiveActivityType
     @EnvironmentObject var settings: SettingsModel
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
-    private var isEnabledBinding: Binding<Bool> {
+    private var requiredFeature: AppFeature? {
+        switch activityType {
+        case .sports:
+            return .liveSports
+        case .finance:
+            return .financeLiveActivity
+        default:
+            return nil
+        }
+    }
+
+    private var isPremiumLocked: Bool {
+        guard let requiredFeature else { return false }
+        return !subscriptionManager.hasAccess(to: requiredFeature)
+    }
+
+    private var baseEnabledBinding: Binding<Bool> {
         switch activityType {
         case .music: return $settings.settings.musicLiveActivityEnabled
         case .weather: return $settings.settings.weatherLiveActivityEnabled
@@ -116,8 +208,20 @@ struct LiveActivityRowView: View {
         case .focus: return $settings.settings.focusLiveActivityEnabled
         case .fileShelf: return $settings.settings.fileShelfLiveActivityEnabled
         case .fileProgress: return $settings.settings.fileProgressLiveActivityEnabled
+        case .microphone: return $settings.settings.microphoneLiveActivityEnabled
         case .stats: return $settings.settings.statsLiveActivityEnabled
+        case .finance: return $settings.settings.financeLiveActivityEnabled
+        case .sports: return $settings.settings.sportsLiveActivityEnabled
         }
+    }
+
+    private var isEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { isPremiumLocked ? false : baseEnabledBinding.wrappedValue },
+            set: { newValue in
+                baseEnabledBinding.wrappedValue = isPremiumLocked ? false : newValue
+            }
+        )
     }
 
     var body: some View {
@@ -128,12 +232,64 @@ struct LiveActivityRowView: View {
             Toggle("", isOn: isEnabledBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .disabled(isPremiumLocked)
+            if isPremiumLocked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.white.opacity(0.6))
                 .padding(.leading, 8)
         }
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
+    }
+}
+
+struct FavoriteEntriesEditor: View {
+    let title: String
+    let subtitle: String
+    let placeholder: String
+    let maxItems: Int
+    @Binding var entries: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.caption).foregroundColor(.secondary)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(entries.indices, id: \.self) { index in
+                    HStack {
+                        TextField(placeholder, text: Binding(
+                            get: { entries[index] },
+                            set: { entries[index] = $0 }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+
+                        Button {
+                            entries.remove(at: index)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(entries.count <= 1)
+                    }
+                }
+
+                if entries.count < maxItems {
+                    Button {
+                        entries.append("")
+                    } label: {
+                        Label("Add", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 }
 

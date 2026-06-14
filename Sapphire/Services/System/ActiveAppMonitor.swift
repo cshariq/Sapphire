@@ -44,6 +44,15 @@ class ActiveAppMonitor: ObservableObject {
     private var mouseUpMonitor: Any?
     private var lastMoveTime: TimeInterval = 0
 
+    deinit {
+        if let observer = axObserver {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        }
+        if let monitor = mouseUpMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
     private init() {
         self.settingsModel = SettingsModel.shared
 

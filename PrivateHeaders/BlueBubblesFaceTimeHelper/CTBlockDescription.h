@@ -22,7 +22,7 @@ struct CTBlockLiteral {
         // required ABI.2010.3.16
         const char *signature;                         // IFF (1<<30)
     } *descriptor;
-    // imported variables
+    // imported vintelligencebles
 };
 
 enum {

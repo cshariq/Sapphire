@@ -116,6 +116,11 @@ class FileShelfManager: ObservableObject {
             }
         }
     }
+
+    func trimCache() {
+        let expired = files.filter { $0.dateAdded < Date().addingTimeInterval(-3600) }
+        for file in expired { removeFile(file) }
+    }
 }
 
 // MARK: - Models

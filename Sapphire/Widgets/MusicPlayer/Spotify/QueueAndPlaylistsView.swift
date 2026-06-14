@@ -362,13 +362,16 @@ struct ActionButtonsView: View {
 struct TabButton: View {
     let title: String, systemImage: String, isSelected: Bool, action: () -> Void
     var body: some View {
-        Button(action: action) {
-            HStack { Image(systemName: systemImage); Text(title) }
-                .font(.system(size: 10, weight: .semibold))
-                .padding(.horizontal, 12).padding(.vertical, 5)
-                .contentShape(Capsule())
+        Button {
+            action()
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
         }
-        .buttonStyle(.plain).background(isSelected ? Color.accentColor : .clear)
+        .buttonStyle(.plain)
+        .background(isSelected ? Color.accentColor : Color.white.opacity(0.08))
         .foregroundColor(isSelected ? .white : .primary).clipShape(Capsule())
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }

@@ -1,396 +1,367 @@
-//
-//  GeminiLiveManager.swift
-//  Sapphire
-//
-//  Created by Shariq Charolia on 2025-07-04.
-//
-
 import Foundation
-import ScreenCaptureKit
-import AVFoundation
 import Combine
-import CoreImage
-import AppKit
+import AVFoundation
+import ScreenCaptureKit
 
 @MainActor
-class GeminiLiveManager: NSObject, ObservableObject, SCStreamOutput, SCStreamDelegate {
-
+class GeminiLiveManager: NSObject, ObservableObject {
     @Published var isSessionRunning = false
     @Published var isMicMuted = true
     @Published var currentAudioLevel: Float = 0.0
 
-    private var webSocketTask: URLSessionWebSocketTask?
-    private let urlSession = URLSession(configuration: .default)
-    private var sessionTask: Task<Void, Never>?
-
-    private let playbackEngine = AVAudioEngine()
-    private var captureEngine: AVAudioEngine?
-    private let audioPlayer = AVAudioPlayerNode()
-    private let geminiAudioFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: false)!
-    private var playerAudioFormat: AVAudioFormat!
-    private var audioConverter_Playback: AVAudioConverter!
-    private let audioProcessingQueue = DispatchQueue(label: "com.sapphire.AudioProcessingQueue")
-
-    private var isSendingUserAudio = false
-    private let vadThreshold: Float = 0.01
-
-    private var stream: SCStream?
-    private let videoFrameOutputQueue = DispatchQueue(label: "com.sapphire.VideoOutputQueue")
-    private let imageContext = CIContext()
-    private var audioLevelResetTimer: Timer?
-
     let sessionDidEndPublisher = PassthroughSubject<Void, Never>()
+
+    private let liveSession = GeminiLiveSession()
+    private var cancellables = Set<AnyCancellable>()
+
+    private var captureEngine: AVAudioEngine?
+    private let playbackEngine = AVAudioEngine()
+    private let playerNode = AVAudioPlayerNode()
+    private var audioLevelTimer: Timer?
+
+    private var isWaitingForSetupComplete = false
+    private var currentScreenFilter: SCContentFilter?
+    private var isInterrupted = false
+    private let inputSampleRate: Double = 16000.0
+    private let outputSampleRate: Double = 24000.0
 
     override init() {
         super.init()
         setupPlaybackEngine()
+        observeMessages()
     }
 
-    func startSession(with filter: SCContentFilter) {
-        guard !isSessionRunning else { return }
-        isSessionRunning = true
-        isMicMuted = true
-        isSendingUserAudio = false
+    // MARK: - Playback Engine
 
-        guard let url = GeminiAPI.webSocketURL() else {
-            print("[GeminiLiveManager] Could not create WebSocket URL. Aborting session start.")
-            isSessionRunning = false; return
+    private func setupPlaybackEngine() {
+        let outputFormat = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: 1)!
+        playbackEngine.attach(playerNode)
+        playbackEngine.connect(playerNode, to: playbackEngine.mainMixerNode, format: outputFormat)
+        playbackEngine.prepare()
+    }
+
+    private func startPlaybackEngine() {
+        guard !playbackEngine.isRunning else { return }
+        do {
+            try playbackEngine.start()
+        } catch {
+            print("[GeminiLiveManager] Failed to start playback engine: \(error)")
+        }
+    }
+
+    private func stopPlaybackEngine() {
+        playerNode.stop()
+        playbackEngine.stop()
+    }
+
+    // MARK: - Message Observation
+
+    private func observeMessages() {
+        liveSession.$isConnected
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] connected in
+                guard let self else { return }
+                if !connected && self.isSessionRunning {
+                    self.cleanupSession()
+                }
+            }
+            .store(in: &cancellables)
+
+        liveSession.serverMessagePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                self?.handleServerMessage(message)
+            }
+            .store(in: &cancellables)
+
+        liveSession.connectionErrorPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] error in
+                print("[GeminiLiveManager] Connection error: \(error)")
+                self?.cleanupSession()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func handleServerMessage(_ message: GeminiLiveServerMessage) {
+        switch message {
+        case .setupComplete:
+            print("[GeminiLiveManager] Setup complete")
+            isWaitingForSetupComplete = false
+            isSessionRunning = true
+            startAudioCapture()
+            startAudioLevelMonitoring()
+
+        case .serverContent(let modelTurn, let turnComplete, let interrupted):
+            if interrupted {
+                isInterrupted = true
+                playerNode.stop()
+            }
+
+            if let turn = modelTurn, let parts = turn["parts"] as? [[String: Any]] {
+                for part in parts {
+                    if let text = part["text"] as? String {
+                        print("[GeminiLiveManager] Text: \(text)")
+                    }
+                    if let audioData = part["audioData"] as? Data {
+                        scheduleAudioPlayback(audioData)
+                    }
+                    if let functionCall = part["functionCall"] as? [String: Any] {
+                        handleFunctionCall(functionCall)
+                    }
+                }
+            }
+
+            if turnComplete {
+                isInterrupted = false
+            }
+
+        case .toolCall(let functionCalls):
+            for fc in functionCalls {
+                handleFunctionCall(fc)
+            }
+
+        case .toolCallCancellation(let ids):
+            print("[GeminiLiveManager] Tool calls cancelled: \(ids)")
+        }
+    }
+
+    private func handleFunctionCall(_ functionCall: [String: Any]) {
+        guard let name = functionCall["name"] as? String else { return }
+        print("[GeminiLiveManager] Function call: \(name)")
+        let response: [String: Any] = ["name": name, "response": ["result": "Not yet implemented"]]
+        liveSession.sendToolResponse(functionResponses: [response])
+    }
+
+    // MARK: - Audio Capture
+
+    private func startAudioCapture() {
+        guard !isMicMuted else { return }
+
+        stopAudioCapture()
+
+        let engine = AVAudioEngine()
+        captureEngine = engine
+
+        let inputNode = engine.inputNode
+        engine.prepare()
+
+        let hardwareFormat = inputNode.outputFormat(forBus: 0)
+        guard hardwareFormat.sampleRate > 0, hardwareFormat.channelCount > 0 else {
+            print("[GeminiLiveManager] Invalid input format: \(hardwareFormat)")
+            return
         }
 
-        webSocketTask = self.urlSession.webSocketTask(with: url)
+        guard let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: inputSampleRate,
+            channels: 1,
+            interleaved: true
+        ) else {
+            print("[GeminiLiveManager] Failed to create Int16 target format")
+            return
+        }
 
-        sessionTask = Task {
-            do {
-                if !self.playbackEngine.isRunning { try self.playbackEngine.start(); if !self.audioPlayer.isPlaying { self.audioPlayer.play() } }
-                try self.startCaptureAudio()
-                webSocketTask?.resume()
-                try await Task.sleep(for: .milliseconds(100))
-                try await self.sendSetupMessage()
-                try await withThrowingTaskGroup(of: Void.self) { group in
-                    group.addTask { try await self.receiveMessages() }
-                    group.addTask { try await self.captureAndSendScreen(with: filter) }
-                    try await group.waitForAll()
+        guard let converter = AVAudioConverter(from: hardwareFormat, to: targetFormat) else {
+            print("[GeminiLiveManager] Failed to create audio converter")
+            return
+        }
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: hardwareFormat) { [weak self] buffer, _ in
+            guard let self else { return }
+
+            let frameCapacity = AVAudioFrameCount(
+                Double(buffer.frameLength) * inputSampleRate / hardwareFormat.sampleRate
+            ) + 64
+            guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCapacity) else {
+                return
+            }
+
+            var error: NSError?
+            var consumedInput = false
+            converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+                if consumedInput {
+                    outStatus.pointee = .noDataNow
+                    return nil
                 }
-            } catch {
-                if !(error is CancellationError) { print("[GeminiLiveManager] Session failed with error: \(error)") }
-                await self.cleanupSession()
+                consumedInput = true
+                outStatus.pointee = .haveData
+                return buffer
+            }
+
+            guard error == nil, convertedBuffer.frameLength > 0,
+                  let pcmData = Self.int16PCMData(from: convertedBuffer) else {
+                return
+            }
+
+            let level = Self.peakLevel(from: pcmData)
+            Task { @MainActor in
+                self.currentAudioLevel = level
+                self.liveSession.sendRealtimeAudio(pcmData)
+            }
+        }
+
+        do {
+            try engine.start()
+        } catch {
+            print("[GeminiLiveManager] Failed to start capture engine: \(error)")
+            stopAudioCapture()
+        }
+    }
+
+    private static func int16PCMData(from buffer: AVAudioPCMBuffer) -> Data? {
+        guard buffer.format.commonFormat == .pcmFormatInt16,
+              let channelData = buffer.int16ChannelData else {
+            return nil
+        }
+        let byteCount = Int(buffer.frameLength) * MemoryLayout<Int16>.size
+        return Data(bytes: channelData.pointee, count: byteCount)
+    }
+
+    private static func peakLevel(from pcmData: Data) -> Float {
+        var maxVal: Int16 = 0
+        pcmData.withUnsafeBytes { rawBuffer in
+            let samples = rawBuffer.bindMemory(to: Int16.self)
+            for sample in samples {
+                maxVal = max(maxVal, abs(sample))
+            }
+        }
+        return min(Float(maxVal) / 32768.0, 1.0)
+    }
+
+    private func stopAudioCapture() {
+        guard let engine = captureEngine else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        captureEngine = nil
+    }
+
+    // MARK: - Audio Playback
+
+    private func scheduleAudioPlayback(_ audioData: Data) {
+        guard !audioData.isEmpty else { return }
+
+        startPlaybackEngine()
+
+        let frameCount = audioData.count / MemoryLayout<Int16>.size
+        guard frameCount > 0,
+              let format = AVAudioFormat(standardFormatWithSampleRate: outputSampleRate, channels: 1),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount)),
+              let floatChannel = buffer.floatChannelData?.pointee else {
+            return
+        }
+
+        buffer.frameLength = AVAudioFrameCount(frameCount)
+
+        audioData.withUnsafeBytes { rawBuffer in
+            let samples = rawBuffer.bindMemory(to: Int16.self)
+            for index in 0..<frameCount {
+                floatChannel[index] = Float(samples[index]) / 32768.0
+            }
+        }
+
+        playerNode.scheduleBuffer(buffer)
+        if !playerNode.isPlaying {
+            playerNode.play()
+        }
+    }
+
+    // MARK: - Audio Level Monitoring
+
+    private func startAudioLevelMonitoring() {
+        audioLevelTimer?.invalidate()
+        audioLevelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.isMicMuted else { return }
+                if self.currentAudioLevel > 0 {
+                    self.currentAudioLevel = max(0, self.currentAudioLevel - 0.01)
+                }
+            }
+        }
+    }
+
+    private func stopAudioLevelMonitoring() {
+        audioLevelTimer?.invalidate()
+        audioLevelTimer = nil
+        currentAudioLevel = 0
+    }
+
+    // MARK: - Session Management
+
+    func startSession(with filter: SCContentFilter) {
+        let config = GeminiLiveConfiguration()
+        guard !config.apiKey.isEmpty else {
+            print("[GeminiLiveManager] API key not configured")
+            return
+        }
+
+        currentScreenFilter = filter
+        isMicMuted = false
+        currentAudioLevel = 0
+
+        let genCfg: [String: Any] = [
+            "temperature": 1.0,
+            "topP": 0.95,
+            "topK": 64,
+            "maxOutputTokens": 8192,
+            "responseModalities": ["AUDIO"]
+        ]
+
+        liveSession.connect(
+            apiKey: config.apiKey,
+            model: config.model,
+            systemInstruction: config.systemInstruction,
+            generationConfig: genCfg
+        )
+        isWaitingForSetupComplete = true
+
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            if self?.isWaitingForSetupComplete == true {
+                print("[GeminiLiveManager] Setup timed out")
+                self?.cleanupSession()
             }
         }
     }
 
     public func signalEndOfUserTurn() {
-        Task {
-            do {
-                self.isMicMuted = true
-                self.isSendingUserAudio = false
-                let finalPart = GeminiWebSocketMessage.ContentInput.Part(text: "That's all, please respond based on what you've seen and heard.")
-                let turn = GeminiWebSocketMessage.ContentInput.Turn(parts: [finalPart])
-                let payload = GeminiWebSocketMessage.ContentInput.Payload(turns: [turn], turnComplete: true)
-                let message = GeminiWebSocketMessage.ContentInput(clientContent: payload)
-                try await send(message: message)
-            } catch { print("[GeminiLiveManager] Error signaling end of turn: \(error)") }
-        }
+        guard isSessionRunning else { return }
+        liveSession.sendClientContent(turns: [], turnComplete: true)
     }
 
     func stopSession() {
-        Task {
-            await cleanupSession()
-        }
+        guard isSessionRunning || liveSession.isConnected else { return }
+        cleanupSession()
     }
 
-    private func cleanupSession() async {
-        guard isSessionRunning else { return }
+    private func cleanupSession() {
+        let wasRunning = isSessionRunning
+
+        stopAudioCapture()
+        stopPlaybackEngine()
+        stopAudioLevelMonitoring()
+        liveSession.disconnect()
+
         isSessionRunning = false
-
-        sessionTask?.cancel()
-        webSocketTask?.cancel(with: .goingAway, reason: nil)
-
-        if let streamToStop = self.stream {
-            Task.detached {
-                do {
-                    try await streamToStop.stopCapture()
-                } catch {
-                    print("[GeminiLiveManager] stopCapture() threw an error: \(error.localizedDescription)")
-                }
-            }
-        }
-
-        stopCaptureAudio()
-
-        if playbackEngine.isRunning {
-            audioPlayer.stop()
-            audioPlayer.reset()
-            playbackEngine.stop()
-            playbackEngine.reset()
-        }
-
-        currentAudioLevel = 0
-        audioLevelResetTimer?.invalidate()
-
-        sessionDidEndPublisher.send()
-    }
-
-    private func send<T: Encodable>(message: T) async throws {
-        guard let webSocketTask = webSocketTask, webSocketTask.closeCode == .invalid else {
-            return
-        }
-
-        let encoder = JSONEncoder()
-        let jsonData = try encoder.encode(message)
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-
-        try await webSocketTask.send(.string(jsonString))
-    }
-
-    private func sendSetupMessage() async throws {
-        let payload = GeminiWebSocketMessage.Setup.Payload(model: GeminiAPI.modelName)
-        let message = GeminiWebSocketMessage.Setup(setup: payload)
-        try await send(message: message)
-    }
-
-    private func receiveMessages() async throws {
-        guard let webSocketTask = webSocketTask else { return }
-
-        while !Task.isCancelled {
-            let message = try await webSocketTask.receive()
-            switch message {
-            case .data(let data):
-                try self.handleReceivedJSONData(data)
-            case .string(let text):
-                try self.handleReceivedJSONData(Data(text.utf8))
-            @unknown default:
-                fatalError("Received unknown WebSocket message type.")
-            }
-        }
-    }
-
-    private func handleReceivedJSONData(_ data: Data) throws {
-        let decoder = JSONDecoder()
-        if (try? decoder.decode(ServerSetupComplete.self, from: data)) != nil {
-            Task {
-                let initialPart = GeminiWebSocketMessage.ContentInput.Part(text: "Say 'Hi, what can I help you with?'")
-                let turn = GeminiWebSocketMessage.ContentInput.Turn(parts: [initialPart])
-                let payload = GeminiWebSocketMessage.ContentInput.Payload(turns: [turn], turnComplete: true)
-                let message = GeminiWebSocketMessage.ContentInput(clientContent: payload)
-                try await self.send(message: message)
-            }
-        } else if let audioOutput = try? decoder.decode(ServerAudioOutput.self, from: data),
-                  let audioDataB64 = audioOutput.serverContent.modelTurn.parts.first?.inlineData.data,
-                  let audioData = Data(base64Encoded: audioDataB64) {
-
-            self.currentAudioLevel = self.calculateAudioLevel(from: audioData)
-            self.playAudioData(audioData)
-
-            let audioDuration = Double(audioData.count) / (geminiAudioFormat.sampleRate * 2)
-            self.audioLevelResetTimer?.invalidate()
-            self.audioLevelResetTimer = Timer.scheduledTimer(withTimeInterval: audioDuration + 0.2, repeats: false) { _ in
-                Task { @MainActor in self.currentAudioLevel = 0 }
-            }
-
-        } else if let interruptedMessage = try? decoder.decode(ServerInterrupted.self, from: data),
-                  interruptedMessage.serverContent.interrupted {
-            self.stopAndClearPlayback()
-
-        } else if let turnComplete = try? decoder.decode(ServerTurnComplete.self, from: data) {
-            if turnComplete.serverContent.turnComplete {
-
-                self.isMicMuted = false
-                self.isSendingUserAudio = false
-            }
-        } else {
-            let jsonString = String(data: data, encoding: .utf8) ?? "Undecodable binary"
-        }
-    }
-
-    private func setupPlaybackEngine() {
-        playerAudioFormat = AVAudioFormat(standardFormatWithSampleRate: geminiAudioFormat.sampleRate, channels: geminiAudioFormat.channelCount)!
-        audioConverter_Playback = AVAudioConverter(from: geminiAudioFormat, to: playerAudioFormat)!
-        playbackEngine.attach(audioPlayer)
-        playbackEngine.connect(audioPlayer, to: playbackEngine.outputNode, format: playerAudioFormat)
-        playbackEngine.prepare()
-    }
-
-    private func playAudioData(_ data: Data) {
-        guard let geminiBuffer = data.toPCMBuffer(format: geminiAudioFormat) else { return }
-        let playerBuffer = AVAudioPCMBuffer(pcmFormat: playerAudioFormat, frameCapacity: geminiBuffer.frameCapacity)!
         isMicMuted = true
-        do {
-            try audioConverter_Playback.convert(to: playerBuffer, from: geminiBuffer)
-            if !playbackEngine.isRunning { try playbackEngine.start() }
-            if !audioPlayer.isPlaying { audioPlayer.play() }
-            audioPlayer.scheduleBuffer(playerBuffer)
-        } catch { print("[GeminiLiveManager] Playback audio conversion error: \(error)") }
-    }
+        currentAudioLevel = 0
+        isWaitingForSetupComplete = false
+        currentScreenFilter = nil
 
-    private func stopAndClearPlayback() {
-        isMicMuted = false
-        audioPlayer.stop()
-        audioPlayer.reset()
-    }
-
-    private func startCaptureAudio() throws {
-        captureEngine = AVAudioEngine()
-        guard let captureEngine = captureEngine else { return }
-
-        let inputNode = captureEngine.inputNode
-        let sourceFormat = inputNode.outputFormat(forBus: 0)
-        let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
-
-        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
-            throw NSError(domain: "GeminiLiveManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create audio converter"])
-        }
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: sourceFormat) { [weak self] inputBuffer, _ in
-            guard let self = self else { return }
-            self.audioProcessingQueue.async {
-                guard self.isSessionRunning, !self.isMicMuted else { return }
-
-                if self.isSendingUserAudio {
-                    self.convertAndSend(buffer: inputBuffer, using: converter)
-                } else {
-                    let level = self.calculateRMSAudioLevel(fromBuffer: inputBuffer)
-                    if level > self.vadThreshold {
-                        self.isSendingUserAudio = true
-                        self.convertAndSend(buffer: inputBuffer, using: converter)
-                    }
-                }
-            }
-        }
-        captureEngine.prepare()
-        try captureEngine.start()
-    }
-
-    private func convertAndSend(buffer: AVAudioPCMBuffer, using converter: AVAudioConverter) {
-        let targetFormat = converter.outputFormat
-        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
-        let outputFrameCount = AVAudioFrameCount(ceil(Double(buffer.frameLength) * ratio))
-
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCount) else { return }
-
-        var error: NSError?
-        var providedInput = false
-        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
-            if providedInput { outStatus.pointee = .noDataNow; return nil }
-            outStatus.pointee = .haveData; providedInput = true; return buffer
-        }
-
-        let status = converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
-        if status == .error { return }
-
-        guard let pcmData = outputBuffer.toData(), !pcmData.isEmpty else { return }
-
-        let base64String = pcmData.base64EncodedString()
-        let chunk = GeminiWebSocketMessage.AudioInput.MediaChunk(mimeType: "audio/pcm;rate=16000", data: base64String)
-        let payload = GeminiWebSocketMessage.AudioInput.Payload(mediaChunks: [chunk])
-        let message = GeminiWebSocketMessage.AudioInput(realtimeInput: payload)
-
-        Task { try? await self.send(message: message) }
-    }
-
-    private func stopCaptureAudio() {
-        guard let captureEngine = captureEngine, captureEngine.isRunning else {
-            return
-        }
-        captureEngine.stop()
-        captureEngine.inputNode.removeTap(onBus: 0)
-        self.captureEngine = nil
-    }
-
-    private func captureAndSendScreen(with filter: SCContentFilter) async throws {
-        let config = SCStreamConfiguration()
-        config.width = 1024; config.height = 768
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-        config.queueDepth = 5
-        stream = SCStream(filter: filter, configuration: config, delegate: self)
-        try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoFrameOutputQueue)
-        try await stream?.startCapture()
-        try await Task.sleep(nanoseconds: .max)
-    }
-
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid, isSessionRunning else { return }
-        guard let pixelBuffer = sampleBuffer.imageBuffer else { return }
-
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        guard let cgImage = imageContext.createCGImage(ciImage, from: ciImage.extent),
-              let jpegData = NSBitmapImageRep(cgImage: cgImage).representation(using: .jpeg, properties: [.compressionFactor: 0.7]) else { return }
-
-        let base64String = jpegData.base64EncodedString()
-
-        let chunk = GeminiWebSocketMessage.VideoInput.MediaChunk(mimeType: "image/jpeg", data: base64String)
-        let payload = GeminiWebSocketMessage.VideoInput.Payload(video: chunk)
-        let message = GeminiWebSocketMessage.VideoInput(realtimeInput: payload)
-
-        Task {
-            try? await self.send(message: message)
+        if wasRunning {
+            sessionDidEndPublisher.send()
         }
     }
 
-    func stream(_ stream: SCStream, didStopWithError error: Error) {
-        Task { @MainActor in
-            self.stream = nil
-            await self.cleanupSession()
+    deinit {
+        audioLevelTimer?.invalidate()
+        audioLevelTimer = nil
+        if let engine = captureEngine {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
         }
-    }
-
-    private func calculateRMSAudioLevel(fromBuffer buffer: AVAudioPCMBuffer) -> Float {
-        guard let floatChannelData = buffer.floatChannelData else { return 0.0 }
-        let channelCount = Int(buffer.format.channelCount)
-        let frameLength = Int(buffer.frameLength)
-        var rms: Float = 0.0
-        for channel in 0..<channelCount {
-            var sum: Float = 0.0
-            let data = floatChannelData[channel]
-            for i in 0..<frameLength { sum += (data[i] * data[i]) }
-            rms += sqrt(sum / Float(frameLength))
-        }
-        return rms / Float(channelCount)
-    }
-
-    private func calculateAudioLevel(from pcmData: Data) -> Float {
-        guard !pcmData.isEmpty else { return 0.0 }
-
-        let count = pcmData.count / 2
-        var sumOfSquares: Double = 0.0
-
-        pcmData.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
-            let samples = bytes.bindMemory(to: Int16.self)
-            for i in 0..<count {
-                let sample = Double(samples[i]) / 32767.0
-                sumOfSquares += sample * sample
-            }
-        }
-
-        let rms = sqrt(sumOfSquares / Double(count))
-        let amplifier: Double = 5.0
-        return Float(min(1.0, rms * amplifier))
-    }
-}
-
-fileprivate extension Data {
-    func toPCMBuffer(format: AVAudioFormat) -> AVAudioPCMBuffer? {
-        let frameCapacity = UInt32(self.count) / format.streamDescription.pointee.mBytesPerFrame
-        guard frameCapacity > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity) else { return nil }
-        buffer.frameLength = frameCapacity
-        self.withUnsafeBytes { srcBuffer in
-            if let baseAddress = srcBuffer.baseAddress, let dest = buffer.int16ChannelData?[0] {
-                memcpy(dest, baseAddress, self.count)
-            }
-        }
-        return buffer
-    }
-}
-
-fileprivate extension AVAudioPCMBuffer {
-    func toData() -> Data? {
-
-        let frameLength = Int(self.frameLength)
-        let channelCount = Int(self.format.channelCount)
-        let bytesPerFrame = Int(self.format.streamDescription.pointee.mBytesPerFrame)
-        let dataSize = frameLength * bytesPerFrame
-
-        guard dataSize > 0, channelCount == 1, let channelData = self.int16ChannelData else { return nil }
-
-        return Data(bytes: channelData[0], count: dataSize)
+        playerNode.stop()
+        playbackEngine.stop()
+        liveSession.disconnect()
     }
 }

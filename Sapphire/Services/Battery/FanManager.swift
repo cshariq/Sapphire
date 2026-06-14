@@ -93,7 +93,8 @@ class FanManager: ObservableObject {
 
     private func startMonitoring() {
         updateTimer?.invalidate()
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        // Increased from 2s to 3s to reduce SMC polling frequency
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             self?.updateData()
         }
     }
@@ -102,14 +103,22 @@ class FanManager: ObservableObject {
         Task {
             guard let helper = getHelper() else { return }
 
-            for i in 0..<fans.count {
-                if let updatedFan = await helper.getFanInfo(fanIndex: i) {
-                    self.fans[i].currentRPM = updatedFan.currentRPM
+            await withTaskGroup(of: Void.self) { group in
+                for i in 0..<fans.count {
+                    group.addTask { [i] in
+                        if let updatedFan = await helper.getFanInfo(fanIndex: i) {
+                            await MainActor.run { self.fans[i].currentRPM = updatedFan.currentRPM }
+                        }
+                    }
                 }
-            }
-
-            for i in 0..<sensors.count {
-                self.sensors[i].value = await helper.getSensorValue(key: sensors[i].key)
+                for i in 0..<sensors.count {
+                    group.addTask { [key = sensors[i].key] in
+                        let newValue = await helper.getSensorValue(key: key)
+                        if newValue >= 0 {
+                            await MainActor.run { self.sensors[i].value = newValue }
+                        }
+                    }
+                }
             }
 
             applySensorBasedControl()
@@ -161,6 +170,12 @@ class FanManager: ObservableObject {
 
     func getMode(for fanIndex: Int) -> FanControlMode {
         return fanModes[fanIndex] ?? .auto
+    }
+
+    func markAllFansAutomatic() {
+        for index in fans.indices {
+            fanModes[index] = .auto
+        }
     }
 
     private func getHelper() -> HelperProtocol? {

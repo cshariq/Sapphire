@@ -13,7 +13,7 @@ extension Notification.Name {
 }
 
 private func launchpadEventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    guard let refcon = refcon else { return Unmanaged.passRetained(event) }
+    guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
     let interceptor = Unmanaged<LaunchpadInputInterceptor>.fromOpaque(refcon).takeUnretainedValue()
     return interceptor.handle(event: event, type: type)
 }
@@ -40,15 +40,13 @@ class LaunchpadInputInterceptor {
         isMonitoring = true
         isAwaitingFirstTypingKey = true
 
-//        let eventTypes: [CGEventType] = [
-//            .keyDown, .keyUp, .flagsChanged,
-//            .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
-//            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .scrollWheel
-//        ]
-//        let eventsToMonitor = eventTypes.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
+        let eventTypes: [CGEventType] = [
+            .keyDown, .flagsChanged
+        ]
+        let eventsToMonitor = eventTypes.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
         let selfAsUnsafeMutableRawPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
-//        eventTap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: eventsToMonitor, callback: launchpadEventTapCallback, userInfo: selfAsUnsafeMutableRawPointer)
+        eventTap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly, eventsOfInterest: eventsToMonitor, callback: launchpadEventTapCallback, userInfo: selfAsUnsafeMutableRawPointer)
 
         guard let eventTap = eventTap else {
             print("[LaunchpadInputInterceptor] FATAL ERROR: Failed to create event tap.")
@@ -57,7 +55,7 @@ class LaunchpadInputInterceptor {
 
         let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-//        CGEvent.tapEnable(tap: eventTap, enable: true)
+        CGEvent.tapEnable(tap: eventTap, enable: true)
         print("[LaunchpadInputInterceptor] Smart event filter enabled.")
     }
 
@@ -74,29 +72,22 @@ class LaunchpadInputInterceptor {
     }
 
     fileprivate func handle(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
-        let sapphirePID = ProcessInfo.processInfo.processIdentifier
-
         switch type {
-        case .keyDown, .keyUp, .flagsChanged:
+        case .keyDown:
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if type == .keyDown && isAwaitingFirstTypingKey && !nonTypingKeyCodes.contains(keyCode) {
+            if isAwaitingFirstTypingKey && !nonTypingKeyCodes.contains(keyCode) {
                 self.isAwaitingFirstTypingKey = false
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .userStartedTypingInLaunchpad, object: nil)
                 }
             }
-            event.postToPid(sapphirePID)
-            return nil
+            return Unmanaged.passUnretained(event)
+
+        case .flagsChanged:
+            return Unmanaged.passUnretained(event)
 
         default:
-            let mouseLocation = event.location
-
-            if dockFrame.contains(mouseLocation) || folderFrame.contains(mouseLocation) {
-                return Unmanaged.passRetained(event)
-            } else {
-                event.postToPid(sapphirePID)
-                return nil
-            }
+            return Unmanaged.passUnretained(event)
         }
     }
 }

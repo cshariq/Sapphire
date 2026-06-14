@@ -5,20 +5,96 @@
 //  Created by Shariq Charolia on 2025-08-17.
 //
 
-import Foundation
+import AppKit
 import Combine
+import Foundation
 import os.log
 
 @MainActor
 class CaffeineManager: ObservableObject {
     static let shared = CaffeineManager()
+
     private let settings = SettingsModel.shared
+    private let lidAngleSensor = LidAngleSensor.shared
     @Published private(set) var isActive = false
 
     private var caffeineTask: Process?
-    private var isUsingClamshellMode = false
+    private var rootDomainClamshellActive = false
+    private var helperSleepDisabledActive = false
+    private var forceClamshellGuard = false
+    private var cancellables = Set<AnyCancellable>()
+    private var dimmedScreenForLidAngle = false
+    private var savedBrightnessBeforeScreenOff: Float?
+    private var shouldRemainActive = false
+    private var watchdogTimer: Timer?
+    private var lastKnownClamshellClosed = false
+    private var clamshellReleaseDebounceTask: Task<Void, Never>?
+    private var powerGuardRefreshDebounceTask: Task<Void, Never>?
+    private var screenParameterDebounceTask: Task<Void, Never>?
+    private var pendingClamshellOpen = false
 
-    private init() {}
+    /// Hysteresis: require consecutive "open" readings before releasing detector-only guards.
+    private var consecutiveClamshellOpenReadings = 0
+    private let clamshellOpenReadingsRequired = 3
+
+    private init() {
+        lidAngleSensor.$angle
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleClamshellOrLidChange()
+            }
+            .store(in: &cancellables)
+
+        lidAngleSensor.$isAvailable
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.handleClamshellOrLidChange()
+            }
+            .store(in: &cancellables)
+
+        settings.$settings
+            .map {
+                (
+                    $0.sleepInClamshell,
+                    $0.persistentCaffeinateAfterClamshell,
+                    $0.caffeinateTurnOffScreenUsingLidAngle,
+                    $0.caffeinateLidAngleTrigger
+                )
+            }
+            .removeDuplicates { $0 == $1 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateLidAngleSensorRequirement()
+                self?.evaluateLidAngleScreenOff()
+                self?.schedulePowerGuardRefresh()
+            }
+            .store(in: &cancellables)
+
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceCenter.publisher(for: NSWorkspace.willSleepNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshPowerGuardsIfNeeded()
+            }
+            .store(in: &cancellables)
+
+        workspaceCenter.publisher(for: NSWorkspace.didWakeNotification)
+            .merge(with: workspaceCenter.publisher(for: NSWorkspace.screensDidWakeNotification))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.restoreCaffeinateIfNeeded()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.scheduleClamshellReevaluation()
+            }
+            .store(in: &cancellables)
+
+        updateLidAngleSensorRequirement()
+    }
 
     func toggle() {
         if isActive {
@@ -29,68 +105,403 @@ class CaffeineManager: ObservableObject {
     }
 
     func start(forcePreventSleepInClamshell: Bool = false) {
-        guard !isActive else { return }
+        shouldRemainActive = true
+        if forcePreventSleepInClamshell {
+            self.forceClamshellGuard = true
+        }
 
-        if forcePreventSleepInClamshell || settings.settings.sleepInClamshell {
-            // MARK: Clamshell Mode (XPC Method)
-            guard let helper = BatteryManager.shared.getHelper() else {
-                os_log("CaffeineManager: Could not connect to helper tool.")
+        if isActive {
+            refreshAllPowerGuards()
+            evaluateLidAngleScreenOff()
+            return
+        }
+
+        refreshAllPowerGuards()
+        startWatchdogIfNeeded()
+        evaluateLidAngleScreenOff()
+    }
+
+    func stop() {
+        shouldRemainActive = false
+        forceClamshellGuard = false
+        stopWatchdog()
+        clamshellReleaseDebounceTask?.cancel()
+        powerGuardRefreshDebounceTask?.cancel()
+        screenParameterDebounceTask?.cancel()
+        pendingClamshellOpen = false
+        consecutiveClamshellOpenReadings = 0
+
+        releaseIOPMAssertions()
+        terminateCaffeinateProcess()
+        releaseClamshellGuardIfNeeded()
+        ClamshellDetector.resetStickyState()
+
+        isActive = false
+        updateLidAngleSensorRequirement()
+        restoreBrightnessIfNeeded()
+    }
+
+    // MARK: - Layered Power Guards
+
+    private func refreshAllPowerGuards() {
+        let assertionOK = acquireIOPMAssertions()
+        let caffeinateOK = ensureCaffeinateProcessRunning()
+
+        if shouldAcquireClamshellGuard() {
+            pendingClamshellOpen = false
+            consecutiveClamshellOpenReadings = 0
+            clamshellReleaseDebounceTask?.cancel()
+            acquireClamshellGuardIfNeeded()
+        }
+
+        updateActiveState(assertionOK: assertionOK, caffeinateOK: caffeinateOK)
+        lastKnownClamshellClosed = ClamshellDetector.isClosed
+    }
+
+    private func scheduleClamshellReevaluation() {
+        guard shouldRemainActive else { return }
+        screenParameterDebounceTask?.cancel()
+        screenParameterDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self, self.shouldRemainActive else { return }
+            self.handleClamshellOrLidChange()
+        }
+    }
+
+    private func schedulePowerGuardRefresh() {
+        guard shouldRemainActive else { return }
+        powerGuardRefreshDebounceTask?.cancel()
+        powerGuardRefreshDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled, let self, self.shouldRemainActive else { return }
+            self.refreshAllPowerGuards()
+        }
+    }
+
+    private func shouldAcquireClamshellGuard() -> Bool {
+        forceClamshellGuard
+            || settings.settings.sleepInClamshell
+            || settings.settings.persistentCaffeinateAfterClamshell
+            || ClamshellDetector.isClosed
+    }
+
+    /// Keep clamshell sleep disabled for the whole caffeinate session when any sticky setting is on.
+    private func shouldKeepClamshellGuardForSession() -> Bool {
+        forceClamshellGuard
+            || settings.settings.sleepInClamshell
+            || settings.settings.persistentCaffeinateAfterClamshell
+    }
+
+    private func scheduleClamshellReleaseIfNeeded() {
+        guard shouldRemainActive else { return }
+        guard !shouldKeepClamshellGuardForSession() else { return }
+        guard rootDomainClamshellActive || helperSleepDisabledActive else { return }
+
+        clamshellReleaseDebounceTask?.cancel()
+        pendingClamshellOpen = true
+        clamshellReleaseDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self, self.shouldRemainActive else { return }
+            guard !self.shouldKeepClamshellGuardForSession() else { return }
+            guard !ClamshellDetector.isClosed else {
+                self.pendingClamshellOpen = false
                 return
             }
+            self.releaseClamshellGuardIfNeeded()
+            self.pendingClamshellOpen = false
+            self.refreshAllPowerGuards()
+        }
+    }
 
-            helper.preventSystemSleep { [weak self] error in
-                if let error = error {
-                    os_log("CaffeineManager: Helper failed to prevent sleep: %{public}@", error.localizedDescription)
-                    self?.isActive = false
-                } else {
-                    self?.isUsingClamshellMode = true
-                    self?.isActive = true
-                    print("[CaffeineManager] System sleep prevented via helper for clamshell mode.")
+    private func refreshPowerGuardsIfNeeded() {
+        guard shouldRemainActive else { return }
+        refreshAllPowerGuards()
+    }
+
+    private func restoreCaffeinateIfNeeded() {
+        guard shouldRemainActive else { return }
+
+        let reassertClamshellGuard =
+            shouldKeepClamshellGuardForSession()
+            || ClamshellDetector.isClosed
+
+        if !isActive {
+            refreshAllPowerGuards()
+            startWatchdogIfNeeded()
+            evaluateLidAngleScreenOff()
+            return
+        }
+
+        if reassertClamshellGuard {
+            acquireClamshellGuardIfNeeded()
+        }
+
+        refreshAllPowerGuards()
+        evaluateLidAngleScreenOff()
+    }
+
+    private func handleClamshellOrLidChange() {
+        evaluateLidAngleScreenOff()
+        guard shouldRemainActive else { return }
+
+        let clamshellClosed = ClamshellDetector.isClosed
+        if clamshellClosed {
+            consecutiveClamshellOpenReadings = 0
+            pendingClamshellOpen = false
+            clamshellReleaseDebounceTask?.cancel()
+        } else {
+            consecutiveClamshellOpenReadings += 1
+        }
+
+        guard clamshellClosed != lastKnownClamshellClosed else { return }
+        lastKnownClamshellClosed = clamshellClosed
+
+        if clamshellClosed {
+            refreshAllPowerGuards()
+            return
+        }
+
+        guard consecutiveClamshellOpenReadings >= clamshellOpenReadingsRequired else { return }
+        scheduleClamshellReleaseIfNeeded()
+    }
+
+    private func shouldUseClamshellGuard() -> Bool {
+        shouldAcquireClamshellGuard()
+    }
+
+    private func acquireClamshellGuardIfNeeded() {
+        if rootDomainClamshellActive {
+            setClamshellSleepDisabled(true)
+            updateActiveState()
+            return
+        }
+
+        if helperSleepDisabledActive {
+            updateActiveState()
+            return
+        }
+
+        if setClamshellSleepDisabled(true) {
+            rootDomainClamshellActive = true
+            releaseHelperSleepDisabledIfNeeded()
+            print("[CaffeineManager] Clamshell sleep disabled via IOPMrootDomain.")
+            updateActiveState()
+            return
+        }
+
+        os_log("CaffeineManager: IOPMrootDomain clamshell guard unavailable, falling back to helper.")
+        requestHelperSleepDisabled(true)
+    }
+
+    private func releaseClamshellGuardIfNeeded() {
+        if rootDomainClamshellActive {
+            if setClamshellSleepDisabled(false) {
+                print("[CaffeineManager] Clamshell sleep restored via IOPMrootDomain.")
+            } else {
+                os_log("CaffeineManager: Failed to restore clamshell sleep via IOPMrootDomain.")
+            }
+            rootDomainClamshellActive = false
+        }
+
+        releaseHelperSleepDisabledIfNeeded()
+    }
+
+    private func acquireIOPMAssertions() -> Bool {
+        acquirePreventSleepAssertions()
+    }
+
+    private func releaseIOPMAssertions() {
+        releasePreventSleepAssertions()
+    }
+
+    @discardableResult
+    private func ensureCaffeinateProcessRunning() -> Bool {
+        if let task = caffeineTask, task.isRunning {
+            return true
+        }
+
+        caffeineTask = nil
+        return startCaffeinateProcess()
+    }
+
+    @discardableResult
+    private func startCaffeinateProcess() -> Bool {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
+        task.arguments = ["-d", "-i", "-m", "-s"]
+        task.terminationHandler = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.shouldRemainActive else { return }
+                self.caffeineTask = nil
+                if self.ensureCaffeinateProcessRunning() {
+                    self.updateActiveState()
                 }
             }
-        } else {
-            // MARK: Default Mode (Caffeinate Command)
-            caffeineTask = Process()
-            caffeineTask?.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
-            caffeineTask?.arguments = ["-d", "-i", "-s"]
+        }
 
-            do {
-                try caffeineTask?.run()
-                isUsingClamshellMode = false
-                isActive = true
-                print("[CaffeineManager] Caffeinate process started.")
-            } catch {
-                print("[CaffeineManager] Failed to start caffeinate process: \(error)")
-                caffeineTask = nil
-                isActive = false
+        do {
+            try task.run()
+            caffeineTask = task
+            return true
+        } catch {
+            os_log("CaffeineManager: Failed to start caffeinate process: %{public}@", error.localizedDescription)
+            caffeineTask = nil
+            return false
+        }
+    }
+
+    private func terminateCaffeinateProcess() {
+        guard let task = caffeineTask else { return }
+        task.terminationHandler = nil
+        if task.isRunning {
+            task.terminate()
+        }
+        caffeineTask = nil
+    }
+
+    private func requestHelperSleepDisabled(_ disabled: Bool) {
+        guard disabled else {
+            releaseHelperSleepDisabledIfNeeded()
+            return
+        }
+
+        guard !helperSleepDisabledActive else { return }
+
+        guard let helper = BatteryManager.shared.getHelper() else {
+            os_log("CaffeineManager: Helper unavailable for clamshell sleep prevention.")
+            updateActiveState()
+            return
+        }
+
+        helper.preventSystemSleep { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                if let error {
+                    os_log(
+                        "CaffeineManager: Helper failed to prevent sleep: %{public}@",
+                        error.localizedDescription
+                    )
+                    self.helperSleepDisabledActive = false
+                } else {
+                    self.helperSleepDisabledActive = true
+                    print("[CaffeineManager] System sleep disabled via helper.")
+                }
+
+                self.updateActiveState()
             }
         }
     }
 
-    func stop() {
-        guard isActive else { return }
+    private func releaseHelperSleepDisabledIfNeeded() {
+        guard helperSleepDisabledActive else { return }
 
-        if isUsingClamshellMode {
-            // MARK: Restore Sleep via XPC
-            guard let helper = BatteryManager.shared.getHelper() else {
-                os_log("CaffeineManager: Could not connect to helper tool to restore sleep.")
-                return
-            }
-            helper.allowSystemSleep { error in
-                if let error = error {
-                    os_log("CaffeineManager: Helper failed to restore sleep: %{public}@", error.localizedDescription)
+        guard let helper = BatteryManager.shared.getHelper() else {
+            helperSleepDisabledActive = false
+            os_log("CaffeineManager: Helper unavailable while restoring sleep settings.")
+            return
+        }
+
+        helper.allowSystemSleep { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                if let error {
+                    os_log(
+                        "CaffeineManager: Helper failed to restore sleep: %{public}@",
+                        error.localizedDescription
+                    )
                 } else {
                     print("[CaffeineManager] System sleep restored via helper.")
                 }
+
+                self.helperSleepDisabledActive = false
             }
-        } else if let task = caffeineTask {
-            // MARK: Terminate Caffeinate Process
-            task.terminate()
-            caffeineTask = nil
-            print("[CaffeineManager] Caffeinate process terminated.")
+        }
+    }
+
+    private func updateActiveState(
+        assertionOK: Bool? = nil,
+        caffeinateOK: Bool? = nil
+    ) {
+        let assertionsActive = assertionOK ?? preventSleepAssertionsAreActive()
+        let caffeinateRunning = caffeinateOK ?? (caffeineTask?.isRunning == true)
+        let clamshellGuardActive = rootDomainClamshellActive || helperSleepDisabledActive
+        let needsClamshellGuard = shouldUseClamshellGuard()
+
+        if needsClamshellGuard {
+            isActive = assertionsActive || caffeinateRunning || clamshellGuardActive
+        } else {
+            isActive = assertionsActive || caffeinateRunning
         }
 
-        isActive = false
-        isUsingClamshellMode = false
+        updateLidAngleSensorRequirement()
+    }
+
+    // MARK: - Watchdog
+
+    private func startWatchdogIfNeeded() {
+        guard watchdogTimer == nil else { return }
+
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.runWatchdog()
+            }
+        }
+    }
+
+    private func stopWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
+    }
+
+    private func runWatchdog() {
+        guard shouldRemainActive else {
+            stopWatchdog()
+            return
+        }
+
+        refreshAllPowerGuards()
+    }
+
+    // MARK: - Lid Angle Screen Dimming
+
+    private func evaluateLidAngleScreenOff() {
+        let shouldTurnScreenOff =
+            isActive &&
+            settings.settings.caffeinateTurnOffScreenUsingLidAngle &&
+            lidAngleSensor.isAvailable &&
+            lidAngleSensor.angle <= settings.settings.caffeinateLidAngleTrigger
+
+        if shouldTurnScreenOff {
+            guard !dimmedScreenForLidAngle else { return }
+            savedBrightnessBeforeScreenOff = SystemControl.getBrightness()
+            SystemControl.setBrightnessSmoothly(to: 0, duration: 0.12)
+            dimmedScreenForLidAngle = true
+            return
+        }
+
+        restoreBrightnessIfNeeded()
+    }
+
+    private func updateLidAngleSensorRequirement() {
+        let needsSensor =
+            isActive &&
+            settings.settings.caffeinateTurnOffScreenUsingLidAngle
+
+        if needsSensor {
+            lidAngleSensor.acquire(.caffeineManager)
+        } else {
+            lidAngleSensor.release(.caffeineManager)
+        }
+    }
+
+    private func restoreBrightnessIfNeeded() {
+        guard dimmedScreenForLidAngle else { return }
+
+        let targetBrightness = savedBrightnessBeforeScreenOff ?? max(0.2, settings.settings.brightness)
+        savedBrightnessBeforeScreenOff = nil
+        dimmedScreenForLidAngle = false
+        SystemControl.setBrightnessSmoothly(to: targetBrightness, duration: 0.15)
     }
 }

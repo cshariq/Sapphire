@@ -9,10 +9,6 @@ import Foundation
 
 class LyricsFetcher {
 
-    private static let decoder: JSONDecoder = {
-        return JSONDecoder()
-    }()
-
     func fetchSyncedLyrics(for title: String, artist: String, album: String) async -> [LyricLine]? {
 
         var components = URLComponents(string: "https://lrclib.net/api/get")!
@@ -108,6 +104,7 @@ class LyricsFetcher {
     }
 
     func translate(lyrics: inout [LyricLine], from sourceLanguage: String, to targetLanguage: String) async {
+
         struct UnofficialGoogleTranslateResponse: Decodable {
             let translatedText: String?
             init(from decoder: Decoder) throws {
@@ -165,4 +162,11 @@ class LyricsFetcher {
             }
         }
     }
+
+    private static let decoder: JSONDecoder = {
+        return JSONDecoder()
+    }()
 }
+// MARK: - Note
+// All subscription/auth/payment logic lives in SubscriptionKit/* and is injected here only via FeatureGate/SubscriptionManager.
+

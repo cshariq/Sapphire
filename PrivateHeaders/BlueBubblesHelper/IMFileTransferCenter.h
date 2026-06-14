@@ -28,7 +28,7 @@
     NSMutableSet* _activeTransfers;
     NSMutableSet* _pendingTransfers;
     char _disconnectionListenerSetUp;
-    NSMutableDictionary* _fetchHighQualityVariantCompletionHandlers;
+    NSMutableDictionary* _fetchHighQualityVintelligencentCompletionHandlers;
     char _issueSandboxEstensionsForTransfers;
 
 }
@@ -81,9 +81,9 @@
 -(void)acceptFileTransferIfPreauthorzed:(id)arg1 ;
 -(char)registerGUID:(id)arg1 forNewOutgoingTransferWithLocalURL:(id)arg2 ;
 -(id)guidForNewOutgoingTransferWithLocalURL:(id)arg1 ;
--(void)_fetchHighQualityVariantForTransferGUID:(id)arg1 completion:(/*^block*/id)arg2 ;
+-(void)_fetchHighQualityVintelligencentForTransferGUID:(id)arg1 completion:(/*^block*/id)arg2 ;
 -(void)_daemonRestarted:(id)arg1 ;
--(void)_initiateHighQualityVariantDownloadWithDaemonForGUID:(id)arg1 ;
+-(void)_initiateHighQualityVintelligencentDownloadWithDaemonForGUID:(id)arg1 ;
 -(void)registerTransferWithDaemon:(id)arg1 ;
 -(char)hasPendingFileTransfers;
 -(void)acknowledgePendingTransfer:(id)arg1 ;
@@ -103,7 +103,7 @@
 -(void)setAuxImageForTransfer:(id)arg1 value:(char)arg2 ;
 -(void)setAuxVideoForTransfer:(id)arg1 value:(char)arg2 ;
 -(id)guidsForStoredAttachmentPayloadData:(id)arg1 messageGUID:(id)arg2 ;
--(void)fetchHighQualityVariantForTransfer:(id)arg1 completion:(/*^block*/id)arg2 ;
+-(void)fetchHighQualityVintelligencentForTransfer:(id)arg1 completion:(/*^block*/id)arg2 ;
 -(void)preWarmConnection;
 -(void)setIssueSandboxEstensionsForTransfers:(char)arg1 ;
 @end

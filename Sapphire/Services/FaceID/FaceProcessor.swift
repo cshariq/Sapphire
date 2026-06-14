@@ -61,9 +61,52 @@ class FaceProcessor {
     }
 
     private func alignFace(from image: NSImage, faceObservation: VNFaceObservation) -> NSImage? {
-        guard let rollNumber = faceObservation.roll else { return image }
-        let rollAngle = CGFloat(truncating: rollNumber)
-        return image.rotated(by: -rollAngle)
+        if let landmarks = faceObservation.landmarks,
+           let leftEyePoints = landmarks.leftEye?.normalizedPoints,
+           let rightEyePoints = landmarks.rightEye?.normalizedPoints,
+           !leftEyePoints.isEmpty, !rightEyePoints.isEmpty {
+
+            let width = image.size.width
+            let height = image.size.height
+            let leftEye = landmarkPoint(averagePoint(leftEyePoints), width: width, height: height)
+            let rightEye = landmarkPoint(averagePoint(rightEyePoints), width: width, height: height)
+
+            let dx = rightEye.x - leftEye.x
+            let dy = rightEye.y - leftEye.y
+            let angle = atan2(dy, dx)
+            let eyeDistance = max(hypot(dx, dy), 1)
+
+            guard var aligned = image.rotated(by: -angle) else { return image }
+
+            let targetEyeDistance = width * 0.42
+            let scale = targetEyeDistance / eyeDistance
+            if abs(scale - 1) > 0.04 {
+                aligned = aligned.scaled(by: scale) ?? aligned
+            }
+            return aligned
+        }
+
+        if let rollNumber = faceObservation.roll {
+            let rollAngle = CGFloat(truncating: rollNumber)
+            return image.rotated(by: -rollAngle)
+        }
+
+        return image
+    }
+
+    private func landmarkPoint(_ point: CGPoint, width: CGFloat, height: CGFloat) -> CGPoint {
+        CGPoint(x: point.x * width, y: point.y * height)
+    }
+
+    private func averagePoint(_ points: [CGPoint]) -> CGPoint {
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        for point in points {
+            x += point.x
+            y += point.y
+        }
+        let count = CGFloat(points.count)
+        return CGPoint(x: x / count, y: y / count)
     }
 
     private func nsImage(from ciImage: CIImage) -> NSImage? {
@@ -92,6 +135,19 @@ extension NSImage {
             context.rotate(by: radians)
             let drawRect = CGRect(x: -self.size.width / 2, y: -self.size.height / 2, width: self.size.width, height: self.size.height)
             context.draw(cgImage, in: drawRect)
+        }
+        newImage.unlockFocus()
+        return newImage
+    }
+
+    func scaled(by scale: CGFloat) -> NSImage? {
+        guard let cgImage = self.cgImage else { return nil }
+        let newSize = CGSize(width: self.size.width * scale, height: self.size.height * scale)
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        if let context = NSGraphicsContext.current?.cgContext {
+            context.interpolationQuality = .high
+            context.draw(cgImage, in: CGRect(origin: .zero, size: newSize))
         }
         newImage.unlockFocus()
         return newImage

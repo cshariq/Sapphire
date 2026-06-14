@@ -17,7 +17,22 @@ class WeatherService: NSObject, CLLocationManagerDelegate {
     private var lastFetchDate: Date?
     private let cacheDuration: TimeInterval = 10 * 60
 
-    private let weatherAPIKey = "e45ff1b7c7bda231216c7ab7c33509b8"
+    private var weatherAPIKey: String {
+        if let key = ProcessInfo.processInfo.environment["WEATHER_API_KEY"], !key.isEmpty {
+            return key
+        }
+        let homeConfig = (NSHomeDirectory() as NSString).appendingPathComponent(".sapphire/WeatherConfig.plist")
+        if let dict = NSDictionary(contentsOfFile: homeConfig),
+           let key = dict["APIKey"] as? String, !key.isEmpty {
+            return key
+        }
+        if let path = Bundle.main.path(forResource: "WeatherConfig", ofType: "plist"),
+           let dict = NSDictionary(contentsOfFile: path),
+           let key = dict["APIKey"] as? String, !key.isEmpty {
+            return key
+        }
+        return ""
+    }
 
     private static let apiDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
