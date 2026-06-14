@@ -1,5 +1,5 @@
 <div align="center">
-  <img width="170" height="170" alt="Sapphire Logo" src="https://github.com/user-attachments/assets/b68ccfe0-2d8e-4eb6-bf23-1296caf6f924" />
+<img width="630" height="630" alt="Group 28" src="https://github.com/user-attachments/assets/c50e3d25-4769-48db-8eeb-f8130243694b" />
   <h1>Sapphire</h1>
   <p><b>The all-in-one mac app that redefines the notch</b></p>
   <a href="https://cshariq.github.io/Sapphire-Website/" style="text-decoration: none; margin-right: 10px;">
@@ -19,15 +19,13 @@
 Sapphire is a sleek notch app that displays current activities neatly around the notch on newer MacBooks. It also includes a suite of convenient features, from nearby share compatibility for easy file transfers to a versatile window snapping system.
 
 ## Known Issues
-  - **High CPU Usage in certain scenarios**
-  - **Unexpected Collapse when opening the music widget**
-    
-**Note:** Multi-Audio functionality is in development, as a result most of its embded function aren't functional
+  - **High CPU and Ram Usage in certain scenarios**
+    - Please report specific scenario
 
 ## Installation
 
 1.  **Download:** Get the latest release from the [releases page](https://github.com/cshariq/Sapphire/releases/tag/Release).
-2.  **Install:** Drag `Sapphire.app` to your `Applications` folder.
+2.  **Install:** Open the downloaded app and follow the installation process.
 3.  **Permissions:** On first launch, you may need to grant accessibility and other permissions in `System Settings` for all features to work correctly.
 
 ## Features
