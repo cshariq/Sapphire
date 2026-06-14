@@ -512,6 +512,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             hostingView.wantsLayer = true
             hostingView.layer?.backgroundColor = NSColor.clear.cgColor
             window.contentView = hostingView
+            window.delegate = self
             onboardingWindow = window
         }
         if let onboardingWindow {
@@ -1172,6 +1173,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+
+        if window === onboardingWindow {
+            NSApp.terminate(nil)
+            return
+        }
 
         let isSettings = window === settingsWindow
         let isLyrics = window === lyricsWindow

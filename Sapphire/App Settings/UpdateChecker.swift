@@ -69,7 +69,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     let latestVersion = release.name.replacingOccurrences(of: "v", with: "")
 
                     if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
-                        if let asset = release.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? release.assets.first(where: { $0.name.hasSuffix(".dmg") }) {
+                        if let asset = release.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? release.assets.first(where: { $0.name.hasSuffix(".pkg") }) {
                             self.status = .available(version: latestVersion, asset: asset)
                         } else {
                             self.status = .error("No suitable download file found.")
@@ -105,7 +105,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     }
                     let latestVersion = betaRelease.name.replacingOccurrences(of: "v", with: "")
                     if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
-                        if let asset = betaRelease.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? betaRelease.assets.first(where: { $0.name.hasSuffix(".dmg") }) {
+                        if let asset = betaRelease.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? betaRelease.assets.first(where: { $0.name.hasSuffix(".pkg") }) {
                             self.status = .available(version: latestVersion, asset: asset)
                         } else {
                             self.status = .error("No suitable beta download file found.")

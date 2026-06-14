@@ -48,14 +48,14 @@ enum SapphireStandardMenu {
 }
 
 enum UtilityWindowPresenter {
-    /// Elevated level for onboarding / beta flows that must sit above the notch.
-    private static let elevatedWindowLevel = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+    /// Normal window level so other apps can appear above when focused.
+    private static let elevatedWindowLevel = NSWindow.Level.normal
 
     /// Standard settings / lyrics windows behave like a normal app window.
     static func presentSettingsWindow(_ window: NSWindow) {
         activateAsRegularApp()
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.level = .normal
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
@@ -72,11 +72,20 @@ enum UtilityWindowPresenter {
 
     static func present(_ window: NSWindow) {
         activateAsRegularApp()
-        window.collectionBehavior.insert(.moveToActiveSpace)
+        window.collectionBehavior.insert(.canJoinAllSpaces)
         window.level = elevatedWindowLevel
-        window.orderFrontRegardless()
-        window.makeKeyAndOrderFront(nil)
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
         window.center()
+
+        // Defer key/front ordering to the next run loop so the
+        // accessory → regular activation policy transition completes first.
+        window.orderFrontRegardless()
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 
     static func activateAsRegularApp() {

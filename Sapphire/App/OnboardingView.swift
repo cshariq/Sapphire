@@ -208,7 +208,7 @@ private struct HelperInstallationStepView: View {
                 .font(.system(size: 32, weight: .bold, design: .rounded))
                 .padding(.top, 40).padding(.bottom, 10)
 
-            Text("Sapphire uses a secure helper for advanced features like battery management and system integrations. This requires administrator approval to install.")
+            Text("Sapphire uses a helper for advanced features like battery management and system integrations. This requires administrator approval to install.")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -260,34 +260,35 @@ private struct HelperInstallationStepView: View {
         }
         .onAppear {
             helperManager.updateStatus()
-            setupPlayer()
+//            setupPlayer()
         }
-        .onDisappear {
-            cleanupPlayer()
-        }
+//        .onDisappear {
+//            cleanupPlayer()
+//        }
     }
 
     private func setupPlayer() {
-        guard let url = Bundle.main.url(forResource: "helper_install_demo", withExtension: "mp4") else {
-            print("Error: helper_install_demo.mp4 not found in app bundle.")
-            return
-        }
+//        guard let url = Bundle.main.url(forResource: "helper_install_demo", withExtension: "mp4") else {
+//            print("Error: helper_install_demo.mp4 not found in app bundle.")
+//            return
+//        }
 
-        let newPlayer = AVPlayer(url: url)
-        newPlayer.isMuted = true
-        newPlayer.actionAtItemEnd = .none
-
-        playerObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: newPlayer.currentItem,
-            queue: .main
-        ) { _ in
-            newPlayer.seek(to: .zero)
-            newPlayer.play()
-        }
-
-        self.player = newPlayer
-        self.player?.play()
+//        let newPlayer = AVPlayer(url: url)
+//        newPlayer.isMuted = true
+//        newPlayer.actionAtItemEnd = .none
+//
+//        playerObserver = NotificationCenter.default.addObserver(
+//            forName: .AVPlayerItemDidPlayToEndTime,
+//            object: newPlayer.currentItem,
+//            queue: .main
+//        ) { _ in
+//            newPlayer.seek(to: .zero)
+//            newPlayer.play()
+//        }
+//
+//        self.player = newPlayer
+//        self.player?.play()
+        return
     }
 
     private func cleanupPlayer() {
@@ -336,7 +337,7 @@ private struct PrivacyStepView: View {
 
                     PrivacySection(
                         title: "Data We NEVER Collect",
-                        content: "We are committed to your privacy. We DO NOT collect, store, or transmit any personal or sensitive information. This includes, but is not limited to:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps"
+                        content: "We are committed to your privacy. We DO NOT automatically collect, store, or transmit any personal or sensitive information. This includes, but is not limited to:\n• Your name, email, or other personal identifiers\n• Screen contents or keyboard input\n• Application data from other apps"
                     )
 
                     PrivacySection(

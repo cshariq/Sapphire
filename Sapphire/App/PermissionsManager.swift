@@ -109,9 +109,14 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     }
 
     private func checkFullDiskAccessStatus() {
-        let testUrl = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
-        let canAccess = FileManager.default.isReadableFile(atPath: testUrl.path)
-        fullDiskAccessStatus = canAccess ? .granted : .notRequested
+        if let preflight = Self.tccPreflight {
+            let result = preflight(Self.serviceSystemPolicyAllFiles, nil)
+            fullDiskAccessStatus = result == 0 ? .granted : .notRequested
+        } else {
+            let testUrl = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
+            let canAccess = FileManager.default.isReadableFile(atPath: testUrl.path)
+            fullDiskAccessStatus = canAccess ? .granted : .notRequested
+        }
     }
 
     func checkAllPermissions() {
@@ -186,9 +191,8 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             }
 
         case .fullDiskAccess:
-            triggerFullDiskAccessPrePopulation()
-            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FullDiskAccess")!
-            NSWorkspace.shared.open(url)
+            requestFullDiskAccessPrePopulation()
+            openFullDiskAccessSettings()
 
         case .automation:
             triggerAutomationPermissionRequest()
@@ -295,12 +299,40 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         }.value
     }
 
-    // MARK: - Full Disk Access Trigger
+    // MARK: - Full Disk Access
 
-    private func triggerFullDiskAccessPrePopulation() {
-        let safariBookmarksPath = "~/Library/Safari/Bookmarks.plist"
-        _ = try? String(contentsOfFile: (safariBookmarksPath as NSString).expandingTildeInPath, encoding: .utf8)
+    private func requestFullDiskAccessPrePopulation() {
+        guard let request = Self.tccRequest else { return }
+        request(Self.serviceSystemPolicyAllFiles, nil) { _ in }
     }
+
+    private func openFullDiskAccessSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - TCC Private SPI (dynamic loading)
+
+    private typealias TCCPreflightFunc = @convention(c) (CFString, CFDictionary?) -> Int
+    private typealias TCCRequestFunc = @convention(c) (CFString, CFDictionary?, @escaping (Bool) -> Void) -> Void
+
+    private static let tccHandle: UnsafeMutableRawPointer? = {
+        dlopen("/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC", RTLD_NOW)
+    }()
+
+    private static let tccPreflight: TCCPreflightFunc? = {
+        guard let handle = tccHandle,
+              let sym = dlsym(handle, "TCCAccessPreflight") else { return nil }
+        return unsafeBitCast(sym, to: TCCPreflightFunc.self)
+    }()
+
+    private static let tccRequest: TCCRequestFunc? = {
+        guard let handle = tccHandle,
+              let sym = dlsym(handle, "TCCAccessRequest") else { return nil }
+        return unsafeBitCast(sym, to: TCCRequestFunc.self)
+    }()
+
+    private static let serviceSystemPolicyAllFiles = "kTCCServiceSystemPolicyAllFiles" as CFString
 
     // MARK: - Local Network Logic
 
