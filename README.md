@@ -9,7 +9,7 @@
   </a>
   <a href="https://github.com/cshariq/Sapphire/releases/tag/Release" style="text-decoration: none;">
     <div style="background-color: #007aff; color: white; padding: 10px 20px; border-radius: 8px; display: inline-block; font-weight: bold;">
-      Download Pre-Release
+      Download Latest Release
     </div>
   </a>
 </div>
