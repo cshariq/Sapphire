@@ -1309,7 +1309,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .calendar: return [.calendar, .reminders]
         case .bluetooth, .bluetoothUnlock: return [.bluetooth, .accessibility]
         case .liveActivities: return [.focusStatus]
-        case .intelligence: return [.accessibility, .fullDiskAccess]
+        case .audio: return [.screenRecording]
+        case .intelligence: return [.accessibility, .fullDiskAccess, .screenRecording]
         default: return []
         }
     }

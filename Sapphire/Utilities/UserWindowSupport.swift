@@ -61,10 +61,10 @@ enum UtilityWindowPresenter {
         }
         window.center()
 
-        // Defer key/front ordering to the next run loop so the
+        // Defer ALL ordering to the next run loop so the
         // accessory → regular activation policy transition completes first.
-        window.orderFrontRegardless()
         DispatchQueue.main.async {
+            window.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }
@@ -79,10 +79,10 @@ enum UtilityWindowPresenter {
         }
         window.center()
 
-        // Defer key/front ordering to the next run loop so the
+        // Defer ALL ordering to the next run loop so the
         // accessory → regular activation policy transition completes first.
-        window.orderFrontRegardless()
         DispatchQueue.main.async {
+            window.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }

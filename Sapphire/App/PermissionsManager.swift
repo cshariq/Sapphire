@@ -20,7 +20,7 @@ import Network
 
 // MARK: - Permission Enums
 enum PermissionType: Identifiable, CaseIterable {
-    case accessibility, notifications, location, calendar, reminders, bluetooth, focusStatus, fullDiskAccess, localNetwork, automation
+    case accessibility, notifications, location, calendar, reminders, bluetooth, focusStatus, fullDiskAccess, screenRecording, localNetwork, automation
     var id: Self { self }
 }
 
@@ -54,6 +54,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     @Published var bluetoothStatus: PermissionStatus = .notRequested
     @Published var focusStatusStatus: PermissionStatus = .notRequested
     @Published var fullDiskAccessStatus: PermissionStatus = .notRequested
+    @Published var screenRecordingStatus: PermissionStatus = .notRequested
     @Published var localNetworkStatus: PermissionStatus = .notRequested
     @Published var automationStatus: PermissionStatus = .notRequested
 
@@ -68,7 +69,8 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
     public let allPermissions: [PermissionItem] = [
         .init(type: .accessibility, title: "Accessibility", description: "Needed for media key presses, window snapping, and HUDs.", iconName: "figure.wave.circle.fill", iconColor: .purple, category: .required),
-        .init(type: .fullDiskAccess, title: "Full Disk Access", description: "Required for features like File Shelf and advanced integrations.", iconName: "folder.badge.gearshape", iconColor: .gray, category: .required),
+        .init(type: .fullDiskAccess, title: "Full Disk Access", description: "Enables File Shelf, Intelligence file access, and deeper system integrations.", iconName: "folder.badge.gearshape", iconColor: .gray, category: .recommended),
+        .init(type: .screenRecording, title: "Screen Recording", description: "Required for Gemini Live screen sharing and per-app audio capture.", iconName: "record.circle", iconColor: .orange, category: .recommended),
         .init(type: .localNetwork, title: "Local Network", description: "Needed to discover and control supported media players on your network.", iconName: "network", iconColor: .cyan, category: .recommended),
         .init(type: .automation, title: "Automation", description: "Needed to control playback and get track info from Spotify and Music.", iconName: "play.display", iconColor: .green, category: .recommended),
         .init(type: .notifications, title: "Notifications", description: "Needed to show custom alerts for messages and system events.", iconName: "bell.badge.fill", iconColor: .red, category: .recommended),
@@ -98,6 +100,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             .sink { [weak self] _ in
                 self?.checkAccessibilityStatus()
                 self?.checkFullDiskAccessStatus()
+                self?.checkScreenRecordingStatus()
                 self?.checkAutomationStatus()
             }
             .store(in: &cancellables)
@@ -111,7 +114,11 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     private func checkFullDiskAccessStatus() {
         if let preflight = Self.tccPreflight {
             let result = preflight(Self.serviceSystemPolicyAllFiles, nil)
-            fullDiskAccessStatus = result == 0 ? .granted : .notRequested
+            switch result {
+            case 0: fullDiskAccessStatus = .granted
+            case 1: fullDiskAccessStatus = .denied
+            default: fullDiskAccessStatus = .notRequested
+            }
         } else {
             let testUrl = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
             let canAccess = FileManager.default.isReadableFile(atPath: testUrl.path)
@@ -119,9 +126,21 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         }
     }
 
+    private func checkScreenRecordingStatus() {
+        let granted = CGPreflightScreenCaptureAccess()
+        if granted {
+            screenRecordingStatus = .granted
+        } else if UserDefaults.standard.bool(forKey: "screenRecordingRequested") {
+            screenRecordingStatus = .denied
+        } else {
+            screenRecordingStatus = .notRequested
+        }
+    }
+
     func checkAllPermissions() {
         checkAccessibilityStatus()
         checkFullDiskAccessStatus()
+        checkScreenRecordingStatus()
         checkLocalNetworkStatus()
         checkAutomationStatus()
 
@@ -175,6 +194,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         case .bluetooth: return bluetoothStatus
         case .focusStatus: return focusStatusStatus
         case .fullDiskAccess: return fullDiskAccessStatus
+        case .screenRecording: return screenRecordingStatus
         case .localNetwork: return localNetworkStatus
         case .automation: return automationStatus
         }
@@ -193,6 +213,10 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         case .fullDiskAccess:
             requestFullDiskAccessPrePopulation()
             openFullDiskAccessSettings()
+
+        case .screenRecording:
+            CGRequestScreenCaptureAccess()
+            UserDefaults.standard.set(true, forKey: "screenRecordingRequested")
 
         case .automation:
             triggerAutomationPermissionRequest()

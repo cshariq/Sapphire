@@ -8,6 +8,7 @@ import SwiftUI
 struct AudioSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
     @ObservedObject private var audioManager = MultiAudioManager.shared
+    @ObservedObject private var permissionsManager = PermissionsManager.shared
     @State private var showResetAppConfirmation = false
     @State private var showResetDeviceConfirmation = false
 
@@ -17,6 +18,8 @@ struct AudioSettingsView: View {
                 Text("Audio")
                     .font(.largeTitle.bold())
                     .padding(.bottom, 4)
+
+                RequiredPermissionsView(section: .audio)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Notch")
@@ -37,6 +40,7 @@ struct AudioSettingsView: View {
                             }
                         )
                     )
+                    .disabled(permissionsManager.screenRecordingStatus != .granted)
                     Divider().padding(.leading, 20)
                     AudioCompactToggleRow(
                         title: "Haptic Feedback",
@@ -103,6 +107,11 @@ struct AudioSettingsView: View {
             }
             .padding(25)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onChange(of: permissionsManager.screenRecordingStatus) { _, newStatus in
+            if newStatus == .granted, !settings.settings.notchButtonOrder.contains(.multiAudio) {
+                settings.settings.notchButtonOrder.append(.multiAudio)
+            }
         }
     }
 

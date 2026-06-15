@@ -1100,7 +1100,7 @@ struct NotchController: View {
                 .padding(.horizontal, NotchConfiguration.batteryHorizontalPadding)
             }
         case .multiAudio:
-            if settings.settings.showMultiAudioIcon {
+            if settings.settings.showMultiAudioIcon, PermissionsManager.shared.screenRecordingStatus == .granted {
                 SubtleIconButton(systemName: "hifispeaker.and.homepod.mini.fill", action: { navigationStack.append(.multiAudio) })
             }
         case .pin:

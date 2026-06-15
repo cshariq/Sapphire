@@ -64,10 +64,11 @@ class MultiAudioManager: ObservableObject {
     }
 
     private func requestCapturePermissions() {
-        if !CGPreflightScreenCaptureAccess() {
-            CGRequestScreenCaptureAccess()
-        } else {
+        if CGPreflightScreenCaptureAccess() {
             self.isAuthorized = true
+        } else if !UserDefaults.standard.bool(forKey: "screenRecordingRequested") {
+            CGRequestScreenCaptureAccess()
+            UserDefaults.standard.set(true, forKey: "screenRecordingRequested")
         }
     }
 

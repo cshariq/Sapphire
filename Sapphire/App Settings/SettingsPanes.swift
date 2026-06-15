@@ -109,9 +109,13 @@ struct RequiredPermissionsView: View {
     @ObservedObject private var permissionsManager = PermissionsManager.shared
     let section: SettingsSection
     private var requiredPermissions: [PermissionItem] { permissionsManager.allPermissions.filter { section.requiredPermissions.contains($0.type) } }
+    private var missingPermissions: [PermissionItem] { requiredPermissions.filter { permissionsManager.status(for: $0.type) != .granted } }
     var body: some View {
         if !requiredPermissions.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
+                if !missingPermissions.isEmpty {
+                    missingPermissionsWarning
+                }
                 Text("Required Permissions").font(.headline).padding([.horizontal, .top])
                 ForEach(requiredPermissions) { permission in
                     PermissionStatusRowView(permission: permission)
@@ -119,6 +123,37 @@ struct RequiredPermissionsView: View {
                 }
             }.modifier(SettingsContainerModifier()).onAppear(perform: permissionsManager.checkAllPermissions)
         }
+    }
+
+    private var missingPermissionsWarning: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.orange)
+                Text(missingPermissionsMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .padding()
+            .background(Color.orange.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.orange.opacity(0.5), lineWidth: 1)
+            )
+        }
+        .padding([.horizontal, .top])
+    }
+
+    private var missingPermissionsMessage: String {
+        let names = missingPermissions.map(\.title)
+        if names.isEmpty { return "" }
+        if names.count == 1 {
+            return "\(names[0]) permission has not been granted. Some features may not work until it is enabled."
+        }
+        let list = names.dropLast().joined(separator: ", ") + " and " + names.last!
+        return "\(list) permissions have not been granted. Some features may not work until they are enabled."
     }
 }
 
@@ -2853,6 +2888,7 @@ struct ProximityUnlockSettingsView: View {
                 if settings.settings.faceIDUnlockEnabled {
                     InfoContainer(text: "Enabling face ID will increase the app's ram usage.", iconName: "info.circle", color: .yellow)
                 }
+                RequiredPermissionsView(section: .bluetoothUnlock)
                 authenticationSection
                 faceIDSection
                 bluetoothUnlockSection
@@ -8033,7 +8069,7 @@ fileprivate struct NotchButtonRowView: View {
         case .intelligenceLive: return $settings.settings.intelligenceEnabled
         case .intelligence: return $settings.settings.intelligenceEnabled
         case .caffeine: return $settings.settings.caffeinateEnabled
-        case .battery: return $settings.settings.showMultiAudioIcon
+        case .battery: return $settings.settings.batteryEstimatorEnabled
         case .multiAudio: return $settings.settings.showMultiAudioIcon
         case .pin: return $settings.settings.pinEnabled
         }
@@ -8091,6 +8127,7 @@ struct AppearanceSettingsView: View {
             VStack(alignment: .leading, spacing: 40) {
                 Text("Appearance")
                     .font(.largeTitle.bold())
+                RequiredPermissionsView(section: .appearance)
                 NotchAppearanceEditorView(appearance: $settings.settings.notchWidgetAppearance, title: "Expanded Notch Appearance")
                 NotchAppearanceEditorView(appearance: $settings.settings.notchLiveActivityAppearance, title: "Collapsed Notch Appearance")
                 MenuBarHidingSettingsView()
