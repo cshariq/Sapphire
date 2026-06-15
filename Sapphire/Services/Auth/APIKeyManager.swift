@@ -13,6 +13,9 @@ final class APIKeyManager {
     private let hackClubKeychainKey = "hackclub_api_key"
     private let hackClubUserDefaultsKey = "hackClubAPIKey"
 
+    private let weatherKeychainKey = "weather_api_key"
+    private let weatherUserDefaultsKey = "weatherAPIKey"
+
     private init() {
         migrateExistingKeys()
     }
@@ -29,6 +32,11 @@ final class APIKeyManager {
         if keychain.load(forKey: hackClubKeychainKey) == nil {
             if let existing = defaults.string(forKey: hackClubUserDefaultsKey), !existing.isEmpty {
                 keychain.save(existing, forKey: hackClubKeychainKey)
+            }
+        }
+        if keychain.load(forKey: weatherKeychainKey) == nil {
+            if let existing = defaults.string(forKey: weatherUserDefaultsKey), !existing.isEmpty {
+                keychain.save(existing, forKey: weatherKeychainKey)
             }
         }
     }
@@ -81,6 +89,29 @@ final class APIKeyManager {
         }
     }
 
+    // MARK: - Weather API Key
+    var weatherAPIKey: String {
+        get {
+            if let keychainKey = keychain.load(forKey: weatherKeychainKey) {
+                return keychainKey
+            }
+            if let existing = defaults.string(forKey: weatherUserDefaultsKey), !existing.isEmpty {
+                keychain.save(existing, forKey: weatherKeychainKey)
+                return existing
+            }
+            return ""
+        }
+        set {
+            if newValue.isEmpty {
+                keychain.delete(forKey: weatherKeychainKey)
+            } else {
+                keychain.save(newValue, forKey: weatherKeychainKey)
+            }
+            defaults.set(newValue, forKey: weatherUserDefaultsKey)
+        }
+    }
+
     var hasGeminiKey: Bool { !geminiAPIKey.isEmpty }
     var hasHackClubKey: Bool { !hackClubAPIKey.isEmpty }
+    var hasWeatherKey: Bool { !weatherAPIKey.isEmpty }
 }

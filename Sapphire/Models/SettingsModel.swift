@@ -697,9 +697,6 @@ struct Settings: Codable, Equatable {
     var bluetoothUnlockPassiveMode: Bool = false
     var faceIDUnlockEnabled: Bool = false
     var hasRegisteredFaceID: Bool = false
-    // Toggle to use the bundled modern on-device face model.
-    // Face ID depends on this model now that the legacy fallback has been removed.
-    var useModernFaceModel: Bool = true
     var bluetoothUnlockWakeOnProximity: Bool = true
     var bluetoothUnlockWakeWithoutUnlocking: Bool = false
     var bluetoothUnlockPauseMusicOnLock: Bool = false

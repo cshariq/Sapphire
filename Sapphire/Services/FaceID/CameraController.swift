@@ -31,10 +31,11 @@ private enum FacePoseBucket: String, CaseIterable {
     case right
 
     static func detect(yaw: Double) -> FacePoseBucket? {
-        if abs(yaw) < 0.13 { return .center }
-        // Front camera yaw is inverted relative to the user's left/right in the preview.
-        if yaw >= 0.15 { return .left }
-        if yaw <= -0.15 { return .right }
+        if abs(yaw) < 0.12 { return .center }
+        // Front camera is mirrored: user's RIGHT turn = face appears to turn LEFT in preview = positive yaw
+        // User's LEFT turn = face appears to turn RIGHT in preview = negative yaw
+        if yaw > 0.12 { return .right }
+        if yaw < -0.12 { return .left }
         return nil
     }
 }
@@ -81,13 +82,13 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
     private var poseBucketSamples: [FacePoseBucket: [Faceprint]] = [:]
     private var stablePoseFrames = 0
     private var lastStableBucket: FacePoseBucket?
-    private let samplesPerBucket = 1
+    private let samplesPerBucket = 2
     private let requiredStableFrames = 2
-    private let maxSamplesPerBucket = 2
+    private let maxSamplesPerBucket = 3
 
-    private let unlockThreshold: Double = 0.84
-    private let instantUnlockThreshold: Double = 0.92
-    private let consecutiveMatchesRequired = 2
+    private let unlockThreshold: Double = 0.75
+    private let instantUnlockThreshold: Double = 0.80
+    private let consecutiveMatchesRequired = 1
     private let authFrameStride = 1
 
     @Published var isRegistrationMode = false
@@ -267,11 +268,22 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         guard currentRegistrationStep == .scanning else { return }
 
         let yaw = observation.yaw?.doubleValue ?? 0
+        let pitch = observation.pitch?.doubleValue ?? 0
+        let roll = observation.roll?.doubleValue ?? 0
+        let hasYaw = observation.yaw != nil
+        let hasPitch = observation.pitch != nil
+        let hasRoll = observation.roll != nil
+        
+        logger.debug("Face pose - yaw: \(yaw, privacy: .public) (hasYaw: \(hasYaw, privacy: .public)), pitch: \(pitch, privacy: .public) (hasPitch: \(hasPitch, privacy: .public)), roll: \(roll, privacy: .public) (hasRoll: \(hasRoll, privacy: .public))")
+
         guard let bucket = FacePoseBucket.detect(yaw: yaw) else {
+            logger.debug("No bucket detected for yaw: \(yaw, privacy: .public)")
             stablePoseFrames = 0
             lastStableBucket = nil
             return
         }
+        
+        logger.debug("Detected bucket: \(bucket.rawValue, privacy: .public) for yaw: \(yaw, privacy: .public), lastStableBucket: \(self.lastStableBucket?.rawValue ?? "nil", privacy: .public)")
 
         DispatchQueue.main.async {
             self.userInstruction = self.registrationHint()
@@ -284,18 +296,29 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
             stablePoseFrames = 1
         }
 
+        logger.debug("Stable frames for \(bucket.rawValue, privacy: .public): \(self.stablePoseFrames, privacy: .public)")
+
         guard stablePoseFrames >= requiredStableFrames else { return }
 
         let existingCount = poseBucketSamples[bucket]?.count ?? 0
         guard existingCount < maxSamplesPerBucket else { return }
 
-        captureSample(for: bucket, observation: observation, pixelBuffer: pixelBuffer)
-        stablePoseFrames = 0
+        let success = captureSample(for: bucket, observation: observation, pixelBuffer: pixelBuffer)
+        if success {
+            stablePoseFrames = 0
+        } else {
+            // Keep the frame counter saturated so it continuously tries on subsequent
+            // frames without requiring the user to look away and look back.
+            stablePoseFrames = requiredStableFrames
+        }
 
         let filledBuckets = FacePoseBucket.allCases.filter { (poseBucketSamples[$0]?.isEmpty == false) }.count
         let totalSamples = poseBucketSamples.values.reduce(0) { $0 + $1.count }
         let targetSamples = FacePoseBucket.allCases.count * samplesPerBucket
-        registrationProgress = min(1.0, Double(filledBuckets) / Double(FacePoseBucket.allCases.count))
+        
+        DispatchQueue.main.async {
+            self.registrationProgress = min(1.0, Double(filledBuckets) / Double(FacePoseBucket.allCases.count))
+        }
 
         if filledBuckets == FacePoseBucket.allCases.count && totalSamples >= targetSamples {
             advanceToFinalizingRegistration()
@@ -314,9 +337,16 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         }
     }
 
-    private func captureSample(for bucket: FacePoseBucket, observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
-        guard isFaceQualityAcceptable(observation) else { return }
-        guard let faceprint = faceDataStore.generateEmbedding(for: observation, from: pixelBuffer) else { return }
+    @discardableResult
+    private func captureSample(for bucket: FacePoseBucket, observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) -> Bool {
+        guard isFaceQualityAcceptable(observation) else {
+            logger.debug("⚠️ captureSample aborted: Face quality standards not met.")
+            return false
+        }
+        guard let faceprint = faceDataStore.generateEmbedding(for: observation, from: pixelBuffer) else {
+            logger.debug("❌ captureSample aborted: Failed to generate faceprint embedding.")
+            return false
+        }
 
         if poseBucketSamples[bucket] == nil {
             poseBucketSamples[bucket] = []
@@ -331,6 +361,9 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
             let filled = FacePoseBucket.allCases.filter { self.poseBucketSamples[$0]?.isEmpty == false }.count
             self.registrationProgress = min(1.0, Double(filled) / Double(FacePoseBucket.allCases.count))
         }
+        
+        logger.debug("✅ Successfully captured sample for bucket: \(bucket.rawValue, privacy: .public)")
+        return true
     }
 
     private func advanceToFinalizingRegistration() {
@@ -381,6 +414,7 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
     private func performAuthenticationChecks(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
         guard isAuthenticating else { return }
         guard isFaceQualityAcceptable(observation) else {
+            logger.debug("❌ Face quality check failed")
             consecutiveMatchCount = 0
             return
         }
@@ -388,22 +422,28 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         isProcessingAuthFrame = true
         defer { isProcessingAuthFrame = false }
 
-        guard let preparedImage = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) else { return }
+        guard let preparedImage = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) else { 
+            logger.debug("❌ Failed to prepare image")
+            return 
+        }
 
         let faceScore = faceDataStore.getSimilarityScore(for: preparedImage)
+        logger.debug("🔐 Auth check - Score: \(String(format: "%.1f%%", faceScore * 100)), instantThreshold: \(String(format: "%.0f%%", self.instantUnlockThreshold * 100)), confirmThreshold: \(String(format: "%.0f%%", self.unlockThreshold * 100))")
 
-        if faceScore >= 0.90 {
+        if faceScore >= 0.85 {
             faceDataStore.learnNewFaceprint(faceImage: preparedImage)
         }
 
-        let requiredMatches = faceScore >= 0.96 ? 1 : consecutiveMatchesRequired
         let shouldUnlockInstantly = faceScore >= instantUnlockThreshold
         let shouldUnlockWithConfirmation = faceScore >= unlockThreshold
+        let requiredMatches = 1
 
         if shouldUnlockInstantly {
             consecutiveMatchCount = requiredMatches
+            logger.debug("✅ Instant unlock threshold met")
         } else if shouldUnlockWithConfirmation {
             consecutiveMatchCount += 1
+            logger.debug("🔄 Confirmation frame \(self.consecutiveMatchCount)/\(requiredMatches)")
         } else {
             consecutiveMatchCount = 0
         }
@@ -416,7 +456,7 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
             self.processedAuthImage = preparedImage
 
             if authenticated {
-                self.logger.info("Auth success after \(self.consecutiveMatchCount) confirming frame(s) at \(String(format: "%.1f%%", faceScore * 100)).")
+                self.logger.info("✅ Auth success at \(String(format: "%.1f%%", faceScore * 100))")
                 self.completeAuthentication(reason: reason, faceScore: faceScore)
             } else {
                 let scoreStr = String(format: "Face: %.1f%%", faceScore * 100)
@@ -431,19 +471,58 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
 
     private func isFaceQualityAcceptable(_ observation: VNFaceObservation) -> Bool {
         let faceSize = observation.boundingBox.width * observation.boundingBox.height
-        guard faceSize > 0.06 else { return false }
+        guard faceSize > 0.04 else {
+            logger.debug("❌ Rejected: Face too small (\(faceSize))")
+            return false
+        }
 
         let yaw = abs(observation.yaw?.doubleValue ?? 0)
         let pitch = abs(observation.pitch?.doubleValue ?? 0)
         let roll = abs(observation.roll?.doubleValue ?? 0)
-        guard yaw < 0.55, pitch < 0.45, roll < 0.45 else { return false }
-
-        if let quality = observation.faceCaptureQuality, quality < 0.35 {
+        
+        guard yaw < 0.95 else {
+            logger.debug("❌ Rejected: Yaw too high (\(yaw))")
+            return false
+        }
+        guard pitch < 0.55 else {
+            logger.debug("❌ Rejected: Pitch too high (\(pitch))")
+            return false
+        }
+        guard roll < 0.55 else {
+            logger.debug("❌ Rejected: Roll too high (\(roll))")
             return false
         }
 
-        guard let landmarks = observation.landmarks else { return false }
-        return landmarks.leftEye != nil && landmarks.rightEye != nil && landmarks.nose != nil
+        if let quality = observation.faceCaptureQuality {
+            // More adaptive quality threshold
+            let requiredQuality: Float = (yaw > 0.25) ? 0.10 : (yaw > 0.15 ? 0.20 : 0.30)
+            if quality < requiredQuality {
+                logger.debug("❌ Rejected: Quality too low (\(quality) < required \(requiredQuality))")
+                return false
+            }
+        }
+
+        guard let landmarks = observation.landmarks else {
+            logger.debug("❌ Rejected: Landmarks missing completely")
+            return false
+        }
+        
+        if yaw < 0.25 {
+            // Center Profile requirements - need both eyes and nose
+            guard landmarks.leftEye != nil, landmarks.rightEye != nil, landmarks.nose != nil else {
+                logger.debug("❌ Rejected: Missing critical landmarks for center face")
+                return false
+            }
+        } else {
+            // Turned Profile requirements - at least one eye and nose
+            let hasAtLeastOneEye = landmarks.leftEye != nil || landmarks.rightEye != nil
+            guard hasAtLeastOneEye, landmarks.nose != nil else {
+                logger.debug("❌ Rejected: Missing critical landmarks for turned face")
+                return false
+            }
+        }
+        
+        return true
     }
 
     private func completeAuthentication(reason: String, faceScore: Double) {

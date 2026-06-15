@@ -42,7 +42,6 @@ to ensure there are no large numeric regressions.
 Runtime notes
 -------------
 - Place the compiled `.mlmodelc` or `.mlpackage` inside the app bundle resources named `ModernFace`.
-- Enable the new model from Settings → `useModernFaceModel` toggle. The app will attempt to load
-  `ModernFace.mlmodelc` or `ModernFace.mlmodel` at runtime.
+- The app will automatically load `ModernFace.mlmodelc` or `ModernFace.mlmodel` at runtime. This is the only supported model.
 
 Example conversion scripts can be found in `convert_to_coreml.py` (template).

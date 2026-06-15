@@ -53,7 +53,14 @@ enum UtilityWindowPresenter {
 
     /// Standard settings / lyrics windows behave like a normal app window.
     static func presentSettingsWindow(_ window: NSWindow) {
-        activateAsRegularApp()
+        // Set activation policy to regular FIRST, before any window operations
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+        if NSApp.isHidden {
+            NSApp.unhide(nil)
+        }
+        
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.level = .normal
         if window.isMiniaturized {
@@ -61,8 +68,7 @@ enum UtilityWindowPresenter {
         }
         window.center()
 
-        // Defer ALL ordering to the next run loop so the
-        // accessory → regular activation policy transition completes first.
+        // Defer ordering to next run loop to let activation policy settle
         DispatchQueue.main.async {
             window.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)

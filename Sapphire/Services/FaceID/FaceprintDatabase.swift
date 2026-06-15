@@ -27,7 +27,7 @@ class FaceDataStore {
     private var cancellables = Set<AnyCancellable>()
     private let logger = Logger(subsystem: "com.sapphire.app", category: "FaceID.FaceprintDatabase") // Initialize logger
 
-    private let maxLearnedPrints = 50
+    private let maxLearnedPrints = 100
     private let secureFileURL: URL
 
     private init() {
@@ -133,7 +133,7 @@ class FaceDataStore {
         let sumOfSquaredDiffs = distances.map { pow($0 - averageDistance, 2) }.reduce(0, +)
         let stdDev = sqrt(sumOfSquaredDiffs / Float(distances.count))
 
-        let cutoffDistance = averageDistance + (stdDev * 1.5) // Keep samples within 1.5 std dev
+        let cutoffDistance = averageDistance + (stdDev * 2.0) // Keep samples within 2.0 std dev (less aggressive)
 
         var filteredPrints: [Faceprint] = []
         for (index, distance) in distances.enumerated() {
@@ -189,16 +189,19 @@ class FaceDataStore {
 
     private func distanceToSimilarity(distance: Double) -> Double {
         // Calibrated for L2-normalized ModernFace embeddings using top-3 average distance.
+        // Adjusted to be more generous around 80% threshold for better unlock reliability
         if distance < 0.36 {
             return 1.0 - (distance / 0.36) * 0.04  // 96-100%
         } else if distance < 0.52 {
             return 0.96 - ((distance - 0.36) / 0.16) * 0.08  // 88-96%
-        } else if distance < 0.68 {
-            return 0.88 - ((distance - 0.52) / 0.16) * 0.13  // 75-88%
-        } else if distance < 0.88 {
-            return 0.75 - ((distance - 0.68) / 0.20) * 0.20  // 55-75%
+        } else if distance < 0.65 {
+            return 0.90 - ((distance - 0.52) / 0.13) * 0.10  // 80-90%
+        } else if distance < 0.80 {
+            return 0.80 - ((distance - 0.65) / 0.15) * 0.15  // 65-80%
+        } else if distance < 0.95 {
+            return 0.65 - ((distance - 0.80) / 0.15) * 0.20  // 45-65%
         } else {
-            return max(0.0, 0.55 - (distance - 0.88) * 0.30)
+            return max(0.0, 0.45 - (distance - 0.95) * 0.30)
         }
     }
 
@@ -210,7 +213,7 @@ class FaceDataStore {
         var shouldLearn = true
         for existingPrint in database.learnedPrints {
             let distance = euclideanDistance(newEmbedding, existingPrint)
-            if distance < 0.1 { // Too similar
+            if distance < 0.08 { // Too similar (lowered threshold to allow more variation)
                 shouldLearn = false
                 break
             }

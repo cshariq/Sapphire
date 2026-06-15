@@ -18,8 +18,12 @@ class WeatherService: NSObject, CLLocationManagerDelegate {
     private let cacheDuration: TimeInterval = 10 * 60
 
     private var weatherAPIKey: String {
-        if let key = ProcessInfo.processInfo.environment["WEATHER_API_KEY"], !key.isEmpty {
+        let key = APIKeyManager.shared.weatherAPIKey
+        if !key.isEmpty {
             return key
+        }
+        if let envKey = ProcessInfo.processInfo.environment["WEATHER_API_KEY"], !envKey.isEmpty {
+            return envKey
         }
         let homeConfig = (NSHomeDirectory() as NSString).appendingPathComponent(".sapphire/WeatherConfig.plist")
         if let dict = NSDictionary(contentsOfFile: homeConfig),

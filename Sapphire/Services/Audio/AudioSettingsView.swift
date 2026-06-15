@@ -19,8 +19,6 @@ struct AudioSettingsView: View {
                     .font(.largeTitle.bold())
                     .padding(.bottom, 4)
 
-                RequiredPermissionsView(section: .audio)
-
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Notch")
                         .font(.headline)
@@ -104,6 +102,8 @@ struct AudioSettingsView: View {
                     }
                 }
                 .modifier(SettingsContainerModifier())
+
+                RequiredPermissionsView(section: .audio)
             }
             .padding(25)
             .frame(maxWidth: .infinity, alignment: .leading)

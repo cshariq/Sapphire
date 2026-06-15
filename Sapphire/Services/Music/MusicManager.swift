@@ -156,6 +156,9 @@ class MusicManager: ObservableObject {
     private var artworkFetchGeneration = 0
     private var artworkColorExtractionTask: Task<Void, Never>?
 
+    private var lyricsCache: [String: [LyricLine]] = [:]
+    private let lyricsCacheQueue = DispatchQueue(label: "com.sapphire.lyricsCache", attributes: .concurrent)
+
     private var needsLyricsUpdates: Bool {
         if isDetailPlayerOpen || isLyricsDetailOpen { return true }
         guard settingsModel.settings.showLyricsInLiveActivity,
@@ -712,6 +715,7 @@ class MusicManager: ObservableObject {
 
     func trimExpandedUIMemory() {
         trimArtworkCache()
+        trimLyricsCache()
         mediaController.trimArtworkCache(keeping: lastTrackIdentity)
 
         if !needsLyricsUpdates {
@@ -729,6 +733,23 @@ class MusicManager: ObservableObject {
         artworkCache.removeAll(keepingCapacity: false)
         if let current {
             artworkCache[key] = current
+        }
+    }
+
+    func trimLyricsCache() {
+        guard let key = lastMediaFingerprint else {
+            lyricsCacheQueue.async(flags: .barrier) {
+                self.lyricsCache.removeAll()
+            }
+            return
+        }
+        lyricsCacheQueue.async(flags: .barrier) {
+            var filtered = self.lyricsCache
+            filtered.removeValue(forKey: key)
+            if filtered.count > 50 {
+                filtered.removeAll()
+            }
+            self.lyricsCache = filtered
         }
     }
 
@@ -864,6 +885,18 @@ class MusicManager: ObservableObject {
 
     private func fetchAndTranslateLyricsIfNeeded() {
         guard let title = self.title, let artist = self.artist, let album = self.album else { return }
+        
+        let cacheKey = "\(title)|\(artist)|\(album)".lowercased()
+        
+        if let cachedLyrics = lyricsCacheQueue.sync(execute: { lyricsCache[cacheKey] }) {
+            self.lyrics = cachedLyrics
+            self.retranslateLyricsIfNeeded()
+            if self.needsLyricsUpdates {
+                self.updateCurrentLyric(for: self.currentElapsedTime)
+            }
+            return
+        }
+        
         lyricsFetchTask?.cancel()
         let fetchIdentity = lastTrackIdentity
         lyricsFetchTask = Task {
@@ -872,6 +905,9 @@ class MusicManager: ObservableObject {
             await MainActor.run {
                 guard self.lastTrackIdentity == fetchIdentity else { return }
                 self.lyrics = fL
+                self.lyricsCacheQueue.async(flags: .barrier) {
+                    self.lyricsCache[cacheKey] = fL
+                }
                 self.retranslateLyricsIfNeeded()
                 if self.needsLyricsUpdates {
                     self.updateCurrentLyric(for: self.currentElapsedTime)

@@ -1198,8 +1198,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func finishClosingUserWindow() {
-        restoreAgentActivationIfNeeded()
-        MemoryTrimSupport.trimAfterUserWindowClose(musicManager: musicManager)
+        // Delay slightly to allow any new window presentation to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
+            self.restoreAgentActivationIfNeeded()
+            MemoryTrimSupport.trimAfterUserWindowClose(musicManager: self.musicManager)
+        }
     }
 
     private func restoreAgentActivationIfNeeded() {

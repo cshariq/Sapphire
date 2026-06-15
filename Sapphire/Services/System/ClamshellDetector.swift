@@ -6,6 +6,7 @@
 import AppKit
 import Foundation
 import IOKit
+import os.log
 
 @MainActor
 enum ClamshellDetector {
@@ -14,37 +15,62 @@ enum ClamshellDetector {
     /// When the registry reports closed, hold that through brief unreadable windows (e.g. notch resize).
     private static var registryReportedClosed = false
     private static var consecutiveRegistryOpenReadings = 0
-    private static let registryOpenReadingsRequiredToClearSticky = 3
+    private static let registryOpenReadingsRequiredToClearSticky = 10
+    private static var lastRegistryReadTime: Date?
+    private static let minRegistryReadInterval: TimeInterval = 2.0
 
     static var isClosed: Bool {
+        let now = Date()
+        if let lastRead = lastRegistryReadTime, now.timeIntervalSince(lastRead) < minRegistryReadInterval {
+            if registryReportedClosed {
+                os_log("ClamshellDetector: isClosed - cached true (registryReportedClosed, within interval)")
+                return true
+            }
+        } else {
+            lastRegistryReadTime = now
+        }
+
         if let registryState = readAppleClamshellState() {
             if registryState {
                 consecutiveRegistryOpenReadings = 0
                 registryReportedClosed = true
+                os_log("ClamshellDetector: isClosed - true (registryState=true)")
                 return true
             }
 
             consecutiveRegistryOpenReadings += 1
             if consecutiveRegistryOpenReadings >= registryOpenReadingsRequiredToClearSticky {
                 registryReportedClosed = false
+                consecutiveRegistryOpenReadings = 0
             }
 
             if registryReportedClosed {
+                os_log("ClamshellDetector: isClosed - true (registryReportedClosed sticky, registryState=false)")
                 return true
             }
+            os_log("ClamshellDetector: isClosed - false (registryState=false, registryReportedClosed=%{public}@)", 
+                   registryReportedClosed ? "true" : "false")
             return false
         }
 
         if registryReportedClosed {
+            os_log("ClamshellDetector: isClosed - true (registryReportedClosed sticky, registry read failed)")
             return true
         }
 
         let sensor = LidAngleSensor.shared
         if sensor.isAvailable, sensor.angle <= closedLidAngleThreshold {
+            os_log("ClamshellDetector: isClosed - true (lid angle: %{public}.1f)", sensor.angle)
             return true
         }
 
-        return isLikelyClamshellFromDisplays
+        let displayBased = isLikelyClamshellFromDisplays
+        os_log("ClamshellDetector: isClosed - %{public}@ (displayBased: %{public}@, sensorAvailable: %{public}@, sensorAngle: %{public}.1f)", 
+               displayBased ? "true" : "false",
+               displayBased ? "true" : "false",
+               sensor.isAvailable ? "true" : "false",
+               sensor.angle)
+        return displayBased
     }
 
     static func resetStickyState() {

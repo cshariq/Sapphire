@@ -2888,11 +2888,11 @@ struct ProximityUnlockSettingsView: View {
                 if settings.settings.faceIDUnlockEnabled {
                     InfoContainer(text: "Enabling face ID will increase the app's ram usage.", iconName: "info.circle", color: .yellow)
                 }
-                RequiredPermissionsView(section: .bluetoothUnlock)
                 authenticationSection
                 faceIDSection
                 bluetoothUnlockSection
                 actionsSection
+                RequiredPermissionsView(section: .bluetoothUnlock)
             }
             .padding(25)
         }
@@ -3000,11 +3000,6 @@ struct ProximityUnlockSettingsView: View {
                 }
 
                 Divider().padding(.horizontal)
-                ToggleRow(title: "Use Modern Face Model", description: "Use the bundled ModernFace Core ML model for Face ID. Turning this off will disable Face ID until another model is provided.", isOn: Binding(get: { settings.settings.useModernFaceModel }, set: { settings.settings.useModernFaceModel = $0 }))
-                Text("Switching face models changes the embedding space. For best results, re-register existing Face ID profiles after enabling this.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal)
             }
         }
         .modifier(SettingsContainerModifier())
@@ -7572,9 +7567,9 @@ struct NeardropSettingsView: View {
                 settingsHaveChanged = true
             }
             .animation(.spring(), value: settingsHaveChanged)
-        }
 
-        RequiredPermissionsView(section: .neardrop)
+            RequiredPermissionsView(section: .neardrop)
+        }
     }
 
     private func validateAndSavePath() {
@@ -8127,12 +8122,12 @@ struct AppearanceSettingsView: View {
             VStack(alignment: .leading, spacing: 40) {
                 Text("Appearance")
                     .font(.largeTitle.bold())
-                RequiredPermissionsView(section: .appearance)
                 NotchAppearanceEditorView(appearance: $settings.settings.notchWidgetAppearance, title: "Expanded Notch Appearance")
                 NotchAppearanceEditorView(appearance: $settings.settings.notchLiveActivityAppearance, title: "Collapsed Notch Appearance")
                 MenuBarHidingSettingsView()
                 MenuBarAppearanceSettingsView()
                 MenuBarSpacingSettingsView()
+                RequiredPermissionsView(section: .appearance)
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

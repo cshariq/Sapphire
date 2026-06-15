@@ -19,28 +19,9 @@ final class MLModelManager {
 
     /// Produce a normalized embedding vector for a preprocessed image represented
     /// as an `MLMultiArray`. This method uses the modern Core ML model named
-    /// `ModernFace` when `SettingsModel.shared.settings.useModernFaceModel` is
-    /// enabled.
+    /// `ModernFace`.
     func predictEmbedding(from mlArray: MLMultiArray) throws -> [Float] {
-        if SettingsModel.shared.settings.useModernFaceModel {
-            if let modernEmbedding = try? predictWithModernModel(from: mlArray) {
-                return modernEmbedding
-            }
-
-            logger.error("ModernFace requested but unavailable or incompatible.")
-            throw NSError(
-                domain: "MLModelManager",
-                code: -3,
-                userInfo: [NSLocalizedDescriptionKey: "ModernFace model could not be loaded or predicted successfully"]
-            )
-        }
-
-        logger.error("ModernFace model is disabled in settings.")
-        throw NSError(
-            domain: "MLModelManager",
-            code: -4,
-            userInfo: [NSLocalizedDescriptionKey: "ModernFace model is disabled in settings"]
-        )
+        return try predictWithModernModel(from: mlArray)
     }
 
     private func predictWithModernModel(from mlArray: MLMultiArray) throws -> [Float] {
