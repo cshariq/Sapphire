@@ -1,12 +1,30 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Window Accessor Helper
+struct WindowAccessor: NSViewRepresentable {
+    var onChange: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                onChange(window)
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 struct LyricsDetachedWindowView: View {
     @EnvironmentObject var musicManager: MusicManager
+    @State private var hostingWindow: NSWindow? = nil
 
     var body: some View {
         ZStack {
-            // MARK: - Apple TV Ambient Background
+            // MARK: - Apple TV Ambient Background (Micro-Blur optimized)
             GeometryReader { geo in
                 ZStack {
                     // 1. Base Ambient Artwork
@@ -14,10 +32,11 @@ struct LyricsDetachedWindowView: View {
                         Image(nsImage: image)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .blur(radius: 120, opaque: true) // Massive smooth blur
+                            // Downsample mathematically to bypass heavy GPU processing
+                            .frame(width: geo.size.width / 10, height: geo.size.height / 10)
+                            .blur(radius: 12, opaque: true) // Low-cost blur on small frame
                             .saturation(1.2) // Enhance colors
-                            .scaleEffect(1.2) // Prevent edges from bleeding
+                            .scaleEffect(10.5) // Scale back to fill original geometry
                             .animation(.easeInOut(duration: 1.5), value: image)
                     } else {
                         musicManager.accentColor
@@ -25,7 +44,7 @@ struct LyricsDetachedWindowView: View {
                             .blur(radius: 100)
                     }
                     
-                    // 2. Heavy Dark TV Overlay (Crucial for text contrast)
+                    // 2. Heavy Dark TV Overlay
                     Color.black.opacity(0.65)
                     
                     // 3. Ultra-thin glass texture
@@ -41,11 +60,11 @@ struct LyricsDetachedWindowView: View {
                 HStack(spacing: 14) {
                     HStack(spacing: 8) {
                         Circle().fill(Color(nsColor: .systemRed)).frame(width: 12, height: 12)
-                            .onTapGesture { NSApp.keyWindow?.close() }
+                            .onTapGesture { hostingWindow?.performClose(nil) }
                         Circle().fill(Color(nsColor: .systemYellow)).frame(width: 12, height: 12)
-                            .onTapGesture { NSApp.keyWindow?.miniaturize(nil) }
+                            .onTapGesture { hostingWindow?.miniaturize(nil) }
                         Circle().fill(Color(nsColor: .systemGreen)).frame(width: 12, height: 12)
-                            .onTapGesture { NSApp.keyWindow?.zoom(nil) }
+                            .onTapGesture { hostingWindow?.zoom(nil) }
                     }
                     Spacer()
                 }
@@ -53,7 +72,6 @@ struct LyricsDetachedWindowView: View {
                 .padding(.leading, 20)
                 .frame(height: 30)
                 .background(Color.clear)
-                .overlay(Color.clear.contentShape(Rectangle()).allowsHitTesting(false)) // Draggable
 
                 // MARK: - Middle Content (Art + Lyrics)
                 HStack(alignment: .center, spacing: 60) {
@@ -82,6 +100,27 @@ struct LyricsDetachedWindowView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
         )
+        // Background accessor dynamically configures the host NSWindow details
+        .background(
+            WindowAccessor { window in
+                self.hostingWindow = window
+                window.titleVisibility = .hidden
+                window.titlebarAppearsTransparent = true
+                window.styleMask.insert(.fullSizeContentView)
+                window.isMovableByWindowBackground = true // Draggable from background canvas
+                
+                // Hide system standard window control buttons
+                window.standardWindowButton(.closeButton)?.isHidden = true
+                window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+                window.standardWindowButton(.zoomButton)?.isHidden = true
+            }
+        )
+        .onAppear {
+            musicManager.setDetachedLyricsOpen(true)
+        }
+        .onDisappear {
+            musicManager.setDetachedLyricsOpen(false)
+        }
     }
 }
 
@@ -120,7 +159,6 @@ private struct LyricsDetachedLeftPane: View {
             // Track Info
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    // Optional tiny animated EQ or High-Res logo could go here
                     Image(systemName: "music.note.tv.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.6))
@@ -190,17 +228,16 @@ private struct LyricsDetachedRightPane: View {
                                 .foregroundStyle(.white)
                                 .scaleEffect(isCurrent ? 1.0 : 0.95, anchor: .leading)
                                 .opacity(isCurrent ? 1.0 : 0.35)
-                                // Smooth bounce animation
+                                // OPTIMIZATION: Animates exclusively on state shifts (avoids layout engine thrashing)
                                 .animation(
-                                    .spring(response: 0.55, dampingFraction: 0.75, blendDuration: 0.1),
-                                    value: currentLyricID
+                                    .spring(response: 0.45, dampingFraction: 0.8, blendDuration: 0.1),
+                                    value: isCurrent
                                 )
                             }
                             
                             Spacer().frame(height: 200)
                         }
                     }
-                    // TV-style gradient edge masking
                     .mask(
                         LinearGradient(
                             gradient: Gradient(stops: [
@@ -222,7 +259,7 @@ private struct LyricsDetachedRightPane: View {
     }
 
     private func scrollToCurrentLyric(using proxy: ScrollViewProxy, animated: Bool) {
-        guard let currentLyricID else { return }
+        guard let currentLyricID = currentLyricID else { return }
         if animated {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
                 proxy.scrollTo(currentLyricID, anchor: .center)
@@ -272,7 +309,7 @@ private struct LyricsDetachedBottomBar: View {
                 }
             }
             
-            // Minimal Playback Controls (So it's functional on macOS)
+            // Minimal Playback Controls
             HStack(spacing: 32) {
                 SeekButton(
                     systemName: "backward.fill",

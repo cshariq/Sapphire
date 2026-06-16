@@ -2,21 +2,19 @@ import Foundation
 import Darwin
 import AppKit
 import Combine
+import ImageIO
 
-// MARK: - Continuous Monotonic Time
-// Uses mach_continuous_time for drift-free time measurement unaffected by system clock changes.
-struct ContinuousTime: Equatable {
-    let ticks: UInt64
+// MARK: - Precise Absolute Timing Anchor
+struct PlaybackTimingAnchor: Equatable {
+    let elapsedAtSample: TimeInterval
+    let sampleEpochTime: TimeInterval
+    let rate: Double
 
-    var seconds: TimeInterval {
-        var timebase = mach_timebase_info_data_t()
-        mach_timebase_info(&timebase)
-        let nanos = ticks * UInt64(timebase.numer) / UInt64(timebase.denom)
-        return TimeInterval(nanos) / TimeInterval(NSEC_PER_SEC)
-    }
-
-    static var now: ContinuousTime {
-        ContinuousTime(ticks: mach_continuous_time())
+    func elapsed(at now: Date = Date()) -> TimeInterval {
+        guard rate != 0 else { return elapsedAtSample }
+        let delta = now.timeIntervalSince1970 - sampleEpochTime
+        let clampedDelta = max(0, min(delta, 86400))
+        return elapsedAtSample + (clampedDelta * rate)
     }
 }
 
@@ -71,70 +69,36 @@ struct TrackInfo {
         }
 
         func interpolatedElapsedTime(at now: Date) -> TimeInterval {
-            guard let elapsed = currentElapsedTime else { return 0 }
-
-            let isPlayingNow = isPlaying ?? false
-            let effectiveRate: Double
-            if !isPlayingNow {
-                effectiveRate = 0
-            } else if let rate = playbackRate {
-                effectiveRate = Double(rate)
-            } else {
-                effectiveRate = 1.0
+            guard let anchor = playbackTimingAnchor(isPlayingNow: isPlaying ?? false) else {
+                return currentElapsedTime ?? 0
             }
-
-            if effectiveRate == 0 { return elapsed }
-
-            if let micros = timestampEpochMicros {
-                let timestamp = Double(micros) / 1_000_000
-                let epochDiff = now.timeIntervalSince1970 - timestamp
-                if epochDiff >= 0 && epochDiff < 86_400 {
-                    return elapsed + (epochDiff * effectiveRate)
-                }
-            }
-
-            if let ts = timestamp?.doubleValue {
-                let diff = now.timeIntervalSinceReferenceDate - ts
-                if diff >= 0 && diff < 86_400 {
-                    return elapsed + (diff * effectiveRate)
-                }
-            }
-
-            // Fall back to adapter-provided estimate only when timestamp is unavailable.
-            return elapsed
+            return anchor.elapsed(at: now)
         }
 
+        // Creates a highly precise timing anchor using absolute OS timestamps
         func playbackTimingAnchor(isPlayingNow: Bool) -> PlaybackTimingAnchor? {
             guard let elapsed = currentElapsedTime else { return nil }
 
-            let rate: Double
-            if isPlayingNow {
-                rate = Double(playbackRate ?? 1.0)
+            let rate = isPlayingNow ? Double(playbackRate ?? 1.0) : 0.0
+            let sampleEpoch: TimeInterval
+            
+            if let micros = timestampEpochMicros {
+                sampleEpoch = Double(micros) / 1_000_000.0
+            } else if let ts = timestamp?.doubleValue {
+                sampleEpoch = ts + Date.timeIntervalBetween1970AndReferenceDate
             } else {
-                rate = 0
+                sampleEpoch = Date().timeIntervalSince1970
             }
 
             return PlaybackTimingAnchor(
                 elapsedAtSample: elapsed,
-                sampleContinuousTime: ContinuousTime.now,
+                sampleEpochTime: sampleEpoch,
                 rate: rate
             )
         }
     }
 
     let payload: Payload
-}
-
-struct PlaybackTimingAnchor: Equatable {
-    let elapsedAtSample: TimeInterval
-    let sampleContinuousTime: ContinuousTime
-    let rate: Double
-
-    func elapsed() -> TimeInterval {
-        guard rate != 0 else { return elapsedAtSample }
-        let delta = ContinuousTime.now.seconds - sampleContinuousTime.seconds
-        return elapsedAtSample + (delta * rate)
-    }
 }
 
 @MainActor
@@ -153,11 +117,39 @@ final class NativeMediaController: NSObject {
     private var lastKnownTrackInfo: TrackInfo?
     private var lastTrackIdentityByKey: [String: String] = [:]
     private var lastMediaFingerprintByKey: [String: String] = [:]
-    private var artworkCache: [String: NSImage] = [:]
     private var artworkPrefetchTasks: [String: Task<Void, Never>] = [:]
     private var mergedMetadataByKey: [String: [String: Any]] = [:]
     private var snapshotRefreshTask: Task<Void, Never>?
     private var lastSnapshotRefreshInstant: TimeInterval = 0
+
+    // Cached Paths (Avoids continuous disk hits)
+    private static let cachedPaths: (script: String, adapter: String, testClient: String?)? = {
+        let fm = FileManager.default
+        guard let resourcePath = Bundle.main.resourcePath else { return nil }
+
+        let scriptPath = (resourcePath as NSString).appendingPathComponent("mediaremote-adapter.pl")
+        let adapterPath = (resourcePath as NSString).appendingPathComponent("MediaRemoteAdapter.framework")
+
+        if fm.fileExists(atPath: scriptPath) && fm.fileExists(atPath: adapterPath) {
+            return (scriptPath, adapterPath, nil)
+        }
+
+        var size: UInt32 = 0
+        _NSGetExecutablePath(nil, &size)
+        let buffer = UnsafeMutablePointer<Int8>.allocate(capacity: Int(size))
+        defer { buffer.deallocate() }
+        
+        if _NSGetExecutablePath(buffer, &size) == 0 {
+            let exeDir = (String(cString: buffer) as NSString).deletingLastPathComponent
+            let fbScript = (exeDir as NSString).appendingPathComponent("mediaremote-adapter.pl")
+            let fbAdapter = (exeDir as NSString).appendingPathComponent("MediaRemoteAdapter.framework")
+            
+            if fm.fileExists(atPath: fbScript) && fm.fileExists(atPath: fbAdapter) {
+                return (fbScript, fbAdapter, nil)
+            }
+        }
+        return nil
+    }()
 
     override init() {
         super.init()
@@ -210,10 +202,9 @@ final class NativeMediaController: NSObject {
         guard isListening else { return }
         isListening = false
         pollQueue.async { [weak self] in
-            guard let self else { return }
             Task { @MainActor in
-                self.streamProcess?.terminate()
-                self.streamProcess = nil
+                self?.streamProcess?.terminate()
+                self?.streamProcess = nil
             }
         }
     }
@@ -256,7 +247,8 @@ final class NativeMediaController: NSObject {
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        task.arguments = [paths.script, paths.adapter, "stream", "--debounce=100", "--micros", "--no-artwork"]
+        // OPTIMIZATION: Passed "--micros" option to enforce microsecond epoch time formats natively
+        task.arguments = [paths.script, paths.adapter, "stream", "--debounce=100", "--micros"]
         
         var env = ProcessInfo.processInfo.environment
         env["PERLIO"] = ":unix"
@@ -281,7 +273,7 @@ final class NativeMediaController: NSObject {
 
         task.terminationHandler = { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self = self else { return }
                 self.onListenerTerminated?()
                 if self.isListening {
                     try? await Task.sleep(for: .seconds(2))
@@ -331,11 +323,18 @@ final class NativeMediaController: NSObject {
 
         let key = metadataKey(for: metadata)
         var merged = mergedMetadataByKey[key] ?? [:]
+        
         for (entryKey, value) in metadata {
             if entryKey == "artworkData" || entryKey == "artworkMimeType" || entryKey == "_sapphireSnapshot" { continue }
-            guard Self.shouldMergeField(key: entryKey, value: value) else { continue }
-            merged[entryKey] = value
+            
+            // OPTIMIZATION: Safely prune keys that have been explicitly nullified (diff tracking)
+            if value is NSNull {
+                merged.removeValue(forKey: entryKey)
+            } else if Self.shouldMergeField(key: entryKey, value: value) {
+                merged[entryKey] = value
+            }
         }
+        
         if Self.shouldAcceptIncomingArtwork(from: metadata, for: merged) {
             if let artworkData = metadata["artworkData"] {
                 merged["artworkData"] = artworkData
@@ -383,21 +382,23 @@ final class NativeMediaController: NSObject {
             merged.removeValue(forKey: "artworkData")
             merged.removeValue(forKey: "artworkMimeType")
             mergedMetadataByKey[key] = merged
-            requestImmediateSnapshot(for: key, urgent: true)
+            
+            let streamHasCompleteData = merged["title"] != nil && merged["artist"] != nil && (merged["durationMicros"] != nil || merged["duration"] != nil)
+            if !streamHasCompleteData {
+                requestImmediateSnapshot(for: key, urgent: true)
+            }
         }
 
         let transportChanged = Self.transportFieldsChanged(in: metadata)
 
         let previousArtwork = previousClient?.payload.artwork
         let previousTitle = previousClient?.payload.title
-        let cachedArtwork = artworkCache[Self.trackIdentity(merged)]
 
         guard let track = buildTrackInfo(
             from: merged,
             trackChanged: trackChanged,
             previousArtwork: previousArtwork,
             previousTitle: previousTitle,
-            cachedArtwork: cachedArtwork,
             previousIsPlaying: previousClient?.payload.isPlaying
         ) else { return }
 
@@ -405,11 +406,9 @@ final class NativeMediaController: NSObject {
         let existingClient = activeClients[clientKey]
         let trackIdentity = Self.trackIdentityFor(track.payload)
 
-        if let artwork = track.payload.artwork {
-            artworkCache[trackIdentity] = artwork
-        } else if trackChanged,
-                  metadata["_sapphireSnapshot"] as? Bool == true,
-                  track.payload.artwork == nil {
+        if trackChanged,
+           metadata["_sapphireSnapshot"] as? Bool == true,
+           track.payload.artwork == nil {
             prefetchArtworkIfNeeded(identity: trackIdentity, clientKey: clientKey, payload: track.payload)
         }
 
@@ -463,18 +462,6 @@ final class NativeMediaController: NSObject {
         artworkPrefetchTasks.values.forEach { $0.cancel() }
         artworkPrefetchTasks.removeAll()
 
-        if let identity, let kept = artworkCache[identity] {
-            artworkCache.removeAll(keepingCapacity: false)
-            artworkCache[identity] = kept
-        } else {
-            artworkCache.removeAll(keepingCapacity: false)
-        }
-
-        if artworkCache.count > 5 {
-            let keysToDrop = artworkCache.keys.filter { $0 != identity }.prefix(artworkCache.count - 5)
-            keysToDrop.forEach { artworkCache.removeValue(forKey: $0) }
-        }
-
         mergedMetadataByKey.removeAll(keepingCapacity: false)
         lastTrackIdentityByKey.removeAll(keepingCapacity: false)
         lastMediaFingerprintByKey.removeAll(keepingCapacity: false)
@@ -494,7 +481,7 @@ final class NativeMediaController: NSObject {
         snapshotRefreshTask?.cancel()
         snapshotRefreshTask = Task { @MainActor in
             let snapshot = await self.fetchMetadataSnapshot()
-            guard !Task.isCancelled, let snapshot, !snapshot.isEmpty else { return }
+            guard !Task.isCancelled, let snapshot = snapshot, !snapshot.isEmpty else { return }
             var tagged = snapshot
             tagged["_sapphireSnapshot"] = true
             self.handleTrackUpdate(tagged)
@@ -510,7 +497,7 @@ final class NativeMediaController: NSObject {
     }
 
     nonisolated private static func fetchMetadataSnapshotSync(paths: (script: String, adapter: String, testClient: String?)?) -> [String: Any]? {
-        guard let paths else { return nil }
+        guard let paths = paths else { return nil }
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
@@ -546,7 +533,6 @@ final class NativeMediaController: NSObject {
     }
 
     private func prefetchArtworkIfNeeded(identity: String, clientKey: String, payload: TrackInfo.Payload) {
-        guard artworkCache[identity] == nil else { return }
         artworkPrefetchTasks[identity]?.cancel()
         artworkPrefetchTasks[identity] = Task { @MainActor in
             defer { self.artworkPrefetchTasks[identity] = nil }
@@ -556,15 +542,12 @@ final class NativeMediaController: NSObject {
                 artist: payload.artist,
                 album: payload.album
             )
-            guard !Task.isCancelled, let image else { return }
-
-            let downsized = Self.downsampleImage(image, targetSize: NSSize(width: 120, height: 120))
-            self.artworkCache[identity] = downsized
+            guard !Task.isCancelled, let image = image else { return }
 
             guard let existing = self.activeClients[clientKey] else { return }
             guard Self.trackIdentityFor(existing.payload) == identity else { return }
 
-            let updatedPayload = existing.payload.updatingArtwork(downsized, mimeType: mimeType)
+            let updatedPayload = existing.payload.updatingArtwork(image, mimeType: mimeType)
             let updated = TrackInfo(payload: updatedPayload)
             self.activeClients[clientKey] = updated
             self.lastKnownTrackInfo = updated
@@ -573,6 +556,7 @@ final class NativeMediaController: NSObject {
         }
     }
 
+    // Directly fetch artwork from the adapter with zero caching
     func fetchArtworkForTrack(
         expectedIdentity: String,
         title: String?,
@@ -582,14 +566,15 @@ final class NativeMediaController: NSObject {
         guard let paths = resolveAdapterPaths() else { return (nil, nil) }
         return await withCheckedContinuation { continuation in
             pollQueue.async {
-                continuation.resume(returning: Self.runValidatedArtworkFetch(
+                let result = Self.runValidatedArtworkFetch(
                     script: paths.script,
                     adapter: paths.adapter,
                     expectedIdentity: expectedIdentity,
                     expectedTitle: title,
                     expectedArtist: artist,
                     expectedAlbum: album
-                ))
+                )
+                continuation.resume(returning: result)
             }
         }
     }
@@ -755,31 +740,7 @@ final class NativeMediaController: NSObject {
     }
 
     nonisolated private func resolveAdapterPaths() -> (script: String, adapter: String, testClient: String?)? {
-        let fm = FileManager.default
-        guard let resourcePath = Bundle.main.resourcePath else { return nil }
-
-        let scriptPath = (resourcePath as NSString).appendingPathComponent("mediaremote-adapter.pl")
-        let adapterPath = (resourcePath as NSString).appendingPathComponent("MediaRemoteAdapter.framework")
-
-        if fm.fileExists(atPath: scriptPath) && fm.fileExists(atPath: adapterPath) {
-            return (scriptPath, adapterPath, nil)
-        }
-
-        var size: UInt32 = 0
-        _NSGetExecutablePath(nil, &size)
-        let buffer = UnsafeMutablePointer<Int8>.allocate(capacity: Int(size))
-        defer { buffer.deallocate() }
-        
-        if _NSGetExecutablePath(buffer, &size) == 0 {
-            let exeDir = (String(cString: buffer) as NSString).deletingLastPathComponent
-            let fbScript = (exeDir as NSString).appendingPathComponent("mediaremote-adapter.pl")
-            let fbAdapter = (exeDir as NSString).appendingPathComponent("MediaRemoteAdapter.framework")
-            
-            if fm.fileExists(atPath: fbScript) && fm.fileExists(atPath: fbAdapter) {
-                return (fbScript, fbAdapter, nil)
-            }
-        }
-        return nil
+        return Self.cachedPaths
     }
 
     nonisolated private func clientKey(for track: TrackInfo) -> String {
@@ -788,24 +749,11 @@ final class NativeMediaController: NSObject {
         return "\(bundle):\(pid)"
     }
 
-    nonisolated private static func downsampleImage(_ image: NSImage, targetSize: NSSize) -> NSImage {
-        let size = image.size
-        guard size.width > targetSize.width || size.height > targetSize.height else { return image }
-        let scale = min(targetSize.width / max(size.width, 1), targetSize.height / max(size.height, 1))
-        let newSize = NSSize(width: size.width * scale, height: size.height * scale)
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-        image.draw(in: NSRect(origin: .zero, size: newSize), from: .zero, operation: .copy, fraction: 1.0)
-        newImage.unlockFocus()
-        return newImage
-    }
-
     nonisolated private func buildTrackInfo(
         from metadata: [String: Any],
         trackChanged: Bool,
         previousArtwork: NSImage?,
         previousTitle: String?,
-        cachedArtwork: NSImage?,
         previousIsPlaying: Bool?
     ) -> TrackInfo? {
         let title = metadata["title"] as? String
@@ -855,11 +803,11 @@ final class NativeMediaController: NSObject {
         }
 
         var artwork: NSImage?
-        if let base64 = metadata["artworkData"] as? String, let data = Data(base64Encoded: base64),
-           let image = NSImage(data: data) {
-            artwork = Self.downsampleImage(image, targetSize: NSSize(width: 120, height: 120))
-        } else if let cachedArtwork {
-            artwork = cachedArtwork
+        
+        // Directly decode base64
+        if let base64 = metadata["artworkData"] as? String,
+           let data = Data(base64Encoded: base64) {
+            artwork = NSImage(data: data)
         } else if !trackChanged, let previousArtwork, previousTitle == title {
             artwork = previousArtwork
         }
@@ -913,6 +861,7 @@ final class NativeMediaController: NSObject {
     }
 }
 
+// MARK: - TrackInfo.Payload Extension
 extension TrackInfo.Payload {
     func updatingArtwork(_ artwork: NSImage?, mimeType: String?) -> TrackInfo.Payload {
         TrackInfo.Payload(
@@ -944,7 +893,7 @@ extension TrackInfo.Payload {
             shuffleMode: shuffleMode,
             isLiked: isLiked,
             isBanned: isBanned,
-            isInWishList: isInWishList,
+            isInWishList: isLiked,
             isAdvertisement: isAdvertisement,
             isMusicApp: isMusicApp,
             supportsIsLiked: supportsIsLiked,

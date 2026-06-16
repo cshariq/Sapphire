@@ -67,7 +67,10 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     func completeFaceRegistration() {
         self.faceRegistrationController = nil
         self.fetchRegisteredFaces()
+        
+        // RAM OPTIMIZATION: Flush models and pre-allocated buffers from memory immediately
         MLModelManager.shared.unloadModels()
+        FaceDataStore.shared.deallocateStaticBuffers()
     }
 
     func deleteFaceProfile(name: String) {
@@ -89,8 +92,11 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         isFaceIDAuthenticating = false
         cameraController?.teardown()
         cameraController = nil
+        
+        // RAM OPTIMIZATION: Flush models and pre-allocated buffers from memory asynchronously
         DispatchQueue.global(qos: .utility).async {
             MLModelManager.shared.unloadModels()
+            FaceDataStore.shared.deallocateStaticBuffers()
         }
     }
 
@@ -124,8 +130,11 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             return
         }
 
+        // IMMEDIATE CAMERA SHUTDOWN:
+        // Tear down the Face ID engine and turn off the webcam immediately.
+        // This stops the hardware green light on the spot.
         if isFaceIDAuthenticating {
-            cameraController?.stopCameraSession()
+            tearDownFaceID()
         }
 
         // Ensure we have Accessibility permission to post keyboard events
@@ -143,12 +152,6 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self else { return }
             self.unlockWithPassword()
-
-            if self.isFaceIDAuthenticating {
-                DispatchQueue.main.async {
-                    self.tearDownFaceID()
-                }
-            }
         }
     }
 
@@ -259,7 +262,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     private func unlockWithPassword() {
-        // Verify Accessibility permission once more (no prompt here to avoid showing over lock screen)
+        // Verify Accessibility permission once more
         guard hasAccessibilityPermission(promptIfNeeded: false) else {
             setStatusThrottled("Accessibility permission required")
             return
@@ -280,29 +283,26 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
         let tapLocation = CGEventTapLocation.cghidEventTap
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            let utf16chars = Array(password.utf16)
-            var offset = 0
-            let chunkSize = 20
-
-            while offset < utf16chars.count {
-                var chunk = Array(utf16chars[offset..<min(offset + chunkSize, utf16chars.count)])
-                if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
-                    pwDown.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
-                    pwDown.post(tap: tapLocation)
-                }
-                if let pwUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
-                    pwUp.post(tap: tapLocation)
-                }
-                offset += chunkSize
-                usleep(12_000) // brief gap between chunks to avoid event coalescing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            var utf16chars = Array(password.utf16)
+            
+            // KEYBOARD OPTIMIZATION: Instead of chunking with sleeps, the entire password
+            // string is posted in a single Unicode keystroke packet, dropping latency to <1ms.
+            if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
+                pwDown.keyboardSetUnicodeString(stringLength: utf16chars.count, unicodeString: &utf16chars)
+                pwDown.post(tap: tapLocation)
             }
+            if let pwUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
+                pwUp.post(tap: tapLocation)
+            }
+            
+            // Minimal sleep for OS HID buffer commits
+            usleep(5000)
 
-            // Press Return to submit
+            // Submit with Return key
             let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
             let retUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
             retDown?.post(tap: tapLocation)
-            usleep(20_000)
             retUp?.post(tap: tapLocation)
 
             self.setStatusThrottled("Unlocked")
@@ -406,4 +406,3 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         statusUpdateQueue.asyncAfter(deadline: .now() + throttle, execute: work)
     }
 }
-

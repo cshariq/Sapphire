@@ -1,10 +1,3 @@
-//
-//  LyricsFetcher.swift
-//  Sapphire
-//
-//  Created by Shariq Charolia on 2025-06-26.
-//
-
 import Foundation
 
 class LyricsFetcher {
@@ -103,62 +96,107 @@ class LyricsFetcher {
         return nil
     }
 
+    // High performance batch translation of lyric strings
     func translate(lyrics: inout [LyricLine], from sourceLanguage: String, to targetLanguage: String) async {
+        guard !lyrics.isEmpty else { return }
+
+        // We group lyric lines to fit safely under standard API character limitations
+        var chunks: [[(index: Int, text: String)]] = []
+        var currentChunk: [(index: Int, text: String)] = []
+        var currentLength = 0
+
+        for i in 0..<lyrics.count {
+            let originalText = lyrics[i].text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if originalText.isEmpty {
+                lyrics[i].translatedText = ""
+                continue
+            }
+            
+            if currentLength + originalText.count + 1 > 1800 && !currentChunk.isEmpty {
+                chunks.append(currentChunk)
+                currentChunk = []
+                currentLength = 0
+            }
+            
+            currentChunk.append((index: i, text: originalText))
+            currentLength += originalText.count + 1
+        }
+        if !currentChunk.isEmpty {
+            chunks.append(currentChunk)
+        }
 
         struct UnofficialGoogleTranslateResponse: Decodable {
             let translatedText: String?
             init(from decoder: Decoder) throws {
                 var container = try decoder.unkeyedContainer()
-                if var outerArray = try? container.nestedUnkeyedContainer(),
-                   var firstInnerArray = try? outerArray.nestedUnkeyedContainer() {
-                    self.translatedText = try? firstInnerArray.decode(String.self)
+                if var outerArray = try? container.nestedUnkeyedContainer() {
+                    var combinedTranslation = ""
+                    while !outerArray.isAtEnd {
+                        if var firstInnerArray = try? outerArray.nestedUnkeyedContainer(),
+                           let translatedSegment = try? firstInnerArray.decode(String.self) {
+                            combinedTranslation += translatedSegment
+                        } else {
+                            _ = try? outerArray.decode(AnyCodable.self)
+                        }
+                    }
+                    self.translatedText = combinedTranslation.isEmpty ? nil : combinedTranslation
                 } else {
                     self.translatedText = nil
                 }
             }
         }
 
-        await withTaskGroup(of: (Int, String?).self) { group in
-            for i in 0..<lyrics.count {
-                let originalText = lyrics[i].text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if originalText.isEmpty {
-                    continue
-                }
+        struct AnyCodable: Decodable {}
 
+        await withTaskGroup(of: [(Int, String)].self) { group in
+            for chunk in chunks {
                 group.addTask {
+                    let combinedText = chunk.map { $0.text }.joined(separator: "\n")
+                    
                     var components = URLComponents(string: "https://translate.googleapis.com/translate_a/single")!
                     components.queryItems = [
                         URLQueryItem(name: "client", value: "gtx"),
                         URLQueryItem(name: "sl", value: sourceLanguage),
                         URLQueryItem(name: "tl", value: targetLanguage),
                         URLQueryItem(name: "dt", value: "t"),
-                        URLQueryItem(name: "q", value: originalText)
+                        URLQueryItem(name: "q", value: combinedText)
                     ]
 
-                    guard let url = components.url else { return (i, nil) }
+                    guard let url = components.url else { return [] }
 
                     do {
                         let (data, _) = try await URLSession.shared.data(from: url)
                         let unofficialResponse = try Self.decoder.decode(UnofficialGoogleTranslateResponse.self, from: data)
-                        return (i, unofficialResponse.translatedText)
+                        
+                        if let translatedResult = unofficialResponse.translatedText {
+                            let translatedLines = translatedResult.components(separatedBy: "\n")
+                            var results: [(Int, String)] = []
+                            for (offset, item) in chunk.enumerated() {
+                                if offset < translatedLines.count {
+                                    let cleanText = translatedLines[offset].trimmingCharacters(in: .whitespacesAndNewlines)
+                                    results.append((item.index, cleanText.isEmpty ? item.text : cleanText))
+                                } else {
+                                    results.append((item.index, item.text))
+                                }
+                            }
+                            return results
+                        }
                     } catch {
-                        return (i, nil)
                     }
+                    return chunk.map { ($0.index, $0.text) }
                 }
             }
 
-            for await (index, translatedText) in group {
-                if let translatedText = translatedText, !translatedText.isEmpty {
+            for await chunkResult in group {
+                for (index, translatedText) in chunkResult {
                     lyrics[index].translatedText = translatedText
-                } else {
-                    lyrics[index].translatedText = lyrics[index].text
                 }
             }
         }
 
         for i in 0..<lyrics.count {
             if lyrics[i].translatedText == nil {
-                lyrics[i].translatedText = ""
+                lyrics[i].translatedText = lyrics[i].text
             }
         }
     }
@@ -167,6 +205,3 @@ class LyricsFetcher {
         return JSONDecoder()
     }()
 }
-// MARK: - Note
-// All subscription/auth/payment logic lives in SubscriptionKit/* and is injected here only via FeatureGate/SubscriptionManager.
-

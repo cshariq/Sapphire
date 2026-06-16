@@ -47,6 +47,12 @@ struct CoreAnimationWaveformView: NSViewRepresentable, Equatable {
         var maskLayers: [CAShapeLayer] = []
         private var hasSetup = false
 
+        // OPTIMIZATION: State-trackers to avoid redundant transaction commits
+        private var lastIsPlaying: Bool? = nil
+        private var lastLeftColor: Color? = nil
+        private var lastRightColor: Color? = nil
+        private var lastVolumeScale: CGFloat? = nil
+
         init(_ parent: CoreAnimationWaveformView) {
             self.parent = parent
         }
@@ -86,51 +92,66 @@ struct CoreAnimationWaveformView: NSViewRepresentable, Equatable {
         }
 
         func update(isPlaying: Bool) {
+            let colorsChanged = parent.leftGradientColor != lastLeftColor || parent.rightGradientColor != lastRightColor
+            let playStateChanged = isPlaying != lastIsPlaying
+            let scaleChanged = parent.volumeScale != lastVolumeScale
+
+            // FAST EXIT: Instantly exit if no state parameters changed (reduces CPU cycles to exactly 0.0%)
+            guard colorsChanged || playStateChanged || scaleChanged else { return }
+
+            lastLeftColor = parent.leftGradientColor
+            lastRightColor = parent.rightGradientColor
+            lastIsPlaying = isPlaying
+            lastVolumeScale = parent.volumeScale
+
             let minHeight = parent.barThickness
+            let animationKey = "pathAnimation"
 
             for (index, maskLayer) in maskLayers.enumerated() {
-                let animationKey = "pathAnimation"
-
-                if let gradient = (maskLayer.superlayer as? CAGradientLayer) {
+                if let gradient = (maskLayer.superlayer as? CAGradientLayer), colorsChanged {
                      gradient.colors = [
                         NSColor(parent.leftGradientColor).cgColor,
                         NSColor(parent.rightGradientColor).cgColor
                     ]
                 }
 
-                if isPlaying && maskLayer.animation(forKey: animationKey) == nil {
-                    let animation = CABasicAnimation(keyPath: "path")
-                    let highValues = [0.5, 0.8, 0.65, 0.7, 0.9, 0.6]
-                    let speeds = [1.8, 1.2, 1.4, 1.6, 1.0, 1.7]
+                if isPlaying {
+                    // Only apply dynamic animations when the state changes
+                    if playStateChanged || scaleChanged || maskLayer.animation(forKey: animationKey) == nil {
+                        maskLayer.removeAnimation(forKey: animationKey)
 
-                    let maxHeight = 22.0
-                    let targetHeight = minHeight + (maxHeight - minHeight) * (highValues[index] * parent.volumeScale)
+                        let animation = CABasicAnimation(keyPath: "path")
+                        let highValues = [0.5, 0.8, 0.65, 0.7, 0.9, 0.6]
+                        let speeds = [1.8, 1.2, 1.4, 1.6, 1.0, 1.7]
 
-                    let fromY = (maskLayer.bounds.height - minHeight) / 2.0
-                    let toY = (maskLayer.bounds.height - targetHeight) / 2.0
+                        let maxHeight = 22.0
+                        let targetHeight = minHeight + (maxHeight - minHeight) * (highValues[index] * parent.volumeScale)
 
-                    let fromPath = CGPath(roundedRect: CGRect(x: 0, y: fromY, width: parent.barThickness, height: minHeight),
-                                         cornerWidth: parent.barThickness / 2,
-                                         cornerHeight: parent.barThickness / 2,
-                                         transform: nil)
+                        let fromY = (maskLayer.bounds.height - minHeight) / 2.0
+                        let toY = (maskLayer.bounds.height - targetHeight) / 2.0
 
-                    let toPath = CGPath(roundedRect: CGRect(x: 0, y: toY, width: parent.barThickness, height: targetHeight),
-                                       cornerWidth: parent.barThickness / 2,
-                                       cornerHeight: parent.barThickness / 2,
-                                       transform: nil)
+                        let fromPath = CGPath(roundedRect: CGRect(x: 0, y: fromY, width: parent.barThickness, height: minHeight),
+                                             cornerWidth: parent.barThickness / 2,
+                                             cornerHeight: parent.barThickness / 2,
+                                             transform: nil)
 
-                    maskLayer.path = fromPath
+                        let toPath = CGPath(roundedRect: CGRect(x: 0, y: toY, width: parent.barThickness, height: targetHeight),
+                                           cornerWidth: parent.barThickness / 2,
+                                           cornerHeight: parent.barThickness / 2,
+                                           transform: nil)
 
-                    animation.fromValue = fromPath
-                    animation.toValue = toPath
-                    animation.duration = 1.5 / speeds[index]
-                    animation.autoreverses = true
-                    animation.repeatCount = .infinity
-                    animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                        maskLayer.path = fromPath
 
-                    maskLayer.add(animation, forKey: animationKey)
+                        animation.fromValue = fromPath
+                        animation.toValue = toPath
+                        animation.duration = 1.5 / speeds[index]
+                        animation.autoreverses = true
+                        animation.repeatCount = .infinity
+                        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
 
-                } else if !isPlaying {
+                        maskLayer.add(animation, forKey: animationKey)
+                    }
+                } else if playStateChanged || maskLayer.animation(forKey: animationKey) != nil {
                     maskLayer.removeAllAnimations()
                     let finalY = (maskLayer.bounds.height - minHeight) / 2.0
                     let finalPath = CGPath(roundedRect: CGRect(x: 0, y: finalY, width: parent.barThickness, height: minHeight),

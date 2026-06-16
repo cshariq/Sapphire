@@ -10,6 +10,7 @@ import AppKit
 import Combine
 import SwiftUI
 import AudioToolbox
+import ImageIO
 
 @MainActor
 class MusicManager: ObservableObject {
@@ -62,8 +63,10 @@ class MusicManager: ObservableObject {
     func setDetailPlayerOpen(_ isOpen: Bool) {
         guard isDetailPlayerOpen != isOpen else { return }
         isDetailPlayerOpen = isOpen
+        print("[MusicManager:Timing] Detail Player open state changed to: \(isOpen)")
         refreshTimers()
-        if isOpen, isPlaying {
+        if isOpen {
+            // Force an immediate precise calculation of the current elapsed time upon opening
             publishPlaybackTime(force: true, includeProgressUI: true)
         }
         refreshLyricsLoadingState()
@@ -73,9 +76,23 @@ class MusicManager: ObservableObject {
     func setLyricsDetailOpen(_ isOpen: Bool) {
         guard isLyricsDetailOpen != isOpen else { return }
         isLyricsDetailOpen = isOpen
+        print("[MusicManager:Timing] Lyrics View open state changed to: \(isOpen)")
         refreshTimers()
-        if isOpen, isPlaying {
-            publishPlaybackTime(force: true, includeProgressUI: isDetailPlayerOpen)
+        if isOpen {
+            // Force an immediate precise calculation of the current elapsed time upon opening
+            publishPlaybackTime(force: true, includeProgressUI: true)
+        }
+        refreshLyricsLoadingState()
+    }
+
+    func setDetachedLyricsOpen(_ isOpen: Bool) {
+        guard isDetachedLyricsOpen != isOpen else { return }
+        isDetachedLyricsOpen = isOpen
+        print("[MusicManager:Timing] Detached Lyrics Window state changed to: \(isOpen)")
+        refreshTimers()
+        if isOpen {
+            // Force an immediate precise calculation of the current elapsed time upon opening
+            publishPlaybackTime(force: true, includeProgressUI: true)
         }
         refreshLyricsLoadingState()
     }
@@ -119,12 +136,15 @@ class MusicManager: ObservableObject {
     @Published var nowPlayingTrack: PlayerState.Track?
 
     @Published private(set) var currentLyric: LyricLine?
-    @Published private(set) var playbackProgress: Double = 0.0
-    @Published private(set) var currentElapsedTime: TimeInterval = 0
     @Published private(set) var isDetailPlayerOpen: Bool = false
     @Published private(set) var isLyricsDetailOpen: Bool = false
+    @Published private(set) var isDetachedLyricsOpen: Bool = false
     @Published private(set) var isMusicLiveActivityActive: Bool = false
     private(set) var systemVolume: Float = 0.0
+
+    // Non-published layout properties to prevent high-frequency global body redraw cascades
+    private(set) var currentElapsedTime: TimeInterval = 0
+    private(set) var playbackProgress: Double = 0.0
 
     // MARK: - Private Properties
     private let mediaController = NativeMediaController()
@@ -132,6 +152,7 @@ class MusicManager: ObservableObject {
     private let settingsModel = SettingsModel.shared
 
     private var lyricsFetchTask: Task<Void, Never>?
+    private var lyricsTranslationTask: Task<Void, Never>?
     private var volumeListener: AudioObjectPropertyListenerBlock?
     private var currentTrackDuration: TimeInterval = 0
     private var lastFetchedTitle: String?
@@ -143,7 +164,7 @@ class MusicManager: ObservableObject {
     private var lastLyricLookupSecond: Int = -1
     private var currentLyricIndex: Int? = nil
 
-    // Event-driven timers: only fire when needed by visible UI
+    // OPTIMIZATION: Throttled scrubber loop down to 5 FPS (0.2s) to drastically reduce CPU rendering workloads [3]
     private var detailPlayerTimer: Timer?
     private var liveActivityTimer: Timer?
     private var latestTrackPayload: TrackInfo.Payload?
@@ -151,8 +172,7 @@ class MusicManager: ObservableObject {
     private var lastPlaybackSyncWasPlaying = false
     private var lastTrackIdentity: String?
     private var lastMediaFingerprint: String?
-    private var currentArtworkCacheKey: String?
-    private var artworkCache: [String: NSImage] = [:]
+    private var currentlyFetchingFingerprint: String?
     private var artworkFetchGeneration = 0
     private var artworkColorExtractionTask: Task<Void, Never>?
 
@@ -160,7 +180,7 @@ class MusicManager: ObservableObject {
     private let lyricsCacheQueue = DispatchQueue(label: "com.sapphire.lyricsCache", attributes: .concurrent)
 
     private var needsLyricsUpdates: Bool {
-        if isDetailPlayerOpen || isLyricsDetailOpen { return true }
+        if isDetailPlayerOpen || isLyricsDetailOpen || isDetachedLyricsOpen { return true }
         guard settingsModel.settings.showLyricsInLiveActivity,
               settingsModel.settings.musicLiveActivityEnabled,
               isMusicLiveActivityActive else { return false }
@@ -186,8 +206,6 @@ class MusicManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .assign(to: &$nowPlayingTrack)
 
-        // Sync auxiliary states from Spotify Private API (Shuffle/Repeat)
-        // Note: Playback State (isPlaying) is now driven exclusively by the System stream to prevent fighting
         spotifyPrivateAPI.$playerState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
@@ -225,6 +243,7 @@ class MusicManager: ObservableObject {
     func pause() { defaultControls.pause() }
     func nextTrack() { defaultControls.nextTrack() }
     func previousTrack() { defaultControls.previousTrack() }
+    
     func seek(to seconds: Double) {
         defaultControls.seek(to: seconds)
         applyOptimisticSeek(to: seconds)
@@ -346,13 +365,11 @@ class MusicManager: ObservableObject {
     }
 
     private func setupHandlers() {
-        // Core handler for building the "Mac OS Native Media" list (tabs)
         mediaController.onActiveClientsChanged = { [weak self] clients in
             Task { @MainActor in
                 guard let self = self else { return }
                 self.activeMediaSources = clients
 
-                // Focus logic: switch to the focused app if we don't have one, or update current
                 if self.currentSourceKey == nil || clients[self.currentSourceKey!] == nil {
                     if let playingKey = clients.first(where: { $0.value.payload.isPlaying == true })?.key {
                         self.selectSource(key: playingKey)
@@ -386,7 +403,6 @@ class MusicManager: ObservableObject {
                     }
                 }
 
-                // Auto-switch tabs if another app starts actively playing
                 if track.payload.isPlaying == true && self.currentSourceKey != newKey {
                     self.selectSource(key: newKey)
                 }
@@ -400,9 +416,7 @@ class MusicManager: ObservableObject {
     private func applyTrackPayload(_ payload: TrackInfo.Payload, sourceKey: String) {
         self.latestTrackPayload = payload
         guard let title = payload.title, !title.isEmpty else {
-            if self.title != nil {
-                return
-            }
+            if self.title != nil { return }
             self.clearPlayerState()
             return
         }
@@ -427,32 +441,14 @@ class MusicManager: ObservableObject {
             self.fetchAndTranslateLyricsIfNeeded()
             self.trackDidChange.send()
 
+            // Apply natively streamed artwork immediately with no disk or memory delay
             if let newArtwork = payload.artwork {
-                applyArtwork(
-                    Self.downsampleImage(newArtwork),
-                    cacheKey: trackIdentity,
-                    trackIdentity: trackIdentity
-                )
-            } else if let cached = artworkCache[trackIdentity] {
-                applyArtwork(cached, cacheKey: trackIdentity, trackIdentity: trackIdentity)
+                self.applyArtwork(newArtwork, trackIdentity: trackIdentity)
             } else {
-                invalidatePendingArtwork(for: trackIdentity)
-            }
-        } else if trackIdentity != lastTrackIdentity {
-            self.lastTrackIdentity = trackIdentity
-            if let newArtwork = payload.artwork {
-                applyArtwork(
-                    Self.downsampleImage(newArtwork),
-                    cacheKey: trackIdentity,
-                    trackIdentity: trackIdentity
-                )
+                self.requestArtworkForTrack(payload: payload, trackIdentity: trackIdentity)
             }
         } else if let newArtwork = payload.artwork {
-            applyArtwork(
-                Self.downsampleImage(newArtwork),
-                cacheKey: trackIdentity,
-                trackIdentity: trackIdentity
-            )
+            self.applyArtwork(newArtwork, trackIdentity: trackIdentity)
         }
 
         if let newIsPlaying = resolvedIsPlaying(from: payload) { self.isPlaying = newIsPlaying }
@@ -486,7 +482,6 @@ class MusicManager: ObservableObject {
             totalDuration = duration
         }
 
-        // Always update timing and publish on incoming MediaRemote event
         syncPlaybackTiming(from: payload, trackChanged: false, publishImmediately: true)
     }
 
@@ -598,13 +593,12 @@ class MusicManager: ObservableObject {
         let isPlayingNow = payload.isPlaying ?? isPlaying
         guard let incomingAnchor = payload.playbackTimingAnchor(isPlayingNow: isPlayingNow) else { return }
 
-        // Always accept the latest anchor from MediaRemote for event-driven accuracy
         playbackTimingAnchor = incomingAnchor
         lastPlaybackSyncWasPlaying = isPlayingNow
 
         publishPlaybackTime(
             force: trackChanged || publishImmediately,
-            includeProgressUI: isDetailPlayerOpen
+            includeProgressUI: (isDetailPlayerOpen || isLyricsDetailOpen || isDetachedLyricsOpen)
         )
     }
 
@@ -613,7 +607,7 @@ class MusicManager: ObservableObject {
         let rate = isPlaying ? Double(latestTrackPayload?.playbackRate ?? 1.0) : 0
         playbackTimingAnchor = PlaybackTimingAnchor(
             elapsedAtSample: clamped,
-            sampleContinuousTime: ContinuousTime.now,
+            sampleEpochTime: Date().timeIntervalSince1970,
             rate: rate
         )
         publishPlaybackTime(force: true)
@@ -621,11 +615,16 @@ class MusicManager: ObservableObject {
 
     private func publishPlaybackTime(force: Bool = false, includeProgressUI: Bool? = nil) {
         let exactTime: TimeInterval
+        let source: String
+        
         if let anchor = playbackTimingAnchor {
-            exactTime = anchor.elapsed()
+            exactTime = anchor.elapsed(at: Date())
+            source = "Anchor (Sample: \(anchor.elapsedAtSample)s, Rate: \(anchor.rate), Age: \(Date().timeIntervalSince1970 - anchor.sampleEpochTime)s)"
         } else if let payload = latestTrackPayload {
             exactTime = payload.interpolatedElapsedTime(at: Date())
+            source = "Payload Interpolation (Sample: \(payload.currentElapsedTime ?? 0)s)"
         } else {
+            print("[MusicManager:Timing] WARNING: Cannot publish playback time. No timing anchor or payload available.")
             return
         }
 
@@ -633,9 +632,14 @@ class MusicManager: ObservableObject {
         let clampedElapsed = duration > 0 ? max(0.0, min(duration, exactTime)) : max(0.0, exactTime)
         let progress = duration > 0 ? max(0.0, min(1.0, clampedElapsed / duration)) : 0.0
 
-        let publishesProgress = includeProgressUI ?? isDetailPlayerOpen
+        let publishesProgress = includeProgressUI ?? (isDetailPlayerOpen || isLyricsDetailOpen || isDetachedLyricsOpen)
         let elapsedThreshold = publishesProgress ? 0.025 : 0.45
         let elapsedDelta = abs(clampedElapsed - currentElapsedTime)
+        
+        if force {
+            print("[MusicManager:Timing] Forcing update. Calculated elapsed: \(clampedElapsed)s / \(duration)s (\(progress * 100)%) via \(source)")
+        }
+
         if !force, elapsedDelta < elapsedThreshold {
             return
         }
@@ -657,7 +661,6 @@ class MusicManager: ObservableObject {
         lastPlaybackSyncWasPlaying = false
         lastTrackIdentity = nil
         lastMediaFingerprint = nil
-        currentArtworkCacheKey = nil
         currentTrackArtworkToken = ""
         self.title = nil; self.artist = nil; self.album = nil; self.artwork = nil; self.artworkURL = nil
         self.uri = nil; self.trackID = nil; self.popularity = nil; self.playCount = nil
@@ -665,18 +668,15 @@ class MusicManager: ObservableObject {
         self.resetLyricsState()
     }
 
-    // MARK: - Event-Driven Timer Management
-    // Timers only run when UI needs updates. When nothing visible needs timing (widget only, no live activity),
-    // timing is purely driven by MediaRemote push events.
-
     private func refreshTimers() {
-        let needsDetailTimer = isPlaying && isDetailPlayerOpen
+        let needsDetailTimer = isPlaying && (isDetailPlayerOpen || isLyricsDetailOpen || isDetachedLyricsOpen)
         let needsActivityTimer = isPlaying && isMusicLiveActivityActive && settingsModel.settings.showLyricsInLiveActivity && settingsModel.settings.musicLiveActivityEnabled
 
-        // Detail player timer: ~60fps for smooth progress bar
+        // OPTIMIZATION: Throttled scrubber loop down to 5 FPS (0.2s) to drastically reduce CPU rendering workloads [3]
         if needsDetailTimer {
             if detailPlayerTimer == nil {
-                let timer = Timer(timeInterval: 0.016, repeats: true) { [weak self] _ in
+                print("[MusicManager:Timing] Starting 5 FPS low-overhead playback timer.")
+                let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
                     guard let self = self, self.isPlaying else { return }
                     self.publishPlaybackTime(includeProgressUI: true)
                 }
@@ -684,13 +684,16 @@ class MusicManager: ObservableObject {
                 RunLoop.main.add(timer, forMode: .common)
             }
         } else {
-            detailPlayerTimer?.invalidate()
-            detailPlayerTimer = nil
+            if detailPlayerTimer != nil {
+                print("[MusicManager:Timing] Stopping 5 FPS playback timer.")
+                detailPlayerTimer?.invalidate()
+                detailPlayerTimer = nil
+            }
         }
 
-        // Live activity timer: 1 second for lyrics updates
         if needsActivityTimer && !needsDetailTimer {
             if liveActivityTimer == nil {
+                print("[MusicManager:Timing] Starting 1 Hz Live Activity fallback timer.")
                 let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
                     guard let self = self, self.isPlaying else { return }
                     self.publishPlaybackTime(includeProgressUI: false)
@@ -699,11 +702,12 @@ class MusicManager: ObservableObject {
                 RunLoop.main.add(timer, forMode: .common)
             }
         } else {
-            liveActivityTimer?.invalidate()
-            liveActivityTimer = nil
+            if liveActivityTimer != nil {
+                print("[MusicManager:Timing] Stopping 1 Hz Live Activity fallback timer.")
+                liveActivityTimer?.invalidate()
+                liveActivityTimer = nil
+            }
         }
-
-        // When neither timer is needed, timing is purely event-driven from MediaRemote
     }
 
     private func invalidateAllTimers() {
@@ -725,15 +729,7 @@ class MusicManager: ObservableObject {
     }
 
     func trimArtworkCache() {
-        guard let key = currentArtworkCacheKey else {
-            artworkCache.removeAll()
-            return
-        }
-        let current = artworkCache[key]
-        artworkCache.removeAll(keepingCapacity: false)
-        if let current {
-            artworkCache[key] = current
-        }
+        // Stateless: Memory and disk maps are freed automatically on track update.
     }
 
     func trimLyricsCache() {
@@ -776,35 +772,23 @@ class MusicManager: ObservableObject {
         return fingerprint.isEmpty ? "unknown" : "fp:\(fingerprint)"
     }
 
-    private func artworkCacheKey(for payload: TrackInfo.Payload) -> String {
-        mediaFingerprint(for: payload)
-    }
-
-    private func fetchArtwork(for payload: TrackInfo.Payload) {
-        requestArtworkForTrack(payload: payload, trackIdentity: trackIdentity(for: payload))
-    }
-
-    private func invalidatePendingArtwork(for trackIdentity: String) {
-        artworkFetchGeneration += 1
-        currentArtworkCacheKey = nil
-        self.artwork = nil
-        self.artworkURL = nil
-        currentTrackArtworkToken = trackIdentity
+    private func prefetchArtworkIfNeeded(payload: TrackInfo.Payload, trackIdentity: String) {
+        // Stateless: Stream loads direct base64 automatically.
     }
 
     private func requestArtworkForTrack(payload: TrackInfo.Payload, trackIdentity: String) {
-        if let cached = artworkCache[trackIdentity] {
-            applyArtwork(cached, cacheKey: trackIdentity, trackIdentity: trackIdentity)
-            return
-        }
-
         let generation = artworkFetchGeneration
         let title = payload.title
         let artist = payload.artist
         let album = payload.album
 
+        if let artwork = payload.artwork {
+            self.applyArtwork(artwork, trackIdentity: trackIdentity)
+            return
+        }
+
         Task(priority: .userInitiated) { [weak self] in
-            guard let self else { return }
+            guard let self = self else { return }
             let (artwork, _) = await self.mediaController.fetchArtworkForTrack(
                 expectedIdentity: trackIdentity,
                 title: title,
@@ -812,29 +796,16 @@ class MusicManager: ObservableObject {
                 album: album
             )
 
-            await MainActor.run {
-                guard self.artworkFetchGeneration == generation,
-                      self.lastTrackIdentity == trackIdentity,
-                      let artwork else { return }
-                self.applyArtwork(
-                    Self.downsampleImage(artwork),
-                    cacheKey: trackIdentity,
-                    trackIdentity: trackIdentity
-                )
-            }
+            guard self.artworkFetchGeneration == generation,
+                  self.lastTrackIdentity == trackIdentity,
+                  let artwork = artwork else { return }
+                  
+            self.applyArtwork(artwork, trackIdentity: trackIdentity)
         }
     }
 
-    private func applyArtwork(_ displayArtwork: NSImage, cacheKey: String, trackIdentity: String? = nil) {
+    private func applyArtwork(_ displayArtwork: NSImage, trackIdentity: String? = nil) {
         if let trackIdentity, trackIdentity != lastTrackIdentity { return }
-
-        if artworkCache.count >= 3, artworkCache[cacheKey] == nil {
-            if let dropKey = artworkCache.keys.first(where: { $0 != currentArtworkCacheKey && $0 != cacheKey }) {
-                artworkCache.removeValue(forKey: dropKey)
-            }
-        }
-        artworkCache[cacheKey] = displayArtwork
-        currentArtworkCacheKey = cacheKey
         self.artwork = displayArtwork
         self.artworkURL = nil
         refreshArtworkColorExtractionIfNeeded()
@@ -842,9 +813,7 @@ class MusicManager: ObservableObject {
 
     private func refreshArtworkColorExtractionIfNeeded() {
         artworkColorExtractionTask?.cancel()
-        guard shouldExtractArtworkColors, let artwork else {
-            return
-        }
+        guard shouldExtractArtworkColors, let artwork = artwork else { return }
 
         artworkColorExtractionTask = Task { @MainActor in
             guard !Task.isCancelled, self.shouldExtractArtworkColors else { return }
@@ -861,8 +830,10 @@ class MusicManager: ObservableObject {
     private func refreshLyricsLoadingState() {
         if needsLyricsUpdates {
             if lyrics.isEmpty {
+                print("[MusicManager:Lyrics] Dedicated view opened but lyrics list is empty. Triggering fetch.")
                 fetchAndTranslateLyricsIfNeeded()
             } else {
+                print("[MusicManager:Lyrics] Dedicated view opened. Syncing current active lyric line.")
                 updateCurrentLyric(for: currentElapsedTime)
             }
         }
@@ -884,11 +855,23 @@ class MusicManager: ObservableObject {
     // MARK: - Lyrics & UI Helpers
 
     private func fetchAndTranslateLyricsIfNeeded() {
-        guard let title = self.title, let artist = self.artist, let album = self.album else { return }
+        guard let title = self.title, let artist = self.artist, let album = self.album else {
+            print("[MusicManager:Lyrics] Cancelled fetch: Title/Artist/Album values are missing.")
+            return
+        }
         
         let cacheKey = "\(title)|\(artist)|\(album)".lowercased()
         
+        // OPTIMIZATION: Prevent fetch thrashing (cancellation loop) if exact track request is already active
+        if currentlyFetchingFingerprint == cacheKey {
+            print("[MusicManager:Lyrics] Fetch for '\(title)' by '\(artist)' is already in progress. Ignoring redundant fetch.")
+            return
+        }
+        
+        print("[MusicManager:Lyrics] Requesting lyrics for track: '\(title)' by '\(artist)' [Album: '\(album)']")
+        
         if let cachedLyrics = lyricsCacheQueue.sync(execute: { lyricsCache[cacheKey] }) {
+            print("[MusicManager:Lyrics] Hit local memory cache! Loaded \(cachedLyrics.count) lines instantly.")
             self.lyrics = cachedLyrics
             self.retranslateLyricsIfNeeded()
             if self.needsLyricsUpdates {
@@ -898,12 +881,31 @@ class MusicManager: ObservableObject {
         }
         
         lyricsFetchTask?.cancel()
+        lyricsTranslationTask?.cancel()
+        currentlyFetchingFingerprint = cacheKey
+        
         let fetchIdentity = lastTrackIdentity
+        print("[MusicManager:Lyrics] Initiating network fetch from API...")
         lyricsFetchTask = Task {
+            defer {
+                Task { @MainActor in
+                    if self.currentlyFetchingFingerprint == cacheKey {
+                        self.currentlyFetchingFingerprint = nil
+                    }
+                }
+            }
             guard let fL = await lyricsFetcher.fetchSyncedLyrics(for: title, artist: artist, album: album),
-                  !fL.isEmpty, !Task.isCancelled else { return }
+                  !fL.isEmpty, !Task.isCancelled else {
+                print("[MusicManager:Lyrics] Synced lyrics API returned empty or call was cancelled.")
+                return
+            }
+            
             await MainActor.run {
-                guard self.lastTrackIdentity == fetchIdentity else { return }
+                guard self.lastTrackIdentity == fetchIdentity else {
+                    print("[MusicManager:Lyrics] Network fetch completed, but active track already changed. Ignoring.")
+                    return
+                }
+                print("[MusicManager:Lyrics] Synced lyrics loaded successfully! Count: \(fL.count) lines. Updating UI instantly.")
                 self.lyrics = fL
                 self.lyricsCacheQueue.async(flags: .barrier) {
                     self.lyricsCache[cacheKey] = fL
@@ -917,17 +919,50 @@ class MusicManager: ObservableObject {
     }
 
     private func retranslateLyricsIfNeeded() {
-        Task {
+        lyricsTranslationTask?.cancel()
+        let fetchIdentity = lastTrackIdentity
+        
+        lyricsTranslationTask = Task {
             guard !self.lyrics.isEmpty else { return }
             var lyricsToUpdate = self.lyrics
+            
+            // If translation is disabled, clear any translations and update immediately
             if !settingsModel.settings.enableLyricTranslation {
+                print("[MusicManager:Lyrics] Translations disabled in user settings. Skipping.")
                 for i in 0..<lyricsToUpdate.count { lyricsToUpdate[i].translatedText = nil }
-                self.lyrics = lyricsToUpdate; return
+                guard !Task.isCancelled, self.lastTrackIdentity == fetchIdentity else { return }
+                self.lyrics = lyricsToUpdate
+                return
             }
+            
             let sample = lyricsToUpdate.prefix(5).map { $0.text }.joined(separator: " ")
-            guard !sample.isEmpty, let lang = await lyricsFetcher.detectLanguage(for: sample) else { return }
+            guard !sample.isEmpty else { return }
+            
+            print("[MusicManager:Lyrics] Detecting language for lyrics sample...")
+            guard let lang = await lyricsFetcher.detectLanguage(for: sample) else {
+                print("[MusicManager:Lyrics] Language detection failed.")
+                return
+            }
+            print("[MusicManager:Lyrics] Detected source language: '\(lang)'")
+            
             let target = settingsModel.settings.lyricTranslationLanguage
-            if lang != target { await lyricsFetcher.translate(lyrics: &lyricsToUpdate, from: lang, to: target); self.lyrics = lyricsToUpdate }
+            guard lang != target else {
+                print("[MusicManager:Lyrics] Track language matches target language '\(target)'. Skipping translation.")
+                return
+            }
+            
+            if Task.isCancelled { return }
+            print("[MusicManager:Lyrics] Translating lyrics from '\(lang)' to '\(target)'...")
+            await lyricsFetcher.translate(lyrics: &lyricsToUpdate, from: lang, to: target)
+            
+            guard !Task.isCancelled, self.lastTrackIdentity == fetchIdentity else {
+                print("[MusicManager:Lyrics] Translation finished but active track already changed. Discarding output.")
+                return
+            }
+            
+            print("[MusicManager:Lyrics] Translation successfully completed. Updating UI.")
+            self.lyrics = lyricsToUpdate
+            self.updateCurrentLyric(for: self.currentElapsedTime)
         }
     }
 
@@ -935,9 +970,7 @@ class MusicManager: ObservableObject {
         guard needsLyricsUpdates, !lyrics.isEmpty else { return }
 
         let second = Int(elapsedTime)
-        if second == lastLyricLookupSecond, currentLyricIndex != nil {
-            return
-        }
+        if second == lastLyricLookupSecond, currentLyricIndex != nil { return }
         lastLyricLookupSecond = second
 
         let newIndex = binarySearchLyric(for: elapsedTime)
@@ -947,6 +980,7 @@ class MusicManager: ObservableObject {
         if self.currentLyric?.id != newLyric?.id {
             self.currentLyric = newLyric
             self.currentLyricPublisher.send(newLyric)
+            print("[MusicManager:Lyrics] Active lyric line updated to index \(newIndex ?? -1): '\(newLyric?.text ?? "")'")
         }
     }
 
@@ -1010,16 +1044,22 @@ class MusicManager: ObservableObject {
         self.appIcon = NSWorkspace.shared.icon(forFile: url.path)
     }
 
+    // High-performance background-safe scaling via ImageIO
     nonisolated private static func downsampleImage(_ image: NSImage, maxDimension: CGFloat = 200) -> NSImage {
-        let size = image.size
-        guard size.width > maxDimension || size.height > maxDimension else { return image }
-        let scale = min(maxDimension / max(size.width, size.height), 1.0)
-        let newSize = NSSize(width: size.width * scale, height: size.height * scale)
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-        image.draw(in: NSRect(origin: .zero, size: newSize), from: .zero, operation: .copy, fraction: 1.0)
-        newImage.unlockFocus()
-        return newImage
+        guard let tiffData = image.tiffRepresentation,
+              let source = CGImageSourceCreateWithData(tiffData as CFData, nil) else {
+            return image
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return image
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
     private func resetColorsToDefault() {
@@ -1027,8 +1067,14 @@ class MusicManager: ObservableObject {
         self.accentColor = def; self.leftGradientColor = def; self.rightGradientColor = def.opacity(0.7)
     }
 
+    private func resetColorsToDefault_() {
+        let def = Color(red: 0.53, green: 0.73, blue: 0.88)
+        self.accentColor = def; self.leftGradientColor = def; self.rightGradientColor = def.opacity(0.7)
+    }
+
     private func resetLyricsState() {
         lyricsFetchTask?.cancel()
+        lyricsTranslationTask?.cancel()
         lyrics = []
         currentLyric = nil
         currentLyricIndex = nil
@@ -1042,7 +1088,7 @@ class MusicManager: ObservableObject {
             .removeDuplicates { $0 == $1 }
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self else { return }
+                guard let self = self else { return }
                 self.refreshLyricsLoadingState()
                 if self.needsLyricsUpdates {
                     self.retranslateLyricsIfNeeded()
@@ -1066,7 +1112,6 @@ class MusicManager: ObservableObject {
     private func updateDevicePolling() {
         airplayDeviceUpdateTimer?.invalidate()
         if lastKnownBundleID == "com.apple.Music" {
-            // Increased from 5s to 10s to reduce polling frequency
             airplayDeviceUpdateTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in Task { await self?.updateAirPlayDevices() } }
             airplayDeviceUpdateTimer?.fire()
         }

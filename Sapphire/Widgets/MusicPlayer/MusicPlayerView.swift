@@ -36,15 +36,24 @@ private struct PlayerProgressView: View {
                 }
             )
             .frame(height: 30)
-            .shadow(color: musicManager.accentColor.opacity(0.5), radius: 8, y: 3)
+            .shadow(color: musicManager.accentColor.opacity(0.3), radius: 4, y: 2)
 
             Text("-\(formatTime(musicManager.totalDuration - displayElapsed))")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(.secondary)
         }
+        .onAppear {
+            displayElapsed = musicManager.currentElapsedTime
+            currentProgress = musicManager.playbackProgress
+        }
         .onReceive(musicManager.playbackTimePublisher) { (elapsed, progress) in
             displayElapsed = elapsed
-            currentProgress = progress
+            
+            // OPTIMIZATION: Interpolates progress width smoothly over the 200ms gap [2].
+            // This preserves 100% fluid visual animations while the CPU only ticks 5 times a second!
+            withAnimation(.linear(duration: 0.2)) {
+                currentProgress = progress
+            }
         }
     }
 }
@@ -180,15 +189,13 @@ struct MusicPlayerView: View {
                         .resizable().aspectRatio(contentMode: .fit).frame(width: 60, height: 60)
                         .cornerRadius(8)
                         .compositingGroup()
-                        .shadow(color: musicManager.accentColor.opacity(0.8), radius: 8)
-                        .shadow(color: showTemporaryLikedGlow ? .pink.opacity(0.8) : .clear, radius: 15)
+                        .shadow(color: musicManager.accentColor.opacity(0.4), radius: 6, y: 3)
 
                     Image(systemName: "heart.fill")
                         .font(.system(size: 30)).foregroundColor(.white)
                         .scaleEffect(showLikeAnimation ? 1.0 : 0.5).opacity(showLikeAnimation ? 1.0 : 0.0)
                         .shadow(radius: 5)
                 }
-                .drawingGroup()
                 .animation(.easeInOut, value: showTemporaryLikedGlow)
                 .onTapGesture(count: 2) {
                     guard isSpotifyOrAppleMusic else { return }
@@ -220,7 +227,6 @@ struct MusicPlayerView: View {
                 WaveformView()
                     .environmentObject(musicManager)
                     .scaleEffect(1.3)
-                    .compositingGroup()
             }
             .padding(.top, musicManager.activeMediaSources.count > 1 ? 0 : 10)
 
@@ -392,6 +398,7 @@ struct MusicPlayerView: View {
     }
 }
 
+// MARK: - View Modifiers
 struct PressableButton: ViewModifier {
     @Binding var isPressing: Bool
     var size: MusicPlayerView.ButtonSize

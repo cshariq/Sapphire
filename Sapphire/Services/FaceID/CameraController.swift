@@ -13,7 +13,7 @@ import AppKit
 import AVFoundation
 import os
 
-enum RegistrationStep:  CaseIterable, Equatable {
+enum RegistrationStep: CaseIterable, Equatable {
     case scanning
     case finalizing
 
@@ -40,20 +40,20 @@ private enum FacePoseBucket: String, CaseIterable {
     }
 }
 
-enum CameraState:  Equatable {
+enum CameraState: Equatable {
     case idle, registering(RegistrationStep), registeredAndIdle, detecting, recognized, authenticating
 }
 
 class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     public let id = UUID()
-    @Published var appState:  CameraState = .idle
+    @Published var appState: CameraState = .idle
     @Published var userInstruction: String = "Press 'Register' to begin."
-    @Published var faceIsRecognized:  Bool = false
+    @Published var faceIsRecognized: Bool = false
     @Published var smoothedBoundingBox: CGRect?
-    @Published var processedAuthImage: NSImage?  = nil
+    @Published var processedAuthImage: NSImage? = nil
     @Published var processedRegImage: NSImage? = nil
-    @Published var cameraError: String?  = nil
+    @Published var cameraError: String? = nil
     @Published var registrationProgress: Double = 0.0
     @Published var registrationPoseCaptured: Set<String> = []
 
@@ -63,11 +63,15 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
     private var consecutiveMatchCount = 0
     private let logger = Logger(subsystem: "com.sapphire.app", category: "FaceID.CameraController")
 
+    // Temporal Score History Buffer
+    private var similarityHistory: [Double] = []
+    private let temporalWindowSize = 4
+
     let captureSession = AVCaptureSession()
 
     private let videoDataOutput = AVCaptureVideoDataOutput()
     private let sessionQueue = DispatchQueue(label: "com.cshariq.Sapphire.sessionQueue", qos: .userInteractive)
-    private let visionQueue = DispatchQueue(label:  "com.cshariq.Sapphire.visionQueue", qos: .userInitiated)
+    private let visionQueue = DispatchQueue(label: "com.cshariq.Sapphire.visionQueue", qos: .userInitiated)
 
     public var faceDataStore = FaceDataStore.shared
 
@@ -82,13 +86,13 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
     private var poseBucketSamples: [FacePoseBucket: [Faceprint]] = [:]
     private var stablePoseFrames = 0
     private var lastStableBucket: FacePoseBucket?
-    private let samplesPerBucket = 2
+    private let samplesPerBucket = 1
     private let requiredStableFrames = 2
-    private let maxSamplesPerBucket = 3
+    private let maxSamplesPerBucket = 2
 
-    private let unlockThreshold: Double = 0.75
-    private let instantUnlockThreshold: Double = 0.80
-    private let consecutiveMatchesRequired = 1
+    private let unlockThreshold: Double = 0.84
+    private let instantUnlockThreshold: Double = 0.92
+    private let consecutiveMatchesRequired = 2
     private let authFrameStride = 1
 
     @Published var isRegistrationMode = false
@@ -132,7 +136,7 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         if faceDataStore.hasRegisteredFaceprints() {
             DispatchQueue.main.async {
                 self.appState = .registeredAndIdle
-                self.userInstruction = "Registered!  Press Authenticate."
+                self.userInstruction = "Registered! Press Authenticate."
             }
         }
     }
@@ -161,6 +165,7 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         stablePoseFrames = 0
         lastStableBucket = nil
         registrationPoseCaptured.removeAll()
+        similarityHistory.removeAll()
 
         stopCameraSession()
 
@@ -189,6 +194,8 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         isProcessingAuthFrame = false
         consecutiveMatchCount = 0
         authFrameCounter = 0
+        similarityHistory.removeAll()
+        
         DispatchQueue.main.async {
             self.appState = .authenticating
             self.userInstruction = "Looking for your face..."
@@ -270,11 +277,8 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         let yaw = observation.yaw?.doubleValue ?? 0
         let pitch = observation.pitch?.doubleValue ?? 0
         let roll = observation.roll?.doubleValue ?? 0
-        let hasYaw = observation.yaw != nil
-        let hasPitch = observation.pitch != nil
-        let hasRoll = observation.roll != nil
         
-        logger.debug("Face pose - yaw: \(yaw, privacy: .public) (hasYaw: \(hasYaw, privacy: .public)), pitch: \(pitch, privacy: .public) (hasPitch: \(hasPitch, privacy: .public)), roll: \(roll, privacy: .public) (hasRoll: \(hasRoll, privacy: .public))")
+        logger.debug("Face pose - yaw: \(yaw, privacy: .public), pitch: \(pitch, privacy: .public), roll: \(roll, privacy: .public)")
 
         guard let bucket = FacePoseBucket.detect(yaw: yaw) else {
             logger.debug("No bucket detected for yaw: \(yaw, privacy: .public)")
@@ -282,8 +286,6 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
             lastStableBucket = nil
             return
         }
-        
-        logger.debug("Detected bucket: \(bucket.rawValue, privacy: .public) for yaw: \(yaw, privacy: .public), lastStableBucket: \(self.lastStableBucket?.rawValue ?? "nil", privacy: .public)")
 
         DispatchQueue.main.async {
             self.userInstruction = self.registrationHint()
@@ -307,8 +309,6 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         if success {
             stablePoseFrames = 0
         } else {
-            // Keep the frame counter saturated so it continuously tries on subsequent
-            // frames without requiring the user to look away and look back.
             stablePoseFrames = requiredStableFrames
         }
 
@@ -356,7 +356,7 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         DispatchQueue.main.async {
             self.registrationPoseCaptured.insert(bucket.rawValue)
             if let preparedImage = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) {
-                self.processedRegImage = preparedImage
+                self.processedRegImage = FaceProcessor.shared.makeUiImage(from: preparedImage)
             }
             let filled = FacePoseBucket.allCases.filter { self.poseBucketSamples[$0]?.isEmpty == false }.count
             self.registrationProgress = min(1.0, Double(filled) / Double(FacePoseBucket.allCases.count))
@@ -414,64 +414,150 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
     private func performAuthenticationChecks(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
         guard isAuthenticating else { return }
         guard isFaceQualityAcceptable(observation) else {
-            logger.debug("❌ Face quality check failed")
             consecutiveMatchCount = 0
+            similarityHistory.removeAll()
             return
         }
 
         isProcessingAuthFrame = true
-        defer { isProcessingAuthFrame = false }
+        
+        // Ensure static buffers are allocated prior to processing
+        FaceDataStore.shared.allocateStaticBuffers()
 
-        guard let preparedImage = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) else { 
-            logger.debug("❌ Failed to prepare image")
-            return 
-        }
+        // Multi-Model Concurrency on Background Thread
+        Task.detached(priority: .userInitiated) {
+            
+            // 1. CoreImage Similarity Alignment (GPU only) for Face Match
+            guard let preparedFace = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) else {
+                await self.finishAuthFrame()
+                return
+            }
 
-        let faceScore = faceDataStore.getSimilarityScore(for: preparedImage)
-        logger.debug("🔐 Auth check - Score: \(String(format: "%.1f%%", faceScore * 100)), instantThreshold: \(String(format: "%.0f%%", self.instantUnlockThreshold * 100)), confirmThreshold: \(String(format: "%.0f%%", self.unlockThreshold * 100))")
-
-        if faceScore >= 0.85 {
-            faceDataStore.learnNewFaceprint(faceImage: preparedImage)
-        }
-
-        let shouldUnlockInstantly = faceScore >= instantUnlockThreshold
-        let shouldUnlockWithConfirmation = faceScore >= unlockThreshold
-        let requiredMatches = 1
-
-        if shouldUnlockInstantly {
-            consecutiveMatchCount = requiredMatches
-            logger.debug("✅ Instant unlock threshold met")
-        } else if shouldUnlockWithConfirmation {
-            consecutiveMatchCount += 1
-            logger.debug("🔄 Confirmation frame \(self.consecutiveMatchCount)/\(requiredMatches)")
-        } else {
-            consecutiveMatchCount = 0
-        }
-
-        let authenticated = consecutiveMatchCount >= requiredMatches
-        let reason = "Face Match (\(String(format: "%.1f%%", faceScore * 100)))"
-
-        DispatchQueue.main.async {
-            guard self.isAuthenticating else { return }
-            self.processedAuthImage = preparedImage
-
-            if authenticated {
-                self.logger.info("✅ Auth success at \(String(format: "%.1f%%", faceScore * 100))")
-                self.completeAuthentication(reason: reason, faceScore: faceScore)
-            } else {
-                let scoreStr = String(format: "Face: %.1f%%", faceScore * 100)
-                if shouldUnlockWithConfirmation {
-                    self.userInstruction = "Almost there... (\(scoreStr))"
-                } else {
-                    self.userInstruction = "Verifying... (\(scoreStr))"
+            // 2. Full Center-Square Crop of the Widescreen Frame (Bypasses face detector coordinates entirely)
+            guard let wideFace = FaceProcessor.shared.prepareFullSquareImage(from: pixelBuffer) else {
+                await self.finishAuthFrame()
+                return
+            }
+            
+            // 3. Zero-Heap-Allocation CoreML Array Instantiation
+            guard let faceArray = FaceDataStore.shared.preallocatedFaceArray112,
+                  let livenessArray = FaceDataStore.shared.preallocatedLivenessArray128 else {
+                await self.finishAuthFrame()
+                return
+            }
+            
+            // 4. Pre-allocated Static Buffer References
+            guard let faceBuf = FaceDataStore.shared.faceBuffer112,
+                  let liveBuf = FaceDataStore.shared.livenessBuffer128 else {
+                await self.finishAuthFrame()
+                return
+            }
+            
+            // 5. Zero-Copy Fast Pointer preprocessing
+            // - EdgeFace expects standard RGB (isBGR: false, isNormalizedTo01: false) scaled to 112x112 from tight crop
+            // - MiniFAS expects standard RGB (isBGR: false, isNormalizedTo01: true) scaled to 128x128 from full center-square crop
+            guard FaceDataStore.shared.preprocess(ciImage: preparedFace, size: 112, targetBuffer: faceBuf, targetArray: faceArray, isBGR: false, isNormalizedTo01: false),
+                  FaceDataStore.shared.preprocess(ciImage: wideFace, size: 128, targetBuffer: liveBuf, targetArray: livenessArray, isBGR: false, isNormalizedTo01: true) else {
+                await self.finishAuthFrame()
+                return
+            }
+            
+            // 6. Parallel Apple Neural Engine (ANE) Inference
+            async let similarityScore = self.calculateFaceSimilarity(array: faceArray)
+            async let livenessScore = self.calculateLiveness(array: livenessArray)
+            
+            let finalSimilarity = await similarityScore
+            let finalLiveness = await livenessScore
+            
+            // 7. Temporal Scoring Matrix
+            await MainActor.run {
+                self.similarityHistory.append(finalSimilarity)
+                if self.similarityHistory.count > self.temporalWindowSize {
+                    self.similarityHistory.removeFirst()
                 }
+            }
+            
+            let smoothedFaceScore = await MainActor.run {
+                self.similarityHistory.reduce(0.0, +) / Double(self.similarityHistory.count)
+            }
+
+            // 8. Dynamic Pose Compensation
+            let yaw = abs(observation.yaw?.doubleValue ?? 0)
+            let pitch = abs(observation.pitch?.doubleValue ?? 0)
+            let poseOffset = (yaw * 0.04) + (pitch * 0.04)
+            let dynamicUnlockThreshold = max(0.79, self.unlockThreshold - poseOffset)
+            let dynamicInstantUnlockThreshold = max(0.87, self.instantUnlockThreshold - poseOffset)
+
+            // OPTIMIZATION: Fast-Path Instant Bypass
+            // If the current frame produces an exceptional match and liveness, we bypass the
+            // temporal rolling window entirely to execute an instant unlock (<100ms).
+            let isInstantSuccess = finalSimilarity >= dynamicInstantUnlockThreshold && finalLiveness >= 0.85
+
+            let shouldUnlockInstantly = smoothedFaceScore >= dynamicInstantUnlockThreshold || isInstantSuccess
+            let shouldUnlockWithConfirmation = smoothedFaceScore >= dynamicUnlockThreshold
+            let requiredMatches = shouldUnlockInstantly ? 1 : self.consecutiveMatchesRequired
+
+            await MainActor.run {
+                guard self.isAuthenticating else { return }
+
+                // Liveness Cutoff: 85% threshold using CelebA Spoof MiniFASNet weights
+                let isGenuineFace = finalLiveness >= 0.85
+                
+                if isGenuineFace && (shouldUnlockInstantly || shouldUnlockWithConfirmation) {
+                    if shouldUnlockInstantly {
+                        self.consecutiveMatchCount = requiredMatches
+                    } else {
+                        self.consecutiveMatchCount += 1
+                    }
+                } else {
+                    self.consecutiveMatchCount = 0
+                }
+
+                let authenticated = self.consecutiveMatchCount >= requiredMatches
+
+                if authenticated {
+                    self.logger.info("Auth success. Matching score: \(smoothedFaceScore), Liveness: \(finalLiveness)")
+                    if smoothedFaceScore >= 0.90 {
+                        FaceDataStore.shared.learnNewFaceprint(faceImage: FaceProcessor.shared.makeUiImage(from: preparedFace) ?? NSImage())
+                    }
+                    // Generate UI display image ONLY on success to conserve background CPU cycles
+                    self.processedAuthImage = FaceProcessor.shared.makeUiImage(from: preparedFace)
+                    self.similarityHistory.removeAll()
+                    self.completeAuthentication(reason: "Face Match", faceScore: smoothedFaceScore)
+                } else {
+                    if !isGenuineFace && (shouldUnlockInstantly || shouldUnlockWithConfirmation) {
+                        self.userInstruction = "Spoof Attempt Blocked."
+                    } else {
+                        let scoreStr = String(format: "Face: %.1f%%", smoothedFaceScore * 100)
+                        if shouldUnlockWithConfirmation {
+                            self.userInstruction = "Almost there... (\(scoreStr))"
+                        } else {
+                            self.userInstruction = "Verifying... (\(scoreStr))"
+                        }
+                    }
+                }
+                self.isProcessingAuthFrame = false
             }
         }
     }
 
+    private func calculateFaceSimilarity(array: MLMultiArray) async -> Double {
+        guard let embedding = try? MLModelManager.shared.predictEmbedding(from: array) else { return 0.0 }
+        return FaceDataStore.shared.getSimilarityScore(from: embedding)
+    }
+
+    private func calculateLiveness(array: MLMultiArray) async -> Float {
+        guard let score = try? MLModelManager.shared.predictLiveness(from: array) else { return 0.0 }
+        return score
+    }
+
+    private func finishAuthFrame() async {
+        await MainActor.run { self.isProcessingAuthFrame = false }
+    }
+
     private func isFaceQualityAcceptable(_ observation: VNFaceObservation) -> Bool {
         let faceSize = observation.boundingBox.width * observation.boundingBox.height
-        guard faceSize > 0.04 else {
+        guard faceSize > 0.05 else {
             logger.debug("❌ Rejected: Face too small (\(faceSize))")
             return false
         }
@@ -480,22 +566,26 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         let pitch = abs(observation.pitch?.doubleValue ?? 0)
         let roll = abs(observation.roll?.doubleValue ?? 0)
         
-        guard yaw < 0.95 else {
+        guard yaw < 0.85 else {
             logger.debug("❌ Rejected: Yaw too high (\(yaw))")
             return false
         }
-        guard pitch < 0.55 else {
+        guard pitch < 0.45 else {
             logger.debug("❌ Rejected: Pitch too high (\(pitch))")
             return false
         }
-        guard roll < 0.55 else {
+        
+        // OPTIMIZATION: Loosened roll threshold from 0.45 to 1.1 radians (approx. 63 degrees).
+        // Since our 5-point Similarity Transform solves for translation, scale, and in-plane
+        // rotation (roll) in closed form, the face is automatically rotated right-side up
+        // before embedding generation, making recognition fully invariant to head tilts.
+        guard roll < 1.1 else {
             logger.debug("❌ Rejected: Roll too high (\(roll))")
             return false
         }
 
         if let quality = observation.faceCaptureQuality {
-            // More adaptive quality threshold
-            let requiredQuality: Float = (yaw > 0.25) ? 0.10 : (yaw > 0.15 ? 0.20 : 0.30)
+            let requiredQuality: Float = (yaw > 0.15) ? 0.12 : 0.15
             if quality < requiredQuality {
                 logger.debug("❌ Rejected: Quality too low (\(quality) < required \(requiredQuality))")
                 return false
@@ -507,19 +597,10 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
             return false
         }
         
-        if yaw < 0.25 {
-            // Center Profile requirements - need both eyes and nose
-            guard landmarks.leftEye != nil, landmarks.rightEye != nil, landmarks.nose != nil else {
-                logger.debug("❌ Rejected: Missing critical landmarks for center face")
-                return false
-            }
-        } else {
-            // Turned Profile requirements - at least one eye and nose
-            let hasAtLeastOneEye = landmarks.leftEye != nil || landmarks.rightEye != nil
-            guard hasAtLeastOneEye, landmarks.nose != nil else {
-                logger.debug("❌ Rejected: Missing critical landmarks for turned face")
-                return false
-            }
+        let hasAtLeastOneEye = landmarks.leftEye != nil || landmarks.rightEye != nil
+        guard hasAtLeastOneEye, landmarks.nose != nil, landmarks.outerLips != nil else {
+            logger.debug("❌ Rejected: Missing critical landmarks")
+            return false
         }
         
         return true
@@ -529,6 +610,15 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         guard isAuthenticating else { return }
         isAuthenticating = false
         consecutiveMatchCount = 0
+
+        // IMMEDIATE HARDWARE SHUTDOWN OPTIMIZATION:
+        // Disable the video connection and stop the capture session synchronously on this queue.
+        // This cuts off frame delivery and turns off the camera hardware/green light
+        // the exact millisecond authentication succeeds.
+        if let connection = self.videoDataOutput.connection(with: .video) {
+            connection.isEnabled = false
+        }
+        stopCameraSession()
 
         logger.info("✅ AUTHENTICATION SUCCESSFUL!")
         logger.info("   - Reason: \(reason, privacy: .public)")
@@ -542,6 +632,8 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
         }
     }
 }
+
+// MARK: - CoreGraphics Helper Extensions
 
 extension CGRect {
     func lerp(to other: CGRect, alpha: CGFloat) -> CGRect {

@@ -143,6 +143,7 @@ class LiveActivityManager: ObservableObject {
     private var lastShownDesktopNumber: Int?, lastShownFocusModeID: String?
     private var lastShownBluetoothEvent: BluetoothDeviceState?, lastShownAudioSwitchEventID: UUID?
     private var isDismissingPausedMusic = false
+    private var sportsActivityTeamIndex: Int = 0
     private enum CalendarNotificationMilestone { case oneDay, thirtyMinutes }
     private var notifiedEventMilestones: [String: Set<CalendarNotificationMilestone>] = [:]
     private enum ReminderNotificationMilestone { case thirtyMinutes }
@@ -1254,17 +1255,19 @@ where: {
             return nil
         }
         
-        guard let teamOrLeague = settingsModel.settings.currentSportsFavoriteTeam() else {
-            return nil
-        }
+        let teams = settingsModel.settings.sportsFavoriteTeams
+        guard !teams.isEmpty else { return nil }
         
-        let index = settingsModel.settings.sportsFavoriteTeamIndex
+        // Normalize the activity team index
+        sportsActivityTeamIndex = max(0, min(sportsActivityTeamIndex, teams.count - 1))
+        let teamOrLeague = teams[sportsActivityTeamIndex]
+        
         let liveEvent = SportsAPIService.shared.cachedLiveEvent(for: teamOrLeague)
         let payload: SportsPayload
         if let live = liveEvent {
             payload = SportsFinanceContentProvider.makeSportsPayload(from: live)
         } else {
-            payload = SportsFinanceContentProvider.makeSportsPayload(for: teamOrLeague, index: index)
+            payload = SportsFinanceContentProvider.makeSportsPayload(for: teamOrLeague, index: sportsActivityTeamIndex)
         }
 
         var bottomContent: SportsBottomContentType = .none
@@ -1293,6 +1296,17 @@ where: {
         let content = LiveActivityContent.standard(data: data, id: id)
         
         return (.sports, content, nil)
+    }
+
+    /// Cycle the sports activity to the next favorite team's match.
+    /// Returns true if there are multiple teams to cycle through.
+    @discardableResult
+    func cycleSportsActivity() -> Bool {
+        let teams = settingsModel.settings.sportsFavoriteTeams
+        guard currentActivity == .sports, teams.count > 1 else { return false }
+        sportsActivityTeamIndex = (sportsActivityTeamIndex + 1) % teams.count
+        evaluateAndDisplayActivity()
+        return true
     }
 
     private func checkForFinance() -> (ActivityType, LiveActivityContent, TimeInterval?)? {

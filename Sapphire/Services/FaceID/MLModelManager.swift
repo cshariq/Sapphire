@@ -6,125 +6,123 @@
 //
 
 import CoreML
-import os // Import os for Logger
+import os
 
 final class MLModelManager {
-    private let queue = DispatchQueue(label:  "MLModelManager. queue", attributes: .concurrent)
+    private let queue = DispatchQueue(label: "com.sapphire.MLModelManager.queue", attributes: .concurrent)
     static let shared = MLModelManager()
 
-    private var modernModel: MLModel?
-    private let logger = Logger(subsystem: "com.sapphire.app", category: "FaceID.MLModelManager") // Initialize logger
+    private var modernFaceModel: MLModel?
+    private var livenessModel: MLModel?
+    
+    private let logger = Logger(subsystem: "com.sapphire.app", category: "FaceID.MLModelManager")
 
     private init() {}
 
-    /// Produce a normalized embedding vector for a preprocessed image represented
-    /// as an `MLMultiArray`. This method uses the modern Core ML model named
-    /// `ModernFace`.
+    /// Pre-warms both models asynchronously on initial application launch to load weights into Neural Engine caches.
+    func prewarm() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            self.logger.debug("Pre-warming face biometrics and liveness pipelines...")
+            do {
+                let dummyFace = try MLMultiArray(shape: [1, 3, 112, 112], dataType: .float32)
+                let dummyLiveness = try MLMultiArray(shape: [1, 3, 128, 128], dataType: .float32)
+                
+                _ = try? self.predictEmbedding(from: dummyFace)
+                _ = try? self.predictLiveness(from: dummyLiveness)
+                
+                self.logger.info("✅ Biometric & Liveness models pre-warmed on ANE successfully.")
+            } catch {
+                self.logger.warning("Pre-warm completed with status: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Generates a 512-dimensional face embedding using the native EdgeFace model.
     func predictEmbedding(from mlArray: MLMultiArray) throws -> [Float] {
-        return try predictWithModernModel(from: mlArray)
-    }
-
-    private func predictWithModernModel(from mlArray: MLMultiArray) throws -> [Float] {
-        if let cached = queue.sync(execute: { modernModel }) {
-            do {
-                let start = DispatchTime.now()
-                let embedding = try runGenericModel(cached, with: mlArray)
-                let end = DispatchTime.now()
-                let elapsed = Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000.0
-                logger.debug("Prediction time: \(elapsed, privacy: .public) ms")
-                logger.debug("Embedding (first 8 dims): \(embedding.prefix(8).map { String(format: "%.4f", $0) }.joined(separator: ", "), privacy: .public) norm=\(self.l2Norm(embedding), privacy: .public)")
-                return embedding
-            } catch {
-                logger.error("Cached ModernFace prediction failed: \(error.localizedDescription)")
-                queue.sync(flags: .barrier) {
-                    if modernModel === cached {
-                        modernModel = nil
-                    }
-                }
-            }
+        if modernFaceModel == nil { try loadModel(name: "ModernFace", into: &modernFaceModel) }
+        guard let model = modernFaceModel else {
+            throw NSError(domain: "MLModelManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "ModernFace model not loaded"])
         }
-
-        // Attempt to load the packaged model from the app bundle.
-        // Prefer `.mlpackage` because that is the packaged format produced by conversion.
-        let candidateURLs: [URL] = [
-            Bundle.main.url(forResource: "ModernFace", withExtension: "mlpackage"),
-            Bundle.main.url(forResource: "ModernFace", withExtension: "mlmodelc"),
-            Bundle.main.url(forResource: "ModernFace", withExtension: "mlmodel")
-        ].compactMap { $0 }
-
-        for url in candidateURLs {
-            do {
-                let ml = try MLModel(contentsOf: url, configuration: modernModelConfiguration())
-//                logger.info("ModernFace loaded successfully from \(url.lastPathComponent, privacy: .public), modelVersion=\(ml.modelDescription.metadata[.creatorDefinedKey] ?? "unknown", privacy: .public)")
-                queue.sync(flags: .barrier) { modernModel = ml }
-                let start = DispatchTime.now()
-                let embedding = try runGenericModel(ml, with: mlArray)
-                let end = DispatchTime.now()
-                let elapsed = Double(end.uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000.0
-                logger.debug("✅ ModernFace model used for embedding. Prediction time: \(elapsed, privacy: .public) ms")
-                logger.debug("Embedding (first 8 dims): \(embedding.prefix(8).map { String(format: "%.4f", $0) }.joined(separator: ", "), privacy: .public) norm=\(self.l2Norm(embedding), privacy: .public)")
-                return embedding
-            } catch {
-                logger.error("Failed to use ModernFace at \(url.lastPathComponent, privacy: .public): \(error.localizedDescription)")
-            }
+        
+        let provider = try MLDictionaryFeatureProvider(dictionary: ["input": MLFeatureValue(multiArray: mlArray)])
+        let result = try model.prediction(from: provider)
+        
+        if let out = result.featureNames.compactMap({ result.featureValue(for: $0)?.multiArrayValue }).first {
+            return l2Normalize(floatVector(from: out))
         }
-
-        throw NSError(
-            domain: "MLModelManager",
-            code: -2,
-            userInfo: [NSLocalizedDescriptionKey: "ModernFace model could not be loaded or predicted successfully"]
-        )
+        throw NSError(domain: "MLModelManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Empty output tensor"])
     }
 
-    private func runGenericModel(_ ml: MLModel, with mlArray: MLMultiArray) throws -> [Float] {
-        let inputName = ml.modelDescription.inputDescriptionsByName.first(where: { $0.value.multiArrayConstraint != nil })?.key
-            ?? ml.modelDescription.inputDescriptionsByName.keys.first
-            ?? "input"
-        let provider = try MLDictionaryFeatureProvider(dictionary: [inputName: MLFeatureValue(multiArray: mlArray)])
-        let result = try ml.prediction(from: provider)
-
-        if let outputFeature = result.featureNames.compactMap({ result.featureValue(for: $0) }).first(where: { $0.multiArrayValue != nil }),
-           let outArray = outputFeature.multiArrayValue {
-            return l2Normalize(floatVector(from: outArray))
+    /// Evaluates the 128x128 facial crop using the MiniFASNet V2 SE model.
+    /// Returns a real face probability (0.0 to 1.0) using a numerically stable Softmax implementation.
+    func predictLiveness(from mlArray: MLMultiArray) throws -> Float {
+        if livenessModel == nil { try loadModel(name: "MiniFAS", into: &livenessModel) }
+        guard let model = livenessModel else {
+            throw NSError(domain: "MLModelManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "MiniFAS liveness model not loaded"])
         }
-
-        throw NSError(domain: "MLModelManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No valid multi-array output from model"])
-    }
-
-    private func floatVector(from array: MLMultiArray) -> [Float] {
-        let count = array.count
-        var vector = [Float](repeating: 0, count: count)
-        for i in 0..<count {
-            vector[i] = array[i].floatValue
+        
+        let provider = try MLDictionaryFeatureProvider(dictionary: ["input": MLFeatureValue(multiArray: mlArray)])
+        let result = try model.prediction(from: provider)
+        
+        if let out = result.featureNames.compactMap({ result.featureValue(for: $0)?.multiArrayValue }).first {
+            // MiniFAS outputs 2 classes of raw logits: [RealLogit, SpoofLogit]
+            // where Index 0 is Real, and Index 1 is Spoof.
+            let realLogit = out[0].floatValue
+            let spoofLogit = out[1].floatValue
+            
+            // Apply Softmax with dynamic shift to prevent numerical exp() overflow
+            let maxLogit = max(spoofLogit, realLogit)
+            let expReal = exp(realLogit - maxLogit)
+            let expSpoof = exp(spoofLogit - maxLogit)
+            
+            let realProbability = expReal / (expReal + expSpoof)
+            
+            logger.debug("Liveness Output - Logits: [Real: \(realLogit), Spoof: \(spoofLogit)] → Real Probability: \(realProbability * 100)%")
+            return realProbability
         }
-        return vector
+        throw NSError(domain: "MLModelManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Empty liveness output"])
     }
 
-    private func modernModelConfiguration() -> MLModelConfiguration {
-        let configuration = MLModelConfiguration()
-        configuration.computeUnits = .all
-        return configuration
-    }
-
-    private func l2Normalize(_ vector: [Float]) -> [Float] {
-        var sumSquares: Float = 0.0
-        for v in vector { sumSquares += v * v }
-        let norm = sqrt(sumSquares)
-        guard norm > 0 else { return vector }
-        return vector.map { $0 / norm }
-    }
-
-    private func l2Norm(_ vector: [Float]) -> Float {
-        var sumSquares: Float = 0.0
-        for v in vector { sumSquares += v * v }
-        return sqrt(sumSquares)
-    }
-
+    /// Releases loaded models from system memory to conserve ANE and GPU resources.
     func unloadModels() {
         queue.sync(flags: .barrier) {
             autoreleasepool {
-                modernModel = nil
+                modernFaceModel = nil
+                livenessModel = nil
             }
+            logger.info("Unloaded Core ML models from memory.")
         }
+    }
+
+    // MARK: - Core Helpers
+    
+    private func loadModel(name: String, into target: inout MLModel?) throws {
+        try queue.sync(flags: .barrier) {
+            if target != nil { return }
+            let urls = [
+                Bundle.main.url(forResource: name, withExtension: "mlpackage"),
+                Bundle.main.url(forResource: name, withExtension: "mlmodelc")
+            ].compactMap { $0 }
+            
+            for url in urls {
+                let config = MLModelConfiguration()
+                config.computeUnits = .all // Target CPU, GPU, and Apple Neural Engine
+                if let ml = try? MLModel(contentsOf: url, configuration: config) {
+                    target = ml
+                    return
+                }
+            }
+            throw NSError(domain: "MLModelManager", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to locate \(name)"])
+        }
+    }
+
+    private func floatVector(from array: MLMultiArray) -> [Float] {
+        return (0..<array.count).map { array[$0].floatValue }
+    }
+
+    private func l2Normalize(_ vector: [Float]) -> [Float] {
+        let norm = sqrt(vector.reduce(0) { $0 + $1 * $1 })
+        return norm > 0 ? vector.map { $0 / norm } : vector
     }
 }

@@ -16,6 +16,7 @@ class SystemAudioMonitor: ObservableObject {
 
     private let engine = AVAudioEngine()
     private var isMonitoring = false
+    private var lastUpdateTime: TimeInterval = 0
 
     init() {}
 
@@ -41,20 +42,27 @@ class SystemAudioMonitor: ObservableObject {
         do {
             var deviceID = blackHoleDeviceID
             guard let audioUnit = inputNode.audioUnit else {
-                print("[SystemAudioMonitor]  Could not get AudioUnit for input node."); return
+                print("[SystemAudioMonitor] Could not get AudioUnit for input node."); return
             }
             let error = AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &deviceID, UInt32(MemoryLayout<AudioDeviceID>.size))
             if error != noErr {
-                print("[SystemAudioMonitor]  Failed to set input device. Error: \(error)"); return
+                print("[SystemAudioMonitor] Failed to set input device. Error: \(error)"); return
             }
             try engine.start()
         } catch {
-            print("[SystemAudioMonitor]  Failed to start audio engine: \(error.localizedDescription)"); return
+            print("[SystemAudioMonitor] Failed to start audio engine: \(error.localizedDescription)"); return
         }
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputNode.outputFormat(forBus: 0)) { [weak self] buffer, _ in
-            let level = self?.calculateRMS(from: buffer) ?? 0.0
-            DispatchQueue.main.async { self?.audioLevel = level }
+            guard let self = self else { return }
+            let level = self.calculateRMS(from: buffer)
+            
+            // Capping MainActor dispatch frequency to 30 FPS to prevent system resource saturation
+            let now = CACurrentMediaTime()
+            if now - self.lastUpdateTime >= 0.033 {
+                self.lastUpdateTime = now
+                DispatchQueue.main.async { self.audioLevel = level }
+            }
         }
 
         isMonitoring = true
