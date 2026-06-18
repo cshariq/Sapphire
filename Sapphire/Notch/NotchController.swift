@@ -90,6 +90,7 @@ fileprivate struct MaxContentWidthPreferenceKey: PreferenceKey {
 
 struct NotchController: View {
     let notchWindow: NSWindow?
+    private let notchWidget: NotchWidgetView
 
     enum NotchState: Hashable {
         case initial, autoExpanded, hoverExpanded, clickExpanded
@@ -154,19 +155,13 @@ struct NotchController: View {
     @State private var hudOverlayOpacity: Double = 0.0
     @State private var hudOverlayBlur: CGFloat = 10.0
 
-    @State private var expandedContentSession = UUID()
     @State private var dropZoneFrames: [DropZone: CGRect] = [:]
     @State private var hoverDetectionTimer: Timer?
-    @State private var hoverInsideSamples = 0
-    @State private var hoverOutsideSamples = 0
     @State private var notchInteractionPollingTimer: Timer?
-    @State private var mouseMoveMonitorGlobal: Any?
-    @State private var mouseMoveMonitorLocal: Any?
     @State private var lastSampledMouseLocation: CGPoint?
     @State private var lastPublishedInteractiveFrame: CGRect = .null
     @State private var appliedTargetFPS: Int = 0
     @State private var lastActivityShapeSignature: String = ""
-    @State private var lastActivityType: ActivityType = .none
     @State private var isCalendarHovered: Bool = false
     @State private var fileDropFlowObserver: NSObjectProtocol?
 
@@ -197,23 +192,7 @@ struct NotchController: View {
     }
 
     private var isInteractive: Bool {
-        notchState == .clickExpanded
-            || notchState == .hoverExpanded
-            || isHovered
-            || dragManager.isDraggingInActivationZone
-            || activeAppMonitor.isWindowDragging
-    }
-
-    private var acceptsHoverTracking: Bool {
-        notchState == .hoverExpanded || notchState == .clickExpanded
-    }
-
-    private var canEnterHoverFromCollapsed: Bool {
-        notchState == .initial || notchState == .autoExpanded
-    }
-
-    private var shouldAllowActivityHitTesting: Bool {
-        isHovered || notchState == .hoverExpanded || isInteractive
+        notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || activeAppMonitor.isWindowDragging
     }
 
     private var shouldHideWindowForSharing: Bool {
@@ -273,14 +252,14 @@ struct NotchController: View {
                 return settings.settings.weatherWidgetEnabled
             case .calendar:
                 return settings.settings.calendarWidgetEnabled
-            case .shortcuts:
-                return settings.settings.shortcutsWidgetEnabled
-            case .agent:
-                return settings.settings.intelligenceEnabled
             case .sports:
                 return settings.settings.sportsWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .sportsWidget)
             case .finance:
                 return settings.settings.financeWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .financeWidget)
+            case .shortcuts:
+                return settings.settings.shortcutsWidgetEnabled
+            case .agent:
+                return settings.settings.intelligenceEnabled
             }
         }
     }
@@ -291,10 +270,10 @@ struct NotchController: View {
             case .music: return .musicPlayer
             case .weather: return .weatherPlayer
             case .calendar: return .calendarPlayer
-            case .shortcuts: return nil
-            case .agent: return .agentS
             case .sports: return .sportsPlayer
             case .finance: return .financePlayer
+            case .shortcuts: return nil
+            case .agent: return .agentS
             }
         }
     }
@@ -313,6 +292,10 @@ struct NotchController: View {
             }
         }
         return settings.settings.defaultSnapLayout
+    }
+
+    private var showMultiAudioIcon: Bool {
+        audioManager.availableOutputDevices.count > 1
     }
 
     private var leftNotchButtons: [NotchButtonType] {
@@ -367,7 +350,9 @@ struct NotchController: View {
     // MARK: - Initializer
     public init(notchWindow: NSWindow?) {
         self.notchWindow = notchWindow
-        _calendarViewModel = StateObject(wrappedValue: InteractiveCalendarViewModel())
+        let calendarViewModel = InteractiveCalendarViewModel()
+        _calendarViewModel = StateObject(wrappedValue: calendarViewModel)
+self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     // MARK: - Body
@@ -394,8 +379,7 @@ struct NotchController: View {
                     if showActivityView && isLiveActivityActive && canRenderAutoContent {
                         autoActivityView
                             .fixedSize(horizontal: true, vertical: false)
-                            .compositingGroup()
-                            .blur(radius: activityBlurRadius > 0 ? activityBlurRadius : 0)
+                            .blur(radius: activityBlurRadius)
                             .scaleEffect(activityContentScale)
                             .id(liveActivityManager.currentActivity)
                             .animation(liveActivityManager.activityHasBottomContent ?
@@ -404,7 +388,7 @@ struct NotchController: View {
                                        value: liveActivityManager.activityAnimationKey)
                             .opacity(autoContentOpacity)
                             .scaleEffect(animatedContentScale)
-                            .allowsHitTesting(shouldAllowActivityHitTesting)
+                            .allowsHitTesting(isHovered)
                     } else {
                         contentView
                             .mask(activeShape)
@@ -413,8 +397,7 @@ struct NotchController: View {
                     if notchState == .clickExpanded {
                         expandedOverlayIcons
                             .transition(.opacity.animation(.easeInOut(duration: 0.2)))
-                            .zIndex(2)
-                            .allowsHitTesting(true)
+                            .zIndex(1)
                         
                         hudOverlayView
                             .transition(.opacity.animation(.easeOut(duration: 0.18)))
@@ -429,8 +412,9 @@ struct NotchController: View {
                 y: isGeminiActive ? 0 : (notchState == .clickExpanded ? config.expandedShadowOffsetY : (notchState == .hoverExpanded ? 6 : 0))
             )
             .frame(width: animatedWidth, height: animatedHeight)
-            .contentShape(Rectangle())
+            .contentShape(activeShape)
             .onDrop(of: [UTType.fileURL, .plainText], isTargeted: $isFileDropTargeted, perform: handleItemDrop)
+            .onHover(perform: handleHover)
             .padding(.top, -config.topBuffer)
             .onAppear(perform: setupMonitors)
             .onDisappear(perform: teardownMonitors)
@@ -451,9 +435,6 @@ struct NotchController: View {
                 }
             }
             .onChange(of: notchState, handleStateChange)
-            .onChange(of: liveActivityManager.activityAnimationKey) { _, _ in
-                clampAutoContentSizeToVisibleActivity()
-            }
             .onChange(of: navigationStack, handleNavigationStackChange)
             .onChange(of: dragManager.isDraggingInActivationZone) { _, isDragging in
                 Task {
@@ -468,18 +449,6 @@ struct NotchController: View {
             .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
             .onChange(of: measuredClickContentSize) { _, newSize in handleSizeChange(newSize, for: .clickExpanded) }
             .onChange(of: measuredAutoContentSize) { _, newSize in handleSizeChange(newSize, for: .autoExpanded) }
-            .onChange(of: animatedWidth) { _, _ in
-                updateMouseEventHandling(isInteractive: isInteractive)
-                if let window = notchWindow as? DynamicFocusWindow {
-                    window.updateInteractiveContentFrame(interactiveFrame(for: window, config: config))
-                }
-            }
-            .onChange(of: animatedHeight) { _, _ in
-                updateMouseEventHandling(isInteractive: isInteractive)
-                if let window = notchWindow as? DynamicFocusWindow {
-                    window.updateInteractiveContentFrame(interactiveFrame(for: window, config: config))
-                }
-            }
             .onReceive(pickerHelper.pickerResultPublisher, perform: handlePickerResult)
             .onChange(of: showLyrics, perform: handleShowLyricsChange)
             .onChange(of: isInteractive) { _, newValue in
@@ -524,21 +493,17 @@ struct NotchController: View {
         let appearance = activeAppearanceSettings
         ZStack {
             Color.clear
-            if notchState != .initial {
-                if #available(macOS 26.0, *), appearance.liquidGlassLook {
-                    activeShape
-                        .fill(.clear)
-                        .glassEffect(.clear, in: activeShape)
-                } else {
-                    if appearance.enableTransparencyBlur {
-                        VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                    }
-                    Rectangle()
-                        .fill(notchFillMaterial)
-                        .opacity(appearance.opacity)
-                }
+            if #available(macOS 26.0, *), appearance.liquidGlassLook {
+                activeShape
+                    .fill(.clear)
+                    .glassEffect(.clear, in: activeShape)
             } else {
-                activeShape.fill(notchFillMaterial).opacity(appearance.opacity)
+                if appearance.enableTransparencyBlur {
+                    VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                }
+                Rectangle()
+                    .fill(notchFillMaterial)
+                    .opacity(appearance.opacity)
             }
         }
         .contentShape(activeShape)
@@ -580,8 +545,7 @@ struct NotchController: View {
     @ViewBuilder
     private var contentView: some View {
         if let config = config, notchState == .clickExpanded {
-            NotchWidgetView(calendarViewModel: calendarViewModel)
-                .id(expandedContentSession)
+            notchWidget
                 .environmentObject(fileShelfState)
                 .environmentObject(dragState)
                 .environment(\.navigationStack, $navigationStack)
@@ -609,6 +573,7 @@ struct NotchController: View {
                 })
                 .frame(width: animatedWidth, height: animatedHeight, alignment: .top)
                 .clipped()
+                .id(notchState)
                 .allowsHitTesting(true)
         } else {
             EmptyView()
@@ -837,8 +802,6 @@ struct NotchController: View {
             .padding(.horizontal, NotchConfiguration.defaultModeIconsHorizontalPadding)
             .frame(height: config.initialSize.height)
             .frame(width: animatedWidth)
-            .contentShape(Rectangle())
-            .allowsHitTesting(true)
         }
     }
 
@@ -863,7 +826,8 @@ struct NotchController: View {
             } else {
                 if settings.settings.geminiApiKey.isEmpty {
                     navigationStack.append(.geminiApiKeysMissing)
-                } else if FeatureGate.shared.require(.geminiLive, message: "Gemini Live") {
+                } else {
+                    // Show agent panel on tap; long-press / hover "Go live" handled below
                     pickerHelper.showPicker()
                 }
             }
@@ -1008,15 +972,16 @@ struct NotchController: View {
             }
         case .audioSwitch(let event): AudioSwitchActivityView.left(for: event)
         case .geminiLive: GeminiActiveActivityView.left()
-        case .microphone: MicrophoneLiveActivityView.left { MicrophoneUsageManager.shared.toggleMute() }
+        case .sports(let payload, _): SportsLiveActivityView.left(for: payload, preferLogo: settings.settings.sportsPreferLogo)
+        case .finance(let payload): FinanceLiveActivityView.left(for: payload)
+        case .microphone:
+            MicrophoneLiveActivityView.left { MicrophoneUsageManager.shared.toggleMute() }
         case .nearDrop: NearDropCompactActivityView.left()
         case .hud(let type): SystemHUDSlimActivityView.left(type: type, settings: settings)
         case .lockScreen: LockScreenLiveActivityView.left()
         case .updateAvailable: UpdateAvailableActivityView.left()
         case .unlocked: LockScreenLiveActivityView.left()
         case .stats(let payload): statsLiveActivityView.left(for: payload, selectedStats: settings.settings.selectedStats, selectedSensorKeys: settings.settings.selectedSensorKeys)
-        case .sports(let payload, _): SportsLiveActivityView.left(for: payload, preferLogo: settings.settings.sportsPreferLogo)
-        case .finance(let payload): FinanceLiveActivityView.left(for: payload)
         }
     }
 
@@ -1049,6 +1014,12 @@ struct NotchController: View {
             }
         case .audioSwitch(let event): AudioSwitchActivityView.right(for: event)
         case .geminiLive(let payload): GeminiActiveActivityView.right(isMuted: payload.isMicMuted) { geminiLiveManager.isMicMuted.toggle() }
+        case .sports(let payload, let bottom):
+            Text("\(payload.homeTeam) vs \(payload.awayTeam)")
+                .font(.system(size: 13, weight: .semibold))
+        case .finance(let payload):
+            Text("\(payload.symbol) \(payload.price)")
+                .font(.system(size: 13, weight: .semibold))
         case .microphone: MicrophoneLiveActivityView.right { MicrophoneUsageManager.shared.toggleMute() }
         case .nearDrop(let payload): NearDropCompactActivityView.right(payload: payload)
         case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: SettingsModel.shared)
@@ -1056,8 +1027,6 @@ struct NotchController: View {
         case .updateAvailable(let version): UpdateAvailableActivityView.right(version: version)
         case .unlocked: LockScreenLiveActivityView.right()
         case .stats(let payload): statsLiveActivityView.right(for: payload, selectedStats: settings.settings.selectedStats, selectedSensorKeys: settings.settings.selectedSensorKeys)
-        case .sports(let payload, _): SportsLiveActivityView.right(for: payload, preferLogo: settings.settings.sportsPreferLogo)
-        case .finance(let payload): FinanceLiveActivityView.right(for: payload)
         }
     }
 
@@ -1100,7 +1069,7 @@ struct NotchController: View {
                 .padding(.horizontal, NotchConfiguration.batteryHorizontalPadding)
             }
         case .multiAudio:
-            if settings.settings.showMultiAudioIcon, PermissionsManager.shared.screenRecordingStatus == .granted {
+            if showMultiAudioIcon {
                 SubtleIconButton(systemName: "hifispeaker.and.homepod.mini.fill", action: { navigationStack.append(.multiAudio) })
             }
         case .pin:
@@ -1201,9 +1170,9 @@ struct NotchController: View {
             }
             if activityType == .music, settings.settings.musicOpenOnClick { initiateWidgetView(.musicPlayer); return }
             if activityType == .weather, settings.settings.weatherOpenOnClick { initiateWidgetView(.weatherPlayer); return }
-            if activityType == .calendar, settings.settings.calendarOpenOnClick { initiateWidgetView(.calendarPlayer); return }
             if activityType == .sports, settings.settings.sportsOpenOnClick, SubscriptionManager.shared.hasAccess(to: .sportsWidget) { initiateWidgetView(.sportsPlayer); return }
             if activityType == .finance, settings.settings.financeOpenOnClick { initiateWidgetView(.financePlayer); return }
+            if activityType == .calendar, settings.settings.calendarOpenOnClick { initiateWidgetView(.calendarPlayer); return }
             if activityType == .fileShelf, settings.settings.clickToOpenFileShelf { initiateWidgetView(.fileShelf); return }
             if activityType == .timer, settings.settings.clickToShowTimerView { initiateWidgetView(.timerDetailView); return }
             if activityType == .intelligenceAgent { initiateWidgetView(.agentS); return }
@@ -1230,20 +1199,15 @@ struct NotchController: View {
 
     private func handleHover(hovering: Bool) {
         guard let config = config else { return }
+        self.isHovered = hovering
 
         if hovering {
-            if acceptsHoverTracking {
-                self.isHovered = true
-                collapseTask?.cancel()
-                isCollapseTimerActive = false
-                TrackpadGestureHandler.shared.startMonitoring()
-                return
-            }
-
-            guard canEnterHoverFromCollapsed else { return }
-
-            self.isHovered = true
             TrackpadGestureHandler.shared.startMonitoring()
+        } else {
+            TrackpadGestureHandler.shared.stopMonitoring()
+        }
+
+        if hovering {
             collapseTask?.cancel()
             isCollapseTimerActive = false
             let activityType = liveActivityManager.currentActivity
@@ -1253,7 +1217,7 @@ struct NotchController: View {
                     navigationStack = [.fileShelf]
                     notchState = .clickExpanded
                 }
-            } else if settings.settings.expandOnHover && !isFullViewActivity {
+        } else if settings.settings.expandOnHover && !isFullViewActivity {
                 if notchState != .clickExpanded {
                     NSApp.activate(ignoringOtherApps: true)
                     notchWindow?.makeKeyAndOrderFront(nil)
@@ -1269,17 +1233,13 @@ struct NotchController: View {
                     navigationStack = targetStack
                     notchState = .clickExpanded
                 }
-            } else if notchState == .initial || notchState == .autoExpanded {
-                notchState = .hoverExpanded
-                haptic()
+            } else {
+                if notchState == .initial || notchState == .autoExpanded {
+                    notchState = .hoverExpanded
+                    haptic()
+                }
             }
         } else {
-            self.isHovered = false
-            hoverInsideSamples = 0
-            hoverOutsideSamples = 0
-            TrackpadGestureHandler.shared.stopMonitoring()
-
-            guard acceptsHoverTracking || canEnterHoverFromCollapsed else { return }
             if !isCollapseTimerActive {
                 scheduleCollapse(after: config.collapseAnimationDelay)
             }
@@ -1292,10 +1252,6 @@ struct NotchController: View {
         if newActivity != .none {
             activityBlurRadius = config.activityBlurRadiusMax
             activityContentScale = 0.9
-            // Pre-size the notch so the initial activity frame isn't the zero-width pill
-            if measuredAutoContentSize == .zero {
-                measuredAutoContentSize = CGSize(width: 240, height: 60)
-            }
             DispatchQueue.main.async {
                 withAnimation(config.focusPullAnimation) {
                     self.activityBlurRadius = 0
@@ -1305,14 +1261,7 @@ struct NotchController: View {
         }
 
         let previousState = notchState
-        if isHovered && newActivity != .none {
-            // Keep hover state so the interactive frame doesn't shrink and kill hover.
-            // Content still updates via published properties on LiveActivityManager.
-            lastActivityShapeSignature = liveActivityManager.notchShapeSignature
-            updateAutoContentSize()
-        } else {
-            notchState = newActivity != .none ? .autoExpanded : .initial
-        }
+        notchState = newActivity != .none ? .autoExpanded : .initial
         if previousState == notchState {
             handleStateChange(from: notchState, to: notchState)
             lastActivityShapeSignature = liveActivityManager.notchShapeSignature
@@ -1345,10 +1294,6 @@ struct NotchController: View {
         }
 
         if isContentUpdate { return }
-
-        if oldState == .clickExpanded && newState != .clickExpanded {
-            releaseExpandedNotchMemory()
-        }
 
         switch newState {
         case .initial:
@@ -1387,7 +1332,6 @@ struct NotchController: View {
             }
 
         case .clickExpanded:
-            expandedContentSession = UUID()
             isAnimatingActivityOut = false; self.canRenderAutoContent = false
 
             shadowOpacity = 0
@@ -1447,7 +1391,6 @@ struct NotchController: View {
                 }
             }
         }
-        restartNotchInteractionMonitoring()
         updateFPS()
     }
 
@@ -1757,7 +1700,7 @@ struct NotchController: View {
     // MARK: - Helper Methods
     private func startHoverDetection() {
         stopHoverDetection()
-        hoverDetectionTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+        hoverDetectionTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
             let newActiveZone = self.determineActiveDropZone()
             if self.activeDropZone != newActiveZone {
                 self.activeDropZone = newActiveZone
@@ -1766,8 +1709,9 @@ struct NotchController: View {
     }
 
     private func determineActiveDropZone() -> DropZone? {
-        guard let window = notchWindow,
-              let globalMousePoint = window.swiftUIGlobalMouseLocation else { return nil }
+        guard let mainScreen = NSScreen.main else { return nil }
+        let mouseLocation = NSEvent.mouseLocation
+        let globalMousePoint = CGPoint(x: mouseLocation.x, y: mainScreen.frame.height - mouseLocation.y)
 
         for (zone, frame) in self.dropZoneFrames {
             if frame.contains(globalMousePoint) {
@@ -1785,141 +1729,47 @@ struct NotchController: View {
         }
     }
 
-    private func isMouseNearNotchProximity() -> Bool {
-        guard let window = notchWindow, let screen = window.screen ?? NSScreen.main else { return false }
-        let screenFrame = screen.frame
-        let mouseLocationGlobal = NSEvent.mouseLocation
-        
-        let threshold: CGFloat
-        if notchState == .clickExpanded || notchState == .hoverExpanded {
-            threshold = 400
-        } else {
-            threshold = 150
-        }
-        
-        return mouseLocationGlobal.y >= (screenFrame.maxY - threshold)
-    }
-
-    private func handleMouseMovement() {
-        if isMouseNearNotchProximity() {
-            startPollingTimerIfNeeded()
-        } else {
-            stopPollingTimerIfNeeded()
-        }
-    }
-
-    private func startPollingTimerIfNeeded() {
+    private func startNotchInteractionMonitoring() {
         guard notchInteractionPollingTimer == nil else { return }
 
-        let interval: TimeInterval
-        if acceptsHoverTracking {
-            interval = 1.0 / 30.0
-        } else if canEnterHoverFromCollapsed {
-            interval = 1.0 / 12.0
-        } else {
-            interval = 1.0 / 6.0
-        }
-
+        let interval = isInteractive ? (1.0 / 20.0) : (1.0 / 6.0)
         let timer = Timer(timeInterval: interval, repeats: true) { _ in
             self.refreshNotchInteractionState()
         }
-        timer.tolerance = acceptsHoverTracking ? 0.012 : 0.05
+        timer.tolerance = isInteractive ? 0.02 : 0.06
         notchInteractionPollingTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
 
-    private func stopPollingTimerIfNeeded() {
-        if notchInteractionPollingTimer != nil {
-            notchInteractionPollingTimer?.invalidate()
-            notchInteractionPollingTimer = nil
-            refreshNotchInteractionState()
-        }
-    }
-
-    private func startNotchInteractionMonitoring() {
-        guard mouseMoveMonitorGlobal == nil else { return }
-
-        mouseMoveMonitorGlobal = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [self] _ in
-            self.handleMouseMovement()
-        }
-        mouseMoveMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [self] event in
-            self.handleMouseMovement()
-            return event
-        }
-
-        handleMouseMovement()
-    }
-
     private func stopNotchInteractionMonitoring() {
-        if let monitor = mouseMoveMonitorGlobal {
-            NSEvent.removeMonitor(monitor)
-            mouseMoveMonitorGlobal = nil
-        }
-        if let monitor = mouseMoveMonitorLocal {
-            NSEvent.removeMonitor(monitor)
-            mouseMoveMonitorLocal = nil
-        }
-        stopPollingTimerIfNeeded()
+        notchInteractionPollingTimer?.invalidate()
+        notchInteractionPollingTimer = nil
         lastSampledMouseLocation = nil
         lastPublishedInteractiveFrame = .null
     }
 
     private func restartNotchInteractionMonitoring() {
-        if mouseMoveMonitorGlobal != nil {
-            if notchInteractionPollingTimer != nil {
-                stopPollingTimerIfNeeded()
-                startPollingTimerIfNeeded()
-            } else {
-                handleMouseMovement()
-            }
-        } else {
-            startNotchInteractionMonitoring()
-        }
+        stopNotchInteractionMonitoring()
+        startNotchInteractionMonitoring()
     }
 
     private func refreshNotchInteractionState() {
         guard let config = config, let window = notchWindow else { return }
-
-        if !isInteractive, !window.isVisible {
+        let mouseLocation = window.mouseLocationOutsideOfEventStream
+        if !isInteractive, lastSampledMouseLocation == mouseLocation {
             return
         }
 
-        let mouseLocationGlobal = NSEvent.mouseLocation
-        if let screen = window.screen ?? NSScreen.main {
-            let screenFrame = screen.frame
-            let threshold: CGFloat = (notchState == .clickExpanded || notchState == .hoverExpanded) ? 400 : 150
-            if mouseLocationGlobal.y < screenFrame.maxY - threshold {
-                if isHovered {
-                    handleHover(hovering: false)
-                }
-                return
-            }
-        }
+        lastSampledMouseLocation = mouseLocation
 
-        let mouseLocation = window.mouseLocationOutsideOfEventStream
-        let nearNotch = isMouseNearNotchWindow(window)
-
-        if !acceptsHoverTracking && !canEnterHoverFromCollapsed && !nearNotch {
+        if !isInteractive && !isMouseNearNotchWindow(window) {
             if isHovered {
                 handleHover(hovering: false)
             }
             return
         }
 
-        guard acceptsHoverTracking || canEnterHoverFromCollapsed || nearNotch || lastSampledMouseLocation != mouseLocation else {
-            return
-        }
-        lastSampledMouseLocation = mouseLocation
-
-        let interactiveBounds: CGRect
-        if acceptsHoverTracking {
-            interactiveBounds = interactiveFrame(for: window, config: config)
-        } else if canEnterHoverFromCollapsed && nearNotch {
-            interactiveBounds = hoverEntryFrame(for: window, config: config)
-        } else {
-            return
-        }
-
+        let interactiveBounds = interactiveFrame(for: window, config: config)
         if interactiveBounds != lastPublishedInteractiveFrame {
             lastPublishedInteractiveFrame = interactiveBounds
             updateMouseEventHandling(isInteractive: isInteractive)
@@ -1930,71 +1780,10 @@ struct NotchController: View {
         }
 
         let isPointerInside = interactiveBounds.contains(mouseLocation)
-        if isPointerInside {
-            hoverOutsideSamples = 0
-            hoverInsideSamples = min(hoverInsideSamples + 1, 4)
-        } else {
-            hoverInsideSamples = 0
-            hoverOutsideSamples = min(hoverOutsideSamples + 1, 4)
+
+        if isPointerInside != isHovered {
+            handleHover(hovering: isPointerInside)
         }
-
-        let shouldHover: Bool
-        if isHovered {
-            shouldHover = hoverOutsideSamples < 3
-        } else {
-            shouldHover = hoverInsideSamples >= 2
-        }
-
-        if shouldHover != isHovered {
-            handleHover(hovering: shouldHover)
-        }
-    }
-
-    private func clampAutoContentSizeToVisibleActivity() {
-        guard let config = config else { return }
-        guard isLiveActivityActive,
-              liveActivityManager.currentActivity == .music,
-              !liveActivityManager.activityHasBottomContent else { return }
-
-        let cappedHeight = config.initialSize.height + 10
-        guard measuredAutoContentSize.height > cappedHeight + 1 else { return }
-
-        measuredAutoContentSize = CGSize(
-            width: max(measuredAutoContentSize.width, config.initialSize.width),
-            height: cappedHeight
-        )
-
-        if notchState == .hoverExpanded || notchState == .autoExpanded {
-            animatedHeight = min(animatedHeight, cappedHeight * activeScaleFactor)
-        }
-    }
-
-    private func contentAnchoredInteractiveHeight(config: ResolvedNotchConfiguration) -> CGFloat {
-        let baseHeight = max(animatedHeight, config.initialSize.height)
-        guard isLiveActivityActive,
-              liveActivityManager.currentActivity == .music,
-              !liveActivityManager.activityHasBottomContent else {
-            return baseHeight
-        }
-
-        return min(baseHeight, config.initialSize.height + 10)
-    }
-
-    private func hoverEntryFrame(for window: NSWindow, config: ResolvedNotchConfiguration) -> CGRect {
-        let contentBounds = window.contentView?.bounds ?? .zero
-        guard !contentBounds.isEmpty else { return .zero }
-
-        let width = max(animatedWidth, config.initialSize.width, 180)
-        let notchHeight = max(animatedHeight, config.initialSize.height)
-        let hoverHeight = max(notchHeight, 44)
-        return CGRect(
-            x: contentBounds.midX - (width / 2),
-            y: contentBounds.maxY - notchHeight + 12,
-            width: width,
-            height: hoverHeight + 20
-        )
-        .insetBy(dx: -12, dy: -12)
-        .integral
     }
 
     private func isMouseNearNotchWindow(_ window: NSWindow) -> Bool {
@@ -2006,25 +1795,6 @@ struct NotchController: View {
     private func interactiveFrame(for window: NSWindow, config: ResolvedNotchConfiguration) -> CGRect {
         let contentBounds = window.contentView?.bounds ?? .zero
         guard !contentBounds.isEmpty else { return .zero }
-
-        let usesExpandedInteractiveBounds = notchState == .clickExpanded
-            || notchState == .hoverExpanded
-
-        if usesExpandedInteractiveBounds {
-            let entryWidth = max(animatedWidth, config.initialSize.width, 180)
-            let entryHeight = max(animatedHeight, config.initialSize.height, 44)
-            
-            let width = max(animatedWidth, config.initialSize.width, entryWidth + 12)
-            let height = max(contentAnchoredInteractiveHeight(config: config), entryHeight + 8)
-            return CGRect(
-                x: contentBounds.midX - (width / 2),
-                y: contentBounds.maxY - height,
-                width: width,
-                height: height
-            )
-            .insetBy(dx: -24, dy: -24)
-            .integral
-        }
 
         let horizontalAllowance = min(4, max(1, config.contentHorizontalPadding * 0.08))
         let topExtension = min(6, max(2, config.topBuffer + 2))
@@ -2058,9 +1828,9 @@ struct NotchController: View {
         case .multiAudio: return .multiAudio
         case .weatherPlayer: return .weatherPlayer
         case .calendarPlayer: return .calendarPlayer
+        case .timerDetailView: return .timerDetailView
         case .sportsPlayer: return .sportsPlayer
         case .financePlayer: return .financePlayer
-        case .timerDetailView: return .timerDetailView
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
@@ -2107,11 +1877,11 @@ struct NotchController: View {
         let targetFPS: Int
         switch notchState {
         case .clickExpanded:
-            targetFPS = 8
+            targetFPS = 60
         case .autoExpanded, .hoverExpanded:
-            targetFPS = isLiveActivityActive ? 6 : 5
+            targetFPS = isLiveActivityActive ? 45 : 30
         case .initial:
-            targetFPS = 3
+            targetFPS = 30
         }
         guard targetFPS != appliedTargetFPS else { return }
 
@@ -2171,17 +1941,6 @@ struct NotchController: View {
         if window.sharingType != desired {
             window.sharingType = desired
         }
-    }
-
-    private func releaseExpandedNotchMemory() {
-        isHovered = false
-        if navigationStack != [.defaultWidgets] {
-            navigationStack = [.defaultWidgets]
-        }
-        fileShelfState.selectedItemForPreview = nil
-        measuredClickContentSize = .zero
-        expandedContentSession = UUID()
-        MemoryTrimSupport.trimAfterNotchCollapse(musicManager: musicWidget)
     }
 
     private func scheduleCollapse(after delay: TimeInterval) {
