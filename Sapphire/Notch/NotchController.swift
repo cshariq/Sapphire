@@ -1014,12 +1014,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             }
         case .audioSwitch(let event): AudioSwitchActivityView.right(for: event)
         case .geminiLive(let payload): GeminiActiveActivityView.right(isMuted: payload.isMicMuted) { geminiLiveManager.isMicMuted.toggle() }
-        case .sports(let payload, let bottom):
-            Text("\(payload.homeTeam) vs \(payload.awayTeam)")
-                .font(.system(size: 13, weight: .semibold))
-        case .finance(let payload):
-            Text("\(payload.symbol) \(payload.price)")
-                .font(.system(size: 13, weight: .semibold))
+        case .sports(let payload, _): SportsLiveActivityView.right(for: payload, preferLogo: settings.settings.sportsPreferLogo)
+        case .finance(let payload): FinanceLiveActivityView.right(for: payload)
         case .microphone: MicrophoneLiveActivityView.right { MicrophoneUsageManager.shared.toggleMute() }
         case .nearDrop(let payload): NearDropCompactActivityView.right(payload: payload)
         case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: SettingsModel.shared)
@@ -1197,7 +1193,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
     }
 
-    private func handleHover(hovering: Bool) {
+    private func handleHover(hovering: Bool) { // Ensure window receives hover events during expanded states
         guard let config = config else { return }
         self.isHovered = hovering
 
@@ -1769,7 +1765,14 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             return
         }
 
-        let interactiveBounds = interactiveFrame(for: window, config: config)
+        let interactiveBounds: CGRect = {
+            if isInteractive {
+                // During interactive states (hover/click expanded), consider the full window bounds for hit testing
+                return window.contentView?.bounds ?? .zero
+            } else {
+                return interactiveFrame(for: window, config: config)
+            }
+        }()
         if interactiveBounds != lastPublishedInteractiveFrame {
             lastPublishedInteractiveFrame = interactiveBounds
             updateMouseEventHandling(isInteractive: isInteractive)
@@ -1922,11 +1925,19 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
     }
 
-    private func updateMouseEventHandling(isInteractive: Bool) {
+    private func updateMouseEventHandling(isInteractive: Bool) { // Ensure full window mouse events during interactive states
         guard let window = notchWindow, let config = config else { return }
 
         if let dynamicWindow = window as? DynamicFocusWindow {
-            dynamicWindow.updateInteractiveContentFrame(interactiveFrame(for: dynamicWindow, config: config))
+            if isInteractive {
+                // Expand interactive frame to the full window bounds during interactive states
+                let fullFrame = dynamicWindow.contentView?.bounds ?? .zero
+                dynamicWindow.updateInteractiveContentFrame(fullFrame)
+                // Ensure mouse events are not ignored
+                dynamicWindow.ignoresMouseEvents = false
+            } else {
+                dynamicWindow.updateInteractiveContentFrame(interactiveFrame(for: dynamicWindow, config: config))
+            }
         } else if window.contentView != nil {
             let shouldIgnore = !isInteractive
             if window.ignoresMouseEvents != shouldIgnore {
