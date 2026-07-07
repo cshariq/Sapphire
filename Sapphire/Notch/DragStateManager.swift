@@ -10,6 +10,7 @@ import Combine
 
 @MainActor
 class DragStateManager: ObservableObject {
+    @Published var isHovering: Bool = false
     static let shared = DragStateManager()
     @Published var isDraggingFromShelf = false
     @Published var didJustDrop = false
