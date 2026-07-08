@@ -509,6 +509,7 @@ struct GeneralSettingsView: View {
         case .expandOnHover: return $settings.settings.expandOnHover
         case .swipeToSwitchWidgets: return $settings.settings.swipeToSwitchWidgets
         case .enableOpeningBounce: return $settings.settings.enableOpeningBounce
+        case .capsLockHorizontalLock: return $settings.settings.capsLockHorizontalLockEnabled
         }
     }
 

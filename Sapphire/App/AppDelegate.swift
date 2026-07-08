@@ -92,6 +92,9 @@ final class DynamicFocusWindow: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         sendEventCount += 1
 
+        // Horizontal cursor lock is now handled globally by CursorLockManager.
+        // No per‑event handling required here.
+
         if shouldDropPassivePointerEvent(event) {
             droppedMoveEventCount += 1
             return
