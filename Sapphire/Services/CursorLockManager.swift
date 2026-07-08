@@ -27,19 +27,45 @@ final class CursorLockManager {
             }
         }
     }
+
+    // Update lock state based on Caps Lock flag and user setting.
+    private func updateLockState(capsOn: Bool) {
+        let settingEnabled = SettingsModel.shared.settings.capsLockHorizontalLockEnabled
+        self.lockEnabled = capsOn && settingEnabled
+        logger.debug("CapsLock state changed: \(capsOn), lockEnabled: \(self.lockEnabled, privacy: .public)")
+    }
     private var lockedY: CGFloat = 0
 
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+
     private init() {
-        // Monitor global flag changes to detect Caps Lock state.
-        NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            guard let self = self else { return }
-            let capsOn = event.modifierFlags.contains(.capsLock)
-            // Respect the user setting.
-            let settingEnabled = SettingsModel.shared.settings.capsLockHorizontalLockEnabled
-            self.lockEnabled = capsOn && settingEnabled
+        // Create a CGEventTap to monitor Caps Lock flag changes (low‑level).
+        let flagsMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+        let tap = CGEvent.tapCreate(tap: .cghidEventTap,
+                                    place: .headInsertEventTap,
+                                    options: .defaultTap,
+                                    eventsOfInterest: flagsMask,
+                                    callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+                                        guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
+                                        let manager = Unmanaged<CursorLockManager>.fromOpaque(refcon).takeUnretainedValue()
+                                        let capsOn = event.flags.contains(.maskAlphaShift)
+                                        DispatchQueue.main.async {
+                                            manager.updateLockState(capsOn: capsOn)
+                                        }
+                                        return Unmanaged.passUnretained(event)
+                                    },
+                                    userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
+        if let tap = tap {
+            self.eventTap = tap
+            let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+            self.runLoopSource = source
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+            CGEvent.tapEnable(tap: tap, enable: true)
         }
-        // Monitor mouse movements globally to enforce the lock.
-        NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+        // Monitor mouse movements and drags globally to enforce the lock.
+        let mouseMask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        NSEvent.addGlobalMonitorForEvents(matching: mouseMask) { [weak self] event in
             guard let self = self else { return }
             // Ensure the warp runs on the main thread.
             DispatchQueue.main.async {
