@@ -38,6 +38,8 @@ final class CursorLockManager {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var mouseEventTap: CFMachPort?
+    private var mouseRunLoopSource: CFRunLoopSource?
 
     private init() {
         // Create a CGEventTap to monitor Caps Lock flag changes (low‑level).
@@ -63,14 +65,34 @@ final class CursorLockManager {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
         }
-        // Monitor mouse movements and drags globally to enforce the lock.
-        let mouseMask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
-        NSEvent.addGlobalMonitorForEvents(matching: mouseMask) { [weak self] event in
-            guard let self = self else { return }
-            // Ensure the warp runs on the main thread.
-            DispatchQueue.main.async {
-                self.applyLockIfNeeded(to: event)
+        // Create a CGEventTap to monitor mouse movement and drag events and enforce the lock.
+        let mouseMask = CGEventMask(
+            (1 << CGEventType.mouseMoved.rawValue) |
+            (1 << CGEventType.leftMouseDragged.rawValue) |
+            (1 << CGEventType.rightMouseDragged.rawValue) |
+            (1 << CGEventType.otherMouseDragged.rawValue)
+        )
+        let mouseTap = CGEvent.tapCreate(tap: .cghidEventTap,
+                                         place: .headInsertEventTap,
+                                         options: .defaultTap,
+                                         eventsOfInterest: mouseMask,
+                                         callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+            guard let refc = refcon else { return Unmanaged.passUnretained(event) }
+            let manager = Unmanaged<CursorLockManager>.fromOpaque(refc).takeUnretainedValue()
+            if manager.lockEnabled {
+                var loc = event.location
+                loc.y = manager.lockedY
+                event.location = loc
+                manager.logger.debug("Modified mouse event Y to lockedY: \(manager.lockedY, privacy: .public)")
             }
+            return Unmanaged.passUnretained(event)
+        }, userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
+        if let mouseTap = mouseTap {
+            self.mouseEventTap = mouseTap
+            let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, mouseTap, 0)
+            self.mouseRunLoopSource = source
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+            CGEvent.tapEnable(tap: mouseTap, enable: true)
         }
     }
 
@@ -80,6 +102,8 @@ final class CursorLockManager {
         guard lockEnabled else { return }
         // Get the current mouse location (global screen coordinates).
         let mouseLocation = NSEvent.mouseLocation
+        // Only warp if the Y coordinate differs from the locked value.
+        guard mouseLocation.y != lockedY else { return }
         // Warp the cursor to the locked Y, preserving the X coordinate.
         let target = CGPoint(x: mouseLocation.x, y: lockedY)
         logger.debug("Warping cursor to Y: \(self.lockedY, privacy: .public) (original Y: \(mouseLocation.y, privacy: .public))")
