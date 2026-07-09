@@ -25,8 +25,8 @@ Sapphire is a sleek notch app that displays current activities neatly around the
 
 ## Installation
 
-1.  **Download:** Get the latest release from the [releases page](https://github.com/cshariq/Sapphire/releases/tag/Latest).
-2.  **Install:** Open the downloaded app and follow the installation process.
+1.  **Download:** Download the latest package release from the [releases page](https://github.com/cshariq/Sapphire/releases/tag/Latest).
+2.  **Install:** Open the downloaded package and follow the installation process.
 3.  **Permissions:** On first launch, you may need to grant accessibility and other permissions in `System Settings` for all features to work correctly.
 
 ## Features
