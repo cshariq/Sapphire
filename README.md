@@ -3,7 +3,7 @@
 
   <h1>Sapphire</h1>
   <p><b>The all-in-one mac app that redefines the notch</b></p>
-  <a href="https://cshariq.github.io/Sapphire-Website/" style="text-decoration: none; margin-right: 10px;">
+  <a href="https://sapphire-app.tech" style="text-decoration: none; margin-right: 10px;">
     <div style="background-color: #007aff; color: white; padding: 10px 20px; border-radius: 8px; display: inline-block; font-weight: bold;">
       Official Website
     </div>
