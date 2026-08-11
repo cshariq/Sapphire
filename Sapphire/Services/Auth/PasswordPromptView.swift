@@ -9,6 +9,9 @@ import SwiftUI
 
 struct PasswordPromptView: View {
     @Binding var isPresented: Bool
+    var validate: ((String) -> Bool)?
+    var title: String = "Authentication Required"
+    var message: String = "To enable Bluetooth Unlock, Sapphire needs your Mac's login password. It will be stored securely in your system's Keychain and used only to unlock your device."
     var onSubmit: (String) -> Void
 
     @State private var password = ""
@@ -20,10 +23,10 @@ struct PasswordPromptView: View {
                 .font(.system(size: 40))
                 .foregroundColor(.accentColor)
 
-            Text("Authentication Required")
+            Text(title)
                 .font(.headline)
 
-            Text("To enable Bluetooth Unlock, Sapphire needs your Mac's login password. It will be stored securely in your system's Keychain and used only to unlock your device.")
+            Text(message)
                 .font(.callout)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
@@ -46,10 +49,13 @@ struct PasswordPromptView: View {
                 .keyboardShortcut(.cancelAction)
 
                 Button("OK") {
-                    if !password.isEmpty {
-                        onSubmit(password)
-                    } else {
+                    if password.isEmpty {
                         errorMessage = "Password cannot be empty."
+                    } else if let validate = validate, !validate(password) {
+                        errorMessage = "Incorrect password. Please try again."
+                        password = ""
+                    } else {
+                        onSubmit(password)
                     }
                 }
                 .keyboardShortcut(.defaultAction)

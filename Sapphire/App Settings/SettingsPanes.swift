@@ -3234,9 +3234,30 @@ struct ProximityUnlockSettingsView: View {
     @State private var showUnnamedDevices = false
     @State private var isFindingByDistance = false
     @State private var isCalibratingRSSI = false
+    @State private var pendingFaceProfileAction: FaceProfileAction?
 
     private let deviceRowHeight: CGFloat = 38
     private let maxDeviceListHeight: CGFloat = 228
+
+    private struct FaceProfileAction: Identifiable {
+        enum Kind {
+            case register
+            case delete
+        }
+
+        let id = UUID()
+        let kind: Kind
+        let profileName: String
+    }
+
+    private func performFaceProfileAction(_ action: FaceProfileAction) {
+        switch action.kind {
+        case .register:
+            authManager.beginFaceRegistration(profileName: action.profileName)
+        case .delete:
+            authManager.deleteFaceProfile(name: action.profileName)
+        }
+    }
 
     private var isBluetoothEnabled: Binding<Bool> {
         Binding<Bool>(
@@ -3300,6 +3321,20 @@ struct ProximityUnlockSettingsView: View {
                 if authManager.verifyAndSavePassword(password) {
                     showPasswordPrompt = false
                 }
+            }
+        }
+        .sheet(item: $pendingFaceProfileAction) { action in
+            PasswordPromptView(
+                isPresented: Binding(
+                    get: { pendingFaceProfileAction != nil },
+                    set: { if !$0 { pendingFaceProfileAction = nil } }
+                ),
+                validate: { authManager.verifyPassword($0) },
+                title: "Face ID Authentication Required",
+                message: "Enter your Mac's password to \(action.kind == .delete ? "delete the '\(action.profileName)' face profile" : "register the '\(action.profileName)' face profile")."
+            ) { _ in
+                pendingFaceProfileAction = nil
+                performFaceProfileAction(action)
             }
         }
         .sheet(item: $authManager.faceRegistrationController, onDismiss: {
@@ -3382,10 +3417,10 @@ struct ProximityUnlockSettingsView: View {
                             Text(profileName)
                             Spacer()
                             Button("Re-Register") {
-                                authManager.beginFaceRegistration(profileName: profileName)
+                                pendingFaceProfileAction = FaceProfileAction(kind: .register, profileName: profileName)
                             }
                             Button("Delete", role: .destructive) {
-                                authManager.deleteFaceProfile(name: profileName)
+                                pendingFaceProfileAction = FaceProfileAction(kind: .delete, profileName: profileName)
                             }
                         }.padding()
                     }
@@ -3396,7 +3431,7 @@ struct ProximityUnlockSettingsView: View {
                         Spacer()
                         Button(action: {
                             let profileName = registeredFaces.isEmpty ? "Primary Face" : "Secondary Face"
-                            authManager.beginFaceRegistration(profileName: profileName)
+                            pendingFaceProfileAction = FaceProfileAction(kind: .register, profileName: profileName)
                         }) { Label("Add Face", systemImage: "plus.circle.fill") }
                         .buttonStyle(.borderedProminent)
                         Spacer()

@@ -424,73 +424,73 @@ class FaceDataStore {
     }
 
     func saveMultiArrayToDisk(_ array: MLMultiArray, size: Int, name: String, isNormalizedTo01: Bool) {
-        guard let floatPtr = try? UnsafeBufferPointer<Float>(array) else { return }
-
-        let width = size
-        let height = size
-        let channelStride = size * size
-
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
-
-        for y in 0..<height {
-            for x in 0..<width {
-                let outOffset = y * width + x
-                let pixelOffset = (y * width + x) * 4
-
-                let rVal = floatPtr[outOffset]
-                let gVal = floatPtr[outOffset + channelStride]
-                let bVal = floatPtr[outOffset + (2 * channelStride)]
-
-                let rByte: UInt8
-                let gByte: UInt8
-                let bByte: UInt8
-
-                if isNormalizedTo01 {
-                    rByte = UInt8(clamping: Int(rVal * 255.0))
-                    gByte = UInt8(clamping: Int(gVal * 255.0))
-                    bByte = UInt8(clamping: Int(bVal * 255.0))
-                } else {
-                    rByte = UInt8(clamping: Int(rVal * 128.0 + 127.5))
-                    gByte = UInt8(clamping: Int(gVal * 128.0 + 127.5))
-                    bByte = UInt8(clamping: Int(bVal * 128.0 + 127.5))
-                }
-
-                bytes[pixelOffset] = rByte
-                bytes[pixelOffset + 1] = gByte
-                bytes[pixelOffset + 2] = bByte
-                bytes[pixelOffset + 3] = 255
-            }
-        }
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
-
-        guard let context = CGContext(
-            data: &bytes,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-        ), let cgImage = context.makeImage() else {
-            return
-        }
-
-        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
-
-        let fileManager = FileManager.default
-        guard let desktopURL = fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first else { return }
-        let diagnosticsDirectory = desktopURL.appendingPathComponent("Sapphire_Diagnostics")
-
-        try? fileManager.createDirectory(at: diagnosticsDirectory, withIntermediateDirectories: true)
-        let fileURL = diagnosticsDirectory.appendingPathComponent("\(name)_Tensor.png")
-
-        if let tiffData = nsImage.tiffRepresentation,
-           let bitmap = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmap.representation(using: .png, properties: [:]) {
-            try? pngData.write(to: fileURL)
-        }
+//        guard let floatPtr = try? UnsafeBufferPointer<Float>(array) else { return }
+//
+//        let width = size
+//        let height = size
+//        let channelStride = size * size
+//
+//        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+//
+//        for y in 0..<height {
+//            for x in 0..<width {
+//                let outOffset = y * width + x
+//                let pixelOffset = (y * width + x) * 4
+//
+//                let rVal = floatPtr[outOffset]
+//                let gVal = floatPtr[outOffset + channelStride]
+//                let bVal = floatPtr[outOffset + (2 * channelStride)]
+//
+//                let rByte: UInt8
+//                let gByte: UInt8
+//                let bByte: UInt8
+//
+//                if isNormalizedTo01 {
+//                    rByte = UInt8(clamping: Int(rVal * 255.0))
+//                    gByte = UInt8(clamping: Int(gVal * 255.0))
+//                    bByte = UInt8(clamping: Int(bVal * 255.0))
+//                } else {
+//                    rByte = UInt8(clamping: Int(rVal * 128.0 + 127.5))
+//                    gByte = UInt8(clamping: Int(gVal * 128.0 + 127.5))
+//                    bByte = UInt8(clamping: Int(bVal * 128.0 + 127.5))
+//                }
+//
+//                bytes[pixelOffset] = rByte
+//                bytes[pixelOffset + 1] = gByte
+//                bytes[pixelOffset + 2] = bByte
+//                bytes[pixelOffset + 3] = 255
+//            }
+//        }
+//
+//        let colorSpace = CGColorSpaceCreateDeviceRGB()
+//        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+//
+//        guard let context = CGContext(
+//            data: &bytes,
+//            width: width,
+//            height: height,
+//            bitsPerComponent: 8,
+//            bytesPerRow: width * 4,
+//            space: colorSpace,
+//            bitmapInfo: bitmapInfo
+//        ), let cgImage = context.makeImage() else {
+//            return
+//        }
+//
+//        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+//
+//        let fileManager = FileManager.default
+//        guard let desktopURL = fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first else { return }
+//        let diagnosticsDirectory = desktopURL.appendingPathComponent("Sapphire_Diagnostics")
+//
+//        try? fileManager.createDirectory(at: diagnosticsDirectory, withIntermediateDirectories: true)
+//        let fileURL = diagnosticsDirectory.appendingPathComponent("\(name)_Tensor.png")
+//
+//        if let tiffData = nsImage.tiffRepresentation,
+//           let bitmap = NSBitmapImageRep(data: tiffData),
+//           let pngData = bitmap.representation(using: .png, properties: [:]) {
+//            try? pngData.write(to: fileURL)
+//        }
     }
 
     private func resizedCGImage(_ cgImage: CGImage, to size: CGSize) -> CGImage? {

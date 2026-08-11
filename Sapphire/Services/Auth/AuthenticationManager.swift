@@ -232,6 +232,13 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         if success { _ = savePasswordToKeychain(password); self.isPasswordSet = true }; return success
     }
 
+    func verifyPassword(_ password: String) -> Bool {
+        guard let encrypted = KeychainManager.shared.load(for: passwordAccount),
+              let decrypted = CryptoManager.shared.decrypt(data: encrypted),
+              let stored = String(data: decrypted, encoding: .utf8) else { return false }
+        return stored == password
+    }
+
     private func updateMonitoringConfig(enabled: Bool, deviceID: String?) {
         if enabled, self.isPasswordSet, let id = deviceID, let uuid = UUID(uuidString: id) {
             if isBluetoothAuthenticating && ble.monitoredUUID == uuid {
