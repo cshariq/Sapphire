@@ -245,17 +245,35 @@ class SystemHUDManager: ObservableObject {
         }
 
         let action: MediaKeyAction?
+        let isVolumeKey: Bool
+        let isBrightnessKey: Bool
         switch keyCode {
-        case NX_KEYTYPE_SOUND_UP: action = .volumeUp
-        case NX_KEYTYPE_SOUND_DOWN: action = .volumeDown
-        case NX_KEYTYPE_BRIGHTNESS_UP: action = .brightnessUp
-        case NX_KEYTYPE_BRIGHTNESS_DOWN: action = .brightnessDown
+        case NX_KEYTYPE_SOUND_UP:
+            action = .volumeUp
+            isVolumeKey = true
+            isBrightnessKey = false
+        case NX_KEYTYPE_SOUND_DOWN:
+            action = .volumeDown
+            isVolumeKey = true
+            isBrightnessKey = false
+        case NX_KEYTYPE_BRIGHTNESS_UP:
+            action = .brightnessUp
+            isVolumeKey = false
+            isBrightnessKey = true
+        case NX_KEYTYPE_BRIGHTNESS_DOWN:
+            action = .brightnessDown
+            isVolumeKey = false
+            isBrightnessKey = true
         case NX_KEYTYPE_MUTE:
+            if !settings.settings.enableVolumeHUD { return false }
             if isKeyDown { DispatchQueue.main.async { self.handleMute() } }
             return true
         default:
             return false
         }
+
+        if isVolumeKey && !settings.settings.enableVolumeHUD { return false }
+        if isBrightnessKey && !settings.settings.enableBrightnessHUD { return false }
 
         guard let validAction = action else { return false }
 

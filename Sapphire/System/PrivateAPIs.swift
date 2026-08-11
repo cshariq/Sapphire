@@ -253,13 +253,23 @@ struct SystemControl {
     }
 
     static func getVolume() -> Float {
-        guard let deviceID = getDefaultOutputDeviceID() else { return 0.5 }
+        guard let deviceID = getDefaultOutputDeviceID() else {
+            let scriptSource = "output volume of (get volume settings)"
+            if let script = NSAppleScript(source: scriptSource) {
+                var error: NSDictionary?
+                let result = script.executeAndReturnError(&error)
+                if error == nil {
+                    return Float(result.int32Value) / 100.0
+                }
+            }
+            return 0.5
+        }
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyVolumeScalar,
             mScope: kAudioObjectPropertyScopeOutput,
             mElement: kAudioObjectPropertyElementMain
         )
-        var volume: Float = 0.5
+        var volume: Float = 0.0
         var size = UInt32(MemoryLayout<Float>.size)
         if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &volume) == noErr {
             return volume
@@ -267,6 +277,14 @@ struct SystemControl {
         address.mElement = 0
         if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &volume) == noErr {
             return volume
+        }
+        let scriptSource = "output volume of (get volume settings)"
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            let result = script.executeAndReturnError(&error)
+            if error == nil {
+                return Float(result.int32Value) / 100.0
+            }
         }
         return 0.5
     }
@@ -292,43 +310,37 @@ struct SystemControl {
         } else {
             scriptVolume = Int((cleanLevel * 100).rounded(.toNearestOrAwayFromZero))
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", "set volume output volume \(scriptVolume)"]
-        process.terminationHandler = { proc in
-            if proc.terminationStatus != 0 {
-                print("[SystemControl] osascript setVolume exited \(proc.terminationStatus)")
+        let scriptSource = "set volume output volume \(scriptVolume)"
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            script.executeAndReturnError(&error)
+            if let err = error {
+                print("[SystemControl] ERROR: AppleScript failed to set volume: \(err)")
             }
         }
-        try? process.run()
     }
 
     static func isMuted() -> Bool {
-        guard let deviceID = getDefaultOutputDeviceID() else { return false }
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioObjectPropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var muted: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muted) == noErr {
-            return muted != 0
+        let scriptSource = "output muted of (get volume settings)"
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            let result = script.executeAndReturnError(&error)
+            if error == nil {
+                return result.booleanValue
+            }
         }
         return false
     }
 
     static func setMuted(to isMuted: Bool) {
-        let script = isMuted ? "set volume with output muted" : "set volume without output muted"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        process.terminationHandler = { proc in
-            if proc.terminationStatus != 0 {
-                print("[SystemControl] osascript setMuted exited \(proc.terminationStatus)")
+        let scriptSource = isMuted ? "set volume with output muted" : "set volume without output muted"
+        if let script = NSAppleScript(source: scriptSource) {
+            var error: NSDictionary?
+            script.executeAndReturnError(&error)
+            if let err = error {
+                print("[SystemControl] ERROR: AppleScript failed to set mute state: \(err)")
             }
         }
-        try? process.run()
     }
 
     static func getBrightness() -> Float {
