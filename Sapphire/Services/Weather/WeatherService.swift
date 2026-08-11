@@ -29,12 +29,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
            let key = dict["APIKey"] as? String, !key.isEmpty {
             return key
         }
-        if let path = Bundle.main.path(forResource: "WeatherConfig", ofType: "plist"),
-           let dict = NSDictionary(contentsOfFile: path),
-           let key = dict["APIKey"] as? String, !key.isEmpty {
-            return key
-        }
-        return ""
+        return WeatherAPIKey.value
     }
 
     private static let apiDateFormatter: DateFormatter = {

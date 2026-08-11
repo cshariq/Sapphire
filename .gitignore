@@ -23,3 +23,5 @@ Sapphire/Services/SportLayoutRegistry.swift
 Sapphire/App/GoogleService-Info.plist
 /Sapphire/Services/ConnectedAccounts
 /Sapphire/Services/Monitoring
+/Tools
+Sapphire/Services/Weather/WeatherAPIKey.swift

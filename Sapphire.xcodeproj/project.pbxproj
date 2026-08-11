@@ -1308,7 +1308,7 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.4;
+				MARKETING_VERSION = 2.51;
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;
@@ -1393,7 +1393,7 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.4;
+				MARKETING_VERSION = 2.51;
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;

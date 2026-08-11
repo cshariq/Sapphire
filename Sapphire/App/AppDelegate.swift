@@ -793,6 +793,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(focusModeManager)
                 .environmentObject(bluetoothManager)
                 .environmentObject(batteryMonitor)
+                .environmentObject(timerManager)
 
             widgetConfigs.append(.init(
                 id: "infoWidget",
@@ -808,6 +809,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(settingsModel)
                 .environmentObject(musicManager)
                 .environmentObject(calendarService)
+                .environmentObject(BatteryStatusManager.shared)
+                .environmentObject(focusModeManager)
+                .environmentObject(timerManager)
+                .environmentObject(batteryMonitor)
+                .environmentObject(bluetoothManager)
             widgetConfigs.append(.init(
                 id: "mainWidgetContainer",
                 view: AnyView(mainWidgetContainer),
@@ -826,6 +832,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 .environmentObject(batteryMonitor)
                 .environmentObject(bluetoothManager)
                 .environmentObject(batteryEstimator)
+                .environmentObject(focusModeManager)
+                .environmentObject(timerManager)
 
             widgetConfigs.append(.init(
                 id: "miniWidgets",
