@@ -21,3 +21,5 @@ Sapphire/Services/SportsFinanceContentProvider.swift
 Sapphire/Services/SportsTeamCatalog.swift
 Sapphire/Services/SportLayoutRegistry.swift
 Sapphire/App/GoogleService-Info.plist
+/Sapphire/Services/ConnectedAccounts
+/Sapphire/Services/Monitoring

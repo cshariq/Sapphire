@@ -678,18 +678,29 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
     // MARK: - Alert Volume
 
-    /// Reads the current system alert volume via AppleScript.
-    /// No CoreAudio property exists for alert volume — AppleScript is the canonical API.
+    /// Reads the current system alert volume asynchronously via osascript subprocess.
+    /// No CoreAudio property exists for alert volume — osascript is the canonical API.
+    /// Uses a subprocess with terminationHandler so the main thread is never blocked.
     /// Safe to call periodically for live sync; skip if a debounced write is pending.
     func refreshAlertVolume() {
         guard alertVolumeDebounceTask == nil else { return }
 
-        let script = NSAppleScript(source: "get alert volume of (get volume settings)")
-        var error: NSDictionary?
-        if let result = script?.executeAndReturnError(&error) {
-            let pct = Int(result.int32Value)
-            alertVolume = Float(pct) / 100.0
+        let pipe = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", "get alert volume of (get volume settings)"]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] proc in
+            guard proc.terminationStatus == 0 else { return }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if let pct = Int(str) {
+                let volume = Float(pct) / 100.0
+                Task { @MainActor [weak self] in self?.alertVolume = volume }
+            }
         }
+        try? process.run()
     }
 
     /// Sets the system alert volume (same as System Settings > Sound > Alert volume).

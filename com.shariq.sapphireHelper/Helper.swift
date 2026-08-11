@@ -230,7 +230,27 @@ class Helper: NSObject, HelperProtocol {
     }
 
     // MARK: - Fan Control Functions
-    func getFanCount(reply: @escaping (Int) -> Void) { reply(Int(smc?.getValue("FNum") ?? 0)) }
+    func getFanCount(reply: @escaping (Int) -> Void) {
+        if let count = smc?.getValue("FNum") {
+            reply(Int(count))
+            return
+        }
+        // Fallback: probe sequential fan keys when FNum is missing/unreadable.
+        var probed = 0
+        for index in 0..<8 {
+            let hasFan = smc?.getValue("F\(index)Ac") != nil
+                || smc?.getValue("F\(index)Mx") != nil
+                || smc?.getValue("F\(index)Mn") != nil
+            if hasFan {
+                probed = index + 1
+            } else if probed > 0 {
+                break
+            } else {
+                break
+            }
+        }
+        reply(probed)
+    }
     func getFanInfo(fanIndex: Int, reply: @escaping (FanInfo?) -> Void) {
         guard let smc = smc else { reply(nil); return }
         let name = smc.getStringValue("F\(fanIndex)ID") ?? "Fan \(fanIndex)"
@@ -241,11 +261,19 @@ class Helper: NSObject, HelperProtocol {
     }
     func setFanMode(fanIndex: Int, mode: UInt8, reply: @escaping (Error?) -> Void) {
         guard let smc = smc else { reply(makeError(code: .smcOpenFailed, description: "SMC not connected.")); return }
-        logger.log("Request to set fan \(fanIndex) to AUTO mode.")
-        let modeResult = smc.setFanMode(fanIndex, mode: .automatic)
-        let speedResult = smc.setFanSpeed(fanIndex, speed: 0)
-        if modeResult == kIOReturnSuccess && speedResult == kIOReturnSuccess { reply(nil) }
-        else { reply(makeError(code: .smcWriteFailed, description: "Failed to set fan mode to auto.")) }
+        let targetMode: FanMode = mode == 0 ? .automatic : .forced
+        logger.log("Request to set fan \(fanIndex) to \(targetMode == .automatic ? "AUTO" : "FORCED") mode.")
+
+        if targetMode == .automatic {
+            let modeResult = smc.setFanMode(fanIndex, mode: .automatic)
+            let speedResult = smc.setFanSpeed(fanIndex, speed: 0)
+            if modeResult == kIOReturnSuccess && speedResult == kIOReturnSuccess { reply(nil) }
+            else { reply(makeError(code: .smcWriteFailed, description: "Failed to set fan mode to auto.")) }
+        } else {
+            let modeResult = smc.setFanMode(fanIndex, mode: .forced)
+            if modeResult == kIOReturnSuccess { reply(nil) }
+            else { reply(makeError(code: .smcWriteFailed, description: "Failed to set fan to manual mode.")) }
+        }
     }
     func setFanTargetSpeed(fanIndex: Int, speed: Int, reply: @escaping (Error?) -> Void) {
         guard let smc = smc else { reply(makeError(code: .smcOpenFailed, description: "SMC not connected.")); return }

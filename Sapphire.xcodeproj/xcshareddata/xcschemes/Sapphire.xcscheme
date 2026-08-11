@@ -52,28 +52,6 @@
                ReferencedContainer = "container:Sapphire.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DA343DA02E55068300B675ED"
-               BuildableName = "CaptchaSolverTests.xctest"
-               BlueprintName = "CaptchaSolverTests"
-               ReferencedContainer = "container:Sapphire.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DA343DC72E55098000B675ED"
-               BuildableName = "CaptchaSolverInterfaceTests.xctest"
-               BlueprintName = "CaptchaSolverInterfaceTests"
-               ReferencedContainer = "container:Sapphire.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
@@ -106,6 +84,13 @@
             isEnabled = "NO">
          </CommandLineArgument>
       </CommandLineArguments>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "WEATHER_API_KEY"
+            value = ""
+            isEnabled = "YES">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

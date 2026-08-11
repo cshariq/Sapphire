@@ -192,11 +192,21 @@ public class SMC {
         return IOServiceClose(conn)
     }
 
+    /// Fan counters / RPM / mode registers are valid at zero (idle fans, fanless Macs).
+    private static func allowsZeroByteValue(for key: String) -> Bool {
+        if key == "FS! " || key == "FNum" { return true }
+        guard key.count >= 3, key.first == "F" else { return false }
+        let rest = key.dropFirst()
+        guard let digit = rest.first, digit.isNumber else { return false }
+        return true
+    }
+
     public func getValue(_ key: String) -> Double? {
         var val = SMCVal_t(key)
         guard read(&val) == kIOReturnSuccess, val.dataSize > 0 else { return nil }
 
-        if val.bytes.first(where: { $0 != 0 }) == nil && !["FS! ", "F0Md", "F1Md"].contains(val.key) {
+        // Fan RPM / mode keys are frequently all-zero (idle fans, FNum=0 on fanless Macs).
+        if val.bytes.first(where: { $0 != 0 }) == nil && !Self.allowsZeroByteValue(for: val.key) {
             return nil
         }
 
