@@ -55,6 +55,7 @@ class GammaTable {
     }
 }
 
+@MainActor
 class GammaTechnique: BrightnessTechnique {
     private var overlayWindowControllers: [CGDirectDisplayID: OverlayWindowController] = [:]
     private var gammaTables: [CGDirectDisplayID: GammaTable] = [:]
@@ -66,6 +67,12 @@ class GammaTechnique: BrightnessTechnique {
     }
 
     override func enableScreen(screen: NSScreen) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.enableScreen(screen: screen)
+            }
+            return
+        }
         guard let displayId = screen.displayId else { return }
 
         if overlayWindowControllers[displayId] != nil {

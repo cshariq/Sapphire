@@ -11,15 +11,24 @@ struct ShortcutWidgetView: View {
     @EnvironmentObject var settings: SettingsModel
 
     private let rows: [GridItem] = Array(repeating: .init(.flexible(), spacing: 0), count: 3)
+    private let widgetHeight: CGFloat = 90
+    private let horizontalPadding: CGFloat = 7
 
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 6) {
             if settings.settings.selectedShortcuts.isEmpty {
-                Text("No shortcuts added.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(width: 100, height: 60)
+                VStack(spacing: 6) {
+                    Image(systemName: "square.grid.3x1.folder.badge.plus")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Add shortcuts")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(height: widgetHeight - 8)
+                .padding(.horizontal, 16)
+
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHGrid(rows: rows, spacing: 12) {
@@ -27,11 +36,14 @@ struct ShortcutWidgetView: View {
                             ShortcutIconView(shortcut: shortcut)
                         }
                     }
+                    .padding(.horizontal, 2)
                 }
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(height: widgetHeight - 8)
             }
         }
-        .padding(.horizontal, 7)
-        .frame(height: 90)
+        .padding(.horizontal, horizontalPadding)
+        .frame(height: widgetHeight)
     }
 }
 
@@ -43,7 +55,7 @@ fileprivate struct ShortcutIconView: View {
         Button(action: {
             ShortcutsManager.shared.runShortcut(id: shortcut.id)
         }) {
-            Image(nsImage: iconImage ?? NSImage())
+            Image(nsImage: iconImage ?? ShortcutsManager.shared.getIcon(for: shortcut))
                 .resizable()
                 .scaledToFit()
                 .font(.system(size: 2, weight: .bold))

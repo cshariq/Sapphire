@@ -68,7 +68,6 @@ enum HUDType: Hashable {
             hasher.combine(canControlVolume)
         case .appVolume(let appName, let appIcon, let appVolume):
             hasher.combine(appName)
-            // NSImage is not Hashable, so we hash its TIFF representation
             if let imageData = appIcon?.tiffRepresentation {
                 hasher.combine(imageData)
             }
@@ -125,8 +124,7 @@ class SystemHUDManager: ObservableObject {
     private var isFetchingSpotifyState = false
     private var isControllingSpotify = false
     private var spotifyFetchRequestID = UUID()
-    
-    // App volume control properties
+
     private var currentAppBundleID: String?
     private var currentAppVolume: Float = 0.5
     private var lastCommittedAppVolume: Float?
@@ -294,7 +292,6 @@ class SystemHUDManager: ObservableObject {
             let requestID = UUID()
             spotifyFetchRequestID = requestID
 
-            // Use cached spotify state only if MusicManager indicates Spotify is the current now-playing source
             if settings.settings.showSpotifyVolumeHUD, let cachedState = self.lastKnownSpotifyState, musicManager.lastKnownBundleID == "com.spotify.client", musicManager.isPlaying {
                 self.spotifyStateForAction = cachedState
                 self.updateVolumeHUD()
@@ -352,8 +349,6 @@ class SystemHUDManager: ObservableObject {
              if isControllingAppVolume,
                 let bundleID = self.currentAppBundleID,
                 let lastCommitted = self.lastCommittedAppVolume {
-                 // App volume has already been set via PerAppAudioController.shared.setVolume
-                 // Just update the last committed value
                  self.lastCommittedAppVolume = self.currentAppVolume
              }
 
@@ -420,8 +415,6 @@ class SystemHUDManager: ObservableObject {
                        performSpotifyVolumeChange(action: action, isFineTuning: isFineTuningForSpotify)
 
                    } else if settings.settings.showAppVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune {
-                       // Prefer to show app volume immediately when Option+Volume is pressed
-                       // This ensures a single press will change app volume even if Spotify fetch is pending
                        self.isControllingSpotify = false
                        self.performAppVolumeChange(action: action)
                    } else if isFetchingSpotifyState {
@@ -432,7 +425,6 @@ class SystemHUDManager: ObservableObject {
                        self.changeSystemVolume(action: action, isFineTuning: isSystemFineTune)
                    }
               } else if settings.settings.showAppVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune {
-                  // App volume when Spotify HUD is disabled but app volume is enabled with Option modifier
                   self.isControllingSpotify = false
                   self.performAppVolumeChange(action: action)
               } else {
@@ -604,7 +596,6 @@ class SystemHUDManager: ObservableObject {
         guard let currentVolume = self.currentSpotifyVolumeForAction else { return }
 
         let changeDirection: Float = action == .volumeUp ? 1 : -1
-        // Use per-device override when available (falls back to global slider step)
         let currentDevice = AudioDeviceManager().getCurrentOutputDevice()
         let step: Float = isFineTuning ? 1.0 : Float(settings.volumeSliderStep(forDeviceUID: currentDevice?.uid))
 
@@ -627,7 +618,6 @@ class SystemHUDManager: ObservableObject {
 
        @MainActor
        private func performAppVolumeChange(action: MediaKeyAction) {
-                  // Determine target app bundle id. Prefer the app we previously detected/showed in HUD
                   let targetBundleID: String
                   if let existing = self.currentAppBundleID {
                       targetBundleID = existing
@@ -637,52 +627,41 @@ class SystemHUDManager: ObservableObject {
                       return
                   }
 
-                  // Skip Spotify and Apple Music - they have their own volume control
                   if targetBundleID == "com.spotify.client" || targetBundleID == "com.apple.Music" {
                       return
                   }
 
-                  // Skip Sapphire itself
                   if targetBundleID == Bundle.main.bundleIdentifier {
                       return
                   }
-           
-           // Initialize app volume on first press
+
             if self.currentAppBundleID != targetBundleID || self.lastCommittedAppVolume == nil {
                 let storedVolume = Float(PerAppAudioController.shared.volume(for: targetBundleID))
                 self.currentAppBundleID = targetBundleID
                 self.currentAppVolume = storedVolume
                 self.lastCommittedAppVolume = storedVolume
             }
-           
+
            self.isControllingAppVolume = true
-           
-           // Calculate new volume
+
             let changeDirection: Float = action == .volumeUp ? 1 : -1
-            // Use per-device override when available
             let currentDevice = AudioDeviceManager().getCurrentOutputDevice()
             let percentageStep = Float(settings.volumeSliderStep(forDeviceUID: currentDevice?.uid))
             let coarseStep = (percentageStep / 100.0).clamped(to: 0.01...1.0)
-           
+
            let newVolume: Float = (self.currentAppVolume + (coarseStep * changeDirection)).clamped(to: 0...1)
            self.currentAppVolume = newVolume
-           
-           // Set the new volume
+
             PerAppAudioController.shared.setVolume(Double(newVolume), for: targetBundleID)
 
-            // Get app name and app icon for display (prefer running application info)
             let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == targetBundleID })
             let appName = runningApp?.localizedName ?? NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown App"
             let iconImage = runningApp?.icon ?? self.currentAppIcon
             self.currentAppIcon = iconImage
 
-            // Show HUD with app volume. If the HUD was already showing a combined system+app view
-            // (represented as .externalDeviceVolume), keep that combined view and update the app's
-            // deviceVolume so the UI remains system+app instead of switching to the dedicated app view.
             if let current = self.currentHUD {
                 switch current {
                 case .externalDeviceVolume(let deviceName, let deviceIcon, _, let systemVolume, _, _):
-                    // Update existing combined HUD to reflect new app volume and mark as controlling
                     showHUD(for: .externalDeviceVolume(
                         deviceName: deviceName,
                         deviceIcon: deviceIcon,
@@ -702,7 +681,6 @@ class SystemHUDManager: ObservableObject {
      @MainActor
      private func changeSystemVolume(action: MediaKeyAction, isFineTuning: Bool) {
           let changeDirection: Float = action == .volumeUp ? 1 : -1
-          // Determine step using per-device override (if configured) otherwise use global setting
           let currentDevice = AudioDeviceManager().getCurrentOutputDevice()
           let percentageStep = Float(settings.volumeSliderStep(forDeviceUID: currentDevice?.uid))
           let coarseStep = (percentageStep / 100.0).clamped(to: 0.01...1.0)
@@ -731,12 +709,10 @@ class SystemHUDManager: ObservableObject {
        private func updateVolumeHUD() {
             let systemVolume = SystemControl.getVolume()
 
-            // If spotify is no longer the now-playing source, clear cached spotify state to avoid stale HUDs
             if self.spotifyStateForAction != nil && (musicManager.lastKnownBundleID != "com.spotify.client" || !musicManager.isPlaying) {
                 self.spotifyStateForAction = nil
             }
 
-            // Only show Spotify device HUD if MusicManager reports Spotify as the current now-playing source
             if settings.settings.showSpotifyVolumeHUD, let spotifyState = self.spotifyStateForAction, musicManager.lastKnownBundleID == "com.spotify.client", musicManager.isPlaying {
                 let spotifyVolumePercent = self.currentSpotifyVolumeForAction ?? Float(spotifyState.volumePercent ?? 75)
                 let hud = HUDType.externalDeviceVolume(
@@ -749,33 +725,26 @@ class SystemHUDManager: ObservableObject {
                 )
                 showHUD(for: hud)
             } else if isControllingAppVolume, let bundleID = self.currentAppBundleID {
-                // Show app volume HUD (when controlling with Option + Volume)
-                // Prefer stored currentAppIcon/name when available (we populate these when showing app in normal HUD)
                 let runningApp = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID })
                 let appName = runningApp?.localizedName ?? "Unknown App"
                 let appIconImage = self.currentAppIcon ?? runningApp?.icon
                 showHUD(for: .appVolume(appName: appName, appIcon: appIconImage, appVolume: self.currentAppVolume))
             } else {
                 let device = AudioDeviceManager().getCurrentOutputDevice()
-                
-                // Check if we should show app volume indicator in normal HUD
+
                 if settings.settings.showAppVolumeHUD && settings.settings.showAppVolumeInNormalHUD {
-                    // Try to get the currently playing app from MusicManager first
                     let musicManager = MusicManager.shared
-                    
-                    // Check if there's a currently playing app with active audio
+
                     var appBundleID: String?
                     var appName: String?
                     var appIcon: NSImage?
-                    
-                    // Prefer now-playing info from MusicManager (media adapter) when available
+
                     if musicManager.isPlaying, let bundleID = musicManager.lastKnownBundleID,
                        bundleID != "com.spotify.client" && bundleID != "com.apple.Music" && bundleID != Bundle.main.bundleIdentifier {
                         appBundleID = bundleID
                         appName = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID })?.localizedName ?? musicManager.title ?? "Unknown App"
                         appIcon = musicManager.appIcon ?? NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID })?.icon
                     } else {
-                        // Fallback: check if frontmost app has active audio taps
                         if let frontmostApp = NSWorkspace.shared.frontmostApplication,
                            let bundleID = frontmostApp.bundleIdentifier,
                            bundleID != "com.spotify.client" && bundleID != "com.apple.Music" && bundleID != Bundle.main.bundleIdentifier {
@@ -787,24 +756,21 @@ class SystemHUDManager: ObservableObject {
                             }
                         }
                     }
-                    
-                    // If we found an app with active audio, show it
+
                     if let bundleID = appBundleID, let name = appName {
                         let appVolume = Float(PerAppAudioController.shared.volume(for: bundleID))
-                        // Persist the detected playing app so Option+Volume targets it even when it's not frontmost
                         self.currentAppBundleID = bundleID
                         self.currentAppVolume = appVolume
                         self.lastCommittedAppVolume = appVolume
                         self.currentAppIcon = appIcon
 
-                        // Show app volume HUD as external device volume (like Spotify)
                         showHUD(for: .externalDeviceVolume(
                             deviceName: name,
                             deviceIcon: "app.fill",
                             deviceVolume: appVolume,
                             systemVolume: systemVolume,
-                            isControllingExternal: false,  // Not being controlled from this view
-                            canControlVolume: true  // Show as compatible but controlled via Option+Volume
+                            isControllingExternal: false,
+                            canControlVolume: true
                         ))
                     } else {
                         showHUD(for: .volume(level: systemVolume, device: device))
@@ -1064,7 +1030,6 @@ struct SystemHUDView: View {
       @ViewBuilder
        private func appVolumeContent(appName: String, appIcon: NSImage?, appVolume: Float) -> some View {
           HStack(spacing: 12) {
-              // Prefer explicit NSImage from hud manager if available
               if let nsIcon = hudManager.currentAppIcon ?? appIcon {
                   Image(nsImage: nsIcon)
                       .resizable()
@@ -1084,7 +1049,7 @@ struct SystemHUDView: View {
                   Text(appName)
                       .font(.system(size: 12, weight: .semibold))
                       .lineLimit(1)
-                
+
                   DynamicSliderIndicator(
                       level: appVolume,
                       onChanged: { _ in }
@@ -1116,7 +1081,6 @@ struct ExternalDeviceIndicatorHUD: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                // Display app icon if provided, otherwise use system icon
                 if let appIcon = appIcon {
                     Image(nsImage: appIcon)
                         .resizable()

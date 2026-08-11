@@ -67,8 +67,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     func completeFaceRegistration() {
         self.faceRegistrationController = nil
         self.fetchRegisteredFaces()
-        
-        // RAM OPTIMIZATION: Flush models and pre-allocated buffers from memory immediately
+
         MLModelManager.shared.unloadModels()
         FaceDataStore.shared.deallocateStaticBuffers()
     }
@@ -82,8 +81,13 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         guard !isUnlockInProgress, !isFaceIDAuthenticating, settings.settings.faceIDUnlockEnabled, settings.settings.hasRegisteredFaceID, self.cameraController == nil else { return }
         print("LOG (FaceID): Creating new CameraController instance for authentication.")
         isFaceIDAuthenticating = true
+        MLModelManager.shared.prewarm()
+        FaceDataStore.shared.allocateStaticBuffers()
         self.cameraController = CameraController()
-        self.cameraController?.startAuthentication()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self, self.isFaceIDAuthenticating, self.isScreenLocked else { return }
+            self.cameraController?.startAuthentication()
+        }
     }
 
     private func tearDownFaceID() {
@@ -92,13 +96,17 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         isFaceIDAuthenticating = false
         cameraController?.teardown()
         cameraController = nil
-        
-        // RAM OPTIMIZATION: Flush models and pre-allocated buffers from memory asynchronously
-        DispatchQueue.global(qos: .utility).async {
-            MLModelManager.shared.unloadModels()
-            FaceDataStore.shared.deallocateStaticBuffers()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self, !self.isFaceIDSessionActive else { return }
+            DispatchQueue.global(qos: .utility).async {
+                MLModelManager.shared.unloadModels()
+                FaceDataStore.shared.deallocateStaticBuffers()
+            }
         }
     }
+
+    var isFaceIDSessionActive: Bool { isFaceIDAuthenticating || cameraController != nil }
 
     func stopAllAuthentication() {
         if isBluetoothAuthenticating {
@@ -120,7 +128,6 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             return
         }
 
-        // Always wake the display before typing (Face ID path especially needs this)
         if settings.settings.bluetoothUnlockWakeOnProximity || isFaceIDAuthenticating {
             (NSApp.delegate as? AppDelegate)?.wakeDisplay()
         }
@@ -130,14 +137,10 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             return
         }
 
-        // IMMEDIATE CAMERA SHUTDOWN:
-        // Tear down the Face ID engine and turn off the webcam immediately.
-        // This stops the hardware green light on the spot.
         if isFaceIDAuthenticating {
             tearDownFaceID()
         }
 
-        // Ensure we have Accessibility permission to post keyboard events
         if !hasAccessibilityPermission(promptIfNeeded: true) {
             print("[AuthManager] Accessibility permission is required to type the password. Prompting user.")
             setStatusThrottled("Enable Accessibility in System Settings to allow auto-unlock.")
@@ -148,10 +151,9 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
         setStatusThrottled("Unlocking...")
 
-        // Give the system a brief moment to wake/focus the password field
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self = self else { return }
-            self.unlockWithPassword()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self else { return }
+            self.unlockWithPassword(attempt: 1)
         }
     }
 
@@ -261,10 +263,10 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    private func unlockWithPassword() {
-        // Verify Accessibility permission once more
+    private func unlockWithPassword(attempt: Int = 1) {
         guard hasAccessibilityPermission(promptIfNeeded: false) else {
             setStatusThrottled("Accessibility permission required")
+            isUnlockInProgress = false
             return
         }
 
@@ -273,21 +275,23 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
               let password = String(data: decrypted, encoding: .utf8) else {
             setStatusThrottled("Password not set")
             showPasswordPrompt()
+            isUnlockInProgress = false
             return
         }
 
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             setStatusThrottled("Unlock failed")
+            isUnlockInProgress = false
             return
         }
 
         let tapLocation = CGEventTapLocation.cghidEventTap
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        (NSApp.delegate as? AppDelegate)?.wakeDisplay()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
             var utf16chars = Array(password.utf16)
-            
-            // KEYBOARD OPTIMIZATION: Instead of chunking with sleeps, the entire password
-            // string is posted in a single Unicode keystroke packet, dropping latency to <1ms.
+
             if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
                 pwDown.keyboardSetUnicodeString(stringLength: utf16chars.count, unicodeString: &utf16chars)
                 pwDown.post(tap: tapLocation)
@@ -295,17 +299,30 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             if let pwUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
                 pwUp.post(tap: tapLocation)
             }
-            
-            // Minimal sleep for OS HID buffer commits
-            usleep(5000)
 
-            // Submit with Return key
-            let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
-            let retUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
-            retDown?.post(tap: tapLocation)
-            retUp?.post(tap: tapLocation)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+                let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
+                let retUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
+                retDown?.post(tap: tapLocation)
+                retUp?.post(tap: tapLocation)
 
-            self.setStatusThrottled("Unlocked")
+                self.setStatusThrottled("Unlocked")
+
+                if attempt < 2 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                        if self.isScreenLocked {
+                            print("[AuthManager] Screen still locked after Face ID unlock — retrying password entry.")
+                            self.unlockWithPassword(attempt: attempt + 1)
+                        } else {
+                            self.didCompleteUnlock()
+                        }
+                    }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.didCompleteUnlock()
+                    }
+                }
+            }
         }
     }
 
@@ -328,7 +345,6 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     func updateRSSI(rssi: Int?, active: Bool) {
         self.lastRSSI = rssi
-        // Throttle UI/status updates to at most ~5 Hz
         rssiUpdateWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
@@ -368,7 +384,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     private func handleLock() {
         if !isScreenLocked {
-            if settings.settings.bluetoothUnlockPauseMusicOnLock { MusicManager.shared.pause() }
+            if settings.settings.bluetoothUnlockPauseMusicOnLock { Task { await MusicManager.shared.pause() } }
             settings.settings.bluetoothUnlockUseScreensaver ? startScreenSaver() : (_ = SACLockScreenImmediate())
             if settings.settings.bluetoothUnlockTurnOffScreenOnLock {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { (NSApp.delegate as? AppDelegate)?.sleepDisplay() }
@@ -390,7 +406,6 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     private func setStatusThrottled(_ newStatus: String, throttle: TimeInterval = 0.2) {
-        // Avoid redundant updates
         if status == newStatus { return }
         pendingStatus = newStatus
         statusUpdateWorkItem?.cancel()

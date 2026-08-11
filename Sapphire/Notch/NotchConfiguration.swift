@@ -56,11 +56,11 @@ struct NotchConfiguration {
     private static func baseNotchSize() -> (width: CGFloat, height: CGFloat) {
         switch DisplayDetection.detectDeviceClass() {
         case .macBookPro14:
-            return (width: 205, height: 34)
+            return (width: 214, height: 36.2)
         case .macBookPro16:
             return (width: 195, height: 32)
         case .macBookAir13:
-            return (width: 190, height: 32.5)
+            return (width: 210, height: 38)
         case .macBookAir15:
             return (width: 205, height: 32)
         case .unknown:
@@ -116,9 +116,7 @@ struct NotchConfiguration {
 
     static var liveActivityBottomCornerRadius: CGFloat = 18
 
-    static var collapseAnimationDelay: TimeInterval = 0.07
-    static var initialOpenCollapseDelay: TimeInterval = 1.5
-    static var widgetSwitchCollapseDelay: TimeInterval = 3.0
+    static var collapseAnimationDelay: TimeInterval = 0
 
     // MARK: - Animation Configurations (Represents the 'Snappy' default)
     static var expandAnimation = Animation.spring(response: 0.4, dampingFraction: 0.55, blendDuration: 0)
@@ -147,6 +145,7 @@ struct NotchConfiguration {
     static var expandedShadowColor = Color.black.opacity(0.4)
     static var expandedShadowRadius: CGFloat = 18
     static var expandedShadowOffset: CGPoint { CGPoint(x: 0, y: 8) }
+    static var notchShadowBleed: CGFloat = 28
 
     // MARK: - Content Padding and Layout
     static var contentTopPadding: CGFloat = 10 * screenHeightAdjustment
@@ -154,7 +153,7 @@ struct NotchConfiguration {
     static var contentHorizontalPadding: CGFloat = 35 * screenWidthAdjustment
     static var contentVisibilityThresholdHeight: CGFloat { universalHeight + 1 }
     static var primaryWidgetSwitchDelay: TimeInterval = 0.2
-    static var dragActivationCollapseDelay: TimeInterval = 0.1
+    static var dragActivationCollapseDelay: TimeInterval = 0.05
 
     // MARK: - Battery View Configuration
     static var batteryTextFontSize: CGFloat = 12
@@ -221,12 +220,15 @@ struct NotchConfiguration {
 
     // MARK: - Settings Window Configuration
     static var settingsWindowWidth: CGFloat = 950 * screenWidthAdjustment
-    static var settingsWindowHeight: CGFloat = 650 * screenHeightAdjustment
+    static var settingsWindowHeight: CGFloat = (NSScreen.main?.visibleFrame.height ?? 650) * 0.95
+
+    static var hostWindowMaxWidth: CGFloat = 1400 * screenWidthAdjustment
+    static var hostWindowMaxHeight: CGFloat = 720 * screenHeightAdjustment
 
     // MARK: - Menu Type Detection
     static func isLargeVerticalMenu(_ mode: NotchWidgetMode) -> Bool {
         switch mode {
-        case .musicPlayer, .sportsPlayer, .financePlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS:
+        case .musicPlayer, .sportsPlayer, .financePlayer, .notesPlayer, .clipboardPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS:
             return true
         default:
             return false
@@ -260,8 +262,6 @@ struct ResolvedNotchConfiguration {
 
     // MARK: - Delays
     let collapseAnimationDelay: TimeInterval
-    let initialOpenCollapseDelay: TimeInterval
-    let widgetSwitchCollapseDelay: TimeInterval
     let dragActivationCollapseDelay: TimeInterval
 
     // MARK: - Animation Configurations
@@ -329,8 +329,6 @@ struct ResolvedNotchConfiguration {
             self.liveActivityBottomCornerRadius = custom.liveActivityBottomCornerRadius * screenWidthAdj
 
             self.collapseAnimationDelay = custom.collapseAnimationDelay
-            self.initialOpenCollapseDelay = custom.initialOpenCollapseDelay
-            self.widgetSwitchCollapseDelay = custom.widgetSwitchCollapseDelay
             self.dragActivationCollapseDelay = custom.dragActivationCollapseDelay
 
             self.widgetBlurRadiusMax = custom.widgetBlurRadiusMax
@@ -355,8 +353,6 @@ struct ResolvedNotchConfiguration {
             self.clickExpandedCornerRadius = NotchConfiguration.clickExpandedCornerRadius
             self.liveActivityBottomCornerRadius = NotchConfiguration.liveActivityBottomCornerRadius
             self.collapseAnimationDelay = NotchConfiguration.collapseAnimationDelay
-            self.initialOpenCollapseDelay = NotchConfiguration.initialOpenCollapseDelay
-            self.widgetSwitchCollapseDelay = NotchConfiguration.widgetSwitchCollapseDelay
             self.dragActivationCollapseDelay = NotchConfiguration.dragActivationCollapseDelay
             self.widgetBlurRadiusMax = NotchConfiguration.widgetBlurRadiusMax
             self.activityBlurRadiusMax = NotchConfiguration.activityBlurRadiusMax
@@ -416,4 +412,3 @@ struct ResolvedNotchConfiguration {
         self.activityOpacityAnimation = NotchConfiguration.activityOpacityAnimation
     }
 }
-

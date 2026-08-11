@@ -8,7 +8,6 @@
 import SwiftUI
 import Combine
 import Charts
-import CaptchaSolverInterface
 import CoreBluetooth
 import UniformTypeIdentifiers
 
@@ -29,45 +28,54 @@ struct SettingsDetailView: View {
             if let selectedSection, isSelectedSectionLocked {
                 LockedSettingsSectionView(section: selectedSection)
             } else {
-            switch selectedSection {
-            case .general: GeneralSettingsView()
-            case .widgets: WidgetsSettingsView()
-            case .liveActivities: LiveActivitiesSettingsView()
-            case .appearance: AppearanceSettingsView()
-            case .lockScreen: LockScreenSettingsView()
-            case .bluetoothUnlock: ProximityUnlockSettingsView()
-            case .shortcuts: ShortcutsSettingsView()
-            case .snapZones: SnapZonesSettingsView()
-            case .audio: AudioSettingsView()
-            case .battery: BatterySettingsView()
-            case .bluetooth: BluetoothSettingsView()
-            case .hud: HUDSettingsView()
-            case .notifications: NotificationsSettingsView()
-            case .neardrop: NeardropSettingsView()
-            case .fileShelf: FileShelfSettingsView()
-            case .music: MusicSettingsView()
-            case .weather: WeatherSettingsView()
-            case .calendar: CalendarSettingsView()
-            case .eyeBreak: EyeBreakSettingsView()
-            case .intelligence: IntelligenceSettingsView()
-            case .sports: SportsSettingsView()
-            case .finance: FinanceSettingsView()
-            case .about: AboutSettingsView()
-            case nil:
-                VStack {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 50))
-                        .foregroundStyle(.tertiary)
-                    Text("Select a category")
-                        .font(.title)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+                settingsPane(for: selectedSection)
+                    .id(selectedSection)
             }
         }
         .animation(.easeOut(duration: 0.15), value: selectedSection)
         .animation(.easeOut(duration: 0.15), value: subscriptionManager.activeTier)
+    }
+
+    @ViewBuilder
+    private func settingsPane(for selectedSection: SettingsSection?) -> some View {
+        switch selectedSection {
+        case .general: GeneralSettingsView()
+        case .widgets: WidgetsSettingsView()
+        case .liveActivities: LiveActivitiesSettingsView()
+        case .appearance: AppearanceSettingsView()
+        case .lockScreen: LockScreenSettingsView()
+        case .bluetoothUnlock: ProximityUnlockSettingsView()
+        case .shortcuts: ShortcutsSettingsView()
+        case .snapZones: SnapZonesSettingsView()
+        case .audio: AudioSettingsView()
+        case .battery: BatterySettingsView()
+        case .bluetooth: BluetoothSettingsView()
+        case .hud: HUDSettingsView()
+        case .notifications: NotificationsSettingsView()
+        case .neardrop: NeardropSettingsView()
+        case .fileShelf: FileShelfSettingsView()
+        case .notes: NotesSettingsView()
+        case .clipboard: ClipboardSettingsView()
+        case .caffeine: CaffeineSettingsView()
+        case .music: MusicSettingsView()
+        case .weather: WeatherSettingsView()
+        case .calendar: CalendarSettingsView()
+        case .eyeBreak: EyeBreakSettingsView()
+        case .intelligence: IntelligenceSettingsView()
+        case .sports: SportsSettingsView()
+        case .finance: FinanceSettingsView()
+        case .about: AboutSettingsView()
+        case nil:
+            VStack {
+                Image(systemName: "sidebar.left")
+                    .font(.system(size: 50))
+                    .foregroundStyle(.tertiary)
+                Text("Select a category")
+                    .font(.title)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }
 
@@ -190,6 +198,28 @@ struct NotchAppearanceEditorView: View {
             }
 
             ToggleRow(title: "Liquid Glass Look", description: "Apply a shiny, glass-like effect to the notch background.", isOn: $appearance.liquidGlassLook)
+
+            if appearance.liquidGlassLook {
+                Divider().padding(.leading, 20)
+                let intensityBinding = Binding<Double>(
+                    get: { appearance.liquidGlassIntensity * 100 },
+                    set: { appearance.liquidGlassIntensity = $0 / 100 }
+                )
+                CustomSliderRowView(
+                    label: "Liquid Glass Intensity",
+                    value: intensityBinding,
+                    range: 0...100,
+                    specifier: "%.0f%%"
+                )
+
+                Divider().padding(.leading, 20)
+                ToggleRow(
+                    title: "Frosted Overlay",
+                    description: "Layer frosted liquid glass on top of the clear glass, matching the lock screen frosted treatment.",
+                    isOn: $appearance.enableTransparencyBlur
+                )
+            }
+
             Divider().padding(.leading, 20)
 
             HStack {
@@ -214,13 +244,17 @@ struct NotchAppearanceEditorView: View {
                 get: { appearance.opacity * 100 },
                 set: { appearance.opacity = $0 / 100 }
             )
-            CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%")
+                    CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%", commitsContinuously: true)
 
-            Divider().padding(.leading, 20)
-            ToggleRow(title: "Enable Transparency Blur", description: "Apply a frosted glass effect to the notch background.", isOn: $appearance.enableTransparencyBlur)
+            if !appearance.liquidGlassLook {
+                Divider().padding(.leading, 20)
+                ToggleRow(title: "Enable Transparency Blur", description: "Apply a frosted glass effect to the notch background.", isOn: $appearance.enableTransparencyBlur)
+            }
         }
         .modifier(SettingsContainerModifier())
         .animation(.default, value: appearance.backgroundStyle)
+        .animation(.default, value: appearance.liquidGlassLook)
+        .animation(.default, value: appearance.enableTransparencyBlur)
     }
 
     @ViewBuilder
@@ -295,6 +329,9 @@ struct NotchAppearanceEditorView: View {
 struct GeneralSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
     @State private var showingCustomConfig = false
+    @ObservedObject private var appFetcher = SystemAppFetcher.shared
+    private var browserApps: [SystemApp] { appFetcher.apps.filter { $0.isBrowser } }
+    private var otherApps: [SystemApp] { appFetcher.apps.filter { !$0.isBrowser } }
 
     var body: some View {
         ScrollView {
@@ -306,13 +343,59 @@ struct GeneralSettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Behavior").font(.headline).padding([.top, .horizontal])
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    ForEach(GeneralSettingType.allCases) { setting in
-                        GeneralSettingToggleRowView(setting: setting, isEnabled: binding(for: setting))
-                        if setting != GeneralSettingType.allCases.last {
-                            Divider().padding(.leading, 60)
-                        }
+                ForEach(GeneralSettingType.allCases) { setting in
+                    GeneralSettingToggleRowView(setting: setting, isEnabled: binding(for: setting))
+                    if setting != GeneralSettingType.allCases.last {
+                        Divider().padding(.leading, 60)
                     }
-                }.modifier(SettingsContainerModifier())
+                }
+                if settings.settings.capsLockHorizontalLockEnabled {
+                    Divider().padding(.leading, 60)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Allow in Apps")
+                            .font(.headline)
+                            .padding([.horizontal])
+                        HStack {
+                            Button("Select All") { setAllApps(to: true) }
+                            Button("Deselect All") { setAllApps(to: false) }
+                        }
+                        .padding(.vertical, 4)
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                Text("Browsers (Disabled by Default)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 5)
+                                ForEach(browserApps) { app in
+                                    SystemAppRowView(app: app, isEnabled: capsLockAppBinding(for: app, isBrowser: true))
+                                    if app.id != browserApps.last?.id {
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.2))
+                                            .frame(height: 1)
+                                            .padding(.leading, 50)
+                                    }
+                                }
+                                Text("Other Apps")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 5)
+                                ForEach(otherApps) { app in
+                                    SystemAppRowView(app: app, isEnabled: capsLockAppBinding(for: app, isBrowser: false))
+                                    if app.id != otherApps.last?.id {
+                                        Rectangle()
+                                            .fill(Color.white.opacity(0.2))
+                                            .frame(height: 1)
+                                            .padding(.leading, 50)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 360)
+                    }
+                    .padding()
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }.modifier(SettingsContainerModifier())
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("System").font(.headline).padding([.top, .horizontal])
@@ -334,6 +417,9 @@ struct GeneralSettingsView: View {
                     Divider().padding(.leading, 20)
 
                     ToggleRow(title: "Hide from Screen Sharing", description: "Never include Sapphire in screen sharing, screenshots, or screen recordings.", isOn: $settings.settings.hideFromScreenSharing)
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(title: "Google Analytics", description: "Send anonymous usage events to Google to help improve Sapphire. Disable this to opt out of analytics collection.", isOn: $settings.settings.googleAnalyticsEnabled)
                     Divider().padding(.leading, 20)
 
                     ToggleRow(title: "Hide Notch When Inactive", description: "Hide the notch entirely whenever Sapphire is idle and not showing content.", isOn: $settings.settings.hideNotchWhenInactive)
@@ -484,22 +570,29 @@ struct GeneralSettingsView: View {
                     ReorderableVStack(items: $settings.settings.notchButtonOrder) { buttonType in
                         NotchButtonRowView(buttonType: buttonType)
                     }
-
-                    ToggleRow(title: "Prevent Sleep in Clamshell Mode", description: "Keep your Mac awake while Sapphire's caffeinate mode is active, even with the lid closed.", isOn: $settings.settings.sleepInClamshell)
-                    Divider().padding(.leading, 20)
-
-                    ToggleRow(title: "Keep Caffeinate Enabled After Clamshell", description: "Continue preventing sleep after leaving clamshell mode instead of turning caffeinate off automatically.", isOn: $settings.settings.persistentCaffeinateAfterClamshell)
-                    Divider().padding(.leading, 20)
-
-                    LidAngleCaffeineSettingsView()
                 }
                 .modifier(SettingsContainerModifier())
 
             }
-            .padding(25)
+        .padding(25)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .onAppear {
+        if settings.settings.capsLockHorizontalLockEnabled {
+            appFetcher.fetchApps()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .sheet(isPresented: $showingCustomConfig) {
+    }
+    .onChange(of: settings.settings.capsLockHorizontalLockEnabled) { _, enabled in
+        if enabled {
+            appFetcher.fetchApps()
+        } else {
+            MemoryTrimSupport.releaseSettingsPaneCaches()
+        }
+    }
+    .onDisappear {
+        MemoryTrimSupport.releaseSettingsPaneCaches()
+    }
+    .sheet(isPresented: $showingCustomConfig) {
             CustomNotchConfigView(config: $settings.settings.customNotchConfiguration)
         }
     }
@@ -510,6 +603,19 @@ struct GeneralSettingsView: View {
         case .swipeToSwitchWidgets: return $settings.settings.swipeToSwitchWidgets
         case .enableOpeningBounce: return $settings.settings.enableOpeningBounce
         case .capsLockHorizontalLock: return $settings.settings.capsLockHorizontalLockEnabled
+        }
+    }
+
+    private func capsLockAppBinding(for app: SystemApp, isBrowser: Bool) -> Binding<Bool> {
+        Binding(
+            get: { settings.settings.capsLockHorizontalLockAppStates[app.id, default: true] },
+            set: { settings.settings.capsLockHorizontalLockAppStates[app.id] = $0 }
+        )
+    }
+
+    private func setAllApps(to enabled: Bool) {
+        for app in appFetcher.apps {
+            settings.settings.capsLockHorizontalLockAppStates[app.id] = enabled
         }
     }
 
@@ -571,8 +677,6 @@ struct CustomNotchConfigView: View {
     @State private var clickExpandedCornerRadius: Double
     @State private var liveActivityBottomCornerRadius: Double
     @State private var collapseAnimationDelay: Double
-    @State private var initialOpenCollapseDelay: Double
-    @State private var widgetSwitchCollapseDelay: Double
     @State private var dragActivationCollapseDelay: Double
     @State private var expandAnimationResponse: Double
     @State private var expandAnimationDamping: Double
@@ -604,8 +708,6 @@ struct CustomNotchConfigView: View {
         _clickExpandedCornerRadius = State(initialValue: Double(wrapped.clickExpandedCornerRadius))
         _liveActivityBottomCornerRadius = State(initialValue: Double(wrapped.liveActivityBottomCornerRadius))
         _collapseAnimationDelay = State(initialValue: wrapped.collapseAnimationDelay)
-        _initialOpenCollapseDelay = State(initialValue: wrapped.initialOpenCollapseDelay)
-        _widgetSwitchCollapseDelay = State(initialValue: wrapped.widgetSwitchCollapseDelay)
         _dragActivationCollapseDelay = State(initialValue: wrapped.dragActivationCollapseDelay)
         _expandAnimationResponse = State(initialValue: wrapped.expandAnimationResponse)
         _expandAnimationDamping = State(initialValue: wrapped.expandAnimationDamping)
@@ -671,8 +773,6 @@ struct CustomNotchConfigView: View {
 
                     Section(header: Text("Delays").font(.headline)) {
                         CustomSliderRowView(label: "Collapse Animation Delay", value: $collapseAnimationDelay, range: 0.0...1.0, specifier: "%.2f s")
-                        CustomSliderRowView(label: "Initial Open Collapse Delay", value: $initialOpenCollapseDelay, range: 0.5...5.0, specifier: "%.2f s")
-                        CustomSliderRowView(label: "Widget Switch Collapse Delay", value: $widgetSwitchCollapseDelay, range: 1.0...10.0, specifier: "%.2f s")
                         CustomSliderRowView(label: "Drag Activation Collapse Delay", value: $dragActivationCollapseDelay, range: 0.0...1.0, specifier: "%.2f s")
                     }
 
@@ -725,8 +825,6 @@ struct CustomNotchConfigView: View {
         clickExpandedCornerRadius = Double(sourceConfig.clickExpandedCornerRadius)
         liveActivityBottomCornerRadius = Double(sourceConfig.liveActivityBottomCornerRadius)
         collapseAnimationDelay = sourceConfig.collapseAnimationDelay
-        initialOpenCollapseDelay = sourceConfig.initialOpenCollapseDelay
-        widgetSwitchCollapseDelay = sourceConfig.widgetSwitchCollapseDelay
         dragActivationCollapseDelay = sourceConfig.dragActivationCollapseDelay
         expandAnimationResponse = sourceConfig.expandAnimationResponse
         expandAnimationDamping = sourceConfig.expandAnimationDamping
@@ -756,8 +854,6 @@ struct CustomNotchConfigView: View {
         config.clickExpandedCornerRadius = CGFloat(clickExpandedCornerRadius)
         config.liveActivityBottomCornerRadius = CGFloat(liveActivityBottomCornerRadius)
         config.collapseAnimationDelay = collapseAnimationDelay
-        config.initialOpenCollapseDelay = initialOpenCollapseDelay
-        config.widgetSwitchCollapseDelay = widgetSwitchCollapseDelay
         config.dragActivationCollapseDelay = dragActivationCollapseDelay
         config.expandAnimationResponse = expandAnimationResponse
         config.expandAnimationDamping = expandAnimationDamping
@@ -808,6 +904,197 @@ struct FileShelfSettingsView: View {
     }
 }
 
+struct NotesSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Notes")
+                    .font(.largeTitle.bold())
+                    .padding(.bottom)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ToggleRow(
+                        title: "Enable Notes Widget",
+                        description: "Show the quick notes widget in the notch widget strip.",
+                        isOn: $settings.settings.notesWidgetEnabled
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Open Notes on Click",
+                        description: "Clicking the notes widget expands into the full notes editor.",
+                        isOn: $settings.settings.notesOpenOnClick
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Show Notes in Notch Bar",
+                        description: "Add a notes icon to the expanded notch header for quick access.",
+                        isOn: $settings.settings.notesIconEnabled
+                    )
+                }
+                .modifier(SettingsContainerModifier())
+            }
+            .padding(25)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+struct ClipboardSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+    @State private var historyCount = 0
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Clipboard")
+                    .font(.largeTitle.bold())
+                    .padding(.bottom)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ToggleRow(
+                        title: "Enable Clipboard Widget",
+                        description: "Show recent clipboard items in the notch widget strip.",
+                        isOn: $settings.settings.clipboardWidgetEnabled
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Open Clipboard on Click",
+                        description: "Clicking the clipboard widget expands into the full clipboard history.",
+                        isOn: $settings.settings.clipboardOpenOnClick
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Show Clipboard in Notch Bar",
+                        description: "Add a clipboard icon to the expanded notch header for quick access.",
+                        isOn: $settings.settings.clipboardIconEnabled
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Monitor Clipboard",
+                        description: "Continuously capture newly copied text and images into Sapphire history.",
+                        isOn: $settings.settings.clipboardMonitoringEnabled
+                    )
+                    .onChange(of: settings.settings.clipboardMonitoringEnabled) { _, enabled in
+                        if enabled {
+                            ClipboardManager.shared.startMonitoring()
+                        } else {
+                            ClipboardManager.shared.stopMonitoring()
+                        }
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ToggleRow(
+                        title: "Unlimited History",
+                        description: "Keep every clipboard item Sapphire captures with no retention cap.",
+                        isOn: $settings.settings.clipboardHistoryUnlimited
+                    )
+                    .onChange(of: settings.settings.clipboardHistoryUnlimited) { _, unlimited in
+                        if unlimited {
+                            settings.settings.clipboardHistoryLimit = 0
+                        } else if settings.settings.clipboardHistoryLimit <= 0 {
+                            settings.settings.clipboardHistoryLimit = 40
+                        }
+                    }
+
+                    if !settings.settings.clipboardHistoryUnlimited {
+                        Divider().padding(.leading, 20)
+
+                        CustomSliderRowView(
+                            label: "History Limit",
+                            value: Binding(
+                                get: { Double(max(4, settings.settings.clipboardHistoryLimit)) },
+                                set: { settings.settings.clipboardHistoryLimit = Int($0.rounded()) }
+                            ),
+                            range: 4...200,
+                            specifier: "%.0f items"
+                        )
+                    }
+
+                    Divider().padding(.leading, 20)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Clear History")
+                            Text("Remove \(historyCount) stored clipboard items.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button("Clear") {
+                            ClipboardManager.shared.clearHistory()
+                            historyCount = 0
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(historyCount == 0)
+                    }
+                    .padding()
+                }
+                .modifier(SettingsContainerModifier())
+            }
+            .padding(25)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .onAppear { historyCount = ClipboardManager.shared.recentItems.count }
+    }
+}
+
+struct CaffeineSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Caffeinate")
+                    .font(.largeTitle.bold())
+                    .padding(.bottom)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ToggleRow(
+                        title: "Show Caffeinate in Notch Bar",
+                        description: "Add a caffeinate toggle to the expanded notch header.",
+                        isOn: $settings.settings.caffeinateEnabled
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Prevent Sleep in Clamshell Mode",
+                        description: "Keep your Mac awake while Sapphire's caffeinate mode is active, even with the lid closed.",
+                        isOn: $settings.settings.sleepInClamshell
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Keep Caffeinate Enabled After Clamshell",
+                        description: "Continue preventing sleep after leaving clamshell mode instead of turning caffeinate off automatically.",
+                        isOn: $settings.settings.persistentCaffeinateAfterClamshell
+                    )
+                }
+                .modifier(SettingsContainerModifier())
+
+                LidAngleCaffeineSettingsView()
+            }
+            .padding(25)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
 struct WidgetsSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
 
@@ -819,6 +1106,8 @@ struct WidgetsSettingsView: View {
         if settings.settings.shortcutsWidgetEnabled { count += 1 }
         if settings.settings.sportsWidgetEnabled { count += 1 }
         if settings.settings.financeWidgetEnabled { count += 1 }
+        if settings.settings.notesWidgetEnabled { count += 1 }
+        if settings.settings.clipboardWidgetEnabled { count += 1 }
         return count
     }
 
@@ -864,8 +1153,7 @@ struct WidgetsSettingsView: View {
 
 struct LiveActivitiesSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
-    @StateObject private var statsManager = StatsManager.shared
-    @ObservedObject private var eyeBreakManager = EyeBreakManager.shared
+    @State private var availableSensors: [Sensor_p] = []
 
     private enum PersistentActivitySelection: String, CaseIterable, Identifiable {
         case none = "None"
@@ -875,20 +1163,23 @@ struct LiveActivitiesSettingsView: View {
         var id: String { self.rawValue }
     }
 
+    private var currentPersistentActivity: PersistentActivitySelection {
+        if settings.settings.showPersistentStatsLiveActivity {
+            return .stats
+        } else if settings.settings.showPersistentBatteryLiveActivity {
+            return .battery
+        } else if settings.settings.showPersistentWeatherLiveActivity {
+            return .weather
+        } else {
+            return .none
+        }
+    }
+
     private var persistentActivityBinding: Binding<PersistentActivitySelection> {
         Binding(
-            get: {
-                if settings.settings.showPersistentStatsLiveActivity {
-                    return .stats
-                } else if settings.settings.showPersistentBatteryLiveActivity {
-                    return .battery
-                } else if settings.settings.showPersistentWeatherLiveActivity {
-                    return .weather
-                } else {
-                    return .none
-                }
-            },
+            get: { currentPersistentActivity },
             set: { newValue in
+                guard currentPersistentActivity != newValue else { return }
                 settings.settings.showPersistentStatsLiveActivity = (newValue == .stats)
                 settings.settings.showPersistentBatteryLiveActivity = (newValue == .battery)
                 settings.settings.showPersistentWeatherLiveActivity = (newValue == .weather)
@@ -981,13 +1272,13 @@ struct LiveActivitiesSettingsView: View {
                     }
                     .padding()
 
-                    if persistentActivityBinding.wrappedValue == .stats && !settings.settings.statsLiveActivityEnabled {
+                    if currentPersistentActivity == .stats && !settings.settings.statsLiveActivityEnabled {
                         InfoContainer(text: "Enable the 'Stats' live activity below to select it as persistent.", iconName: "info.circle", color: .yellow)
                             .padding([.horizontal, .bottom])
-                    } else if persistentActivityBinding.wrappedValue == .weather && !settings.settings.weatherLiveActivityEnabled {
+                    } else if currentPersistentActivity == .weather && !settings.settings.weatherLiveActivityEnabled {
                         InfoContainer(text: "Enable the 'Weather' live activity below to select it as persistent.", iconName: "info.circle", color: .yellow)
                             .padding([.horizontal, .bottom])
-                    } else if persistentActivityBinding.wrappedValue == .battery && !settings.settings.batteryLiveActivityEnabled {
+                    } else if currentPersistentActivity == .battery && !settings.settings.batteryLiveActivityEnabled {
                         InfoContainer(text: "Enable the 'Weather' live activity below to select it as persistent.", iconName: "info.circle", color: .yellow)
                             .padding([.horizontal, .bottom])
                     }
@@ -1002,17 +1293,17 @@ struct LiveActivitiesSettingsView: View {
                         }.labelsHidden()
                     }
                     .padding()
-                    .disabled(persistentActivityBinding.wrappedValue == .weather)
-                    .opacity(persistentActivityBinding.wrappedValue == .weather ? 0.5 : 1.0)
+                    .disabled(currentPersistentActivity == .weather)
+                    .opacity(currentPersistentActivity == .weather ? 0.5 : 1.0)
                 }
                 .modifier(SettingsContainerModifier())
-                .animation(.default, value: persistentActivityBinding.wrappedValue)
+                .animation(.default, value: currentPersistentActivity)
 
                 if settings.settings.statsLiveActivityEnabled {
                     SensorSelectionView(
                         selectedStats: $settings.settings.selectedStats,
                         selectedSensorKeys: $settings.settings.selectedSensorKeys,
-                        allSensors: statsManager.allSensors
+                        allSensors: availableSensors
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
 
@@ -1051,13 +1342,19 @@ struct LiveActivitiesSettingsView: View {
                     .modifier(SettingsContainerModifier())
                 }
                 .onChange(of: settings.settings.eyeBreakLiveActivityEnabled) {
-                    eyeBreakManager.dismissBreak()
+                    EyeBreakManager.shared.dismissBreak()
                 }
 
                 RequiredPermissionsView(section: .liveActivities)
             }
             .padding(25)
             .animation(.default, value: settings.settings.statsLiveActivityEnabled)
+        }
+        .onAppear {
+            availableSensors = StatsManager.shared.allSensors
+        }
+        .onDisappear {
+            availableSensors = []
         }
     }
 }
@@ -1263,6 +1560,9 @@ struct ShortcutsSettingsView: View {
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear(perform: fetcher.fetchAllShortcuts)
+            .onDisappear {
+                fetcher.releaseLoadedShortcuts()
+            }
         }
     }
 
@@ -1688,8 +1988,8 @@ fileprivate struct IconPickerView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
                     if filteredIconSections.isEmpty {
                         Text("No icons found for \"\(searchText)\"")
                             .foregroundColor(.gray)
@@ -1724,6 +2024,7 @@ fileprivate struct IconPickerView: View {
                 }
                 .padding()
             }
+
         }
         .frame(width: 350, height: 700)
         .background(Color(red: 0.18, green: 0.18, blue: 0.28))
@@ -1957,11 +2258,35 @@ struct LockScreenSettingsView: View {
 
                     ToggleRow(
                         title: "Liquid Glass Effect",
-                        description: "Apply a liquid glass effect to the widgets.",
+                        description: "Apply a shiny, glass-like effect to the lock screen's background.",
                         isOn: $settings.settings.lockScreenLiquidGlassLook
                     )
+
+                    if settings.settings.lockScreenLiquidGlassLook {
+                        Divider().padding(.leading, 20)
+                        let intensityBinding = Binding<Double>(
+                            get: { settings.settings.lockScreenLiquidGlassIntensity * 100 },
+                            set: { settings.settings.lockScreenLiquidGlassIntensity = $0 / 100 }
+                        )
+                        CustomSliderRowView(
+                            label: "Liquid Glass Intensity",
+                            value: intensityBinding,
+                            range: 0...100,
+                            specifier: "%.0f%%"
+                        )
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Frosted Overlay",
+                            description: "Layer frosted liquid glass on top of the base glass for a denser, more opaque look.",
+                            isOn: $settings.settings.lockScreenFrostedOverLiquidGlass
+                        )
+                    }
                 }
                 .modifier(SettingsContainerModifier())
+                .animation(.default, value: settings.settings.lockScreenLiquidGlassLook)
+                .animation(.default, value: settings.settings.lockScreenFrostedOverLiquidGlass)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Notch Bar").font(.headline).padding([.top, .horizontal])
@@ -2042,6 +2367,24 @@ struct SnapZonesSettingsView: View {
                         description: "Show Snap Zones when dragging a window.",
                         isOn: $settings.settings.snapOnWindowDragEnabled
                     )
+
+                    Divider().padding(.leading, 20)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Activation Delay")
+                                .font(.system(size: 14, weight: .medium))
+                            Spacer()
+                            Text(String(format: "%.2fs", settings.settings.snapActivationDelay))
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $settings.settings.snapActivationDelay, in: 0.1...1.0, step: 0.05)
+                        Text("Wait this long in the activation zone before opening Snap Zones. Helps avoid accidental triggers.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -2084,6 +2427,7 @@ struct SnapZonesSettingsView: View {
             .animation(.easeInOut(duration: 0.2), value: settings.settings.snapZoneViewMode)
         }
         .onAppear(perform: appFetcher.fetchApps)
+        .onDisappear { MemoryTrimSupport.releaseSettingsPaneCaches() }
         .sheet(item: $layoutToEdit) { layout in
             LayoutEditorView(layout: Binding(
                 get: { layout },
@@ -2198,7 +2542,7 @@ struct SnapZonesSettingsView: View {
             } else {
                 ForEach(settings.settings.appSpecificLayoutConfigurations.keys.sorted(), id: \.self) { bundleId in
                     AppSpecificLayoutConfigRow(
-                        appIcon: app(for: bundleId)?.icon,
+                        app: app(for: bundleId),
                         appName: appName(for: bundleId),
                         allLayouts: allLayouts,
                         configuration: bindingForAppConfig(bundleId),
@@ -2323,7 +2667,7 @@ struct SnapZonesSettingsView: View {
 }
 
 fileprivate struct AppSpecificLayoutConfigRow: View {
-    let appIcon: NSImage?
+    let app: SystemApp?
     let appName: String
     let allLayouts: [SnapLayout]
     @Binding var configuration: AppSnapLayoutConfiguration
@@ -2362,8 +2706,8 @@ fileprivate struct AppSpecificLayoutConfigRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if let icon = appIcon {
-                Image(nsImage: icon).resizable().frame(width: 28, height: 28).clipShape(RoundedRectangle(cornerRadius: 6))
+            if let app {
+                SystemAppIconView(app: app, size: 28, cornerRadius: 6)
             } else {
                 Image(systemName: "app.dashed").font(.title2).frame(width: 28)
             }
@@ -2685,9 +3029,7 @@ fileprivate struct AppPickerView: View {
             List(filteredApps) { app in
                 Button(action: { onSelect(app.id) }) {
                     HStack {
-                        Image(nsImage: app.icon)
-                            .resizable().frame(width: 24, height: 24)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        SystemAppIconView(app: app, size: 24, cornerRadius: 4)
                         Text(app.name)
                     }
                 }
@@ -2748,11 +3090,64 @@ struct NotificationsSettingsView: View {
                             description: "Add a quick action to copy the code from supported notifications.",
                             isOn: $settings.settings.showCopyButtonForVerificationCodes
                         )
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Auto-copy verification codes",
+                            description: "Automatically copy OTP codes to the clipboard when detected.",
+                            isOn: $settings.settings.autoCopyVerificationCodes
+                        )
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "OTP notch popover",
+                            description: "Show a dedicated verification-code popover in the notch.",
+                            isOn: $settings.settings.otpLiveActivityEnabled
+                        )
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Scan Mail for OTP codes",
+                            description: "Watch Mail.app unread messages for verification codes (no AI).",
+                            isOn: $settings.settings.mailOTPDetectionEnabled
+                        )
                     }
                     .modifier(SettingsContainerModifier())
                     .disabled(!settings.settings.masterNotificationsEnabled)
                     .opacity(settings.settings.masterNotificationsEnabled ? 1.0 : 0.5)
                     .animation(.easeInOut, value: settings.settings.masterNotificationsEnabled)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Smart Inbox")
+                            .font(.headline)
+                            .padding([.top, .horizontal])
+
+                        ToggleRow(
+                            title: "Enable Smart Inbox",
+                            description: "AI-independent Mail features: OTP detection and parcel tracking.",
+                            isOn: $settings.settings.smartInboxEnabled
+                        )
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Parcel tracking from email",
+                            description: "Detect UPS/FedEx/USPS/DHL/Amazon tracking numbers in Mail.",
+                            isOn: $settings.settings.parcelTrackingEnabled
+                        )
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Parcel notch popover",
+                            description: "Show live package status in the notch when a shipment is active.",
+                            isOn: $settings.settings.parcelLiveActivityEnabled
+                        )
+                    }
+                    .modifier(SettingsContainerModifier())
 
                     VStack(spacing: 0) {
                         ForEach(NotificationSource.allCases) { source in
@@ -2788,7 +3183,7 @@ struct NotificationsSettingsView: View {
                             .opacity(settings.settings.systemNotificationsEnabled ? 1.0 : 0.5)
 
                         ScrollView {
-                            VStack(spacing: 0) {
+                            LazyVStack(spacing: 0) {
                                 ForEach(appFetcher.apps) { app in
                                     SystemAppRowView(app: app, isEnabled: binding(for: app))
                                     if app.id != appFetcher.apps.last?.id {
@@ -2816,6 +3211,9 @@ struct NotificationsSettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 appFetcher.fetchApps()
+            }
+            .onDisappear {
+                MemoryTrimSupport.releaseSettingsPaneCaches()
             }
         }
     }
@@ -2917,6 +3315,11 @@ struct ProximityUnlockSettingsView: View {
         }
         .sheet(isPresented: $isCalibratingRSSI) {
             CalibrateRSSIView().environmentObject(settings)
+        }
+        .onDisappear {
+            if authManager.isScanning {
+                authManager.stopScan()
+            }
         }
     }
 
@@ -3540,9 +3943,15 @@ struct FanControlSectionView: View {
                 .padding()
 
             if fanManager.fans.isEmpty {
-                Text("No fans detected on this system.")
-                    .foregroundColor(.secondary)
-                    .padding()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No fans detected on this system.")
+                        .foregroundColor(.secondary)
+                    Button("Retry Detection") {
+                        Task { await fanManager.refreshHardwareState() }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding()
             } else {
                 ForEach($fanManager.fans) { $fan in
                     FanRowView(fan: $fan, onCustomize: { fanToEditID = fan.id })
@@ -3560,6 +3969,8 @@ struct FanControlSectionView: View {
             }
         }
         .environmentObject(fanManager)
+        .onAppear { fanManager.beginPolling() }
+        .onDisappear { fanManager.endPolling() }
     }
 }
 
@@ -3573,8 +3984,9 @@ struct FanRowView: View {
         case .auto: return "Auto"
         case .constant(let rpm): return "Constant \(rpm) RPM"
         case .sensor(let key, _, _):
-            let name = SensorNameMap.name(for: key)
-            return "Sensor: \(name)"
+            return "Sensor: \(SensorNameMap.name(for: key))"
+        case .customCurve(let key, let points):
+            return "Curve (\(points.count) pts): \(SensorNameMap.name(for: key))"
         case nil: return "Auto"
         }
     }
@@ -3611,6 +4023,7 @@ struct FanControlSheetView: View {
     @State private var sensorKey: String
     @State private var minTemp: Double
     @State private var maxTemp: Double
+    @State private var curvePoints: [FanCurvePoint]
 
     init(fan: Binding<FanInfo>, availableSensors: [TemperatureSensor]) {
         self._fan = fan
@@ -3625,18 +4038,28 @@ struct FanControlSheetView: View {
             _sensorKey = State(initialValue: availableSensors.first?.key ?? "")
             _minTemp = State(initialValue: 40)
             _maxTemp = State(initialValue: 75)
+            _curvePoints = State(initialValue: FanManager.defaultCurvePoints(for: fan.wrappedValue))
         case .constant(let rpm):
             _selectedMode = State(initialValue: 1)
             _constantRPM = State(initialValue: Double(rpm))
             _sensorKey = State(initialValue: availableSensors.first?.key ?? "")
             _minTemp = State(initialValue: 40)
             _maxTemp = State(initialValue: 75)
+            _curvePoints = State(initialValue: FanManager.defaultCurvePoints(for: fan.wrappedValue))
         case .sensor(let key, let minT, let maxT):
             _selectedMode = State(initialValue: 2)
             _constantRPM = State(initialValue: Double(fan.wrappedValue.minRPM))
             _sensorKey = State(initialValue: key)
             _minTemp = State(initialValue: Double(minT))
             _maxTemp = State(initialValue: Double(maxT))
+            _curvePoints = State(initialValue: FanManager.defaultCurvePoints(for: fan.wrappedValue))
+        case .customCurve(let key, let points):
+            _selectedMode = State(initialValue: 3)
+            _constantRPM = State(initialValue: Double(fan.wrappedValue.minRPM))
+            _sensorKey = State(initialValue: key)
+            _minTemp = State(initialValue: 40)
+            _maxTemp = State(initialValue: 75)
+            _curvePoints = State(initialValue: points.isEmpty ? FanManager.defaultCurvePoints(for: fan.wrappedValue) : points)
         }
     }
 
@@ -3656,6 +4079,7 @@ struct FanControlSheetView: View {
                 Text("Automatic").tag(0)
                 Text("Constant RPM").tag(1)
                 Text("Sensor-based").tag(2)
+                Text("Custom Curve").tag(3)
             }
             .pickerStyle(.segmented)
             .padding(.bottom)
@@ -3665,40 +4089,18 @@ struct FanControlSheetView: View {
                     CustomSliderRowView(label: "Fan Speed", value: $constantRPM, range: Double(fan.minRPM)...Double(fan.maxRPM), specifier: "%.0f RPM")
                 }
             } else if selectedMode == 2 {
-                VStack(spacing: 15) {
-                    HStack {
-                        Text("Based on Sensor:")
-                        Spacer()
-                        Picker("Sensor", selection: $sensorKey) {
-                            ForEach(availableSensors) { sensor in
-                                HStack {
-                                    Text(sensor.name)
-                                    Spacer()
-                                    Text(String(format: "%.1f°C", sensor.value))
-                                        .foregroundColor(.secondary)
-                                }.tag(sensor.key)
-                            }
-                        }
-                        Text(selectedSensorValueString)
-                            .font(.body.monospacedDigit())
-                            .foregroundColor(.secondary)
-                            .frame(width: 60, alignment: .trailing)
+                sensorPickerSection
+                CustomSliderRowView(label: "Start increasing from:", value: $minTemp, range: 20...100, specifier: "%.0f °C")
+                    .onChange(of: minTemp) {
+                        if minTemp > maxTemp { maxTemp = minTemp }
                     }
-
-                    CustomSliderRowView(label: "Start increasing from:", value: $minTemp, range: 20...100, specifier: "%.0f °C")
-                        .onChange(of: minTemp) {
-                            if minTemp > maxTemp {
-                                maxTemp = minTemp
-                            }
-                        }
-
-                    CustomSliderRowView(label: "Maximum temperature:", value: $maxTemp, range: 20...100, specifier: "%.0f °C")
-                        .onChange(of: maxTemp) {
-                            if maxTemp < minTemp {
-                                minTemp = maxTemp
-                            }
-                        }
-                }
+                CustomSliderRowView(label: "Maximum temperature:", value: $maxTemp, range: 20...100, specifier: "%.0f °C")
+                    .onChange(of: maxTemp) {
+                        if maxTemp < minTemp { minTemp = maxTemp }
+                    }
+            } else if selectedMode == 3 {
+                sensorPickerSection
+                FanCurveEditorView(fan: fan, points: $curvePoints)
             } else {
                 Text("The fan will be controlled automatically by macOS.")
                     .foregroundColor(.secondary)
@@ -3710,14 +4112,38 @@ struct FanControlSheetView: View {
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("OK") {
-                    saveAndDismiss()
-                }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                Button("OK") { saveAndDismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(30)
-        .frame(width: 550)
-        .frame(minHeight: 350)
+        .frame(width: 580)
+        .frame(minHeight: selectedMode == 3 ? 520 : 350)
+    }
+
+    @ViewBuilder
+    private var sensorPickerSection: some View {
+        VStack(spacing: 15) {
+            HStack {
+                Text("Based on Sensor:")
+                Spacer()
+                Picker("Sensor", selection: $sensorKey) {
+                    ForEach(availableSensors) { sensor in
+                        HStack {
+                            Text(sensor.name)
+                            Spacer()
+                            Text(String(format: "%.1f°C", sensor.value))
+                                .foregroundColor(.secondary)
+                        }.tag(sensor.key)
+                    }
+                }
+                Text(selectedSensorValueString)
+                    .font(.body.monospacedDigit())
+                    .foregroundColor(.secondary)
+                    .frame(width: 60, alignment: .trailing)
+            }
+        }
     }
 
     private func saveAndDismiss() {
@@ -3727,11 +4153,79 @@ struct FanControlSheetView: View {
             newMode = .constant(rpm: Int(constantRPM))
         case 2:
             newMode = .sensor(sensorKey: sensorKey, minTemp: Int(minTemp), maxTemp: Int(maxTemp))
+        case 3:
+            let sortedPoints = curvePoints.sorted { $0.temperature < $1.temperature }
+            newMode = .customCurve(sensorKey: sensorKey, points: sortedPoints)
         default:
             newMode = .auto
         }
         fanManager.setFanMode(for: fan.id, to: newMode)
         dismiss()
+    }
+}
+
+private struct FanCurveEditorView: View {
+    let fan: FanInfo
+    @Binding var points: [FanCurvePoint]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Custom Fan Curve").font(.headline)
+                Spacer()
+                Button("Reset") {
+                    points = FanManager.defaultCurvePoints(for: fan)
+                }
+                .buttonStyle(.borderless)
+            }
+
+            Text("Set RPM at each temperature. Sapphire interpolates between points.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+                VStack(spacing: 8) {
+                    CustomSliderRowView(
+                        label: "Point \(index + 1) Temperature",
+                        value: Binding(
+                            get: { Double(points[index].temperature) },
+                            set: { points[index].temperature = Int($0) }
+                        ),
+                        range: 20...100,
+                        specifier: "%.0f °C"
+                    )
+                    CustomSliderRowView(
+                        label: "Point \(index + 1) RPM",
+                        value: Binding(
+                            get: { Double(points[index].rpm) },
+                            set: { points[index].rpm = Int($0) }
+                        ),
+                        range: Double(fan.minRPM)...Double(fan.maxRPM),
+                        specifier: "%.0f RPM"
+                    )
+                    if points.count > 2 {
+                        Button("Remove Point", role: .destructive) {
+                            points.remove(at: index)
+                        }
+                        .font(.caption)
+                    }
+                }
+                if index < points.count - 1 {
+                    Divider()
+                }
+            }
+
+            if points.count < 6 {
+                Button {
+                    let lastTemp = points.last?.temperature ?? 60
+                    let lastRPM = points.last?.rpm ?? fan.minRPM
+                    points.append(FanCurvePoint(temperature: min(lastTemp + 10, 95), rpm: min(lastRPM + 500, fan.maxRPM)))
+                } label: {
+                    Label("Add Point", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
     }
 }
 
@@ -3951,6 +4445,9 @@ struct BatterySettingsView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: selectedTab)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onReceive(NotificationCenter.default.publisher(for: .sapphireSettingsWillClose)) { _ in
+            selectedTab = "Configuration"
+        }
     }
 }
 
@@ -4070,50 +4567,66 @@ fileprivate struct PickerButton: View {
 struct HeroMetricsView: View {
     @ObservedObject var viewModel: BatteryStatsViewModel
     private var statusColor: Color {
-        if viewModel.isCharging { return .green }
-        if viewModel.batteryLevel < 20 { return .red }
-        if viewModel.batteryLevel < 50 { return .orange }
-        return .blue
+        if viewModel.isCharging { return MaterialChartPalette.tertiary }
+        if viewModel.batteryLevel < 20 { return MaterialChartPalette.error }
+        if viewModel.batteryLevel < 50 { return MaterialChartPalette.warning }
+        return MaterialChartPalette.primary
+    }
+
+    private var metricColumns: [GridItem] {
+        [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+    }
+
+    private var chargingStatusValue: String {
+        if viewModel.isCharging {
+            let watts = abs(viewModel.powerConsumption)
+            return watts > 0 ? String(format: "%.1f W", watts) : "Active"
+        }
+        return viewModel.timeRemaining
+    }
+
+    private var batteryLevelLabel: Text {
+        Text("\(viewModel.batteryLevel)")
+            .font(.system(size: 64, weight: .bold, design: .rounded))
+            .foregroundStyle(statusColor)
+        + Text("%")
+            .font(.system(size: 28, weight: .semibold, design: .rounded))
+            .foregroundStyle(statusColor.opacity(0.7))
     }
 
     var body: some View {
-        HStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(viewModel.batteryLevel)").font(.system(size: 72, weight: .bold, design: .rounded)).foregroundColor(statusColor)
-                    Text("%").font(.system(size: 36, weight: .semibold, design: .rounded)).foregroundColor(statusColor.opacity(0.7))
-                }
-                HStack(spacing: 8) {
-                    Image(systemName: viewModel.isCharging ? "bolt.fill" : "battery.100").font(.headline).foregroundColor(statusColor)
-                    Text(viewModel.isCharging ? "Charging" : "Discharging").font(.headline).foregroundColor(.secondary)
-                }
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Battery")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                batteryLevelLabel
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                MaterialStatChip(
+                    label: viewModel.isCharging ? "Charging" : "On Battery",
+                    value: chargingStatusValue,
+                    color: statusColor,
+                    icon: viewModel.isCharging ? "bolt.fill" : "battery.100"
+                )
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 16) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("Time Remaining").font(.caption).foregroundColor(.secondary)
-                        Text(viewModel.timeRemaining).font(.system(.body, design: .rounded).weight(.semibold))
-                    }
-                    Image(systemName: "clock.fill").font(.title3).foregroundColor(.cyan).frame(width: 28)
-                }
-                HStack(spacing: 12) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("Health").font(.caption).foregroundColor(.secondary)
-                        Text("\(viewModel.maxCapacityPercentage)%").font(.system(.body, design: .rounded).weight(.semibold))
-                    }
-                    Image(systemName: "heart.fill").font(.title3).foregroundColor(.pink).frame(width: 28)
-                }
-                HStack(spacing: 12) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("Cycles").font(.caption).foregroundColor(.secondary)
-                        Text("\(viewModel.cycleCount)").font(.system(.body, design: .rounded).weight(.semibold))
-                    }
-                    Image(systemName: "arrow.triangle.2.circlepath").font(.title3).foregroundColor(.purple).frame(width: 28)
-                }
+            .fixedSize(horizontal: true, vertical: false)
+
+            LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
+                MaterialStatChip(label: "Time Remaining", value: viewModel.timeRemaining, color: MaterialChartPalette.primary, icon: "clock.fill")
+                MaterialStatChip(label: "Health", value: "\(viewModel.maxCapacityPercentage)%", color: Color.pink, icon: "heart.fill")
+                MaterialStatChip(label: "Cycles", value: "\(viewModel.cycleCount)", color: MaterialChartPalette.secondary, icon: "arrow.triangle.2.circlepath")
+                MaterialStatChip(label: "Temperature", value: String(format: "%.1f°C", viewModel.temperature), color: MaterialChartPalette.error, icon: "thermometer.medium")
+                MaterialStatChip(label: "Power", value: String(format: "%.1f W", abs(viewModel.powerConsumption)), color: MaterialChartPalette.warning, icon: "bolt.fill")
+                MaterialStatChip(label: "Voltage", value: String(format: "%.2f V", viewModel.voltage / 1000.0), color: MaterialChartPalette.tertiary, icon: "wave.3.right")
+                MaterialStatChip(label: "Current", value: String(format: "%.2f A", Double(abs(viewModel.amperage)) / 1000.0), color: MaterialChartPalette.primary, icon: "arrow.left.arrow.right")
+                MaterialStatChip(label: "Condition", value: viewModel.health, color: .pink, icon: "heart.text.square")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(24).modifier(SettingsContainerModifier())
+        .padding(22)
+        .materialChartCard(accent: statusColor)
     }
 }
 
@@ -4123,14 +4636,24 @@ struct SpecRow: View {
         self.label = label; self.value = value; self.percentage = percentage
     }
     var body: some View {
-        HStack {
-            Text(label).foregroundColor(.secondary)
-            Spacer()
-            Text(value).fontWeight(.medium).lineLimit(1).truncationMode(.middle)
-            if let percentage {
-                Text(percentage).fontWeight(.medium).frame(width: 50, alignment: .trailing)
-            }
-        }.font(.system(size: 12))
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(value)
+                .fontWeight(.medium)
+                .monospacedDigit()
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .multilineTextAlignment(.trailing)
+                .frame(minWidth: 72, alignment: .trailing)
+            Text(percentage ?? "")
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .foregroundStyle(percentage == nil ? .clear : .primary)
+                .frame(width: 44, alignment: .trailing)
+        }
+        .font(.system(size: 12, design: .rounded))
     }
 }
 
@@ -4149,11 +4672,59 @@ struct ComponentPowerBreakdownView: View {
     private var isCharging: Bool { viewModel.isCharging }
     private var adapterConnected: Bool { (viewModel.powerAdapterInfo?.maxPower ?? 0) > 0 }
 
-    var body: some View {
-        VStack(spacing: 16) {
-            powerFlowDiagram
-            powerBreakdownCards
+    private var heroWatts: Double { adapterConnected ? max(adapterPower, systemLoad) : systemLoad }
+
+    private var statusLabel: String {
+        if isCharging { return "Charging" }
+        if adapterConnected { return "On AC Power" }
+        return "On Battery"
+    }
+
+    private var statusColor: Color {
+        if isCharging { return MaterialChartPalette.tertiary }
+        if adapterConnected { return MaterialChartPalette.primary }
+        return MaterialChartPalette.warning
+    }
+
+    private var components: [(id: String, icon: String, title: String, power: Double, color: Color)] {
+        var rows: [(id: String, icon: String, title: String, power: Double, color: Color)] = []
+        if isCharging && chargingPower > 0.15 {
+            rows.append(("charging", "battery.100.bolt", "Charging", chargingPower, MaterialChartPalette.tertiary))
         }
+        if cpuPower > 0.35 {
+            rows.append(("cpu", "cpu", "CPU", cpuPower, Color.cyan))
+        }
+        if gpuPower > 0.35 {
+            rows.append(("gpu", "cube.fill", "GPU", gpuPower, MaterialChartPalette.secondary))
+        }
+        if displayPower > 0.35 {
+            rows.append(("display", "display", "Display", displayPower, MaterialChartPalette.warning))
+        }
+        if otherPower > 0.35 {
+            rows.append(("other", "ellipsis.circle", "Other", otherPower, MaterialChartPalette.onSurfaceVariant))
+        }
+        return rows
+    }
+
+    private var totalComponentPower: Double {
+        max(components.reduce(0) { $0 + $1.power }, 0.001)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            powerHeroHeader
+            if !components.isEmpty {
+                shareStrip
+                componentRows
+            } else {
+                Text("Waiting for power sensors…")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(20)
+        .materialChartCard(accent: statusColor)
         .onAppear {
             statsManager.setPolling(for: "ComponentBreakdown", requiredStats: [.systemPower, .batteryPower, .cpu, .gpu])
         }
@@ -4162,126 +4733,135 @@ struct ComponentPowerBreakdownView: View {
         }
     }
 
-    private var powerFlowDiagram: some View {
-        HStack(spacing: 0) {
-            powerSourceIcon
-            powerFlowCenter
-            laptopIcon
+    private var powerHeroHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("System Power")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                Spacer()
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 7, height: 7)
+                    Text(statusLabel)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(statusColor)
+                }
+            }
+
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                Text(String(format: "%.2f", heroWatts))
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
+                Text("W")
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                    .padding(.bottom, 4)
+                Spacer(minLength: 0)
+                Image(systemName: adapterConnected ? "powerplug.fill" : "battery.100")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(statusColor.opacity(0.85))
+            }
+
+            Capsule()
+                .fill(statusColor)
+                .frame(height: 3)
+                .frame(maxWidth: 120, alignment: .leading)
+
+            if adapterConnected || isCharging {
+                HStack(spacing: 12) {
+                    if adapterConnected {
+                        metaChip(icon: "bolt.horizontal.fill", text: String(format: "Adapter %.0f W", adapterPower > 0 ? adapterPower : heroWatts))
+                    }
+                    metaChip(icon: "laptopcomputer", text: String(format: "Draw %.2f W", systemLoad))
+                    Spacer(minLength: 0)
+                }
+            }
         }
-        .padding(20)
-        .modifier(SettingsContainerModifier())
     }
 
-    private var powerBreakdownCards: some View {
-        HStack(spacing: 12) {
-            if isCharging && chargingPower > 0 {
-                PowerBreakdownCard(icon: "battery.100.bolt", title: "Charging", power: chargingPower, color: .green)
-            }
-            if cpuPower > 0.5 {
-                PowerBreakdownCard(icon: "cpu", title: "CPU", power: cpuPower, color: .cyan)
-            }
-            if gpuPower > 0.5 {
-                PowerBreakdownCard(icon: "cube.fill", title: "GPU", power: gpuPower, color: .purple)
-            }
-            if displayPower > 0.5 {
-                PowerBreakdownCard(icon: "display", title: "Display", power: displayPower, color: .orange)
-            }
-            if otherPower > 0.5 {
-                PowerBreakdownCard(icon: "ellipsis.circle.fill", title: "Other", power: otherPower, color: .gray)
+    private func metaChip(icon: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var shareStrip: some View {
+        GeometryReader { geo in
+            HStack(spacing: 3) {
+                ForEach(components, id: \.id) { row in
+                    Capsule()
+                        .fill(row.color)
+                        .frame(width: max(4, geo.size.width * CGFloat(row.power / totalComponentPower)))
+                }
             }
         }
+        .frame(height: 6)
     }
 
-    private var powerSourceIcon: some View {
-        ZStack {
-            Circle().fill(adapterConnected ? Color.gray.opacity(0.15) : Color.gray.opacity(0.05)).frame(width: 60, height: 60)
-            Image(systemName: "powerplug.fill").font(.system(size: 24)).foregroundColor(adapterConnected ? .gray : .gray.opacity(0.3))
-        }.frame(width: 80)
-    }
-
-    private var powerFlowCenter: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12).fill(Color.gray.opacity(0.1)).frame(height: 80)
-            if adapterConnected { AnimatedFlowGradient(isCharging: isCharging) }
-            VStack(spacing: 4) {
-                Text(String(format: "%.2f W", adapterConnected ? adapterPower : systemLoad))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                powerStatusText
+    private var componentRows: some View {
+        VStack(spacing: 12) {
+            ForEach(components, id: \.id) { row in
+                PowerShareRow(
+                    icon: row.icon,
+                    title: row.title,
+                    power: row.power,
+                    fraction: row.power / totalComponentPower,
+                    color: row.color
+                )
             }
-        }.frame(maxWidth: .infinity)
-    }
-
-    @ViewBuilder private var powerStatusText: some View {
-        if isCharging {
-            HStack(spacing: 4) {
-                Image(systemName: "bolt.fill").font(.caption).foregroundColor(.green)
-                Text("Charging").font(.caption).foregroundColor(.green)
-            }
-        } else if adapterConnected { Text("On AC Power").font(.caption).foregroundColor(.blue) }
-        else { Text("On Battery").font(.caption).foregroundColor(.orange) }
-    }
-
-    private var laptopIcon: some View {
-        ZStack {
-            Circle().fill(Color.gray.opacity(0.15)).frame(width: 60, height: 60)
-            Image(systemName: "laptopcomputer").font(.system(size: 24)).foregroundColor(.gray)
-        }.frame(width: 80)
+        }
     }
 }
 
-struct AnimatedFlowGradient: View {
-    let isCharging: Bool
-
-    @State private var isAnimating: Bool = false
-
-    private let animationDuration: Double = 2.5
-    private let highlightOpacity: Double = 0.35
+struct PowerShareRow: View {
+    let icon: String
+    let title: String
+    let power: Double
+    let fraction: Double
+    let color: Color
 
     var body: some View {
-        ZStack {
-            let backgroundColors: [Color] = isCharging ? [
-                Color.green.opacity(0.7),
-                Color.cyan.opacity(0.6),
-                Color.blue.opacity(0.7)
-            ] : [
-                Color.blue.opacity(0.7),
-                Color.cyan.opacity(0.6),
-                Color.green.opacity(0.7)
-            ]
-
-            LinearGradient(
-                colors: backgroundColors,
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-
-            GeometryReader { geometry in
-                let highlightGradient = LinearGradient(
-                    gradient: Gradient(colors: [
-                        .clear,
-                        .white.opacity(highlightOpacity),
-                        .clear
-                    ]),
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-
-                highlightGradient
-                    .frame(width: geometry.size.width)
-                    .offset(x: isAnimating ? geometry.size.width : -geometry.size.width)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(width: 18)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(String(format: "%.2f W", power))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+                Text(String(format: "%.0f%%", fraction * 100))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                    .frame(width: 36, alignment: .trailing)
             }
-        }
-        .frame(height: 80)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .onAppear {
-            withAnimation(
-                .linear(duration: animationDuration)
-                .repeatForever(autoreverses: false)
-            ) {
-                isAnimating.toggle()
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(MaterialChartPalette.outline.opacity(0.55))
+                        .frame(height: 3)
+                    Capsule()
+                        .fill(color)
+                        .frame(width: max(3, geo.size.width * CGFloat(fraction)), height: 3)
+                }
             }
+            .frame(height: 3)
         }
     }
 }
@@ -4293,23 +4873,9 @@ struct PowerBreakdownCard: View {
     let color: Color
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundColor(color)
-
-            Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-
-            Text(String(format: "%.2f W", power))
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundColor(.primary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .modifier(SettingsContainerModifier())
+        PowerShareRow(icon: icon, title: title, power: power, fraction: 1, color: color)
+            .padding(12)
+            .materialChartCard(accent: color)
     }
 }
 
@@ -4319,6 +4885,7 @@ struct ModernBatteryStatsView: View {
     @StateObject private var energyViewModel = EnergyViewModel()
     @StateObject private var helperManager = HelperManager.shared
     @State private var selectedTimeRange: TimeRange = .last24Hours
+    @State private var historyRefreshTimer: AnyCancellable?
 
     private let mainGridLayout = [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)]
 
@@ -4358,9 +4925,7 @@ struct ModernBatteryStatsView: View {
                     }
                 }
                 .padding()
-                .background(.black.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .materialChartCard(accent: helperManager.status == .enabled ? MaterialChartPalette.tertiary : MaterialChartPalette.warning)
 
                 HeroMetricsView(viewModel: viewModel)
 
@@ -4383,18 +4948,44 @@ struct ModernBatteryStatsView: View {
             .padding(.bottom, 25)
         }
         .onAppear {
+            viewModel.start()
             historyViewModel.fetchHistory()
             energyViewModel.start()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 historyViewModel.filterData(for: selectedTimeRange)
             }
+            historyRefreshTimer?.cancel()
+            historyRefreshTimer = Timer.publish(every: 120, on: .main, in: .common)
+                .autoconnect()
+                .sink { _ in
+                    historyViewModel.fetchHistory()
+                    historyViewModel.filterData(for: selectedTimeRange)
+                }
         }
         .onDisappear {
-            energyViewModel.stop()
+            historyRefreshTimer?.cancel()
+            historyRefreshTimer = nil
+            tearDownBatteryStats()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sapphireSettingsWillClose)) { _ in
+            historyRefreshTimer?.cancel()
+            historyRefreshTimer = nil
+            tearDownBatteryStats()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sapphireTrimSettingsMemory)) { _ in
+            historyRefreshTimer?.cancel()
+            historyRefreshTimer = nil
+            tearDownBatteryStats()
         }
         .onChange(of: selectedTimeRange) { _, newRange in
             historyViewModel.filterData(for: newRange)
         }
+    }
+
+    private func tearDownBatteryStats() {
+        energyViewModel.stop()
+        viewModel.stop()
+        historyViewModel.releaseMemory()
     }
 }
 
@@ -4431,8 +5022,7 @@ struct PowerStatCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
-        .modifier(SettingsContainerModifier())
-        .frame(height: 100)
+        .materialChartCard(height: 100)
     }
 }
 
@@ -4448,8 +5038,8 @@ struct BatterySpecsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: "bolt.fill").foregroundColor(.yellow)
-                Text("Battery Specs").font(.headline)
+                Image(systemName: "bolt.fill").foregroundStyle(MaterialChartPalette.warning)
+                Text("Battery Specs").font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             Spacer()
             SpecRow(label: "Current", value: String(format: "%.1f A", Double(abs(viewModel.amperage)) / 1000.0))
@@ -4470,14 +5060,19 @@ struct BatterySpecsCard: View {
                     Text(powerModeManager.isLowPowerModeActive ? "Enabled" : "Disabled")
                         .font(.system(size: 12)).fontWeight(.medium)
                         .foregroundColor(powerModeManager.isLowPowerModeActive ? .green : .primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            (powerModeManager.isLowPowerModeActive ? Color.green.opacity(0.15) : Color.white.opacity(0.08)),
+                            in: Capsule()
+                        )
                 }
                 .buttonStyle(.plain)
             }
             Spacer()
         }
-        .padding()
-        .frame(height: 180)
-        .modifier(SettingsContainerModifier())
+        .padding(16)
+        .materialChartCard(height: 180, accent: MaterialChartPalette.warning)
         .onAppear {
             statsManager.setPolling(for: "BatterySettings", requiredStats: [.systemPower, .batteryPower])
             _ = powerModeManager.isLowPowerModeEnabled()
@@ -4503,80 +5098,66 @@ struct MaxCapacityGraphCard: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Max Capacity").font(.headline)
+                Text("Max Capacity").font(.system(size: 15, weight: .semibold, design: .rounded))
                 Spacer()
-                Text("\(viewModel.maxCapacityPercentage)%").font(.subheadline.weight(.semibold)).foregroundColor(.cyan)
+                Text("\(viewModel.maxCapacityPercentage)%")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(MaterialChartPalette.primary.opacity(0.14))
+                    .clipShape(Capsule())
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 18)
             .padding(.top, 16)
 
             Spacer()
 
             if chartData.isEmpty {
-                EmptyStatsView(height: 120)
+                EmptyStatsView(height: 150)
                     .padding(.horizontal, 16)
             } else {
                 Chart {
                     ForEach(chartData) { entry in
                         LineMark(x: .value("Time", entry.timestamp), y: .value("Capacity", entry.maxCapacity))
-                            .foregroundStyle(.cyan)
-                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(MaterialChartPalette.lineGradient(for: MaterialChartPalette.primary))
+                            .interpolationMethod(.linear)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
                         AreaMark(x: .value("Time", entry.timestamp), y: .value("Capacity", entry.maxCapacity))
-                            .foregroundStyle(LinearGradient(colors: [.cyan.opacity(0.3), .clear], startPoint: .top, endPoint: .bottom))
-                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(MaterialChartPalette.tonalGradient(for: MaterialChartPalette.primary))
+                            .interpolationMethod(.linear)
                     }
 
                     if let selectedDate, let entry = findClosest(to: selectedDate, in: chartData) {
                         PointMark(x: .value("Time", entry.timestamp), y: .value("Capacity", entry.maxCapacity))
-                            .foregroundStyle(.cyan)
-                            .symbolSize(100)
+                            .foregroundStyle(MaterialChartPalette.primary)
+                            .symbolSize(80)
 
                         RuleMark(x: .value("Selected", selectedDate))
-                            .foregroundStyle(.white.opacity(0.2))
+                            .foregroundStyle(MaterialChartPalette.outline)
                             .annotation(position: .top, alignment: .center) {
-                                Text("\(entry.maxCapacity) mAh")
-                                    .font(.caption)
-                                    .padding(4)
-                                    .background(.background)
-                                    .cornerRadius(4)
+                                MaterialSelectionPill(text: "\(entry.maxCapacity) mAh", color: MaterialChartPalette.primary)
                             }
                     }
                 }
+                .materialChartPlotStyle()
                 .chartYScale(domain: yDomainMin...yDomainMax)
-                .dynamicXAxis(for: selectedTimeRange, isVisible: isHovered)
-                .chartYAxis { if isHovered { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) } }
+                .dynamicXAxis(for: selectedTimeRange, isVisible: true)
+                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
                 .chartOverlay { proxy in chartInteraction(proxy: proxy, chartData: chartData) }
-                .frame(height: 120)
+                .frame(height: 150)
+                .padding(.horizontal, 12)
             }
 
             Spacer()
         }
-        .frame(height: 180)
-        .modifier(SettingsContainerModifier())
+        .materialChartCard(height: 220)
         .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
     }
 
     private func chartInteraction(proxy: ChartProxy, chartData: [BatteryLogEntry]) -> some View {
-        GeometryReader { geometry in
-            Rectangle().fill(.clear).contentShape(Rectangle())
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        let plotAreaStart = geometry.size.width * 0.05
-                        let plotAreaWidth = geometry.size.width * 0.90
-
-                        guard location.x >= plotAreaStart && location.x <= plotAreaStart + plotAreaWidth else {
-                            self.selectedDate = nil
-                            return
-                        }
-
-                        if let date: Date = proxy.value(atX: location.x) {
-                            self.selectedDate = date
-                        }
-                    case .ended:
-                        self.selectedDate = nil
-                    }
-                }
+        MaterialChartHoverOverlay(proxy: proxy) { date in
+            self.selectedDate = date
         }
     }
 
@@ -4600,80 +5181,66 @@ struct CycleCountGraphCard: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Cycle Count").font(.headline)
+                Text("Cycle Count").font(.system(size: 15, weight: .semibold, design: .rounded))
                 Spacer()
-                Text("\(viewModel.cycleCount)").font(.subheadline.weight(.semibold)).foregroundColor(.purple)
+                Text("\(viewModel.cycleCount)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(MaterialChartPalette.secondary.opacity(0.14))
+                    .clipShape(Capsule())
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 18)
             .padding(.top, 16)
 
             Spacer()
 
             if chartData.isEmpty {
-                EmptyStatsView(height: 120)
+                EmptyStatsView(height: 150)
                     .padding(.horizontal, 16)
             } else {
                 Chart {
                     ForEach(chartData) { entry in
                         LineMark(x: .value("Time", entry.timestamp), y: .value("Cycles", entry.cycleCount))
-                            .foregroundStyle(.purple)
-                            .interpolationMethod(.stepStart)
+                            .foregroundStyle(MaterialChartPalette.lineGradient(for: MaterialChartPalette.secondary))
+                            .interpolationMethod(.linear)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
                         AreaMark(x: .value("Time", entry.timestamp), y: .value("Cycles", entry.cycleCount))
-                            .foregroundStyle(LinearGradient(colors: [.purple.opacity(0.3), .clear], startPoint: .top, endPoint: .bottom))
-                            .interpolationMethod(.stepStart)
+                            .foregroundStyle(MaterialChartPalette.tonalGradient(for: MaterialChartPalette.secondary))
+                            .interpolationMethod(.linear)
                     }
 
                     if let selectedDate, let entry = findClosest(to: selectedDate, in: chartData) {
                         PointMark(x: .value("Time", entry.timestamp), y: .value("Cycles", entry.cycleCount))
-                            .foregroundStyle(.purple)
-                            .symbolSize(100)
+                            .foregroundStyle(MaterialChartPalette.secondary)
+                            .symbolSize(80)
 
                         RuleMark(x: .value("Selected", selectedDate))
-                            .foregroundStyle(.white.opacity(0.2))
+                            .foregroundStyle(MaterialChartPalette.outline)
                             .annotation(position: .top, alignment: .center) {
-                                Text("\(entry.cycleCount) cycles")
-                                    .font(.caption)
-                                    .padding(4)
-                                    .background(.background)
-                                    .cornerRadius(4)
+                                MaterialSelectionPill(text: "\(entry.cycleCount) cycles", color: MaterialChartPalette.secondary)
                             }
                     }
                 }
+                .materialChartPlotStyle()
                 .chartYScale(domain: yDomainMin...yDomainMax)
-                .dynamicXAxis(for: selectedTimeRange, isVisible: isHovered)
-                .chartYAxis { if isHovered { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) } }
+                .dynamicXAxis(for: selectedTimeRange, isVisible: true)
+                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
                 .chartOverlay { proxy in chartInteraction(proxy: proxy, chartData: chartData) }
-                .frame(height: 120)
+                .frame(height: 150)
+                .padding(.horizontal, 12)
             }
 
             Spacer()
         }
-        .frame(height: 180)
-        .modifier(SettingsContainerModifier())
+        .materialChartCard(height: 220)
         .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
     }
 
     private func chartInteraction(proxy: ChartProxy, chartData: [BatteryLogEntry]) -> some View {
-        GeometryReader { geometry in
-            Rectangle().fill(.clear).contentShape(Rectangle())
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        let plotAreaStart = geometry.size.width * 0.05
-                        let plotAreaWidth = geometry.size.width * 0.90
-
-                        guard location.x >= plotAreaStart && location.x <= plotAreaStart + plotAreaWidth else {
-                            self.selectedDate = nil
-                            return
-                        }
-
-                        if let date: Date = proxy.value(atX: location.x) {
-                            self.selectedDate = date
-                        }
-                    case .ended:
-                        self.selectedDate = nil
-                    }
-                }
+        MaterialChartHoverOverlay(proxy: proxy) { date in
+            self.selectedDate = date
         }
     }
 
@@ -4694,77 +5261,66 @@ struct TemperatureGraphCard: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Temperature").font(.headline)
+                Text("Temperature").font(.system(size: 15, weight: .semibold, design: .rounded))
                 Spacer()
-                Text(String(format: "%.1f °C", viewModel.temperature)).font(.subheadline.weight(.semibold)).foregroundColor(.orange)
+                Text(String(format: "%.1f °C", viewModel.temperature))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.error)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(MaterialChartPalette.error.opacity(0.14))
+                    .clipShape(Capsule())
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 18)
             .padding(.top, 16)
 
             Spacer()
 
             if chartData.isEmpty {
-                EmptyStatsView(height: 120)
+                EmptyStatsView(height: 150)
                     .padding(.horizontal, 16)
             } else {
                 Chart {
                     ForEach(chartData) { entry in
                         LineMark(x: .value("Time", entry.timestamp), y: .value("Temp", entry.temperature))
-                            .foregroundStyle(.orange)
-                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(MaterialChartPalette.lineGradient(for: MaterialChartPalette.error))
+                            .interpolationMethod(.linear)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        AreaMark(x: .value("Time", entry.timestamp), y: .value("Temp", entry.temperature))
+                            .foregroundStyle(MaterialChartPalette.tonalGradient(for: MaterialChartPalette.error))
+                            .interpolationMethod(.linear)
                     }
 
                     if let selectedDate, let entry = findClosest(to: selectedDate, in: chartData) {
                         PointMark(x: .value("Time", entry.timestamp), y: .value("Temp", entry.temperature))
-                            .foregroundStyle(.orange)
-                            .symbolSize(100)
+                            .foregroundStyle(MaterialChartPalette.error)
+                            .symbolSize(80)
 
                         RuleMark(x: .value("Selected", selectedDate))
-                            .foregroundStyle(.white.opacity(0.2))
+                            .foregroundStyle(MaterialChartPalette.outline)
                             .annotation(position: .top, alignment: .center) {
-                                Text(String(format: "%.1f °C", entry.temperature))
-                                    .font(.caption)
-                                    .padding(4)
-                                    .background(.background)
-                                    .cornerRadius(4)
+                                MaterialSelectionPill(text: String(format: "%.1f °C", entry.temperature), color: MaterialChartPalette.error)
                             }
                     }
                 }
+                .materialChartPlotStyle()
                 .chartYScale(domain: 20...55)
-                .dynamicXAxis(for: selectedTimeRange, isVisible: isHovered)
-                .chartYAxis { if isHovered { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) } }
+                .dynamicXAxis(for: selectedTimeRange, isVisible: true)
+                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) }
                 .chartOverlay { proxy in chartInteraction(proxy: proxy, chartData: chartData) }
-                .frame(height: 120)
+                .frame(height: 150)
+                .padding(.horizontal, 12)
             }
 
             Spacer()
         }
-        .frame(height: 180)
-        .modifier(SettingsContainerModifier())
+        .materialChartCard(height: 220)
         .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
     }
 
     private func chartInteraction(proxy: ChartProxy, chartData: [BatteryLogEntry]) -> some View {
-        GeometryReader { geometry in
-            Rectangle().fill(.clear).contentShape(Rectangle())
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        let plotAreaStart = geometry.size.width * 0.05
-                        let plotAreaWidth = geometry.size.width * 0.90
-
-                        guard location.x >= plotAreaStart && location.x <= plotAreaStart + plotAreaWidth else {
-                            self.selectedDate = nil
-                            return
-                        }
-
-                        if let date: Date = proxy.value(atX: location.x) {
-                            self.selectedDate = date
-                        }
-                    case .ended:
-                        self.selectedDate = nil
-                    }
-                }
+        MaterialChartHoverOverlay(proxy: proxy) { date in
+            self.selectedDate = date
         }
     }
 
@@ -4784,55 +5340,69 @@ struct PowerTimeHistoryGraphView: View {
         let timeData = historyViewModel.chartData.filter { $0.timeRemainingMinutes > 0 }
 
         VStack(alignment: .leading, spacing: 0) {
-            Text("Power & Time").font(.headline)
-                .padding(.horizontal, 16)
+            Text("Power & Time")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 18)
                 .padding(.top, 16)
 
             Spacer()
 
             if powerData.isEmpty && timeData.isEmpty {
-                EmptyStatsView(height: 120)
+                EmptyStatsView(height: 150)
                     .padding(.horizontal, 16)
             } else {
                 Chart {
                     ForEach(powerData) { entry in
                         LineMark(x: .value("Time", entry.timestamp), y: .value("Power", entry.powerConsumption))
                             .foregroundStyle(by: .value("Metric", "Power (W)"))
+                            .interpolationMethod(.linear)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     }
                     ForEach(timeData) { entry in
                         LineMark(x: .value("Time", entry.timestamp), y: .value("Time", Double(entry.timeRemainingMinutes) / 60.0))
                             .foregroundStyle(by: .value("Metric", "Time (h)"))
+                            .interpolationMethod(.linear)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     }
 
                     if let selectedDate {
                         if let powerEntry = findClosest(to: selectedDate, in: powerData) {
                             PointMark(x: .value("Time", powerEntry.timestamp), y: .value("Power", powerEntry.powerConsumption))
-                                .foregroundStyle(.yellow)
-                                .symbolSize(100)
+                                .foregroundStyle(MaterialChartPalette.primary)
+                                .symbolSize(80)
                         }
                         if let timeEntry = findClosest(to: selectedDate, in: timeData) {
                             PointMark(x: .value("Time", timeEntry.timestamp), y: .value("Time", Double(timeEntry.timeRemainingMinutes) / 60.0))
-                                .foregroundStyle(.mint)
-                                .symbolSize(100)
+                                .foregroundStyle(MaterialChartPalette.tertiary)
+                                .symbolSize(80)
                         }
 
                         RuleMark(x: .value("Selected", selectedDate))
-                            .foregroundStyle(.white.opacity(0.2))
+                            .foregroundStyle(MaterialChartPalette.outline)
                             .annotation(position: .top, alignment: .center) {
                                 annotationView(for: selectedDate, powerData: powerData, timeData: timeData)
                             }
                     }
                 }
-                .chartForegroundStyleScale(["Power (W)": .yellow, "Time (h)": .mint])
-                .dynamicXAxis(for: selectedTimeRange, isVisible: isHovered)
-                .chartYAxis { if isHovered { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) } }
-                .frame(height: 120)
+                .materialChartPlotStyle()
+                .chartForegroundStyleScale([
+                    "Power (W)": MaterialChartPalette.primary,
+                    "Time (h)": MaterialChartPalette.tertiary
+                ])
+                .dynamicXAxis(for: selectedTimeRange, isVisible: true)
+                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+                .chartOverlay { proxy in
+                    MaterialChartHoverOverlay(proxy: proxy) { date in
+                        selectedDate = date
+                    }
+                }
+                .frame(height: 150)
+                .padding(.horizontal, 12)
             }
 
             Spacer()
         }
-        .frame(height: 180)
-        .modifier(SettingsContainerModifier())
+        .materialChartCard(height: 220)
         .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
     }
 
@@ -4856,26 +5426,8 @@ struct PowerTimeHistoryGraphView: View {
     }
 
     private func chartInteraction(proxy: ChartProxy, chartData: [BatteryLogEntry]) -> some View {
-        GeometryReader { geometry in
-            Rectangle().fill(.clear).contentShape(Rectangle())
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        let plotAreaStart = geometry.size.width * 0.05
-                        let plotAreaWidth = geometry.size.width * 0.90
-
-                        guard location.x >= plotAreaStart && location.x <= plotAreaStart + plotAreaWidth else {
-                            self.selectedDate = nil
-                            return
-                        }
-
-                        if let date: Date = proxy.value(atX: location.x) {
-                            self.selectedDate = date
-                        }
-                    case .ended:
-                        self.selectedDate = nil
-                    }
-                }
+        MaterialChartHoverOverlay(proxy: proxy) { date in
+            self.selectedDate = date
         }
     }
 
@@ -4884,78 +5436,29 @@ struct PowerTimeHistoryGraphView: View {
     }
 }
 
-fileprivate struct BatteryStateSegment: Identifiable {
-    let id = UUID()
-    var state: State
-    var startDate: Date
-    var endDate: Date
-
-    enum State {
-        case charging, inhibited, lowBattery, normal
-
-        var color: Color {
-            switch self {
-            case .charging: .green
-            case .inhibited: .blue
-            case .lowBattery: .red
-            case .normal: .clear
-            }
-        }
-    }
-}
-
 struct BatteryHistoryView: View {
     @ObservedObject var historyViewModel: BatteryHistoryViewModel
     @State private var selectedEntry: BatteryLogEntry?
     @State private var hoveredEntry: BatteryLogEntry?
-    @State private var showDetailPopover = false
 
-    @State private var popoverAnchor: CGPoint = .zero
-    @State private var hoverAnchor: CGPoint = .zero
-
-    private var stateSegments: [BatteryStateSegment] {
-        guard !historyViewModel.chartData.isEmpty else { return [] }
-
-        var segments: [BatteryStateSegment] = []
-        var currentSegment: BatteryStateSegment?
-
-        for i in 0..<historyViewModel.chartData.count {
-            let entry = historyViewModel.chartData[i]
-            let currentState: BatteryStateSegment.State
-
-            if entry.isCharging && entry.isPluggedIn {
-                currentState = .charging
-            } else if entry.isPluggedIn && !entry.isCharging {
-                currentState = .inhibited
-            } else if entry.charge <= 20 && !entry.isPluggedIn {
-                currentState = .lowBattery
-            } else {
-                currentState = .normal
-            }
-
-            if var segment = currentSegment {
-                if segment.state == currentState {
-                    let nextDate = (i + 1 < historyViewModel.chartData.count) ? historyViewModel.chartData[i+1].timestamp : entry.timestamp
-                    currentSegment?.endDate = nextDate
-                } else {
-                    segments.append(segment)
-                    currentSegment = BatteryStateSegment(state: currentState, startDate: entry.timestamp, endDate: entry.timestamp)
-                }
-            } else {
-                currentSegment = BatteryStateSegment(state: currentState, startDate: entry.timestamp, endDate: entry.timestamp)
-            }
-        }
-
-        if let segment = currentSegment {
-            segments.append(segment)
-        }
-
-        return segments
+    private var summaryStats: (min: Int, max: Int, avg: Int, avgTemp: Double, avgPower: Double)? {
+        let data = historyViewModel.chartData
+        guard !data.isEmpty else { return nil }
+        let charges = data.map(\.charge)
+        let temps = data.map(\.temperature).filter { $0 > 0 }
+        let powers = data.map(\.powerConsumption).filter { $0 > 0 }
+        return (
+            min: charges.min() ?? 0,
+            max: charges.max() ?? 0,
+            avg: Int((Double(charges.reduce(0, +)) / Double(charges.count)).rounded()),
+            avgTemp: temps.isEmpty ? 0 : temps.reduce(0, +) / Double(temps.count),
+            avgPower: powers.isEmpty ? 0 : powers.reduce(0, +) / Double(powers.count)
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Battery Usage History")
                         .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -4967,177 +5470,257 @@ struct BatteryHistoryView: View {
                     }
                 }
 
-                Spacer()
-
-                if let minCharge = historyViewModel.chartData.map({ $0.charge }).min(),
-                   let maxCharge = historyViewModel.chartData.map({ $0.charge }).max() {
-                    HStack(spacing: 16) {
-                        StatPill(label: "Min", value: "\(minCharge)%", color: .orange)
-                        StatPill(label: "Max", value: "\(maxCharge)%", color: .green)
+                if let stats = summaryStats {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            StatPill(label: "Min", value: "\(stats.min)%", color: MaterialChartPalette.warning)
+                            StatPill(label: "Avg", value: "\(stats.avg)%", color: MaterialChartPalette.primary)
+                            StatPill(label: "Max", value: "\(stats.max)%", color: MaterialChartPalette.tertiary)
+                            if stats.avgTemp > 0 {
+                                StatPill(label: "Temp", value: String(format: "%.0f°", stats.avgTemp), color: MaterialChartPalette.error)
+                            }
+                            if stats.avgPower > 0 {
+                                StatPill(label: "Draw", value: String(format: "%.1fW", stats.avgPower), color: MaterialChartPalette.warning)
+                            }
+                        }
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
             .padding(.top, 20)
-            .padding(.bottom, 16)
+            .padding(.bottom, 10)
+
+            historyLegend
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
 
             if historyViewModel.isLoading {
                 ProgressView()
-                    .frame(height: 280, alignment: .center)
+                    .frame(height: 320, alignment: .center)
                     .frame(maxWidth: .infinity)
             } else if historyViewModel.chartData.isEmpty {
                 EmptyHistoryView()
             } else {
-                ZStack {
-                    chartView
-                        .frame(height: 280)
+                chartView
+                    .frame(height: 320)
+                    .padding(.horizontal, 20)
 
-                    if let entry = hoveredEntry, selectedEntry == nil {
-                        HoverAnnotationView(entry: entry)
-                            .position(x: hoverAnchor.x, y: hoverAnchor.y - 25)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .popover(isPresented: $showDetailPopover, attachmentAnchor: .point(.top), arrowEdge: .top) {
-                    if let entry = selectedEntry {
-                        DataPointDetailView(entry: entry, onDismiss: {
-                            showDetailPopover = false
+                if let entry = selectedEntry {
+                    BatteryDataPointCard(entry: entry, onDismiss: {
+                        withAnimation(.easeOut(duration: 0.18)) {
                             selectedEntry = nil
-                        })
-                    }
+                        }
+                    })
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
         }
-        .modifier(SettingsContainerModifier())
+        .padding(.bottom, 20)
+        .materialChartCard()
+        .animation(.easeOut(duration: 0.2), value: selectedEntry?.id)
+    }
+
+    private var historyLegend: some View {
+        HStack(spacing: 10) {
+            legendChip(label: "Charging", color: MaterialChartPalette.tertiary)
+            legendChip(label: "Paused", color: MaterialChartPalette.primary)
+            legendChip(label: "On Battery", color: MaterialChartPalette.warning)
+            legendChip(label: "Low", color: MaterialChartPalette.error)
+            Spacer(minLength: 0)
+            Text("Line color = status")
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(MaterialChartPalette.onSurfaceVariant.opacity(0.75))
+        }
+    }
+
+    private func legendChip(label: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Capsule()
+                .fill(color)
+                .frame(width: 14, height: 3)
+            Text(label)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                .lineLimit(1)
+        }
+        .frame(width: 100)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(MaterialChartPalette.surfaceContainer, in: Capsule())
     }
 
     private func findClosestEntry(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
         guard !data.isEmpty else { return nil }
-
         return data.min { entry1, entry2 in
             abs(entry1.timestamp.timeIntervalSince(date)) < abs(entry2.timestamp.timeIntervalSince(date))
         }
     }
 
+    private var chargeLineSegments: [(id: String, color: Color, a: BatteryLogEntry, b: BatteryLogEntry)] {
+        let data = historyViewModel.chartData
+        guard data.count >= 2 else { return [] }
+
+        var segments: [(id: String, color: Color, a: BatteryLogEntry, b: BatteryLogEntry)] = []
+        segments.reserveCapacity(data.count - 1)
+        for i in 0..<(data.count - 1) {
+            let a = data[i]
+            let b = data[i + 1]
+            segments.append((
+                id: "\(a.id.uuidString)-\(b.id.uuidString)",
+                color: statusColor(for: a),
+                a: a,
+                b: b
+            ))
+        }
+        return segments
+    }
+
     private var chartView: some View {
         Chart {
-            ForEach(stateSegments) { segment in
-                if segment.state != .normal {
-                    RectangleMark(
-                        xStart: .value("Start", segment.startDate),
-                        xEnd: .value("End", segment.endDate),
-                        yStart: .value("Bottom", 0),
-                        yEnd: .value("Top", 100)
-                    )
-                    .foregroundStyle(segment.state.color.opacity(0.15))
-                }
-            }
-
             ForEach(historyViewModel.chartData) { entry in
                 AreaMark(
                     x: .value("Time", entry.timestamp),
                     y: .value("Charge", entry.charge)
                 )
-                .foregroundStyle(LinearGradient(colors: [.cyan.opacity(0.2), .clear], startPoint: .top, endPoint: .bottom))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.10), Color.white.opacity(0.02), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .interpolationMethod(.linear)
+            }
+
+            ForEach(chargeLineSegments, id: \.id) { segment in
+                LineMark(
+                    x: .value("Time", segment.a.timestamp),
+                    y: .value("Charge", segment.a.charge),
+                    series: .value("Segment", segment.id)
+                )
+                .foregroundStyle(segment.color)
+                .interpolationMethod(.linear)
+                .lineStyle(StrokeStyle(lineWidth: 2.75, lineCap: .round, lineJoin: .round))
 
                 LineMark(
-                    x: .value("Time", entry.timestamp),
-                    y: .value("Charge", entry.charge)
+                    x: .value("Time", segment.b.timestamp),
+                    y: .value("Charge", segment.b.charge),
+                    series: .value("Segment", segment.id)
                 )
-                .foregroundStyle(Color.cyan)
-                .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(segment.color)
+                .interpolationMethod(.linear)
+                .lineStyle(StrokeStyle(lineWidth: 2.75, lineCap: .round, lineJoin: .round))
             }
 
-            if let entry = hoveredEntry, selectedEntry == nil {
+            if let entry = hoveredEntry ?? selectedEntry {
+                RuleMark(x: .value("Selected", entry.timestamp))
+                    .foregroundStyle(MaterialChartPalette.outlineStrong)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+
                 PointMark(
                     x: .value("Time", entry.timestamp),
                     y: .value("Charge", entry.charge)
                 )
-                .foregroundStyle(entry.isCharging ? Color.green : Color.cyan)
-                .symbolSize(100)
-                .annotation(position: .overlay) {
-                    Circle().stroke(Color.white.opacity(0.5), lineWidth: 2).frame(width: 15, height: 15)
-                }
-            }
-
-            if let entry = selectedEntry {
-                PointMark(
-                    x: .value("Time", entry.timestamp),
-                    y: .value("Charge", entry.charge)
-                )
-                .foregroundStyle(Color.white)
-                .symbolSize(150)
-                .annotation(position: .overlay) {
-                    Circle().stroke(Color.cyan, lineWidth: 3).frame(width: 20, height: 20)
+                .foregroundStyle(statusColor(for: entry))
+                .symbolSize(selectedEntry?.id == entry.id ? 120 : 90)
+                .annotation(position: .top, spacing: 6) {
+                    if selectedEntry == nil {
+                        MaterialSelectionPill(
+                            text: "\(entry.charge)% · \(entry.timestamp.formatted(date: .omitted, time: .shortened))",
+                            color: statusColor(for: entry)
+                        )
+                    }
                 }
             }
         }
+        .materialChartPlotStyle()
         .chartYScale(domain: 0...100)
         .chartYAxis {
             AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4])).foregroundStyle(.white.opacity(0.15))
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
+                    .foregroundStyle(MaterialChartPalette.outline.opacity(0.7))
                 AxisValueLabel {
-                    if let intValue = value.as(Int.self) { Text("\(intValue)%").font(.system(size: 12, weight: .semibold)).foregroundColor(.secondary) }
+                    if let intValue = value.as(Int.self) {
+                        Text("\(intValue)%")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                    }
                 }
             }
         }
         .chartXAxis {
             AxisMarks(position: .bottom, values: .automatic(desiredCount: 6)) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5)).foregroundStyle(.white.opacity(0.08))
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(MaterialChartPalette.outline)
                 AxisValueLabel {
-                    if let date = value.as(Date.self) { Text(date, style: .time).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary) }
+                    if let date = value.as(Date.self) {
+                        Text(date, style: .time)
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                    }
                 }
             }
         }
         .chartOverlay { proxy in
-            chartInteraction(proxy: proxy)
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 20)
-    }
-
-    private func chartInteraction(proxy: ChartProxy) -> some View {
-        GeometryReader { geometry in
-            Rectangle()
-                .fill(.clear)
-                .contentShape(Rectangle())
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        if let plotFrame = proxy.plotFrame {
-                            let plotAreaFrame = geometry[plotFrame]
-                            if plotAreaFrame.contains(location) {
-                                let translatedX = location.x - plotAreaFrame.minX
-                                if let date: Date = proxy.value(atX: translatedX),
-                                   let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
-                                    hoveredEntry = entry
-                                    if let xPos = proxy.position(forX: entry.timestamp), let yPos = proxy.position(forY: entry.charge) {
-                                        hoverAnchor = CGPoint(x: plotAreaFrame.minX + xPos, y: plotAreaFrame.minY + yPos)
-                                    }
-                                }
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            guard let plotFrame = proxy.plotFrame else {
+                                if selectedEntry == nil { hoveredEntry = nil }
+                                return
                             }
-                        } else {
-                            if selectedEntry == nil { hoveredEntry = nil }
-                        }
-                    case .ended:
-                        if selectedEntry == nil { hoveredEntry = nil }
-                    }
-                }
-                .onTapGesture { location in
-                    if let plotFrame = proxy.plotFrame {
-                        let plotAreaFrame = geometry[plotFrame]
-                        if plotAreaFrame.contains(location) {
+                            let plotAreaFrame = geometry[plotFrame]
+                            guard plotAreaFrame.contains(location) else {
+                                if selectedEntry == nil { hoveredEntry = nil }
+                                return
+                            }
                             let translatedX = location.x - plotAreaFrame.minX
                             if let date: Date = proxy.value(atX: translatedX),
                                let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
-                                selectedEntry = entry
-                                hoveredEntry = nil
-                                showDetailPopover = true
+                                hoveredEntry = entry
+                            }
+                        case .ended:
+                            if selectedEntry == nil { hoveredEntry = nil }
+                        }
+                    }
+                    .onTapGesture { location in
+                        guard let plotFrame = proxy.plotFrame else { return }
+                        let plotAreaFrame = geometry[plotFrame]
+                        guard plotAreaFrame.contains(location) else {
+                            selectedEntry = nil
+                            return
+                        }
+                        let translatedX = location.x - plotAreaFrame.minX
+                        if let date: Date = proxy.value(atX: translatedX),
+                           let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                if selectedEntry?.id == entry.id {
+                                    selectedEntry = nil
+                                } else {
+                                    selectedEntry = entry
+                                    hoveredEntry = nil
+                                }
                             }
                         }
                     }
-                }
+            }
         }
+        .padding(.bottom, 8)
+    }
+
+    private func statusColor(for entry: BatteryLogEntry) -> Color {
+        if entry.isCharging && entry.isPluggedIn { return MaterialChartPalette.tertiary }
+        if entry.isPluggedIn && !entry.isCharging { return MaterialChartPalette.primary }
+        if entry.charge <= 20 && !entry.isPluggedIn { return MaterialChartPalette.error }
+        if !entry.isPluggedIn { return MaterialChartPalette.warning }
+        return MaterialChartPalette.primary
     }
 }
 struct HoverAnnotationView: View {
@@ -5182,15 +5765,19 @@ struct StatPill: View {
             Text(label)
                 .font(.caption2)
                 .foregroundColor(.secondary)
+                .lineLimit(1)
 
             Text(value)
                 .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(color.opacity(0.15))
         .cornerRadius(12)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -5210,8 +5797,179 @@ struct EmptyHistoryView: View {
                 .foregroundColor(.secondary.opacity(0.7))
                 .multilineTextAlignment(.center)
         }
-        .frame(height: 280)
+        .frame(height: 320)
         .frame(maxWidth: .infinity)
+    }
+}
+
+struct BatteryDataPointCard: View {
+    let entry: BatteryLogEntry
+    let onDismiss: () -> Void
+
+    private var statusLabel: String {
+        if entry.isCharging && entry.isPluggedIn { return "Charging" }
+        if entry.isPluggedIn && !entry.isCharging { return "Charge Paused" }
+        if entry.charge <= 20 { return "Low Battery" }
+        if !entry.isPluggedIn { return "On Battery" }
+        return "Normal"
+    }
+
+    private var statusColor: Color {
+        if entry.isCharging && entry.isPluggedIn { return MaterialChartPalette.tertiary }
+        if entry.isPluggedIn && !entry.isCharging { return MaterialChartPalette.primary }
+        if entry.charge <= 20 { return MaterialChartPalette.error }
+        if !entry.isPluggedIn { return MaterialChartPalette.warning }
+        return MaterialChartPalette.onSurfaceVariant
+    }
+
+    private var timeRemainingText: String {
+        guard entry.timeRemainingMinutes > 0 else { return "—" }
+        let hours = entry.timeRemainingMinutes / 60
+        let minutes = entry.timeRemainingMinutes % 60
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        return "\(minutes)m"
+    }
+
+    private var ledLabel: String {
+        switch entry.ledColor {
+        case 1: return "Green"
+        case 2: return "Amber"
+        case 3: return "Red"
+        case 0: return "Off"
+        default: return "\(entry.ledColor)"
+        }
+    }
+
+    private var detailRows: [(section: String, rows: [(icon: String, label: String, value: String, color: Color)])] {
+        [
+            ("Charge", [
+                ("battery.100", "Charge", "\(entry.charge)%", statusColor),
+                ("cpu", "Hardware Charge", "\(entry.hardwareCharge)%", MaterialChartPalette.primary),
+                ("heart.fill", "Max Capacity", "\(entry.maxCapacity) mAh", .pink),
+                ("arrow.clockwise", "Cycle Count", "\(entry.cycleCount)", MaterialChartPalette.secondary),
+            ]),
+            ("Power", [
+                ("bolt.fill", "Power Draw", entry.powerConsumption > 0 ? String(format: "%.2f W", entry.powerConsumption) : "—", MaterialChartPalette.warning),
+                ("clock.fill", entry.isCharging ? "Time to Full" : "Time Remaining", timeRemainingText, MaterialChartPalette.primary),
+                ("thermometer.medium", "Temperature", String(format: "%.1f °C", entry.temperature), entry.temperature > 40 ? MaterialChartPalette.error : MaterialChartPalette.tertiary),
+            ]),
+            ("State", [
+                ("powerplug.fill", "Adapter", entry.isPluggedIn ? "Connected" : "Unplugged", entry.isPluggedIn ? MaterialChartPalette.tertiary : .gray),
+                ("bolt.circle", "Charging", entry.isCharging ? "Yes" : "No", entry.isCharging ? MaterialChartPalette.tertiary : .gray),
+                ("slider.horizontal.3", "Management", entry.managementState.rawValue, MaterialChartPalette.secondary),
+                ("leaf.fill", "Low Power Mode", entry.isLowPowerMode ? "On" : "Off", entry.isLowPowerMode ? MaterialChartPalette.warning : .gray),
+            ]),
+            ("System", [
+                ("display", "Screen", entry.isScreenOn ? "On" : "Off", entry.isScreenOn ? MaterialChartPalette.primary : .gray),
+                ("moon.fill", "Sleeping", entry.isSleeping ? "Yes" : "No", entry.isSleeping ? MaterialChartPalette.secondary : .gray),
+                ("light.max", "LED", ledLabel, MaterialChartPalette.onSurfaceVariant),
+                ("calendar", "Logged", entry.timestamp.formatted(date: .abbreviated, time: .standard), MaterialChartPalette.onSurfaceVariant),
+            ]),
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(entry.charge)%")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(statusColor)
+                        .monospacedDigit()
+                    Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                }
+
+                Spacer()
+
+                Text(statusLabel)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(statusColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(statusColor.opacity(0.16), in: Capsule())
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                        .frame(width: 28, height: 28)
+                        .background(MaterialChartPalette.surfaceContainer, in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
+                alignment: .leading,
+                spacing: 16
+            ) {
+                ForEach(detailRows, id: \.section) { section in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(section.section.uppercased())
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                            .tracking(0.6)
+
+                        VStack(spacing: 0) {
+                            ForEach(Array(section.rows.enumerated()), id: \.offset) { index, row in
+                                BatteryAlignedDetailRow(
+                                    icon: row.icon,
+                                    label: row.label,
+                                    value: row.value,
+                                    color: row.color
+                                )
+                                if index < section.rows.count - 1 {
+                                    Divider().opacity(0.35)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            MaterialChartPalette.surfaceContainer,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        )
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(MaterialChartPalette.surfaceContainer.opacity(0.55), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(MaterialChartPalette.outline, lineWidth: 1)
+        )
+    }
+}
+
+private struct BatteryAlignedDetailRow: View {
+    let icon: String
+    let label: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 18, alignment: .center)
+            Text(label)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(1)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .frame(minWidth: 84, alignment: .trailing)
+        }
+        .padding(.vertical, 7)
     }
 }
 
@@ -5220,190 +5978,10 @@ struct DataPointDetailView: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.timestamp, style: .date)
-                        .font(.system(size: 14, weight: .semibold))
-                    Text(entry.timestamp, style: .time)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 20))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(16)
-            .background(Color.primary.opacity(0.03))
-
-            ScrollView {
-                VStack(spacing: 16) {
-                    DetailSection(title: "Battery Status") {
-                        DetailRow(
-                            icon: "battery.100",
-                            label: "Charge Level",
-                            value: "\(entry.charge)%",
-                            color: entry.charge > 20 ? .green : .orange
-                        )
-
-                        DetailRow(
-                            icon: "battery.100",
-                            label: "Hardware Charge",
-                            value: "\(entry.hardwareCharge)%",
-                            color: entry.hardwareCharge > 20 ? .green : .orange
-                        )
-
-                        DetailRow(
-                            icon: entry.isCharging ? "bolt.fill" : "powerplug",
-                            label: "Charging Status",
-                            value: entry.isCharging ? "Charging" : "Discharging",
-                            color: entry.isCharging ? .green : .blue
-                        )
-
-                        DetailRow(
-                            icon: "powerplug.fill",
-                            label: "Power Adapter",
-                            value: entry.isPluggedIn ? "Connected" : "Disconnected",
-                            color: entry.isPluggedIn ? .green : .gray
-                        )
-
-                        if entry.timeRemainingMinutes > 0 {
-                            let hours = entry.timeRemainingMinutes / 60
-                            let minutes = entry.timeRemainingMinutes % 60
-                            DetailRow(
-                                icon: "clock",
-                                label: entry.isCharging ? "Time to Full" : "Time Remaining",
-                                value: hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m",
-                                color: .cyan
-                            )
-                        }
-                    }
-
-                    DetailSection(title: "Power Information") {
-                        if entry.powerConsumption > 0 {
-                            DetailRow(
-                                icon: "bolt.circle",
-                                label: "Power Consumption",
-                                value: String(format: "%.2f W", entry.powerConsumption),
-                                color: .yellow
-                            )
-                        }
-
-                        DetailRow(
-                            icon: "gauge.with.dots.needle.bottom.50percent",
-                            label: "Management State",
-                            value: managementStateString(entry.managementState),
-                            color: managementStateColor(entry.managementState)
-                        )
-
-                        DetailRow(
-                            icon: "lightbulb.fill",
-                            label: "LED Color",
-                            value: ledColorString(entry.ledColor),
-                            color: ledColorSwiftUI(entry.ledColor)
-                        )
-                    }
-
-                    DetailSection(title: "Battery Health") {
-                        DetailRow(
-                            icon: "heart.fill",
-                            label: "Max Capacity",
-                            value: "\(entry.maxCapacity) mAh",
-                            color: .pink
-                        )
-
-                        DetailRow(
-                            icon: "arrow.clockwise",
-                            label: "Cycle Count",
-                            value: "\(entry.cycleCount)",
-                            color: .cyan
-                        )
-
-                        DetailRow(
-                            icon: "thermometer.medium",
-                            label: "Temperature",
-                            value: String(format: "%.1f °C", entry.temperature),
-                            color: entry.temperature > 40 ? .red : (entry.temperature > 35 ? .orange : .green)
-                        )
-                    }
-
-                    DetailSection(title: "System State") {
-                        DetailRow(
-                            icon: entry.isScreenOn ? "display" : "display.slash",
-                            label: "Screen",
-                            value: entry.isScreenOn ? "On" : "Off",
-                            color: entry.isScreenOn ? .green : .gray
-                        )
-
-                        DetailRow(
-                            icon: entry.isSleeping ? "moon.fill" : "sun.max.fill",
-                            label: "System",
-                            value: entry.isSleeping ? "Sleeping" : "Awake",
-                            color: entry.isSleeping ? .purple : .yellow
-                        )
-
-                        DetailRow(
-                            icon: "leaf.fill",
-                            label: "Low Power Mode",
-                            value: entry.isLowPowerMode ? "Enabled" : "Disabled",
-                            color: entry.isLowPowerMode ? .green : .gray
-                        )
-                    }
-                }
-                .padding(16)
-            }
-        }
-        .frame(width: 340, height: 550)
-        .background(Color(NSColor.windowBackgroundColor))
-        .cornerRadius(12)
-    }
-
-    private func managementStateString(_ state: ManagementState) -> String {
-        switch state {
-        case .heatProtection: return "Heat Protection"
-        case .sailing: return "Sailing"
-        case .calibrating: return "Calibrating"
-        case .discharging: return "Force Discharging"
-        case .inhibited: return "Charging Paused"
-        default: return "None"
-        }
-    }
-
-    private func managementStateColor(_ state: ManagementState) -> Color {
-        switch state {
-        case .heatProtection: return .red
-        case .sailing: return .blue
-        case .calibrating: return .purple
-        case .discharging: return .orange
-        case .inhibited: return .cyan
-        default: return .green
-        }
-    }
-
-    private func ledColorString(_ color: Int) -> String {
-        switch color {
-        case 0: return "Off"
-        case 1: return "Green"
-        case 2: return "Amber"
-        case 3: return "Orange"
-        default: return "Unknown"
-        }
-    }
-
-    private func ledColorSwiftUI(_ color: Int) -> Color {
-        switch color {
-        case 0: return .gray
-        case 1: return .green
-        case 2: return .yellow
-        case 3: return .orange
-        default: return .gray
-        }
+        BatteryDataPointCard(entry: entry, onDismiss: onDismiss)
+            .frame(width: 360)
+            .padding(12)
+            .background(MaterialChartPalette.surface)
     }
 }
 
@@ -5463,7 +6041,10 @@ struct BatteryHealthCard: View {
     @ObservedObject var viewModel: BatteryStatsViewModel
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Image(systemName: "heart.fill"); Text("Battery Health") }.font(.headline)
+            HStack {
+                Image(systemName: "heart.fill").foregroundStyle(.pink)
+                Text("Battery Health").font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
             Spacer()
             SpecRow(label: "Design Capacity", value: "\(viewModel.designCapacity) mAh", percentage: "100%")
             SpecRow(label: "Maximum Capacity", value: "\(viewModel.maxCapacity) mAh", percentage: "\(viewModel.maxCapacityPercentage)%")
@@ -5472,7 +6053,8 @@ struct BatteryHealthCard: View {
             SpecRow(label: "Cycle Count", value: "\(viewModel.cycleCount)")
             Spacer()
         }
-        .padding().frame(height: 180).modifier(SettingsContainerModifier())
+        .padding(16)
+        .materialChartCard(height: 180, accent: .pink)
     }
 }
 
@@ -5480,15 +6062,13 @@ struct PowerAdapterSpecsCard: View {
     @ObservedObject var viewModel: BatteryStatsViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: "powerplug.fill")
-                    .foregroundColor(.gray)
+                    .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
                 Text("Power Adapter Specs")
-                    .font(.headline)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-
-            Spacer()
 
             if let info = viewModel.powerAdapterInfo, info.maxPower > 0 {
                 if info.current > 0 || info.maxCurrent > 0 {
@@ -5528,14 +6108,12 @@ struct PowerAdapterSpecsCard: View {
                 Text("Not Connected")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .center)
             }
-
-            Spacer()
         }
-        .padding()
-        .frame(height: 180)
-        .modifier(SettingsContainerModifier())
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .materialChartCard(minHeight: 180, accent: .gray)
     }
 }
 
@@ -5545,24 +6123,22 @@ fileprivate struct PowerAdapterSpecRow: View {
     let maxValue: String
 
     var body: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(label)
-                .font(.system(size: 12))
+                .font(.system(size: 12, design: .rounded))
                 .foregroundColor(.secondary)
-            Spacer()
-            HStack(spacing: 4) {
-                Text(currentValue)
-                    .font(.system(size: 12))
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                Text("of")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                Text(maxValue)
-                    .font(.system(size: 12))
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(currentValue)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .frame(minWidth: 56, alignment: .trailing)
+            Text("of")
+                .font(.system(size: 12, design: .rounded))
+                .foregroundColor(.secondary)
+            Text(maxValue)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .frame(minWidth: 48, alignment: .trailing)
         }
     }
 }
@@ -5571,7 +6147,8 @@ struct SignificantEnergyUsersView: View {
     @ObservedObject var viewModel: EnergyViewModel
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Significant Energy Users").font(.subheadline.bold())
+            Text("Significant Energy Users")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
             Spacer()
             if viewModel.topProcesses.isEmpty {
                 Text("No Apps Using Significant Energy")
@@ -5582,13 +6159,18 @@ struct SignificantEnergyUsersView: View {
                     HStack {
                         Text(process.name).font(.caption)
                         Spacer()
-                        Text(String(format: "%.2f%%", process.usage)).font(.caption.weight(.semibold))
+                        Text(String(format: "%.2f%%", process.usage))
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(MaterialChartPalette.primary.opacity(0.14), in: Capsule())
                     }
                 }
             }
             Spacer()
         }
-        .padding().frame(height: 180).modifier(SettingsContainerModifier())
+        .padding(16)
+        .materialChartCard(height: 180, accent: MaterialChartPalette.primary)
     }
 }
 struct EmptyStatsView: View {
@@ -6144,7 +6726,7 @@ struct HUDSettingsView: View {
                         description: "Press Option + Volume keys to adjust volume for the active app (excludes Spotify and Apple Music).",
                         isOn: $settings.settings.showAppVolumeHUD
                     )
-                    
+
                     if settings.settings.showAppVolumeHUD {
                         ToggleRow(
                             title: "Show in Normal Volume HUD",
@@ -6153,7 +6735,7 @@ struct HUDSettingsView: View {
                         )
                         .padding(.leading, 20)
                     }
-                    
+
                     Divider().padding(.leading, 20)
                     ToggleRow(
                         title: "Show Device Icon Instead of Speaker",
@@ -6255,7 +6837,6 @@ struct HUDSettingsView: View {
                         .disabled(!settings.settings.enableVolumeHUD)
                         .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
 
-                    // Per-device overrides
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Per-device slider steps")
                             .font(.subheadline)
@@ -6267,7 +6848,6 @@ struct HUDSettingsView: View {
                                     .font(.system(size: 13))
                                 Spacer()
 
-                                // Picker for per-device step (falls back to global when not set)
                                 Picker("", selection: Binding(get: {
                                     Double(settings.settings.volumesliderstepByDevice[device.uid] ?? settings.settings.volumesliderstep)
                                 }, set: { newVal in
@@ -6280,7 +6860,6 @@ struct HUDSettingsView: View {
                                 .labelsHidden()
                                 .frame(width: 120)
 
-                                // Reset override button
                                 Button(action: {
                                     settings.settings.volumesliderstepByDevice.removeValue(forKey: device.uid)
                                 }) {
@@ -6400,12 +6979,14 @@ struct HUDSettingsView: View {
 
 struct MusicSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
-    @ObservedObject var musicManager = MusicManager.shared
-    @ObservedObject var spotifyPrivateAPI = SpotifyPrivateAPIManager.shared
     @ObservedObject private var appFetcher = SystemAppFetcher.shared
 
     @State private var isPrivateApiLoading = false
     @State private var privateApiError: String?
+    @State private var isPrivateAuth = false
+    @State private var isOfficialAuth = false
+    @State private var officialDisplayName: String?
+    @State private var loginChallenge: LoginChallengeDetails?
 
     private var browserApps: [SystemApp] { appFetcher.apps.filter { $0.isBrowser } }
     private var otherApps: [SystemApp] { appFetcher.apps.filter { !$0.isBrowser } }
@@ -6441,6 +7022,25 @@ struct MusicSettingsView: View {
                     ToggleRow(title: "Invert Swipe Gestures", description: "Swipe right to skip and left to go back.", isOn: $settings.settings.invertMusicGestures)
                     Divider().padding(.leading, 20)
                     ToggleRow(title: "Two-Finger Tap to Play/Pause", description: "Tap the album art with two fingers to toggle playback.", isOn: $settings.settings.twoFingerTapToPauseMusic)
+                }
+                .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Hold Actions").font(.headline).padding([.top, .horizontal])
+                    ToggleRow(
+                        title: "Enable Hold Actions",
+                        description: "Press and hold music controls to run a secondary action. When off, Previous/Next hold seeks through the track.",
+                        isOn: $settings.settings.musicLongPressActionsEnabled
+                    )
+                    if settings.settings.musicLongPressActionsEnabled {
+                        Divider().padding(.leading, 20)
+                        ForEach(MusicLongPressTarget.allCases) { target in
+                            MusicLongPressActionPickerRow(target: target)
+                            if target != MusicLongPressTarget.allCases.last {
+                                Divider().padding(.leading, 20)
+                            }
+                        }
+                    }
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -6494,20 +7094,34 @@ struct MusicSettingsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Spotify (Private API)").font(.headline).padding([.horizontal, .top])
                     InfoContainer(text: "WARNING: This method uses Spotify’s internal APIs to unlock standard and additional features for both Premium and non-Premium users. Use at your own risk, usage may be subject to Spotify’s Terms of Service.", iconName: "exclamationmark.triangle.fill", color: .yellow).padding(.horizontal)
+                    InfoContainer(text: "Sapphire is a Connect controller only, audio always plays on the Spotify desktop app or another speaker.", iconName: "hifispeaker", color: .blue).padding(.horizontal)
                     Divider().padding(.horizontal, 20)
-                    if musicManager.isPrivateAPIAuthenticated {
+                    if isPrivateAuth {
                         VStack(spacing: 0) {
                             HStack {
                                 Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
                                 Text("Logged in via Private API")
                                 Spacer()
-                                Button("Log Out", role: .destructive) { musicManager.spotifyPrivateAPI.logout() }
+                                Button("Log Out", role: .destructive) { MusicManager.shared.spotifyPrivateAPI.logout() }
                             }.padding()
 
                             Divider().padding(.leading, 20)
 
-                            ToggleRow(title: "Skip Ads", description: "Attempt to automatically skip advertisements. May not always be successful.", isOn: $settings.settings.skipSpotifyAd)
-                                .disabled(!musicManager.isPrivateAPIAuthenticated)
+                            ToggleRow(title: "Skip Ads", description: "When Spotify desktop on this Mac plays an ad, relaunch it in the background on the same desktop it was on (no focus steal), then resume via Spotify Connect. Cooldown prevents rapid loops.", isOn: $settings.settings.skipSpotifyAd)
+                            ToggleRow(title: "Show Spotify Tab", description: "When another app is playing, show a Spotify source tab so you can switch medias. Hidden while Spotify itself is the main media source.", isOn: $settings.settings.showSpotifySourceTab)
+                                .disabled(!isPrivateAuth)
+                            ToggleRow(title: "Live Canvas Video", description: "Show looping Spotify Canvas video behind the artwork when available. Turn off to always use the album thumbnail.", isOn: $settings.settings.spotifyCanvasLiveVideo)
+                                .disabled(!isPrivateAuth)
+                            ToggleRow(title: "Artist Profile", description: "Show the artist avatar, verified check, and monthly listeners instead of plain artist text.", isOn: $settings.settings.spotifyShowArtistProfile)
+                                .disabled(!isPrivateAuth)
+                            ToggleRow(title: "Next Song", description: "Show the upcoming track from the queue under the now-playing title.", isOn: $settings.settings.spotifyShowNextSong)
+                                .disabled(!isPrivateAuth)
+                            ToggleRow(title: "Suggested Songs", description: "Show related song chips you can play from the music player.", isOn: $settings.settings.spotifyShowSuggestedSongs)
+                                .disabled(!isPrivateAuth)
+                            ToggleRow(title: "Concert Tickets", description: "Show a compact tickets button when nearby concerts are available for the artist.", isOn: $settings.settings.spotifyShowConcertTickets)
+                                .disabled(!isPrivateAuth)
+                            ToggleRow(title: "Account Badge", description: "Show the Premium / Free account badge next to the track title.", isOn: $settings.settings.spotifyShowAccountBadge)
+                                .disabled(!isPrivateAuth)
                         }
                     } else {
                         VStack(spacing: 12) {
@@ -6524,7 +7138,7 @@ struct MusicSettingsView: View {
                     }
                 }
                 .modifier(SettingsContainerModifier())
-                .animation(.default, value: musicManager.isPrivateAPIAuthenticated)
+                .animation(.default, value: isPrivateAuth)
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Spotify (Official API)").font(.headline).padding([.horizontal, .top])
@@ -6539,18 +7153,19 @@ struct MusicSettingsView: View {
                     Text("Log in here to enable official features like device switching for Premium users. This is the standard, recommended login method.").font(.caption).foregroundColor(.secondary).padding(.horizontal)
                     Divider().padding(.horizontal, 20)
                     HStack {
-                        if musicManager.isOfficialAPIAuthenticated, let user = musicManager.spotifyOfficialAPI.userProfile {
-                            HStack { Image(systemName: "checkmark.circle.fill").foregroundColor(.green); Text("Logged in as \(user.displayName)") }
+                        if isOfficialAuth, let name = officialDisplayName {
+                            HStack { Image(systemName: "checkmark.circle.fill").foregroundColor(.green); Text("Logged in as \(name)") }
                             Spacer()
-                            Button("Log Out", role: .destructive) { musicManager.spotifyOfficialAPI.logout() }
+                            Button("Log Out", role: .destructive) { MusicManager.shared.spotifyOfficialAPI.logout() }
                         } else {
                             Text("Not logged in.").foregroundColor(.secondary)
                             Spacer()
-                            Button("Log In") { musicManager.spotifyOfficialAPI.login() }
+                            Button("Log In") { MusicManager.shared.spotifyOfficialAPI.login() }
                         }
                     }.padding()
                 }
                 .modifier(SettingsContainerModifier())
+                .animation(.default, value: isOfficialAuth)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Lyrics").font(.headline).padding([.top, .horizontal])
@@ -6571,7 +7186,7 @@ struct MusicSettingsView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Allow Lyrics From:").font(.headline).padding([.horizontal, .top])
                         ScrollView {
-                            VStack(spacing: 0) {
+                            LazyVStack(spacing: 0) {
                                 Text("Browsers (Disabled by Default)").font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
                                 ForEach(browserApps) { app in SystemAppRowView(app: app, isEnabled: binding(for: app, isBrowser: true)) }
                                 Text("Other Apps").font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
@@ -6585,39 +7200,47 @@ struct MusicSettingsView: View {
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .onAppear { appFetcher.fetchApps() }
-        }
-        .sheet(item: $spotifyPrivateAPI.loginChallenge) { details in
-            if let presenter = try? CaptchaLoader.shared.loadPresenter() {
-                presenter.loginView(
-                    onComplete: { cookieProperties in
-                        spotifyPrivateAPI.completeLoginAfterWebViewSuccess(with: cookieProperties)
-                        spotifyPrivateAPI.loginChallenge = nil
-                        isPrivateApiLoading = false
-                    },
-                    onCancel: {
-                        privateApiError = "Login was cancelled."
-                        spotifyPrivateAPI.loginChallenge = nil
-                        isPrivateApiLoading = false
-                    }
-                )
-            } else {
-                VStack {
-                    Text("Error").font(.largeTitle)
-                    Text("Could not load the login solver component.").padding()
-                    Button("Close") {
-                        spotifyPrivateAPI.loginChallenge = nil
-                        isPrivateApiLoading = false
-                    }
-                }.frame(width: 300, height: 200)
+            .onAppear {
+                appFetcher.fetchApps()
+                syncMusicAuthState()
             }
+            .onDisappear { MemoryTrimSupport.releaseSettingsPaneCaches() }
+            .onReceive(MusicManager.shared.$isPrivateAPIAuthenticated) { isPrivateAuth = $0 }
+            .onReceive(MusicManager.shared.$isOfficialAPIAuthenticated) { isOfficialAuth = $0 }
+            .onReceive(MusicManager.shared.spotifyOfficialAPI.$userProfile) { profile in
+                officialDisplayName = profile?.displayName
+            }
+            .onReceive(SpotifyPrivateAPIManager.shared.$loginChallenge) { loginChallenge = $0 }
         }
+        .sheet(item: $loginChallenge) { _ in
+            SpotifyLoginWebView(
+                onComplete: { cookieProperties in
+                    MusicManager.shared.spotifyPrivateAPI.completeLoginAfterWebViewSuccess(with: cookieProperties)
+                    MusicManager.shared.spotifyPrivateAPI.loginChallenge = nil
+                    isPrivateApiLoading = false
+                },
+                onCancel: {
+                    privateApiError = "Login was cancelled."
+                    MusicManager.shared.spotifyPrivateAPI.loginChallenge = nil
+                    isPrivateApiLoading = false
+                }
+            )
+        }
+    }
+
+    private func syncMusicAuthState() {
+        let music = MusicManager.shared
+        music.spotifyPrivateAPI.bootstrapIfNeeded(policy: .onDemand)
+        isPrivateAuth = music.isPrivateAPIAuthenticated
+        isOfficialAuth = music.isOfficialAPIAuthenticated
+        officialDisplayName = music.spotifyOfficialAPI.userProfile?.displayName
+        loginChallenge = music.spotifyPrivateAPI.loginChallenge
     }
 
     private func handlePrivateApiLogin() {
         isPrivateApiLoading = true
         privateApiError = nil
-        spotifyPrivateAPI.login()
+        MusicManager.shared.spotifyPrivateAPI.login()
     }
 
     private func binding(for app: SystemApp, isBrowser: Bool) -> Binding<Bool> {
@@ -6625,6 +7248,34 @@ struct MusicSettingsView: View {
             get: { settings.settings.musicAppStates[app.id, default: !isBrowser] },
             set: { settings.settings.musicAppStates[app.id] = $0 }
         )
+    }
+}
+
+fileprivate struct MusicLongPressActionPickerRow: View {
+    let target: MusicLongPressTarget
+    @EnvironmentObject var settings: SettingsModel
+
+    private var selection: Binding<MusicLongPressAction> {
+        Binding(
+            get: { target.defaultAction(in: settings.settings) },
+            set: { settings.settings.setLongPressAction($0, for: target) }
+        )
+    }
+
+    var body: some View {
+        HStack {
+            Text("Hold \(target.displayName)")
+                .font(.system(size: 13, weight: .medium))
+            Spacer()
+            Picker("", selection: selection) {
+                ForEach(target.pickerOptions) { action in
+                    Text(action.displayName).tag(action)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 190)
+        }
+        .padding()
     }
 }
 
@@ -7234,27 +7885,34 @@ struct EyeBreakGraphView: View {
                 y: .value("Breaks", dataPoint.completedBreaks)
             )
             .foregroundStyle(by: .value("Type", "Completed"))
+            .cornerRadius(6)
 
             BarMark(
                 x: .value("Day", dataPoint.dayName),
                 y: .value("Breaks", dataPoint.missedBreaks)
             )
             .foregroundStyle(by: .value("Type", "Missed"))
+            .cornerRadius(6)
         }
+        .materialChartPlotStyle()
         .chartForegroundStyleScale([
-            "Completed": Color.blue,
-            "Missed": Color.red.opacity(0.6)
+            "Completed": MaterialChartPalette.primary,
+            "Missed": MaterialChartPalette.error.opacity(0.65)
         ])
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in
-                AxisGridLine()
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(MaterialChartPalette.outline)
                 AxisValueLabel("\(value.as(Int.self) ?? 0)")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
             }
         }
         .chartXAxis {
             AxisMarks {
-                AxisGridLine()
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(MaterialChartPalette.outline)
                 AxisValueLabel()
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
             }
         }
         .chartLegend(position: .top, alignment: .trailing)
@@ -8056,14 +8714,29 @@ fileprivate struct NotchButtonRowView: View {
     let buttonType: NotchButtonType
 
     @EnvironmentObject var settings: SettingsModel
+    @ObservedObject private var permissionsManager = PermissionsManager.shared
 
     private var isEnabledBinding: Binding<Bool> {
         switch buttonType {
         case .settings, .spacer:
             return .constant(true)
         case .fileShelf: return $settings.settings.fileShelfIconEnabled
-        case .intelligenceLive: return $settings.settings.intelligenceEnabled
-        case .intelligence: return $settings.settings.intelligenceEnabled
+        case .notes: return $settings.settings.notesIconEnabled
+        case .clipboard: return $settings.settings.clipboardIconEnabled
+        case .intelligenceLive, .intelligence:
+            return Binding(
+                get: {
+                    settings.settings.intelligenceEnabled
+                        && permissionsManager.areIntelligencePermissionsGranted
+                },
+                set: { newValue in
+                    guard permissionsManager.areIntelligencePermissionsGranted else {
+                        settings.settings.intelligenceEnabled = false
+                        return
+                    }
+                    settings.settings.intelligenceEnabled = newValue
+                }
+            )
         case .caffeine: return $settings.settings.caffeinateEnabled
         case .battery: return $settings.settings.batteryEstimatorEnabled
         case .multiAudio: return $settings.settings.showMultiAudioIcon
@@ -8075,6 +8748,8 @@ fileprivate struct NotchButtonRowView: View {
         switch buttonType {
         case .settings, .spacer:
             return true
+        case .intelligenceLive, .intelligence:
+            return !permissionsManager.areIntelligencePermissionsGranted
         default:
             return false
         }
@@ -8238,7 +8913,29 @@ struct MenuBarAppearanceEditor: View {
             }
             .padding([.top, .horizontal])
 
-            ToggleRow(title: "Liquid Glass Look", description: "Apply a shiny, glass-like effect to the menu bar background.", isOn: $settings.settings.menuBarLiquidGlass)
+            ToggleRow(title: "Liquid Glass Look", description: "Apply a shiny, glass-like effect to the menu bar's background.", isOn: $settings.settings.menuBarLiquidGlass)
+
+            if settings.settings.menuBarLiquidGlass {
+                Divider().padding(.leading, 20)
+                let glassIntensityBinding = Binding<Double>(
+                    get: { settings.settings.menuBarLiquidGlassIntensity * 100 },
+                    set: { settings.settings.menuBarLiquidGlassIntensity = $0 / 100 }
+                )
+                CustomSliderRowView(
+                    label: "Liquid Glass Intensity",
+                    value: glassIntensityBinding,
+                    range: 0...100,
+                    specifier: "%.0f%%"
+                )
+
+                Divider().padding(.leading, 20)
+                ToggleRow(
+                    title: "Frosted Overlay",
+                    description: "Layer frosted liquid glass on top of the base glass, matching the lock screen treatment.",
+                    isOn: $settings.settings.menuBarBlur
+                )
+            }
+
             Divider().padding(.leading, 20)
 
             HStack {
@@ -8257,12 +8954,16 @@ struct MenuBarAppearanceEditor: View {
 
             Divider().padding(.leading, 20)
 
-            CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%")
+                    CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%", commitsContinuously: true)
 
-            Divider().padding(.leading, 20)
-            ToggleRow(title: "Enable Transparency Blur", description: "Apply a frosted glass effect to the menu bar background.", isOn: $settings.settings.menuBarBlur)
+            if !settings.settings.menuBarLiquidGlass {
+                Divider().padding(.leading, 20)
+                ToggleRow(title: "Enable Transparency Blur", description: "Apply a frosted glass effect to the menu bar background.", isOn: $settings.settings.menuBarBlur)
+            }
         }
         .modifier(SettingsContainerModifier())
+        .animation(.default, value: settings.settings.menuBarLiquidGlass)
+        .animation(.default, value: settings.settings.menuBarBlur)
         .animation(.default, value: settings.settings.menuBarTintStyle)
     }
 
@@ -8316,6 +9017,7 @@ struct MenuBarAppearanceEditor: View {
 
     private func resetTintSettings() {
         settings.settings.menuBarLiquidGlass = false
+        settings.settings.menuBarLiquidGlassIntensity = 0.65
         settings.settings.menuBarTintStyle = "none"
         settings.settings.menuBarSolidColor = CodableColor(color: .clear)
         settings.settings.menuBarGradientAngle = 0.0
@@ -8389,6 +9091,7 @@ struct MenuBarAppearanceSettingsView: View {
 
     private func resetAllAppearanceSettings() {
         settings.settings.menuBarLiquidGlass = false
+        settings.settings.menuBarLiquidGlassIntensity = 0.65
         settings.settings.menuBarTintStyle = "none"
         settings.settings.menuBarSolidColor = CodableColor(color: .clear)
         settings.settings.menuBarGradientAngle = 0.0
@@ -8600,7 +9303,7 @@ typealias GeminiSettingsView = IntelligenceSettingsView
 
 struct IntelligenceRunnerView: View {
     let apiKey: String
-    var backend: LLMBackend = .gemini
+    var backend: LLMBackend = .auto
     var geminiSpeedMode: GeminiSpeedMode = .fast
     @ObservedObject private var vm: IntelligenceNotchViewModel
     @State private var isRunningScreenshotDebug = false
@@ -8622,13 +9325,7 @@ struct IntelligenceRunnerView: View {
         if vm.taskInput.trimmingCharacters(in: .whitespaces).isEmpty {
             return true
         }
-        switch backend {
-        case .gemini:
-            return apiKey.isEmpty
-        case .hackclub:
-            let hackKey = APIKeyManager.shared.hackClubAPIKey
-            return hackKey.isEmpty
-        }
+        return !backend.isKeyConfigured && backend.resolveAPIKey(fallbackGeminiKey: apiKey).isEmpty
     }
 
     var body: some View {
@@ -8642,7 +9339,7 @@ struct IntelligenceRunnerView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15)))
                     .onSubmit {
                         if !vm.isRunning && !isLaunchDisabled {
-                            let activeKey = (backend == .hackclub) ? APIKeyManager.shared.hackClubAPIKey : apiKey
+                            let activeKey = backend.resolveAPIKey(fallbackGeminiKey: apiKey)
                             vm.run(
                                 apiKey: activeKey,
                                 backend: backend,
@@ -8662,7 +9359,7 @@ struct IntelligenceRunnerView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 } else {
                     Button {
-                        let activeKey = (backend == .hackclub) ? APIKeyManager.shared.hackClubAPIKey : apiKey
+                        let activeKey = backend.resolveAPIKey(fallbackGeminiKey: apiKey)
                         vm.run(
                             apiKey: activeKey,
                             backend: backend,
@@ -8698,7 +9395,7 @@ struct IntelligenceRunnerView: View {
                     Text("Hack Club AI Integration")
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
-                    
+
                     HStack(spacing: 8) {
                         SecureField("Hack Club API Key", text: Binding(
                             get: { APIKeyManager.shared.hackClubAPIKey },
@@ -8709,7 +9406,7 @@ struct IntelligenceRunnerView: View {
                         .background(Color.black.opacity(0.2))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.12)))
-                        
+
                         TextField("Model Name", text: Binding(
                             get: { UserDefaults.standard.string(forKey: "hackClubModel") ?? "qwen/qwen3-32b" },
                             set: { UserDefaults.standard.set($0, forKey: "hackClubModel") }
@@ -8782,613 +9479,23 @@ struct IntelligenceRunnerView: View {
             defer { isRunningScreenshotDebug = false }
 
             let perception = ScreenPerception()
-            vm.logEntries.append(.init(text: "📸 Screenshot debug started (10 captures / 1.5s)", isError: false, isSubtask: true))
+            vm.logEntries.append(.init(text: " Screenshot debug started (10 captures / 1.5s)", isError: false, isSubtask: true))
 
             for index in 1...10 {
                 let (image, elements) = await perception.captureAnnotatedScreen()
                 let imageNote = image == nil ? "no image" : "image ok"
-                vm.logEntries.append(.init(text: "📸 [\(index)/10] \(imageNote) · \(elements.count) elements", isError: false, isSubtask: true))
+                vm.logEntries.append(.init(text: " [\(index)/10] \(imageNote) · \(elements.count) elements", isError: false, isSubtask: true))
                 if index < 10 {
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                 }
             }
 
-            vm.logEntries.append(.init(text: "📸 Screenshot debug finished", isError: false, isSubtask: true))
+            vm.logEntries.append(.init(text: " Screenshot debug finished", isError: false, isSubtask: true))
         }
     }
 }
 
-// MARK: - Intelligence Settings View (unified Gemini Live + Agent)
-
-struct IntelligenceSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
-    @Environment(\.openURL) private var openURL
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
-
-    @State private var email: String = ""
-    @State private var password: String = ""
-    @State private var displayName: String = ""
-    @State private var statusMessage: String?
-    @State private var isBusy = false
-
-    // MARK: - Direct Tools Testing State
-    @State private var selectedTestTool = "click_element"
-    @State private var testElementId = 1
-    @State private var testAction = "click"
-    @State private var testText = ""
-    @State private var testKey = ""
-    @State private var testURL = "https://example.com"
-    @State private var testAppName = "Safari"
-    @State private var testScrollX = 500
-    @State private var testScrollY = 500
-    @State private var testScrollDelta = -3
-    @State private var testDragStartX = 200
-    @State private var testDragStartY = 200
-    @State private var testDragEndX = 800
-    @State private var testDragEndY = 800
-    
-    @State private var testCountdown = 0
-    @State private var testLog = ""
-    @State private var timerSubscription: AnyCancellable?
-
-    // Binds UserDefaults directly using clean computed properties to offload the Swift compiler type-solver
-    private var hackClubAPIKeyBinding: Binding<String> {
-        Binding(
-            get: { APIKeyManager.shared.hackClubAPIKey },
-            set: { APIKeyManager.shared.hackClubAPIKey = $0 }
-        )
-    }
-
-    private var hackClubModelBinding: Binding<String> {
-        Binding(
-            get: { UserDefaults.standard.string(forKey: "hackClubModel") ?? "qwen/qwen3-32b" },
-            set: { UserDefaults.standard.set($0, forKey: "hackClubModel") }
-        )
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-
-                // MARK: Header
-                HStack(spacing: 14) {
-                    Image(systemName: "sparkle")
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(.purple)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Intelligence")
-                            .font(.largeTitle.bold())
-                        Text("Real-time voice assistant and autonomous Mac agent")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.bottom, 4)
-
-                // MARK: API Key (shared by both Gemini Live and Intelligence Agent)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Gemini API Key")
-                        .font(.system(size: 14, weight: .medium))
-
-                    SecureField("AIza...", text: $settings.settings.geminiApiKey)
-                        .textFieldStyle(.plain)
-                        .padding(8)
-                        .background(Color.black.opacity(0.2))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
-
-                    Text("Used by both Gemini Live (voice) and Intelligence Agent (automation). Get a key at [aistudio.google.com](https://aistudio.google.com/app/apikey)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(25)
-                .modifier(SettingsContainerModifier())
-
-                // MARK: Gemini Live
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.purple)
-                        Text("Gemini Live")
-                            .font(.headline)
-                    }
-                    .padding([.top, .horizontal])
-
-                    InfoContainer(
-                        text: "Gemini Live streams your screen and microphone to Gemini in real time, letting you have a live voice conversation about what's on your Mac. Requires Sapphire Basic.",
-                        iconName: "sparkle",
-                        color: .purple
-                    )
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-
-                    ToggleRow(
-                        title: "Show Intelligence Button in Notch",
-                        description: "Display the Intelligence button in the expanded notch for quick access to Live and Agent.",
-                        isOn: $settings.settings.intelligenceEnabled
-                    )
-                }
-                .modifier(SettingsContainerModifier())
-
-                // MARK: Intelligence Agent — Backend
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "cpu.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.blue)
-                        Text("Intelligence Agent")
-                            .font(.headline)
-                    }
-                    .padding([.top, .horizontal])
-
-                    Text("Autonomous agent that controls your Mac using vision and native Accessibility APIs.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-                        .padding(.bottom, 8)
-
-                    Divider().padding(.leading, 20)
-
-                    Text("AI Backend")
-                        .font(.subheadline.weight(.semibold))
-                        .padding([.top, .horizontal])
-
-                    Picker("", selection: $settings.settings.intelligenceBackend) {
-                        ForEach(LLMBackend.allCases, id: \.self) { backend in
-                            Text(backend.rawValue).tag(backend)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding()
-
-                    Text(settings.settings.intelligenceBackend.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                        .padding(.bottom)
-
-                    // MARK: Clarification Question Policy segmented control
-                    Divider().padding(.leading, 20)
-
-                    Text("Clarification Question Policy")
-                        .font(.subheadline.weight(.semibold))
-                        .padding([.top, .horizontal])
-
-                    Picker("", selection: Binding(
-                        get: { AgentQuestionPolicy(rawValue: UserDefaults.standard.string(forKey: "intelligenceQuestionPolicy") ?? "Normal") ?? .normal },
-                        set: { UserDefaults.standard.set($0.rawValue, forKey: "intelligenceQuestionPolicy") }
-                    )) {
-                        ForEach(AgentQuestionPolicy.allCases) { policy in
-                            Text(policy.rawValue).tag(policy)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding()
-
-                    let currentPolicy = AgentQuestionPolicy(rawValue: UserDefaults.standard.string(forKey: "intelligenceQuestionPolicy") ?? "Normal") ?? .normal
-                    Text(currentPolicy.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                        .padding(.bottom)
-
-                    if settings.settings.intelligenceBackend == .gemini {
-                        Divider().padding(.leading, 20)
-
-                        Text("Gemini Speed Mode")
-                            .font(.subheadline.weight(.semibold))
-                            .padding([.top, .horizontal])
-
-                        Picker("", selection: $settings.settings.intelligenceGeminiSpeedMode) {
-                            ForEach(GeminiSpeedMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .padding()
-
-                        Text(settings.settings.intelligenceGeminiSpeedMode.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
-                            .padding(.bottom)
-                    }
-                }
-                .modifier(SettingsContainerModifier())
-
-                // MARK: Hack Club AI Configuration
-                if settings.settings.intelligenceBackend == .hackclub {
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.purple)
-                            Text("Hack Club AI Integration")
-                                .font(.headline)
-                        }
-                        .padding([.top, .horizontal])
-
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Configure private cloud task-execution using your Hack Club credentials.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Hack Club API Key")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                
-                                SecureField("Bearer hf_...", text: hackClubAPIKeyBinding)
-                                    .textFieldStyle(.plain)
-                                    .padding(8)
-                                    .background(Color.black.opacity(0.2))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15)))
-                            }
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Model Name")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                
-                                TextField("e.g. qwen/qwen3-32b", text: hackClubModelBinding)
-                                    .textFieldStyle(.plain)
-                                    .padding(8)
-                                    .background(Color.black.opacity(0.2))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15)))
-                            }
-                        }
-                        .padding([.horizontal, .bottom])
-                    }
-                    .modifier(SettingsContainerModifier())
-                }
-
-                // MARK: Required permissions
-                RequiredPermissionsView(section: .intelligence)
-
-                // MARK: Direct Tools Testing Suite Card
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "wrench.and.screwdriver.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.orange)
-                        Text("Direct Tools Testing Suite")
-                            .font(.headline)
-                    }
-                    .padding([.top, .horizontal])
-
-                    Text("Directly test the execution of individual tools. Click 'Run Tool Test' and focus your target window—the tool will execute after a 5-second countdown.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Picker("Test Tool", selection: $selectedTestTool) {
-                            Text("Click Element").tag("click_element")
-                            Text("Click Coordinates").tag("click_coordinates")
-                            Text("Type Text").tag("type_text")
-                            Text("Open URL").tag("open_url")
-                            Text("Open App").tag("open_app")
-                            Text("Scroll Coordinates").tag("scroll_coordinates")
-                            Text("Drag Coordinates").tag("drag_coordinates")
-                        }
-                        .pickerStyle(.menu)
-                        .padding(.vertical, 4)
-                        
-                        Group {
-                            if selectedTestTool == "click_element" {
-                                HStack {
-                                    Text("Element ID:")
-                                    TextField("1", value: $testElementId, formatter: NumberFormatter())
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 80)
-                                    
-                                    Picker("Mouse Action", selection: $testAction) {
-                                        Text("Click").tag("click")
-                                        Text("Double Click").tag("double_click")
-                                        Text("Right Click").tag("right_click")
-                                    }
-                                    .pickerStyle(.segmented)
-                                }
-                            }
-                            
-                            if selectedTestTool == "click_coordinates" {
-                                HStack {
-                                    Text("Normalized X:")
-                                    TextField("500", value: $testScrollX, formatter: NumberFormatter())
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 80)
-                                    Text("Normalized Y:")
-                                    TextField("500", value: $testScrollY, formatter: NumberFormatter())
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 80)
-                                    
-                                    Picker("Mouse Action", selection: $testAction) {
-                                        Text("Click").tag("click")
-                                        Text("Double Click").tag("double_click")
-                                        Text("Right Click").tag("right_click")
-                                    }
-                                    .pickerStyle(.segmented)
-                                }
-                            }
-                            
-                            if selectedTestTool == "type_text" {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    TextField("Text Context to Type", text: $testText)
-                                        .textFieldStyle(.roundedBorder)
-                                    TextField("Action Key (Optional, e.g. enter)", text: $testKey)
-                                        .textFieldStyle(.roundedBorder)
-                                }
-                            }
-                            
-                            if selectedTestTool == "open_url" {
-                                TextField("Destination URL Link", text: $testURL)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            
-                            if selectedTestTool == "open_app" {
-                                TextField("Application Name", text: $testAppName)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            
-                            if selectedTestTool == "scroll_coordinates" {
-                                HStack {
-                                    Text("Scroll X:")
-                                    TextField("500", value: $testScrollX, formatter: NumberFormatter())
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 60)
-                                    Text("Scroll Y:")
-                                    TextField("500", value: $testScrollY, formatter: NumberFormatter())
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 60)
-                                    Text("Delta:")
-                                    TextField("-3", value: $testScrollDelta, formatter: NumberFormatter())
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 60)
-                                }
-                            }
-                            
-                            if selectedTestTool == "drag_coordinates" {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("Start X:")
-                                        TextField("200", value: $testDragStartX, formatter: NumberFormatter())
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 70)
-                                        Text("Start Y:")
-                                        TextField("200", value: $testDragStartY, formatter: NumberFormatter())
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 70)
-                                    }
-                                    HStack {
-                                        Text("End X:")
-                                        TextField("800", value: $testDragEndX, formatter: NumberFormatter())
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 70)
-                                        Text("End Y:")
-                                        TextField("800", value: $testDragEndY, formatter: NumberFormatter())
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 70)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.vertical, 4)
-                        
-                        HStack(spacing: 12) {
-                            Button(testCountdown > 0 ? "Starting in \(testCountdown)s…" : "Run Tool Test") {
-                                startToolTest()
-                            }
-                            .disabled(testCountdown > 0)
-                            
-                            if !testLog.isEmpty {
-                                Text(testLog)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.top, 8)
-                    }
-                    .padding()
-                }
-                .modifier(SettingsContainerModifier())
-
-                // MARK: Quick Run
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Quick Run")
-                        .font(.headline)
-                        .padding([.top, .horizontal])
-
-                    Text("Test Intelligence Agent directly from Settings.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-
-                    // DYNAMIC BINDING: Respects selected backend configuration rather than locking to Gemini
-                    IntelligenceRunnerView(
-                        apiKey: settings.settings.geminiApiKey,
-                        backend: settings.settings.intelligenceBackend,
-                        geminiSpeedMode: settings.settings.intelligenceGeminiSpeedMode
-                    )
-                    .padding()
-                }
-                .modifier(SettingsContainerModifier())
-
-                // MARK: How it works
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("How Intelligence Agent Works")
-                        .font(.headline)
-                        .padding([.top, .horizontal])
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        IntelligenceStepRow(number: "1", title: "Native function calling",
-                                    detail: "All actions and tools are Gemini function declarations. The model calls them directly — no JSON parsing, no text extraction.")
-                        Divider().padding(.leading, 48)
-                        IntelligenceStepRow(number: "2", title: "Single persistent conversation",
-                                    detail: "One conversation thread per task. Screenshot + UI tree sent each step; model calls the next action function immediately.")
-                        Divider().padding(.leading, 48)
-                        IntelligenceStepRow(number: "3", title: "Default browser awareness",
-                                    detail: "Resolved via LaunchServices before the task starts — zero API calls. open_url always uses your actual default browser.")
-                        Divider().padding(.leading, 48)
-                        IntelligenceStepRow(number: "4", title: "Tool-augmented execution",
-                                    detail: "40+ tools exposed as function declarations: file system, shell, browser, clipboard, calendar, window management, and more.")
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom)
-                }
-                .modifier(SettingsContainerModifier())
-            }
-            .padding(25)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .task {
-                await subscriptionManager.bootstrap()
-            }
-        }
-        .onDisappear {
-            timerSubscription?.cancel()
-            timerSubscription = nil
-        }
-    }
-
-    private func login() {
-        isBusy = true
-        statusMessage = nil
-        Task {
-            do {
-                try await subscriptionManager.login(email: email, password: password)
-                statusMessage = "Logged in as \(email)."
-            } catch {
-                statusMessage = error.localizedDescription
-            }
-            isBusy = false
-        }
-    }
-
-    private func register() {
-        isBusy = true
-        statusMessage = nil
-        Task {
-            do {
-                let trimmedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-                let finalDisplayName = trimmedDisplayName.isEmpty ? nil : trimmedDisplayName
-                try await subscriptionManager.register(email: email, password: password, displayName: finalDisplayName)
-                statusMessage = "Account created and signed in."
-            } catch {
-                statusMessage = error.localizedDescription
-            }
-            isBusy = false
-        }
-    }
-
-    private func openCheckout(tier: SubscriptionTier, period: BillingPeriod) {
-        isBusy = true
-        statusMessage = nil
-        Task {
-            do {
-                let url = try await subscriptionManager.openCheckout(for: tier, period: period)
-                openURL(url)
-                statusMessage = "Checkout opened."
-            } catch {
-                statusMessage = error.localizedDescription
-            }
-            isBusy = false
-        }
-    }
-
-
-
-    // MARK: - Direct Tools Testing Logic
-
-    private func startToolTest() {
-        testLog = "Focus your target window now..."
-        testCountdown = 5
-        
-        timerSubscription = Timer.publish(every: 1.0, on: .main, in: .common)
-            .autoconnect()
-            .sink { _ in
-                if self.testCountdown > 1 {
-                    self.testCountdown -= 1
-                } else {
-                    self.testCountdown = 0
-                    self.timerSubscription?.cancel()
-                    self.timerSubscription = nil
-                    self.executeDirectTool()
-                }
-            }
-    }
-    
-    private func executeDirectTool() {
-        testLog = "Executing tool..."
-        let executor = ActionExecutor()
-        
-        Task {
-            do {
-                let result: String
-                switch selectedTestTool {
-                case "click_element":
-                    // Fallback to center-screen coordinate simulation for clickElement testing
-                    let screen = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
-                    let action = AgentAction(type: testAction == "double_click" ? .doubleClick : (testAction == "right_click" ? .rightClick : .click), x: screen.width / 2, y: screen.height / 2)
-                    result = try await executor.execute(action)
-                    
-                case "click_coordinates":
-                    let screen = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
-                    let x = (Double(testScrollX) / 1000.0) * screen.width
-                    let y = (Double(testScrollY) / 1000.0) * screen.height
-                    let action = AgentAction(type: testAction == "double_click" ? .doubleClick : (testAction == "right_click" ? .rightClick : .click), x: x, y: y)
-                    result = try await executor.execute(action)
-                    
-                case "type_text":
-                    let keysList = testKey.isEmpty ? nil : [testKey]
-                    let action = AgentAction(type: .type, text: testText, keys: keysList)
-                    result = try await executor.execute(action)
-                    
-                case "open_url":
-                    let action = AgentAction(type: .openURL, text: testURL)
-                    result = try await executor.execute(action)
-                    
-                case "open_app":
-                    let action = AgentAction(type: .openApp, appName: testAppName)
-                    result = try await executor.execute(action)
-                    
-                case "scroll_coordinates":
-                    let screen = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
-                    let x = (Double(testScrollX) / 1000.0) * screen.width
-                    let y = (Double(testScrollY) / 1000.0) * screen.height
-                    let action = AgentAction(type: .scroll, x: x, y: y, scrollDelta: Double(testScrollDelta))
-                    result = try await executor.execute(action)
-                    
-                case "drag_coordinates":
-                    let screen = NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900)
-                    let sx = (Double(testDragStartX) / 1000.0) * screen.width
-                    let sy = (Double(testDragStartY) / 1000.0) * screen.height
-                    let ex = (Double(testDragEndX) / 1000.0) * screen.width
-                    let ey = (Double(testDragEndY) / 1000.0) * screen.height
-                    let action = AgentAction(type: .drag, x: sx, y: sy, endX: ex, endY: ey)
-                    result = try await executor.execute(action)
-                    
-                default:
-                    result = "Unsupported test tool."
-                }
-                
-                await MainActor.run {
-                    self.testLog = "✓ Success: \(result)"
-                }
-            } catch {
-                await MainActor.run {
-                    self.testLog = "Error: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-}
-
-private struct IntelligenceStepRow: View {
+struct IntelligenceStepRow: View {
     let number: String
     let title: String
     let detail: String
@@ -9414,4 +9521,3 @@ private struct IntelligenceStepRow: View {
         .padding(.vertical, 4)
     }
 }
-

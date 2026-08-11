@@ -56,8 +56,7 @@ class SystemAudioMonitor: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputNode.outputFormat(forBus: 0)) { [weak self] buffer, _ in
             guard let self = self else { return }
             let level = self.calculateRMS(from: buffer)
-            
-            // Capping MainActor dispatch frequency to 30 FPS to prevent system resource saturation
+
             let now = CACurrentMediaTime()
             if now - self.lastUpdateTime >= 0.033 {
                 self.lastUpdateTime = now

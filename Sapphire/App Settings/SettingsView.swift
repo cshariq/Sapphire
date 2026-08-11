@@ -30,19 +30,19 @@ extension EnvironmentValues {
 }
 
 struct SettingsView: View {
-    @StateObject private var settings = SettingsModel.shared
+    private let settings = SettingsModel.shared
     @State private var selectedSection: SettingsSection? = .general
-    @State private var showAccountPane = true // Track Account pane visibility (Enabled by default like System Settings)
+    @State private var showAccountPane = false
 
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-                // Pass showAccountPane and selectedSection bindings to handle mutual exclusion
                 SettingsSidebarView(selectedSection: $selectedSection, showAccountPane: $showAccountPane)
-                    .frame(width: 250, height: 1000)
+                    .frame(width: 250)
 
                 if showAccountPane {
                     AccountSettingsView()
+                        .id("account-pane")
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 } else {
                     SettingsDetailView(selectedSection: selectedSection)
@@ -66,6 +66,13 @@ struct SettingsView: View {
                 showAccountPane = true
                 selectedSection = nil
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sapphireSettingsWillClose)) { _ in
+            settings.flushPendingSave()
+            MemoryTrimSupport.releaseSettingsPaneCaches()
+        }
+        .onDisappear {
+            MemoryTrimSupport.releaseSettingsPaneCaches()
         }
     }
 }

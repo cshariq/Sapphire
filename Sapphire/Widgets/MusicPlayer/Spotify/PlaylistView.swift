@@ -48,9 +48,9 @@ class TrackViewModel: ObservableObject, Identifiable {
 
     init(playlistItem: SpotifyPlaylistDetailsResponse.PlaylistItem) {
         self.uid = playlistItem.uid
-        self.name = playlistItem.itemV2.data.name
-        self.artists = playlistItem.itemV2.data.artists.items.map { $0.profile.name }.joined(separator: ", ")
-        self.albumName = playlistItem.itemV2.data.albumOfTrack.name
+        self.name = playlistItem.itemV2.data.name ?? ""
+        self.artists = playlistItem.itemV2.data.artists?.items.map { $0.profile.name }.joined(separator: ", ") ?? ""
+        self.albumName = playlistItem.itemV2.data.albumOfTrack?.name ?? ""
         self.imageURL = playlistItem.itemV2.data.imageURL
         self.uri = playlistItem.itemV2.data.uri ?? ""
         self.dateAdded = playlistItem.addedAt.map { $0 / 1000.0 }
@@ -192,8 +192,8 @@ struct PlaylistView: View {
                     let r = rhs.dateAdded ?? 0
                     return l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
                 case .publicationDate:
-                    let l = lhs.trackDetails?.albumOfTrack.publishDate?.year ?? 0
-                    let r = rhs.trackDetails?.albumOfTrack.publishDate?.year ?? 0
+                    let l = lhs.trackDetails?.albumOfTrack?.publishDate?.year ?? 0
+                    let r = rhs.trackDetails?.albumOfTrack?.publishDate?.year ?? 0
                     if l == 0 && r != 0 { return .orderedDescending }
                     if l != 0 && r == 0 { return .orderedAscending }
                     return l < r ? .orderedAscending : (l > r ? .orderedDescending : .orderedSame)
@@ -502,13 +502,13 @@ private struct UnifiedTrackRow: View {
     }
 
     private var albumName: String? {
-        viewModel.trackDetails?.albumOfTrack.name ?? viewModel.albumName
+        viewModel.trackDetails?.albumOfTrack?.name ?? viewModel.albumName
     }
 
     private var formattedPublicationDate: String? {
-        guard let isoString = viewModel.trackDetails?.albumOfTrack.publishDate?.isoString else {
+        guard let isoString = viewModel.trackDetails?.albumOfTrack?.publishDate?.isoString else {
             return viewModel.publicationYear.map { String($0) } ??
-                   (viewModel.trackDetails?.albumOfTrack.publishDate?.year.map { String($0) })
+            (viewModel.trackDetails?.albumOfTrack?.publishDate?.year.map { String($0) })
         }
         guard let date = isoDateFormatter.date(from: isoString) else { return nil }
         return displayDateFormatter.string(from: date)

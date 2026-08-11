@@ -107,7 +107,8 @@ class GlobalDragManager: ObservableObject {
             if !isInsideActivationRect {
                 isInsideActivationRect = true
                 activationTimer?.invalidate()
-                activationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
+                let delay = max(0.05, SettingsModel.shared.settings.snapActivationDelay)
+                activationTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
                     guard let self = self else { return }
                     let currentLocation = NSEvent.mouseLocation
 

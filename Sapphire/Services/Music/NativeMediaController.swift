@@ -1,3 +1,9 @@
+//
+//  NativeMediaController.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-10
+
 import Foundation
 import Darwin
 import AppKit
@@ -63,7 +69,7 @@ struct TrackInfo {
         let mediaType: String?
         let artwork: NSImage?
         let artworkMimeType: String?
-        
+
         var calculatedElapsedTime: TimeInterval {
             interpolatedElapsedTime(at: Date())
         }
@@ -75,13 +81,12 @@ struct TrackInfo {
             return anchor.elapsed(at: now)
         }
 
-        // Creates a highly precise timing anchor using absolute OS timestamps
         func playbackTimingAnchor(isPlayingNow: Bool) -> PlaybackTimingAnchor? {
             guard let elapsed = currentElapsedTime else { return nil }
 
             let rate = isPlayingNow ? Double(playbackRate ?? 1.0) : 0.0
             let sampleEpoch: TimeInterval
-            
+
             if let micros = timestampEpochMicros {
                 sampleEpoch = Double(micros) / 1_000_000.0
             } else if let ts = timestamp?.doubleValue {
@@ -122,7 +127,6 @@ final class NativeMediaController: NSObject {
     private var snapshotRefreshTask: Task<Void, Never>?
     private var lastSnapshotRefreshInstant: TimeInterval = 0
 
-    // Cached Paths (Avoids continuous disk hits)
     private static let cachedPaths: (script: String, adapter: String, testClient: String?)? = {
         let fm = FileManager.default
         guard let resourcePath = Bundle.main.resourcePath else { return nil }
@@ -138,12 +142,12 @@ final class NativeMediaController: NSObject {
         _NSGetExecutablePath(nil, &size)
         let buffer = UnsafeMutablePointer<Int8>.allocate(capacity: Int(size))
         defer { buffer.deallocate() }
-        
+
         if _NSGetExecutablePath(buffer, &size) == 0 {
             let exeDir = (String(cString: buffer) as NSString).deletingLastPathComponent
             let fbScript = (exeDir as NSString).appendingPathComponent("mediaremote-adapter.pl")
             let fbAdapter = (exeDir as NSString).appendingPathComponent("MediaRemoteAdapter.framework")
-            
+
             if fm.fileExists(atPath: fbScript) && fm.fileExists(atPath: fbAdapter) {
                 return (fbScript, fbAdapter, nil)
             }
@@ -247,9 +251,8 @@ final class NativeMediaController: NSObject {
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        // OPTIMIZATION: Passed "--micros" option to enforce microsecond epoch time formats natively
         task.arguments = [paths.script, paths.adapter, "stream", "--debounce=100", "--micros"]
-        
+
         var env = ProcessInfo.processInfo.environment
         env["PERLIO"] = ":unix"
         task.environment = env
@@ -323,18 +326,17 @@ final class NativeMediaController: NSObject {
 
         let key = metadataKey(for: metadata)
         var merged = mergedMetadataByKey[key] ?? [:]
-        
+
         for (entryKey, value) in metadata {
             if entryKey == "artworkData" || entryKey == "artworkMimeType" || entryKey == "_sapphireSnapshot" { continue }
-            
-            // OPTIMIZATION: Safely prune keys that have been explicitly nullified (diff tracking)
+
             if value is NSNull {
                 merged.removeValue(forKey: entryKey)
             } else if Self.shouldMergeField(key: entryKey, value: value) {
                 merged[entryKey] = value
             }
         }
-        
+
         if Self.shouldAcceptIncomingArtwork(from: metadata, for: merged) {
             if let artworkData = metadata["artworkData"] {
                 merged["artworkData"] = artworkData
@@ -382,7 +384,7 @@ final class NativeMediaController: NSObject {
             merged.removeValue(forKey: "artworkData")
             merged.removeValue(forKey: "artworkMimeType")
             mergedMetadataByKey[key] = merged
-            
+
             let streamHasCompleteData = merged["title"] != nil && merged["artist"] != nil && (merged["durationMicros"] != nil || merged["duration"] != nil)
             if !streamHasCompleteData {
                 requestImmediateSnapshot(for: key, urgent: true)
@@ -556,7 +558,6 @@ final class NativeMediaController: NSObject {
         }
     }
 
-    // Directly fetch artwork from the adapter with zero caching
     func fetchArtworkForTrack(
         expectedIdentity: String,
         title: String?,
@@ -759,7 +760,7 @@ final class NativeMediaController: NSObject {
         let title = metadata["title"] as? String
         let artist = metadata["artist"] as? String
         let bundleId = metadata["bundleIdentifier"] as? String
-        
+
         let hasIdentity = (title?.isEmpty == false) || (bundleId?.isEmpty == false)
         guard hasIdentity else { return nil }
 
@@ -803,8 +804,7 @@ final class NativeMediaController: NSObject {
         }
 
         var artwork: NSImage?
-        
-        // Directly decode base64
+
         if let base64 = metadata["artworkData"] as? String,
            let data = Data(base64Encoded: base64) {
             artwork = NSImage(data: data)

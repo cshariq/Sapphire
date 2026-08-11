@@ -20,7 +20,7 @@ struct AudioDevice: Identifiable, Hashable {
     let isOutput: Bool
 }
 
-struct AudioDeviceSettings: Equatable {
+struct AudioDeviceSettings: Equatable, Codable {
     var volume: Double = 1.0
     var balance: Double = 0.5
     var delay: TimeInterval = 0.0
@@ -31,6 +31,9 @@ struct AudioDeviceSettings: Equatable {
 class MultiAudioManager: ObservableObject {
     static let shared = MultiAudioManager()
 
+    private let deviceSettingsDefaultsKey = "SapphireDeviceAudioSettingsByUID"
+    private let selectedOutputUIDsDefaultsKey = "SapphireSelectedOutputDeviceUIDs"
+
     @Published var availableOutputDevices: [AudioDevice] = []
     @Published var availableInputDevices: [AudioDevice] = []
     @Published var currentInputDeviceID: AudioDeviceID?
@@ -38,26 +41,33 @@ class MultiAudioManager: ObservableObject {
 
     @Published var selectedOutputDeviceIDs: Set<AudioDeviceID> = [] {
         didSet {
-            deviceSettings = deviceSettings.filter { selectedOutputDeviceIDs.contains($0.key) }
-            reTapAllApps()
+            rebuildLiveDeviceSettingsFromArchive()
+            if !isRestoringPersistedSelection {
+                persistSelectedOutputUIDs()
+                reTapAllApps()
+            }
         }
     }
 
     @Published var deviceSettings: [AudioDeviceID: AudioDeviceSettings] = [:]
-    
-    // Core Engine State
-    private(set) var activeTaps: [String: [String: AppTapController]] = [:] // [BundleID: [TargetDeviceUID: Tap]]
+
+    private(set) var activeTaps: [String: [String: AppTapController]] = [:]
     private var isProcessMonitorStarted = false
     private var processListListenerBlock: AudioObjectPropertyListenerBlock?
     private var processRunningListenerBlocks: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
     private var monitoredProcessObjectIDs: Set<AudioObjectID> = []
     private var latestActiveBundleIDs: Set<String> = []
+    private var lastAudioActivityByBundleID: [String: Date] = [:]
+    private let recentAudioPriorityWindow: TimeInterval = 180
     private var isAuthorized = false
+    private var settingsByUID: [String: AudioDeviceSettings] = [:]
+    private var isRestoringPersistedSelection = false
 
     private init() {
         CrashGuard.install()
         requestCapturePermissions()
         discoverDevices()
+        loadPersistedDeviceState()
         setupDeviceListeners()
         configureProcessMonitor()
         if isAuthorized { startProcessMonitorIfNeeded() }
@@ -73,11 +83,11 @@ class MultiAudioManager: ObservableObject {
     }
 
     // MARK: - DSP Controls (UI to Engine Bridge)
-    
+
     func notifyAdjustmentMade(for bundleID: String) {
         reconcileRunningApps()
     }
-    
+
     func setAppVolume(bundleID: String, volume: Float) {
         guard let taps = activeTaps[bundleID]?.values else { return }
         for tap in taps {
@@ -103,7 +113,9 @@ class MultiAudioManager: ObservableObject {
     func updateSettings(for deviceID: AudioDeviceID, settings: AudioDeviceSettings) {
         self.deviceSettings[deviceID] = settings
         guard let uid = getDeviceUID(for: deviceID) else { return }
-        
+        settingsByUID[uid] = settings
+        persistDeviceSettingsArchive()
+
         for tapMap in activeTaps.values {
             for tap in tapMap.values where tap.targetDeviceUID == uid {
                 tap.deviceVolume = Float(settings.volume)
@@ -114,30 +126,135 @@ class MultiAudioManager: ObservableObject {
         }
         reconcileRunningApps()
     }
-    
+
+    func clearAllDeviceSettings() {
+        settingsByUID.removeAll()
+        deviceSettings.removeAll()
+        UserDefaults.standard.removeObject(forKey: deviceSettingsDefaultsKey)
+        notifyAdjustmentMade(for: "ResetAll")
+    }
+
     // MARK: - Input Device Controls
+
     func setInputMute(_ mute: Bool, for deviceID: AudioDeviceID) {
+        setAllInputMutes(mute)
+    }
+
+    func setAllInputMutes(_ mute: Bool) {
+        let deviceIDs: [AudioDeviceID]
+        if availableInputDevices.isEmpty {
+            deviceIDs = Self.allHardwareInputDeviceIDs()
+        } else {
+            deviceIDs = Array(Set(availableInputDevices.map(\.id) + Self.allHardwareInputDeviceIDs()))
+        }
+
+        for id in deviceIDs {
+            applyInputMute(mute, to: id)
+        }
+        objectWillChange.send()
+
+        Task { @MainActor in
+            MicrophoneUsageManager.shared.applyExternalMuteState(mute)
+        }
+    }
+
+    func isInputMuted(for deviceID: AudioDeviceID) -> Bool {
+        readInputMute(of: deviceID)
+    }
+
+    var areAllInputsMuted: Bool {
+        let ids = availableInputDevices.isEmpty ? Self.allHardwareInputDeviceIDs() : availableInputDevices.map(\.id)
+        let muteable = ids.filter { Self.hasInputMuteProperty($0) }
+        guard !muteable.isEmpty else { return false }
+        return muteable.allSatisfy { readInputMute(of: $0) }
+    }
+
+    private func applyInputMute(_ mute: Bool, to deviceID: AudioDeviceID) {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
             mScope: kAudioObjectPropertyScopeInput,
             mElement: kAudioObjectPropertyElementMain
         )
+
+        if !AudioObjectHasProperty(deviceID, &address) {
+            address.mElement = 1
+        }
+        guard AudioObjectHasProperty(deviceID, &address) else { return }
+
+        var settable: DarwinBoolean = false
+        if AudioObjectIsPropertySettable(deviceID, &address, &settable) == noErr, !settable.boolValue {
+            return
+        }
+
         var muteVal: UInt32 = mute ? 1 : 0
         AudioObjectSetPropertyData(deviceID, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &muteVal)
     }
 
-    func isInputMuted(for deviceID: AudioDeviceID) -> Bool {
+    private func readInputMute(of deviceID: AudioDeviceID) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
             mScope: kAudioObjectPropertyScopeInput,
             mElement: kAudioObjectPropertyElementMain
         )
+        if !AudioObjectHasProperty(deviceID, &address) {
+            address.mElement = 1
+        }
+        guard AudioObjectHasProperty(deviceID, &address) else { return false }
+
         var muteVal: UInt32 = 0
         var size = UInt32(MemoryLayout<UInt32>.size)
         if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muteVal) == noErr {
             return muteVal != 0
         }
         return false
+    }
+
+    private static func hasInputMuteProperty(_ deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: kAudioObjectPropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        if AudioObjectHasProperty(deviceID, &address) { return true }
+        address.mElement = 1
+        return AudioObjectHasProperty(deviceID, &address)
+    }
+
+    private static func allHardwareInputDeviceIDs() -> [AudioDeviceID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &dataSize) == noErr,
+              dataSize > 0 else { return [] }
+
+        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        var deviceIDs = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &dataSize,
+            &deviceIDs
+        ) == noErr else { return [] }
+
+        return deviceIDs.filter { id in
+            var streamAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreamConfiguration,
+                mScope: kAudioObjectPropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var size: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &streamAddr, 0, nil, &size) == noErr, size > 0 else { return false }
+            let ptr = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: Int(size))
+            defer { ptr.deallocate() }
+            var mutable = size
+            guard AudioObjectGetPropertyData(id, &streamAddr, 0, nil, &mutable, ptr) == noErr else { return false }
+            return UnsafeMutableAudioBufferListPointer(ptr).contains { $0.mNumberChannels > 0 }
+        }
     }
 
     func getInputVolume(for deviceID: AudioDeviceID) -> Float {
@@ -165,15 +282,15 @@ class MultiAudioManager: ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
         if !AudioObjectHasProperty(deviceID, &address) { address.mElement = 1 }
-        
+
         var vol = volume
         let status = AudioObjectSetPropertyData(deviceID, &address, 0, nil, UInt32(MemoryLayout<Float>.size), &vol)
-        
+
         if status == noErr {
             self.objectWillChange.send()
         }
     }
-    
+
     // MARK: - Process Monitoring & Lazy Tapping
     private func configureProcessMonitor() { }
 
@@ -197,7 +314,7 @@ class MultiAudioManager: ObservableObject {
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &listAddr, .main, block)
         reconcileRunningApps()
     }
-    
+
     private func getResponsibleAppBundleID(for pid: pid_t, runningApps: [pid_t: NSRunningApplication]) -> String? {
         if let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -1), "responsibility_get_pid_responsible_for_pid") {
             let responsiblePID = unsafeBitCast(sym, to: (@convention(c) (pid_t) -> pid_t).self)(pid)
@@ -213,7 +330,7 @@ class MultiAudioManager: ObservableObject {
         }
         return nil
     }
-    
+
     private func appNeedsTap(bundleID: String, outputDeviceIDs: [AudioDeviceID]) -> Bool {
         if PerAppAudioController.shared.hasAdjustments(for: bundleID) { return true }
         if selectedOutputDeviceIDs.count > 1 { return true }
@@ -234,7 +351,7 @@ class MultiAudioManager: ObservableObject {
         }
         return false
     }
-    
+
     private func reconcileRunningApps() {
         if !isAuthorized {
             if CGPreflightScreenCaptureAccess() {
@@ -291,6 +408,14 @@ class MultiAudioManager: ObservableObject {
         }
 
         let currentBundles = Set(newBundleGroups.keys)
+        let now = Date()
+        for bundleID in currentBundles {
+            lastAudioActivityByBundleID[bundleID] = now
+        }
+        lastAudioActivityByBundleID = lastAudioActivityByBundleID.filter {
+            now.timeIntervalSince($0.value) <= recentAudioPriorityWindow * 4
+        }
+
         if currentBundles != latestActiveBundleIDs {
             latestActiveBundleIDs = currentBundles
             NotificationCenter.default.post(name: .multiAudioActiveBundlesDidChange, object: self)
@@ -330,38 +455,36 @@ class MultiAudioManager: ObservableObject {
 
                 if tapMap[outputUID] == nil {
                     do {
-                        // Grab actual sample rate via static helper
                         let hwSampleRate = MultiAudioManager.getNominalSampleRate(for: outputDeviceID)
-                        
+
                         let tap = try AppTapController(bundleID: bundleID, processObjectIDs: sortedIDs, targetDeviceUID: outputUID, sampleRate: hwSampleRate)
-                        
+
                         tap.appVolume = Float(perAppCtrl.volume(for: bundleID))
                         tap.isAppMuted = perAppCtrl.mute(for: bundleID)
-                        
+
                         let appEQGains = perAppCtrl.eqGains(for: bundleID)
                         let shouldApplyAppEQ = perAppCtrl.appliesEQ(for: bundleID, toDeviceUID: outputUID)
-                        
-                        // Pass detected sample rate to EQ setup
+
                         tap.appEqSetup = BiquadMath.createSetup(gains: shouldApplyAppEQ ? appEQGains : Array(repeating: 0.0, count: 10), sampleRate: hwSampleRate, oldSetup: nil)
-                        
+
                         if let devSettings = deviceSettings[outputDeviceID] {
                             tap.deviceVolume = Float(devSettings.volume)
                             tap.deviceBalance = Float(devSettings.balance)
                             tap.deviceDelay = Float(devSettings.delay)
                             tap.deviceEqSetup = BiquadMath.createSetup(gains: devSettings.customEQGains, sampleRate: hwSampleRate, oldSetup: nil)
                         }
-                        
+
                         try tap.activate()
                         tapMap[outputUID] = tap
                     } catch {
-                        print("[Engine] ❌ Failed to tap \(bundleID): \(error.localizedDescription)")
+                        print("[Engine]  Failed to tap \(bundleID): \(error.localizedDescription)")
                     }
                 }
             }
             activeTaps[bundleID] = tapMap.isEmpty ? nil : tapMap
         }
     }
-    
+
     private func reTapAllApps() {
         activeTaps.values.forEach { tapMap in
             tapMap.values.forEach { $0.invalidate() }
@@ -369,11 +492,18 @@ class MultiAudioManager: ObservableObject {
         activeTaps.removeAll()
         reconcileRunningApps()
     }
-    
+
     // MARK: - Device Discovery & Helpers
     private func discoverDevices() {
         self.defaultOutputDeviceID = getDefaultDevice(for: kAudioHardwarePropertyDefaultOutputDevice)
-        
+
+        let previouslySelectedUIDs = Set(
+            availableOutputDevices
+                .filter { selectedOutputDeviceIDs.contains($0.id) }
+                .map(\.uid)
+            + (UserDefaults.standard.stringArray(forKey: selectedOutputUIDsDefaultsKey) ?? [])
+        )
+
         var outputs: [AudioDevice] = []; var inputs: [AudioDevice] = []
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
@@ -384,14 +514,67 @@ class MultiAudioManager: ObservableObject {
         for deviceID in deviceIDs {
             guard let name = name(for: deviceID), let uid = getDeviceUID(for: deviceID), !name.hasPrefix("Sapphire-") else { continue }
             if shouldHideVirtualDevice(name: name, uid: uid) { continue }
-            
+
             let isInput = hasChannels(for: deviceID, scope: kAudioObjectPropertyScopeInput)
             let isOutput = hasChannels(for: deviceID, scope: kAudioObjectPropertyScopeOutput)
-            
+
             if isOutput { outputs.append(AudioDevice(id: deviceID, uid: uid, name: name, isInput: isInput, isOutput: isOutput)) }
             if isInput { inputs.append(AudioDevice(id: deviceID, uid: uid, name: name, isInput: isInput, isOutput: isOutput)) }
         }
         self.availableOutputDevices = outputs.sorted { $0.name < $1.name }; self.availableInputDevices = inputs.sorted { $0.name < $1.name }
+        rematchSelectedDevices(to: previouslySelectedUIDs)
+    }
+
+    // MARK: - Device Settings Persistence
+
+    private func loadPersistedDeviceState() {
+        if let data = UserDefaults.standard.data(forKey: deviceSettingsDefaultsKey),
+           let decoded = try? JSONDecoder().decode([String: AudioDeviceSettings].self, from: data) {
+            settingsByUID = decoded
+        }
+
+        let savedUIDs = Set(UserDefaults.standard.stringArray(forKey: selectedOutputUIDsDefaultsKey) ?? [])
+        rematchSelectedDevices(to: savedUIDs)
+    }
+
+    private func persistDeviceSettingsArchive() {
+        if let data = try? JSONEncoder().encode(settingsByUID) {
+            UserDefaults.standard.set(data, forKey: deviceSettingsDefaultsKey)
+        }
+    }
+
+    private func persistSelectedOutputUIDs() {
+        let uids = availableOutputDevices
+            .filter { selectedOutputDeviceIDs.contains($0.id) }
+            .map(\.uid)
+        UserDefaults.standard.set(uids, forKey: selectedOutputUIDsDefaultsKey)
+    }
+
+    private func rebuildLiveDeviceSettingsFromArchive() {
+        var live: [AudioDeviceID: AudioDeviceSettings] = [:]
+        for device in availableOutputDevices {
+            if let archived = settingsByUID[device.uid] {
+                live[device.id] = archived
+            }
+        }
+        deviceSettings = live
+    }
+
+    private func rematchSelectedDevices(to uids: Set<String>) {
+        guard !uids.isEmpty else {
+            rebuildLiveDeviceSettingsFromArchive()
+            return
+        }
+        let matchedIDs = Set(availableOutputDevices.filter { uids.contains($0.uid) }.map(\.id))
+        if matchedIDs == selectedOutputDeviceIDs {
+            rebuildLiveDeviceSettingsFromArchive()
+            return
+        }
+        isRestoringPersistedSelection = true
+        selectedOutputDeviceIDs = matchedIDs
+        isRestoringPersistedSelection = false
+        rebuildLiveDeviceSettingsFromArchive()
+        reTapAllApps()
     }
 
     private func setupDeviceListeners() {
@@ -399,7 +582,7 @@ class MultiAudioManager: ObservableObject {
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &devicesAddr, nil) { [weak self] _, _ in
             Task { @MainActor [weak self] in self?.discoverDevices() }
         }
-        
+
         var defaultOutputAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &defaultOutputAddr, nil) { [weak self] _, _ in
             Task { @MainActor [weak self] in
@@ -408,7 +591,7 @@ class MultiAudioManager: ObservableObject {
             }
         }
     }
-    
+
     private func name(for deviceID: AudioDeviceID) -> String? {
         var name: CFString = "" as CFString; var size = UInt32(MemoryLayout<CFString>.size); var addr = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         return AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &size, &name) == noErr ? name as String : nil
@@ -456,7 +639,7 @@ class MultiAudioManager: ObservableObject {
         }
         monitoredProcessObjectIDs = newSet
     }
-    
+
     func activeAudioBundleIDs() -> Set<String> {
         if !isAuthorized {
             if CGPreflightScreenCaptureAccess() {
@@ -468,9 +651,18 @@ class MultiAudioManager: ObservableObject {
         }
         return latestActiveBundleIDs
     }
-    
+
+    func lastAudioActivityDate(for bundleID: String) -> Date? {
+        lastAudioActivityByBundleID[bundleID]
+    }
+
+    func isRecentlyOutputtingAudio(_ bundleID: String, within window: TimeInterval = 180) -> Bool {
+        guard let date = lastAudioActivityByBundleID[bundleID] else { return false }
+        return Date().timeIntervalSince(date) <= window
+    }
+
     // MARK: - Advanced Hardware Property Helpers
-    
+
     nonisolated static func getNominalSampleRate(for deviceID: AudioDeviceID) -> Double {
         var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var rate: Double = 0; var size = UInt32(MemoryLayout<Double>.size)
@@ -511,7 +703,7 @@ class MultiAudioManager: ObservableObject {
         var format = AudioStreamBasicDescription()
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &format) == noErr else { return "Unknown" }
-        
+
         let bitDepth = format.mBitsPerChannel
         let channels = format.mChannelsPerFrame
         return "\(channels) Ch / \(bitDepth)-bit"
@@ -522,10 +714,10 @@ class MultiAudioManager: ObservableObject {
 class AppTapController {
     let bundleID: String, processObjectIDs: [AudioObjectID], targetDeviceUID: String
     var tapID: AudioObjectID = 0, aggregateDeviceID: AudioObjectID = 0, procID: AudioDeviceIOProcID?
-    
+
     nonisolated(unsafe) var appVolume: Float = 1.0, isAppMuted: Bool = false, appEqSetup: vDSP_biquad_Setup?
     nonisolated(unsafe) var deviceVolume: Float = 1.0, deviceBalance: Float = 0.5, deviceDelay: Float = 0.0, deviceEqSetup: vDSP_biquad_Setup?
-    
+
     private let appBufferL, appBufferR, devBufferL, devBufferR: UnsafeMutablePointer<Float>
     private let bufferSize = 22
     private let maxDelaySamples = 96000
@@ -534,30 +726,29 @@ class AppTapController {
     private var fadeInSamplesRemaining = 2048
     private var isInvalidated = false
     private var currentSampleRate: Double
-    
+
     init(bundleID: String, processObjectIDs: [AudioObjectID], targetDeviceUID: String, sampleRate: Double) throws {
         self.bundleID = bundleID; self.processObjectIDs = processObjectIDs; self.targetDeviceUID = targetDeviceUID
         self.currentSampleRate = sampleRate
-        
+
         appBufferL = .allocate(capacity: bufferSize); appBufferR = .allocate(capacity: bufferSize)
         devBufferL = .allocate(capacity: bufferSize); devBufferR = .allocate(capacity: bufferSize)
-        
-        // Zero all memory cleanly
+
         appBufferL.initialize(repeating: 0, count: bufferSize)
         appBufferR.initialize(repeating: 0, count: bufferSize)
         devBufferL.initialize(repeating: 0, count: bufferSize)
         devBufferR.initialize(repeating: 0, count: bufferSize)
-        
+
         delayBufferL = .allocate(capacity: maxDelaySamples); delayBufferR = .allocate(capacity: maxDelaySamples)
         delayBufferL.initialize(repeating: 0, count: maxDelaySamples); delayBufferR.initialize(repeating: 0, count: maxDelaySamples)
-        
+
         let objectIDNumbers = processObjectIDs.map { NSNumber(value: $0) }
         let tapDesc = CATapDescription(stereoMixdownOfProcesses: objectIDNumbers as! [AudioObjectID])
         tapDesc.uuid = UUID(); tapDesc.muteBehavior = .mutedWhenTapped; tapDesc.isPrivate = true
-        
+
         var err = AudioHardwareCreateProcessTap(tapDesc, &tapID)
         guard err == noErr else { throw NSError(domain: "TapError", code: Int(err)) }
-        
+
         let aggDesc: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Sapphire-\(bundleID.split(separator: ".").last ?? "App")",
             kAudioAggregateDeviceUIDKey: UUID().uuidString, kAudioAggregateDeviceMainSubDeviceKey: targetDeviceUID,
@@ -566,14 +757,14 @@ class AppTapController {
             kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: targetDeviceUID]],
             kAudioAggregateDeviceTapListKey: [[kAudioSubTapDriftCompensationKey: false, kAudioSubTapUIDKey: tapDesc.uuid.uuidString]]
         ]
-        
+
         err = AudioHardwareCreateAggregateDevice(aggDesc as CFDictionary, &aggregateDeviceID)
         guard err == noErr else { invalidate(); throw NSError(domain: "AggregateError", code: Int(err)) }
         CrashGuard.trackDevice(aggregateDeviceID)
     }
-    
+
     deinit { invalidate() }
-    
+
     func activate() throws {
         let queue = DispatchQueue(label: "com.sapphire.audiotap.\(bundleID)", qos: .userInteractive)
         var err = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateDeviceID, queue) { [weak self] _, inData, _, outData, _ in self?.process(inData, outData) }
@@ -581,7 +772,7 @@ class AppTapController {
         err = AudioDeviceStart(aggregateDeviceID, procID!)
         guard err == noErr else { throw NSError(domain: "DeviceStartError", code: Int(err)) }
     }
-    
+
     func invalidate() {
         guard !isInvalidated else { return }
         isInvalidated = true
@@ -593,30 +784,30 @@ class AppTapController {
         appBufferL.deallocate(); appBufferR.deallocate(); devBufferL.deallocate(); devBufferR.deallocate()
         delayBufferL.deallocate(); delayBufferR.deallocate()
     }
-    
+
     func updateAppEQ(gains: [Double]) { appEqSetup = BiquadMath.createSetup(gains: gains, sampleRate: currentSampleRate, oldSetup: appEqSetup) }
     func updateDeviceEQ(gains: [Double]) { deviceEqSetup = BiquadMath.createSetup(gains: gains, sampleRate: currentSampleRate, oldSetup: deviceEqSetup) }
-    
+
     private func process(_ inData: UnsafePointer<AudioBufferList>, _ outData: UnsafeMutablePointer<AudioBufferList>) {
         let inBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inData))
         let outBuffers = UnsafeMutableAudioBufferListPointer(outData)
         let finalVol = isAppMuted ? 0.0 : (appVolume * deviceVolume)
         let needsProcessing = finalVol != 1.0 || appEqSetup != nil || deviceEqSetup != nil || deviceBalance != 0.5 || deviceDelay > 0.0 || fadeInSamplesRemaining > 0
-        
+
         for i in 0..<outBuffers.count {
             guard let outBytes = outBuffers[i].mData, let inBytes = inBuffers[i].mData else { continue }
             let totalSamples = Int(outBuffers[i].mDataByteSize) / MemoryLayout<Float>.size
             let channels = Int(outBuffers[i].mNumberChannels)
             let outPtr = outBytes.assumingMemoryBound(to: Float.self); let inPtr = inBytes.assumingMemoryBound(to: Float.self)
-            
+
             if !needsProcessing {
                 if inBytes != outBytes { memcpy(outBytes, inBytes, totalSamples * MemoryLayout<Float>.size) }
                 continue
             }
-            
+
             if finalVol == 0 { vDSP_vclr(outPtr, 1, vDSP_Length(totalSamples)) }
             else { var v = finalVol; vDSP_vsmul(inPtr, 1, &v, outPtr, 1, vDSP_Length(totalSamples)) }
-            
+
             let frameCount = totalSamples / channels
             if let eq = appEqSetup, channels == 2 { vDSP_biquad(eq, appBufferL, outPtr, 2, outPtr, 2, vDSP_Length(frameCount)); vDSP_biquad(eq, appBufferR, outPtr.advanced(by: 1), 2, outPtr.advanced(by: 1), 2, vDSP_Length(frameCount)) }
             if let eq = deviceEqSetup, channels == 2 { vDSP_biquad(eq, devBufferL, outPtr, 2, outPtr, 2, vDSP_Length(frameCount)); vDSP_biquad(eq, devBufferR, outPtr.advanced(by: 1), 2, outPtr.advanced(by: 1), 2, vDSP_Length(frameCount)) }
@@ -651,17 +842,14 @@ enum BiquadMath {
     static func createSetup(gains: [Double], sampleRate: Double, oldSetup: vDSP_biquad_Setup?) -> vDSP_biquad_Setup? {
         if let old = oldSetup { DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { vDSP_biquad_DestroySetup(old) } }
         if gains.allSatisfy({ $0 == 0.0 }) { return nil }
-        
+
         let freqs: [Double] = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
         let Q = 1.5
         var coeffs: [Double] = []
-        
-        // REPLACED: Instead of reducing volume by the absolute MAX boost (which kills volume),
-        // we use a more moderate gain compensation of only 60% of the max boost.
-        // This keeps the sound "sharp" but prevents the 50% volume drop.
+
         let maxBoost = gains.max() ?? 0.0
         let compensation = maxBoost > 0 ? pow(10.0, -(maxBoost * 0.6) / 20.0) : 1.0
-        
+
         for i in 0..<10 {
             let gain = gains[i]
             let A = pow(10.0, gain / 40.0)
@@ -669,21 +857,20 @@ enum BiquadMath {
             let sn = sin(omega)
             let cs = cos(omega)
             let alpha = sn / (2.0 * Q)
-            
+
             var b0 = 1.0 + alpha * A
             var b1 = -2.0 * cs
             var b2 = 1.0 - alpha * A
             let a0 = 1.0 + alpha / A
             let a1 = -2.0 * cs
             let a2 = 1.0 - alpha / A
-            
-            // Apply compensation to the first filter block
+
             if i == 0 {
                 b0 *= compensation
                 b1 *= compensation
                 b2 *= compensation
             }
-            
+
             coeffs.append(contentsOf:[b0/a0, b1/a0, b2/a0, a1/a0, a2/a0])
         }
         return coeffs.withUnsafeBufferPointer { vDSP_biquad_CreateSetup($0.baseAddress!, vDSP_Length(10)) }
@@ -692,7 +879,6 @@ enum BiquadMath {
 
 enum SoftLimiter {
     @inline(__always) static func processBuffer(_ buffer: UnsafeMutablePointer<Float>, sampleCount: Int) {
-        // Fast, Native Hard Clip that doesn't apply "fuzz" distortion curves.
         var low: Float = -1.0
         var high: Float = 1.0
         vDSP_vclip(buffer, 1, &low, &high, buffer, 1, vDSP_Length(sampleCount))

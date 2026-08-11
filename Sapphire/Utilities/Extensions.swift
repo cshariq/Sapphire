@@ -34,6 +34,17 @@ extension Color {
         let b = from.blue + (to.blue - from.blue) * Float(t_clamped)
         return Color(red: Double(r), green: Double(g), blue: Double(b))
     }
+
+    func ensuringMinimumBrightness(_ minBrightness: CGFloat = 0.48) -> Color {
+        let ns = NSColor(self)
+        guard let rgb = ns.usingColorSpace(.sRGB) else { return self }
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        rgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        guard brightness < minBrightness else { return self }
+        let liftedSat = min(saturation, 0.85)
+        let lifted = NSColor(hue: hue, saturation: liftedSat, brightness: minBrightness, alpha: alpha)
+        return Color(lifted)
+    }
 }
 
 private enum ImageEdgeColorCache {

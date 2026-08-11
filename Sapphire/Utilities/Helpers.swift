@@ -66,11 +66,13 @@ struct SeekButton: View {
     let systemName: String
     let onTap: () -> Void
     let onSeek: (Bool) -> Void
+    var onLongPressAction: (() -> Void)? = nil
 
     @GestureState private var isPressing = false
     @State private var longPressTimer: Timer?
     @State private var seekTimer: Timer?
     @State private var tapIsEligible = false
+    @State private var didFireLongPress = false
 
     private var isForward: Bool {
         systemName.contains("forward")
@@ -88,18 +90,26 @@ struct SeekButton: View {
             .onChange(of: isPressing) { _, nowPressing in
                 if nowPressing {
                     tapIsEligible = true
+                    didFireLongPress = false
                     longPressTimer?.invalidate()
-                    longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { _ in
+                    longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { _ in
                         tapIsEligible = false
-                        startSeeking()
+                        if let onLongPressAction {
+                            didFireLongPress = true
+                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                            onLongPressAction()
+                        } else {
+                            startSeeking()
+                        }
                     }
                 } else {
                     longPressTimer?.invalidate()
                     seekTimer?.invalidate()
                     seekTimer = nil
-                    if tapIsEligible {
+                    if tapIsEligible, !didFireLongPress {
                         onTap()
                     }
+                    didFireLongPress = false
                 }
             }
             .blur(radius: isPressing ? 4 : 0)
@@ -130,6 +140,7 @@ struct InteractiveProgressBar: View {
     @Binding var value: Double
     var gradient: Gradient
     var onSeek: (Double) -> Void
+    var onDragChanged: ((Double) -> Void)? = nil
     @State private var isDragging = false
     @State private var dragValue: Double = 0.0
 
@@ -146,9 +157,11 @@ struct InteractiveProgressBar: View {
                 if !isDragging { isDragging = true; dragValue = value }
                 let newProgress = min(max(0, gestureValue.location.x / geometry.size.width), 1)
                 self.dragValue = newProgress
+                onDragChanged?(newProgress)
             }.onEnded { gestureValue in
                 let finalProgress = min(max(0, gestureValue.location.x / geometry.size.width), 1)
                 onSeek(finalProgress)
+                value = finalProgress
                 isDragging = false
             })
             .animation(isDragging ? .none : .linear(duration: 0.5), value: value)

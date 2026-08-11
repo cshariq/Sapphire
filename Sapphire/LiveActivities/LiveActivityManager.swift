@@ -33,7 +33,9 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
     case bluetooth = 65
     case audioSwitch = 70
     case fileProgress = 75
+    case parcel = 78
     case notification = 80
+    case otp = 82
     case geminiLive = 85
     case microphone = 86
     case nearbyShare = 90
@@ -134,10 +136,20 @@ class LiveActivityManager: ObservableObject {
         .persistentStats,
         .persistentWeather
     ]
+    private let ephemeralActivityTypes: Set<ActivityType> = [
+        .desktopChange,
+        .bluetooth,
+        .audioSwitch,
+        .focusModeChange,
+        .battery,
+        .eyeBreak,
+        .stats,
+    ]
     private var dismissedNotifications: [AnyHashable: Date] = [:]
     private var lastIntervalWeatherShowTime: Date?
     private var periodicCheckTimer: Timer?
     private var tickerRefreshTimer: Timer?
+    private var sportsFinanceWatchTimer: Timer?
     private var lastKnownFocusStatus: FocusStatus?
     private var hasShownPluggedInAlert = false, hasShownLowBatteryAlert = false, hasShownCurrentEyeBreak = false
     private var lastShownDesktopNumber: Int?, lastShownFocusModeID: String?
@@ -152,6 +164,7 @@ class LiveActivityManager: ObservableObject {
     private var hasReceivedInitialFocusStatus = false
     private var lastShownBatteryManagementState: ManagementState?
     private var lastLyricContentID: AnyHashable?
+    private var lyricContentUpdateTask: Task<Void, Never>?
     public var intelligenceVM: IntelligenceNotchViewModel?
 
     // MARK: - Dependencies
@@ -187,7 +200,9 @@ class LiveActivityManager: ObservableObject {
             .nearbyShare: { self.checkForNearDrop() },
             .geminiLive: { self.checkForGeminiLive() },
             .microphone: { self.checkForMicrophone() },
+            .otp: { self.checkForOTP() },
             .notification: { self.checkForNotification() },
+            .parcel: { self.checkForParcel() },
             .fileProgress: { self.checkForFileProgress() },
             .eyeBreak: { self.checkForEyeBreak() },
             .audioSwitch: { self.checkForAudioSwitch() },
@@ -208,6 +223,7 @@ class LiveActivityManager: ObservableObject {
         ]
         setupSubscriptions()
         setupPeriodicTimer()
+        updateSportsFinanceWatchTimer()
     }
 
     // MARK: - Subscriptions
@@ -216,13 +232,6 @@ class LiveActivityManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] hudType in
                 self?.handleHUDUpdate(hudType)
-            }
-            .store(in: &cancellables)
-
-        musicWidget.currentLyricPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.handleLyricUpdate()
             }
             .store(in: &cancellables)
 
@@ -278,11 +287,38 @@ class LiveActivityManager: ObservableObject {
                 }
             }
             .store(in: &cancellables)
-        $isNotificationHovered
-            .removeDuplicates()
-            .debounce(for: .milliseconds(50), scheduler: DispatchQueue.main)
-            .sink { [weak self] isHovered in }
-            .store(in: &cancellables)
+
+        subscribeToStateChangeTriggers()
+        subscribeToSportsFinanceSettings()
+    }
+
+    private func subscribeToStateChangeTriggers() {
+        let intelligenceRunningPublisher: AnyPublisher<Void, Never> = {
+            guard let intelligenceVM else { return Empty().eraseToAnyPublisher() }
+            return intelligenceVM.$isRunning.mapToVoid().eraseToAnyPublisher()
+        }()
+
+        let intelligenceStatusPublisher: AnyPublisher<Void, Never> = {
+            guard let intelligenceVM else { return Empty().eraseToAnyPublisher() }
+            return intelligenceVM.$statusMessage
+                .removeDuplicates()
+                .mapToVoid()
+                .eraseToAnyPublisher()
+        }()
+
+        let intelligenceProgressPublisher: AnyPublisher<Void, Never> = {
+            guard let intelligenceVM else { return Empty().eraseToAnyPublisher() }
+            return intelligenceVM.$subtaskProgress
+                .map { "\($0.current)/\($0.total)" }
+                .removeDuplicates()
+                .map { _ in () }
+                .eraseToAnyPublisher()
+        }()
+
+        let fileShelfPublisher: AnyPublisher<Void, Never> = {
+            guard let fileShelfManager else { return Empty().eraseToAnyPublisher() }
+            return fileShelfManager.$files.mapToVoid().eraseToAnyPublisher()
+        }()
 
         let stateChangeTriggers: [AnyPublisher<Void, Never>] = [
             $isScreenLocked.removeDuplicates().mapToVoid(),
@@ -291,15 +327,24 @@ class LiveActivityManager: ObservableObject {
             notificationManager.$latestNotification
                 .removeDuplicates()
                 .mapToVoid(),
+            SmartInboxMonitor.shared.$latestOTP
+                .removeDuplicates()
+                .mapToVoid(),
+            SmartInboxMonitor.shared.$activeParcels
+                .mapToVoid(),
             desktopManager.$currentDesktopNumber.removeDuplicates().mapToVoid(),
-            calendarService.$upcomingEvents.mapToVoid(),
-            calendarService.$upcomingReminders.mapToVoid(),
+            calendarService.$upcomingEvents
+                .throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
+                .mapToVoid(),
+            calendarService.$upcomingReminders
+                .throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
+                .mapToVoid(),
             batteryMonitor.$currentState.removeDuplicates().mapToVoid(),
             audioDeviceManager.$lastSwitchEvent.removeDuplicates().mapToVoid(),
             bluetoothManager.$lastEvent.removeDuplicates().mapToVoid(),
             eyeBreakManager.$isBreakTime.removeDuplicates().mapToVoid(),
             timerManager.$isRunning.removeDuplicates().mapToVoid(),
-            weatherActivityViewModel.$weatherData
+            WeatherViewModel.shared.$weatherData
                 .removeDuplicates()
                 .mapToVoid(),
             musicWidget.$shouldShowLiveActivity.removeDuplicates().mapToVoid(),
@@ -307,9 +352,7 @@ class LiveActivityManager: ObservableObject {
             musicWidget.trackDidChange.mapToVoid(),
             musicWidget.$showQuickPeek.removeDuplicates().mapToVoid(),
             musicWidget.$isHoveringAlbumArt.removeDuplicates().mapToVoid(),
-            fileShelfManager?.$files
-                .mapToVoid() ?? Empty()
-                .eraseToAnyPublisher(),
+            fileShelfPublisher,
             settingsModel.$settings.removeDuplicates().mapToVoid(),
             activeAppMonitor.$isLyricsAllowedForActiveApp
                 .removeDuplicates()
@@ -319,23 +362,61 @@ class LiveActivityManager: ObservableObject {
             focusModeManager.$currentStatus.removeDuplicates().mapToVoid(),
             UpdateChecker.shared.$status.mapToVoid(),
             StatsManager.shared.$currentStats
+                .removeDuplicates()
                 .compactMap { $0 }
+                .throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
                 .mapToVoid(),
-            batteryStatusManager.$currentState.mapToVoid(),
-            intelligenceVM?.$isRunning.mapToVoid() ?? Empty().eraseToAnyPublisher(),
-            intelligenceVM?.$statusMessage.mapToVoid() ?? Empty().eraseToAnyPublisher(),
-            intelligenceVM?.$subtaskProgress.map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()
+            batteryStatusManager.$currentState.removeDuplicates().mapToVoid(),
+            intelligenceRunningPublisher,
+            intelligenceStatusPublisher
+                .throttle(for: .milliseconds(400), scheduler: RunLoop.main, latest: true)
+                .eraseToAnyPublisher(),
+            intelligenceProgressPublisher
+                .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
+                .eraseToAnyPublisher(),
         ]
 
         Publishers.MergeMany(stateChangeTriggers)
-            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
+            .debounce(for: .milliseconds(50), scheduler: RunLoop.main)
             .sink { [weak self] in self?.evaluateAndDisplayActivity() }
+            .store(in: &cancellables)
+    }
+
+    private func subscribeToSportsFinanceSettings() {
+        let sportsEnabledPublisher = settingsModel.$settings
+            .map(\.sportsLiveActivityEnabled)
+            .removeDuplicates()
+
+        let financeEnabledPublisher = settingsModel.$settings
+            .map(\.financeLiveActivityEnabled)
+            .removeDuplicates()
+
+        sportsEnabledPublisher
+            .merge(with: financeEnabledPublisher)
+            .sink { [weak self] _ in
+                self?.updateSportsFinanceWatchTimer()
+            }
             .store(in: &cancellables)
     }
 
     // MARK: - Direct HUD Handler
     private func handleHUDUpdate(_ hudType: HUDType?) {
         if let hudType = hudType {
+            let isEnabled: Bool
+            switch hudType {
+            case .volume, .externalDeviceVolume, .appVolume:
+                isEnabled = settingsModel.settings.enableVolumeHUD
+            case .brightness, .keyboardBrightness, .multiDisplayBrightness:
+                isEnabled = settingsModel.settings.enableBrightnessHUD
+            }
+            guard isEnabled else {
+                if currentActivity == .systemHUD {
+                    setActivity(type: .none, content: .none)
+                    evaluateAndDisplayActivity()
+                }
+                return
+            }
+
             let hudStyle: HUDStyle
             switch hudType {
             case .volume, .externalDeviceVolume, .appVolume:
@@ -391,19 +472,25 @@ class LiveActivityManager: ObservableObject {
 
         lastLyricContentID = newContent.id
         self.activityContent = newContent
-        self.contentUpdateID = UUID()
+        lyricContentUpdateTask?.cancel()
+        lyricContentUpdateTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            self.contentUpdateID = UUID()
+        }
     }
 
     // MARK: - Activity Management
     private var lastSnoozeCleanup = Date()
     private let snoozeCleanupInterval: TimeInterval = 30.0
     private var lastEvalTime: CFAbsoluteTime = 0
-    private let minEvalInterval: CFAbsoluteTime = 0.5
+    private let minEvalInterval: CFAbsoluteTime = 0.2
     private var dismissGraceTimer: Timer?
 
     private func evaluateAndDisplayActivity(allowImmediateDismiss: Bool = false) {
         let evalTime = CFAbsoluteTimeGetCurrent()
-        guard evalTime - lastEvalTime >= minEvalInterval else { return }
+        let minInterval: CFAbsoluteTime = NotchRuntimeState.shared.shouldReduceBackgroundWork ? 2.0 : minEvalInterval
+        guard evalTime - lastEvalTime >= minInterval else { return }
         lastEvalTime = evalTime
         let now = Date()
         if now.timeIntervalSince(lastSnoozeCleanup) > snoozeCleanupInterval {
@@ -427,6 +514,7 @@ class LiveActivityManager: ObservableObject {
             return
         }
         if activeAppMonitor.isFullScreen && settingsModel.settings.hideLiveActivityInFullScreen {
+            consumeBlockedEphemeralActivities(winningType: nil)
             if currentActivity != .none {
                 setActivity(type: .none, content: .none)
             }
@@ -442,7 +530,9 @@ class LiveActivityManager: ObservableObject {
 
         let absoluteHighPriority: [ActivityType] = [
             .lockScreen,
+            .otp,
             .notification,
+            .parcel,
             .geminiLive,
             .nearbyShare,
             .audioSwitch,
@@ -452,6 +542,8 @@ class LiveActivityManager: ObservableObject {
         ]
 
         let finalEvaluationOrder = absoluteHighPriority + userOrderedActivities
+
+        var winningCandidate: (ActivityType, LiveActivityContent, TimeInterval?)? = nil
 
         for activityType in finalEvaluationOrder {
             guard snoozedActivities[activityType] == nil else { continue }
@@ -464,37 +556,69 @@ class LiveActivityManager: ObservableObject {
                 }
             }
 
-            if let (type, content, duration) = checker() {
-                setActivity(type: type, content: content, dismissAfter: duration)
-                return
+            if let candidate = checker() {
+                winningCandidate = candidate
+                break
             }
         }
 
         let fullScreenSettingsType = settingsModel.settings.hideActivitiesInFullScreen
         let isFullScreen = activeAppMonitor.isFullScreen
 
-        if !(isFullScreen && fullScreenSettingsType[LiveActivityType.stats.rawValue] == true),
+        if winningCandidate == nil,
+           !(isFullScreen && fullScreenSettingsType[LiveActivityType.stats.rawValue] == true),
            snoozedActivities[.persistentStats] == nil,
-           let (type, content, duration) = checkForPersistentStats() {
-            setActivity(type: type, content: content, dismissAfter: duration)
-            return
+           let candidate = checkForPersistentStats() {
+            winningCandidate = candidate
         }
 
-        if !(isFullScreen && fullScreenSettingsType[LiveActivityType.battery.rawValue] == true),
+        if winningCandidate == nil,
+           !(isFullScreen && fullScreenSettingsType[LiveActivityType.battery.rawValue] == true),
            snoozedActivities[.persistentBattery] == nil,
-           let (type, content, duration) = checkForPersistentBattery() {
-            setActivity(type: type, content: content, dismissAfter: duration)
-            return
+           let candidate = checkForPersistentBattery() {
+            winningCandidate = candidate
         }
 
-        if !(isFullScreen && fullScreenSettingsType[LiveActivityType.weather.rawValue] == true),
+        if winningCandidate == nil,
+           !(isFullScreen && fullScreenSettingsType[LiveActivityType.weather.rawValue] == true),
            snoozedActivities[.persistentWeather] == nil,
-           let (type, content, duration) = checkForPersistentWeather() {
+           let candidate = checkForPersistentWeather() {
+            winningCandidate = candidate
+        }
+
+        consumeBlockedEphemeralActivities(winningType: winningCandidate?.0)
+
+        if let (type, content, duration) = winningCandidate {
             setActivity(type: type, content: content, dismissAfter: duration)
             return
         }
 
         scheduleDismissToNoneUnlessRecovered(allowImmediate: allowImmediateDismiss)
+    }
+
+    private func consumeBlockedEphemeralActivities(winningType: ActivityType?) {
+        for activityType in ephemeralActivityTypes {
+            guard activityType != winningType else { continue }
+            guard snoozedActivities[activityType] == nil else { continue }
+            guard let checker = activityCheckers[activityType] else { continue }
+
+            if activeAppMonitor.isFullScreen {
+                if let liveActivitySettingsType = activityType.toLiveActivityType(),
+                   settingsModel.settings.hideActivitiesInFullScreen[liveActivitySettingsType.rawValue] == true {
+                    continue
+                }
+            }
+
+            guard checker() != nil else { continue }
+            consumeEphemeralActivity(activityType)
+        }
+    }
+
+    private func consumeEphemeralActivity(_ type: ActivityType) {
+        handleActivityDismissal(for: type)
+        if type == .focusModeChange {
+            lastKnownFocusStatus = focusModeManager.currentStatus
+        }
     }
 
     private func scheduleDismissToNoneUnlessRecovered(allowImmediate: Bool) {
@@ -510,7 +634,7 @@ class LiveActivityManager: ObservableObject {
             return
         }
 
-        dismissGraceTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+        dismissGraceTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.dismissGraceTimer = nil
             self.evaluateAndDisplayActivity(allowImmediateDismiss: true)
@@ -540,10 +664,19 @@ class LiveActivityManager: ObservableObject {
         self.dismissalTimer = nil
         oldTimer?.invalidate()
 
+        let oldType = self.currentActivity
+        let oldShape = notchShapeSignature
+
         self.currentActivity = type
         self.activityContent = content
-        self.contentUpdateID = UUID()
-        musicWidget.setMusicLiveActivityActive(type == .music)
+
+        let shapeChanged = oldShape != notchShapeSignature
+        if oldType != type || shapeChanged {
+            self.contentUpdateID = UUID()
+            lastEvalTime = 0
+        }
+
+        Task { await musicWidget.setMusicLiveActivityActive(type == .music) }
         updateTickerRefreshTimer()
 
         if let duration = duration {
@@ -553,7 +686,7 @@ class LiveActivityManager: ObservableObject {
                 self.handleActivityDismissal(for: type)
                 self.currentActivity = .none
                 self.activityContent = .none
-                self.musicWidget.setMusicLiveActivityActive(false)
+                Task { await self.musicWidget.setMusicLiveActivityActive(false) }
                 self.evaluateAndDisplayActivity()
             }
         }
@@ -794,7 +927,8 @@ class LiveActivityManager: ObservableObject {
               settings.showPersistentWeatherLiveActivity else {
             return nil
         }
-        guard let weatherData = weatherActivityViewModel.weatherData else {
+        guard let weatherData = weatherActivityViewModel.weatherData,
+              weatherData.isValid else {
             return nil
         }
 
@@ -814,7 +948,8 @@ class LiveActivityManager: ObservableObject {
         guard settingsModel.settings.weatherLiveActivityEnabled else {
             return nil
         }
-        guard let weatherData = weatherActivityViewModel.weatherData else {
+        guard let weatherData = weatherActivityViewModel.weatherData,
+              weatherData.isValid else {
             return nil
         }
 
@@ -1206,6 +1341,9 @@ where: {
         guard let notification = notificationManager.latestNotification else {
             return nil
         }
+        if notification.verificationCode != nil, settingsModel.settings.otpLiveActivityEnabled {
+            return nil
+        }
         if let until = dismissedNotifications[notification.id], until > Date() {
             return nil
         }
@@ -1222,6 +1360,40 @@ where: {
             .full(view: AnyView(fullView), id: notification.id),
             15.0
         )
+    }
+
+    private func checkForOTP() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
+        guard settingsModel.settings.otpLiveActivityEnabled else { return nil }
+
+        if let event = SmartInboxMonitor.shared.latestOTP {
+            let view = OTPLiveActivityView(event: event)
+            return (.otp, .full(view: AnyView(view), id: event.id), 20.0)
+        }
+
+        notificationManager.start()
+        if let notification = notificationManager.latestNotification,
+           let code = notification.verificationCode {
+            let event = OTPEvent(
+                id: "notif-\(notification.id)",
+                code: code,
+                source: notification.appName,
+                title: notification.title.isEmpty ? "Verification code" : notification.title,
+                body: notification.body,
+                date: notification.date
+            )
+            let view = OTPLiveActivityView(event: event, fromNotification: true)
+            return (.otp, .full(view: AnyView(view), id: event.id), 20.0)
+        }
+        return nil
+    }
+
+    private func checkForParcel() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
+        guard settingsModel.settings.parcelLiveActivityEnabled,
+              settingsModel.settings.parcelTrackingEnabled else { return nil }
+        let parcels = SmartInboxMonitor.shared.activeParcels.filter { !$0.isDelivered }
+        guard let parcel = parcels.first else { return nil }
+        let view = ParcelLiveActivityView(parcel: parcel)
+        return (.parcel, .full(view: AnyView(view), id: parcel.id), 18.0)
     }
 
     private func checkForAudioSwitch() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
@@ -1254,14 +1426,20 @@ where: {
               SubscriptionManager.shared.hasAccess(to: .liveSports) else {
             return nil
         }
-        
+
         let teams = settingsModel.settings.sportsFavoriteTeams
         guard !teams.isEmpty else { return nil }
-        
-        // Normalize the activity team index
-        sportsActivityTeamIndex = max(0, min(sportsActivityTeamIndex, teams.count - 1))
+
+        if let liveIndex = teams.firstIndex(where: { team in
+            SportsAPIService.shared.cachedLiveEvent(for: team)?.isLive == true
+        }) {
+            sportsActivityTeamIndex = liveIndex
+        } else {
+            sportsActivityTeamIndex = max(0, min(sportsActivityTeamIndex, teams.count - 1))
+        }
+
         let teamOrLeague = teams[sportsActivityTeamIndex]
-        
+
         let liveEvent = SportsAPIService.shared.cachedLiveEvent(for: teamOrLeague)
         let payload: SportsPayload
         if let live = liveEvent {
@@ -1294,12 +1472,10 @@ where: {
             : "sports_\(payload.homeTeam)_\(payload.awayTeam)_\(payload.homeScore)_\(payload.awayScore)\(commentarySuffix)"
         let data = StandardActivityData.sports(payload: payload, bottom: bottomContent)
         let content = LiveActivityContent.standard(data: data, id: id)
-        
+
         return (.sports, content, nil)
     }
 
-    /// Cycle the sports activity to the next favorite team's match.
-    /// Returns true if there are multiple teams to cycle through.
     @discardableResult
     func cycleSportsActivity() -> Bool {
         let teams = settingsModel.settings.sportsFavoriteTeams
@@ -1314,11 +1490,11 @@ where: {
               SubscriptionManager.shared.hasAccess(to: .financeLiveActivity) else {
             return nil
         }
-        
+
         guard let symbol = settingsModel.settings.currentFinanceFavoriteSymbol() else {
             return nil
         }
-        
+
         let index = settingsModel.settings.financeFavoriteSymbolIndex
         let quote = FinanceAPIService.shared.cachedQuote(symbol: symbol)
         let payload = FinanceAPIService.shared.makePayload(symbol: symbol, index: index, quote: quote)
@@ -1328,7 +1504,7 @@ where: {
             : "finance_\(payload.symbol)_\(payload.price)_live"
         let data = StandardActivityData.finance(payload: payload)
         let content = LiveActivityContent.standard(data: data, id: id)
-        
+
         return (.finance, content, nil)
     }
 
@@ -1433,7 +1609,7 @@ where: {
     private func setupPeriodicTimer() {
         periodicCheckTimer?.invalidate()
         periodicCheckTimer = Timer
-            .scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            .scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
                 if self?.currentActivity == .none {
                     self?.evaluateAndDisplayActivity()
                 }
@@ -1444,31 +1620,74 @@ where: {
         let needsFastRefresh = currentActivity == .finance || currentActivity == .sports
         if needsFastRefresh {
             guard tickerRefreshTimer == nil else { return }
+            var fetchTick = 0
             tickerRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
                 guard let self else { return }
                 guard self.currentActivity == .finance || self.currentActivity == .sports else {
                     self.updateTickerRefreshTimer()
                     return
                 }
-                // Refresh network cache while the activity is visible
-                if self.currentActivity == .sports,
-                   let teamOrLeague = self.settingsModel.settings.currentSportsFavoriteTeam() {
-                    Task {
-                        if let event = await SportsAPIService.shared.fetchLiveEvent(for: teamOrLeague),
-                           self.settingsModel.settings.sportsCommentaryInLiveActivity,
-                           event.isLive {
-                            _ = await SportsAPIService.shared.fetchCommentary(for: event)
-                        }
-                    }
-                } else if self.currentActivity == .finance,
-                          let symbol = self.settingsModel.settings.currentFinanceFavoriteSymbol() {
-                    Task { _ = await FinanceAPIService.shared.fetchQuote(symbol: symbol) }
+                fetchTick += 1
+                if fetchTick % 2 == 0 {
+                    Task { await self.refreshSportsFinanceData(forceRefresh: true) }
                 }
+                self.lastEvalTime = 0
                 self.evaluateAndDisplayActivity()
             }
         } else {
             tickerRefreshTimer?.invalidate()
             tickerRefreshTimer = nil
+        }
+        updateSportsFinanceWatchTimer()
+    }
+
+    private func updateSportsFinanceWatchTimer() {
+        let needsWatch = settingsModel.settings.sportsLiveActivityEnabled
+            || settingsModel.settings.financeLiveActivityEnabled
+        if needsWatch {
+            let onScreen = currentActivity == .finance || currentActivity == .sports
+            let interval: TimeInterval = onScreen ? 60.0 : 30.0
+            if let sportsFinanceWatchTimer, sportsFinanceWatchTimer.isValid,
+               abs(sportsFinanceWatchTimer.timeInterval - interval) < 0.01 {
+                return
+            }
+            sportsFinanceWatchTimer?.invalidate()
+            SportsAPIService.shared.bootstrapIfNeeded()
+            sportsFinanceWatchTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                if self.currentActivity == .finance || self.currentActivity == .sports {
+                    return
+                }
+                Task {
+                    await self.refreshSportsFinanceData(forceRefresh: true)
+                    await MainActor.run {
+                        self.lastEvalTime = 0
+                        self.evaluateAndDisplayActivity()
+                    }
+                }
+            }
+            if let sportsFinanceWatchTimer {
+                RunLoop.main.add(sportsFinanceWatchTimer, forMode: .common)
+            }
+            Task { await refreshSportsFinanceData(forceRefresh: true) }
+        } else {
+            sportsFinanceWatchTimer?.invalidate()
+            sportsFinanceWatchTimer = nil
+        }
+    }
+
+    private func refreshSportsFinanceData(forceRefresh: Bool = false) async {
+        if settingsModel.settings.sportsLiveActivityEnabled {
+            let teams = settingsModel.settings.sportsFavoriteTeams
+            await SportsAPIService.shared.prefetchLiveScoreboards(for: teams)
+            for team in teams.prefix(6) {
+                _ = await SportsAPIService.shared.fetchLiveEvent(for: team, forceRefresh: forceRefresh)
+            }
+        }
+        if settingsModel.settings.financeLiveActivityEnabled {
+            for symbol in settingsModel.settings.financeFavoriteSymbols.prefix(6) {
+                _ = await FinanceAPIService.shared.fetchQuote(symbol: symbol)
+            }
         }
     }
 }

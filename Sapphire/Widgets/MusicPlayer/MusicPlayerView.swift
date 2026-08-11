@@ -48,9 +48,7 @@ private struct PlayerProgressView: View {
         }
         .onReceive(musicManager.playbackTimePublisher) { (elapsed, progress) in
             displayElapsed = elapsed
-            
-            // OPTIMIZATION: Interpolates progress width smoothly over the 200ms gap [2].
-            // This preserves 100% fluid visual animations while the CPU only ticks 5 times a second!
+
             withAnimation(.linear(duration: 0.2)) {
                 currentProgress = progress
             }
@@ -136,8 +134,7 @@ struct MusicPlayerView: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            
-            // Native Multi-source Tab Switcher
+
             if musicManager.activeMediaSources.count > 1 {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -182,7 +179,7 @@ struct MusicPlayerView: View {
                 .frame(height: 35)
                 .padding(.bottom, 6)
             }
-            
+
             HStack(spacing: 12) {
                 ZStack {
                     Image(nsImage: musicManager.artwork ?? musicManager.appIcon ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art")!)

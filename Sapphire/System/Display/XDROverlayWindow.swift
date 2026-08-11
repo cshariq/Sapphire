@@ -45,6 +45,10 @@ final class OverlayWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func open(rect: NSRect) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.open(rect: rect) }
+            return
+        }
         guard let window = self.window as? OverlayWindow else { return }
         window.setFrame(rect, display: true)
         reposition(screen: screen)

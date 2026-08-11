@@ -2,12 +2,16 @@
 //  UserWindowSupport.swift
 //  Sapphire
 //
+//  Created by Shariq Charolia on 2026-08-10
 
 import AppKit
 import SwiftUI
 
 extension Notification.Name {
     static let sapphireHelperConnectionLost = Notification.Name("sapphireHelperConnectionLost")
+    static let sapphireHelperConnectionRestored = Notification.Name("sapphireHelperConnectionRestored")
+    static let sapphireSettingsWillClose = Notification.Name("sapphireSettingsWillClose")
+    static let sapphireTrimSettingsMemory = Notification.Name("sapphireTrimSettingsMemory")
 }
 
 enum SapphireStandardMenu {
@@ -48,19 +52,16 @@ enum SapphireStandardMenu {
 }
 
 enum UtilityWindowPresenter {
-    /// Normal window level so other apps can appear above when focused.
     private static let elevatedWindowLevel = NSWindow.Level.normal
 
-    /// Standard settings / lyrics windows behave like a normal app window.
     static func presentSettingsWindow(_ window: NSWindow) {
-        // Set activation policy to regular FIRST, before any window operations
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
         if NSApp.isHidden {
             NSApp.unhide(nil)
         }
-        
+
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.level = .normal
         if window.isMiniaturized {
@@ -68,7 +69,6 @@ enum UtilityWindowPresenter {
         }
         window.center()
 
-        // Defer ordering to next run loop to let activation policy settle
         DispatchQueue.main.async {
             window.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)
@@ -85,8 +85,6 @@ enum UtilityWindowPresenter {
         }
         window.center()
 
-        // Defer ALL ordering to the next run loop so the
-        // accessory → regular activation policy transition completes first.
         DispatchQueue.main.async {
             window.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)

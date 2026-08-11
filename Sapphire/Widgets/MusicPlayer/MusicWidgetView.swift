@@ -14,6 +14,12 @@ struct MusicWidgetView: View {
     @EnvironmentObject var settings: SettingsModel
     @State private var isHoveringArtwork = false
 
+    var onExpand: (() -> Void)? = nil
+
+    init(onExpand: (() -> Void)? = nil) {
+        self.onExpand = onExpand
+    }
+
     var body: some View {
         if let title = musicManager.title, !title.isEmpty {
             HStack(alignment: .center, spacing: 16) {
@@ -28,9 +34,9 @@ struct MusicWidgetView: View {
 
                     MusicControlsView(
                         isPlaying: musicManager.isPlaying,
-                        onPrevious: musicManager.previousTrack,
-                        onPlayPause: { musicManager.isPlaying ? musicManager.pause() : musicManager.play() },
-                        onNext: musicManager.nextTrack
+                        onPrevious: { Task { await musicManager.previousTrack() } },
+                        onPlayPause: { Task { await (musicManager.isPlaying ? musicManager.pause() : musicManager.play()) } },
+                        onNext: { Task { await musicManager.nextTrack() } }
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -40,7 +46,11 @@ struct MusicWidgetView: View {
             .fixedSize()
             .contentShape(Rectangle())
             .onTapGesture {
-                navigationStack.wrappedValue.append(.musicPlayer)
+                if let onExpand {
+                    onExpand()
+                } else {
+                    navigationStack.wrappedValue.append(.musicPlayer)
+                }
             }
 
         } else {
@@ -135,6 +145,7 @@ private struct MusicControlsView: View {
     let onNext: () -> Void
 
     @EnvironmentObject var musicManager: MusicManager
+    @EnvironmentObject var settings: SettingsModel
 
     let buttonHitboxSize: CGFloat = 37
 
@@ -144,10 +155,17 @@ private struct MusicControlsView: View {
                 systemName: "backward.end.fill",
                 onTap: onPrevious,
                 onSeek: { isForward in
-                    musicManager.seek(by: isForward ? 5.0 : -5.0)
-                }
+                    Task { await musicManager.seek(by: isForward ? 5.0 : -5.0) }
+                },
+                onLongPressAction: MusicLongPressUI.skipHoldHandler(
+                    for: .previous,
+                    settings: settings.settings,
+                    musicManager: musicManager,
+                    navigation: .notifications
+                )
             )
             .frame(width: buttonHitboxSize, height: buttonHitboxSize)
+            .help(MusicLongPressUI.skipHelp(primary: "Previous", target: .previous, settings: settings.settings))
 
             Button(action: onPlayPause) {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
@@ -161,10 +179,17 @@ private struct MusicControlsView: View {
                 systemName: "forward.end.fill",
                 onTap: onNext,
                 onSeek: { isForward in
-                    musicManager.seek(by: isForward ? 5.0 : -5.0)
-                }
+                    Task { await musicManager.seek(by: isForward ? 5.0 : -5.0) }
+                },
+                onLongPressAction: MusicLongPressUI.skipHoldHandler(
+                    for: .next,
+                    settings: settings.settings,
+                    musicManager: musicManager,
+                    navigation: .notifications
+                )
             )
             .frame(width: buttonHitboxSize, height: buttonHitboxSize)
+            .help(MusicLongPressUI.skipHelp(primary: "Next", target: .next, settings: settings.settings))
         }
         .font(.system(size: 16))
         .foregroundColor(.white)

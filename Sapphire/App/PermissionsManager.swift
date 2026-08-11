@@ -86,7 +86,23 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     var optionalPermissions: [PermissionItem] { allPermissions.filter { $0.category == .optional } }
 
     var areAllRequiredPermissionsGranted: Bool {
-        requiredPermissions.allSatisfy { status(for: $0.type) == .granted }
+        requiredPermissions.allSatisfy { status(for: $0.type) == PermissionStatus.granted }
+    }
+
+    func arePermissionsGranted(for types: [PermissionType]) -> Bool {
+        types.allSatisfy { status(for: $0) == PermissionStatus.granted }
+    }
+
+    func missingPermissions(in types: [PermissionType]) -> [PermissionItem] {
+        allPermissions.filter { types.contains($0.type) && status(for: $0.type) != PermissionStatus.granted }
+    }
+
+    func permissionItems(for types: [PermissionType]) -> [PermissionItem] {
+        types.compactMap { type in allPermissions.first(where: { $0.type == type }) }
+    }
+
+    var areIntelligencePermissionsGranted: Bool {
+        arePermissionsGranted(for: SettingsSection.intelligence.requiredPermissions)
     }
 
     private override init() {
@@ -108,32 +124,32 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
     private func checkAccessibilityStatus() {
         let isTrusted = AXIsProcessTrusted()
-        accessibilityStatus = isTrusted ? .granted : .notRequested
+        accessibilityStatus = isTrusted ? PermissionStatus.granted : PermissionStatus.notRequested
     }
 
     private func checkFullDiskAccessStatus() {
         if let preflight = Self.tccPreflight {
             let result = preflight(Self.serviceSystemPolicyAllFiles, nil)
             switch result {
-            case 0: fullDiskAccessStatus = .granted
-            case 1: fullDiskAccessStatus = .denied
-            default: fullDiskAccessStatus = .notRequested
+            case 0: fullDiskAccessStatus = PermissionStatus.granted
+            case 1: fullDiskAccessStatus = PermissionStatus.denied
+            default: fullDiskAccessStatus = PermissionStatus.notRequested
             }
         } else {
             let testUrl = URL(fileURLWithPath: "/Library/Application Support/com.apple.TCC/TCC.db")
             let canAccess = FileManager.default.isReadableFile(atPath: testUrl.path)
-            fullDiskAccessStatus = canAccess ? .granted : .notRequested
+            fullDiskAccessStatus = canAccess ? PermissionStatus.granted : PermissionStatus.notRequested
         }
     }
 
     private func checkScreenRecordingStatus() {
         let granted = CGPreflightScreenCaptureAccess()
         if granted {
-            screenRecordingStatus = .granted
+            screenRecordingStatus = PermissionStatus.granted
         } else if UserDefaults.standard.bool(forKey: "screenRecordingRequested") {
-            screenRecordingStatus = .denied
+            screenRecordingStatus = PermissionStatus.denied
         } else {
-            screenRecordingStatus = .notRequested
+            screenRecordingStatus = PermissionStatus.notRequested
         }
     }
 
@@ -147,10 +163,10 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
                 switch settings.authorizationStatus {
-                case .authorized, .provisional: self.notificationsStatus = .granted
-                case .denied: self.notificationsStatus = .denied
-                case .notDetermined: self.notificationsStatus = .notRequested
-                @unknown default: self.notificationsStatus = .notRequested
+                case .authorized, .provisional: self.notificationsStatus = PermissionStatus.granted
+                case .denied: self.notificationsStatus = PermissionStatus.denied
+                case .notDetermined: self.notificationsStatus = PermissionStatus.notRequested
+                @unknown default: self.notificationsStatus = PermissionStatus.notRequested
                 }
             }
         }
@@ -159,28 +175,28 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
         let calStatus = EKEventStore.authorizationStatus(for: .event)
         switch calStatus {
-        case .fullAccess, .writeOnly: calendarStatus = .granted
-        case .denied, .restricted: calendarStatus = .denied
-        case .notDetermined: calendarStatus = .notRequested
-        @unknown default: calendarStatus = .notRequested
+        case .fullAccess, .writeOnly: calendarStatus = PermissionStatus.granted
+        case .denied, .restricted: calendarStatus = PermissionStatus.denied
+        case .notDetermined: calendarStatus = PermissionStatus.notRequested
+        @unknown default: calendarStatus = PermissionStatus.notRequested
         }
 
         let remStatus = EKEventStore.authorizationStatus(for: .reminder)
         switch remStatus {
-        case .fullAccess: remindersStatus = .granted
-        case .denied, .restricted: remindersStatus = .denied
-        case .notDetermined: remindersStatus = .notRequested
-        @unknown default: remindersStatus = .notRequested
+        case .fullAccess: remindersStatus = PermissionStatus.granted
+        case .denied, .restricted: remindersStatus = PermissionStatus.denied
+        case .notDetermined: remindersStatus = PermissionStatus.notRequested
+        @unknown default: remindersStatus = PermissionStatus.notRequested
         }
 
         updateBluetoothStatus(for: CBManager.authorization)
 
         let focusAuthStatus = INFocusStatusCenter.default.authorizationStatus
         switch focusAuthStatus {
-        case .authorized: focusStatusStatus = .granted
-        case .denied, .restricted: focusStatusStatus = .denied
-        case .notDetermined: focusStatusStatus = .notRequested
-        @unknown default: focusStatusStatus = .notRequested
+        case .authorized: focusStatusStatus = PermissionStatus.granted
+        case .denied, .restricted: focusStatusStatus = PermissionStatus.denied
+        case .notDetermined: focusStatusStatus = PermissionStatus.notRequested
+        @unknown default: focusStatusStatus = PermissionStatus.notRequested
         }
     }
 
@@ -269,12 +285,12 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             let spotifyStatus = await getAutomationPermissionStatus(for: "Spotify")
             let musicStatus = await getAutomationPermissionStatus(for: "Music")
 
-            if spotifyStatus == .denied || musicStatus == .denied {
-                automationStatus = .denied
-            } else if spotifyStatus == .granted && musicStatus == .granted {
-                automationStatus = .granted
+            if spotifyStatus == PermissionStatus.denied || musicStatus == PermissionStatus.denied {
+                automationStatus = PermissionStatus.denied
+            } else if spotifyStatus == PermissionStatus.granted && musicStatus == PermissionStatus.granted {
+                automationStatus = PermissionStatus.granted
             } else {
-                automationStatus = .notRequested
+                automationStatus = PermissionStatus.notRequested
             }
         }
     }
@@ -297,12 +313,12 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         let errorInfo = await executeAppleScript(command: command, for: appName)
 
         if errorInfo == nil {
-            return .granted
+            return PermissionStatus.granted
         } else if let errorNumber = errorInfo?[NSAppleScript.errorNumber] as? NSNumber,
                   errorNumber.intValue == -1743 {
-            return .denied
+            return PermissionStatus.denied
         } else {
-            return .notRequested
+            return PermissionStatus.notRequested
         }
     }
 
@@ -365,7 +381,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
            let storedStatus = PermissionStatus(rawValue: storedStatusRawValue) {
             localNetworkStatus = storedStatus
         } else {
-            localNetworkStatus = .notRequested
+            localNetworkStatus = PermissionStatus.notRequested
         }
     }
 
@@ -386,13 +402,13 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
                             let service = NetService(domain: "local.", type: "_dummy-service._tcp.", name: "PermissionCheck", port: Int32(port.rawValue))
                             self.dummyNetService = service
                             service.publish()
-                            self.updateLocalNetworkStatus(.granted)
+                            self.updateLocalNetworkStatus(PermissionStatus.granted)
                         }
                         self.scheduleStopLocalNetworkCheck()
 
                     case .failed(let error):
                         print("[PermissionsManager] Local network listener failed: \(error)")
-                        self.updateLocalNetworkStatus(.denied)
+                        self.updateLocalNetworkStatus(PermissionStatus.denied)
                         self.stopLocalNetworkCheck()
 
                     default:
@@ -409,7 +425,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
         } catch {
             print("[PermissionsManager] Failed to create NWListener for permission check: \(error)")
-            self.updateLocalNetworkStatus(.denied)
+            self.updateLocalNetworkStatus(PermissionStatus.denied)
         }
     }
 
@@ -441,10 +457,10 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
 private func updateLocationStatus(for status: CLAuthorizationStatus) {
         switch status {
-        case .authorized, .authorizedAlways, .authorizedWhenInUse: locationStatus = .granted
-        case .denied, .restricted: locationStatus = .denied
-        case .notDetermined: locationStatus = .notRequested
-        @unknown default: locationStatus = .notRequested
+        case .authorized, .authorizedAlways, .authorizedWhenInUse: locationStatus = PermissionStatus.granted
+        case .denied, .restricted: locationStatus = PermissionStatus.denied
+        case .notDetermined: locationStatus = PermissionStatus.notRequested
+        @unknown default: locationStatus = PermissionStatus.notRequested
         }
     }
 
@@ -455,10 +471,10 @@ private func updateLocationStatus(for status: CLAuthorizationStatus) {
 
     private func updateBluetoothStatus(for authorization: CBManagerAuthorization) {
         switch authorization {
-        case .allowedAlways: bluetoothStatus = .granted
-        case .denied, .restricted: bluetoothStatus = .denied
-        case .notDetermined: bluetoothStatus = .notRequested
-        @unknown default: bluetoothStatus = .notRequested
+        case .allowedAlways: bluetoothStatus = PermissionStatus.granted
+        case .denied, .restricted: bluetoothStatus = PermissionStatus.denied
+        case .notDetermined: bluetoothStatus = PermissionStatus.notRequested
+        @unknown default: bluetoothStatus = PermissionStatus.notRequested
         }
     }
 }

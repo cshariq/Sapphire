@@ -375,7 +375,7 @@ struct IntelligenceAgentActivityView {
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(
                 LinearGradient(
-                    colors: [.purple, .blue],
+                    colors: [Color.blue, Color.pink],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -432,8 +432,7 @@ struct AlbumArtView: View {
                 Image(nsImage: image)
                     .resizable()
             } else {
-                Image(systemName: "music.note")
-                    .foregroundColor(.white.opacity(0.8))
+                Color.clear
             }
         }
         .aspectRatio(contentMode: .fill)
@@ -1575,7 +1574,6 @@ struct CalibrationActivityView: View {
                 Image(systemName: "battery.100.bolt")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(.cyan)
-//                    .symbolEffect(.vintelligencebleColor.iterative.reversing, options: .repeating)
 
                 Text("Battery Calibration")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
@@ -1616,5 +1614,135 @@ struct CalibrationActivityView: View {
                 isShowing = true
             }
         }
+    }
+}
+
+// MARK: - OTP / Parcel smart inbox live activities
+
+struct OTPLiveActivityView: View {
+    let event: OTPEvent
+    var fromNotification: Bool = false
+
+    @EnvironmentObject var settings: SettingsModel
+    @State private var didCopy = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Verification code")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text(event.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(event.source)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Text(event.code)
+                    .font(.system(size: 28, weight: .bold, design: .monospaced))
+                    .contentTransition(.numericText())
+
+                Spacer()
+
+                if settings.settings.showCopyButtonForVerificationCodes {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(event.code, forType: .string)
+                        withAnimation(.spring) { didCopy = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                            SmartInboxMonitor.shared.dismissOTP()
+                        }
+                    } label: {
+                        Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .background(didCopy ? Color.green.opacity(0.25) : Color.primary.opacity(0.12))
+                    .clipShape(Capsule())
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .padding(.top, NotchConfiguration.universalHeight)
+        .frame(minWidth: 320, maxWidth: 400)
+        .onAppear {
+            if settings.settings.autoCopyVerificationCodes {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(event.code, forType: .string)
+                didCopy = true
+            }
+        }
+    }
+}
+
+struct ParcelLiveActivityView: View {
+    let parcel: ParcelShipment
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(parcel.carrier.displayName)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text(parcel.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(parcel.status)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(parcel.isDelivered ? .green : .primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.1))
+                    .clipShape(Capsule())
+            }
+
+            HStack {
+                Text(parcel.trackingNumber)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                if let url = parcel.trackingURL {
+                    Button("Track") {
+                        NSWorkspace.shared.open(url)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.orange.opacity(0.2))
+                    .clipShape(Capsule())
+                }
+            }
+
+            if !parcel.detail.isEmpty {
+                Text(parcel.detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .padding(.top, NotchConfiguration.universalHeight)
+        .frame(minWidth: 340, maxWidth: 440)
     }
 }

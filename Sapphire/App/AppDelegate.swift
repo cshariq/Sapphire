@@ -71,8 +71,6 @@ final class DynamicFocusWindow: NSPanel {
         if !normalizedFrame.isNull, !normalizedFrame.isEmpty {
             interactiveContentFrame = normalizedFrame
         } else if let contentBounds = contentView?.bounds, !contentBounds.isEmpty {
-            // Falling back to the content bounds avoids a "windowless" notch state
-            // while SwiftUI is still settling size/position updates.
             interactiveContentFrame = contentBounds
         }
 
@@ -91,9 +89,6 @@ final class DynamicFocusWindow: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         sendEventCount += 1
-
-        // Horizontal cursor lock is now handled globally by CursorLockManager.
-        // No per‑event handling required here.
 
         if shouldDropPassivePointerEvent(event) {
             droppedMoveEventCount += 1
@@ -218,7 +213,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     lazy var geminiLiveManager: GeminiLiveManager = GeminiLiveManager()
     lazy var settingsModel: SettingsModel = .shared
     lazy var activeAppMonitor: ActiveAppMonitor = .shared
-    lazy var powerStateController: PowerStateController = PowerStateController()
+    lazy var powerStateController: PowerStateController = .shared
     lazy var scheduleManager: ScheduleManager = .shared
     lazy var keyboardShortcutManager: KeyboardShortcutManager = .shared
     lazy var globalDragManager: GlobalDragManager = .shared
@@ -284,7 +279,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         source.setEventHandler { [weak self] in
             guard let self else { return }
             let event = source.data
-            print("[Memory] Pressure event: \(event == .critical ? "CRITICAL" : "WARNING")")
             Task { @MainActor in
                 MemoryTrimSupport.trimUnderMemoryPressure(musicManager: self.musicManager)
             }
@@ -309,7 +303,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             object: nil
         )
         UserDefaults.standard.register(defaults: ["NSApplicationCrashOnExceptions": true])
-        FirebaseApp.configure()
+        SapphireAnalytics.bootstrap()
 
         if settingsModel.settings.sportsWidgetEnabled {
             SportsAPIService.shared.bootstrapIfNeeded()
@@ -324,8 +318,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         setupMemoryPressureHandler()
 
-        // Bootstrap subscription FIRST, then route to the appropriate UI.
-        // This ensures entitlements are always known before any content is shown.
         Task {
             await SubscriptionManager.shared.bootstrap()
             await MainActor.run {
@@ -335,8 +327,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func routeAfterLaunch() {
-        // Beta builds require a valid subscription with beta access.
-        // This check must happen before showing any app UI.
         if BetaEntitlementRuntime.isBetaBuild {
             let validator = BetaEntitlementRuntime.makeValidator()
             if !validator.validateBetaEntitlement() {
@@ -353,6 +343,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func observeSettings() {
+        settingsModel.$settings
+            .map(\.googleAnalyticsEnabled)
+            .removeDuplicates()
+            .sink { _ in SapphireAnalytics.applyCollectionPreference() }
+            .store(in: &cancellables)
+
         settingsModel.$settings
             .map(\.neardropDeviceDisplayName)
             .removeDuplicates()
@@ -567,8 +563,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         betaBlockerWindow?.orderOut(nil)
         betaBlockerWindow = nil
 
-        // Re-bootstrap so we pick up any changes made during the beta blocker session
-        // (e.g., user just entered a valid license key), then re-route.
         Task {
             await SubscriptionManager.shared.bootstrap()
             await MainActor.run { self.routeAfterLaunch() }
@@ -626,17 +620,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func initializeCoreManagers() {
-        // Only initialize absolutely essential managers — everything else lazy
         _ = settingsModel
         _ = batteryMonitor
         _ = batteryManager
     }
 
     private func initializeBackgroundServices() {
-        // Changed from .userInitiated to .utility to reduce CPU priority
         DispatchQueue.global(qos: .utility).async {
             self.initializeCoreManagers()
-            // Defer non-critical initializations
             DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 2.0) {
                 _ = IOBluetoothDevice.pairedDevices()
                 if self.settingsModel.settings.neardropEnabled {
@@ -1118,13 +1109,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
+        let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 950, height: 650)
         let window = KeyableWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 950, height: 650),
+            contentRect: NSRect(x: 0, y: 0, width: 950, height: visibleFrame.height),
             styleMask: [.borderless, .resizable, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        window.center()
+        let windowSize = NSSize(width: 950, height: visibleFrame.height)
+        let windowOrigin = NSPoint(x: visibleFrame.midX - windowSize.width / 2, y: visibleFrame.minY)
+        window.setFrame(NSRect(origin: windowOrigin, size: windowSize), display: false)
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
@@ -1189,8 +1183,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if isSettings { settingsWindow = nil }
         if isLyrics { lyricsWindow = nil }
 
-        // Let AppKit release the window/content view (isReleasedWhenClosed).
-        // Only drop our delegate reference after this callback returns.
         DispatchQueue.main.async { [weak window] in
             window?.delegate = nil
         }
@@ -1201,7 +1193,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func finishClosingUserWindow() {
-        // Delay slightly to allow any new window presentation to complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self else { return }
             self.restoreAgentActivationIfNeeded()

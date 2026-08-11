@@ -1,10 +1,8 @@
-
 //
 //  installHelper.swift
 //  Sapphire
 //
 //  Created by Shariq Charolia on 2025-08-13.
-//
 
 func installHelper() {
     guard let scriptPath = Bundle.main.path(forResource: "install", ofType: "sh") else {

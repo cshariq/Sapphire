@@ -7,7 +7,15 @@
 
 import Foundation
 import Combine
-import CaptchaSolverInterface
+import Network
+import CryptoKit
+import SwiftUI
+import AppKit
+import WebKit
+
+struct LoginChallengeDetails: Identifiable {
+    let id = UUID()
+}
 
 enum SpotAPIError: Error, LocalizedError {
     case authenticationFailed(String)
@@ -37,6 +45,18 @@ enum CachePolicy {
     case returnCacheDataElseFetch
     case fetchIgnoringCacheData
     case fetchAndReturnCacheData
+}
+
+enum SessionBootstrapPolicy {
+    case automatic
+    case onDemand
+    case reconnect
+}
+
+extension SpotifyPrivateAPIManager {
+    func bootstrapIfNeeded(policy: SessionBootstrapPolicy = .automatic, delay: TimeInterval = 0) {
+        checkAndReconnectIfNeeded()
+    }
 }
 
 private class FileAPICache {
@@ -329,7 +349,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
     private func finishInitializationFlow(connectionId: String, attemptID: UUID) async {
         do {
             try await performDeviceRegistration(connectionId: connectionId)
-            let playerStateResponse = try await fetchInitialPlayerState()
+            let playerStateResponse = try await fetchInitialPlayerState(connectionId: connectionId)
             if let previouslyActiveDevice = playerStateResponse.activeDeviceId, let newControllerID = self.controllerDeviceID {
                 try await self.transferDevice(from: previouslyActiveDevice, to: newControllerID, isInitialHandshake: true)
             }
@@ -358,22 +378,22 @@ class SpotifyPrivateAPIManager: ObservableObject {
     func skipAd() async {
         do {
             try await forceReregisterAndTransferToSelf()
-            try await Task.sleep(for: .seconds(1))
+            try await Task.sleep(nanoseconds: 1_000_000_000)
 
             guard let nextTrack = nativeQueue.first else {
                 try await skipNext()
                 return
             }
 
-            _ = await MusicManager.shared.play(trackUri: nextTrack.uri, contextUri: nextTrack.metadata?.contextUri, trackUid: nextTrack.uid, trackIndex: nil)
+            try await pythonCompatiblePlay(trackUri: nextTrack.uri, contextUri: nextTrack.metadata?.contextUri ?? "", trackUid: nextTrack.uid, trackIndex: nil, targetDeviceID: activePlayerDeviceID ?? controllerDeviceID!)
         } catch { print("[SpotifyPrivateAPIManager] Error skipping ad: \(error.localizedDescription)") }
     }
 
     func searchForTrack(title: String, artist: String) async -> SpotifyTrack? {
         let query = "\(title) \(artist)"
-        let vintelligencebles: [String: Any] = ["searchTerm": query, "offset": 0, "limit": 5, "numberOfTopResults": 1, "includeAudiobooks": false]
+        let variables: [String: Any] = ["searchTerm": query, "offset": 0, "limit": 5, "numberOfTopResults": 1, "includeAudiobooks": false]
         do {
-            let response: NativeSearchResponse = try await pathfinderQuery(operationName: "searchDesktop", vintelligencebles: vintelligencebles, sendAsBody: false)
+            let response: NativeSearchResponse = try await pathfinderQuery(operationName: "searchDesktop", variables: variables, sendAsBody: false)
             if let bestMatch = response.data?.searchV2?.tracksV2?.items?.first?.itemV2.data { return SpotifyTrack(from: bestMatch) }
             return nil
         } catch {
@@ -384,7 +404,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
     func fetchTrackDetails(trackId: String) async -> SpotifyTrackDetailsResponse.TrackUnion? {
         do {
-            let response: SpotifyTrackDetailsResponse = try await pathfinderQuery(operationName: "getTrack", vintelligencebles: ["uri": "spotify:track:\(trackId)"], sendAsBody: false)
+            let response: SpotifyTrackDetailsResponse = try await pathfinderQuery(operationName: "getTrack", variables: ["uri": "spotify:track:\(trackId)"], sendAsBody: false)
             return response.data.trackUnion
         } catch {
             print("[SpotifyPrivateAPIManager] Error fetching track details: \(error.localizedDescription)")
@@ -399,8 +419,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
         do {
             resetLoadedPlaylistState()
-            let initialVintelligencebles: [String: Any] = ["uri": "spotify:playlist:\(playlistId)", "offset": 0, "limit": 100, "enableWatchFeedEntrypoint": false]
-            let freshResponse: SpotifyPlaylistDetailsResponse = try await pathfinderQuery(operationName: "fetchPlaylist", vintelligencebles: initialVintelligencebles, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData, useV2Endpoint: true)
+            let initialVariables: [String: Any] = ["uri": "spotify:playlist:\(playlistId)", "offset": 0, "limit": 100, "enableWatchFeedEntrypoint": false]
+            let freshResponse: SpotifyPlaylistDetailsResponse = try await pathfinderQuery(operationName: "fetchPlaylist", variables: initialVariables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData, useV2Endpoint: true)
 
             guard var freshPlaylistData = freshResponse.data?.playlistV2 else { throw SpotAPIError.missingData("Initial PlaylistV2 data was missing.") }
             if Task.isCancelled { return }
@@ -418,8 +438,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
             while currentOffset < totalTracks {
                 if Task.isCancelled { break }
-                let pageVintelligencebles: [String: Any] = ["uri": "spotify:playlist:\(playlistId)", "offset": currentOffset, "limit": 200, "enableWatchFeedEntrypoint": false]
-                let pageResponse: SpotifyPlaylistDetailsResponse = try await pathfinderQuery(operationName: "fetchPlaylist", vintelligencebles: pageVintelligencebles, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData, useV2Endpoint: true)
+                let pageVariables: [String: Any] = ["uri": "spotify:playlist:\(playlistId)", "offset": currentOffset, "limit": 200, "enableWatchFeedEntrypoint": false]
+                let pageResponse: SpotifyPlaylistDetailsResponse = try await pathfinderQuery(operationName: "fetchPlaylist", variables: pageVariables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData, useV2Endpoint: true)
 
                 if let newItems = pageResponse.data?.playlistV2?.content.items, !newItems.isEmpty {
                     self.playlistTrackViewModels.append(contentsOf: registerPlaylistItems(newItems, startingAt: currentOffset))
@@ -442,8 +462,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
         do {
             resetLoadedPlaylistState()
-            let vintelligencebles: [String: Any] = ["offset": 0, "limit": 500]
-            let response: LikedSongsResponse = try await pathfinderQuery(operationName: "fetchLibraryTracks", vintelligencebles: vintelligencebles, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData)
+            let variables: [String: Any] = ["offset": 0, "limit": 500]
+            let response: LikedSongsResponse = try await pathfinderQuery(operationName: "fetchLibraryTracks", variables: variables, sendAsBody: true, cachePolicy: .fetchIgnoringCacheData)
             if Task.isCancelled { return }
 
             let likedItems = response.data.me.library.tracks.items
@@ -490,7 +510,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
     func likeTrack(trackURI: String) async -> Bool {
         do {
-            let _: EmptyResponse = try await pathfinderQuery(operationName: "addToLibrary", vintelligencebles: ["uris": [trackURI]], sendAsBody: true)
+            let _: EmptyResponse = try await pathfinderQuery(operationName: "addToLibrary", variables: ["uris": [trackURI]], sendAsBody: true)
             return true
         } catch {
             print("[SpotifyPrivateAPIManager] Error liking track: \(error.localizedDescription)")
@@ -500,7 +520,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
     func unlikeTrack(trackURI: String) async -> Bool {
         do {
-            let _: EmptyResponse = try await pathfinderQuery(operationName: "removeFromLibrary", vintelligencebles: ["uris": [trackURI]], sendAsBody: true)
+            let _: EmptyResponse = try await pathfinderQuery(operationName: "removeFromLibrary", variables: ["uris": [trackURI]], sendAsBody: true)
             return true
         } catch {
             print("[SpotifyPrivateAPIManager] Error unliking track: \(error.localizedDescription)")
@@ -560,6 +580,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
             return false
         }
     }
+
+    // MARK: - Core Auth & Setup Routines
 
     private func fetchApiTokensAndClientVersion() async throws {
         guard let openSpotifyClient = openSpotifyClient else { throw SpotAPIError.authenticationFailed("Open Spotify client not initialized.") }
@@ -622,7 +644,9 @@ class SpotifyPrivateAPIManager: ObservableObject {
             return (discoveredHashes, version)
         }.value
 
-        self.operationHashes = processedHashes
+        var mergedHashes = Self.knownPathfinderHashes
+        mergedHashes.merge(processedHashes) { _, discovered in discovered }
+        self.operationHashes = mergedHashes
         self.clientVersion = clientVersion
 
         let (totp, totpVer) = await TotpGenerator.generateTotp()
@@ -645,32 +669,119 @@ class SpotifyPrivateAPIManager: ObservableObject {
     private func getClientToken(clientID: String) async throws -> ClientTokenResponse {
         guard let clientTokenClient = self.clientTokenClient else { throw SpotAPIError.authenticationFailed("ClientTokenClient not initialized.") }
         guard let deviceId = self.sessionDeviceID else { throw SpotAPIError.missingData("Session Device ID is missing for getClientToken.") }
-        let path = "/v1/clienttoken"; let body: [String: Any] = [ "client_data": [ "client_version": self.clientVersion ?? "harmony:4.43.2-a61ecaf5", "client_id": clientID, "js_sdk_data": ["device_brand": "unknown", "device_model": "unknown", "os": "mac", "os_version": "OS X 10.15.7", "device_id": deviceId, "device_type": "computer"] ] ]; let headers: [String: String] = [ "Accept": "application/json" ]
+        let path = "/v1/clienttoken"
+        let body: [String: Any] = [
+            "client_data": [
+                "client_version": self.clientVersion ?? "1.2.95.452.g5c9bdf32",
+                "client_id": clientID,
+                "js_sdk_data": [
+                    "device_brand": "Apple",
+                    "device_model": "unknown",
+                    "os": "macos",
+                    "os_version": "10.15.7",
+                    "device_id": deviceId,
+                    "device_type": "computer"
+                ]
+            ]
+        ]
+        let headers: [String: String] = ["Accept": "application/json"]
         let response = try await clientTokenClient.post(path: path, jsonBody: body, additionalHeaders: headers, authenticate: false)
-        guard !response.body.isEmpty else { throw SpotAPIError.invalidResponse }
-        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase; return try decoder.decode(ClientTokenResponse.self, from: response.body)
+        guard (200...299).contains(response.statusCode), !response.body.isEmpty else {
+            let snippet = String(data: response.body.prefix(200), encoding: .utf8) ?? "<empty \(response.body.count) bytes>"
+            throw SpotAPIError.apiError("clienttoken HTTP \(response.statusCode): \(snippet)")
+        }
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(ClientTokenResponse.self, from: response.body)
      }
 
     private func performDeviceRegistration(connectionId: String) async throws {
         guard let spclient = spclientClient else { throw SpotAPIError.authenticationFailed("SPClient not ready.") }
         guard let controllerDeviceID = self.controllerDeviceID else { throw SpotAPIError.missingData("Controller Device ID is not set.") }
 
-        let deletePath = "/track-playback/v1/devices/hobs_\(controllerDeviceID)"; do { _ = try await spclient.delete(path: deletePath) } catch { }
+        let deletePath = "/track-playback/v1/devices/\(controllerDeviceID)"; do { _ = try await spclient.delete(path: deletePath) } catch { }
 
-        let registerPayload: [String: Any] = [ "device": [ "brand": "spotify", "capabilities": [ "change_volume": true, "enable_play_token": true, "supports_file_media_type": true, "play_token_lost_behavior": "pause", "disable_connect": false, "audio_podcasts": true, "video_playback": true, "manifest_formats": [ "file_ids_mp3", "file_urls_mp3", "manifest_urls_audio_ad", "manifest_ids_video", "file_urls_external", "file_ids_mp4", "file_ids_mp4_dual", "manifest_urls_audio_ad", ], ], "device_id": controllerDeviceID, "device_type": "computer", "metadata": [:], "model": "web_player", "name": "Sapphire", "platform_identifier": "web_player windows 10;chrome 120.0.0.0;desktop", "is_group": false, ], "connection_id": connectionId, "client_version": self.clientVersion ?? "harmony:4.43.2-a61ecaf5", "volume": 65535, "outro_endcontent_snooping": false ]
-        let registerDevicePath = "/track-playback/v1/devices"; _ = try await spclient.post(path: registerDevicePath, jsonBody: registerPayload)
+        let registerPayload: [String: Any] = [
+            "device": [
+                "brand": "spotify",
+                "capabilities": [
+                    "change_volume": true,
+                    "enable_play_token": true,
+                    "supports_file_media_type": true,
+                    "play_token_lost_behavior": "pause",
+                    "disable_connect": false,
+                    "audio_podcasts": true,
+                    "video_playback": true,
+                    "supports_preferred_media_type": true,
+                    "supports_playback_offsets": true,
+                    "supports_playback_speed": true,
+                    "manifest_formats": [
+                        "file_ids_mp3", "file_urls_mp3", "manifest_urls_audio_ad",
+                        "manifest_ids_video", "file_urls_external", "file_ids_mp4",
+                        "file_ids_mp4_dual", "manifest_urls_audio_ad"
+                    ]
+                ],
+                "device_id": controllerDeviceID,
+                "device_type": "computer",
+                "metadata": [:],
+                "model": "web_player",
+                "name": "Sapphire",
+                "platform_identifier": "osx",
+                "is_group": false,
+                "is_public": false
+            ],
+            "connection_id": connectionId,
+            "client_version": self.clientVersion ?? "harmony:4.43.2-a61ecaf5",
+            "volume": 65535,
+            "outro_endcontent_snooping": false
+        ]
+        let registerDevicePath = "/track-playback/v1/devices"
+        _ = try await spclient.post(path: registerDevicePath, jsonBody: registerPayload)
 
-        let connectDevicePath = "/connect-state/v1/devices/hobs_\(controllerDeviceID)"; let connectPayload: [String: Any] = ["member_type": "CONNECT_STATE", "device": ["device_info": [ "capabilities": [ "can_be_player": false, "hidden": true, "needs_full_player_state": true ] ]]]; var connectHeaders = ["x-spotify-connection-id": connectionId]; connectHeaders["Content-Type"] = "application/json"; _ = try await spclient.put(path: connectDevicePath, jsonBody: connectPayload, additionalHeaders: connectHeaders)
+        let connectDevicePath = "/connect-state/v1/devices/hobs_\(controllerDeviceID)"
+        let connectPayload: [String: Any] = [
+            "member_type": "CONNECT_STATE",
+            "device": ["device_info": ["capabilities": Self.connectStateCapabilities()]]
+        ]
+        var connectHeaders = ["x-spotify-connection-id": connectionId]
+        connectHeaders["Content-Type"] = "application/json"
+        _ = try await spclient.put(path: connectDevicePath, jsonBody: connectPayload, additionalHeaders: connectHeaders)
+        print("[SpotifyPrivateAPIManager] Registered hidden controller \(controllerDeviceID)")
     }
 
-    private func fetchInitialPlayerState() async throws -> SpotifyNativePlayerStateResponse {
+    private func fetchInitialPlayerState(connectionId: String) async throws -> SpotifyNativePlayerStateResponse {
         guard let spclient = spclientClient, let controllerDeviceID = self.controllerDeviceID else { throw SpotAPIError.authenticationFailed("Cannot fetch initial state before controller is initialized.") }
-        guard let connectionId = webSocketManager?.latestConnectionID else {
-            throw SpotAPIError.missingData("WebSocket connection ID is not available for initial state fetch.")
-        }
-        let connectDevicePath = "/connect-state/v1/devices/hobs_\(controllerDeviceID)"; let connectPayload: [String: Any] = ["member_type": "CONNECT_STATE", "device": ["device_info": [ "capabilities": [ "can_be_player": false, "hidden": true, "needs_full_player_state": true ] ]]]; var connectHeaders = ["x-spotify-connection-id": connectionId]; connectHeaders["Content-Type"] = "application/json"
+        let connectDevicePath = "/connect-state/v1/devices/hobs_\(controllerDeviceID)"
+        let connectPayload: [String: Any] = [
+            "member_type": "CONNECT_STATE",
+            "device": ["device_info": ["capabilities": Self.connectStateCapabilities()]]
+        ]
+        var connectHeaders = ["x-spotify-connection-id": connectionId]
+        connectHeaders["Content-Type"] = "application/json"
         let connectResponse = try await spclient.put(path: connectDevicePath, jsonBody: connectPayload, additionalHeaders: connectHeaders)
+        if connectResponse.body.isEmpty {
+            return SpotifyNativePlayerStateResponse(activeDeviceId: nil, playerState: PlayerState(), devices: [:])
+        }
         return try decodeResponse(connectResponse.body, for: "initial-connect-state") as SpotifyNativePlayerStateResponse
+    }
+
+    private static func connectStateCapabilities() -> [String: Any] {
+        [
+            "can_be_player": false,
+            "hidden": true,
+            "needs_full_player_state": true,
+            "volume_steps": 64,
+            "gaia_eq_connect_id": true,
+            "supports_logout": true,
+            "is_observable": true,
+            "command_acks": true,
+            "supports_rename": false,
+            "supports_playlist_v2": true,
+            "is_controllable": true,
+            "supports_command_request": true,
+            "supports_external_episodes": true,
+            "supports_set_options_command": true,
+            "supported_types": [] as [String]
+        ]
     }
 
     private func performUserVerification() async {
@@ -685,11 +796,11 @@ class SpotifyPrivateAPIManager: ObservableObject {
         guard let spclient = spclientClient else { return }
         let event = [ "name": "session_start", "data": [ "client_version": self.clientVersion ?? "harmony:4.43.2-a61ecaf5", "platform": "web_player" ] ] as [String : Any]
         let payload: [String: Any] = ["events": [event]]
-        let path = "/gabo-receiver-service/v1/events"
+        let path = "/gabo-receiver-service/v3/events"
         do { _ = try await spclient.post(path: path, jsonBody: payload) } catch { print("[SpotifyPrivateAPIManager] Error sending Gabo session event: \(error.localizedDescription)") }
     }
 
-    func pythonCompatiblePlay(trackUri: String, contextUri: String, trackUid: String?, trackIndex: Int?, targetDeviceID: String) async throws {
+    internal func pythonCompatiblePlay(trackUri: String, contextUri: String, trackUid: String?, trackIndex: Int?, targetDeviceID: String) async throws {
         guard let fromDeviceID = self.controllerDeviceID, self.isLoggedIn else {
             throw SpotAPIError.authenticationFailed("Spotify private API is not logged in.")
         }
@@ -697,9 +808,39 @@ class SpotifyPrivateAPIManager: ObservableObject {
             throw SpotAPIError.authenticationFailed("SPClient not ready.")
         }
         let path = "/connect-state/v1/player/command/from/\(fromDeviceID)/to/\(targetDeviceID)"
-        var optionsPayload: [String: Any] = [ "license": "tft", "player_options_override": [:] ]
-        if !trackUri.isEmpty { optionsPayload["skip_to"] = [ "track_uid": trackUid ?? "", "track_index": trackIndex ?? 0, "track_uri": trackUri ] }
-        let commandPayload: [String: Any] = [ "context": [ "uri": contextUri, "url": "context://\(contextUri)", "metadata": [:] ], "play_origin": [ "feature_identifier": "playlist", "feature_version": "open-server_2025-09-20_1758397650501_078ed0e", "referrer_identifier": "deeplink" ], "options": optionsPayload, "logging_params": [ "page_instance_ids": [UUID().uuidString], "interaction_ids": [UUID().uuidString], "command_id": generateRandomHexString(length: 32) ], "endpoint": "play" ]
+        var optionsPayload: [String: Any] = [
+            "license": "premium",
+            "player_options_override": [:] as [String: Any]
+        ]
+        if !trackUri.isEmpty {
+            var skipTo: [String: Any] = ["track_uri": trackUri]
+            if let trackUid, !trackUid.isEmpty {
+                skipTo["track_uid"] = trackUid
+            }
+            if let trackIndex {
+                skipTo["track_index"] = trackIndex
+            }
+            optionsPayload["skip_to"] = skipTo
+        }
+        let commandPayload: [String: Any] = [
+            "context": [
+                "uri": contextUri,
+                "url": "context://\(contextUri)",
+                "metadata": [:] as [String: Any]
+            ],
+            "play_origin": [
+                "feature_identifier": "harmony",
+                "feature_version": "open-server_2025-09-20_1758397650501_078ed0e",
+                "referrer_identifier": "deeplink"
+            ],
+            "options": optionsPayload,
+            "logging_params": [
+                "page_instance_ids": [UUID().uuidString],
+                "interaction_ids": [UUID().uuidString],
+                "command_id": generateRandomHexString(length: 32)
+            ],
+            "endpoint": "play"
+        ]
         let finalPayload: [String: Any] = ["command": commandPayload]
         let response = try await spclient.post(path: path, jsonBody: finalPayload)
 
@@ -739,13 +880,34 @@ class SpotifyPrivateAPIManager: ObservableObject {
         return playlistTrackUIDByNormalizedURI[normalizeSpotifyUri(trackUri)]
     }
 
-    private func normalizeSpotifyUri(_ uri: String) -> String { if uri.starts(with: "spotify:track:") { return String(uri.dropFirst("spotify:track:".count)) }; if let url = URL(string: uri), url.host?.contains("spotify.com") == true { return url.lastPathComponent }; return uri }
+    private func normalizeSpotifyUri(_ uri: String) -> String {
+        if uri.starts(with: "spotify:track:") { return String(uri.dropFirst("spotify:track:".count)) }
+        if let url = URL(string: uri), url.host?.contains("spotify.com") == true { return url.lastPathComponent }
+        return uri
+    }
 
-    private func _setVolume(percent: Int) async throws { guard let from = self.controllerDeviceID, let to = self.activePlayerDeviceID, self.isLoggedIn else { throw SpotAPIError.authenticationFailed("Device IDs missing.") }; guard let spclient = spclientClient else { throw SpotAPIError.authenticationFailed("SPClient not ready.") }; let clampedPercent = max(0.0, min(1.0, Double(percent) / 100.0)); let sixteenBitRep = Int(clampedPercent * 65535); let path = "/connect-state/v1/connect/volume/from/\(from)/to/\(to)"; let payload: [String: Any] = ["volume": sixteenBitRep]; _ = try await spclient.put(path: path, jsonBody: payload) }
+    private func _setVolume(percent: Int) async throws {
+        guard let from = self.controllerDeviceID, let to = self.activePlayerDeviceID, self.isLoggedIn else { throw SpotAPIError.authenticationFailed("Device IDs missing.") }
+        guard let spclient = spclientClient else { throw SpotAPIError.authenticationFailed("SPClient not ready.") }
+        let clampedPercent = max(0.0, min(1.0, Double(percent) / 100.0))
+        let sixteenBitRep = Int(clampedPercent * 65535)
+        let path = "/connect-state/v1/connect/volume/from/\(from)/to/\(to)"
+        let payload: [String: Any] = ["volume": sixteenBitRep]
+        _ = try await spclient.put(path: path, jsonBody: payload)
+    }
 
-    internal func pathfinderQuery<T: Decodable>(operationName: String, vintelligencebles: [String: Any], extensions: [String: Any]? = nil, sendAsBody: Bool, cachePolicy: CachePolicy = .returnCacheDataElseFetch, useV2Endpoint: Bool = false) async throws -> T {
+    internal func pathfinderQuery<T: Decodable>(
+        operationName: String,
+        variables: [String: Any],
+        extensions: [String: Any]? = nil,
+        sendAsBody: Bool = true,
+        cachePolicy: CachePolicy = .returnCacheDataElseFetch,
+        useV2Endpoint: Bool = true
+    ) async throws -> T {
         guard let apiPartnerClient = apiPartnerClient, isLoggedIn else { throw SpotAPIError.authenticationFailed("Not logged in.") }
-        let vintelligenceblesData = try? JSONSerialization.data(withJSONObject: vintelligencebles, options: .sortedKeys); let vintelligenceblesString = vintelligenceblesData?.base64EncodedString() ?? ""; let cacheKey = "\(operationName)_\(vintelligenceblesString)"
+        let variablesData = try? JSONSerialization.data(withJSONObject: variables, options: .sortedKeys)
+        let variablesString = variablesData?.base64EncodedString() ?? ""
+        let cacheKey = "\(operationName)_\(variablesString)"
 
         if cachePolicy == .returnCacheDataElseFetch || cachePolicy == .fetchAndReturnCacheData {
             if let cachedEntry = apiCache.get(forKey: cacheKey) {
@@ -754,37 +916,70 @@ class SpotifyPrivateAPIManager: ObservableObject {
         }
 
         let sha256Hash: String
-        switch operationName {
-        case "fetchLibraryTracks":
-            sha256Hash = "087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240"
-        case "fetchPlaylist":
-            sha256Hash = "837211ef46f604a73cd3d051f12ee63c81aca4ec6eb18e227b0629a7b36adad3"
-        default:
-            sha256Hash = try getPartHash(operationName: operationName)
+        if let known = Self.knownPathfinderHashes[operationName] {
+            sha256Hash = known
+        } else if let discovered = operationHashes[operationName] {
+            sha256Hash = discovered
+        } else {
+            throw SpotAPIError.missingData("SHA256 hash for operation '\(operationName)' not found.")
         }
 
-        let finalExtensions = try extensions ?? ["persistedQuery": ["version": 1, "sha256Hash": sha256Hash]]
+        let finalExtensions = extensions ?? ["persistedQuery": ["version": 1, "sha256Hash": sha256Hash]]
 
         let response: HTTPResponse
         let path = useV2Endpoint ? "/pathfinder/v2/query" : "/pathfinder/v1/query"
 
         if sendAsBody {
-            let payload: [String: Any] = [ "operationName": operationName, "vintelligencebles": vintelligencebles, "extensions": finalExtensions ]
+            let payload: [String: Any] = [
+                "operationName": operationName,
+                "variables": variables,
+                "extensions": finalExtensions
+            ]
             response = try await apiPartnerClient.post(path: path, jsonBody: payload)
         } else {
             var components = URLComponents(); components.path = path
-            guard let vintelligenceblesJSONData = try? JSONSerialization.data(withJSONObject: vintelligencebles), let extensionsJSONData = try? JSONSerialization.data(withJSONObject: finalExtensions), let vintelligenceblesJSONString = String(data: vintelligenceblesJSONData, encoding: .utf8), let extensionsJSONString = String(data: extensionsJSONData, encoding: .utf8) else { throw SpotAPIError.urlConstructionFailed("Could not serialize pathfinder vintelligencebles/extensions to JSON string.") }
-            components.queryItems = [URLQueryItem(name: "operationName", value: operationName), URLQueryItem(name: "vintelligencebles", value: vintelligenceblesJSONString), URLQueryItem(name: "extensions", value: extensionsJSONString)]
-            guard let pathWithParams = components.url?.relativeString else { throw SpotAPIError.urlConstructionFailed("Could not create path with query parameters.") }
+            guard let variablesJSONData = try? JSONSerialization.data(withJSONObject: variables),
+                  let extensionsJSONData = try? JSONSerialization.data(withJSONObject: finalExtensions),
+                  let variablesJSONString = String(data: variablesJSONData, encoding: .utf8),
+                  let extensionsJSONString = String(data: extensionsJSONData, encoding: .utf8) else {
+                throw SpotAPIError.urlConstructionFailed("Could not serialize pathfinder variables/extensions to JSON string.")
+            }
+            components.queryItems = [
+                URLQueryItem(name: "operationName", value: operationName),
+                URLQueryItem(name: "variables", value: variablesJSONString),
+                URLQueryItem(name: "extensions", value: extensionsJSONString)
+            ]
+            guard let pathWithParams = components.url?.relativeString else {
+                throw SpotAPIError.urlConstructionFailed("Could not create path with query parameters.")
+            }
             response = try await apiPartnerClient.get(path: pathWithParams)
         }
 
-        if (200...299).contains(response.statusCode) && !response.body.isEmpty { apiCache.set(response.body, forKey: cacheKey) }
+        if (200...299).contains(response.statusCode) && !response.body.isEmpty {
+            apiCache.set(response.body, forKey: cacheKey)
+        }
         return try decodeResponse(response.body, for: operationName)
     }
+
     private func decodeResponse<T: Decodable>(_ data: Data, for operationName: String) throws -> T {
-        do { let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase; return try decoder.decode(T.self, from: data) }
-        catch let error { throw SpotAPIError.decodingError(error) }
+        if let apiError = try? JSONDecoder().decode(SpotifyPathfinderErrorEnvelope.self, from: data),
+           let error = apiError.error {
+            let message = error.message ?? "Spotify API error"
+            if error.status == 401 {
+                throw SpotAPIError.authenticationFailed(message)
+            }
+            throw SpotAPIError.missingData(message)
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            let snippet = String(data: data.prefix(400), encoding: .utf8) ?? "<non-utf8 \(data.count) bytes>"
+            print("[SpotifyPrivateAPIManager] Decode failed for \(operationName): \(error)\nBody snippet: \(snippet)")
+            throw SpotAPIError.decodingError(error)
+        }
     }
 
     func skipNext() async throws {
@@ -829,23 +1024,117 @@ class SpotifyPrivateAPIManager: ObservableObject {
             self.activePlayerDeviceID = playerStateResponse.activeDeviceId
         } catch let error {
             print("[SpotifyPrivateAPIManager] Error refreshing player state: \(error.localizedDescription)")
-
-            if let spotError = error as? SpotAPIError, case .decodingError = spotError {
-                print("[SpotifyPrivateAPIManager] Decoding error detected. Treating as a connection loss and resetting session.")
-                _internalLogout()
-                checkAndReconnectIfNeeded()
-            }
-
             throw error
         }
     }
 
-    private func fetchLibrary() async throws -> UserLibraryResponse.Library { let response: UserLibraryResponse = try await pathfinderQuery( operationName: "libraryV3", vintelligencebles: [ "filters": [], "order": nil, "textFilter": "", "features": ["LIKED_SONGS", "YOUR_EPISODES"], "limit": 100, "offset": 0, "flatten": false, "expandedFolders": [], "folderUri": nil, "includeFoldersWhenFlattening": true ], sendAsBody: false ); guard let library = response.data?.me?.libraryV3 else { throw SpotAPIError.missingData("Library data was missing in the response.") }; return library }
-    private func verifySessionAndFetchUserInfo() async throws { guard let wwwSpotifyClient = self.wwwSpotifyClient else { throw SpotAPIError.authenticationFailed("wwwSpotifyClient not initialized for verification.") }; let response = try await wwwSpotifyClient.get(path: "/api/account-settings/v1/profile"); guard response.statusCode == 200, !response.body.isEmpty else { throw SpotAPIError.authenticationFailed("Session verification failed. Could not fetch user profile.") }; do { let userProfileResponse = try decodeResponse(response.body, for: "user-profile") as SpotifyNativeUserProfile; self.userProfile = userProfileResponse } catch let error { print("[SpotifyPrivateAPIManager] Error verifying session/fetching user info: \(error.localizedDescription)"); throw error } }
-    private func getPartHash(operationName: String) throws -> String { guard let hash = self.operationHashes[operationName] else { throw SpotAPIError.missingData("SHA256 hash for operation '\(operationName)' not found.") }; return hash }
-    private func updateAllClientTokens() { let clients: [String: CustomTLSClient?] = [ "openSpotifyClient": openSpotifyClient, "spclientClient": spclientClient, "apiPartnerClient": apiPartnerClient, "clientTokenClient": clientTokenClient, "wwwSpotifyClient": wwwSpotifyClient, "wgSpclientClient": wgSpclientClient ]; for (_, client) in clients { client?.accessToken = self.accessToken; client?.clientToken = self.clientToken; client?.clientVersion = self.clientVersion }; }
-    internal func generateRandomHexString(length: Int) -> String { let characters = Array("0123456789abcdef"); var result = ""; for _ in 0..<length { result.append(characters.randomElement()!) }; return result }
+    private func fetchLibrary(order: String? = nil) async throws -> UserLibraryResponse.Library {
+        let response: UserLibraryResponse = try await pathfinderQuery(
+            operationName: "libraryV3",
+            variables: [
+                "filters": [],
+                "order": nil,
+                "textFilter": "",
+                "features": ["LIKED_SONGS", "YOUR_EPISODES"],
+                "limit": 100,
+                "offset": 0,
+                "flatten": false,
+                "expandedFolders": [],
+                "folderUri": nil,
+                "includeFoldersWhenFlattening": true
+            ],
+            sendAsBody: false
+        )
+        guard let library = response.data?.me?.libraryV3 else { throw SpotAPIError.missingData("Library data was missing in the response.") }
+        return library
+    }
+
+    private func verifySessionAndFetchUserInfo() async throws {
+        guard let wwwSpotifyClient = self.wwwSpotifyClient else { throw SpotAPIError.authenticationFailed("wwwSpotifyClient not initialized for verification.") }
+        let response = try await wwwSpotifyClient.get(path: "/api/account-settings/v1/profile")
+        guard response.statusCode == 200, !response.body.isEmpty else { throw SpotAPIError.authenticationFailed("Session verification failed. Could not fetch user profile.") }
+        do {
+            let userProfileResponse = try decodeResponse(response.body, for: "user-profile") as SpotifyNativeUserProfile
+            self.userProfile = userProfileResponse
+        } catch let error {
+            print("[SpotifyPrivateAPIManager] Error verifying session/fetching user info: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    private func getPartHash(operationName: String) throws -> String {
+        guard let hash = self.operationHashes[operationName] else { throw SpotAPIError.missingData("SHA256 hash for operation '\(operationName)' not found.") }
+        return hash
+    }
+
+    private func updateAllClientTokens() {
+        let clients: [String: CustomTLSClient?] = [
+            "openSpotifyClient": openSpotifyClient, "spclientClient": spclientClient,
+            "apiPartnerClient": apiPartnerClient, "clientTokenClient": clientTokenClient,
+            "wwwSpotifyClient": wwwSpotifyClient, "wgSpclientClient": wgSpclientClient
+        ]
+        for (_, client) in clients {
+            client?.accessToken = self.accessToken
+            client?.clientToken = self.clientToken
+            client?.clientVersion = self.clientVersion
+        }
+    }
+
+    internal func generateRandomHexString(length: Int) -> String {
+        let characters = Array("0123456789abcdef")
+        var result = ""
+        for _ in 0..<length { result.append(characters.randomElement()!) }
+        return result
+    }
+
     private struct EmptyResponse: Decodable {}
+
+    private static let knownPathfinderHashes: [String: String] = [
+        "fetchLibraryTracks": "087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240",
+        "fetchPlaylist": "e4b2953f160e58e38ac025d79b5a9b3aceee5c4c716598e9830bfceb69faff5f",
+        "fetchPlaylistContents": "e4b2953f160e58e38ac025d79b5a9b3aceee5c4c716598e9830bfceb69faff5f",
+        "fetchPlaylistMetadata": "e4b2953f160e58e38ac025d79b5a9b3aceee5c4c716598e9830bfceb69faff5f",
+        "decorateContextTracks": "383de00240775c39a6afe0b1055dc562b2a3930894201f9762f3fc32a74971c7",
+        "getTrack": "1a2f0cce77c90a4a5b1730beecc4da7e34290d684324c16663bf09a268ebce48",
+        "libraryV3": "390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455",
+        "areEntitiesInLibrary": "134337999233cc6fdd6b1e6dbf94841409f04a946c5c7b744b09ba0dfe5a85ed",
+        "canvas": "575138ab27cd5c1b3e54da54d0a7cc8d85485402de26340c2145f0f6bb5e7a9f",
+        "playlistPermissions": "e43d1d35f231cf289c23c9d9c489f4a4f502e4eda09839c530608f107b6556b8",
+        "smartShuffle": "3384085be84fbf2f855b024f99bc06cded1c0fd71af3a8fb8abb84e9656faba2",
+        "fetchEntitiesForRecentlyPlayed": "cf5d2e94ffd82788470788ae1f6090cc3e9e774fb8fd383580634c6e6f50f7be",
+        "fetchExtractedColors": "36e90fcaea00d47c695fce31874efeb2519b97d4cd0ee1abfb4f8dc9348596ea",
+        "getDynamicColorsByUris": "f0f112945d6d745bd8ff790317bbf8d310036da75df33130490e9d6dc96c59d9",
+        "getDynamicColors": "f0f112945d6d745bd8ff790317bbf8d310036da75df33130490e9d6dc96c59d9",
+        "accountAttributes": "8ea75f2a2e357219328570ef35ec2d9c4db6089076908f59c6eb62348b225b55",
+        "profileAttributes": "08ffb4730af3746e04a8301396f20875dbbce10c75243803091a9274eacc8ac0",
+        "queryNpvArtist": "b2cedf7ed0f29c713567d97ed69b848c8387294edfe58a0e439a3a5669cc27bb",
+        "queryArtistOverview": "ae0e2958a4ab645b35ca19ac04d0495ae12d9c5d7b7286217674801a9aab281a",
+        "queryTrackArtists": "ee2b038198f5e62c679c3996584d9249bbee55fe69fc212271c56492a022c798",
+        "lookupChildEntities": "91ce02e32b19123de231dc8de91fe4b9ab84eca087d4c015549308d77fbb6d10",
+        "isCurated": "e4ed1f91a2cc5415befedb85acf8671dc1a4bf3ca1a5b945a6386101a22e28a6",
+        "internalLinkRecommenderTrack": "c77098ee9d6ee8ad3eb844938722db60570d040b49f41f5ec6e7be9160a7c86b",
+        "similarAlbumsBasedOnThisTrack": "1d1f93a737498adca2c892c73af87fc0b052afe4e1a33c989540c32413dfae17",
+        "ArtistConcerts": "ef53c43b865496b9890b7167eab1dc614a8949ef9451b3c41184ea888de8bd2b",
+        "ArtistConcertsPageLocation": "320698465a352f0d0247ec8ed02471244106d4199820f99de4d0a785561c2b03",
+        "userLocation": "079939378ca79b67c6d047be9152ea940d21f10bbfa2f5d4cf4d8320d87774c2",
+        "searchDesktop": "db61238974d27839a136c9dc02bfdbe3fab7635f21cf85976ebff9a1ee281345",
+        "addToLibrary": "1ad0d40b3c09660d818b9e770eb1e84745dfbe941df159a64f8772b6fa2bfc3a",
+        "removeFromLibrary": "1ad0d40b3c09660d818b9e770eb1e84745dfbe941df159a64f8772b6fa2bfc3a",
+        "home": "76243c78b0e20ecdbe41b794dec8cbe73f75e585b0a7201b8d2e84578412847a",
+        "queryAlbumTracks": "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10",
+        "editablePlaylists": "d5c4b8096437dcc2ac9528c91dfcd299e35b747cda2f8f75d28f41f49c5092ba",
+        "applyCurations": "05b739a3a73091c213385233b9d3ed8a857c2ca29d2eebadb3d04ed12e288697",
+        "centralisedStatePlayerOptions": "e2dcfcab470854d4d1c7cb1a851438f14fe0a94d57db7f0b9dde492559d5395d",
+        "feedBaselineLookup": "a950fb7c4ecdcaf2aad2f3ca9ee9c3aa4b9c43c97e1d07d05148c4d355bea7fc"
+    ]
+
+    private struct SpotifyPathfinderErrorEnvelope: Decodable {
+        struct ErrorBody: Decodable {
+            let status: Int?
+            let message: String?
+        }
+        let error: ErrorBody?
+    }
 
     private func resetLoadedPlaylistState() {
         selectedPlaylist = nil
@@ -887,7 +1176,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
         do {
             let trackDetailsResponse: SpotifyTrackDetailsResponse = try await pathfinderQuery(
                 operationName: "getTrack",
-                vintelligencebles: ["uri": sparseTrack.uri],
+                variables: ["uri": sparseTrack.uri],
                 sendAsBody: false
             )
 
@@ -938,7 +1227,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
                     group.addTask {
                         var hydratedTrack = track
                         do {
-                            let trackDetails: SpotifyTrackDetailsResponse = try await self.pathfinderQuery(operationName: "getTrack", vintelligencebles: ["uri": track.uri], sendAsBody: false)
+                            let trackDetails: SpotifyTrackDetailsResponse = try await self.pathfinderQuery(operationName: "getTrack", variables: ["uri": track.uri], sendAsBody: false)
                             hydratedTrack = PlayerState.Track(hydrating: track, withDetails: trackDetails.data.trackUnion)
                         } catch {
                             print("[SpotifyPrivateAPIManager] Error hydrating queue track \(track.uri): \(error.localizedDescription)")
@@ -1045,14 +1334,14 @@ extension Data {
 extension SpotifyTrack {
     init(from nativeTrack: NativeTrackData) {
         self.id = nativeTrack.uri.components(separatedBy: ":").last ?? ""
-        self.name = nativeTrack.name
+        self.name = nativeTrack.name ?? "Unknown Track"
         self.uri = nativeTrack.uri
         self.album = SpotifyAlbum(
-            name: nativeTrack.albumOfTrack.name,
-            images: nativeTrack.albumOfTrack.coverArt.sources.map { SpotifyImage(url: $0.url) }
+            name: nativeTrack.albumOfTrack?.name ?? "Unknown Album",
+            images: nativeTrack.albumOfTrack?.coverArt.sources.map { SpotifyImage(url: $0.url) } ?? []
         )
-        self.artists = nativeTrack.artists.items.map { SpotifyArtist(name: $0.profile.name) }
-        self.durationMs = nativeTrack.duration.totalMilliseconds
+        self.artists = nativeTrack.artists?.items.map { SpotifyArtist(name: $0.profile.name) } ?? [SpotifyArtist(name: "Unknown Artist")]
+        self.durationMs = nativeTrack.duration?.totalMilliseconds ?? 0
         self.popularity = nil
     }
 }

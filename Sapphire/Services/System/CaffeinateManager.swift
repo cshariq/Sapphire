@@ -26,6 +26,7 @@ class CaffeineManager: ObservableObject {
     private var dimmedScreenForLidAngle = false
     private var savedBrightnessBeforeScreenOff: Float?
     private var shouldRemainActive = false
+    private var autoStartedByBatteryDischarge = false
     private var watchdogTimer: Timer?
     private var lastKnownClamshellClosed = false
     private var clamshellReleaseDebounceTask: Task<Void, Never>?
@@ -33,7 +34,6 @@ class CaffeineManager: ObservableObject {
     private var screenParameterDebounceTask: Task<Void, Never>?
     private var pendingClamshellOpen = false
 
-    /// Hysteresis: require consecutive "open" readings before releasing detector-only guards.
     private var consecutiveClamshellOpenReadings = 0
     private let clamshellOpenReadingsRequired = 10
 
@@ -41,6 +41,7 @@ class CaffeineManager: ObservableObject {
         lidAngleSensor.$angle
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
+                guard self?.shouldRemainActive == true else { return }
                 self?.handleClamshellOrLidChange()
             }
             .store(in: &cancellables)
@@ -48,6 +49,7 @@ class CaffeineManager: ObservableObject {
         lidAngleSensor.$isAvailable
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
+                guard self?.shouldRemainActive == true else { return }
                 self?.handleClamshellOrLidChange()
             }
             .store(in: &cancellables)
@@ -105,9 +107,13 @@ class CaffeineManager: ObservableObject {
     }
 
     func start(forcePreventSleepInClamshell: Bool = false) {
+        let wasActive = isActive
         shouldRemainActive = true
         if forcePreventSleepInClamshell {
             self.forceClamshellGuard = true
+            if !wasActive {
+                autoStartedByBatteryDischarge = true
+            }
         }
 
         if isActive {
@@ -124,6 +130,7 @@ class CaffeineManager: ObservableObject {
     func stop() {
         shouldRemainActive = false
         forceClamshellGuard = false
+        autoStartedByBatteryDischarge = false
         stopWatchdog()
         clamshellReleaseDebounceTask?.cancel()
         powerGuardRefreshDebounceTask?.cancel()
@@ -141,10 +148,15 @@ class CaffeineManager: ObservableObject {
         restoreBrightnessIfNeeded()
     }
 
+    func stopIfAutoStartedByBatteryDischarge() {
+        guard autoStartedByBatteryDischarge else { return }
+        stop()
+    }
+
     // MARK: - Layered Power Guards
 
     private func refreshAllPowerGuards() {
-        os_log("CaffeineManager: refreshAllPowerGuards - shouldAcquireClamshellGuard: %{public}@", 
+        os_log("CaffeineManager: refreshAllPowerGuards - shouldAcquireClamshellGuard: %{public}@",
                shouldAcquireClamshellGuard() ? "true" : "false")
         let assertionOK = acquireIOPMAssertions()
         let caffeinateOK = ensureCaffeinateProcessRunning()
@@ -187,7 +199,6 @@ class CaffeineManager: ObservableObject {
             || ClamshellDetector.isClosed
     }
 
-    /// Keep clamshell sleep disabled for the whole caffeinate session when any sticky setting is on.
     private func shouldKeepClamshellGuardForSession() -> Bool {
         forceClamshellGuard
             || settings.settings.sleepInClamshell
@@ -196,13 +207,13 @@ class CaffeineManager: ObservableObject {
 
     private func scheduleClamshellReleaseIfNeeded() {
         guard shouldRemainActive else { return }
-        guard !shouldKeepClamshellGuardForSession() else { 
+        guard !shouldKeepClamshellGuardForSession() else {
             os_log("CaffeineManager: Skipping clamshell release - session guard required.")
-            return 
+            return
         }
-        guard rootDomainClamshellActive || helperSleepDisabledActive else { 
+        guard rootDomainClamshellActive || helperSleepDisabledActive else {
             os_log("CaffeineManager: Skipping clamshell release - no active guard.")
-            return 
+            return
         }
 
         os_log("CaffeineManager: Scheduling clamshell release (guard active, session guard not required).")
@@ -211,9 +222,9 @@ class CaffeineManager: ObservableObject {
         clamshellReleaseDebounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled, let self, self.shouldRemainActive else { return }
-            guard !self.shouldKeepClamshellGuardForSession() else { 
+            guard !self.shouldKeepClamshellGuardForSession() else {
                 os_log("CaffeineManager: Cancelled clamshell release - session guard now required.")
-                return 
+                return
             }
             guard !ClamshellDetector.isClosed else {
                 os_log("CaffeineManager: Cancelled clamshell release - clamshell closed.")
@@ -255,15 +266,15 @@ class CaffeineManager: ObservableObject {
     }
 
     private func handleClamshellOrLidChange() {
-        os_log("CaffeineManager: handleClamshellOrLidChange called - shouldRemainActive: %{public}@", 
+        os_log("CaffeineManager: handleClamshellOrLidChange called - shouldRemainActive: %{public}@",
                shouldRemainActive ? "true" : "false")
         evaluateLidAngleScreenOff()
         guard shouldRemainActive else { return }
 
         let clamshellClosed = ClamshellDetector.isClosed
-        os_log("CaffeineManager: ClamshellDetector.isClosed = %{public}@, lastKnownClamshellClosed = %{public}@", 
+        os_log("CaffeineManager: ClamshellDetector.isClosed = %{public}@, lastKnownClamshellClosed = %{public}@",
                clamshellClosed ? "true" : "false", lastKnownClamshellClosed ? "true" : "false")
-        os_log("CaffeineManager: Clamshell state changed - closed: %{public}@, consecutiveOpen: %{public}d", 
+        os_log("CaffeineManager: Clamshell state changed - closed: %{public}@, consecutiveOpen: %{public}d",
                clamshellClosed ? "true" : "false", consecutiveClamshellOpenReadings)
 
         if clamshellClosed {
@@ -275,7 +286,7 @@ class CaffeineManager: ObservableObject {
         }
 
         guard clamshellClosed != lastKnownClamshellClosed else { return }
-        os_log("CaffeineManager: Clamshell state transition - lastKnown: %{public}@, current: %{public}@", 
+        os_log("CaffeineManager: Clamshell state transition - lastKnown: %{public}@, current: %{public}@",
                lastKnownClamshellClosed ? "true" : "false", clamshellClosed ? "true" : "false")
         lastKnownClamshellClosed = clamshellClosed
 
@@ -285,10 +296,10 @@ class CaffeineManager: ObservableObject {
             return
         }
 
-        guard consecutiveClamshellOpenReadings >= clamshellOpenReadingsRequired else { 
-            os_log("CaffeineManager: Not enough consecutive open readings (%{public}d/%{public}d)", 
+        guard consecutiveClamshellOpenReadings >= clamshellOpenReadingsRequired else {
+            os_log("CaffeineManager: Not enough consecutive open readings (%{public}d/%{public}d)",
                    consecutiveClamshellOpenReadings, clamshellOpenReadingsRequired)
-            return 
+            return
         }
         scheduleClamshellReleaseIfNeeded()
     }
@@ -298,11 +309,11 @@ class CaffeineManager: ObservableObject {
     }
 
     private func acquireClamshellGuardIfNeeded() {
-        os_log("CaffeineManager: acquireClamshellGuardIfNeeded called - rootDomainClamshellActive: %{public}@, helperSleepDisabledActive: %{public}@, shouldKeepClamshellGuardForSession: %{public}@", 
-               rootDomainClamshellActive ? "true" : "false", 
+        os_log("CaffeineManager: acquireClamshellGuardIfNeeded called - rootDomainClamshellActive: %{public}@, helperSleepDisabledActive: %{public}@, shouldKeepClamshellGuardForSession: %{public}@",
+               rootDomainClamshellActive ? "true" : "false",
                helperSleepDisabledActive ? "true" : "false",
                shouldKeepClamshellGuardForSession() ? "true" : "false")
-        
+
         if rootDomainClamshellActive {
             os_log("CaffeineManager: Clamshell guard already active, skipping re-acquire.")
             updateActiveState()
@@ -328,11 +339,11 @@ class CaffeineManager: ObservableObject {
     }
 
     private func releaseClamshellGuardIfNeeded() {
-        os_log("CaffeineManager: releaseClamshellGuardIfNeeded called - rootDomainClamshellActive: %{public}@, helperSleepDisabledActive: %{public}@, shouldKeepClamshellGuardForSession: %{public}@", 
-               rootDomainClamshellActive ? "true" : "false", 
+        os_log("CaffeineManager: releaseClamshellGuardIfNeeded called - rootDomainClamshellActive: %{public}@, helperSleepDisabledActive: %{public}@, shouldKeepClamshellGuardForSession: %{public}@",
+               rootDomainClamshellActive ? "true" : "false",
                helperSleepDisabledActive ? "true" : "false",
                shouldKeepClamshellGuardForSession() ? "true" : "false")
-        
+
         if rootDomainClamshellActive {
             os_log("CaffeineManager: Releasing clamshell guard (rootDomainClamshellActive=true).")
             if setClamshellSleepDisabled(false) {

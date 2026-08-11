@@ -2,14 +2,10 @@
 //  AppSystemTeardown.swift
 //  Sapphire
 //
+//  Created by Shariq Charolia on 2026-08-10
 
 import Foundation
 
-/// Restores session-scoped system state when Sapphire stops managing the Mac.
-///
-/// Battery charge limits and fan curves are intentionally **not** reset here — the
-/// privileged helper daemon keeps running after the app exits and continues to own
-/// those SMC settings until Sapphire reconnects or the user changes them.
 @MainActor
 enum AppSystemTeardown {
     static func restoreManagedSystemState(reason: String) {

@@ -2,14 +2,11 @@
 //  SapphireBuildFlags.swift
 //  Sapphire
 //
+//  Created by Shariq Charolia on 2026-08-10
 
 import Foundation
 
 enum SapphireBuildFlags {
-    /// `true` when compiled with `-DSAPPHIRE_FORCE_ONBOARDING`.
-    ///
-    /// To force onboarding on every launch:
-    ///   Xcode → Target → Build Settings → Other Swift Flags → add `-DSAPPHIRE_FORCE_ONBOARDING`
     static var forceOnboarding: Bool {
         #if SAPPHIRE_FORCE_ONBOARDING
         return true

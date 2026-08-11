@@ -82,6 +82,10 @@ struct LockScreenMainWidgetContainerView: View {
     @EnvironmentObject var musicManager: MusicManager
     @EnvironmentObject var calendarService: CalendarService
     @EnvironmentObject var batteryStatusManager: BatteryStatusManager
+    @EnvironmentObject var focusModeManager: FocusModeManager
+    @EnvironmentObject var timerManager: TimerManager
+    @EnvironmentObject var batteryMonitor: BatteryMonitor
+    @EnvironmentObject var bluetoothManager: BluetoothManager
     @StateObject private var navigationManager = LockScreenNavigationManager()
     @State private var maxMainWidgetHeight: CGFloat = 0
     @State private var dummyStack: [NotchWidgetMode] = []
@@ -102,7 +106,6 @@ struct LockScreenMainWidgetContainerView: View {
             }
             .onPreferenceChange(SizePreferenceKey.self) { sizes in
                 let maxHeight = sizes.map { $0.height }.max() ?? 0
-                let viewName = String(describing: navigationManager.currentView)
                 if self.maxMainWidgetHeight != maxHeight {
                     self.maxMainWidgetHeight = maxHeight
                 }
@@ -115,6 +118,11 @@ struct LockScreenMainWidgetContainerView: View {
         .environmentObject(musicManager)
         .environmentObject(calendarService)
         .environmentObject(navigationManager)
+        .environmentObject(focusModeManager)
+        .environmentObject(timerManager)
+        .environmentObject(batteryMonitor)
+        .environmentObject(bluetoothManager)
+        .environmentObject(batteryStatusManager)
     }
 
     @ViewBuilder
@@ -132,6 +140,21 @@ struct LockScreenMainWidgetContainerView: View {
                 .transition(fadeTransition)
         case .calendar:
             LockScreenCalendarView()
+                .transition(fadeTransition)
+        case .battery:
+            LockScreenBatteryMainView()
+                .transition(fadeTransition)
+        case .focus:
+            LockScreenFocusMainView()
+                .transition(fadeTransition)
+        case .timer:
+            LockScreenTimerMainView()
+                .transition(fadeTransition)
+        case .notes:
+            LockScreenNotesMainView()
+                .transition(fadeTransition)
+        case .clipboard:
+            LockScreenClipboardMainView()
                 .transition(fadeTransition)
         }
     }
@@ -159,7 +182,7 @@ struct LockScreenMainWidgetContainerView: View {
             case .devices:
                 LockScreenPaddedBackground {
                     ZStack(alignment: .topLeading) {
-                        DevicesView(navigationStack: $dummyStack, isLockScreenMode: true)
+                        QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
                         LockScreenBackButton()
                     }
                 }
@@ -198,7 +221,7 @@ struct LockScreenMainWidgetContainerView: View {
                         .padding(LockScreenConfiguration.backgroundPadding)
                         .measureSize()
                 case .devices:
-                    DevicesView(navigationStack: $dummyStack, isLockScreenMode: true)
+                    QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
                         .padding(LockScreenConfiguration.backgroundPadding)
                         .measureSize()
                 case .lyrics:
@@ -217,6 +240,16 @@ struct LockScreenMainWidgetContainerView: View {
             LockScreenWeatherView().measureSize()
         case .calendar:
             LockScreenCalendarView().measureSize()
+        case .battery:
+            LockScreenBatteryMainView().measureSize()
+        case .focus:
+            LockScreenFocusMainView().measureSize()
+        case .timer:
+            LockScreenTimerMainView().measureSize()
+        case .notes:
+            LockScreenNotesMainView().measureSize()
+        case .clipboard:
+            LockScreenClipboardMainView().measureSize()
         }
     }
 }
@@ -240,58 +273,10 @@ struct LockScreenPaddedBackground<Content: View>: View {
 
     @ViewBuilder
     private var backgroundMaterial: some View {
-        if settings.settings.lockScreenLiquidGlassLook {
-            if #available(macOS 26, *) {
-                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
-                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
-            } else {
-                ZStack {
-                    VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            .white.opacity(0.15),
-                            .white.opacity(0.05),
-                            .clear
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-                .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                gradient: Gradient(colors: [.white.opacity(0.25), .clear]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: LockScreenConfiguration.backgroundStrokeWidth
-                        )
-                        .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
-                )
-            }
-        } else {
-            ZStack {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                .white.opacity(0.2),
-                                .white.opacity(0.05)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: LockScreenConfiguration.backgroundStrokeWidth
-                    )
-                    .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
-            )
-        }
+        LockScreenWidgetSurface(
+            shape: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous),
+            cornerRadius: LockScreenConfiguration.cornerRadius
+        )
     }
 }
 

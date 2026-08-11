@@ -386,7 +386,7 @@ public class StatsManager: ObservableObject {
         let activeGPUs = gpus.list.filter{ $0.state && $0.utilization != nil }.sorted{ $0.utilization ?? 0 > $1.utilization ?? 0 }
         let primaryGPU = activeGPUs.first
 
-        self.currentStats = StatsPayload(
+        let newPayload = StatsPayload(
             cpu: self.cpu,
             ram: self.ram,
             disk: primaryDisk,
@@ -394,6 +394,9 @@ public class StatsManager: ObservableObject {
             sensors: self.sensors,
             battery: self.battery
         )
+        if currentStats != newPayload {
+            self.currentStats = newPayload
+        }
     }
 }
 
@@ -420,7 +423,7 @@ internal class Reader<T> {
     private let readerName: String
     private var source: DispatchSourceTimer?
 
-    init(interval: DispatchTimeInterval = .seconds(2), callback: @escaping (T?) -> Void) {
+    init(interval: DispatchTimeInterval = .seconds(3), callback: @escaping (T?) -> Void) {
         self.interval = interval
         self.callback = callback
         self.readerName = String(describing: T.self)
@@ -831,7 +834,6 @@ internal class SensorsStatsReader {
             }
             await self.read()
 
-            // Increased from 2s to 3s to reduce sensor polling frequency
             self.timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
                 Task {
                     await self?.read()

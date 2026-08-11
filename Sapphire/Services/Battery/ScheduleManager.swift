@@ -58,7 +58,6 @@ class ScheduleManager: ObservableObject {
 
     // MARK: - Dependencies
     private let settings = SettingsModel.shared
-    private let powerStateController = PowerStateController()
     private let caffeineManager = CaffeineManager.shared
     private let fanManager = FanManager.shared
 
@@ -146,18 +145,18 @@ class ScheduleManager: ObservableObject {
 
         case .setFanAuto:
             print("[ScheduleManager] Executing task: Set Fans to Automatic.")
-            for i in 0..<fanManager.fans.count {
-                fanManager.setFanMode(for: i, to: .auto)
+            for fan in fanManager.fans {
+                fanManager.setFanMode(for: fan.id, to: .auto)
             }
         case .setFanConstant:
             print("[ScheduleManager] Executing task: Set Fans to \(task.fanSpeed) RPM.")
-            for i in 0..<fanManager.fans.count {
-                fanManager.setFanMode(for: i, to: .constant(rpm: task.fanSpeed))
+            for fan in fanManager.fans {
+                fanManager.setFanMode(for: fan.id, to: .constant(rpm: task.fanSpeed))
             }
         case .setFanSensorBased:
             print("[ScheduleManager] Executing task: Set Fans to Sensor-based (\(task.sensorKey), \(task.minTemp)°C-\(task.maxTemp)°C).")
-            for i in 0..<fanManager.fans.count {
-                fanManager.setFanMode(for: i, to: .sensor(sensorKey: task.sensorKey, minTemp: task.minTemp, maxTemp: task.maxTemp))
+            for fan in fanManager.fans {
+                fanManager.setFanMode(for: fan.id, to: .sensor(sensorKey: task.sensorKey, minTemp: task.minTemp, maxTemp: task.maxTemp))
             }
         }
     }

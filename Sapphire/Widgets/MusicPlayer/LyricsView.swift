@@ -156,26 +156,26 @@ struct LyricsView: View {
                     }
                 }
                 .frame(width: 25, height: 26)
-                
+
                 VStack(alignment: .leading, spacing: 0.5) {
                     Text(displayTitle)
                         .font(.system(size: 9, weight: .semibold))
-                    
+
                     if let album = musicManager.album, !album.isEmpty {
                         Text(album)
                             .font(.system(size: 8, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
-                    
+
                     if let artist = musicManager.artist, !artist.isEmpty {
                         Text(artist)
                             .font(.system(size: 8, weight: .regular))
                             .foregroundStyle(.secondary)
                     }
                 }
-                
+
             }
-            
+
             Text("\(formatTime(displayedElapsedTime)) / \(formatTime(musicManager.totalDuration))")
                 .font(.system(size: 8, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)

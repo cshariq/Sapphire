@@ -2,8 +2,7 @@
 //  LidAngleAutomationManager.swift
 //  Sapphire
 //
-//  Created by OpenAI Codex.
-//
+//  Created by Shariq Charolia on 2026-08-10
 
 import AppKit
 import Combine
@@ -65,13 +64,13 @@ final class LidAngleAutomationManager: ObservableObject {
         let shouldResume = autoPausedPlayback && sensor.angle > trigger + hysteresis
 
         if shouldPause, !autoPausedPlayback, musicManager.isPlaying {
-            musicManager.pause()
+            Task { await musicManager.pause() }
             autoPausedPlayback = true
             return
         }
 
         if shouldResume {
-            musicManager.play()
+            Task { await musicManager.play() }
             autoPausedPlayback = false
         } else if !settings.settings.lidAnglePauseMediaEnabled {
             autoPausedPlayback = false
@@ -149,7 +148,6 @@ final class LidAngleAutomationManager: ObservableObject {
         releaseForcedSystemChanges()
     }
 
-    /// Reverts lid-angle automations that changed media, audio, display, or power state.
     func releaseForcedSystemChanges() {
         autoPausedPlayback = false
 

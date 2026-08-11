@@ -9,19 +9,18 @@ import Foundation
 import CoreLocation
 import SwiftUI
 
-class WeatherService: NSObject, CLLocationManagerDelegate {
+final class WeatherService: NSObject, CLLocationManagerDelegate {
+    static let shared = WeatherService()
+
     private let locationManager = CLLocationManager()
-    private var completionHandler: ((Result<ProcessedWeatherData, Error>) -> Void)?
+    private var pendingCompletions: [(Result<ProcessedWeatherData, Error>) -> Void] = []
 
     private var cachedWeatherData: ProcessedWeatherData?
     private var lastFetchDate: Date?
     private let cacheDuration: TimeInterval = 10 * 60
+    private var isFetchingLocation = false
 
     private var weatherAPIKey: String {
-        let key = APIKeyManager.shared.weatherAPIKey
-        if !key.isEmpty {
-            return key
-        }
         if let envKey = ProcessInfo.processInfo.environment["WEATHER_API_KEY"], !envKey.isEmpty {
             return envKey
         }
@@ -57,92 +56,141 @@ class WeatherService: NSObject, CLLocationManagerDelegate {
         return formatter
     }()
 
-    override init() {
+    private override init() {
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
     }
 
     public func fetchWeather(completion: @escaping (Result<ProcessedWeatherData, Error>) -> Void) {
-        self.completionHandler = completion
+        pendingCompletions.append(completion)
 
         if let lastFetch = lastFetchDate,
            let cachedData = cachedWeatherData,
+           cachedData.isValid,
            Date().timeIntervalSince(lastFetch) < cacheDuration {
-            completionHandler?(.success(cachedData))
+            finishPending(with: .success(cachedData))
             return
         }
 
         if !CLLocationManager.locationServicesEnabled() {
-            let error = NSError(domain: "WeatherService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Location services are disabled system-wide."])
-            completionHandler?(.failure(error))
+            finishPending(with: .failure(WeatherServiceError.locationDisabled))
             return
         }
 
+        requestLocationIfAuthorized()
+    }
+
+    private func requestLocationIfAuthorized() {
+        guard !isFetchingLocation else { return }
+
         switch locationManager.authorizationStatus {
         case .authorized, .authorizedAlways, .authorizedWhenInUse:
+            isFetchingLocation = true
             locationManager.requestLocation()
         case .denied, .restricted:
-            let error = NSError(domain: "WeatherService", code: 2, userInfo: [NSLocalizedDescriptionKey: "Location access was denied. Please enable it in System Settings."])
-            completionHandler?(.failure(error))
+            finishPending(with: .failure(WeatherServiceError.locationDenied))
         case .notDetermined:
-            locationManager.requestLocation()
+            locationManager.requestWhenInUseAuthorization()
         @unknown default:
-            let error = NSError(domain: "WeatherService", code: 99, userInfo: [NSLocalizedDescriptionKey: "Unknown location authorization status."])
-            completionHandler?(.failure(error))
+            finishPending(with: .failure(WeatherServiceError.unknownAuthorization))
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorized, .authorizedAlways, .authorizedWhenInUse:
+            requestLocationIfAuthorized()
+        case .denied, .restricted:
+            finishPending(with: .failure(WeatherServiceError.locationDenied))
+        case .notDetermined:
+            break
+        @unknown default:
+            finishPending(with: .failure(WeatherServiceError.unknownAuthorization))
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
-        locationManager.stopUpdatingLocation()
+        isFetchingLocation = false
+        guard let location = locations.last else {
+            finishPending(with: .failure(WeatherServiceError.locationUnavailable))
+            return
+        }
         fetchAPIs(for: location)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        completionHandler?(.failure(error))
-    }
-
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        isFetchingLocation = false
+        finishPending(with: .failure(error))
     }
 
     private func fetchAPIs(for location: CLLocation) {
-        let lat = location.coordinate.latitude
-        let lon = location.coordinate.longitude
-        let urlString = "https://api.weather.com/v1/geocode/\(lat)/\(lon)/aggregate.json?apiKey=\(weatherAPIKey)&products=conditionsshort,fcstdaily10short,fcsthourly24short,nowlinks"
-
-        guard let url = URL(string: urlString) else {
-            let error = NSError(domain: "WeatherService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])
-            completionHandler?(.failure(error))
-            return
-        }
-
         Task {
+            let placemarks   = try? await CLGeocoder().reverseGeocodeLocation(location)
+            let locationName = placemarks?.first?.locality ?? placemarks?.first?.name ?? "Unknown Location"
+
+            if !weatherAPIKey.isEmpty,
+               let primaryData = await fetchPrimary(for: location, locationName: locationName) {
+                self.cachedWeatherData = primaryData
+                self.lastFetchDate     = Date()
+                finishPending(with: .success(primaryData))
+                return
+            }
+
             do {
-                let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
-                let locationName = placemarks.first?.locality ?? placemarks.first?.name ?? "Unknown Location"
-
-                let (data, _) = try await URLSession.shared.data(from: url)
-
-                let decoder = JSONDecoder()
-                let apiResponse = try decoder.decode(WeatherApiResponse.self, from: data)
-
-                let processedData = self.process(response: apiResponse, locationName: locationName)
-
-                self.cachedWeatherData = processedData
-                self.lastFetchDate = Date()
-
-                self.completionHandler?(.success(processedData))
-
+                let fallbackData = try await OpenMeteoService.shared.fetchWeather(
+                    for: location,
+                    locationName: locationName
+                )
+                self.cachedWeatherData = fallbackData
+                self.lastFetchDate     = Date()
+                finishPending(with: .success(fallbackData))
             } catch {
-                self.completionHandler?(.failure(error))
+                finishPending(with: .failure(error))
             }
         }
     }
 
-    private func process(response: WeatherApiResponse, locationName: String) -> ProcessedWeatherData {
+    private func fetchPrimary(
+        for location: CLLocation,
+        locationName: String
+    ) async -> ProcessedWeatherData? {
+        let lat       = location.coordinate.latitude
+        let lon       = location.coordinate.longitude
+        let urlString = "https://api.weather.com/v1/geocode/\(lat)/\(lon)/aggregate.json?apiKey=\(weatherAPIKey)&products=conditionsshort,fcstdaily10short,fcsthourly24short,nowlinks"
+
+        guard let url = URL(string: urlString) else { return nil }
+
+        do {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest  = 10
+            config.timeoutIntervalForResource = 15
+            let (data, response) = try await URLSession(configuration: config).data(from: url)
+
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                return nil
+            }
+
+            let apiResponse = try JSONDecoder().decode(WeatherApiResponse.self, from: data)
+            return self.process(response: apiResponse, locationName: locationName)
+        } catch {
+            return nil
+        }
+    }
+
+    private func finishPending(with result: Result<ProcessedWeatherData, Error>) {
+        let completions = pendingCompletions
+        pendingCompletions.removeAll()
+        completions.forEach { $0(result) }
+    }
+
+    private func process(response: WeatherApiResponse, locationName: String) -> ProcessedWeatherData? {
         let observation = response.conditionsshort?.observation
         let todayForecast = response.fcstdaily10short?.forecasts?.first
+
+        guard observation?.imperial?.temp != nil || observation?.metric?.temp != nil else {
+            return nil
+        }
 
         let uiDailyForecasts: [DailyForecastUIData] = response.fcstdaily10short?.forecasts?.prefix(7).compactMap { forecast in
             guard let dow = forecast.dow,
@@ -177,16 +225,16 @@ class WeatherService: NSObject, CLLocationManagerDelegate {
 
         return ProcessedWeatherData(
             locationName: locationName,
-            temperature: observation?.imperial?.temp ?? 0,
-            temperatureMetric: observation?.metric?.temp ?? 0,
-            highTemp: todayForecast?.imperial?.max_temp ?? 0,
-            highTempMetric: todayForecast?.metric?.max_temp ?? 0,
-            lowTemp: todayForecast?.imperial?.min_temp ?? 0,
-            lowTempMetric: todayForecast?.metric?.min_temp ?? 0,
+            temperature: observation?.imperial?.temp ?? observation?.metric?.temp ?? 0,
+            temperatureMetric: observation?.metric?.temp ?? observation?.imperial?.temp ?? 0,
+            highTemp: todayForecast?.imperial?.max_temp ?? observation?.imperial?.temp ?? 0,
+            highTempMetric: todayForecast?.metric?.max_temp ?? observation?.metric?.temp ?? 0,
+            lowTemp: todayForecast?.imperial?.min_temp ?? observation?.imperial?.temp ?? 0,
+            lowTempMetric: todayForecast?.metric?.min_temp ?? observation?.metric?.temp ?? 0,
             conditionDescription: observation?.wx_phrase ?? "Unavailable",
             iconCode: observation?.wx_icon ?? 44,
-            feelsLike: observation?.imperial?.feels_like ?? 0,
-            feelsLikeMetric: observation?.metric?.feels_like ?? 0,
+            feelsLike: observation?.imperial?.feels_like ?? observation?.imperial?.temp ?? 0,
+            feelsLikeMetric: observation?.metric?.feels_like ?? observation?.metric?.temp ?? 0,
             windInfo: "\(observation?.imperial?.wspd ?? 0) mph",
             humidity: "\(observation?.rh ?? 0)%",
             precipChance: todayForecast?.day?.pop ?? 0,
@@ -196,12 +244,35 @@ class WeatherService: NSObject, CLLocationManagerDelegate {
             visibility: observation?.vis != nil ? "\(Int(observation!.vis!)) mi" : "-- mi",
             pressure: observation?.pressure != nil ? "\(String(format: "%.2f", observation!.pressure! * 0.02953)) in" : "-- in",
             dailyForecasts: uiDailyForecasts,
-            hourlyForecasts: uiHourlyForecasts
+            hourlyForecasts: uiHourlyForecasts,
+            isAvailable: true
         )
     }
 
     private func formatTime(from dateString: String?) -> String {
         guard let dateString = dateString, let date = Self.apiDateFormatter.date(from: dateString) else { return "--:--" }
         return Self.displayTimeFormatter.string(from: date)
+    }
+}
+
+enum WeatherServiceError: LocalizedError {
+    case missingAPIKey
+    case locationDisabled
+    case locationDenied
+    case locationUnavailable
+    case unknownAuthorization
+    case invalidURL
+    case unavailableData
+
+    var errorDescription: String? {
+        switch self {
+        case .missingAPIKey: return "Weather API key is not configured."
+        case .locationDisabled: return "Location services are disabled system-wide."
+        case .locationDenied: return "Location access was denied. Please enable it in System Settings."
+        case .locationUnavailable: return "Could not determine your location."
+        case .unknownAuthorization: return "Unknown location authorization status."
+        case .invalidURL: return "Invalid weather API URL."
+        case .unavailableData: return "Weather data is temporarily unavailable."
+        }
     }
 }

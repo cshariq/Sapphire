@@ -31,23 +31,7 @@ struct NotificationPayload: Identifiable, Equatable {
     }
 
     var verificationCode: String? {
-        let textToSearch = "\(title) \(body)"
-
-        let patterns = [
-            "G-(\\d{6})",
-            "(\\d{3}-\\d{3})",
-            "(?:code|pin|token|password|otp|verification|auth|security|passcode)(?: is | is: |: | be )?([a-zA-Z0-9]{4,8})",
-            "([a-zA-Z0-9]{4,8}) is your",
-            "\\b(\\d{6})\\b"
-        ]
-
-        for pattern in patterns {
-            if let code = findCode(in: textToSearch, with: pattern) {
-                return code.uppercased()
-            }
-        }
-
-        return nil
+        VerificationCodeDetector.find(in: "\(title) \(body)")
     }
 
     var appName: String {
@@ -57,17 +41,6 @@ struct NotificationPayload: Identifiable, Equatable {
         case "com.apple.sharingd": return "AirDrop"
         default: return appIdentifier.split(separator: ".").last.map(String.init) ?? "Notification"
         }
-    }
-
-    private func findCode(in text: String, with pattern: String) -> String? {
-        do {
-            let regex = try NSRegularExpression(pattern: pattern, options: .caseInsensitive)
-            let range = NSRange(text.startIndex..., in: text)
-            if let match = regex.firstMatch(in: text, options: [], range: range) {
-                if match.numberOfRanges > 1, let captureRange = Range(match.range(at: 1), in: text) { return String(text[captureRange]) }
-            }
-        } catch { print("Verification code regex error: \(error)") }
-        return nil
     }
 
     static func == (lhs: NotificationPayload, rhs: NotificationPayload) -> Bool {
@@ -213,8 +186,13 @@ class iMessageActionManager {
         } catch { return [] }
     }
     private func _runAppleScript(_ script: String) {
-        var error: NSDictionary?
-        if let scriptObject = NSAppleScript(source: script) { _ = scriptObject.executeAndReturnError(&error); if let err = error { print("iMessageActionManager: AppleScript Error: \(err)") } }
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSDictionary?
+            if let scriptObject = NSAppleScript(source: script) {
+                _ = scriptObject.executeAndReturnError(&error)
+                if let err = error { print("iMessageActionManager: AppleScript Error: \(err)") }
+            }
+        }
     }
 }
 
@@ -263,7 +241,22 @@ class NotificationManager: ObservableObject {
                 }
             }
             if let newest = notificationsToPublish.first { self.lastNotificationId = Int64(newest.id) ?? self.lastNotificationId; self.lastNotificationDate = newest.date.timeIntervalSinceReferenceDate }
-            for notification in notificationsToPublish.reversed() { self.latestNotification = notification }
+            for notification in notificationsToPublish.reversed() {
+                self.latestNotification = notification
+                if let code = notification.verificationCode {
+                    let source = notification.appName
+                    let title = notification.title
+                    let body = notification.body
+                    Task { @MainActor in
+                        SmartInboxMonitor.shared.presentOTP(
+                            code: code,
+                            source: source,
+                            title: title,
+                            body: body
+                        )
+                    }
+                }
+            }
         } catch { print("Failed to check for notifications: \(error)") }
     }
     private func _shouldShowNotification(for payload: NotificationPayload) -> Bool {

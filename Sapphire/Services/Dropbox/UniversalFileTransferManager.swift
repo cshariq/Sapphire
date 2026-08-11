@@ -74,7 +74,6 @@ class UniversalFileTransferManager {
             directoryMonitors.append(monitor)
         }
 
-        // Increased from 0.5s to 1.0s to reduce file system polling
         progressUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateTasks()
         }

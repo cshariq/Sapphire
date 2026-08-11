@@ -7,6 +7,103 @@
 
 import Foundation
 
+// MARK: - Flexible JSON number helpers
+
+enum SpotifyFlexibleNumber {
+    static func decodeInt64<K: CodingKey>(from container: KeyedDecodingContainer<K>, forKey key: K) -> Int64? {
+        if let value = try? container.decodeIfPresent(Int64.self, forKey: key) { return value }
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) { return Int64(value) }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) { return Int64(value) }
+        if let value = try? container.decodeIfPresent(String.self, forKey: key) { return Int64(value) }
+        return nil
+    }
+
+    static func decodeInt<K: CodingKey>(from container: KeyedDecodingContainer<K>, forKey key: K) -> Int? {
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) { return value }
+        if let value = try? container.decodeIfPresent(Int64.self, forKey: key) { return Int(value) }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) { return Int(value) }
+        if let value = try? container.decodeIfPresent(String.self, forKey: key) { return Int(value) }
+        return nil
+    }
+}
+
+enum SpotifyIDConverter {
+    private static let base62Alphabet = Array("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+    static func rawID(from value: String) -> String {
+        if value.hasPrefix("spotify:"), let id = value.split(separator: ":").last {
+            return String(id)
+        }
+        if let url = URL(string: value), url.host?.contains("spotify.com") == true {
+            return url.lastPathComponent
+        }
+        return value
+    }
+
+    static func uri(type: String, from value: String) -> String {
+        let id = rawID(from: value)
+        if value.hasPrefix("spotify:") { return value }
+        return "spotify:\(type):\(id)"
+    }
+
+    static func gid(fromBase62 id: String) -> String? {
+        let cleaned = rawID(from: id)
+        if cleaned.count == 32, cleaned.allSatisfy(\.isHexDigit) {
+            return cleaned.lowercased()
+        }
+        var value = Array(repeating: 0, count: 16)
+        for char in cleaned {
+            guard let digit = base62Alphabet.firstIndex(of: char) else { return nil }
+            var carry = digit
+            for i in stride(from: 15, through: 0, by: -1) {
+                let product = value[i] * 62 + carry
+                value[i] = product & 0xFF
+                carry = product >> 8
+            }
+            if carry != 0 { return nil }
+        }
+        return value.map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func base62(fromGID gid: String) -> String? {
+        let cleaned = gid.lowercased()
+        guard cleaned.count == 32, cleaned.allSatisfy(\.isHexDigit) else { return nil }
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(16)
+        var index = cleaned.startIndex
+        while index < cleaned.endIndex {
+            let next = cleaned.index(index, offsetBy: 2)
+            guard let byte = UInt8(cleaned[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+
+        var digits = [Int]()
+        var remaining = bytes
+        while !remaining.allSatisfy({ $0 == 0 }) {
+            var quotient = [UInt8]()
+            var carry = 0
+            for byte in remaining {
+                let value = carry * 256 + Int(byte)
+                let q = value / 62
+                carry = value % 62
+                if !quotient.isEmpty || q != 0 {
+                    quotient.append(UInt8(q))
+                }
+            }
+            digits.append(carry)
+            remaining = quotient
+        }
+        if digits.isEmpty { return "0" }
+        return String(digits.reversed().map { base62Alphabet[$0] })
+    }
+
+    static func pathEncodedURI(_ uri: String) -> String {
+        uri.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"))
+            ?? uri.replacingOccurrences(of: ":", with: "%3A")
+    }
+}
+
 // MARK: - Shared Enums
 
 enum RepeatMode: String, Codable {
@@ -50,9 +147,18 @@ struct UserProfile: Codable, Identifiable {
     let id: String
     let displayName: String
     let product: String
-    enum CodingKeys: String, CodingKey {
-        case id, product, displayName = "display_name"
+    let followers: Followers?
+
+    struct Followers: Codable, Hashable {
+        let total: Int?
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id, product, followers
+        case displayName = "display_name"
+    }
+
+    var followerCount: Int? { followers?.total }
 }
 struct SpotifyUserSimple: Decodable, Identifiable, Hashable {
     let id: String
@@ -139,9 +245,35 @@ extension String {
 
 // MARK: - Native User Profile (/api/account-settings/v1/profile)
 struct SpotifyNativeUserProfile: Decodable {
-    let profile: Profile
+    var profile: Profile
     struct Profile: Decodable {
-        let email: String, gender: String, birthdate: String, country: String, username: String, displayName: String?
+        let email: String?
+        let gender: String?
+        let birthdate: String?
+        let country: String?
+        let username: String
+        var displayName: String?
+
+        var friendlyName: String {
+            let trimmed = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let trimmed, !trimmed.isEmpty { return trimmed }
+            return username
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case email, gender, birthdate, country, username, displayName, name
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            email = try container.decodeIfPresent(String.self, forKey: .email)
+            gender = try container.decodeIfPresent(String.self, forKey: .gender)
+            birthdate = try container.decodeIfPresent(String.self, forKey: .birthdate)
+            country = try container.decodeIfPresent(String.self, forKey: .country)
+            username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+            displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+                ?? container.decodeIfPresent(String.self, forKey: .name)
+        }
     }
 }
 
@@ -150,17 +282,107 @@ struct SpotifyNativePlayerStateResponse: Decodable {
     let activeDeviceId: String?
     let playerState: PlayerState
     let devices: [String: SpotifyNativeDevice]
+
+    enum CodingKeys: String, CodingKey {
+        case activeDeviceId, playerState, devices
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        activeDeviceId = try container.decodeIfPresent(String.self, forKey: .activeDeviceId)
+        playerState = try container.decodeIfPresent(PlayerState.self, forKey: .playerState) ?? PlayerState()
+        devices = try container.decodeIfPresent([String: SpotifyNativeDevice].self, forKey: .devices) ?? [:]
+    }
+
+    init(activeDeviceId: String?, playerState: PlayerState, devices: [String: SpotifyNativeDevice]) {
+        self.activeDeviceId = activeDeviceId
+        self.playerState = playerState
+        self.devices = devices
+    }
 }
 
 struct PlayerState: Decodable {
     var track: Track?
     let isPlaying: Bool?
     let isPaused: Bool?
+    let timestamp: Int64?
+    let positionAsOfTimestamp: Int?
+    let duration: Int?
     let options: Options?
     let prevTracks: [Track]?
     let nextTracks: [Track]?
     let contextUri: String?
     let playOrigin: PlayOrigin?
+    let queueRevision: String?
+
+    enum CodingKeys: String, CodingKey {
+        case track, isPlaying, isPaused, timestamp, positionAsOfTimestamp, duration
+        case options, prevTracks, nextTracks, contextUri, playOrigin
+        case queueRevision = "queue_revision"
+    }
+
+    init(
+        track: Track? = nil,
+        isPlaying: Bool? = nil,
+        isPaused: Bool? = nil,
+        timestamp: Int64? = nil,
+        positionAsOfTimestamp: Int? = nil,
+        duration: Int? = nil,
+        options: Options? = nil,
+        prevTracks: [Track]? = nil,
+        nextTracks: [Track]? = nil,
+        contextUri: String? = nil,
+        playOrigin: PlayOrigin? = nil,
+        queueRevision: String? = nil
+    ) {
+        self.track = track
+        self.isPlaying = isPlaying
+        self.isPaused = isPaused
+        self.timestamp = timestamp
+        self.positionAsOfTimestamp = positionAsOfTimestamp
+        self.duration = duration
+        self.options = options
+        self.prevTracks = prevTracks
+        self.nextTracks = nextTracks
+        self.contextUri = contextUri
+        self.playOrigin = playOrigin
+        self.queueRevision = queueRevision
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        track = try container.decodeIfPresent(Track.self, forKey: .track)
+        isPlaying = try container.decodeIfPresent(Bool.self, forKey: .isPlaying)
+        isPaused = try container.decodeIfPresent(Bool.self, forKey: .isPaused)
+        timestamp = SpotifyFlexibleNumber.decodeInt64(from: container, forKey: .timestamp)
+        positionAsOfTimestamp = SpotifyFlexibleNumber.decodeInt(from: container, forKey: .positionAsOfTimestamp)
+        duration = SpotifyFlexibleNumber.decodeInt(from: container, forKey: .duration)
+        options = try container.decodeIfPresent(Options.self, forKey: .options)
+        prevTracks = try container.decodeIfPresent([Track].self, forKey: .prevTracks)
+        nextTracks = try container.decodeIfPresent([Track].self, forKey: .nextTracks)
+        contextUri = try container.decodeIfPresent(String.self, forKey: .contextUri)
+        playOrigin = try container.decodeIfPresent(PlayOrigin.self, forKey: .playOrigin)
+        queueRevision = try container.decodeIfPresent(String.self, forKey: .queueRevision)
+    }
+
+    func realtimePositionMilliseconds(at now: Date = Date()) -> Int? {
+        guard let sampleMs = positionAsOfTimestamp, let timestamp else { return nil }
+        let paused = (isPaused == true) || (isPlaying == false)
+        if paused { return sampleMs }
+        let sampleEpochSeconds = TimeInterval(timestamp) / 1000.0
+        let elapsed = max(0, now.timeIntervalSince1970 - sampleEpochSeconds)
+        let live = sampleMs + Int(elapsed * 1000.0)
+        if let duration, duration > 0 { return min(live, duration) }
+        return live
+    }
+
+    var isActivelyPlaying: Bool {
+        if isPaused == true { return false }
+        if isPlaying == true { return true }
+        if isPlaying == false { return false }
+        if isPaused == false { return true }
+        return false
+    }
 
     struct Options: Decodable {
         let shufflingContext: Bool?
@@ -172,6 +394,23 @@ struct PlayerState: Decodable {
         let uri: String
         let uid: String
         var metadata: Metadata?
+
+        enum CodingKeys: String, CodingKey {
+            case uri, uid, metadata
+        }
+
+        init(uri: String, uid: String, metadata: Metadata?) {
+            self.uri = uri
+            self.uid = uid
+            self.metadata = metadata
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            uri = try container.decodeIfPresent(String.self, forKey: .uri) ?? ""
+            uid = try container.decodeIfPresent(String.self, forKey: .uid) ?? UUID().uuidString
+            metadata = try container.decodeIfPresent(Metadata.self, forKey: .metadata)
+        }
 
         struct Metadata: Decodable, Hashable {
             var title: String?
@@ -201,7 +440,7 @@ extension PlayerState.Track {
 
         var updatedMetadata = sparseTrack.metadata ?? Metadata(title: nil, albumTitle: nil, artistName: nil, artistUri: nil, imageUrl: nil, imageSmallUrl: nil, imageLargeUrl: nil, imageXlargeUrl: nil, contextUri: nil, hidden: nil)
 
-        let allArtistItems = details.artists.items + details.otherArtists.items
+        let allArtistItems = (details.artists?.items ?? []) + (details.otherArtists?.items ?? [])
 
         if !allArtistItems.isEmpty {
             updatedMetadata.artistUri = allArtistItems.first?.uri
@@ -209,9 +448,9 @@ extension PlayerState.Track {
         }
 
         updatedMetadata.title = details.name
-        updatedMetadata.albumTitle = details.albumOfTrack.name
+        updatedMetadata.albumTitle = details.albumOfTrack?.name
 
-        let bestImage = details.albumOfTrack.coverArt.sources.max { ($0.width ?? 0) < ($1.width ?? 0) }
+        let bestImage = details.albumOfTrack?.coverArt.sources.max { ($0.width ?? 0) < ($1.width ?? 0) }
         updatedMetadata.imageUrl = bestImage?.url
 
         self.metadata = updatedMetadata
@@ -236,6 +475,31 @@ struct SpotifyNativeDevice: Decodable, Hashable, Identifiable {
     let model: String?
     let brand: String
     let capabilities: Capabilities
+
+    enum CodingKeys: String, CodingKey {
+        case canPlay, volume, name, deviceId, deviceType
+        case spircVersion, deviceSoftwareVersion, model, brand, capabilities
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        canPlay = try container.decodeIfPresent(Bool.self, forKey: .canPlay) ?? false
+        if let intVolume = try? container.decodeIfPresent(Int.self, forKey: .volume) {
+            volume = intVolume
+        } else if let doubleVolume = try? container.decodeIfPresent(Double.self, forKey: .volume) {
+            volume = Int(doubleVolume)
+        } else {
+            volume = nil
+        }
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Unknown Device"
+        deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId) ?? UUID().uuidString
+        deviceType = try container.decodeIfPresent(String.self, forKey: .deviceType) ?? "UNKNOWN"
+        spircVersion = try container.decodeIfPresent(String.self, forKey: .spircVersion)
+        deviceSoftwareVersion = try container.decodeIfPresent(String.self, forKey: .deviceSoftwareVersion)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        brand = try container.decodeIfPresent(String.self, forKey: .brand) ?? "unknown"
+        capabilities = try container.decodeIfPresent(Capabilities.self, forKey: .capabilities) ?? Capabilities()
+    }
 }
 
 struct Capabilities: Decodable, Hashable {
@@ -257,6 +521,79 @@ struct Capabilities: Decodable, Hashable {
     let supportsSetOptionsCommand: Bool?
     let supportsHifi: Hifi?
     let supportsDj: Bool?
+
+    init(
+        canBePlayer: Bool = false,
+        isControllable: Bool = false,
+        gaiaEqConnectId: Bool? = nil,
+        supportsLogout: Bool? = nil,
+        isObservable: Bool? = nil,
+        volumeSteps: Int? = nil,
+        supportedTypes: [String]? = nil,
+        commandAcks: Bool? = nil,
+        supportsRename: Bool? = nil,
+        supportsPlaylistV2: Bool? = nil,
+        supportsExternalEpisodes: Bool? = nil,
+        supportsSetBackendMetadata: Bool? = nil,
+        supportsTransferCommand: Bool? = nil,
+        supportsCommandRequest: Bool? = nil,
+        supportsGzipPushes: Bool? = nil,
+        supportsSetOptionsCommand: Bool? = nil,
+        supportsHifi: Hifi? = nil,
+        supportsDj: Bool? = nil
+    ) {
+        self.canBePlayer = canBePlayer
+        self.isControllable = isControllable
+        self.gaiaEqConnectId = gaiaEqConnectId
+        self.supportsLogout = supportsLogout
+        self.isObservable = isObservable
+        self.volumeSteps = volumeSteps
+        self.supportedTypes = supportedTypes
+        self.commandAcks = commandAcks
+        self.supportsRename = supportsRename
+        self.supportsPlaylistV2 = supportsPlaylistV2
+        self.supportsExternalEpisodes = supportsExternalEpisodes
+        self.supportsSetBackendMetadata = supportsSetBackendMetadata
+        self.supportsTransferCommand = supportsTransferCommand
+        self.supportsCommandRequest = supportsCommandRequest
+        self.supportsGzipPushes = supportsGzipPushes
+        self.supportsSetOptionsCommand = supportsSetOptionsCommand
+        self.supportsHifi = supportsHifi
+        self.supportsDj = supportsDj
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case canBePlayer, isControllable, gaiaEqConnectId, supportsLogout, isObservable
+        case volumeSteps, supportedTypes, commandAcks, supportsRename, supportsPlaylistV2
+        case supportsExternalEpisodes, supportsSetBackendMetadata, supportsTransferCommand
+        case supportsCommandRequest, supportsGzipPushes, supportsSetOptionsCommand, supportsHifi, supportsDj
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        canBePlayer = try container.decodeIfPresent(Bool.self, forKey: .canBePlayer) ?? false
+        isControllable = try container.decodeIfPresent(Bool.self, forKey: .isControllable) ?? false
+        gaiaEqConnectId = try container.decodeIfPresent(Bool.self, forKey: .gaiaEqConnectId)
+        supportsLogout = try container.decodeIfPresent(Bool.self, forKey: .supportsLogout)
+        isObservable = try container.decodeIfPresent(Bool.self, forKey: .isObservable)
+        volumeSteps = try container.decodeIfPresent(Int.self, forKey: .volumeSteps)
+        supportedTypes = try container.decodeIfPresent([String].self, forKey: .supportedTypes)
+        commandAcks = try container.decodeIfPresent(Bool.self, forKey: .commandAcks)
+        supportsRename = try container.decodeIfPresent(Bool.self, forKey: .supportsRename)
+        supportsPlaylistV2 = try container.decodeIfPresent(Bool.self, forKey: .supportsPlaylistV2)
+        supportsExternalEpisodes = try container.decodeIfPresent(Bool.self, forKey: .supportsExternalEpisodes)
+        supportsSetBackendMetadata = try container.decodeIfPresent(Bool.self, forKey: .supportsSetBackendMetadata)
+        supportsTransferCommand = try container.decodeIfPresent(Bool.self, forKey: .supportsTransferCommand)
+        supportsCommandRequest = try container.decodeIfPresent(Bool.self, forKey: .supportsCommandRequest)
+        supportsGzipPushes = try container.decodeIfPresent(Bool.self, forKey: .supportsGzipPushes)
+        supportsSetOptionsCommand = try container.decodeIfPresent(Bool.self, forKey: .supportsSetOptionsCommand)
+        if let hifi = try? container.decodeIfPresent(Hifi.self, forKey: .supportsHifi) {
+            supportsHifi = hifi
+        } else {
+            supportsHifi = nil
+        }
+        supportsDj = try container.decodeIfPresent(Bool.self, forKey: .supportsDj)
+    }
 }
 
 // MARK: - Track Details Response (/pathfinder/v1/query?operationName=getTrack)
@@ -271,9 +608,9 @@ struct SpotifyTrackDetailsResponse: Decodable {
         let uri: String
         let name: String
         let playcount: String?
-        let albumOfTrack: AlbumOfTrack
-        let artists: ArtistCollection
-        let otherArtists: ArtistCollection
+        let albumOfTrack: AlbumOfTrack?
+        let artists: ArtistCollection?
+        let otherArtists: ArtistCollection?
 
         var playcountInt: Int? {
             guard let playcount = self.playcount, let count = Int(playcount) else { return nil }
@@ -325,6 +662,29 @@ fileprivate let spotifyDateFormatter: DateFormatter = {
     return formatter
 }()
 
+fileprivate let spotifyISO8601Fractional: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+}()
+
+fileprivate let spotifyISO8601: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+}()
+
+enum SpotifyDateParsing {
+    static func timeInterval(from isoString: String) -> TimeInterval? {
+        if let date = spotifyISO8601Fractional.date(from: isoString)
+            ?? spotifyISO8601.date(from: isoString)
+            ?? spotifyDateFormatter.date(from: isoString) {
+            return date.timeIntervalSince1970
+        }
+        return nil
+    }
+}
+
 // MARK: - Playlist Details Response (/pathfinder/v1/query?operationName=fetchPlaylist)
 struct SpotifyPlaylistDetailsResponse: Decodable {
     var data: DataResponse?
@@ -362,9 +722,41 @@ struct SpotifyPlaylistDetailsResponse: Decodable {
             case typename = "__typename"
         }
 
+        enum CodingKeys: String, CodingKey {
+            case name, uri, content
+        }
+
+        init(name: String, uri: String?, content: Content) {
+            self.name = name
+            self.uri = uri
+            self.content = content
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Playlist"
+            uri = try container.decodeIfPresent(String.self, forKey: .uri)
+            content = try container.decodeIfPresent(Content.self, forKey: .content) ?? Content(totalCount: 0, items: [])
+        }
+
         struct Content: Decodable {
             let totalCount: Int
             var items: [PlaylistItem]
+
+            enum CodingKeys: String, CodingKey {
+                case totalCount, items
+            }
+
+            init(totalCount: Int, items: [PlaylistItem]) {
+                self.totalCount = totalCount
+                self.items = items
+            }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                totalCount = try container.decodeIfPresent(Int.self, forKey: .totalCount) ?? 0
+                items = try container.decodeIfPresent([PlaylistItem].self, forKey: .items) ?? []
+            }
         }
     }
 
@@ -372,14 +764,31 @@ struct SpotifyPlaylistDetailsResponse: Decodable {
         let uid: String
         let itemV2: ItemV2
         let addedAtInfo: AddedAt?
+        let addedBy: AddedByWrapper?
 
         enum CodingKeys: String, CodingKey {
-            case uid, itemV2, addedAtInfo = "addedAt"
+            case uid, itemV2, addedAtInfo = "addedAt", addedBy
+        }
+
+        init(uid: String, itemV2: ItemV2, addedAtInfo: AddedAt?, addedBy: AddedByWrapper? = nil) {
+            self.uid = uid
+            self.itemV2 = itemV2
+            self.addedAtInfo = addedAtInfo
+            self.addedBy = addedBy
         }
 
         var addedAt: TimeInterval? {
             guard let isoString = addedAtInfo?.isoString else { return nil }
-            return spotifyDateFormatter.date(from: isoString)?.timeIntervalSince1970
+            return SpotifyDateParsing.timeInterval(from: isoString)
+        }
+
+        var addedByDisplayName: String? {
+            let data = addedBy?.data
+            let name = data?.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let name, !name.isEmpty { return name }
+            let username = data?.username?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let username, !username.isEmpty { return username }
+            return nil
         }
 
         static func == (lhs: PlaylistItem, rhs: PlaylistItem) -> Bool {
@@ -387,8 +796,66 @@ struct SpotifyPlaylistDetailsResponse: Decodable {
         }
     }
 
+    struct AddedByWrapper: Decodable {
+        let data: AddedByUser?
+    }
+
+    struct AddedByUser: Decodable {
+        let name: String?
+        let username: String?
+        let uri: String?
+
+        enum CodingKeys: String, CodingKey {
+            case name, username, uri, profile
+        }
+
+        enum ProfileKeys: String, CodingKey {
+            case name, username, uri
+        }
+
+        init(name: String?, username: String?, uri: String?) {
+            self.name = name
+            self.username = username
+            self.uri = uri
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            if let profile = try? container.nestedContainer(keyedBy: ProfileKeys.self, forKey: .profile) {
+                name = try profile.decodeIfPresent(String.self, forKey: .name)
+                    ?? container.decodeIfPresent(String.self, forKey: .name)
+                username = try profile.decodeIfPresent(String.self, forKey: .username)
+                    ?? container.decodeIfPresent(String.self, forKey: .username)
+                uri = try profile.decodeIfPresent(String.self, forKey: .uri)
+                    ?? container.decodeIfPresent(String.self, forKey: .uri)
+            } else {
+                name = try container.decodeIfPresent(String.self, forKey: .name)
+                username = try container.decodeIfPresent(String.self, forKey: .username)
+                uri = try container.decodeIfPresent(String.self, forKey: .uri)
+            }
+        }
+    }
+
     struct AddedAt: Decodable {
         let isoString: String
+
+        enum CodingKeys: String, CodingKey { case isoString }
+
+        init(isoString: String) { self.isoString = isoString }
+
+        init(from decoder: Decoder) throws {
+            if let container = try? decoder.container(keyedBy: CodingKeys.self),
+               let iso = try container.decodeIfPresent(String.self, forKey: .isoString) {
+                isoString = iso
+                return
+            }
+            let single = try decoder.singleValueContainer()
+            if let iso = try? single.decode(String.self) {
+                isoString = iso
+            } else {
+                isoString = ""
+            }
+        }
     }
 
     struct ItemV2: Decodable {
@@ -397,9 +864,9 @@ struct SpotifyPlaylistDetailsResponse: Decodable {
 
     struct ItemData: Decodable {
         var uri: String?
-        let name: String
-        let albumOfTrack: AlbumOfTrack
-        let artists: ArtistCollection
+        let name: String?
+        let albumOfTrack: AlbumOfTrack?
+        let artists: ArtistCollection?
         let playcount: String?
 
         var playcountInt: Int? {
@@ -408,13 +875,15 @@ struct SpotifyPlaylistDetailsResponse: Decodable {
         }
 
         var imageURL: URL? {
-            return albumOfTrack.coverArt.bestImageURL
+            return albumOfTrack?.coverArt.bestImageURL
         }
     }
 
     struct ImageCollection: Decodable {
         let items: [ImageItem]?
         let sources: [ImageSource]?
+
+        static let empty = ImageCollection(items: nil, sources: nil)
 
         var bestImageURL: URL? {
             if let directSources = sources, let url = directSources.first?.url {
@@ -432,9 +901,30 @@ struct SpotifyPlaylistDetailsResponse: Decodable {
     }
 
     struct AlbumOfTrack: Decodable {
+        let uri: String?
         let name: String
         let coverArt: ImageCollection
         let publishDate: PublishDate?
+
+        enum CodingKeys: String, CodingKey {
+            case uri, name, coverArt
+            case publishDate = "date"
+        }
+
+        init(uri: String? = nil, name: String, coverArt: ImageCollection, publishDate: PublishDate? = nil) {
+            self.uri = uri
+            self.name = name
+            self.coverArt = coverArt
+            self.publishDate = publishDate
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            uri = try container.decodeIfPresent(String.self, forKey: .uri)
+            name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Unknown Album"
+            coverArt = try container.decodeIfPresent(ImageCollection.self, forKey: .coverArt) ?? .empty
+            publishDate = try container.decodeIfPresent(PublishDate.self, forKey: .publishDate)
+        }
     }
 
     struct PublishDate: Decodable {
@@ -448,7 +938,20 @@ struct UserLibraryResponse: Decodable {
     let data: DataClass?
     struct DataClass: Decodable { let me: Me? }
     struct Me: Decodable { let libraryV3: Library? }
-    struct Library: Decodable { let items: [LibraryItem]? }
+    struct Library: Decodable {
+        let items: [LibraryItem]?
+        let availableSortOrders: [SortOrder]?
+        let selectedSortOrder: SortOrder?
+        let availableFilters: [LibraryFilter]?
+    }
+    struct SortOrder: Decodable, Hashable, Identifiable {
+        let id: String
+        let name: String
+    }
+    struct LibraryFilter: Decodable, Hashable, Identifiable {
+        let id: String
+        let name: String
+    }
     struct LibraryItem: Decodable { let item: ItemWrapper? }
     struct ItemWrapper: Decodable { let data: LibraryItemType? }
 
@@ -547,7 +1050,7 @@ struct LikedSongItem: Decodable {
 
     var addedAt: TimeInterval? {
         guard let isoString = addedAtInfo?.isoString else { return nil }
-        return spotifyDateFormatter.date(from: isoString)?.timeIntervalSince1970
+        return SpotifyDateParsing.timeInterval(from: isoString)
     }
 }
 
@@ -702,10 +1205,10 @@ struct NativeSearchItemData: Decodable {
 
 struct NativeTrackData: Decodable {
     let uri: String
-    let name: String
-    let albumOfTrack: NativeAlbumOfTrack
-    let artists: NativeArtists
-    let duration: NativeDuration
+    let name: String?
+    let albumOfTrack: NativeAlbumOfTrack?
+    let artists: NativeArtists?
+    let duration: NativeDuration?
 }
 
 struct NativeAlbumOfTrack: Decodable {

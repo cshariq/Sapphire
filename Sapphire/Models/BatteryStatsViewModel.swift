@@ -35,17 +35,30 @@ class BatteryStatsViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var refreshTimer: Timer?
+    private var isStarted = false
 
-    init() {
+    init() {}
+
+    deinit { refreshTimer?.invalidate() }
+
+    func start() {
+        guard !isStarted else { return }
+        isStarted = true
         setupBindings()
         fetchStats()
-        // Reduced from 3s to 5s to lower CPU usage
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.fetchStats()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.fetchStats()
+            }
         }
     }
 
-    deinit { refreshTimer?.invalidate() }
+    func stop() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        cancellables.removeAll()
+        isStarted = false
+    }
 
     private func setupBindings() {
         batteryMonitor.$currentState.compactMap { $0 }.receive(on: DispatchQueue.main)

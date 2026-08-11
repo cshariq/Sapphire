@@ -2,6 +2,7 @@
 //  ClamshellDetector.swift
 //  Sapphire
 //
+//  Created by Shariq Charolia on 2026-08-10
 
 import AppKit
 import Foundation
@@ -12,7 +13,6 @@ import os.log
 enum ClamshellDetector {
     private static let closedLidAngleThreshold: Double = 8
 
-    /// When the registry reports closed, hold that through brief unreadable windows (e.g. notch resize).
     private static var registryReportedClosed = false
     private static var consecutiveRegistryOpenReadings = 0
     private static let registryOpenReadingsRequiredToClearSticky = 10
@@ -48,7 +48,7 @@ enum ClamshellDetector {
                 os_log("ClamshellDetector: isClosed - true (registryReportedClosed sticky, registryState=false)")
                 return true
             }
-            os_log("ClamshellDetector: isClosed - false (registryState=false, registryReportedClosed=%{public}@)", 
+            os_log("ClamshellDetector: isClosed - false (registryState=false, registryReportedClosed=%{public}@)",
                    registryReportedClosed ? "true" : "false")
             return false
         }
@@ -65,7 +65,7 @@ enum ClamshellDetector {
         }
 
         let displayBased = isLikelyClamshellFromDisplays
-        os_log("ClamshellDetector: isClosed - %{public}@ (displayBased: %{public}@, sensorAvailable: %{public}@, sensorAngle: %{public}.1f)", 
+        os_log("ClamshellDetector: isClosed - %{public}@ (displayBased: %{public}@, sensorAvailable: %{public}@, sensorAngle: %{public}.1f)",
                displayBased ? "true" : "false",
                displayBased ? "true" : "false",
                sensor.isAvailable ? "true" : "false",

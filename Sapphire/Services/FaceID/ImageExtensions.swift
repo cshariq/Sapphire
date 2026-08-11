@@ -67,19 +67,18 @@ extension NSImage {
         return newImage
     }
 
-    /// Converts NSImage to CVPixelBuffer for Vision framework processing
     func toPixelBuffer() -> CVPixelBuffer? {
         let width = Int(self.size.width)
         let height = Int(self. size.height)
-        
+
         guard width > 0 && height > 0 else { return nil }
-        
+
         let attrs = [
             kCVPixelBufferCGImageCompatibilityKey:  kCFBooleanTrue,
             kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue,
             kCVPixelBufferIOSurfacePropertiesKey:  [: ] as CFDictionary
         ] as CFDictionary
-        
+
         var pixelBuffer: CVPixelBuffer?
         let status = CVPixelBufferCreate(
             kCFAllocatorDefault,
@@ -89,24 +88,24 @@ extension NSImage {
             attrs,
             &pixelBuffer
         )
-        
+
         guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
-            print("❌ Failed to create pixel buffer with status: \(status)")
+            print(" Failed to create pixel buffer with status: \(status)")
             return nil
         }
-        
+
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-        
+
         guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else {
-            print("❌ Failed to get pixel buffer base address")
+            print(" Failed to get pixel buffer base address")
             return nil
         }
-        
+
         let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
-        
+
         guard let context = CGContext(
             data:  baseAddress,
             width: width,
@@ -116,17 +115,17 @@ extension NSImage {
             space: colorSpace,
             bitmapInfo: bitmapInfo
         ) else {
-            print("❌ Failed to create graphics context")
+            print(" Failed to create graphics context")
             return nil
         }
-        
+
         guard let cgImage = self.cgImage else {
-            print("❌ Failed to get CGImage from NSImage")
+            print(" Failed to get CGImage from NSImage")
             return nil
         }
-        
+
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        
+
         return buffer
     }
 }

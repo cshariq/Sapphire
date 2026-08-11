@@ -58,15 +58,19 @@ class BatteryHistoryViewModel: ObservableObject {
     private var allLogEntries: [BatteryLogEntry] = []
     private let logger = BatteryDataLogger.shared
     private var cancellables = Set<AnyCancellable>()
+    private var fetchGeneration: UInt64 = 0
 
     init() {}
 
     func fetchHistory() {
+        fetchGeneration &+= 1
+        let generation = fetchGeneration
         isLoading = true
-        Task(priority: .userInitiated) {
+        Task(priority: .utility) {
             let logs = logger.readLogFile().sorted { $0.timestamp < $1.timestamp }
 
             await MainActor.run {
+                guard generation == self.fetchGeneration else { return }
                 self.allLogEntries = logs
                 self.isLoading = false
             }
@@ -76,7 +80,27 @@ class BatteryHistoryViewModel: ObservableObject {
     func filterData(for range: TimeRange) {
         let (startDate, endDate) = calculateDateRange(for: range)
         let filteredData = allLogEntries.filter { $0.timestamp >= startDate && $0.timestamp <= endDate }
-        self.chartData = filteredData
+        self.chartData = Self.downsample(filteredData, maxPoints: 360)
+    }
+
+    func releaseMemory() {
+        fetchGeneration &+= 1
+        chartData = []
+        allLogEntries = []
+        isLoading = false
+        cancellables.removeAll()
+    }
+
+    private static func downsample(_ entries: [BatteryLogEntry], maxPoints: Int) -> [BatteryLogEntry] {
+        guard entries.count > maxPoints, maxPoints > 2 else { return entries }
+        let step = Double(entries.count - 1) / Double(maxPoints - 1)
+        var result: [BatteryLogEntry] = []
+        result.reserveCapacity(maxPoints)
+        for i in 0..<maxPoints {
+            let index = min(entries.count - 1, Int((Double(i) * step).rounded()))
+            result.append(entries[index])
+        }
+        return result
     }
 
     private func calculateDateRange(for range: TimeRange) -> (start: Date, end: Date) {

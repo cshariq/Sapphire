@@ -12,20 +12,17 @@ import QuartzCore
 
 @MainActor
 final class MenuBarAppearanceManager {
-    // Coalescer to batch frequent refresh requests and avoid redundant work
     private struct RefreshCoalescer {
         var pending = false
         var lastRequest: CFTimeInterval = 0
     }
     private var coalescer = RefreshCoalescer()
-    // Removed: private let refreshQueue = DispatchQueue(label: "MenuBarAppearanceManager.refresh", qos: .userInitiated)
-    
+
     enum PanelType { case full, left, right }
     private var overlayPanels = [NSScreen: [PanelType: MenuBarOverlayPanel]]()
     private var cancellables = Set<AnyCancellable>()
     private var isMissionControlActive = false
 
-    // Cache last applied frames per screen and panel type to skip no-op updates
     private var lastFrames = [NSScreen: [PanelType: CGRect]]()
 
     init() {
@@ -56,7 +53,6 @@ final class MenuBarAppearanceManager {
 
     @objc private func scheduleRefresh() {
         let now = CACurrentMediaTime()
-        // Mark that a refresh is pending; we batch events within 150ms window
         if !coalescer.pending {
             coalescer.pending = true
             coalescer.lastRequest = now
@@ -73,7 +69,7 @@ final class MenuBarAppearanceManager {
     @objc private func refreshAppearanceWithDelay() {
         scheduleRefresh()
     }
-    
+
     private func refreshAppearanceImmediately() {
         self.applyAppearance(from: SettingsModel.shared.settings)
     }
@@ -82,8 +78,7 @@ final class MenuBarAppearanceManager {
 
     private func applyAppearance(from settings: Settings) {
         let isAnyEffectEnabled = settings.menuBarTintStyle != "none" || settings.menuBarBorderWidth > 0 || settings.menuBarShadowEnabled || settings.menuBarShapeStyle != "none" || settings.menuBarBlur || settings.menuBarLiquidGlass
-        
-        // Avoid heavy updates while Mission Control is active; panels will update when it ends
+
         if isMissionControlActive { return }
 
         guard isAnyEffectEnabled else {
@@ -146,7 +141,6 @@ final class MenuBarAppearanceManager {
 
         let leftWidth = (WindowInfo.getApplicationMenuFrame(for: screen.displayID)?.width ?? 0) + sidePadding
 
-        // Compute rightX lazily; only detect items if we don't have a cached minX
         var rightX: CGFloat = screenFrame.maxX - sidePadding
         do {
             let allItems = MenuBarItemDetector.detectItemsWithInfo().filter { screenFrame.intersects($0.frame) }
@@ -182,7 +176,7 @@ final class MenuBarAppearanceManager {
 // MARK: - Overlay Panel
 fileprivate class MenuBarOverlayPanel: NSPanel {
     private var panelType: MenuBarAppearanceManager.PanelType
-    
+
     final class AppearanceModel: ObservableObject {
         @Published var settings: Settings
         @Published var panelType: MenuBarAppearanceManager.PanelType
@@ -225,7 +219,6 @@ fileprivate class MenuBarOverlayPanel: NSPanel {
                 self.animator().setFrame(frame, display: true)
             }
         }
-        // Update the SwiftUI root view efficiently by updating the model only
         if appearanceModel.settings != settings { appearanceModel.settings = settings }
         if appearanceModel.panelType != type { appearanceModel.panelType = type }
         if appearanceModel.isMissionControlActive != isMissionControlActive { appearanceModel.isMissionControlActive = isMissionControlActive }
@@ -235,14 +228,14 @@ fileprivate class MenuBarOverlayPanel: NSPanel {
 // MARK: - SwiftUI Appearance View
 fileprivate struct MenuBarAppearanceView: View {
     @ObservedObject var model: MenuBarOverlayPanel.AppearanceModel
-    
+
     var body: some View {
         appearanceContent
             .modifier(ConditionalShadow(enabled: model.settings.menuBarShadowEnabled))
             .opacity(model.isMissionControlActive ? 0.0 : model.settings.menuBarOpacity)
             .animation(.easeOut(duration: 0.2), value: model.isMissionControlActive)
     }
-    
+
     private struct ConditionalShadow: ViewModifier {
         let enabled: Bool
         func body(content: Content) -> some View {
@@ -327,13 +320,31 @@ fileprivate struct MenuBarAppearanceView: View {
 
     @ViewBuilder
     private func liquidGlassOverlay(shape: AnyShape) -> some View {
-        if #available(macOS 26.0, *) {
-            shape.fill(.clear).glassEffect()
-        } else {
-            LinearGradient(colors: [.white.opacity(0.25), .clear], startPoint: .top, endPoint: .bottom)
-                .blendMode(.overlay)
-                .blur(radius: 2)
+        ZStack {
+            LiquidGlassShapeFill(
+                shape: shape,
+                intensity: model.settings.menuBarLiquidGlassIntensity,
+                blendingMode: .behindWindow,
+                appearance: .auto
+            )
+            if model.settings.menuBarBlur {
+                VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow)
+                    .clipShape(shape)
+                VisualEffectView(material: .hudWindow, blendingMode: .withinWindow)
+                    .clipShape(shape)
+                    .opacity(0.7)
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.28),
+                                Color.white.opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
         }
     }
 }
-

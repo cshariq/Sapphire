@@ -2,6 +2,7 @@
 //  AudioSettingsView.swift
 //  Sapphire
 //
+//  Created by Shariq Charolia on 2026-08-10
 
 import SwiftUI
 
@@ -116,15 +117,8 @@ struct AudioSettingsView: View {
     }
 
     private func resetAllAppSettings() {
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: "SapphirePerAppVolumeMap")
-        defaults.removeObject(forKey: "SapphirePerAppMuteMap")
-        defaults.removeObject(forKey: "SapphirePerAppEQMap")
-        defaults.removeObject(forKey: "SapphirePerAppEQDeviceScopeMap")
-
-        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: nil)
-
         Task { @MainActor in
+            PerAppAudioController.shared.clearAllPersistedState()
             MultiAudioManager.shared.activeTaps.values.forEach { tapMap in
                 tapMap.values.forEach { $0.invalidate() }
             }
@@ -134,8 +128,7 @@ struct AudioSettingsView: View {
 
     private func resetAllDeviceSettings() {
         Task { @MainActor in
-            MultiAudioManager.shared.deviceSettings.removeAll()
-            MultiAudioManager.shared.notifyAdjustmentMade(for: "ResetAll")
+            MultiAudioManager.shared.clearAllDeviceSettings()
         }
     }
 }

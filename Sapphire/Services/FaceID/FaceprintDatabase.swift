@@ -30,12 +30,10 @@ class FaceDataStore {
 
     private let maxLearnedPrints = 50
     private let secureFileURL: URL
-    
-    // Dynamic static buffers to achieve zero-heap-allocation during active streaming
+
     private(set) var faceBuffer112: CVPixelBuffer?
     private(set) var livenessBuffer128: CVPixelBuffer?
-    
-    // Pre-allocated MLMultiArrays to avoid instantiations inside loop
+
     private(set) var preallocatedFaceArray112: MLMultiArray?
     private(set) var preallocatedLivenessArray128: MLMultiArray?
 
@@ -78,7 +76,6 @@ class FaceDataStore {
             .store(in: &cancellables)
     }
 
-    /// Dynamically allocates the static frame buffers when authentication is active.
     func allocateStaticBuffers() {
         if self.faceBuffer112 == nil {
             self.faceBuffer112 = createPixelBuffer(width: 112, height: 112)
@@ -94,13 +91,12 @@ class FaceDataStore {
         }
     }
 
-    /// Clears and deallocates all static buffers to achieve a zero-RAM footprint when idle.
     func deallocateStaticBuffers() {
         self.faceBuffer112 = nil
         self.livenessBuffer128 = nil
         self.preallocatedFaceArray112 = nil
         self.preallocatedLivenessArray128 = nil
-        self.logger.info("🧹 Zero-RAM Footprint: Deallocated all static camera buffers and float arrays from memory.")
+        self.logger.info(" Zero-RAM Footprint: Deallocated all static camera buffers and float arrays from memory.")
     }
 
     private func createPixelBuffer(width: Int, height: Int) -> CVPixelBuffer? {
@@ -108,7 +104,7 @@ class FaceDataStore {
         let attrs = [
             kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue,
             kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue,
-            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary // CRUCIAL: Enables GPU VRAM memory mapping for Metal
+            kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
         ] as CFDictionary
         let status = CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs, &pixelBuffer)
         return status == kCVReturnSuccess ? pixelBuffer : nil
@@ -161,7 +157,7 @@ class FaceDataStore {
             SettingsModel.shared.settings.hasRegisteredFaceID = true
         }
 
-        logger.info("✅ Registration successful for profile: \(name, privacy: .public)")
+        logger.info(" Registration successful for profile: \(name, privacy: .public)")
     }
 
     private func rejectOutliers(from faceprints: [Faceprint]) -> [Faceprint] {
@@ -242,7 +238,7 @@ class FaceDataStore {
             }
             profiles[profileName] = database
             saveToSecureStorage()
-            logger.info("🎓 Learned new face variations (total: \(database.learnedPrints.count, privacy: .public))")
+            logger.info(" Learned new face variations (total: \(database.learnedPrints.count, privacy: .public))")
         }
     }
 
@@ -252,7 +248,7 @@ class FaceDataStore {
             guard let encryptedData = CryptoManager.shared.encrypt(data: jsonData) else { return }
             try encryptedData.write(to: secureFileURL, options: .atomic)
         } catch {
-            print("❌ Failed to save profiles: \(error)")
+            print(" Failed to save profiles: \(error)")
         }
     }
 
@@ -262,9 +258,9 @@ class FaceDataStore {
             let encryptedData = try Data(contentsOf: secureFileURL)
             guard let decryptedData = CryptoManager.shared.decrypt(data: encryptedData) else { return }
             profiles = try JSONDecoder().decode([String: FaceprintDatabase].self, from: decryptedData)
-            print("✅ Secure faceprint profiles loaded successfully.")
+            print(" Secure faceprint profiles loaded successfully.")
         } catch {
-            print("❌ Error loading profiles: \(error)")
+            print(" Error loading profiles: \(error)")
         }
     }
 
@@ -272,20 +268,19 @@ class FaceDataStore {
 
     public func generateEmbedding(for observation: VNFaceObservation, from pixelBuffer: CVPixelBuffer) -> [Float]? {
         allocateStaticBuffers()
-        
+
         guard let preparedCIImage = FaceProcessor.shared.prepareImage(from: pixelBuffer, faceObservation: observation) else {
             logger.error("Failed to prepare CIImage for embedding generation.")
             return nil
         }
-        
+
         guard let array = try? MLMultiArray(shape: [1, 3, 112, 112], dataType: .float32) else { return nil }
         guard let tempBuffer = faceBuffer112 else { return nil }
-        
-        // EdgeFace expects standard RGB (isBGR: false, isNormalizedTo01: false)
+
         guard preprocess(ciImage: preparedCIImage, size: 112, targetBuffer: tempBuffer, targetArray: array, isBGR: false, isNormalizedTo01: false) else {
             return nil
         }
-        
+
         do {
             return try MLModelManager.shared.predictEmbedding(from: array)
         } catch {
@@ -308,16 +303,15 @@ class FaceDataStore {
         }
     }
 
-    /// Legacy preprocessor fallback for NSImages (used during adaptive learning)
     func preprocess(image: NSImage, size: Int) -> MLMultiArray? {
         let targetSize = CGSize(width: size, height: size)
         guard let cgImage = image.cgImage else { return nil }
-        
+
         guard let array = try? MLMultiArray(
             shape: [1, 3, NSNumber(value: size), NSNumber(value: size)],
             dataType: .float32
         ) else { return nil }
-        
+
         guard let context = CGContext(
             data: nil,
             width: size,
@@ -327,30 +321,30 @@ class FaceDataStore {
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
-        
+
         context.draw(resizedCGImage(cgImage, to: targetSize) ?? cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
         guard let pixelData = context.data else { return nil }
         let ptr = pixelData.bindMemory(to: UInt8.self, capacity: size * size * 4)
-        
+
         array.withUnsafeMutableBytes { (dataPtr, strides) in
             guard let floatPtr = dataPtr.bindMemory(to: Float.self).baseAddress else { return }
-            
+
             let channelStride = strides[1]
             let rowStride = strides[2]
             let colStride = strides[3]
-            
+
             for y in 0..<size {
                 let rowOffset = y * rowStride
                 let pixelRowOffset = y * size * 4
-                
+
                 for x in 0..<size {
                     let pixelOffset = pixelRowOffset + x * 4
                     let outOffset = rowOffset + x * colStride
-                    
+
                     let r = (Float(ptr[pixelOffset]) - 127.5) / 128.0
                     let g = (Float(ptr[pixelOffset + 1]) - 127.5) / 128.0
                     let b = (Float(ptr[pixelOffset + 2]) - 127.5) / 128.0
-                    
+
                     floatPtr[outOffset] = r
                     floatPtr[outOffset + channelStride] = g
                     floatPtr[outOffset + (2 * channelStride)] = b
@@ -360,64 +354,53 @@ class FaceDataStore {
         return array
     }
 
-    /// Zero-copy GPU preprocessor rendering directly from CIImage to a static memory CVPixelBuffer, then mapping to MLMultiArray.
-    /// Performs GPU scaling and dynamic channel swapping.
     func preprocess(ciImage: CIImage, size: Int, targetBuffer: CVPixelBuffer, targetArray: MLMultiArray, isBGR: Bool = false, isNormalizedTo01: Bool = false) -> Bool {
-        // GPU scaling calculation
         let scaleX = CGFloat(size) / ciImage.extent.width
         let scaleY = CGFloat(size) / ciImage.extent.height
         let scaledImage = ciImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
-        
+
         let bounds = CGRect(x: 0, y: 0, width: size, height: size)
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return false }
-        
-        // Render scaled CIImage (GPU) directly to static CVPixelBuffer
+
         FaceProcessor.shared.ciContext.render(scaledImage, to: targetBuffer, bounds: bounds, colorSpace: colorSpace)
-        
+
         CVPixelBufferLockBaseAddress(targetBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(targetBuffer, .readOnly) }
-        
+
         guard let baseAddress = CVPixelBufferGetBaseAddress(targetBuffer) else { return false }
         let ptr = baseAddress.bindMemory(to: UInt8.self, capacity: CVPixelBufferGetDataSize(targetBuffer))
-        
-        // Retrieve the true hardware-aligned row stride (prevents diagonal pixel shearing)
+
         let bytesPerRow = CVPixelBufferGetBytesPerRow(targetBuffer)
-        
+
         targetArray.withUnsafeMutableBytes { (dataPtr, strides) in
             guard let floatPtr = dataPtr.bindMemory(to: Float.self).baseAddress else { return }
-            
+
             let channelStride = strides[1]
             let rowStride = strides[2]
             let colStride = strides[3]
-            
+
             for y in 0..<size {
                 let rowOffset = y * rowStride
-                
-                // Read rows in standard order (top-to-bottom) because CoreImage's ciContext.render
-                // automatically handles the vertical coordinate flip when writing to CVPixelBuffer.
+
                 let pixelRowOffset = y * bytesPerRow
-                
+
                 for x in 0..<size {
                     let pixelOffset = pixelRowOffset + x * 4
                     let outOffset = rowOffset + x * colStride
-                    
-                    // Native BGRA format mappings
+
                     let b = Float(ptr[pixelOffset])
                     let g = Float(ptr[pixelOffset + 1])
                     let r = Float(ptr[pixelOffset + 2])
-                    
-                    // Swaps channels dynamically based on model format requirements
+
                     let c0 = isBGR ? b : r
                     let c1 = g
                     let c2 = isBGR ? r : b
-                    
+
                     if isNormalizedTo01 {
-                        // Standard [0.0, 1.0] normalization (used by MiniFASNet V2 SE)
                         floatPtr[outOffset] = c0 / 255.0
                         floatPtr[outOffset + channelStride] = c1 / 255.0
                         floatPtr[outOffset + (2 * channelStride)] = c2 / 255.0
                     } else {
-                        // Standard [-0.996, 0.996] normalization (used by EdgeFace)
                         floatPtr[outOffset] = (c0 - 127.5) / 128.0
                         floatPtr[outOffset + channelStride] = (c1 - 127.5) / 128.0
                         floatPtr[outOffset + (2 * channelStride)] = (c2 - 127.5) / 128.0
@@ -425,60 +408,43 @@ class FaceDataStore {
                 }
             }
         }
-        
-        // AUTOMATIC TENSOR DIAGNOSTIC: Reconstructs and saves the exact float data
-        // inside the MLMultiArray directly to your Desktop.
+
         let name = (size == 112) ? "Face_Model_Input" : "Liveness_Model_Input"
         self.saveMultiArrayToDisk(targetArray, size: size, name: name, isNormalizedTo01: isNormalizedTo01)
-        
+
         return true
     }
 
-    /// Diagnostic helper to save the exact preprocessed buffer to your Desktop as a PNG.
     func saveBufferToDisk(_ buffer: CVPixelBuffer, name: String) {
         let ciImage = CIImage(cvPixelBuffer: buffer)
         let context = CIContext()
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
         let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: ciImage.extent.width, height: ciImage.extent.height))
-        
-        let fileManager = FileManager.default
-        guard let desktopURL = fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first else { return }
-        let diagnosticsDirectory = desktopURL.appendingPathComponent("Sapphire_Diagnostics")
-        
-        try? fileManager.createDirectory(at: diagnosticsDirectory, withIntermediateDirectories: true)
-        let fileURL = diagnosticsDirectory.appendingPathComponent("\(name).png")
-        
-        if let tiffData = nsImage.tiffRepresentation,
-           let bitmap = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmap.representation(using: .png, properties: [:]) {
-            try? pngData.write(to: fileURL)
-        }
+
     }
-    
-    /// Diagnostic helper to reconstruct and save the exact float data inside MLMultiArray to your Desktop.
+
     func saveMultiArrayToDisk(_ array: MLMultiArray, size: Int, name: String, isNormalizedTo01: Bool) {
         guard let floatPtr = try? UnsafeBufferPointer<Float>(array) else { return }
-        
+
         let width = size
         let height = size
         let channelStride = size * size
-        
+
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        
+
         for y in 0..<height {
             for x in 0..<width {
                 let outOffset = y * width + x
                 let pixelOffset = (y * width + x) * 4
-                
-                // CoreML tensor shape layout: Channel 0 (R), Channel 1 (G), Channel 2 (B)
+
                 let rVal = floatPtr[outOffset]
                 let gVal = floatPtr[outOffset + channelStride]
                 let bVal = floatPtr[outOffset + (2 * channelStride)]
-                
+
                 let rByte: UInt8
                 let gByte: UInt8
                 let bByte: UInt8
-                
+
                 if isNormalizedTo01 {
                     rByte = UInt8(clamping: Int(rVal * 255.0))
                     gByte = UInt8(clamping: Int(gVal * 255.0))
@@ -488,18 +454,17 @@ class FaceDataStore {
                     gByte = UInt8(clamping: Int(gVal * 128.0 + 127.5))
                     bByte = UInt8(clamping: Int(bVal * 128.0 + 127.5))
                 }
-                
-                // RGBA output layout
+
                 bytes[pixelOffset] = rByte
                 bytes[pixelOffset + 1] = gByte
                 bytes[pixelOffset + 2] = bByte
-                bytes[pixelOffset + 3] = 255 // Alpha
+                bytes[pixelOffset + 3] = 255
             }
         }
-        
+
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
-        
+
         guard let context = CGContext(
             data: &bytes,
             width: width,
@@ -511,16 +476,16 @@ class FaceDataStore {
         ), let cgImage = context.makeImage() else {
             return
         }
-        
+
         let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
-        
+
         let fileManager = FileManager.default
         guard let desktopURL = fileManager.urls(for: .desktopDirectory, in: .userDomainMask).first else { return }
         let diagnosticsDirectory = desktopURL.appendingPathComponent("Sapphire_Diagnostics")
-        
+
         try? fileManager.createDirectory(at: diagnosticsDirectory, withIntermediateDirectories: true)
         let fileURL = diagnosticsDirectory.appendingPathComponent("\(name)_Tensor.png")
-        
+
         if let tiffData = nsImage.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let pngData = bitmap.representation(using: .png, properties: [:]) {

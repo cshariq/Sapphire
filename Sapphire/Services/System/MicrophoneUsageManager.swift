@@ -1,5 +1,8 @@
-// MicrophoneUsageManager.swift
-// Sapphire
+//
+//  MicrophoneUsageManager.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-10
 
 import Foundation
 import Combine
@@ -156,23 +159,20 @@ final class MicrophoneUsageManager: ObservableObject {
     }
 
     private func updateMicUsageState() {
-        let anyRunning = Self.allInputDeviceIDs().contains { Self.deviceIsRunning($0) }
+        let anyRunning = Self.anyProcessUsingMicrophone()
         if anyRunning != isMicInUse {
             isMicInUse = anyRunning
         }
 
-        let muteDeviceID = MultiAudioManager.shared.currentInputDeviceID ?? currentDefaultInputDeviceID
-        guard muteDeviceID != kAudioObjectUnknown else {
-            isMuted = false
-            return
-        }
-
-        let muted: Bool
-        if MultiAudioManager.shared.availableInputDevices.contains(where: { $0.id == muteDeviceID }) {
-            muted = MultiAudioManager.shared.isInputMuted(for: muteDeviceID)
-        } else {
-            muted = Self.readInputMuteState(of: muteDeviceID)
-        }
+        let muted = MultiAudioManager.shared.areAllInputsMuted
+            || {
+                let muteDeviceID = MultiAudioManager.shared.currentInputDeviceID ?? currentDefaultInputDeviceID
+                guard muteDeviceID != kAudioObjectUnknown else { return false }
+                if MultiAudioManager.shared.availableInputDevices.contains(where: { $0.id == muteDeviceID }) {
+                    return MultiAudioManager.shared.isInputMuted(for: muteDeviceID)
+                }
+                return Self.readInputMuteState(of: muteDeviceID)
+            }()
 
         if muted != isMuted {
             isMuted = muted
@@ -184,23 +184,115 @@ final class MicrophoneUsageManager: ObservableObject {
     }
 
     func setMuted(_ muted: Bool) {
-        let targetDevice = MultiAudioManager.shared.currentInputDeviceID ?? currentDefaultInputDeviceID
-        guard targetDevice != kAudioObjectUnknown else { return }
+        MultiAudioManager.shared.setAllInputMutes(muted)
+        isMuted = muted
+    }
 
-        let success: Bool
-        if MultiAudioManager.shared.availableInputDevices.contains(where: { $0.id == targetDevice }) {
-            MultiAudioManager.shared.setInputMute(muted, for: targetDevice)
-            success = MultiAudioManager.shared.isInputMuted(for: targetDevice) == muted
-        } else {
-            success = Self.setInputMuteState(muted, for: targetDevice)
-        }
-
-        if success {
+    func applyExternalMuteState(_ muted: Bool) {
+        if isMuted != muted {
             isMuted = muted
         }
     }
 
     // MARK: - CoreAudio helpers
+
+    private static func anyProcessUsingMicrophone() -> Bool {
+        let ourBundleID = Bundle.main.bundleIdentifier
+        for objectID in allProcessObjectIDs() {
+            guard processIsRunningInput(objectID) else { continue }
+            let bundleID = readProcessBundleID(objectID)
+            if let bundleID {
+                if bundleID == ourBundleID { continue }
+                if isIgnoredMicProcess(bundleID: bundleID) { continue }
+            }
+            return true
+        }
+        return false
+    }
+
+    private static func allProcessObjectIDs() -> [AudioObjectID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &dataSize
+        ) == noErr, dataSize > 0 else {
+            return []
+        }
+
+        let count = Int(dataSize) / MemoryLayout<AudioObjectID>.size
+        var objectIDs = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &dataSize,
+            &objectIDs
+        ) == noErr else {
+            return []
+        }
+        return objectIDs
+    }
+
+    private static func processIsRunningInput(_ objectID: AudioObjectID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyIsRunningInput,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var running: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &running) == noErr else {
+            return false
+        }
+        return running != 0
+    }
+
+    private static func readProcessBundleID(_ objectID: AudioObjectID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyBundleID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var bundleID: CFString = "" as CFString
+        var size = UInt32(MemoryLayout<CFString>.size)
+        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &bundleID) == noErr else {
+            return nil
+        }
+        let id = bundleID as String
+        return id.isEmpty ? nil : id
+    }
+
+    private static func isIgnoredMicProcess(bundleID: String) -> Bool {
+        let ignoredPrefixes = [
+            "com.apple.siri",
+            "com.apple.Siri",
+            "com.apple.assistant",
+            "com.apple.audio",
+            "com.apple.coreaudio",
+            "com.apple.mediaremote",
+            "com.apple.accessibility.heard",
+            "com.apple.hearingd",
+            "com.apple.voicebankingd",
+            "com.apple.systemsound",
+            "com.apple.speech",
+            "com.apple.dictation",
+            "com.apple.corespeech",
+            "com.apple.CoreSpeech",
+            "com.apple.VoiceControl",
+            "com.apple.voicecontrol",
+        ]
+        return ignoredPrefixes.contains { bundleID.hasPrefix($0) }
+    }
 
     private static func allInputDeviceIDs() -> [AudioDeviceID] {
         var address = AudioObjectPropertyAddress(
@@ -254,20 +346,6 @@ final class MicrophoneUsageManager: ObservableObject {
 
         let buffers = UnsafeMutableAudioBufferListPointer(bufferListPointer)
         return buffers.contains { $0.mNumberChannels > 0 }
-    }
-
-    private static func deviceIsRunning(_ deviceID: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var running: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &running) == noErr else {
-            return false
-        }
-        return running != 0
     }
 
     private static func readInputMuteState(of deviceID: AudioDeviceID) -> Bool {

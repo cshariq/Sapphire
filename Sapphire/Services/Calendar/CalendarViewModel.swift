@@ -15,7 +15,6 @@ struct MonthGridItem: Identifiable {
 }
 
 class InteractiveCalendarViewModel: ObservableObject {
-    @Published var isHovering: Bool = false
     @Published var dates: [Date] = []
     @Published var selectedDate: Date {
         didSet {

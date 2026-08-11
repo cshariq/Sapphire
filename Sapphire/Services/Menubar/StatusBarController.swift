@@ -15,6 +15,10 @@ extension Notification.Name {
 @MainActor
 final class StatusBarController {
 
+    static func teardown(_ controller: StatusBarController?) {
+        controller?.shutdown()
+    }
+
     // MARK: - Status Bar Items
     private let expandCollapseItem: NSStatusItem
     private let separatorItem: NSStatusItem
@@ -63,9 +67,17 @@ final class StatusBarController {
     }
 
     deinit {
+    }
+
+    func shutdown() {
+        stopAutoRehide()
+        cancellables.removeAll()
+        if let item = alwaysHiddenItem {
+            NSStatusBar.system.removeStatusItem(item)
+            alwaysHiddenItem = nil
+        }
         NSStatusBar.system.removeStatusItem(expandCollapseItem)
         NSStatusBar.system.removeStatusItem(separatorItem)
-        if let alwaysHiddenItem = alwaysHiddenItem { NSStatusBar.system.removeStatusItem(alwaysHiddenItem) }
         appearanceManager = nil
         screenCornerManager = nil
     }
@@ -104,8 +116,14 @@ final class StatusBarController {
     private func updateAlwaysHiddenItem() {
         if SettingsModel.shared.settings.enableAlwaysHiddenSection {
             guard alwaysHiddenItem == nil else { return }
-            alwaysHiddenItem = NSStatusBar.system.statusItem(withLength: Lengths.collapsed)
-            alwaysHiddenItem?.autosaveName = AutosaveKeys.alwaysHidden
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.alwaysHiddenItem == nil else { return }
+                guard SettingsModel.shared.settings.enableAlwaysHiddenSection else { return }
+                self.alwaysHiddenItem = NSStatusBar.system.statusItem(withLength: Lengths.collapsed)
+                self.alwaysHiddenItem?.autosaveName = AutosaveKeys.alwaysHidden
+                self.updateItems()
+            }
+            return
         } else {
             guard let item = alwaysHiddenItem else { return }
             NSStatusBar.system.removeStatusItem(item)
@@ -186,7 +204,7 @@ final class StatusBarController {
             alwaysHiddenItem?.length = Lengths.separator
             alwaysHiddenItem?.button?.image = image
 
-        } else if isCollapsed {
+        } else if isCollapsed && !hideControlIcon {
             separatorItem.length = Lengths.collapsed
             separatorItem.button?.image = showDividers ? image : nil
             alwaysHiddenItem?.length = Lengths.collapsed

@@ -46,6 +46,10 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var downloadTask: URLSessionDownloadTask?
     private var downloadedAssetPath: URL?
     private var timer: Timer?
+    private var wakeObserver: NSObjectProtocol?
+    private var initialCheckWorkItem: DispatchWorkItem?
+    private var lastBackgroundCheck: Date = .distantPast
+    private let minimumBackgroundCheckGap: TimeInterval = 30 * 60
 
     private override init() {
         super.init()
@@ -54,13 +58,17 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func checkForUpdates() {
         if case .checking = status { return }
         if case .downloading = status { return }
+        if case .installing = status { return }
 
         self.status = .checking
         guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases/latest") else {
             self.status = .error("Invalid update URL"); return
         }
 
-        URLSession.shared.dataTask(with: url) { data, response, error in
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 15
+        URLSession(configuration: config).dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
                 if let error = error { self.status = .error(error.localizedDescription); return }
                 guard let data = data else { self.status = .error("No data received."); return }
@@ -87,13 +95,17 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     func checkForBetaUpdates() {
         if case .checking = status { return }
         if case .downloading = status { return }
+        if case .installing = status { return }
 
         self.status = .checking
         guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases?per_page=5") else {
             self.status = .error("Invalid beta update URL"); return
         }
 
-        URLSession.shared.dataTask(with: url) { data, response, error in
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 15
+        URLSession(configuration: config).dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
                 if let error = error { self.status = .error(error.localizedDescription); return }
                 guard let data = data else { self.status = .error("No data received."); return }
@@ -129,12 +141,62 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
 
+    func checkInBackgroundIfNeeded(force: Bool = false) {
+        switch status {
+        case .checking, .downloading, .installing:
+            return
+        case .available:
+            if !force { return }
+        default:
+            break
+        }
+        if !force, Date().timeIntervalSince(lastBackgroundCheck) < minimumBackgroundCheckGap {
+            return
+        }
+        lastBackgroundCheck = Date()
+        checkForUpdatesMatchingCurrentChannel()
+    }
+
     func startPeriodicChecks(interval: TimeInterval) {
+        stopPeriodicChecks()
+
+        let work = DispatchWorkItem { [weak self] in
+            self?.checkInBackgroundIfNeeded(force: true)
+        }
+        initialCheckWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: work)
+
+        let safeInterval = max(interval, 60 * 60)
+        timer = Timer.scheduledTimer(withTimeInterval: safeInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.checkInBackgroundIfNeeded()
+            }
+        }
+        if let timer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                self?.checkInBackgroundIfNeeded()
+            }
+        }
     }
 
     func stopPeriodicChecks() {
+        initialCheckWorkItem?.cancel()
+        initialCheckWorkItem = nil
         timer?.invalidate()
         timer = nil
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
     }
 
     func downloadUpdate(asset: GitHubReleaseAsset) {

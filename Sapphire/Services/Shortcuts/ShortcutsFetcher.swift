@@ -32,6 +32,12 @@ class ShortcutsFetcher: ObservableObject {
         }
     }
 
+    func releaseLoadedShortcuts() {
+        allShortcuts = []
+        isLoading = false
+        accessError = nil
+    }
+
     private func loadShortcuts() async throws -> [ShortcutInfo] {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")

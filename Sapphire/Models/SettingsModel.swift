@@ -5,6 +5,7 @@
 //  Created by Shariq Charolia on 2025-11-22
 
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 
 extension UTType {
@@ -131,8 +132,6 @@ struct CustomizableNotchConfiguration: Codable, Equatable {
     var liveActivityBottomCornerRadius: CGFloat = 20
 
     var collapseAnimationDelay: TimeInterval = 0.07
-    var initialOpenCollapseDelay: TimeInterval = 1.5
-    var widgetSwitchCollapseDelay: TimeInterval = 3.0
     var dragActivationCollapseDelay: TimeInterval = 0.1
 
     var expandAnimationResponse: Double = 0.45
@@ -164,8 +163,6 @@ struct CustomizableNotchConfiguration: Codable, Equatable {
                lhs.clickExpandedCornerRadius == rhs.clickExpandedCornerRadius &&
                lhs.liveActivityBottomCornerRadius == rhs.liveActivityBottomCornerRadius &&
                lhs.collapseAnimationDelay == rhs.collapseAnimationDelay &&
-               lhs.initialOpenCollapseDelay == rhs.initialOpenCollapseDelay &&
-               lhs.widgetSwitchCollapseDelay == rhs.widgetSwitchCollapseDelay &&
                lhs.dragActivationCollapseDelay == rhs.dragActivationCollapseDelay &&
                lhs.expandAnimationResponse == rhs.expandAnimationResponse &&
                lhs.expandAnimationDamping == rhs.expandAnimationDamping &&
@@ -223,32 +220,57 @@ enum FocusDisplayMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum LockScreenMainWidgetType: String, Codable, CaseIterable, Identifiable {
-    case music, weather, calendar
+    case music, weather, calendar, battery, focus, timer, notes, clipboard
     var id: String { self.rawValue }
-    var displayName: String { self.rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .notes: return "Notes"
+        case .clipboard: return "Clipboard"
+        default: return self.rawValue.capitalized
+        }
+    }
 
     static var selectableCases: [LockScreenMainWidgetType] {
-        return [.music, .weather, .calendar]
+        return [.music, .weather, .calendar, .battery, .focus, .timer, .notes, .clipboard]
     }
 }
 
 enum LockScreenWidgetType: String, Codable, CaseIterable, Identifiable {
-    case none, weather, calendar, music, focus, bluetooth, battery
+    case none, weather, calendar, music, focus, bluetooth, battery, caffeine, timer, clock, notes, clipboard, system
     var id: String { self.rawValue }
-    var displayName: String { self.rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .caffeine: return "Caffeine"
+        case .timer: return "Timer"
+        case .clock: return "Clock"
+        case .notes: return "Notes"
+        case .clipboard: return "Clipboard"
+        case .system: return "System"
+        default: return self.rawValue.capitalized
+        }
+    }
 
     static var selectableCases: [LockScreenWidgetType] {
-        return [.weather, .calendar, .music, .focus, .bluetooth, .battery]
+        return [.weather, .calendar, .music, .focus, .bluetooth, .battery, .caffeine, .timer, .clock, .notes, .clipboard, .system]
     }
 }
 
 enum LockScreenMiniWidgetType: String, Codable, CaseIterable, Identifiable {
-    case none, weather, calendar, music, battery
+    case none, weather, calendar, music, battery, focus, caffeine, timer, bluetooth, clipboard, notes, system
     var id: String { self.rawValue }
-    var displayName: String { self.rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .caffeine: return "Caffeine"
+        case .timer: return "Timer"
+        case .clipboard: return "Clipboard"
+        case .notes: return "Notes"
+        case .system: return "System"
+        default: return self.rawValue.capitalized
+        }
+    }
 
     static var selectableCases: [LockScreenMiniWidgetType] {
-        return [.weather, .calendar, .music, .battery]
+        return [.weather, .calendar, .music, .battery, .focus, .caffeine, .timer, .bluetooth, .clipboard, .notes, .system]
     }
 }
 
@@ -320,6 +342,8 @@ enum RestorableNotchMenu: String, Codable, Equatable {
     case musicDevices
     case sportsPlayer
     case financePlayer
+    case notesPlayer
+    case clipboardPlayer
     case nearDrop
     case fileShelf
     case multiAudio
@@ -335,6 +359,8 @@ enum RestorableNotchMenu: String, Codable, Equatable {
         case .musicDevices: return .musicDevices
         case .sportsPlayer: return .sportsPlayer
         case .financePlayer: return .financePlayer
+        case .notesPlayer: return .notesPlayer
+        case .clipboardPlayer: return .clipboardPlayer
         case .nearDrop: return .nearDrop
         case .fileShelf: return .fileShelf
         case .multiAudio: return .multiAudio
@@ -356,6 +382,7 @@ struct NotchAppearanceSettings: Codable, Equatable {
     var opacity: Double = 1.0
     var enableTransparencyBlur: Bool = true
     var liquidGlassLook: Bool = false
+    var liquidGlassIntensity: Double = 0.65
 }
 
 enum MediaSource: String, Codable, CaseIterable, Identifiable {
@@ -418,6 +445,110 @@ enum MusicPlayerButtonType: String, Codable, CaseIterable, Identifiable, Equatab
     }
 }
 
+enum MusicLongPressAction: String, Codable, CaseIterable, Identifiable, Equatable {
+    case none
+    case seek
+    case shuffle
+    case repeatMode
+    case like
+    case playPause
+    case nextTrack
+    case previousTrack
+    case openQueue
+    case openDevices
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .none: return "None (tap only)"
+        case .seek: return "Seek"
+        case .shuffle: return "Shuffle"
+        case .repeatMode: return "Repeat"
+        case .like: return "Like"
+        case .playPause: return "Play / Pause"
+        case .nextTrack: return "Next Track"
+        case .previousTrack: return "Previous Track"
+        case .openQueue: return "Open Queue"
+        case .openDevices: return "Open Devices"
+        }
+    }
+
+    static var skipButtonOptions: [MusicLongPressAction] {
+        [.none, .seek, .shuffle, .repeatMode, .like, .playPause, .nextTrack, .previousTrack, .openQueue, .openDevices]
+    }
+
+    static var accessoryButtonOptions: [MusicLongPressAction] {
+        [.none, .shuffle, .repeatMode, .like, .playPause, .nextTrack, .previousTrack, .openQueue, .openDevices]
+    }
+}
+
+enum MusicLongPressTarget: String, CaseIterable, Identifiable {
+    case previous
+    case next
+    case like
+    case shuffle
+    case repeatMode
+    case playPause
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .previous: return "Previous"
+        case .next: return "Next"
+        case .like: return "Like"
+        case .shuffle: return "Shuffle"
+        case .repeatMode: return "Repeat"
+        case .playPause: return "Play / Pause"
+        }
+    }
+
+    var pickerOptions: [MusicLongPressAction] {
+        switch self {
+        case .previous, .next: return MusicLongPressAction.skipButtonOptions
+        default: return MusicLongPressAction.accessoryButtonOptions
+        }
+    }
+
+    func defaultAction(in settings: Settings) -> MusicLongPressAction {
+        switch self {
+        case .previous: return settings.musicLongPressPrevious
+        case .next: return settings.musicLongPressNext
+        case .like: return settings.musicLongPressLike
+        case .shuffle: return settings.musicLongPressShuffle
+        case .repeatMode: return settings.musicLongPressRepeat
+        case .playPause: return settings.musicLongPressPlayPause
+        }
+    }
+}
+
+extension Settings {
+    mutating func setLongPressAction(_ action: MusicLongPressAction, for target: MusicLongPressTarget) {
+        switch target {
+        case .previous: musicLongPressPrevious = action
+        case .next: musicLongPressNext = action
+        case .like: musicLongPressLike = action
+        case .shuffle: musicLongPressShuffle = action
+        case .repeatMode: musicLongPressRepeat = action
+        case .playPause: musicLongPressPlayPause = action
+        }
+    }
+
+    func resolvedSkipHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction {
+        guard musicLongPressActionsEnabled else { return .seek }
+        let configured = target.defaultAction(in: self)
+        if configured == .none || configured == .seek { return .seek }
+        return configured
+    }
+
+    func resolvedAccessoryHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction? {
+        guard musicLongPressActionsEnabled else { return nil }
+        let configured = target.defaultAction(in: self)
+        return configured == .none ? nil : configured
+    }
+}
+
 // MARK: - Main Settings Struct
 struct Settings: Codable, Equatable {
     var animationProfile: AnimationProfile = .snappy
@@ -448,6 +579,8 @@ struct Settings: Codable, Equatable {
     var lockScreenShowNotch: Bool = true
     var lockScreenLiveActivityEnabled: Bool = true
     var lockScreenLiquidGlassLook: Bool = true
+    var lockScreenLiquidGlassIntensity: Double = 0.65
+    var lockScreenFrostedOverLiquidGlass: Bool = false
     var lockScreenWeatherInfo: [WeatherInfoType] = [.temperature]
     var lockScreenBatteryInfo: [BatteryInfoType] = [.batteryIcon, .percentage]
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
@@ -455,22 +588,33 @@ struct Settings: Codable, Equatable {
     var launchAtLogin: Bool = true
     var appLanguage: String = "en"
     var hapticFeedbackEnabled: Bool = true
+    var googleAnalyticsEnabled: Bool = true
     var hideFromScreenSharing: Bool = false
     var notchDisplayTarget: NotchDisplayTarget = .macbookDisplay
     var expandOnHover: Bool = false
+    var capsLockHorizontalLockEnabled: Bool = false
+    var capsLockHorizontalLockAppStates: [String: Bool] = [:]
     var launchpadEnabled: Bool = false
     var caffeinateEnabled: Bool = true
+    var notesIconEnabled: Bool = true
+    var clipboardIconEnabled: Bool = true
     var fileShelfIconEnabled: Bool = true
     var batteryEstimatorEnabled: Bool = true
     var showMultiAudioIcon: Bool = true
     var intelligenceEnabled: Bool = true
     var intelligenceApiKey: String = ""
-    var intelligenceBackend: LLMBackend = .gemini
+    var intelligenceBackend: LLMBackend = .auto
     var intelligenceGeminiSpeedMode: GeminiSpeedMode = .fast
+    var intelligenceGeminiModel: GeminiModelOption = .auto
+    var intelligenceOpenAIModel: OpenAIModelOption = .auto
+    var intelligenceAnthropicModel: AnthropicModelOption = .auto
+    var intelligenceOpenRouterModel: String = OpenRouterModelPreset.auto.rawValue
+    var intelligenceXAIModel: XAIModelOption = .auto
+    var intelligenceNVIDIAModel: NVIDIAModelOption = .auto
     var pinEnabled: Bool = true
     var hideNotchWhenInactive: Bool = false
     var releaseChannel: ReleaseChannel = .stable
-    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .intelligence, .spacer, .battery, .multiAudio, .caffeine, .pin]
+    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .spacer, .battery, .multiAudio, .caffeine, .pin]
 
     // MARK: - Legacy migration shims (read-only computed, not persisted)
     var geminiEnabled: Bool { intelligenceEnabled }
@@ -490,13 +634,20 @@ struct Settings: Codable, Equatable {
     var rememberLastMenu: Bool = false
     var lastNotchNavigationStack: [RestorableNotchMenu]? = nil
     var showDividersBetweenWidgets: Bool = false
-    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .shortcuts]
+    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .shortcuts, .notes, .clipboard]
     var musicWidgetEnabled: Bool = true
     var weatherWidgetEnabled: Bool = true
     var sportsWidgetEnabled: Bool = false
     var financeWidgetEnabled: Bool = false
     var calendarWidgetEnabled: Bool = true
     var shortcutsWidgetEnabled: Bool = false
+    var notesWidgetEnabled: Bool = false
+    var clipboardWidgetEnabled: Bool = false
+    var notesOpenOnClick: Bool = true
+    var clipboardOpenOnClick: Bool = true
+    var clipboardHistoryLimit: Int = 0
+    var clipboardMonitoringEnabled: Bool = true
+    var clipboardHistoryUnlimited: Bool = true
     var timerWidgetEnabled: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
     var liveActivityOrder: [LiveActivityType] = LiveActivityType.allCases
@@ -512,7 +663,6 @@ struct Settings: Codable, Equatable {
     var fileShelfLiveActivityEnabled: Bool = true
     var fileProgressLiveActivityEnabled: Bool = false
 
-    // Microphone live activity settings
     var microphoneLiveActivityEnabled: Bool = true
     var microphoneLiveActivityBehavior: MicrophoneLiveActivityBehavior = .iconAndGesture
 
@@ -527,7 +677,6 @@ struct Settings: Codable, Equatable {
         .gpu: StatThreshold()
     ]
 
-    // Sports and Finance live activity settings
     var sportsLiveActivityEnabled: Bool = false
     var sportsCommentaryInLiveActivity: Bool = false
     var financeLiveActivityEnabled: Bool = false
@@ -570,6 +719,33 @@ struct Settings: Codable, Equatable {
         }
     }
 
+    mutating func normalizeCollectionOrders() {
+        let allActivities = LiveActivityType.allCases
+        liveActivityOrder = liveActivityOrder.filter { allActivities.contains($0) }
+        let missingActivities = allActivities.filter { !liveActivityOrder.contains($0) }
+        if !missingActivities.isEmpty {
+            liveActivityOrder.append(contentsOf: missingActivities)
+        }
+
+        let allWidgets = WidgetType.allCases
+        widgetOrder = widgetOrder.filter { allWidgets.contains($0) }
+        let missingWidgets = allWidgets.filter { !widgetOrder.contains($0) }
+        if !missingWidgets.isEmpty {
+            widgetOrder.append(contentsOf: missingWidgets)
+        }
+
+        let allNotchButtons = NotchButtonType.allCases
+        notchButtonOrder = notchButtonOrder.filter { allNotchButtons.contains($0) }
+        let missingNotchButtons = allNotchButtons.filter { !notchButtonOrder.contains($0) }
+        if !missingNotchButtons.isEmpty {
+            if let spacerIndex = notchButtonOrder.firstIndex(of: .spacer) {
+                notchButtonOrder.insert(contentsOf: missingNotchButtons, at: spacerIndex)
+            } else {
+                notchButtonOrder.append(contentsOf: missingNotchButtons)
+            }
+        }
+    }
+
     func currentSportsFavoriteTeam() -> String? {
         guard !sportsFavoriteTeams.isEmpty else { return nil }
         let index = max(0, min(sportsFavoriteTeamIndex, sportsFavoriteTeams.count - 1))
@@ -607,6 +783,14 @@ struct Settings: Codable, Equatable {
     var swipeToRewindMusic: Bool = true
     var invertMusicGestures: Bool = false
     var twoFingerTapToPauseMusic: Bool = true
+    var musicHoldSkipForSecondaryActions: Bool = true
+    var musicLongPressActionsEnabled: Bool = true
+    var musicLongPressPrevious: MusicLongPressAction = .shuffle
+    var musicLongPressNext: MusicLongPressAction = .repeatMode
+    var musicLongPressLike: MusicLongPressAction = .none
+    var musicLongPressShuffle: MusicLongPressAction = .none
+    var musicLongPressRepeat: MusicLongPressAction = .none
+    var musicLongPressPlayPause: MusicLongPressAction = .none
     var waveformUseGradient: Bool = true
     var useStaticWaveform: Bool = false
     var waveformBarCount: Int = 3
@@ -630,6 +814,14 @@ struct Settings: Codable, Equatable {
     var showPopularityInMusicPlayer: Bool = true
     var hideMusicWidgetWhenNotPlaying: Bool = false
     var preferAirPlayOverSpotify: Bool = true
+    var spotifyCanvasLiveVideo: Bool = true
+    var showSpotifySourceTab: Bool = true
+    var spotifyShowArtistProfile: Bool = true
+    var spotifyShowSuggestedSongs: Bool = true
+    var spotifyShowNextSong: Bool = true
+    var spotifyShowConcertTickets: Bool = false
+    var spotifyShowAccountBadge: Bool = true
+
     var hudDuration: Double = 2.5
     var hudShowPercentage: Bool = true
     var hudVisualStyle: HUDVisualStyle = .adaptive
@@ -646,12 +838,12 @@ struct Settings: Codable, Equatable {
     var enableBrightnessHUD: Bool = true
     var brightnessHUDStyle: HUDStyle = .default
     var volumesliderstep: Int = 6
-    // Per-audio-device slider step overrides. Keyed by device UID (AudioDevice.device.uid)
     var volumesliderstepByDevice: [String: Int] = [:]
     var brightnessliderstep: Int = 6
     var snapZoneViewMode: SnapZoneViewMode = .multi
     var snapDragEnabled: Bool = true
     var snapOnWindowDragEnabled: Bool = true
+    var snapActivationDelay: Double = 0.45
     var defaultSnapLayout: SnapLayout = LayoutTemplate.columns
     var appSpecificLayoutConfigurations: [String: AppSnapLayoutConfiguration] = [:]
     var customSnapLayouts: [SnapLayout] = []
@@ -682,6 +874,7 @@ struct Settings: Codable, Equatable {
     var magSafeLEDSetting: MagSafeLEDSetting = .alwaysOn
     var preventSleepDuringCalibration: Bool = false
     var preventSleepDuringDischarge: Bool = true
+    var fanControlModes: [String: StoredFanControlMode] = [:]
     var enableBiweeklyCalibration: Bool = false
     var magSafeGreenAtLimit: Bool = true
     var bluetoothNotifyLowBattery: Bool = true
@@ -710,6 +903,12 @@ struct Settings: Codable, Equatable {
     var appNotificationStates: [String: Bool] = [:]
     var onlyShowVerificationCodeNotifications: Bool = true
     var showCopyButtonForVerificationCodes: Bool = true
+    var smartInboxEnabled: Bool = true
+    var mailOTPDetectionEnabled: Bool = true
+    var autoCopyVerificationCodes: Bool = false
+    var parcelTrackingEnabled: Bool = true
+    var parcelLiveActivityEnabled: Bool = true
+    var otpLiveActivityEnabled: Bool = true
     var neardropEnabled: Bool = true
     var neardropDeviceDisplayName: String = Host.current().localizedName ?? "My Mac"
     var neardropDownloadLocationPath: String = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.path
@@ -763,6 +962,7 @@ struct Settings: Codable, Equatable {
     var menuBarOpacity: Double = 1.0
     var menuBarBlur: Bool = false
     var menuBarLiquidGlass: Bool = false
+    var menuBarLiquidGlassIntensity: Double = 0.65
 
     var menuBarBorderWidth: CGFloat = 0.0
     var menuBarBorderColor: CodableColor = CodableColor(color: .black)
@@ -905,18 +1105,29 @@ class SettingsModel: ObservableObject {
 
     @Published var settings: Settings = Settings() {
         didSet {
+            guard !isApplyingLoadedSettings else { return }
             var sanitized = settings
+            sanitized.normalizeCollectionOrders()
             sanitized.disableUnavailablePremiumFeatures()
             if sanitized != settings {
+                isApplyingLoadedSettings = true
                 settings = sanitized
+                isApplyingLoadedSettings = false
+                scheduleSaveSettings()
                 return
             }
-            saveSettings()
+            scheduleSaveSettings()
         }
     }
 
     private let defaults = UserDefaults.standard
     private let settingsAccessQueue = DispatchQueue(label: "com.shariq.sapphire.settings.sync.queue")
+    private var isApplyingLoadedSettings = false
+    private var pendingSaveWorkItem: DispatchWorkItem?
+    private var lastPersistedSnapshot: [String: Any] = [:]
+
+    private var encodedCache: [String: Data] = [:]
+    private let cacheQueue = DispatchQueue(label: "com.shariq.sapphire.settings.cache")
 
     private init() {
         loadSettings()
@@ -941,27 +1152,40 @@ class SettingsModel: ObservableObject {
                 let mergedData = try JSONSerialization.data(withJSONObject: dict)
                 var loadedSettings = try JSONDecoder().decode(Settings.self, from: mergedData)
 
-                // Migration: ensure newly added LiveActivityType cases (e.g. .microphone) are present
-                // in the persisted `liveActivityOrder`. Older installs may have saved the order
-                // before the microphone type existed which prevents it showing in the settings UI.
-                let allActivities = LiveActivityType.allCases
-                let missingActivities = allActivities.filter { !loadedSettings.liveActivityOrder.contains($0) }
-                if !missingActivities.isEmpty {
-                    // Append missing activities to preserve user's existing order
-                    loadedSettings.liveActivityOrder.append(contentsOf: missingActivities)
+                loadedSettings.normalizeCollectionOrders()
+
+                if defaults.object(forKey: "musicLongPressPrevious") == nil {
+                    if loadedSettings.musicHoldSkipForSecondaryActions {
+                        loadedSettings.musicLongPressActionsEnabled = true
+                        loadedSettings.musicLongPressPrevious = .shuffle
+                        loadedSettings.musicLongPressNext = .repeatMode
+                    } else {
+                        loadedSettings.musicLongPressActionsEnabled = false
+                        loadedSettings.musicLongPressPrevious = .seek
+                        loadedSettings.musicLongPressNext = .seek
+                    }
                 }
 
-                // Migration: ensure newly added WidgetType cases (e.g. .sports, .finance, .agent) are present
-                // in the persisted `widgetOrder`.
-                let allWidgets = WidgetType.allCases
-                let missingWidgets = allWidgets.filter { !loadedSettings.widgetOrder.contains($0) }
-                if !missingWidgets.isEmpty {
-                    loadedSettings.widgetOrder.append(contentsOf: missingWidgets)
-                }
                 loadedSettings.disableUnavailablePremiumFeatures()
 
+                UserDefaults.standard.set(loadedSettings.intelligenceGeminiModel.rawValue, forKey: "geminiModelID")
+                UserDefaults.standard.set(loadedSettings.intelligenceGeminiSpeedMode.rawValue, forKey: "geminiSpeedMode")
+                UserDefaults.standard.set(loadedSettings.intelligenceBackend.rawValue, forKey: "llmBackend")
+                BlipModelPreferences.openAIModel = loadedSettings.intelligenceOpenAIModel.rawValue
+                BlipModelPreferences.anthropicModel = loadedSettings.intelligenceAnthropicModel.rawValue
+                BlipModelPreferences.openRouterModelStored = loadedSettings.intelligenceOpenRouterModel
+                BlipModelPreferences.xaiModel = loadedSettings.intelligenceXAIModel.rawValue
+                BlipModelPreferences.nvidiaModel = loadedSettings.intelligenceNVIDIAModel.rawValue
+
+                if let snapshotData = try? JSONEncoder().encode(loadedSettings),
+                   let snapshot = try? JSONSerialization.jsonObject(with: snapshotData) as? [String: Any] {
+                    lastPersistedSnapshot = snapshot
+                }
+
                 DispatchQueue.main.async {
+                    self.isApplyingLoadedSettings = true
                     self.settings = loadedSettings
+                    self.isApplyingLoadedSettings = false
                 }
             } catch {
                 print("Error: Failed to decode settings. Using defaults. \(error)")
@@ -969,16 +1193,72 @@ class SettingsModel: ObservableObject {
         }
     }
 
+    private func scheduleSaveSettings() {
+        pendingSaveWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.saveSettings()
+        }
+        pendingSaveWorkItem = work
+        settingsAccessQueue.asyncAfter(deadline: .now() + .milliseconds(500), execute: work)
+    }
+
+    func flushPendingSave() {
+        pendingSaveWorkItem?.cancel()
+        pendingSaveWorkItem = nil
+        settingsAccessQueue.sync {
+            persistSettingsUnlocked()
+        }
+    }
+
     private func saveSettings() {
         settingsAccessQueue.async {
-            guard let data = try? JSONEncoder().encode(self.settings),
-                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return
-            }
+            self.persistSettingsUnlocked()
+        }
+    }
 
-            for (key, value) in dict {
-                self.defaults.set(value, forKey: key)
+    private func persistSettingsUnlocked() {
+        guard let data = try? JSONEncoder().encode(self.settings),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+
+        for (key, value) in dict {
+            let previous = lastPersistedSnapshot[key]
+            if !Self.isEqualUserDefaultsValue(previous, value) {
+                defaults.set(value, forKey: key)
             }
+        }
+        for key in lastPersistedSnapshot.keys where dict[key] == nil {
+            defaults.removeObject(forKey: key)
+        }
+        lastPersistedSnapshot = dict
+    }
+
+    private static func isEqualUserDefaultsValue(_ lhs: Any?, _ rhs: Any?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case let (l as NSNumber, r as NSNumber):
+            return l.isEqual(to: r)
+        case let (l as String, r as String):
+            return l == r
+        case let (l as Data, r as Data):
+            return l == r
+        case let (l as Date, r as Date):
+            return l == r
+        case let (l as [Any], r as [Any]):
+            guard l.count == r.count else { return false }
+            return zip(l, r).allSatisfy { isEqualUserDefaultsValue($0, $1) }
+        case let (l as [String: Any], r as [String: Any]):
+            guard l.count == r.count else { return false }
+            for (key, lv) in l {
+                guard isEqualUserDefaultsValue(lv, r[key]) else { return false }
+            }
+            return true
+        case let (l as NSObject, r as NSObject):
+            return l.isEqual(r)
+        default:
+            return false
         }
     }
 
@@ -986,7 +1266,6 @@ class SettingsModel: ObservableObject {
         SettingsBackupDocument(settings: settings)
     }
 
-    /// Return the configured slider step for a given audio device UID, falling back to the global setting.
     func volumeSliderStep(forDeviceUID uid: String?) -> Int {
         guard let uid = uid else { return settings.volumesliderstep }
         return settings.volumesliderstepByDevice[uid] ?? settings.volumesliderstep
@@ -996,6 +1275,7 @@ class SettingsModel: ObservableObject {
         let data = try Data(contentsOf: url)
         let importedPayload = try SettingsBackupDocument.decodePayload(from: data)
         var importedSettings = importedPayload.settings
+        importedSettings.normalizeCollectionOrders()
         importedSettings.disableUnavailablePremiumFeatures()
         settings = importedSettings
     }
@@ -1040,7 +1320,7 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case weather, calendar, shortcuts, music, sports, finance, agent
+    case weather, calendar, shortcuts, music, sports, finance, notes, clipboard, agent
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
@@ -1050,6 +1330,8 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
         case .music: return "Music"
         case .sports: return "Sports"
         case .finance: return "Finance"
+        case .notes: return "Notes"
+        case .clipboard: return "Clipboard"
         case .agent: return "Agent"
         }
     }
@@ -1100,13 +1382,14 @@ enum NotificationSource: String, CaseIterable, Identifiable {
 }
 
 enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
-    case expandOnHover, swipeToSwitchWidgets, enableOpeningBounce
+    case expandOnHover, swipeToSwitchWidgets, enableOpeningBounce, capsLockHorizontalLock
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
         case .expandOnHover: "Expand on Hover"
         case .swipeToSwitchWidgets: "Swipe to Switch Widgets"
         case .enableOpeningBounce: "Bounce when Opening Widgets"
+        case .capsLockHorizontalLock: "Lock Cursor Horizontally with Caps Lock"
         }
     }
     var systemImage: String {
@@ -1114,24 +1397,27 @@ enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
         case .expandOnHover: "cursorarrow.motionlines"
         case .swipeToSwitchWidgets: "hand.draw.fill"
         case .enableOpeningBounce: "arrowshape.bounce.forward.fill"
+        case .capsLockHorizontalLock: "capslock"
         }
     }
     var iconColor: Color {
         switch self {
         case .expandOnHover: .cyan
         case .swipeToSwitchWidgets: .orange
-        case .enableOpeningBounce: .green
+        case .enableOpeningBounce: .blue
+        case .capsLockHorizontalLock: .green
         }
     }
 }
 
 enum NotchButtonType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case settings, fileShelf, intelligence, intelligenceLive, caffeine, spacer, multiAudio, battery, pin
+    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, caffeine, spacer, multiAudio, battery, pin
     var id: String { self.rawValue }
 
     var displayName: String {
         switch self {
-        case .settings: "Settings"; case .fileShelf: "File Shelf"; case .intelligence: "Intelligence"; case .intelligenceLive: "Gemini";
+        case .settings: "Settings"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"
+        case .intelligence: "Blip"; case .intelligenceLive: "Gemini";
         case .caffeine: "Caffeinate"; case .spacer: "Spacer";
         case .multiAudio: "Multi-Audio (Beta)"; case .battery: "Battery"; case .pin: "Pin"
         }
@@ -1139,7 +1425,8 @@ enum NotchButtonType: String, Codable, CaseIterable, Identifiable, Equatable {
 
     var systemImage: String {
         switch self {
-        case .settings: "gearshape"; case .fileShelf: "tray.full"; case .intelligence: "sparkle"; case .intelligenceLive: "sparkle";
+        case .settings: "gearshape"; case .fileShelf: "tray.full"; case .notes: "note.text"; case .clipboard: "list.clipboard"
+        case .intelligence: "sparkle"; case .intelligenceLive: "waveform";
         case .caffeine: "cup.and.saucer"; case .spacer: "space";
         case .multiAudio: "hifispeaker.and.homepod.mini.fill"; case .battery: "battery.100"; case .pin: "pin"
         }
@@ -1147,7 +1434,42 @@ enum NotchButtonType: String, Codable, CaseIterable, Identifiable, Equatable {
 }
 
 struct SystemApp: Identifiable, Equatable {
-    let id: String, name: String, icon: NSImage, isBrowser: Bool, url: URL
+    let id: String, name: String, isBrowser: Bool, url: URL
+}
+
+enum AppIconLoader {
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 48
+        cache.totalCostLimit = 2 * 1024 * 1024
+        return cache
+    }()
+
+    static func icon(for url: URL, maxDimension: CGFloat = 32) -> NSImage {
+        let key = url.path as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+        let image = downsample(NSWorkspace.shared.icon(forFile: url.path), maxDimension: maxDimension)
+        cache.setObject(image, forKey: key, cost: Int(maxDimension * maxDimension * 4))
+        return image
+    }
+
+    static func releaseCache() {
+        cache.removeAllObjects()
+    }
+
+    nonisolated static func downsample(_ image: NSImage, maxDimension: CGFloat) -> NSImage {
+        let size = image.size
+        guard size.width > maxDimension || size.height > maxDimension else { return image }
+        let scale = min(maxDimension / max(size.width, size.height), 1.0)
+        let newSize = NSSize(width: size.width * scale, height: size.height * scale)
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: newSize), from: .zero, operation: .copy, fraction: 1.0)
+        newImage.unlockFocus()
+        return newImage
+    }
 }
 
 enum Day: String, Codable, CaseIterable, Identifiable {
@@ -1209,7 +1531,7 @@ extension UTType {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, fileShelf, music, weather, calendar, eyeBreak, intelligence, sports, finance, about
+    case general, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, fileShelf, notes, clipboard, caffeine, music, weather, calendar, eyeBreak, intelligence, sports, finance, about
 
     var id: String { self.rawValue }
 
@@ -1259,11 +1581,14 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: "Choose which system notifications Sapphire mirrors or enhances."
         case .neardrop: "Nearby sharing preferences, transfers, and device discovery options."
         case .fileShelf: "Manage temporary file storage, drag targets, and shelf behavior."
+        case .notes: "Quick notes widget, click-to-expand behavior, and notch bar access."
+        case .clipboard: "Clipboard history, monitoring, and notch clipboard shortcuts."
+        case .caffeine: "Keep your Mac awake, clamshell sleep behavior, and lid-angle display controls."
         case .music: "Music widget sources, playback controls, and media integrations."
         case .weather: "Weather widget data sources, units, and location-based behavior."
         case .calendar: "Calendar and reminder integrations shown in widgets and live activities."
         case .eyeBreak: "Break reminders, timing, and focus nudges for healthier screen habits."
-        case .intelligence: "Intelligence AI — real-time voice assistant and autonomous Mac agent powered by Gemini."
+        case .intelligence: "Sapphire Blip — Mac agent with memory, skills, tools, and computer use."
         case .sports: "Sports widget settings, favorite teams selection, and scoreboard configurations."
         case .finance: "Stock market ticker configurations, favorite stocks, and trendline visualizations."
         case .about: "App version details, credits, links, and project information."
@@ -1272,7 +1597,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var searchTokens: [String] {
         switch self {
-        case .general: ["startup", "login", "animation", "notch", "system", "behavior", "caffeinate"]
+        case .general: ["startup", "login", "animation", "notch", "system", "behavior", "analytics", "google", "privacy", "tracking", "telemetry"]
         case .widgets: ["widget", "widgets", "reorder", "layout"]
         case .liveActivities: ["live", "activity", "activities", "dynamic", "focus"]
         case .appearance: ["theme", "appearance", "style", "glass", "color", "material"]
@@ -1287,11 +1612,14 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: ["notifications", "alerts", "imessage", "facetime", "airdrop"]
         case .neardrop: ["nearby", "share", "drop", "transfer"]
         case .fileShelf: ["file", "shelf", "drag", "drop", "storage"]
+        case .notes: ["notes", "note", "memo", "quick note"]
+        case .clipboard: ["clipboard", "pasteboard", "history", "copy", "paste"]
+        case .caffeine: ["caffeinate", "caffeine", "sleep", "awake", "clamshell", "lid"]
         case .music: ["music", "media", "spotify", "playback"]
         case .weather: ["weather", "forecast", "temperature", "location"]
         case .calendar: ["calendar", "reminders", "events", "schedule"]
         case .eyeBreak: ["eye", "break", "rest", "wellness", "focus"]
-        case .intelligence: ["intelligence", "gemini", "ai", "assistant", "agent", "automation", "task", "voice", "live", "computer", "control", "accessibility"]
+        case .intelligence: ["intelligence", "blip", "facet", "nova", "octo", "claw", "connected", "accounts", "gmail", "github", "outlook", "findmy", "gemini", "ai", "assistant", "agent", "automation", "task", "voice", "live", "computer", "control", "accessibility", "memory", "skills", "personalization", "profiling", "monitoring", "privacy", "learning", "behavior", "screenshots", "calendar", "notes", "spotify", "clipboard", "settings", "data", "tracking"]
         case .sports: ["sports", "score", "game", "nfl", "nba", "mlb", "nhl", "team"]
         case .finance: ["finance", "stocks", "market", "ticker", "portfolio", "aapl"]
         case .about: ["about", "version", "credits", "support"]
@@ -1314,19 +1642,19 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .general: "General"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .intelligence: "Intelligence"; case .sports: "Sports"; case .finance: "Finance"; case .about: "About"
+        case .general: "General"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .intelligence: "Blip"; case .sports: "Sports"; case .finance: "Finance"; case .about: "About"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .general: "gear"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .audio: "speaker.circle.fill"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill"; case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .about: "info.circle"
+        case .general: "gear"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .audio: "speaker.circle.fill"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .notes: "note.text"; case .clipboard: "list.clipboard"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill"; case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .about: "info.circle"
         }
     }
 
     var iconBackgroundColor: Color {
         switch self {
-        case .general: .black; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .music: .pink; case .weather: .blue; case .calendar: .red; case .eyeBreak: .teal; case .intelligence: .purple; case .sports: .green; case .finance: .green; case .about: .blue
+        case .general: .black; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .notes: .yellow; case .clipboard: .mint; case .caffeine: .brown; case .music: .pink; case .weather: .blue; case .calendar: .red; case .eyeBreak: .teal; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .about: .blue
         }
     }
 }
@@ -1338,14 +1666,15 @@ class SystemAppFetcher: ObservableObject {
     @Published private(set) var apps: [SystemApp] = []
     @Published private(set) var foundBundleIDs: Set<String> = []
     private var shouldDiscardFetch = false
+    private var fetchTask: Task<Void, Never>?
 
     private init() {}
 
     func fetchApps() {
-        guard self.apps.isEmpty else { return }
+        guard apps.isEmpty, fetchTask == nil else { return }
         shouldDiscardFetch = false
 
-        Task.detached(priority: .userInitiated) {
+        fetchTask = Task(priority: .utility) {
             var fetchedApps: [SystemApp] = []
             var seenBundleIDs = Set<String>()
 
@@ -1356,6 +1685,7 @@ class SystemAppFetcher: ObservableObject {
             ] + NSSearchPathForDirectoriesInDomains(.applicationDirectory, .userDomainMask, true)
 
             for path in searchPaths.compactMap({ $0 }) {
+                guard !Task.isCancelled else { return }
                 guard let enumerator = fileManager.enumerator(
                     at: URL(fileURLWithPath: path),
                     includingPropertiesForKeys: [.isApplicationKey, .nameKey],
@@ -1364,28 +1694,26 @@ class SystemAppFetcher: ObservableObject {
                 ) else { continue }
 
                 for case let url as URL in enumerator {
-                    if url.pathExtension == "app" {
-                        guard let bundle = Bundle(url: url),
-                              let bundleId = bundle.bundleIdentifier,
-                              !seenBundleIDs.contains(bundleId) else { continue }
+                    if Task.isCancelled { return }
+                    guard url.pathExtension == "app",
+                          let bundle = Bundle(url: url),
+                          let bundleId = bundle.bundleIdentifier,
+                          !seenBundleIDs.contains(bundleId) else { continue }
 
-                        let name = fileManager.displayName(atPath: url.path)
-                        let icon = Self.downsampleAppIcon(NSWorkspace.shared.icon(forFile: url.path))
+                    let name = fileManager.displayName(atPath: url.path)
+                    let isBrowser = Self.isBrowser(bundle: bundle)
+                    let app = SystemApp(id: bundleId, name: name, isBrowser: isBrowser, url: url)
 
-                        let isBrowser = await self.isBrowser(bundle: bundle)
-
-                        let app = SystemApp(id: bundleId, name: name, icon: icon, isBrowser: isBrowser, url: url)
-
-                        fetchedApps.append(app)
-                        seenBundleIDs.insert(bundleId)
-                    }
+                    fetchedApps.append(app)
+                    seenBundleIDs.insert(bundleId)
                 }
             }
 
             let sortedApps = fetchedApps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
             await MainActor.run {
-                guard !self.shouldDiscardFetch else { return }
+                defer { self.fetchTask = nil }
+                guard !self.shouldDiscardFetch, !Task.isCancelled else { return }
                 self.apps = sortedApps
                 self.foundBundleIDs = seenBundleIDs
             }
@@ -1394,23 +1722,14 @@ class SystemAppFetcher: ObservableObject {
 
     func releaseCachedApps() {
         shouldDiscardFetch = true
+        fetchTask?.cancel()
+        fetchTask = nil
         apps.removeAll(keepingCapacity: false)
         foundBundleIDs.removeAll(keepingCapacity: false)
+        AppIconLoader.releaseCache()
     }
 
-    nonisolated private static func downsampleAppIcon(_ image: NSImage, maxDimension: CGFloat = 32) -> NSImage {
-        let size = image.size
-        guard size.width > maxDimension || size.height > maxDimension else { return image }
-        let scale = min(maxDimension / max(size.width, size.height), 1.0)
-        let newSize = NSSize(width: size.width * scale, height: size.height * scale)
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-        image.draw(in: NSRect(origin: .zero, size: newSize), from: .zero, operation: .copy, fraction: 1.0)
-        newImage.unlockFocus()
-        return newImage
-    }
-
-    private func isBrowser(bundle: Bundle?) -> Bool {
+    nonisolated private static func isBrowser(bundle: Bundle?) -> Bool {
         guard let bundle = bundle, let urlTypes = bundle.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]] else { return false }
 
         return urlTypes.contains { type in

@@ -10,7 +10,6 @@ import UniformTypeIdentifiers
 import QuickLookUI
 
 class FileShelfState: ObservableObject {
-    @Published var isFileDropZoneHovered: Bool = false
     @Published var selectedItemForPreview: ShelfItem?
 }
 

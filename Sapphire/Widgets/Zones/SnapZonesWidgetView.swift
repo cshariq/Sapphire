@@ -9,24 +9,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import AppKit
 
-extension NSWindow {
-    /// Matches SwiftUI's `.global` coordinate space for views hosted in an `NSHostingView`.
-    var swiftUIGlobalMouseLocation: CGPoint? {
-        guard let contentView else { return nil }
-        let mouseInWindow = mouseLocationOutsideOfEventStream
-        return CGPoint(
-            x: mouseInWindow.x,
-            y: contentView.bounds.height - mouseInWindow.y
-        )
-    }
-
-    static var visibleNotchWindow: NSWindow? {
-        NSApplication.shared.windows.first { window in
-            window is DynamicFocusWindow && window.isVisible
-        }
-    }
-}
-
 fileprivate struct LayoutFramePreferenceKey: PreferenceKey {
     typealias Value = [UUID: CGRect]
     static var defaultValue: Value = [:]
@@ -221,7 +203,6 @@ struct SnapZonesWidgetView: View {
                 y: globalMousePoint.y - frame.minY
             )
 
-            // Ignore hovers over the layout name label below the zone grid.
             guard localPoint.y >= 0, localPoint.y <= itemHeight else { continue }
 
             for zone in layout.zones {

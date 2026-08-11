@@ -7,31 +7,33 @@
 
 import Foundation
 import SwiftUI
-import CoreLocation
+import Combine
 
+@MainActor
 class WeatherActivityViewModel: ObservableObject {
-    private let service = WeatherService()
-    @Published var weatherData: ProcessedWeatherData?
+    private let source = WeatherViewModel.shared
+    private var cancellables = Set<AnyCancellable>()
+
+    var weatherData: ProcessedWeatherData? {
+        source.weatherData
+    }
+
+    var hasValidWeather: Bool {
+        source.hasValidWeather
+    }
 
     init() {
-        fetch()
+        source.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
 
-        // Increased from 10 min to 15 min to reduce network requests
-        Timer.scheduledTimer(withTimeInterval: 60 * 15, repeats: true) { [weak self] _ in
-            self?.fetch()
-        }
+        fetch()
     }
 
     func fetch() {
-        service.fetchWeather { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let data):
-                    self?.weatherData = data
-                case .failure(let error):
-                    print("[WeatherActivityViewModel] Failed to refresh weather: \(error.localizedDescription)")
-                }
-            }
-        }
+        source.fetch()
     }
 }

@@ -12,11 +12,9 @@ struct DeviceAdjustView: View {
     let device: AudioDevice
     @StateObject private var audioManager = MultiAudioManager.shared
     @StateObject private var appStore = AdjustViewPerAppStore()
-    
-    // Output state
+
     @State private var settings: AudioDeviceSettings
-    
-    // Input state
+
     @State private var micGain: Double = 1.0
     @State private var isMicMuted: Bool = false
     @State private var sampleRate: Double = 0.0
@@ -30,7 +28,6 @@ struct DeviceAdjustView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Minimal Header
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(device.isOutput ? "MASTER ADJUSTMENTS" : "MICROPHONE CONFIGURATION")
@@ -55,7 +52,7 @@ struct DeviceAdjustView: View {
             } else {
                 inputControls
             }
-            
+
             Spacer(minLength: 0)
         }
         .frame(width: 750, height: 380)
@@ -67,21 +64,20 @@ struct DeviceAdjustView: View {
             if device.isOutput { audioManager.updateSettings(for: device.id, settings: newSettings) }
         }
     }
-    
+
     private func refreshInputStats() {
         micGain = Double(audioManager.getInputVolume(for: device.id))
-        isMicMuted = audioManager.isInputMuted(for: device.id)
-        sampleRate = MultiAudioManager.getNominalSampleRate(for: device.id) // <--- FIXED
+        isMicMuted = audioManager.areAllInputsMuted || audioManager.isInputMuted(for: device.id)
+        sampleRate = MultiAudioManager.getNominalSampleRate(for: device.id)
         availableRates = audioManager.getAvailableSampleRates(for: device.id)
         streamFormat = audioManager.getStreamFormat(for: device.id)
     }
-    
+
     // MARK: - Output Layout
     @ViewBuilder
     private var outputControls: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
-                // Main DSP Grid
                 HStack(spacing: 16) {
                     VStack(spacing: 12) {
                         ModernDarkSlider(label: "Volume", value: $settings.volume, range: 0...1.0, formatDisplay: { "\(Int($0 * 100))%" })
@@ -93,7 +89,7 @@ struct DeviceAdjustView: View {
                     }
                     .padding(16)
                     .background(cardBackground)
-                    
+
                     if !appStore.runningApps.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("APP MIXER").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.4)).tracking(1)
@@ -114,31 +110,32 @@ struct DeviceAdjustView: View {
             .padding(.bottom, 20)
         }
     }
-    
+
     // MARK: - Input Layout
     @ViewBuilder
     private var inputControls: some View {
         HStack(alignment: .top, spacing: 16) {
-            // Left Column: Gain & Mute
             VStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("LEVELS").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.4)).tracking(1)
                     ModernDarkSlider(label: "Input Gain", value: Binding(get: { micGain }, set: { micGain = $0; audioManager.setInputVolume(Float($0), for: device.id) }), range: 0...1.0, formatDisplay: { "\(Int($0 * 100))%" })
-                    
+
                     HStack {
                         Label("Hardware Mute", systemImage: isMicMuted ? "mic.slash.fill" : "mic.fill")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(isMicMuted ? .red : .white.opacity(0.8))
                         Spacer()
-                        Toggle("", isOn: Binding(get: { isMicMuted }, set: { isMicMuted = $0; audioManager.setInputMute($0, for: device.id) }))
+                        Toggle("", isOn: Binding(get: { isMicMuted }, set: {
+                            isMicMuted = $0
+                            audioManager.setAllInputMutes($0)
+                        }))
                             .toggleStyle(SwitchToggleStyle(tint: .red))
                     }
                     .padding(.top, 4)
                 }
                 .padding(16)
                 .background(cardBackground)
-                
-                // Shortcut
+
                 Button(action: { NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Audio MIDI Setup.app")) }) {
                     HStack {
                         Image(systemName: "dial.min.fill")
@@ -152,16 +149,15 @@ struct DeviceAdjustView: View {
                 .buttonStyle(.plain)
             }
             .frame(width: 360)
-            
-            // Right Column: Technical Specs
+
             VStack(alignment: .leading, spacing: 12) {
                 Text("SPECIFICATIONS").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.4)).tracking(1)
-                
+
                 VStack(spacing: 12) {
                     specRow(label: "Stream Format", value: streamFormat)
-                    
+
                     Divider().background(Color.white.opacity(0.1))
-                    
+
                     HStack {
                         Text("Sample Rate").font(.caption).foregroundStyle(.secondary)
                         Spacer()

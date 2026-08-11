@@ -1,3 +1,9 @@
+//
+//  GeminiAPI.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-10
+
 import Foundation
 import Combine
 
@@ -7,7 +13,6 @@ struct GeminiLiveConfiguration {
         APIKeyManager.shared.geminiAPIKey
     }
 
-    /// Gemini 3.1 Flash Live Preview — low-latency audio-to-audio Live API model.
     var model: String {
         "models/gemini-3.1-flash-live-preview"
     }

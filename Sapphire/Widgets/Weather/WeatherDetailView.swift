@@ -80,6 +80,8 @@ struct WeatherPlayerView: View {
             .padding(.trailing, 12)
         }
         .frame(width: 560, height: 240)
+        .foregroundColor(.white)
+        .preferredColorScheme(.dark)
         .animation(.spring(response: 0.6, dampingFraction: 1, blendDuration: 0.2), value: viewModel.temperature)
         .animation(.easeInOut(duration: 0.8), value: viewModel.gradientColors.first)
     }

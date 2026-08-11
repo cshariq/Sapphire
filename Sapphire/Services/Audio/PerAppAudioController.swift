@@ -2,7 +2,7 @@
 //  PerAppAudioController.swift
 //  Sapphire
 //
-//  Created by Codex on 2026-05-09.
+//  Created by Shariq Charolia on 2026-05-09.
 //
 
 import Foundation
@@ -20,14 +20,12 @@ final class PerAppAudioController {
     private var volumeMap: [String: Double] = [:]
     private var muteMap: [String: Bool] = [:]
     private var eqMap: [String: [Double]] = [:]
-    // bundleID -> target device UIDs. Missing or empty means "all devices".
     private var eqDeviceScopeMap: [String: [String]] = [:]
 
     private init() {
         loadPersistedState()
     }
 
-    /// The key to Lazy Tapping. Returns true if the user has changed anything from default.
     func hasAdjustments(for bundleID: String) -> Bool {
         if volumeMap[bundleID] != nil && volumeMap[bundleID] != 1.0 { return true }
         if muteMap[bundleID] == true { return true }
@@ -42,7 +40,7 @@ final class PerAppAudioController {
     func setVolume(_ value: Double, for bundleID: String) {
         let clamped = min(max(value, 0.0), 1.0)
         volumeMap[bundleID] = clamped
-        UserDefaults.standard.set(volumeMap, forKey: volumeDefaultsKey)
+        persistDoubleMap(volumeMap, forKey: volumeDefaultsKey)
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
         MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
@@ -55,7 +53,7 @@ final class PerAppAudioController {
 
     func setMute(_ muted: Bool, for bundleID: String) {
         muteMap[bundleID] = muted
-        UserDefaults.standard.set(muteMap, forKey: muteDefaultsKey)
+        persistBoolMap(muteMap, forKey: muteDefaultsKey)
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
         MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
@@ -68,7 +66,7 @@ final class PerAppAudioController {
 
     func setEQGains(_ gains: [Double], for bundleID: String) {
         eqMap[bundleID] = gains
-        UserDefaults.standard.set(eqMap, forKey: eqDefaultsKey)
+        persistEQMap()
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
         MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
@@ -91,7 +89,7 @@ final class PerAppAudioController {
         } else {
             eqDeviceScopeMap.removeValue(forKey: bundleID)
         }
-        UserDefaults.standard.set(eqDeviceScopeMap, forKey: eqDeviceScopeDefaultsKey)
+        persistEQScopeMap()
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
         MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
@@ -112,19 +110,126 @@ final class PerAppAudioController {
         eqMap.removeValue(forKey: bundleID)
         eqDeviceScopeMap.removeValue(forKey: bundleID)
 
-        UserDefaults.standard.set(volumeMap, forKey: volumeDefaultsKey)
-        UserDefaults.standard.set(muteMap, forKey: muteDefaultsKey)
-        UserDefaults.standard.set(eqMap, forKey: eqDefaultsKey)
-        UserDefaults.standard.set(eqDeviceScopeMap, forKey: eqDeviceScopeDefaultsKey)
+        persistDoubleMap(volumeMap, forKey: volumeDefaultsKey)
+        persistBoolMap(muteMap, forKey: muteDefaultsKey)
+        persistEQMap()
+        persistEQScopeMap()
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
         MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
     }
 
+    func clearAllPersistedState() {
+        volumeMap.removeAll()
+        muteMap.removeAll()
+        eqMap.removeAll()
+        eqDeviceScopeMap.removeAll()
+
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: volumeDefaultsKey)
+        defaults.removeObject(forKey: muteDefaultsKey)
+        defaults.removeObject(forKey: eqDefaultsKey)
+        defaults.removeObject(forKey: eqDeviceScopeDefaultsKey)
+
+        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self)
+    }
+
     private func loadPersistedState() {
-        volumeMap = UserDefaults.standard.dictionary(forKey: volumeDefaultsKey) as? [String: Double] ?? [:]
-        muteMap = UserDefaults.standard.dictionary(forKey: muteDefaultsKey) as? [String: Bool] ?? [:]
-        eqMap = UserDefaults.standard.dictionary(forKey: eqDefaultsKey) as? [String: [Double]] ?? [:]
-        eqDeviceScopeMap = UserDefaults.standard.dictionary(forKey: eqDeviceScopeDefaultsKey) as? [String: [String]] ?? [:]
+        volumeMap = loadDoubleMap(forKey: volumeDefaultsKey)
+        muteMap = loadBoolMap(forKey: muteDefaultsKey)
+        eqMap = loadEQMap(forKey: eqDefaultsKey)
+        eqDeviceScopeMap = loadStringArrayMap(forKey: eqDeviceScopeDefaultsKey)
+    }
+
+    // MARK: - Persistence helpers
+
+    private func persistDoubleMap(_ map: [String: Double], forKey key: String) {
+        UserDefaults.standard.set(map, forKey: key)
+    }
+
+    private func persistBoolMap(_ map: [String: Bool], forKey key: String) {
+        UserDefaults.standard.set(map, forKey: key)
+    }
+
+    private func persistEQMap() {
+        if let data = try? JSONEncoder().encode(eqMap) {
+            UserDefaults.standard.set(data, forKey: eqDefaultsKey)
+        }
+    }
+
+    private func persistEQScopeMap() {
+        if let data = try? JSONEncoder().encode(eqDeviceScopeMap) {
+            UserDefaults.standard.set(data, forKey: eqDeviceScopeDefaultsKey)
+        }
+    }
+
+    private func loadDoubleMap(forKey key: String) -> [String: Double] {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let decoded = try? JSONDecoder().decode([String: Double].self, from: data) {
+            return decoded
+        }
+        guard let raw = UserDefaults.standard.dictionary(forKey: key) else { return [:] }
+        var result: [String: Double] = [:]
+        for (k, v) in raw {
+            if let d = v as? Double {
+                result[k] = d
+            } else if let n = v as? NSNumber {
+                result[k] = n.doubleValue
+            }
+        }
+        return result
+    }
+
+    private func loadBoolMap(forKey key: String) -> [String: Bool] {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let decoded = try? JSONDecoder().decode([String: Bool].self, from: data) {
+            return decoded
+        }
+        guard let raw = UserDefaults.standard.dictionary(forKey: key) else { return [:] }
+        var result: [String: Bool] = [:]
+        for (k, v) in raw {
+            if let b = v as? Bool {
+                result[k] = b
+            } else if let n = v as? NSNumber {
+                result[k] = n.boolValue
+            }
+        }
+        return result
+    }
+
+    private func loadEQMap(forKey key: String) -> [String: [Double]] {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let decoded = try? JSONDecoder().decode([String: [Double]].self, from: data) {
+            return decoded
+        }
+        guard let raw = UserDefaults.standard.dictionary(forKey: key) else { return [:] }
+        var result: [String: [Double]] = [:]
+        for (k, v) in raw {
+            if let arr = v as? [Double] {
+                result[k] = arr
+            } else if let arr = v as? [NSNumber] {
+                result[k] = arr.map(\.doubleValue)
+            } else if let arr = v as? [Any] {
+                result[k] = arr.compactMap { ($0 as? NSNumber)?.doubleValue ?? ($0 as? Double) }
+            }
+        }
+        return result
+    }
+
+    private func loadStringArrayMap(forKey key: String) -> [String: [String]] {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let decoded = try? JSONDecoder().decode([String: [String]].self, from: data) {
+            return decoded
+        }
+        guard let raw = UserDefaults.standard.dictionary(forKey: key) else { return [:] }
+        var result: [String: [String]] = [:]
+        for (k, v) in raw {
+            if let arr = v as? [String] {
+                result[k] = arr
+            } else if let arr = v as? [Any] {
+                result[k] = arr.compactMap { $0 as? String }
+            }
+        }
+        return result
     }
 }

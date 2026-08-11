@@ -171,12 +171,20 @@ public class LockScreenManager {
         public let view: AnyView
         public let initialSize: CGSize
         public let positioner: (CGSize, NSScreen) -> NSRect
+        public let windowLevel: NSWindow.Level
 
-        public init(id: String, view: AnyView, initialSize: CGSize, positioner: @escaping (CGSize, NSScreen) -> NSRect) {
+        public init(
+            id: String,
+            view: AnyView,
+            initialSize: CGSize,
+            positioner: @escaping (CGSize, NSScreen) -> NSRect,
+            windowLevel: NSWindow.Level = .mainMenu + 2
+        ) {
             self.id = id
             self.view = view
             self.initialSize = initialSize
             self.positioner = positioner
+            self.windowLevel = windowLevel
         }
     }
 
@@ -208,7 +216,14 @@ public class LockScreenManager {
         for (index, config) in configs.enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + (Double(index) * 0.05)) {
                 let initialFrame = config.positioner(config.initialSize, screen)
-                self.displayView(config.view, withId: config.id, initialFrame: initialFrame, positioner: config.positioner, on: screen)
+                self.displayView(
+                    config.view,
+                    withId: config.id,
+                    initialFrame: initialFrame,
+                    positioner: config.positioner,
+                    windowLevel: config.windowLevel,
+                    on: screen
+                )
             }
         }
 
@@ -250,11 +265,30 @@ public class LockScreenManager {
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
+    func calculateFullScreenMusicFrame(size: CGSize, screen: NSScreen) -> NSRect {
+        screen.frame
+    }
+
+    private let FULLSCREEN_MUSIC_ID = "fullScreenMusicPane"
+
     private func displayView(_ view: AnyView,
                              withId id: String,
                              initialFrame: NSRect,
                              positioner: @escaping (CGSize, NSScreen) -> NSRect,
+                             windowLevel: NSWindow.Level,
                              on screen: NSScreen) {
+        assert(Thread.isMainThread, "LockScreenManager window creation must run on the main thread")
+
+        if let existing = windows[id] {
+            if let window = existing.window {
+                removeWindow(window)
+                window.orderOut(nil)
+                window.contentViewController = nil
+            }
+            existing.close()
+            windows.removeValue(forKey: id)
+            lastMeasuredSizes.removeValue(forKey: id)
+        }
 
         let window = UnfocusableWindow(
             contentRect: initialFrame,
@@ -265,8 +299,9 @@ public class LockScreenManager {
         window.isOpaque = false
         window.backgroundColor = NSColor.clear
         window.hasShadow = false
-        window.level = .mainMenu + 2
-        window.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, .stationary]
+        window.level = windowLevel
+        window.isExcludedFromWindowsMenu = true
+        window.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, .stationary, .ignoresCycle]
 
         let controller = NSWindowController(window: window)
         windows[id] = controller
@@ -277,16 +312,18 @@ public class LockScreenManager {
             self.lastMeasuredSizes[id] = newSize
 
             let newFrame = positioner(newSize, screen)
+            let isFullscreenMusic = id == FULLSCREEN_MUSIC_ID
+
             if !window.isVisible {
                 window.setFrame(newFrame, display: false)
                 window.alphaValue = 0
-                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
                 NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.4
+                    context.duration = isFullscreenMusic ? 0.28 : 0.4
                     context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                     window.animator().alphaValue = 1
                 }
-            } else {
+            } else if !isFullscreenMusic {
                 window.animator().setFrame(newFrame, display: true)
             }
 

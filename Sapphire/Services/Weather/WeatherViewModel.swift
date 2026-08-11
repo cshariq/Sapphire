@@ -8,12 +8,14 @@
 import SwiftUI
 import CoreLocation
 
+@MainActor
 class WeatherViewModel: ObservableObject {
     static let shared = WeatherViewModel()
 
-    private let weatherService = WeatherService()
+    private let weatherService = WeatherService.shared
     private let settingsModel = SettingsModel.shared
 
+    @Published private(set) var weatherData: ProcessedWeatherData?
     @Published var locationName: String = "Loading..."
     @Published var temperature: String = "—°"
     @Published var conditionDescription: String = "Fetching..."
@@ -32,10 +34,12 @@ class WeatherViewModel: ObservableObject {
 
     @Published var isFetching = false
 
+    var hasValidWeather: Bool { weatherData?.isValid == true }
+
     private init() {
         fetch()
         Timer.scheduledTimer(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
-            self?.fetch()
+            Task { @MainActor in self?.fetch() }
         }
     }
 
@@ -44,13 +48,20 @@ class WeatherViewModel: ObservableObject {
         isFetching = true
 
         weatherService.fetchWeather { [weak self] result in
-            DispatchQueue.main.async {
-                self?.isFetching = false
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.isFetching = false
                 switch result {
                 case .success(let data):
-                    self?.updateUI(with: data)
+                    guard data.isValid else {
+                        self.handleError(WeatherServiceError.unavailableData)
+                        return
+                    }
+                    self.weatherData = data
+                    self.updateUI(with: data)
                 case .failure(let error):
-                    self?.handleError(error)
+                    self.weatherData = nil
+                    self.handleError(error)
                 }
             }
         }
@@ -77,9 +88,9 @@ class WeatherViewModel: ObservableObject {
     }
 
     private func handleError(_ error: Error) {
-        self.locationName = "Error"
+        self.locationName = "Unavailable"
         self.temperature = "—°"
-        self.conditionDescription = "Failed to load"
+        self.conditionDescription = error.localizedDescription
         self.highLowTemp = "H: —° L: —°"
         self.feelsLike = "—°"
         self.windInfo = "— mph"
@@ -88,8 +99,8 @@ class WeatherViewModel: ObservableObject {
         self.visibility = "—"
         self.pressure = "—"
         self.precipChance = "—%"
-        self.iconName = "exclamationmark.triangle.fill"
-        self.gradientColors = [.gray, .black.opacity(0.8)]
+        self.iconName = "icloud"
+        self.gradientColors = [.gray.opacity(0.6), .black.opacity(0.8)]
         self.hourlyForecasts = []
         self.lastUpdated = nil
     }

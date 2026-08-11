@@ -31,7 +31,12 @@ struct LockScreenInfoWidgetView: View {
     @EnvironmentObject var focusModeManager: FocusModeManager
     @EnvironmentObject var bluetoothManager: BluetoothManager
     @EnvironmentObject var batteryMonitor: BatteryMonitor
+    @EnvironmentObject var timerManager: TimerManager
     @StateObject private var batteryEstimator = BatteryEstimator.shared
+    @ObservedObject private var caffeineManager = CaffeineManager.shared
+    @ObservedObject private var notesManager = NotesManager.shared
+    @ObservedObject private var clipboardManager = ClipboardManager.shared
+    @ObservedObject private var statsManager = StatsManager.shared
 
     private let fadeTransition = AnyTransition.opacity
 
@@ -41,8 +46,13 @@ struct LockScreenInfoWidgetView: View {
         let eventId = calendarService.upcomingEvents.first?.eventIdentifier ?? "none"
         let focusState = focusModeManager.currentStatus.isActive ? "on" : "off"
         let bluetoothId = bluetoothManager.lastEvent.map { "\($0.name)-\($0.batteryLevel ?? 0)" } ?? "none"
+        let caffeineState = caffeineManager.isActive ? "on" : "off"
+        let timerState = timerManager.isRunning ? "\(Int(timerManager.displayTime))" : "off"
+        let notesCount = notesManager.notes.count
+        let clipboardCount = clipboardManager.recentItems.count
+        let cpu = Int(((statsManager.currentStats?.cpu?.totalUsage ?? 0) * 100).rounded())
 
-        return "\(widgetTypes)-\(musicState)-\(eventId)-\(focusState)-\(bluetoothId)"
+        return "\(widgetTypes)-\(musicState)-\(eventId)-\(focusState)-\(bluetoothId)-\(caffeineState)-\(timerState)-\(notesCount)-\(clipboardCount)-\(cpu)"
     }
 
     var body: some View {
@@ -55,12 +65,30 @@ struct LockScreenInfoWidgetView: View {
                     CalendarInfoView()
                 case .music:
                     MusicInfoView()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if musicWidget.isPlaying {
+                                LockScreenMusicPaneController.shared.open()
+                            }
+                        }
                 case .focus:
                     FocusInfoView()
                 case .bluetooth:
                     BluetoothInfoView()
                 case .battery:
                     BatteryInfoView()
+                case .caffeine:
+                    LockScreenCaffeineInfoView()
+                case .timer:
+                    LockScreenTimerInfoView()
+                case .clock:
+                    LockScreenClockInfoView()
+                case .notes:
+                    LockScreenNotesInfoView()
+                case .clipboard:
+                    LockScreenClipboardInfoView()
+                case .system:
+                    LockScreenSystemInfoView()
                 case .none:
                     EmptyView()
                 }
@@ -73,7 +101,7 @@ struct LockScreenInfoWidgetView: View {
 
     @ViewBuilder
     private func WeatherInfoView() -> some View {
-        if let weather = weatherVM.weatherData {
+        if let weather = weatherVM.weatherData, weather.isValid {
             HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
                 ForEach(settings.settings.lockScreenWeatherInfo, id: \.self) { infoType in
                     weatherItemView(for: infoType, with: weather)
@@ -167,10 +195,12 @@ struct LockScreenInfoWidgetView: View {
     private func MusicInfoView() -> some View {
         if musicWidget.isPlaying, let title = musicWidget.title {
             HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
-                Image(nsImage: musicWidget.artwork ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: "Album art")!)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: LockScreenConfiguration.infoWidgetMusicArtworkSize, height: LockScreenConfiguration.infoWidgetMusicArtworkSize).cornerRadius(LockScreenConfiguration.infoWidgetMusicArtworkCornerRadius)
+                if let cover = musicWidget.artwork ?? musicWidget.appIcon {
+                    Image(nsImage: cover)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: LockScreenConfiguration.infoWidgetMusicArtworkSize, height: LockScreenConfiguration.infoWidgetMusicArtworkSize).cornerRadius(LockScreenConfiguration.infoWidgetMusicArtworkCornerRadius)
+                }
 
                 VStack(alignment: .leading) {
                     Text(title)

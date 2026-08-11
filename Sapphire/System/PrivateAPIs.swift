@@ -141,15 +141,22 @@ fileprivate func CGSSpaceDestroy(_ cid: CGSConnectionID, _ space: CGSSpaceID)
 @_silgen_name("CGSSpaceSetAbsoluteLevel")
 fileprivate func CGSSpaceSetAbsoluteLevel(_ cid: CGSConnectionID, _ space: CGSSpaceID, _ level: Int)
 @_silgen_name("CGSAddWindowsToSpaces")
-fileprivate func CGSAddWindowsToSpaces(_ cid: CGSConnectionID, _ windows: NSArray, _ spaces: NSArray)
+internal func CGSAddWindowsToSpaces(_ cid: CGSConnectionID, _ windows: NSArray, _ spaces: NSArray)
 @_silgen_name("CGSRemoveWindowsFromSpaces")
-fileprivate func CGSRemoveWindowsFromSpaces(_ cid: CGSConnectionID, _ windows: NSArray, _ spaces: NSArray)
+internal func CGSRemoveWindowsFromSpaces(_ cid: CGSConnectionID, _ windows: NSArray, _ spaces: NSArray)
 @_silgen_name("CGSHideSpaces")
 fileprivate func CGSHideSpaces(_ cid: CGSConnectionID, _ spaces: NSArray)
 @_silgen_name("CGSShowSpaces")
 fileprivate func CGSShowSpaces(_ cid: CGSConnectionID, _ spaces: NSArray)
 @_silgen_name("CGSCopyManagedDisplaySpaces")
-private func CGSCopyManagedDisplaySpaces(_ cid: CGSConnectionID) -> CFArray
+internal func CGSCopyManagedDisplaySpaces(_ cid: CGSConnectionID) -> CFArray
+
+@_silgen_name("CGSMoveWindowsToManagedSpace")
+internal func CGSMoveWindowsToManagedSpace(
+    _ cid: CGSConnectionID,
+    _ windows: NSArray,
+    _ space: CGSSpaceID
+)
 
 @_silgen_name("CoreDockSendNotification")
 internal func CoreDockSendNotification(_ notification: CFString, _ unknown: CInt) -> Void
@@ -246,59 +253,82 @@ struct SystemControl {
     }
 
     static func getVolume() -> Float {
-        let scriptSource = "output volume of (get volume settings)"
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            let result = script.executeAndReturnError(&error)
-            if error == nil {
-                return Float(result.int32Value) / 100.0
-            }
+        guard let deviceID = getDefaultOutputDeviceID() else { return 0.5 }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: kAudioObjectPropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var volume: Float = 0.5
+        var size = UInt32(MemoryLayout<Float>.size)
+        if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &volume) == noErr {
+            return volume
+        }
+        address.mElement = 0
+        if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &volume) == noErr {
+            return volume
         }
         return 0.5
     }
 
+    private static func getDefaultOutputDeviceID() -> AudioDeviceID? {
+        var deviceID = kAudioObjectUnknown
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID) == noErr,
+              deviceID != kAudioObjectUnknown else { return nil }
+        return deviceID
+    }
+
     static func setVolume(to level: Float) {
         let cleanLevel = max(0.0, min(1.0, level))
-
         let scriptVolume: Int
         if cleanLevel < 0.05 {
             scriptVolume = Int(ceil(cleanLevel * 100))
         } else {
             scriptVolume = Int((cleanLevel * 100).rounded(.toNearestOrAwayFromZero))
         }
-
-        let scriptSource = "set volume output volume \(scriptVolume)"
-
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            script.executeAndReturnError(&error)
-            if let err = error {
-                print("[SystemControl] ERROR: AppleScript failed to set volume: \(err)")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", "set volume output volume \(scriptVolume)"]
+        process.terminationHandler = { proc in
+            if proc.terminationStatus != 0 {
+                print("[SystemControl] osascript setVolume exited \(proc.terminationStatus)")
             }
         }
+        try? process.run()
     }
 
     static func isMuted() -> Bool {
-        let scriptSource = "output muted of (get volume settings)"
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            let result = script.executeAndReturnError(&error)
-            if error == nil {
-                return result.booleanValue
-            }
+        guard let deviceID = getDefaultOutputDeviceID() else { return false }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: kAudioObjectPropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var muted: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muted) == noErr {
+            return muted != 0
         }
         return false
     }
 
     static func setMuted(to isMuted: Bool) {
-        let scriptSource = isMuted ? "set volume with output muted" : "set volume without output muted"
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            script.executeAndReturnError(&error)
-            if let err = error {
-                print("[SystemControl] ERROR: AppleScript failed to set mute state: \(err)")
+        let script = isMuted ? "set volume with output muted" : "set volume without output muted"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        process.terminationHandler = { proc in
+            if proc.terminationStatus != 0 {
+                print("[SystemControl] osascript setMuted exited \(proc.terminationStatus)")
             }
         }
+        try? process.run()
     }
 
     static func getBrightness() -> Float {

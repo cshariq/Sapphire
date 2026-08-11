@@ -16,13 +16,37 @@ class BatteryMonitor: ObservableObject {
     private var runLoopSource: CFRunLoopSource?
 
     private var lastLoggedLevel: Int?
+    private var lastPeriodicLogTime: Date = .distantPast
+    private let periodicLogInterval: TimeInterval = 300
+    private var periodicLogTimer: Timer?
 
     private init() {
         setupBatteryChangeNotification()
         updateBatteryState()
+        startPeriodicLogging()
+    }
+
+    private func startPeriodicLogging() {
+        periodicLogTimer?.invalidate()
+        periodicLogTimer = Timer.scheduledTimer(withTimeInterval: periodicLogInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.logPeriodicSnapshot()
+            }
+        }
+        if let periodicLogTimer {
+            RunLoop.main.add(periodicLogTimer, forMode: .common)
+        }
+    }
+
+    private func logPeriodicSnapshot() {
+        let now = Date()
+        guard now.timeIntervalSince(lastPeriodicLogTime) >= periodicLogInterval - 1 else { return }
+        lastPeriodicLogTime = now
+        BatteryDataLogger.shared.logCurrentState()
     }
 
     deinit {
+        periodicLogTimer?.invalidate()
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
         }

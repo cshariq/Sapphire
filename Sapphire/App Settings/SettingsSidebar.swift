@@ -48,13 +48,13 @@ struct SettingsSidebarView: View {
             .background(Color.white.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.horizontal, 12)
-            .padding(.bottom, 12) // Spacing below search bar
+            .padding(.bottom, 12)
 
             // MARK: 2. Apple ID Style Account Sidebar Card (Below Search Bar)
             SidebarAccountCardView(isSelected: showAccountPane) {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     showAccountPane = true
-                    selectedSection = nil // Deselect standard list rows
+                    selectedSection = nil
                 }
             }
 
@@ -85,7 +85,7 @@ struct SettingsSidebarView: View {
                     }
                 }
             }
-            
+
             if !searchText.isEmpty && filteredSections.isEmpty {
                 Text("No settings matched \"\(searchText)\".")
                     .font(.caption)
@@ -128,7 +128,6 @@ struct SidebarAccountCardView: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                // Avatar: gradient only when signed in; plain icon when logged out
                 Group {
                     if subscriptionManager.isSignedIn {
                         ZStack {
@@ -150,7 +149,6 @@ struct SidebarAccountCardView: View {
                 }
                 .frame(width: 38, height: 38)
 
-                // User details stack
                 VStack(alignment: .leading, spacing: 2) {
                     Text(subscriptionManager.userDisplayName)
                         .font(.system(size: 13, weight: .semibold))
@@ -160,9 +158,9 @@ struct SidebarAccountCardView: View {
                         .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.5))
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.3))

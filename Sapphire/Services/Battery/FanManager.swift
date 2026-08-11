@@ -9,6 +9,76 @@ import Foundation
 import Combine
 
 // MARK: - Data Models
+
+struct FanCurvePoint: Codable, Equatable, Identifiable {
+    var id: UUID = UUID()
+    var temperature: Int
+    var rpm: Int
+
+    enum CodingKeys: String, CodingKey {
+        case temperature, rpm
+    }
+}
+
+enum FanControlMode: Equatable {
+    case auto
+    case constant(rpm: Int)
+    case sensor(sensorKey: String, minTemp: Int, maxTemp: Int)
+    case customCurve(sensorKey: String, points: [FanCurvePoint])
+}
+
+struct StoredFanControlMode: Codable, Equatable {
+    enum Kind: String, Codable {
+        case auto, constant, sensor, customCurve
+    }
+
+    var kind: Kind
+    var rpm: Int?
+    var sensorKey: String?
+    var minTemp: Int?
+    var maxTemp: Int?
+    var points: [FanCurvePoint]?
+
+    init(from mode: FanControlMode) {
+        switch mode {
+        case .auto:
+            kind = .auto
+        case .constant(let rpm):
+            kind = .constant
+            self.rpm = rpm
+        case .sensor(let sensorKey, let minTemp, let maxTemp):
+            kind = .sensor
+            self.sensorKey = sensorKey
+            self.minTemp = minTemp
+            self.maxTemp = maxTemp
+        case .customCurve(let sensorKey, let points):
+            kind = .customCurve
+            self.sensorKey = sensorKey
+            self.points = points
+        }
+    }
+
+    func toMode() -> FanControlMode {
+        switch kind {
+        case .auto:
+            return .auto
+        case .constant:
+            return .constant(rpm: rpm ?? 2000)
+        case .sensor:
+            return .sensor(
+                sensorKey: sensorKey ?? "TC0P",
+                minTemp: minTemp ?? 40,
+                maxTemp: maxTemp ?? 75
+            )
+        case .customCurve:
+            return .customCurve(
+                sensorKey: sensorKey ?? "TC0P",
+                points: points ?? []
+            )
+        }
+    }
+}
+
 struct TemperatureSensor: Identifiable, Hashable {
     let id = UUID()
     let key: String
@@ -16,13 +86,8 @@ struct TemperatureSensor: Identifiable, Hashable {
     var value: Double = 0
 }
 
-enum FanControlMode: Equatable {
-    case auto
-    case constant(rpm: Int)
-    case sensor(sensorKey: String, minTemp: Int, maxTemp: Int)
-}
-
 // MARK: - Fan Manager
+
 @MainActor
 class FanManager: ObservableObject {
     static let shared = FanManager()
@@ -32,217 +97,387 @@ class FanManager: ObservableObject {
     @Published private(set) var fanModes: [Int: FanControlMode] = [:]
 
     private var updateTimer: Timer?
+    private var helperRetryTimer: Timer?
+    private var notificationObservers: [NSObjectProtocol] = []
+    private var pollingConsumers = 0
+
+    private var needsControlLoop: Bool {
+        fanModes.values.contains {
+            if case .auto = $0 { return false }
+            return true
+        }
+    }
 
     private init() {
+        loadPersistedModes()
+        registerHelperObservers()
         Task {
-            await initializeFans()
-            await initializeSensors()
-            startMonitoring()
+            await refreshHardwareState()
+            refreshPollingState()
+        }
+    }
+
+    deinit {
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
+    func beginPolling() {
+        pollingConsumers += 1
+        refreshPollingState()
+        Task { await refreshHardwareState() }
+    }
+
+    func endPolling() {
+        pollingConsumers = max(0, pollingConsumers - 1)
+        refreshPollingState()
+    }
+
+    private func refreshPollingState() {
+        if needsControlLoop || pollingConsumers > 0 {
+            startMonitoring(interval: needsControlLoop ? 3.0 : 5.0)
+        } else {
+            stopMonitoring()
+        }
+    }
+
+    private func registerHelperObservers() {
+        let center = NotificationCenter.default
+        notificationObservers = [
+            center.addObserver(forName: .sapphireHelperConnectionRestored, object: nil, queue: .main) { [weak self] _ in
+                Task { await self?.refreshHardwareState() }
+            },
+            center.addObserver(forName: .sapphireHelperConnectionLost, object: nil, queue: .main) { [weak self] _ in
+                self?.startHelperRetryIfNeeded()
+            }
+        ]
+    }
+
+    func refreshHardwareState() async {
+        await initializeFans()
+        await initializeSensors()
+        restorePersistedModes()
+        refreshPollingState()
+        if !fans.isEmpty {
+            helperRetryTimer?.invalidate()
+            helperRetryTimer = nil
+        }
+    }
+
+    private func startHelperRetryIfNeeded() {
+        guard helperRetryTimer == nil else { return }
+        helperRetryTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task { await self?.refreshHardwareState() }
         }
     }
 
     private func initializeFans() async {
-        guard let helper = getHelper() else { return }
+        guard let helper = getHelper() else {
+            startHelperRetryIfNeeded()
+            return
+        }
+
         let fanCount = await helper.getFanCount()
         guard fanCount > 0 else {
-            print("[FanManager] No fans found on this device.")
+            startHelperRetryIfNeeded()
             return
         }
 
         var fanArray: [FanInfo] = []
-        for i in 0..<fanCount {
-            if let fanInfo = await helper.getFanInfo(fanIndex: i) {
+        for index in 0..<fanCount {
+            if let fanInfo = await helper.getFanInfo(fanIndex: index) {
                 fanArray.append(fanInfo)
-                fanModes[i] = .auto
+                if fanModes[fanInfo.id] == nil {
+                    fanModes[fanInfo.id] = .auto
+                }
             }
         }
-        self.fans = fanArray.sorted { $0.name < $1.name }
+
+        if fanArray.isEmpty {
+            startHelperRetryIfNeeded()
+            return
+        }
+
+        fans = fanArray.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private func initializeSensors() async {
         guard let helper = getHelper() else { return }
 
-        let allSMCKeys = await helper.getAllSMCKeys()
-        let availableKeys = Set(allSMCKeys)
-
+        let availableKeys = Set(await helper.getAllSMCKeys())
         var foundSensors: [TemperatureSensor] = []
 
-        for (key, _) in SensorNameMap.knownSensors {
-            if availableKeys.contains(key) {
+        for (key, _) in SensorNameMap.knownSensors where availableKeys.contains(key) {
+            foundSensors.append(TemperatureSensor(key: key))
+        }
+
+        for i in 0...15 {
+            let hexChar = String(format: "%X", i)
+            for key in ["TC\(hexChar)c", "TC\(hexChar)C"] where availableKeys.contains(key) {
                 foundSensors.append(TemperatureSensor(key: key))
             }
         }
 
-        let wildcardPrefixes = ["TC"]
-        for prefix in wildcardPrefixes {
-            for i in 0...15 {
-                let hexChar = String(format: "%X", i)
-                let keyLower = "\(prefix)\(hexChar)c"
-                if availableKeys.contains(keyLower) {
-                    foundSensors.append(TemperatureSensor(key: keyLower))
-                }
-                let keyUpper = "\(prefix)\(hexChar)C"
-                if availableKeys.contains(keyUpper) {
-                    foundSensors.append(TemperatureSensor(key: keyUpper))
+        sensors = foundSensors
+            .reduce(into: [TemperatureSensor]()) { result, sensor in
+                if !result.contains(where: { $0.key == sensor.key }) {
+                    result.append(sensor)
                 }
             }
-        }
-
-        self.sensors = foundSensors.sorted { $0.name < $1.name }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private func startMonitoring() {
+    private func startMonitoring(interval: TimeInterval = 3.0) {
+        if let updateTimer, updateTimer.isValid, abs(updateTimer.timeInterval - interval) < 0.01 {
+            return
+        }
         updateTimer?.invalidate()
-        // Increased from 2s to 3s to reduce SMC polling frequency
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        updateTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.updateData()
         }
+        if let updateTimer {
+            RunLoop.main.add(updateTimer, forMode: .common)
+        }
+        updateData()
+    }
+
+    private func stopMonitoring() {
+        updateTimer?.invalidate()
+        updateTimer = nil
     }
 
     private func updateData() {
         Task {
             guard let helper = getHelper() else { return }
 
+            let currentFans = fans
+            let currentSensors = sensors
+
             await withTaskGroup(of: Void.self) { group in
-                for i in 0..<fans.count {
-                    group.addTask { [i] in
-                        if let updatedFan = await helper.getFanInfo(fanIndex: i) {
-                            await MainActor.run { self.fans[i].currentRPM = updatedFan.currentRPM }
+                for fan in currentFans {
+                    let fanID = fan.id
+                    group.addTask {
+                        if let updatedFan = await helper.getFanInfo(fanIndex: fanID) {
+                            await MainActor.run {
+                                guard let index = self.fans.firstIndex(where: { $0.id == fanID }) else { return }
+                                self.fans[index].currentRPM = updatedFan.currentRPM
+                            }
                         }
                     }
                 }
-                for i in 0..<sensors.count {
-                    group.addTask { [key = sensors[i].key] in
+                for sensor in currentSensors {
+                    let key = sensor.key
+                    group.addTask {
                         let newValue = await helper.getSensorValue(key: key)
                         if newValue >= 0 {
-                            await MainActor.run { self.sensors[i].value = newValue }
+                            await MainActor.run {
+                                guard let index = self.sensors.firstIndex(where: { $0.key == key }) else { return }
+                                self.sensors[index].value = newValue
+                            }
                         }
                     }
                 }
             }
 
-            applySensorBasedControl()
+            applyActiveControlModes()
         }
     }
 
-    private func applySensorBasedControl() {
-        for i in 0..<fans.count {
-            if case .sensor(let sensorKey, let minTemp, let maxTemp) = fanModes[i] {
-                guard let sensor = sensors.first(where: { $0.key == sensorKey }) else { continue }
-
-                let tempRange = Double(maxTemp - minTemp)
-                if tempRange <= 0 { continue }
-                let speedRange = Double(fans[i].maxRPM - fans[i].minRPM)
-
-                let currentTemp = sensor.value
-                var targetRPM: Int
-
-                if currentTemp <= Double(minTemp) { targetRPM = fans[i].minRPM }
-                else if currentTemp >= Double(maxTemp) { targetRPM = fans[i].maxRPM }
-                else {
-                    let tempProgress = (currentTemp - Double(minTemp)) / tempRange
-                    targetRPM = fans[i].minRPM + Int(tempProgress * speedRange)
-                }
-
-                targetRPM = max(fans[i].minRPM, min(fans[i].maxRPM, targetRPM))
-
-                Task { await getHelper()?.setFanTargetSpeed(fanIndex: i, speed: targetRPM) }
+    private func applyActiveControlModes() {
+        for fan in fans {
+            guard let mode = fanModes[fan.id] else { continue }
+            switch mode {
+            case .auto:
+                continue
+            case .constant(let rpm):
+                Task { await getHelper()?.setFanToConstantRPM(fanIndex: fan.id, speed: rpm) }
+            case .sensor(let sensorKey, let minTemp, let maxTemp):
+                applyLinearCurve(
+                    fan: fan,
+                    sensorKey: sensorKey,
+                    points: [
+                        FanCurvePoint(temperature: minTemp, rpm: fan.minRPM),
+                        FanCurvePoint(temperature: maxTemp, rpm: fan.maxRPM)
+                    ]
+                )
+            case .customCurve(let sensorKey, let points):
+                applyLinearCurve(fan: fan, sensorKey: sensorKey, points: points)
             }
         }
     }
 
-    func setFanMode(for fanIndex: Int, to mode: FanControlMode) {
-        guard fans.indices.contains(fanIndex) else { return }
-        fanModes[fanIndex] = mode
+    private func applyLinearCurve(fan: FanInfo, sensorKey: String, points: [FanCurvePoint]) {
+        guard let sensor = sensors.first(where: { $0.key == sensorKey }) else { return }
+        let sortedPoints = points.sorted { $0.temperature < $1.temperature }
+        guard sortedPoints.count >= 2 else { return }
+
+        let currentTemp = sensor.value
+        var targetRPM = fan.minRPM
+
+        if currentTemp <= Double(sortedPoints[0].temperature) {
+            targetRPM = sortedPoints[0].rpm
+        } else if currentTemp >= Double(sortedPoints[sortedPoints.count - 1].temperature) {
+            targetRPM = sortedPoints[sortedPoints.count - 1].rpm
+        } else {
+            for index in 0..<(sortedPoints.count - 1) {
+                let lower = sortedPoints[index]
+                let upper = sortedPoints[index + 1]
+                let lowerTemp = Double(lower.temperature)
+                let upperTemp = Double(upper.temperature)
+                guard currentTemp >= lowerTemp, currentTemp <= upperTemp else { continue }
+                let progress = (currentTemp - lowerTemp) / max(upperTemp - lowerTemp, 1)
+                targetRPM = lower.rpm + Int(progress * Double(upper.rpm - lower.rpm))
+                break
+            }
+        }
+
+        targetRPM = max(fan.minRPM, min(fan.maxRPM, targetRPM))
+        Task { await getHelper()?.setFanTargetSpeed(fanIndex: fan.id, speed: targetRPM) }
+    }
+
+    func setFanMode(for fanID: Int, to mode: FanControlMode) {
+        guard fans.contains(where: { $0.id == fanID }) else { return }
+        fanModes[fanID] = mode
+        persistModes()
+        refreshPollingState()
 
         Task {
             guard let helper = getHelper() else { return }
             switch mode {
             case .auto:
-                await helper.setFanMode(fanIndex: fanIndex, mode: 0)
+                await helper.setFanMode(fanIndex: fanID, mode: 0)
             case .constant(let rpm):
-                await helper.setFanToConstantRPM(fanIndex: fanIndex, speed: rpm)
-            case .sensor:
-                await helper.setFanMode(fanIndex: fanIndex, mode: 1)
+                await helper.setFanToConstantRPM(fanIndex: fanID, speed: rpm)
+            case .sensor(_, _, _):
+                let minRPM = fans.first(where: { $0.id == fanID })?.minRPM ?? 2000
+                await helper.setFanToConstantRPM(fanIndex: fanID, speed: minRPM)
+            case .customCurve(_, let points):
+                let startRPM = points.sorted { $0.temperature < $1.temperature }.first?.rpm
+                    ?? fans.first(where: { $0.id == fanID })?.minRPM
+                    ?? 2000
+                await helper.setFanToConstantRPM(fanIndex: fanID, speed: startRPM)
             }
         }
     }
 
-    func getMode(for fanIndex: Int) -> FanControlMode {
-        return fanModes[fanIndex] ?? .auto
+    func getMode(for fanID: Int) -> FanControlMode {
+        fanModes[fanID] ?? .auto
     }
 
     func markAllFansAutomatic() {
-        for index in fans.indices {
-            fanModes[index] = .auto
+        for fan in fans {
+            fanModes[fan.id] = .auto
+        }
+        persistModes()
+        refreshPollingState()
+    }
+
+    static func defaultCurvePoints(for fan: FanInfo) -> [FanCurvePoint] {
+        let midRPM = fan.minRPM + ((fan.maxRPM - fan.minRPM) / 2)
+        return [
+            FanCurvePoint(temperature: 45, rpm: fan.minRPM),
+            FanCurvePoint(temperature: 65, rpm: midRPM),
+            FanCurvePoint(temperature: 85, rpm: fan.maxRPM)
+        ]
+    }
+
+    private func loadPersistedModes() {
+        let stored = SettingsModel.shared.settings.fanControlModes
+        fanModes = stored.reduce(into: [:]) { result, entry in
+            guard let fanID = Int(entry.key) else { return }
+            result[fanID] = entry.value.toMode()
         }
     }
 
+    private func restorePersistedModes() {
+        for fan in fans {
+            guard let mode = fanModes[fan.id] else { continue }
+            if case .auto = mode { continue }
+            setFanMode(for: fan.id, to: mode)
+        }
+    }
+
+    private func persistModes() {
+        var settings = SettingsModel.shared.settings
+        settings.fanControlModes = fanModes.reduce(into: [:]) { result, entry in
+            result[String(entry.key)] = StoredFanControlMode(from: entry.value)
+        }
+        SettingsModel.shared.settings = settings
+    }
+
     private func getHelper() -> HelperProtocol? {
-        return BatteryManager.shared.getHelper()
+        BatteryManager.shared.getHelper()
     }
 }
 
 // MARK: - Async Helper Wrappers
 
+private enum HelperAsyncTimeout {
+    static let seconds: TimeInterval = 3.0
+}
+
 extension HelperProtocol {
     func getFanCount() async -> Int {
-        await withCheckedContinuation { continuation in
-            getFanCount { count in
-                continuation.resume(returning: count)
-            }
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: 0) { finish in
+            getFanCount(reply: finish)
         }
     }
 
     func getFanInfo(fanIndex: Int) async -> FanInfo? {
-        await withCheckedContinuation { (continuation: CheckedContinuation<FanInfo?, Never>) in
-            getFanInfo(fanIndex: fanIndex) { fanInfo in
-                continuation.resume(returning: fanInfo)
-            }
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: nil as FanInfo?) { finish in
+            getFanInfo(fanIndex: fanIndex, reply: finish)
         }
     }
 
-    func getAllTemperatureSensors(reply: @escaping ([String]) -> Void) {
-        reply([])
-    }
-
     func getSensorValue(key: String) async -> Double {
-        await withCheckedContinuation { continuation in
-            getSensorValue(key: key) { value in
-                continuation.resume(returning: value)
-            }
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: -1.0) { finish in
+            getSensorValue(key: key, reply: finish)
         }
     }
 
     func setFanMode(fanIndex: Int, mode: UInt8) async {
-        await withCheckedContinuation { continuation in
-            setFanMode(fanIndex: fanIndex, mode: mode) { _ in
-                continuation.resume()
-            }
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: ()) { finish in
+            setFanMode(fanIndex: fanIndex, mode: mode) { _ in finish(()) }
         }
     }
 
     func setFanTargetSpeed(fanIndex: Int, speed: Int) async {
-        await withCheckedContinuation { continuation in
-            setFanTargetSpeed(fanIndex: fanIndex, speed: speed) { _ in
-                continuation.resume()
-            }
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: ()) { finish in
+            setFanTargetSpeed(fanIndex: fanIndex, speed: speed) { _ in finish(()) }
         }
     }
 
     func setFanToConstantRPM(fanIndex: Int, speed: Int) async {
-        await withCheckedContinuation { continuation in
-            setFanToConstantRPM(fanIndex: fanIndex, speed: speed) { _ in
-                continuation.resume()
-            }
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: ()) { finish in
+            setFanToConstantRPM(fanIndex: fanIndex, speed: speed) { _ in finish(()) }
         }
     }
 
     func getAllSMCKeys() async -> [String] {
-        await withCheckedContinuation { continuation in
-            getAllSMCKeys { keys in
-                continuation.resume(returning: keys)
-            }
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: [String]()) { finish in
+            getAllSMCKeys(reply: finish)
+        }
+    }
+}
+
+private func withTimeoutReply<T>(
+    seconds: TimeInterval,
+    default defaultValue: T,
+    start: (@escaping (T) -> Void) -> Void
+) async -> T {
+    await withCheckedContinuation { continuation in
+        let lock = NSLock()
+        var finished = false
+        let finish: (T) -> Void = { value in
+            lock.lock()
+            defer { lock.unlock() }
+            guard !finished else { return }
+            finished = true
+            continuation.resume(returning: value)
+        }
+
+        start(finish)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds) {
+            finish(defaultValue)
         }
     }
 }

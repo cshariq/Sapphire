@@ -56,7 +56,7 @@ struct DeviceEQView: View {
                         .font(.system(size: 20, weight: .bold))
                 }
                 Spacer()
-                Image(systemName: "f_curve.curve.curve.right_filled")
+                Image(systemName: "slider.vertical.3")
                     .font(.title)
             }
             .padding(.horizontal, 24)
@@ -104,7 +104,7 @@ struct DeviceEQView: View {
                         .fill(.black.opacity(0.2))
                         .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.1), lineWidth: 1))
                 )
-                
+
                 HStack {
                     ForEach(eqFrequencies, id: \.self) { freq in
                         Text(freq)

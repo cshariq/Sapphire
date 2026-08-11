@@ -249,7 +249,8 @@ class TimerManager: ObservableObject {
         self.displayedTimerID = newTimerID
         self.activeTimer = newActiveTimerType
         updateDisplayedTime()
-        if newTimerID != nil { startInternalTimer() } else { stopInternalTimer() }
+        stopInternalTimer()
+        if newTimerID != nil { startInternalTimer() }
     }
 
     @objc private func updateDisplayedTime() {
@@ -275,8 +276,12 @@ class TimerManager: ObservableObject {
 
     private func startInternalTimer() {
         guard internalTimer == nil || !(internalTimer!.isValid) else { return }
-        internalTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        let interval: TimeInterval = activeTimer == .stopwatch ? 0.25 : 1.0
+        internalTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.updateDisplayedTime()
+        }
+        if let internalTimer {
+            RunLoop.main.add(internalTimer, forMode: .common)
         }
     }
 

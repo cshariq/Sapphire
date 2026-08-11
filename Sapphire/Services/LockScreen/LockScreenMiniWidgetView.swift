@@ -24,58 +24,10 @@ struct LockScreenWidgetBackground<Content: View>: View {
 
     @ViewBuilder
     private var backgroundMaterial: some View {
-        if settings.settings.lockScreenLiquidGlassLook {
-            if #available(macOS 26.0, *) {
-                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
-                    .glassEffect(.clear, in: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
-            } else {
-                ZStack {
-                    VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            .white.opacity(0.15),
-                            .white.opacity(0.05),
-                            .clear
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
-                .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
-                        .stroke(
-                            LinearGradient(
-                                gradient: Gradient(colors: [.white.opacity(0.25), .clear]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: LockScreenConfiguration.backgroundStrokeWidth
-                        )
-                        .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
-                )
-            }
-        } else {
-            ZStack {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous)
-                    .stroke(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                .white.opacity(0.2),
-                                .white.opacity(0.05)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: LockScreenConfiguration.backgroundStrokeWidth
-                    )
-                    .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
-            )
-        }
+        LockScreenWidgetSurface(
+            shape: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous),
+            cornerRadius: LockScreenConfiguration.cornerRadius
+        )
     }
 }
 
@@ -86,6 +38,8 @@ struct LockScreenMiniWidgetView: View {
     @EnvironmentObject var musicWidget: MusicManager
     @EnvironmentObject var batteryMonitor: BatteryMonitor
     @EnvironmentObject var bluetoothManager: BluetoothManager
+    @EnvironmentObject var focusModeManager: FocusModeManager
+    @EnvironmentObject var timerManager: TimerManager
 
     @StateObject private var batteryStatusManager = BatteryStatusManager.shared
 
@@ -94,12 +48,13 @@ struct LockScreenMiniWidgetView: View {
 
     @State private var maxMiniWidgetHeight: CGFloat = 0
 
-    private var animationValue: (Bool, [LockScreenMiniWidgetType], CGFloat) {
-        (musicWidget.isPlaying, settings.settings.lockScreenMiniWidgets, maxMiniWidgetHeight)
+    private var animationToken: String {
+        let widgets = settings.settings.lockScreenMiniWidgets.map(\.rawValue).joined(separator: ",")
+        return "\(musicWidget.isPlaying)-\(widgets)-\(Int(maxMiniWidgetHeight))-\(timerManager.isRunning)"
     }
 
     var body: some View {
-        let fadeTransition = AnyTransition.opacity
+        let fadeTransition = AnyTransition.opacity.combined(with: .scale(scale: 0.98))
 
         HStack(alignment: .top, spacing: LockScreenConfiguration.widgetSpacing) {
             ForEach(settings.settings.lockScreenMiniWidgets, id: \.self) { widgetType in
@@ -124,7 +79,9 @@ struct LockScreenMiniWidgetView: View {
                 case .music:
                     if musicWidget.isPlaying {
                         LockScreenWidgetBackground {
-                            MusicWidgetView()
+                            MusicWidgetView(onExpand: {
+                                LockScreenMusicPaneController.shared.open()
+                            })
                                 .environmentObject(musicManager)
                                 .environmentObject(settings)
                                 .environment(\.navigationStack, $dummyNavigationStack)
@@ -139,15 +96,64 @@ struct LockScreenMiniWidgetView: View {
                     .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
+                case .focus:
+                    LockScreenWidgetBackground {
+                        LockScreenFocusMiniWidget()
+                    }
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                    .transition(fadeTransition)
+
+                case .caffeine:
+                    LockScreenWidgetBackground {
+                        LockScreenCaffeineMiniWidget()
+                    }
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                    .transition(fadeTransition)
+
+                case .timer:
+                    if timerManager.isRunning || !settings.settings.lockScreenHideInactiveInfoWidgets {
+                        LockScreenWidgetBackground {
+                            LockScreenTimerMiniWidget()
+                        }
+                        .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                        .transition(fadeTransition)
+                    }
+
+                case .bluetooth:
+                    LockScreenWidgetBackground {
+                        LockScreenBluetoothMiniWidget()
+                    }
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                    .transition(fadeTransition)
+
+                case .clipboard:
+                    LockScreenWidgetBackground {
+                        ClipboardWidgetView()
+                    }
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                    .transition(fadeTransition)
+
+                case .notes:
+                    LockScreenWidgetBackground {
+                        NotesWidgetView()
+                    }
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                    .transition(fadeTransition)
+
+                case .system:
+                    LockScreenWidgetBackground {
+                        LockScreenSystemMiniWidget()
+                    }
+                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                    .transition(fadeTransition)
+
                 case .none:
                     EmptyView()
                         .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                 }
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.0)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.1)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue.2)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationToken)
         .fixedSize(horizontal: true, vertical: false)
         .background(
             VStack(spacing: 0) {
@@ -171,6 +177,8 @@ struct LockScreenMiniWidgetView: View {
         .environmentObject(batteryMonitor)
         .environmentObject(bluetoothManager)
         .environmentObject(batteryStatusManager)
+        .environmentObject(focusModeManager)
+        .environmentObject(timerManager)
     }
 
     @ViewBuilder
@@ -194,7 +202,9 @@ struct LockScreenMiniWidgetView: View {
         case .music:
             if musicWidget.isPlaying {
                 LockScreenWidgetBackground {
-                    MusicWidgetView()
+                    MusicWidgetView(onExpand: {
+                        LockScreenMusicPaneController.shared.open()
+                    })
                         .environmentObject(musicManager)
                         .environmentObject(settings)
                         .environment(\.navigationStack, $dummyNavigationStack)
@@ -207,6 +217,48 @@ struct LockScreenMiniWidgetView: View {
         case .battery:
             LockScreenWidgetBackground {
                 BatteryMiniWidget()
+            }
+            .measureSize()
+
+        case .focus:
+            LockScreenWidgetBackground {
+                LockScreenFocusMiniWidget()
+            }
+            .measureSize()
+
+        case .caffeine:
+            LockScreenWidgetBackground {
+                LockScreenCaffeineMiniWidget()
+            }
+            .measureSize()
+
+        case .timer:
+            LockScreenWidgetBackground {
+                LockScreenTimerMiniWidget()
+            }
+            .measureSize()
+
+        case .bluetooth:
+            LockScreenWidgetBackground {
+                LockScreenBluetoothMiniWidget()
+            }
+            .measureSize()
+
+        case .clipboard:
+            LockScreenWidgetBackground {
+                ClipboardWidgetView()
+            }
+            .measureSize()
+
+        case .notes:
+            LockScreenWidgetBackground {
+                NotesWidgetView()
+            }
+            .measureSize()
+
+        case .system:
+            LockScreenWidgetBackground {
+                LockScreenSystemMiniWidget()
             }
             .measureSize()
 

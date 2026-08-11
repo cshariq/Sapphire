@@ -102,6 +102,10 @@ struct NotchWidgetView: View {
                 return settings.settings.calendarWidgetEnabled
             case .shortcuts:
                 return settings.settings.shortcutsWidgetEnabled
+            case .notes:
+                return settings.settings.notesWidgetEnabled
+            case .clipboard:
+                return settings.settings.clipboardWidgetEnabled
             case .agent:
                 return false
             }
@@ -198,12 +202,16 @@ struct NotchWidgetView: View {
             SportsPlayerView(navigationStack: navigationStack)
         case .financePlayer:
             FinancePlayerView(navigationStack: navigationStack)
+        case .notesPlayer:
+            NotesPlayerView(navigationStack: navigationStack)
+        case .clipboardPlayer:
+            ClipboardPlayerView(navigationStack: navigationStack)
         case .musicLoginPrompt:
             LoginPromptView(navigationStack: navigationStack)
         case .musicQueueAndPlaylists:
             QueueAndPlaylistsView(navigationStack: navigationStack)
         case .musicDevices:
-            DevicesView(navigationStack: navigationStack)
+            QueueAndPlaylistsView(navigationStack: navigationStack)
         case .musicLyrics:
             LyricsView()
         case .musicPlaylistDetail(let playlist):
@@ -243,7 +251,7 @@ struct NotchWidgetView: View {
             DeviceEQView(device: device)
         case .multiAudioAppEQ(let bundleID, let appName):
             AppEQView(bundleID: bundleID, appName: appName)
-            
+
         case .dragActivated:
             Color.clear
                 .frame(width: 300, height: 200)
@@ -311,6 +319,26 @@ struct NotchWidgetView: View {
                 }
         case .shortcuts:
             ShortcutWidgetView()
+        case .notes:
+            NotesWidgetView()
+                .onTapGesture {
+                    if settings.settings.notesOpenOnClick {
+                        Task {
+                            try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
+                            navigationStack.wrappedValue.append(NotchWidgetMode.notesPlayer)
+                        }
+                    }
+                }
+        case .clipboard:
+            ClipboardWidgetView()
+                .onTapGesture {
+                    if settings.settings.clipboardOpenOnClick {
+                        Task {
+                            try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
+                            navigationStack.wrappedValue.append(NotchWidgetMode.clipboardPlayer)
+                        }
+                    }
+                }
         case .agent:
             EmptyView()
         }

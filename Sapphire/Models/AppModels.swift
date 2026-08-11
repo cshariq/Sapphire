@@ -27,6 +27,8 @@ enum NotchWidgetMode: Hashable {
     case calendarPlayer
     case sportsPlayer
     case financePlayer
+    case notesPlayer
+    case clipboardPlayer
 
     case musicQueueAndPlaylists
     case musicDevices
@@ -65,6 +67,10 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(23)
         case .financePlayer:
             hasher.combine(24)
+        case .notesPlayer:
+            hasher.combine(25)
+        case .clipboardPlayer:
+            hasher.combine(26)
         case .musicQueueAndPlaylists:
             hasher.combine(6)
         case .musicDevices:
@@ -261,14 +267,14 @@ struct BatteryState: Equatable, Hashable {
 }
 
 struct SportsPayload: Equatable, Hashable {
-    let league: String  // NFL, NBA, MLB, NHL, etc.
+    let league: String
     let homeTeam: String
     let awayTeam: String
     let homeScore: Int
     let awayScore: Int
-    let status: String  // "Live", "Final", "Scheduled", etc.
-    let time: String    // Current time or game time
-    let league_logo: String?  // URL or system image name
+    let status: String
+    let time: String
+    let league_logo: String?
     let homeLogoURL: URL?
     let awayLogoURL: URL?
 
@@ -357,14 +363,14 @@ struct SportsComment: Identifiable, Equatable {
 }
 
 struct FinancePayload: Equatable, Hashable {
-    let symbol: String  // AAPL, BTC/USD, etc.
+    let symbol: String
     let price: String
-    let change: String  // "+1.25" or "-2.30"
-    let changePercent: String  // "+1.2%" or "-2.3%"
+    let change: String
+    let changePercent: String
     let isPositive: Bool
-    let name: String    // "Apple Inc." etc.
+    let name: String
     let isAfterHours: Bool
-    let closingPrice: String?  // Last regular-session close when after hours
+    let closingPrice: String?
 
     var unitPrice: Double {
         Double(price.replacingOccurrences(of: "$", with: "")) ?? 0

@@ -1,3 +1,9 @@
+//
+//  LyricsDetachedWindowView.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-10
+
 import SwiftUI
 import AppKit
 
@@ -27,27 +33,23 @@ struct LyricsDetachedWindowView: View {
             // MARK: - Apple TV Ambient Background (Micro-Blur optimized)
             GeometryReader { geo in
                 ZStack {
-                    // 1. Base Ambient Artwork
                     if let image = musicManager.artwork ?? musicManager.appIcon {
                         Image(nsImage: image)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            // Downsample mathematically to bypass heavy GPU processing
                             .frame(width: geo.size.width / 10, height: geo.size.height / 10)
-                            .blur(radius: 12, opaque: true) // Low-cost blur on small frame
-                            .saturation(1.2) // Enhance colors
-                            .scaleEffect(10.5) // Scale back to fill original geometry
+                            .blur(radius: 12, opaque: true)
+                            .saturation(1.2)
+                            .scaleEffect(10.5)
                             .animation(.easeInOut(duration: 1.5), value: image)
                     } else {
                         musicManager.accentColor
                             .opacity(0.4)
                             .blur(radius: 100)
                     }
-                    
-                    // 2. Heavy Dark TV Overlay
+
                     Color.black.opacity(0.65)
-                    
-                    // 3. Ultra-thin glass texture
+
                     Rectangle()
                         .fill(.ultraThinMaterial)
                         .opacity(0.5)
@@ -75,18 +77,16 @@ struct LyricsDetachedWindowView: View {
 
                 // MARK: - Middle Content (Art + Lyrics)
                 HStack(alignment: .center, spacing: 60) {
-                    // LEFT: Album Art & Info
                     LyricsDetachedLeftPane()
                         .frame(width: 320)
-                    
-                    // RIGHT: Massive Lyrics
+
                     LyricsDetachedRightPane()
                         .frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, 60)
                 .padding(.top, 20)
                 .padding(.bottom, 40)
-                
+
                 // MARK: - Bottom Player Controls (Scrubber & Buttons)
                 LyricsDetachedBottomBar()
                     .padding(.horizontal, 60)
@@ -94,22 +94,20 @@ struct LyricsDetachedWindowView: View {
             }
         }
         .frame(minWidth: 1100, idealWidth: 1280, minHeight: 650, idealHeight: 760)
-        .environment(\.colorScheme, .dark) // Force dark mode contrast
+        .environment(\.colorScheme, .dark)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
         )
-        // Background accessor dynamically configures the host NSWindow details
         .background(
             WindowAccessor { window in
                 self.hostingWindow = window
                 window.titleVisibility = .hidden
                 window.titlebarAppearsTransparent = true
                 window.styleMask.insert(.fullSizeContentView)
-                window.isMovableByWindowBackground = true // Draggable from background canvas
-                
-                // Hide system standard window control buttons
+                window.isMovableByWindowBackground = true
+
                 window.standardWindowButton(.closeButton)?.isHidden = true
                 window.standardWindowButton(.miniaturizeButton)?.isHidden = true
                 window.standardWindowButton(.zoomButton)?.isHidden = true
@@ -130,8 +128,7 @@ private struct LyricsDetachedLeftPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            
-            // Artwork
+
             Group {
                 if let image = musicManager.artwork ?? musicManager.appIcon {
                     Image(nsImage: image)
@@ -156,19 +153,18 @@ private struct LyricsDetachedLeftPane: View {
             .scaleEffect(musicManager.isPlaying ? 1.0 : 0.95)
             .animation(.spring(response: 0.6, dampingFraction: 0.7), value: musicManager.isPlaying)
 
-            // Track Info
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Image(systemName: "music.note.tv.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.6))
-                    
+
                     Text(displayTitle)
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                 }
-                
+
                 Text(displayArtist)
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.white.opacity(0.5))
@@ -209,11 +205,11 @@ private struct LyricsDetachedRightPane: View {
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
                         LazyVStack(alignment: .leading, spacing: 32) {
-                            Spacer().frame(height: 120) // Padding for smooth scroll centering
-                            
+                            Spacer().frame(height: 120)
+
                             ForEach(lyrics) { lyric in
                                 let isCurrent = lyric.id == currentLyricID
-                                
+
                                 LyricLineView(
                                     lyric: lyric,
                                     isCurrent: isCurrent,
@@ -222,19 +218,18 @@ private struct LyricsDetachedRightPane: View {
                                 .id(lyric.id)
                                 .multilineTextAlignment(.leading)
                                 .font(.system(
-                                    size: isCurrent ? 44 : 36, // Apple TV massive fonts
+                                    size: isCurrent ? 44 : 36,
                                     weight: .bold
                                 ))
                                 .foregroundStyle(.white)
                                 .scaleEffect(isCurrent ? 1.0 : 0.95, anchor: .leading)
                                 .opacity(isCurrent ? 1.0 : 0.35)
-                                // OPTIMIZATION: Animates exclusively on state shifts (avoids layout engine thrashing)
                                 .animation(
                                     .spring(response: 0.45, dampingFraction: 0.8, blendDuration: 0.1),
                                     value: isCurrent
                                 )
                             }
-                            
+
                             Spacer().frame(height: 200)
                         }
                     }
@@ -278,8 +273,7 @@ private struct LyricsDetachedBottomBar: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            
-            // Ultra-thin Scrubber Line
+
             VStack(spacing: 8) {
                 InteractiveProgressBar(
                     value: $currentProgress,
@@ -291,25 +285,23 @@ private struct LyricsDetachedBottomBar: View {
                         }
                     }
                 )
-                .frame(height: 4) // Extremely thin TV style
+                .frame(height: 4)
                 .background(Color.white.opacity(0.2))
                 .clipShape(Capsule())
 
-                // Time Labels
                 HStack {
                     Text(formatTime(displayedElapsedTime))
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.6))
-                    
+
                     Spacer()
-                    
+
                     Text("-" + formatTime(max(0, musicManager.totalDuration - displayedElapsedTime)))
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.6))
                 }
             }
-            
-            // Minimal Playback Controls
+
             HStack(spacing: 32) {
                 SeekButton(
                     systemName: "backward.fill",

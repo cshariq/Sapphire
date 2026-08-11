@@ -13,17 +13,20 @@ class EnergyViewModel: ObservableObject {
 
     private var energyReader: EnergyReader?
 
-    init() {
-        self.energyReader = EnergyReader { [weak self] processes in
-            self?.topProcesses = processes
-        }
-    }
+    init() {}
 
     func start() {
+        if energyReader == nil {
+            energyReader = EnergyReader { [weak self] processes in
+                self?.topProcesses = processes
+            }
+        }
         energyReader?.start()
     }
 
     func stop() {
         energyReader?.stop()
+        energyReader = nil
+        topProcesses = []
     }
 }

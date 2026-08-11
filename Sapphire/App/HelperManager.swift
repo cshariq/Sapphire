@@ -49,30 +49,37 @@ class HelperManager: ObservableObject {
     func installIfNeeded() {
         guard status == .notRegistered || status == .notFound else {
             if status == .requiresApproval {
-                AlertHelper.showAlert(
-                    title: "Helper Service Approval Required",
-                    message: "Sapphire needs you to enable its helper service in System Settings for certain functions like battery management to work correctly. Please go to System Settings > General > Login Items and enable it."
-                )
-                SMAppService.openSystemSettingsLoginItems()
+                DispatchQueue.main.async {
+                    AlertHelper.showAlert(
+                        title: "Helper Service Approval Required",
+                        message: "Sapphire needs you to enable its helper service in System Settings for certain functions like battery management to work correctly. Please go to System Settings > General > Login Items and enable it."
+                    )
+                    SMAppService.openSystemSettingsLoginItems()
+                }
             }
             return
         }
 
-        do {
-            try SMAppService.daemon(plistName: "\(helperToolIdentifier).plist").register()
-            AlertHelper.showAlert(
-                title: "Helper Service Installed",
-                message: "The helper service for Sapphire has been properly installed."
-            )
-
-        } catch {
-            NSLog("[HelperManager] Helper registration failed with error: \(error.localizedDescription)")
-            AlertHelper.showAlert(
-                title: "Installation Failed",
-                message: "Failed to install the helper service. Please try again. Error: \(error.localizedDescription)"
-            )
+        Task.detached(priority: .utility) {
+            do {
+                try SMAppService.daemon(plistName: "\(self.helperToolIdentifier).plist").register()
+                await MainActor.run {
+                    AlertHelper.showAlert(
+                        title: "Helper Service Installed",
+                        message: "The helper service for Sapphire has been properly installed."
+                    )
+                }
+            } catch {
+                NSLog("[HelperManager] Helper registration failed with error: \(error.localizedDescription)")
+                await MainActor.run {
+                    AlertHelper.showAlert(
+                        title: "Installation Failed",
+                        message: "Failed to install the helper service. Please try again. Error: \(error.localizedDescription)"
+                    )
+                }
+            }
+            await MainActor.run { self.updateStatus() }
         }
-        updateStatus()
     }
 
     func uninstall() {

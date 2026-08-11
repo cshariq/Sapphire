@@ -338,7 +338,9 @@ struct FolderIconView: View {
                 Rectangle().fill(.black.opacity(0.3)).frame(width: 110, height: 110).cornerRadius(26)
                 LazyVGrid(columns: columns, spacing: 6) {
                     ForEach(folder.items.prefix(4)) { item in
-                        if let app = viewModel.getApp(for: item) { Image(nsImage: app.icon).resizable().aspectRatio(contentMode: .fit).frame(width: 42, height: 42) }
+                        if let app = viewModel.getApp(for: item) {
+                            SystemAppIconView(app: app, size: 42, cornerRadius: 10)
+                        }
                     }
                 }.padding(8)
             }.frame(width: 110, height: 110)
@@ -351,7 +353,7 @@ struct AppIconView: View {
     let app: SystemApp; let isHovered: Bool
     var body: some View {
         VStack(spacing: 8) {
-            Image(nsImage: app.icon).resizable().aspectRatio(contentMode: .fit)
+            SystemAppIconView(app: app, size: 110, cornerRadius: 22)
             Text(app.name).font(.system(size: 13, weight: .medium)).foregroundColor(.white).lineLimit(1).truncationMode(.tail).frame(maxWidth: 110)
         }
     }

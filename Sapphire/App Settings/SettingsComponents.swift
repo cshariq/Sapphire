@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct InfoContainer: View {
     let text: String
@@ -83,6 +84,8 @@ struct WidgetRowView: View {
             case .music: return settings.settings.musicWidgetEnabled
             case .sports: return settings.settings.sportsWidgetEnabled
             case .finance: return settings.settings.financeWidgetEnabled
+            case .notes: return settings.settings.notesWidgetEnabled
+            case .clipboard: return settings.settings.clipboardWidgetEnabled
             case .agent: return false
             }
         }
@@ -122,6 +125,8 @@ struct WidgetRowView: View {
         case .music: return $settings.settings.musicWidgetEnabled
         case .sports: return $settings.settings.sportsWidgetEnabled
         case .finance: return $settings.settings.financeWidgetEnabled
+        case .notes: return $settings.settings.notesWidgetEnabled
+        case .clipboard: return $settings.settings.clipboardWidgetEnabled
         case .agent: return .constant(false)
         }
     }
@@ -328,17 +333,27 @@ struct NotificationToggleRowView: View {
     }
 }
 
+struct SystemAppIconView: View {
+    let app: SystemApp
+    var size: CGFloat = 28
+    var cornerRadius: CGFloat = 6
+
+    var body: some View {
+        Image(nsImage: AppIconLoader.icon(for: app.url, maxDimension: size * 2))
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
 struct SystemAppRowView: View {
     let app: SystemApp
     @Binding var isEnabled: Bool
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(nsImage: app.icon)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 28, height: 28)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            SystemAppIconView(app: app, size: 28, cornerRadius: 6)
 
             Text(app.name)
                 .font(.system(size: 13))
@@ -478,17 +493,47 @@ struct CustomSliderRowView: View {
     let range: ClosedRange<Double>
     let specifier: String
     var onEditingChanged: ((Bool) -> Void)? = nil
+    var commitsContinuously: Bool = false
+
+    @State private var draft: Double = 0
+    @State private var isEditing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(label)
                 Spacer()
-                Text(String(format: specifier, value))
+                Text(String(format: specifier, isEditing || !commitsContinuously ? draft : value))
             }
-            Slider(value: $value, in: range, onEditingChanged: { editing in onEditingChanged?(editing)})
+            Slider(
+                value: Binding(
+                    get: { draft },
+                    set: { newValue in
+                        draft = newValue
+                        if commitsContinuously || !isEditing {
+                            value = newValue
+                        }
+                    }
+                ),
+                in: range,
+                onEditingChanged: { editing in
+                    isEditing = editing
+                    if editing {
+                        draft = value
+                    } else if abs(draft - value) > .ulpOfOne {
+                        value = draft
+                    }
+                    onEditingChanged?(editing)
+                }
+            )
         }
         .padding()
+        .onAppear { draft = value }
+        .onChange(of: value) { _, newValue in
+            if !isEditing {
+                draft = newValue
+            }
+        }
     }
 }
 

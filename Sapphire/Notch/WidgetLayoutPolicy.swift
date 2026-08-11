@@ -1,3 +1,9 @@
+//
+//  WidgetLayoutPolicy.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-10
+
 import AppKit
 
 enum WidgetLayoutPolicy {
@@ -13,6 +19,8 @@ enum WidgetLayoutPolicy {
         case .shortcuts: return 110
         case .sports: return 190
         case .finance: return 190
+        case .notes: return 176
+        case .clipboard: return 176
         case .agent: return 0
         }
     }

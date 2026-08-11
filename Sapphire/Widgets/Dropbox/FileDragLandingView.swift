@@ -35,44 +35,41 @@ struct FileDragLandingView: View {
     @Binding var activeZone: DropZone?
 
     @Environment(\.navigationStack) private var navigationStack
-    @EnvironmentObject private var dragState: DragStateManager
 
     var body: some View {
-        ZStack {
-            HStack(spacing: 15) {
-                if mode == .newFile {
-                    GeometryReader { geometry in
-                        DropZoneView(
-                            zone: .shelf,
-                            icon: "tray.and.arrow.down.fill",
-                            text: "Add to Shelf",
-                            isTargeted: activeZone == .shelf
-                        )
-                        .preference(
-                            key: DropZonePreferenceKey.self,
-                            value: [.shelf: geometry.frame(in: .global)]
-                        )
-                    }
-                    .id(DropZone.shelf)
-                }
-
+        HStack(spacing: 15) {
+            if mode == .newFile {
                 GeometryReader { geometry in
                     DropZoneView(
-                        zone: .airdrop,
-                        icon: "airplayaudio",
-                        text: "AirDrop",
-                        isTargeted: activeZone == .airdrop
+                        zone: .shelf,
+                        icon: "tray.and.arrow.down.fill",
+                        text: "Add to Shelf",
+                        isTargeted: activeZone == .shelf
                     )
                     .preference(
                         key: DropZonePreferenceKey.self,
-                        value: [.airdrop: geometry.frame(in: .global)]
+                        value: [.shelf: geometry.frame(in: .global)]
                     )
                 }
-                .id(DropZone.airdrop)
+                .id(DropZone.shelf)
             }
+
+            GeometryReader { geometry in
+                DropZoneView(
+                    zone: .airdrop,
+                    icon: "airplayaudio",
+                    text: "AirDrop",
+                    isTargeted: activeZone == .airdrop
+                )
+                .preference(
+                    key: DropZonePreferenceKey.self,
+                    value: [.airdrop: geometry.frame(in: .global)]
+                )
+            }
+            .id(DropZone.airdrop)
         }
         .padding(15)
-        .frame(width: mode == .newFile ? 550 : 250, height: 140)
+        .frame(width: mode == .newFile ? 520 : 360, height: 150)
     }
 }
 
@@ -85,7 +82,8 @@ private struct DropZoneView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 28, weight: .light))
+            Image(systemName: icon)
+                .font(.system(size: 28, weight: .light))
             Text(text).font(.system(.headline, design: .rounded).weight(.medium))
         }
         .foregroundColor(isTargeted ? .white : .secondary)

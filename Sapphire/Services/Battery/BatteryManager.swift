@@ -25,14 +25,18 @@ public struct PowerAdapterInfo: Equatable {
 
 @MainActor
 class PowerStateController: ObservableObject {
+    static let shared = PowerStateController()
+
     private let settings = SettingsModel.shared
     private let batteryMonitor = BatteryMonitor.shared
     private let batteryManager = BatteryManager.shared
     private let caffeineManager = CaffeineManager.shared
     private let statusManager = BatteryStatusManager.shared
     private let calibrationManager = CalibrationManager.shared
+    private let powerModeManager = PowerModeManager.shared
     private var cancellables = Set<AnyCancellable>()
     private var heatProtectionHysteresisTimer: Timer?
+    private var isInHeatProtection = false
 
     private lazy var isAppleSilicon: Bool = {
         var sysinfo = utsname()
@@ -43,7 +47,7 @@ class PowerStateController: ObservableObject {
         return machine.starts(with: "arm64")
     }()
 
-    init() {
+    private init() {
         Publishers.Merge3(
             settings.objectWillChange.map { _ in "Settings Change" },
             batteryMonitor.$currentState.map { _ in "Battery State Change" },
@@ -53,7 +57,7 @@ class PowerStateController: ObservableObject {
         .sink { [weak self] _ in self?.evaluateState() }
         .store(in: &cancellables)
 
-        Timer.publish(every: 15.0, on: .main, in: .common).autoconnect()
+        Timer.publish(every: 45.0, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.evaluateState() }
             .store(in: &cancellables)
 
@@ -106,6 +110,12 @@ class PowerStateController: ObservableObject {
                 }
             }
 
+            if currentSettings.dischargeToLimitEnabled && currentCharge <= currentSettings.batteryChargeLimit {
+                self.settings.settings.dischargeToLimitEnabled = false
+                batteryManager.setDischarge(discharging: false)
+                caffeineManager.stopIfAutoStartedByBatteryDischarge()
+            }
+
             if currentSettings.dischargeToLimitEnabled && currentCharge > currentSettings.batteryChargeLimit {
                 statusManager.updateState(managementState: .discharging)
                 batteryManager.setDischarge(discharging: true)
@@ -131,21 +141,81 @@ class PowerStateController: ObservableObject {
 
             if currentSettings.heatProtectionEnabled && shouldCharge && batteryState.isCharging {
                 let temp = await batteryManager.getBatteryTemperature()
-                if temp >= currentSettings.heatProtectionThreshold {
+                let threshold = currentSettings.heatProtectionThreshold
+                if temp >= threshold {
                     shouldCharge = false
                     currentManagementState = .heatProtection
+                    isInHeatProtection = true
                     heatProtectionHysteresisTimer?.invalidate()
-                    heatProtectionHysteresisTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in self?.evaluateState() }
+                    heatProtectionHysteresisTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { [weak self] _ in
+                        self?.evaluateState()
+                    }
+                } else if isInHeatProtection, temp <= threshold - 3 {
+                    isInHeatProtection = false
+                    heatProtectionHysteresisTimer?.invalidate()
+                    heatProtectionHysteresisTimer = nil
+                } else if isInHeatProtection {
+                    shouldCharge = false
+                    currentManagementState = .heatProtection
                 }
+            } else if !currentSettings.heatProtectionEnabled {
+                isInHeatProtection = false
             }
+
+            applyLowPowerModePolicy(batteryState: batteryState, settings: currentSettings)
+            applySleepUntilChargeLimitPolicy(
+                batteryState: batteryState,
+                currentCharge: currentCharge,
+                settings: currentSettings
+            )
 
             if isAppleSilicon { batteryManager.enableCharging(shouldCharge) }
             else { batteryManager.setChargeLimit(shouldCharge ? 100 : currentSettings.batteryChargeLimit) }
 
-            if caffeineManager.isActive && currentSettings.preventSleepDuringDischarge { caffeineManager.stop() }
+            if caffeineManager.isActive && currentSettings.preventSleepDuringDischarge { caffeineManager.stopIfAutoStartedByBatteryDischarge() }
             let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: !shouldCharge)
             batteryManager.setMagSafeLED(color: ledColor)
             statusManager.updateState(managementState: currentManagementState, ledColor: ledColor)
+        }
+    }
+
+    private func applyLowPowerModePolicy(batteryState: BatteryState, settings: Settings) {
+        switch settings.lowPowerMode {
+        case .alwaysOn:
+            if !powerModeManager.isLowPowerModeActive {
+                powerModeManager.enableLowPowerMode()
+            }
+        case .onBattery:
+            if !batteryState.isPluggedIn, batteryState.level <= 25, !powerModeManager.isLowPowerModeActive {
+                powerModeManager.enableLowPowerMode()
+            } else if batteryState.isPluggedIn, powerModeManager.isLowPowerModeActive {
+                powerModeManager.disableLowPowerMode()
+            }
+        case .never:
+            break
+        }
+    }
+
+    private func applySleepUntilChargeLimitPolicy(
+        batteryState: BatteryState,
+        currentCharge: Int,
+        settings: Settings
+    ) {
+        guard settings.disableSleepUntilChargeLimit else {
+            if caffeineManager.isActive, !settings.dischargeToLimitEnabled, !settings.oneTimeDischargeEnabled {
+                caffeineManager.stopIfAutoStartedByBatteryDischarge()
+            }
+            return
+        }
+
+        let needsStayAwake = batteryState.isPluggedIn
+            && currentCharge < settings.batteryChargeLimit
+            && !calibrationManager.isActive
+
+        if needsStayAwake, !caffeineManager.isActive {
+            caffeineManager.start(forcePreventSleepInClamshell: true)
+        } else if !needsStayAwake {
+            caffeineManager.stopIfAutoStartedByBatteryDischarge()
         }
     }
 
@@ -204,7 +274,14 @@ class BatteryManager {
         guard self.helperConnection == nil else { return }
 
         let connection = NSXPCConnection(machServiceName: "com.shariq.sapphireHelper", options: .privileged)
-        connection.remoteObjectInterface = NSXPCInterface(with: HelperProtocol.self)
+        let interface = NSXPCInterface(with: HelperProtocol.self)
+        interface.setClasses(
+            NSSet(array: [FanInfo.self, NSNull.self]) as! Set<AnyHashable>,
+            for: #selector(HelperProtocol.getFanInfo(fanIndex:reply:)),
+            argumentIndex: 0,
+            ofReply: true
+        )
+        connection.remoteObjectInterface = interface
 
         connection.invalidationHandler = { [weak self] in
             print("[BatteryManager] XPC connection invalidated.")
@@ -227,31 +304,29 @@ class BatteryManager {
     }
 
     func getHelper() -> HelperProtocol? {
-        if let connection = self.helperConnection, connection.remoteObjectProxy != nil {
-            return connection.remoteObjectProxy as? HelperProtocol
-        }
-
         connectionLock.lock()
-        defer { connectionLock.unlock() }
-
         if self.helperConnection == nil {
+            connectionLock.unlock()
             setupHelperConnection()
+            connectionLock.lock()
         }
+        let connection = self.helperConnection
+        connectionLock.unlock()
 
-        let proxy = self.helperConnection?.remoteObjectProxyWithErrorHandler { [weak self] error in
+        return connection?.remoteObjectProxyWithErrorHandler { [weak self] error in
             print("[BatteryManager] XPC remote object error: \(error.localizedDescription)")
             DispatchQueue.global().async {
                 self?.connectionLock.lock()
                 self?.helperConnection?.invalidate()
                 self?.helperConnection = nil
                 self?.connectionLock.unlock()
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
+                }
             }
         } as? HelperProtocol
-
-        return proxy
     }
 
-    /// Re-establish the privileged helper connection after permission or lifecycle changes.
     func reconnectHelper() {
         connectionLock.lock()
         if let connection = helperConnection {
@@ -428,7 +503,6 @@ class BatteryManager {
         let version = await withHelperCallback(fallback: helperPingTimeoutSentinel) { helper, reply in
             helper.getVersion(reply: reply)
         }
-        // Any XPC reply (including "N/A" when the helper bundle has no short version) means the helper is alive.
         return version != helperPingTimeoutSentinel
     }
 }

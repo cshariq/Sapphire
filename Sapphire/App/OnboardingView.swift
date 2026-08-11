@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import CaptchaSolverInterface
 import AVKit
 
 // MARK: - Main Onboarding View
@@ -21,7 +20,6 @@ struct OnboardingView: View {
     @EnvironmentObject var settings: SettingsModel
     @StateObject var musicManager = MusicManager.shared
 
-    @StateObject var spotifyPrivateAPI = SpotifyPrivateAPIManager.shared
     @State private var isPrivateApiLoading = false
     @State private var privateApiError: String?
 
@@ -102,33 +100,6 @@ struct OnboardingView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .frame(width: 1200, height: 900)
-        .sheet(item: $spotifyPrivateAPI.loginChallenge) { _ in
-            if let presenter = try? CaptchaLoader.shared.loadPresenter() {
-                presenter.loginView(
-                    onComplete: { cookieProperties in
-                        spotifyPrivateAPI.completeLoginAfterWebViewSuccess(with: cookieProperties)
-                        spotifyPrivateAPI.loginChallenge = nil
-                        isPrivateApiLoading = false
-                    },
-                    onCancel: {
-                        privateApiError = "Login was cancelled by the user."
-                        spotifyPrivateAPI.loginChallenge = nil
-                        isPrivateApiLoading = false
-                    }
-                )
-            } else {
-                VStack(spacing: 15) {
-                    Text("Login Error").font(.largeTitle)
-                    Text("Could not load the login solver component. Please try again later.").multilineTextAlignment(.center)
-                    Button("Close") {
-                        spotifyPrivateAPI.loginChallenge = nil
-                        isPrivateApiLoading = false
-                        privateApiError = "Failed to load login component."
-                    }
-                }
-                .frame(width: 300, height: 200)
-            }
-        }
     }
 }
 
@@ -267,34 +238,11 @@ private struct HelperInstallationStepView: View {
         }
         .onAppear {
             helperManager.updateStatus()
-//            setupPlayer()
         }
-//        .onDisappear {
-//            cleanupPlayer()
-//        }
     }
 
     private func setupPlayer() {
-//        guard let url = Bundle.main.url(forResource: "helper_install_demo", withExtension: "mp4") else {
-//            print("Error: helper_install_demo.mp4 not found in app bundle.")
-//            return
-//        }
 
-//        let newPlayer = AVPlayer(url: url)
-//        newPlayer.isMuted = true
-//        newPlayer.actionAtItemEnd = .none
-//
-//        playerObserver = NotificationCenter.default.addObserver(
-//            forName: .AVPlayerItemDidPlayToEndTime,
-//            object: newPlayer.currentItem,
-//            queue: .main
-//        ) { _ in
-//            newPlayer.seek(to: .zero)
-//            newPlayer.play()
-//        }
-//
-//        self.player = newPlayer
-//        self.player?.play()
         return
     }
 
@@ -309,8 +257,8 @@ private struct HelperInstallationStepView: View {
 }
 
 private struct PrivacyStepView: View {
+    @EnvironmentObject var settings: SettingsModel
     var onContinue: () -> Void
-    @State private var hasAgreed = false
 
     var body: some View {
         VStack(spacing: 15) {
@@ -362,8 +310,8 @@ private struct PrivacyStepView: View {
             .padding(.horizontal, 60)
             .padding(.top, 20)
 
-            Toggle(isOn: $hasAgreed) {
-                Text("I have read and agree to the collection of anonymous usage data to help improve the app.")
+            Toggle(isOn: $settings.settings.googleAnalyticsEnabled) {
+                Text("Share anonymous usage data with Google Analytics to help improve Sapphire. You can change this anytime in Settings > General.")
                     .font(.callout)
             }
             .padding(.horizontal, 50)
@@ -372,8 +320,6 @@ private struct PrivacyStepView: View {
             Spacer(minLength: 20)
 
             OnboardingButton(title: "Continue", action: onContinue)
-                .disabled(!hasAgreed)
-                .animation(.easeInOut, value: hasAgreed)
         }
     }
 
@@ -429,6 +375,7 @@ private struct MusicChoiceStepView: View {
 
 private struct SpotifySetupStepView: View {
     @EnvironmentObject var musicManager: MusicManager
+    @ObservedObject private var spotifyPrivateAPI = SpotifyPrivateAPIManager.shared
     var onNext: () -> Void
     @Binding var isLoading: Bool
     @Binding var error: String?
@@ -454,6 +401,20 @@ private struct SpotifySetupStepView: View {
             }.padding(25).background(.black.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous)).overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1)).padding(50)
             Spacer()
             if musicManager.isPrivateAPIAuthenticated { OnboardingButton(title: "Continue", action: onNext) } else if !isLoading { Button("Skip for Now", action: onNext).buttonStyle(.plain).foregroundColor(.secondary).padding(.bottom, 50) } else { OnboardingButton(title: "Continue", action: {}).hidden().padding(.bottom, 50) }
+        }
+        .sheet(item: $spotifyPrivateAPI.loginChallenge) { _ in
+            SpotifyLoginWebView(
+                onComplete: { cookieProperties in
+                    spotifyPrivateAPI.completeLoginAfterWebViewSuccess(with: cookieProperties)
+                    spotifyPrivateAPI.loginChallenge = nil
+                    isLoading = false
+                },
+                onCancel: {
+                    error = "Login was cancelled by the user."
+                    spotifyPrivateAPI.loginChallenge = nil
+                    isLoading = false
+                }
+            )
         }
     }
 }

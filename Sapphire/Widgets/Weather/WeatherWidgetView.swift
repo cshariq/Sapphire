@@ -22,6 +22,8 @@ struct WeatherWidgetView: View {
         .padding(.top, 0)
         .frame(minWidth: 200, minHeight: 90)
         .fixedSize()
+        .foregroundColor(.white)
+        .preferredColorScheme(.dark)
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {

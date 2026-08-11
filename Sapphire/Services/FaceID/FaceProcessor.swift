@@ -12,92 +12,78 @@ import CoreImage.CIFilterBuiltins
 
 class FaceProcessor {
     static let shared = FaceProcessor()
-    
-    // Thread-safe background Metal-backed renderer with low-latency priority options
+
     let ciContext = CIContext(options: [
         .useSoftwareRenderer: false,
         .priorityRequestLow: false,
         .highQualityDownsample: true
     ])
-    
+
     private init() {}
 
     private let targetWidth: CGFloat = 256.0
     private let targetHeight: CGFloat = 256.0
 
-    // Reference landmarks mathematically pre-scaled to a standard 256x256 coordinate space
     private let targetPointsBottomLeft: [CGPoint] = [
-        CGPoint(x: 87.53, y: 137.84),   // Left Eye
-        CGPoint(x: 168.07, y: 138.28),  // Right Eye
-        CGPoint(x: 128.06, y: 92.03),   // Nose Tip
-        CGPoint(x: 94.97, y: 44.88),    // Left Mouth Corner
-        CGPoint(x: 161.67, y: 45.25)    // Right Mouth Corner
+        CGPoint(x: 87.53, y: 137.84),
+        CGPoint(x: 168.07, y: 138.28),
+        CGPoint(x: 128.06, y: 92.03),
+        CGPoint(x: 94.97, y: 44.88),
+        CGPoint(x: 161.67, y: 45.25)
     ]
 
     // MARK: - Public Methods
 
-    /// Performs high-precision 5-point similarity transformation alignment returning an aligned CIImage.
-    /// This bypasses NSImage/CGImage conversion, maintaining processing purely on the GPU.
     func prepareImage(from pixelBuffer: CVPixelBuffer, faceObservation: VNFaceObservation) -> CIImage? {
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
 
-        // 1. Extract 5 target landmarks in absolute pixel space (bottom-left coordinate origin)
         guard let sourcePoints = getFiveLandmarks(from: faceObservation, imageWidth: width, imageHeight: height) else {
             return nil
         }
 
-        // 2. Compute 2D similarity transform (Scale, Rotate, Translate)
         guard let transform = SimilarityTransform.estimate(from: sourcePoints, to: targetPointsBottomLeft) else {
             return nil
         }
 
-        // 3. Apply the forward transform and crop to the 256x256 target size
         let originalCIImage = CIImage(cvPixelBuffer: pixelBuffer)
         let warpedImage = originalCIImage.transformed(by: transform)
         let croppedImage = warpedImage.cropped(to: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
 
-        // 4. Return standard brightness/contrast normalized CIImage
         return simpleNormalization(for: croppedImage)
     }
 
-    /// Extracts a perfect, widescreen center-square crop from scratch (e.g., 720x720 from a 1280x720 frame).
-    /// This preserves natural aspect ratios and captures maximum background context for liveness.
     func prepareFullSquareImage(from pixelBuffer: CVPixelBuffer) -> CIImage? {
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
-        
-        // Calculate the maximum possible square dimensions from the video frame
+
         let side = min(width, height)
         let x = (width - side) / 2.0
         let y = (height - side) / 2.0
         let centerSquare = CGRect(x: x, y: y, width: side, height: side)
-        
+
         let originalCIImage = CIImage(cvPixelBuffer: pixelBuffer)
         let cropped = originalCIImage.cropped(to: centerSquare)
-        
-        // Translate the coordinate origin back to (0, 0) for downstream scaling and rendering
+
         return cropped.transformed(by: CGAffineTransform(translationX: -x, y: -y))
     }
 
-    /// Renders a masked UI-ready image from an aligned CIImage on demand.
     func makeUiImage(from ciImage: CIImage) -> NSImage? {
         let extent = ciImage.extent
         guard !extent.isEmpty, !extent.isInfinite, extent.width > 0, extent.height > 0 else {
             return nil
         }
-        
+
         guard let cgImage = ciContext.createCGImage(ciImage, from: extent) else {
             return nil
         }
-        
+
         let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: extent.width, height: extent.height))
         return nsImage.withOvalMask()
     }
 
     // MARK: - Private Helper Methods
 
-    /// Maps normalized Vision landmark coordinates to pixel coordinates, outputting sorted, stable 5-point coordinates.
     private func getFiveLandmarks(from observation: VNFaceObservation, imageWidth: CGFloat, imageHeight: CGFloat) -> [CGPoint]? {
         guard let landmarks = observation.landmarks else { return nil }
 
@@ -108,7 +94,6 @@ class FaceProcessor {
             return nil
         }
 
-        // Helper: Converts a normalized point within the face's bounding box to absolute bottom-left pixel coordinates
         func mapPointToBottomLeft(_ p: CGPoint) -> CGPoint {
             let bbox = observation.boundingBox
             let imgX = bbox.origin.x + p.x * bbox.size.width
@@ -131,12 +116,10 @@ class FaceProcessor {
         let rightEyeCentroid = calculateCentroid(rightEyePoints)
         let noseCentroid = calculateCentroid(nosePoints)
 
-        // Map mouth points and sort them on the X-axis to find the leftmost and rightmost corners
         let mappedMouth = mouthPoints.map { mapPointToBottomLeft($0) }
         let sortedMouth = mappedMouth.sorted { $0.x < $1.x }
         guard let leftMouth = sortedMouth.first, let rightMouth = sortedMouth.last else { return nil }
 
-        // Sort eyes and mouth corners by screen coordinate X to gracefully handle mirror modes
         let sortedEyes = [leftEyeCentroid, rightEyeCentroid].sorted { $0.x < $1.x }
         let leftEye = sortedEyes[0]
         let rightEye = sortedEyes[1]
@@ -159,8 +142,6 @@ class FaceProcessor {
 
 // MARK: - Similarity Transform Estimation
 struct SimilarityTransform {
-    /// Computes the closed-form least-squares similarity transformation matrix (translation, scale, and rotation)
-    /// to align a set of 5 points with target reference coordinates.
     static func estimate(from sourcePoints: [CGPoint], to targetPoints: [CGPoint]) -> CGAffineTransform? {
         guard sourcePoints.count == 5, targetPoints.count == 5 else { return nil }
 
@@ -203,9 +184,6 @@ struct SimilarityTransform {
         let tx = dstMeanX - (a * srcMeanX - b * srcMeanY)
         let ty = dstMeanY - (b * srcMeanX + a * srcMeanY)
 
-        // Map computed linear coefficients to CGAffineTransform mapping:
-        // u = a * x - b * y + tx
-        // v = b * x + a * y + ty
         return CGAffineTransform(a: a, b: b, c: -b, d: a, tx: tx, ty: ty)
     }
 }
@@ -218,14 +196,13 @@ extension NSImage {
         return cgImage(forProposedRect: &imageRect, context: nil, hints: nil)
     }
 
-    /// Thread-safe oval masking performed inside an offscreen CGContext.
     func withOvalMask() -> NSImage {
         guard let cgImage = self.cgImage else { return self }
         let width = Int(self.size.width)
         let height = Int(self.size.height)
-        
+
         guard width > 0, height > 0 else { return self }
-        
+
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(
                   data: nil,
@@ -238,11 +215,11 @@ extension NSImage {
               ) else {
             return self
         }
-        
+
         context.addEllipse(in: CGRect(x: 0, y: 0, width: width, height: height))
         context.clip()
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-        
+
         guard let maskedCGImage = context.makeImage() else { return self }
         return NSImage(cgImage: maskedCGImage, size: self.size)
     }

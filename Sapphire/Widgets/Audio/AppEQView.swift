@@ -33,7 +33,7 @@ struct AppEQView: View {
             set: { perAppCtrl.setEQGains($0, for: bundleID) }
         )
     }
-    
+
     private var appVolumeBinding: Binding<Double> {
         Binding(
             get: { perAppCtrl.volume(for: bundleID) },
@@ -68,14 +68,13 @@ struct AppEQView: View {
                         .font(.system(size: 20, weight: .bold))
                 }
                 Spacer()
-                Image(systemName: "f_curve.curve.curve.right_filled")
+                Image(systemName: "slider.vertical.3")
                     .font(.title)
             }
             .padding(.horizontal, 24)
             .padding(.top, 0)
             .padding(.bottom, 12)
-            
-            // App Master Volume directly injected
+
             ModernGlassSlider(
                 label: "App Volume",
                 value: appVolumeBinding,
@@ -119,7 +118,7 @@ struct AppEQView: View {
             VStack(spacing: 12) {
                 WaveformEQView(
                     gains: customEQGainsBinding,
-                    range: -12.0...12.0
+                    range: -18.0...18.0
                 )
                 .frame(height: 140)
 
@@ -164,17 +163,13 @@ fileprivate struct ModernGlassSlider: View {
             .padding(.horizontal, 16)
 
             ZStack(alignment: .leading) {
-                // Background Track
                 Capsule().fill(Color.black.opacity(0.15))
-                
-                // Background Text
+
                 textView.foregroundColor(.primary.opacity(0.6))
 
-                // Progress Track
                 ZStack {
                     Capsule().fill(Color.accentColor)
-                    
-                    // Foreground Text
+
                     textView.foregroundColor(.white)
                 }
                 .mask(
@@ -204,7 +199,7 @@ fileprivate final class PerAppVolumeStoreForEQ: ObservableObject {
     func volume(for bundleID: String) -> Double {
         PerAppAudioController.shared.volume(for: bundleID)
     }
-    
+
     func setVolume(_ vol: Double, for bundleID: String) {
         objectWillChange.send()
         PerAppAudioController.shared.setVolume(vol, for: bundleID)
