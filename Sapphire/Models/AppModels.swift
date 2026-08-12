@@ -29,6 +29,7 @@ enum NotchWidgetMode: Hashable {
     case financePlayer
     case notesPlayer
     case clipboardPlayer
+    case mirrorPlayer
 
     case musicQueueAndPlaylists
     case musicDevices
@@ -71,6 +72,8 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(25)
         case .clipboardPlayer:
             hasher.combine(26)
+        case .mirrorPlayer:
+            hasher.combine(27)
         case .musicQueueAndPlaylists:
             hasher.combine(6)
         case .musicDevices:

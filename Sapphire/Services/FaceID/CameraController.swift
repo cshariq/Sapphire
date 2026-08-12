@@ -67,8 +67,8 @@ class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideo
     let captureSession = AVCaptureSession()
 
     private let videoDataOutput = AVCaptureVideoDataOutput()
-    private let sessionQueue = DispatchQueue(label: "com.cshariq.Sapphire.sessionQueue", qos: .userInteractive)
-    private let visionQueue = DispatchQueue(label: "com.cshariq.Sapphire.visionQueue", qos: .userInitiated)
+    private let sessionQueue = DispatchQueue(label: "com.shariq.Sapphire.sessionQueue", qos: .userInteractive)
+    private let visionQueue = DispatchQueue(label: "com.shariq.Sapphire.visionQueue", qos: .userInitiated)
 
     public var faceDataStore = FaceDataStore.shared
 

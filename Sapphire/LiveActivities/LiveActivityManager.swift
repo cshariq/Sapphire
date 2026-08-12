@@ -766,7 +766,6 @@ class LiveActivityManager: ObservableObject {
     }
 
     private func checkForUpdateAvailable() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
-        guard SubscriptionManager.shared.hasAccess(to: .betaSoftwareUpdates) else { return nil }
         guard case .available(let version, _) = UpdateChecker.shared.status else {
             return nil
         }

@@ -24,14 +24,18 @@ class SpotifyOfficialAPIManager: ObservableObject {
     private var clientSecret = ""
     private let redirectURI = "sapphire://callback"
 
-    private let settingsModel = SettingsModel.shared
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
-        updateCredentials(clientId: settingsModel.settings.spotifyClientId, clientSecret: settingsModel.settings.spotifyClientSecret)
-        settingsModel.$settings.receive(on: DispatchQueue.main).sink { [weak self] newSettings in
-            self?.updateCredentials(clientId: newSettings.spotifyClientId, clientSecret: newSettings.spotifyClientSecret)
-        }.store(in: &cancellables)
+        loadCredentials()
+        
+        // Observe APIKeyManager changes for Spotify credentials
+        NotificationCenter.default.publisher(for: .apiKeyManagerSpotifyCredentialsChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.loadCredentials()
+            }
+            .store(in: &cancellables)
 
         self.accessToken = UserDefaults.standard.string(forKey: "spotifyAccessToken")
         self.refreshToken = UserDefaults.standard.string(forKey: "spotifyRefreshToken")
@@ -41,10 +45,12 @@ class SpotifyOfficialAPIManager: ObservableObject {
         }
     }
 
-    private func updateCredentials(clientId: String, clientSecret: String) {
-        self.clientId = clientId
-        self.clientSecret = clientSecret
-        let nowHasKeys = !clientId.isEmpty && !clientSecret.isEmpty
+    private func loadCredentials() {
+        let newClientId = APIKeyManager.shared.spotifyClientId
+        let newClientSecret = APIKeyManager.shared.spotifyClientSecret
+        self.clientId = newClientId
+        self.clientSecret = newClientSecret
+        let nowHasKeys = !newClientId.isEmpty && !newClientSecret.isEmpty
         if self.hasApiKeys != nowHasKeys {
             self.hasApiKeys = nowHasKeys
         }

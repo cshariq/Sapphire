@@ -10,6 +10,9 @@ import IOKit.ps
 import Combine
 import ServiceManagement
 import AppKit
+import OSLog
+
+private let helperLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "BatteryManager")
 
 public struct PowerAdapterInfo: Equatable {
     var name: String = "N/A"
@@ -247,6 +250,15 @@ class BatteryManager {
     private let connectionLock = NSLock()
     private var batteryService: io_connect_t = 0
 
+    // Circuit breaker state
+    private var consecutiveFailures = 0
+    private var lastFailureTime: Date?
+    private let maxConsecutiveFailures = 3
+    private let circuitBreakerResetInterval: TimeInterval = 60 // 1 minute
+    private let circuitBreakerCooldownInterval: TimeInterval = 3600 // 1 hour
+    private var isCircuitOpen = false
+    private var circuitBreakerTimer: Timer?
+
     private lazy var isARM: Bool = {
         var sysinfo = utsname()
         uname(&sysinfo)
@@ -259,11 +271,73 @@ class BatteryManager {
     private init() {
         setupHelperConnection()
         self.batteryService = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"))
+        startCircuitBreakerTimer()
     }
 
     deinit {
         if self.batteryService != 0 {
             IOObjectRelease(self.batteryService)
+        }
+        circuitBreakerTimer?.invalidate()
+    }
+
+    private func startCircuitBreakerTimer() {
+        circuitBreakerTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            self?.checkCircuitBreaker()
+        }
+        if let timer = circuitBreakerTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    private func checkCircuitBreaker() {
+        connectionLock.lock()
+        defer { connectionLock.unlock() }
+
+        guard isCircuitOpen, let lastFailure = lastFailureTime else { return }
+
+        let timeSinceFailure = Date().timeIntervalSince(lastFailure)
+
+        // If cooldown period passed, try to reset circuit
+        if timeSinceFailure >= circuitBreakerCooldownInterval {
+            helperLogger.info("[BatteryManager] Circuit breaker cooldown passed, attempting reconnection...")
+            isCircuitOpen = false
+            consecutiveFailures = 0
+            lastFailureTime = nil
+            // Try to reconnect
+            if let connection = helperConnection {
+                connection.invalidationHandler = nil
+                connection.interruptionHandler = nil
+                connection.invalidate()
+            }
+            helperConnection = nil
+            setupHelperConnection()
+        }
+    }
+
+    private func recordFailure() {
+        connectionLock.lock()
+        defer { connectionLock.unlock() }
+
+        consecutiveFailures += 1
+        lastFailureTime = Date()
+
+        if consecutiveFailures >= maxConsecutiveFailures && !isCircuitOpen {
+            isCircuitOpen = true
+            helperLogger.warning("[BatteryManager] Circuit breaker OPEN - helper unreachable, will retry in \(self.circuitBreakerCooldownInterval)s")
+            NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
+        }
+    }
+
+    private func recordSuccess() {
+        connectionLock.lock()
+        defer { connectionLock.unlock() }
+
+        if consecutiveFailures > 0 || isCircuitOpen {
+            consecutiveFailures = 0
+            isCircuitOpen = false
+            lastFailureTime = nil
+            helperLogger.info("[BatteryManager] Circuit breaker CLOSED - helper connection restored")
         }
     }
 
@@ -310,16 +384,29 @@ class BatteryManager {
             setupHelperConnection()
             connectionLock.lock()
         }
+
+        // Check circuit breaker
+        if isCircuitOpen {
+            connectionLock.unlock()
+            return nil
+        }
+
         let connection = self.helperConnection
+        let recordFailure = self.recordFailure
+        let maxConsecutiveFailures = self.maxConsecutiveFailures
         connectionLock.unlock()
 
-        return connection?.remoteObjectProxyWithErrorHandler { [weak self] error in
-            print("[BatteryManager] XPC remote object error: \(error.localizedDescription)")
+        return connection?.remoteObjectProxyWithErrorHandler { error in
+            recordFailure()
+            // Only log first few failures, then silence
+            if (self.consecutiveFailures) <= maxConsecutiveFailures {
+                print("[BatteryManager] XPC remote object error: \(error.localizedDescription)")
+            }
             DispatchQueue.global().async {
-                self?.connectionLock.lock()
-                self?.helperConnection?.invalidate()
-                self?.helperConnection = nil
-                self?.connectionLock.unlock()
+                self.connectionLock.lock()
+                self.helperConnection?.invalidate()
+                self.helperConnection = nil
+                self.connectionLock.unlock()
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
                 }
@@ -335,6 +422,9 @@ class BatteryManager {
             connection.invalidate()
         }
         helperConnection = nil
+        consecutiveFailures = 0
+        isCircuitOpen = false
+        lastFailureTime = nil
         connectionLock.unlock()
         setupHelperConnection()
     }
@@ -344,7 +434,10 @@ class BatteryManager {
         timeout: TimeInterval = 5,
         _ work: (HelperProtocol, @escaping (T) -> Void) -> Void
     ) async -> T {
-        await withCheckedContinuation { continuation in
+        let recordFailure = self.recordFailure
+        let recordSuccess = self.recordSuccess
+        
+        return await withCheckedContinuation { (continuation: CheckedContinuation<T, Never>) in
             let lock = NSLock()
             var resumed = false
 
@@ -357,15 +450,18 @@ class BatteryManager {
             }
 
             guard let helper = getHelper() else {
+                recordFailure()
                 resumeOnce(fallback)
                 return
             }
 
             work(helper) { value in
+                recordSuccess()
                 resumeOnce(value)
             }
 
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                recordFailure()
                 resumeOnce(fallback)
             }
         }
@@ -374,26 +470,54 @@ class BatteryManager {
     // MARK: - Public API to Helper
 
     func setChargeLimit(_ limit: Int) {
+        let recordFailure = self.recordFailure
+        let recordSuccess = self.recordSuccess
         getHelper()?.setChargeLimit(limit) { error in
-            if let error = error { print("[BatteryManager] Error setting charge limit: \(error.localizedDescription)") }
+            if let error = error {
+                recordFailure()
+                print("[BatteryManager] Error setting charge limit: \(error.localizedDescription)")
+            } else {
+                recordSuccess()
+            }
         }
     }
 
     func enableCharging(_ enabled: Bool) {
+        let recordFailure = self.recordFailure
+        let recordSuccess = self.recordSuccess
         getHelper()?.enableCharging(enabled) { error in
-            if let error = error { print("[BatteryManager] Error setting charging enabled (\(enabled)): \(error.localizedDescription)") }
+            if let error = error {
+                recordFailure()
+                print("[BatteryManager] Error setting charging enabled (\(enabled)): \(error.localizedDescription)")
+            } else {
+                recordSuccess()
+            }
         }
     }
 
     func setDischarge(discharging: Bool) {
+        let recordFailure = self.recordFailure
+        let recordSuccess = self.recordSuccess
         getHelper()?.setDischarge(discharging) { error in
-            if let error = error { print("[BatteryManager] Error setting discharge (\(discharging)): \(error.localizedDescription)") }
+            if let error = error {
+                recordFailure()
+                print("[BatteryManager] Error setting discharge (\(discharging)): \(error.localizedDescription)")
+            } else {
+                recordSuccess()
+            }
         }
     }
 
     func setMagSafeLED(color: Int) {
+        let recordFailure = self.recordFailure
+        let recordSuccess = self.recordSuccess
         getHelper()?.setMagSafeLED(color: color) { error in
-            if let error = error { print("[BatteryManager] Error setting MagSafe LED: \(error.localizedDescription)") }
+            if let error = error {
+                recordFailure()
+                print("[BatteryManager] Error setting MagSafe LED: \(error.localizedDescription)")
+            } else {
+                recordSuccess()
+            }
         }
     }
 
@@ -404,7 +528,16 @@ class BatteryManager {
 
     func beginCalibrationCycle(reply: @escaping (Error?) -> Void) {
         print("[BatteryManager] Sending command to helper to begin calibration hardware setup.")
-        getHelper()?.startCalibration(reply: reply)
+        let recordFailure = self.recordFailure
+        let recordSuccess = self.recordSuccess
+        getHelper()?.startCalibration { [weak self] error in
+            if error != nil {
+                recordFailure()
+            } else {
+                recordSuccess()
+            }
+            reply(error)
+        }
     }
 
     // MARK: - Data Fetching from IOKit

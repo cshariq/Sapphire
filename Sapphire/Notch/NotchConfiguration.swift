@@ -60,7 +60,7 @@ struct NotchConfiguration {
         case .macBookPro16:
             return (width: 195, height: 32)
         case .macBookAir13:
-            return (width: 210, height: 38)
+            return (width: 190, height: 32.5)
         case .macBookAir15:
             return (width: 205, height: 32)
         case .unknown:

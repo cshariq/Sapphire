@@ -106,8 +106,8 @@ final class DynamicFocusWindow: NSPanel {
             break
         }
 
-        super.sendEvent(event)
-
+        // Refresh passthrough BEFORE processing so clicks outside the interactive
+        // frame are ignored (not absorbed by the expanded notch).
         switch event.type {
         case .leftMouseDown, .leftMouseUp, .leftMouseDragged,
                 .rightMouseDown, .rightMouseUp, .rightMouseDragged,
@@ -117,6 +117,8 @@ final class DynamicFocusWindow: NSPanel {
         default:
             break
         }
+
+        super.sendEvent(event)
     }
 
     private func refreshMouseEventPassthrough(force: Bool = false) {
@@ -890,6 +892,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Termination
 
     func applicationWillTerminate(_ aNotification: Notification) {
+        cleanupNotchWindow()
+
         if Thread.isMainThread {
             AppSystemTeardown.restoreManagedSystemState(reason: "app-quit")
         } else {
@@ -909,6 +913,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         teardownLaunchpad()
         interactionManager?.stopMonitoring()
         DistributedNotificationCenter.default().removeObserver(self)
+    }
+
+    private func cleanupNotchWindow() {
+        screenParametersDebounceTimer?.invalidate()
+        screenParametersDebounceTimer = nil
+
+        if let window = notchWindow {
+            cgsSpace?.windows.remove(window)
+            window.orderOut(nil)
+            window.close()
+            notchWindow = nil
+        }
     }
 
     // MARK: - URL Handling
@@ -994,13 +1010,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Notch Window
 
+    private var isCreatingNotchWindow = false
+
     func createNotchWindow() {
-        if let oldWindow = notchWindow {
-            notchWindow = nil
-            cgsSpace?.windows.remove(oldWindow)
-            oldWindow.orderOut(nil)
-            oldWindow.close()
-        }
+        // Prevent concurrent/duplicate creation
+        guard !isCreatingNotchWindow else { return }
+        isCreatingNotchWindow = true
+        defer { isCreatingNotchWindow = false }
 
         let targetScreen: NSScreen? = {
             switch settingsModel.settings.notchDisplayTarget {
@@ -1017,6 +1033,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }()
 
         guard let mainScreen = targetScreen else { return }
+
+        // If window already exists on the correct screen, just ensure it's visible
+        if let existingWindow = notchWindow, existingWindow.screen == mainScreen, existingWindow.isVisible {
+            // Update sharing type in case it changed
+            existingWindow.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+            return
+        }
+
+        // Clean up existing window synchronously
+        if let oldWindow = notchWindow {
+            cgsSpace?.windows.remove(oldWindow)
+            oldWindow.orderOut(nil)
+            oldWindow.close()
+            notchWindow = nil
+        }
         let screenFrame = mainScreen.frame
         let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings)
         let paddedWidth = ceil(max(initialConfig.initialSize.width + 8, screenFrame.width * 0.72))
@@ -1218,12 +1249,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Screen Parameters
 
+    private var screenParametersDebounceTimer: Timer?
+
     @objc func handleSubscriptionPaywallRequest(_ notification: Notification) {
         openSettingsWindow()
     }
 
     @objc func screenParametersChanged(notification: Notification) {
-        createNotchWindow()
+        screenParametersDebounceTimer?.invalidate()
+        screenParametersDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            self?.createNotchWindow()
+        }
     }
 
     // MARK: - Launch at Login

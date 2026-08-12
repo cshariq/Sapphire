@@ -21,6 +21,7 @@ enum WidgetLayoutPolicy {
         case .finance: return 190
         case .notes: return 176
         case .clipboard: return 176
+        case .mirror: return 140
         case .agent: return 0
         }
     }

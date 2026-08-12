@@ -106,6 +106,8 @@ struct NotchWidgetView: View {
                 return settings.settings.notesWidgetEnabled
             case .clipboard:
                 return settings.settings.clipboardWidgetEnabled
+            case .mirror:
+                return settings.settings.mirrorWidgetEnabled
             case .agent:
                 return false
             }
@@ -206,6 +208,8 @@ struct NotchWidgetView: View {
             NotesPlayerView(navigationStack: navigationStack)
         case .clipboardPlayer:
             ClipboardPlayerView(navigationStack: navigationStack)
+        case .mirrorPlayer:
+            MirrorPlayerView()
         case .musicLoginPrompt:
             LoginPromptView(navigationStack: navigationStack)
         case .musicQueueAndPlaylists:
@@ -339,6 +343,8 @@ struct NotchWidgetView: View {
                         }
                     }
                 }
+        case .mirror:
+            MirrorWidgetView()
         case .agent:
             EmptyView()
         }

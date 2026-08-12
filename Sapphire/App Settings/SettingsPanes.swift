@@ -56,6 +56,7 @@ struct SettingsDetailView: View {
         case .fileShelf: FileShelfSettingsView()
         case .notes: NotesSettingsView()
         case .clipboard: ClipboardSettingsView()
+        case .mirror: MirrorSettingsView()
         case .caffeine: CaffeineSettingsView()
         case .music: MusicSettingsView()
         case .weather: WeatherSettingsView()
@@ -1026,6 +1027,14 @@ struct ClipboardSettingsView: View {
 
                     Divider().padding(.leading, 20)
 
+                    ToggleRow(
+                        title: "Ignore Concealed Items",
+                        description: "Skip passwords and other concealed clipboard content (e.g., from 1Password, Bitwarden).",
+                        isOn: $settings.settings.clipboardIgnoreConcealedItems
+                    )
+
+                    Divider().padding(.leading, 20)
+
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Clear History")
@@ -1049,6 +1058,47 @@ struct ClipboardSettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .onAppear { historyCount = ClipboardManager.shared.recentItems.count }
+    }
+}
+
+struct MirrorSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Mirror")
+                    .font(.largeTitle.bold())
+                    .padding(.bottom)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ToggleRow(
+                        title: "Enable Mirror Widget",
+                        description: "Show the live camera feed widget in the notch widget strip.",
+                        isOn: $settings.settings.mirrorWidgetEnabled
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Open Mirror on Click",
+                        description: "Clicking the mirror widget expands into the full camera view.",
+                        isOn: $settings.settings.mirrorOpenOnClick
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Flip Horizontally",
+                        description: "Mirror the camera feed horizontally for a natural selfie view.",
+                        isOn: $settings.settings.mirrorFlipHorizontally
+                    )
+                }
+                .modifier(SettingsContainerModifier())
+            }
+            .padding(25)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
     }
 }
 
@@ -1108,6 +1158,7 @@ struct WidgetsSettingsView: View {
         if settings.settings.financeWidgetEnabled { count += 1 }
         if settings.settings.notesWidgetEnabled { count += 1 }
         if settings.settings.clipboardWidgetEnabled { count += 1 }
+        if settings.settings.mirrorWidgetEnabled { count += 1 }
         return count
     }
 
@@ -4929,24 +4980,28 @@ struct ModernBatteryStatsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 DateRangePickerView(selection: $selectedTimeRange)
                 HStack(spacing: 15) {
-                    switch helperManager.status {
-                    case .enabled:
-                        Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green)
-                        Text("Helper Installed Successfully")
-                            .font(.headline)
-                    case .requiresApproval:
-                        Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundColor(.yellow)
-                        VStack(alignment: .leading) {
-                            Text("Approval Required")
+                    VStack(alignment: .leading, spacing: 4) {
+                        switch helperManager.status {
+                        case .enabled:
+                            Label("Helper Installed", systemImage: "checkmark.circle.fill")
                                 .font(.headline)
-                            Text("Please enable in System Settings > Login Items.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.green)
+                        case .requiresApproval:
+                            Label("Approval Required", systemImage: "exclamationmark.triangle.fill")
+                                .font(.headline)
+                                .foregroundColor(.yellow)
+                        default:
+                            Label("Helper Not Installed", systemImage: "xmark.circle.fill")
+                                .font(.headline)
+                                .foregroundColor(.red)
                         }
-                    default:
-                        Image(systemName: "xmark.circle.fill").font(.title2).foregroundColor(.red)
-                        Text("Helper Not Installed")
-                            .font(.headline)
+
+                        if helperManager.status == .enabled {
+                            Label(helperManager.isRunning ? "Running" : "Inactive",
+                                  systemImage: helperManager.isRunning ? "circle.fill" : "circle")
+                                .font(.caption)
+                                .foregroundColor(helperManager.isRunning ? .green : .orange)
+                        }
                     }
 
                     Spacer()
@@ -7177,13 +7232,19 @@ struct MusicSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Spotify (Official API)").font(.headline).padding([.horizontal, .top])
-                    VStack(alignment: .leading, spacing: 8) {
+VStack(alignment: .leading, spacing: 8) {
                         Text("Spotify API Credentials").font(.system(size: 14, weight: .medium))
                         Text("Register your app at developer.spotify.com and copy these values here. The redirect URI is: sapphire://callback").font(.caption).foregroundColor(.secondary).padding(.bottom, 4)
                         Text("Client ID").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8))
-                        SecureField("Enter your Client ID", text: $settings.settings.spotifyClientId).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
+                        SecureField("Enter your Client ID", text: Binding(
+                            get: { APIKeyManager.shared.spotifyClientId },
+                            set: { APIKeyManager.shared.spotifyClientId = $0 }
+                        )).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
                         Text("Client Secret").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8)).padding(.top, 5)
-                        SecureField("Enter your Client Secret", text: $settings.settings.spotifyClientSecret).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
+                        SecureField("Enter your Client Secret", text: Binding(
+                            get: { APIKeyManager.shared.spotifyClientSecret },
+                            set: { APIKeyManager.shared.spotifyClientSecret = $0 }
+                        )).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
                     }.padding().padding(.top, 5)
                     Text("Log in here to enable official features like device switching for Premium users. This is the standard, recommended login method.").font(.caption).foregroundColor(.secondary).padding(.horizontal)
                     Divider().padding(.horizontal, 20)

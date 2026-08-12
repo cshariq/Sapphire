@@ -86,6 +86,7 @@ struct WidgetRowView: View {
             case .finance: return settings.settings.financeWidgetEnabled
             case .notes: return settings.settings.notesWidgetEnabled
             case .clipboard: return settings.settings.clipboardWidgetEnabled
+            case .mirror: return settings.settings.mirrorWidgetEnabled
             case .agent: return false
             }
         }
@@ -127,6 +128,7 @@ struct WidgetRowView: View {
         case .finance: return $settings.settings.financeWidgetEnabled
         case .notes: return $settings.settings.notesWidgetEnabled
         case .clipboard: return $settings.settings.clipboardWidgetEnabled
+        case .mirror: return $settings.settings.mirrorWidgetEnabled
         case .agent: return .constant(false)
         }
     }
@@ -373,7 +375,7 @@ struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
     @Binding var items: [Item]
     @ViewBuilder var content: (Item) -> Content
 
-    @State private var draggingItem: Item?
+    @State private var draggingIndex: Int?
     @State private var dragOffset: CGSize = .zero
 
     init(items: Binding<[Item]>, @ViewBuilder content: @escaping (Item) -> Content) {
@@ -383,32 +385,32 @@ struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ForEach(items) { item in
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 content(item)
-                    .offset(y: draggingItem == item ? dragOffset.height : 0)
-                    .opacity(draggingItem == item ? 0.75 : 1)
-                    .zIndex(draggingItem == item ? 1 : 0)
+                    .offset(y: draggingIndex == index ? dragOffset.height : 0)
+                    .opacity(draggingIndex == index ? 0.75 : 1)
+                    .zIndex(draggingIndex == index ? 1 : 0)
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 10, coordinateSpace: .global)
                             .onChanged { value in
-                                if draggingItem == nil {
-                                    draggingItem = item
+                                if draggingIndex == nil {
+                                    draggingIndex = index
                                 }
                                 dragOffset = value.translation
                             }
                             .onEnded { value in
-                                if let draggingItem = draggingItem {
-                                    moveItem(draggedItem: draggingItem, with: value)
+                                if let draggingIndex = draggingIndex {
+                                    moveItem(from: draggingIndex, with: value)
                                 }
                                 withAnimation {
-                                    draggingItem = nil
+                                    self.draggingIndex = nil
                                     dragOffset = .zero
                                 }
                             }
                     )
 
-                if item.id != items.last?.id {
+                if index != items.count - 1 {
                     Rectangle()
                         .fill(Color.white.opacity(0.2))
                         .frame(height: 1)
@@ -417,8 +419,8 @@ struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
         }
     }
 
-    private func moveItem(draggedItem: Item, with value: DragGesture.Value) {
-        guard let fromIndex = items.firstIndex(of: draggedItem) else { return }
+    private func moveItem(from fromIndex: Int, with value: DragGesture.Value) {
+        guard fromIndex < items.count else { return }
 
         let rowHeight: CGFloat = 61.0
         let verticalTranslation = value.translation.height
@@ -428,10 +430,8 @@ struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
         toIndex = max(0, min(items.count - 1, toIndex))
 
         if fromIndex != toIndex {
-            withAnimation(.spring()) {
-                let itemToMove = items.remove(at: fromIndex)
-                items.insert(itemToMove, at: toIndex)
-            }
+            let itemToMove = items.remove(at: fromIndex)
+            items.insert(itemToMove, at: toIndex)
         }
     }
 }

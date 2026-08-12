@@ -344,6 +344,7 @@ enum RestorableNotchMenu: String, Codable, Equatable {
     case financePlayer
     case notesPlayer
     case clipboardPlayer
+    case mirrorPlayer
     case nearDrop
     case fileShelf
     case multiAudio
@@ -361,6 +362,7 @@ enum RestorableNotchMenu: String, Codable, Equatable {
         case .financePlayer: return .financePlayer
         case .notesPlayer: return .notesPlayer
         case .clipboardPlayer: return .clipboardPlayer
+        case .mirrorPlayer: return .mirrorPlayer
         case .nearDrop: return .nearDrop
         case .fileShelf: return .fileShelf
         case .multiAudio: return .multiAudio
@@ -602,7 +604,6 @@ struct Settings: Codable, Equatable {
     var batteryEstimatorEnabled: Bool = true
     var showMultiAudioIcon: Bool = true
     var intelligenceEnabled: Bool = true
-    var intelligenceApiKey: String = ""
     var intelligenceBackend: LLMBackend = .auto
     var intelligenceGeminiSpeedMode: GeminiSpeedMode = .fast
     var intelligenceGeminiModel: GeminiModelOption = .auto
@@ -619,13 +620,13 @@ struct Settings: Codable, Equatable {
     // MARK: - Legacy migration shims (read-only computed, not persisted)
     var geminiEnabled: Bool { intelligenceEnabled }
     var geminiApiKey: String {
-        get { intelligenceApiKey }
-        set { intelligenceApiKey = newValue }
+        get { APIKeyManager.shared.geminiAPIKey }
+        set { APIKeyManager.shared.geminiAPIKey = newValue }
     }
     var agentSEnabled: Bool { intelligenceEnabled }
     var agentSApiKey: String {
-        get { intelligenceApiKey }
-        set { intelligenceApiKey = newValue }
+        get { APIKeyManager.shared.geminiAPIKey }
+        set { APIKeyManager.shared.geminiAPIKey = newValue }
     }
     var agentSBackend: LLMBackend {
         get { intelligenceBackend }
@@ -634,7 +635,7 @@ struct Settings: Codable, Equatable {
     var rememberLastMenu: Bool = false
     var lastNotchNavigationStack: [RestorableNotchMenu]? = nil
     var showDividersBetweenWidgets: Bool = false
-    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .shortcuts, .notes, .clipboard]
+    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .shortcuts, .notes, .clipboard, .mirror]
     var musicWidgetEnabled: Bool = true
     var weatherWidgetEnabled: Bool = true
     var sportsWidgetEnabled: Bool = false
@@ -643,11 +644,15 @@ struct Settings: Codable, Equatable {
     var shortcutsWidgetEnabled: Bool = false
     var notesWidgetEnabled: Bool = false
     var clipboardWidgetEnabled: Bool = false
+    var mirrorWidgetEnabled: Bool = false
+    var mirrorOpenOnClick: Bool = true
+    var mirrorFlipHorizontally: Bool = true
     var notesOpenOnClick: Bool = true
     var clipboardOpenOnClick: Bool = true
     var clipboardHistoryLimit: Int = 0
     var clipboardMonitoringEnabled: Bool = true
     var clipboardHistoryUnlimited: Bool = true
+    var clipboardIgnoreConcealedItems: Bool = true
     var timerWidgetEnabled: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
     var liveActivityOrder: [LiveActivityType] = LiveActivityType.allCases
@@ -796,8 +801,14 @@ struct Settings: Codable, Equatable {
     var waveformBarCount: Int = 3
     var waveformBarThickness: Double = 4.0
     var musicWaveformIsVolumeSensitive: Bool = true
-    var spotifyClientId: String = ""
-    var spotifyClientSecret: String = ""
+    var spotifyClientId: String {
+        get { APIKeyManager.shared.spotifyClientId }
+        set { APIKeyManager.shared.spotifyClientId = newValue }
+    }
+    var spotifyClientSecret: String {
+        get { APIKeyManager.shared.spotifyClientSecret }
+        set { APIKeyManager.shared.spotifyClientSecret = newValue }
+    }
     var skipSpotifyAd: Bool = false
     var defaultMusicPlayer: DefaultMusicPlayer = .appleMusic
     var showLyricsInLiveActivity: Bool = false
@@ -1320,7 +1331,7 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case weather, calendar, shortcuts, music, sports, finance, notes, clipboard, agent
+    case weather, calendar, shortcuts, music, sports, finance, notes, clipboard, mirror, agent
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
@@ -1332,6 +1343,7 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
         case .finance: return "Finance"
         case .notes: return "Notes"
         case .clipboard: return "Clipboard"
+        case .mirror: return "Mirror"
         case .agent: return "Agent"
         }
     }
@@ -1531,7 +1543,7 @@ extension UTType {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, fileShelf, notes, clipboard, caffeine, music, weather, calendar, eyeBreak, intelligence, sports, finance, about
+    case general, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, fileShelf, notes, clipboard, mirror, caffeine, music, weather, calendar, eyeBreak, intelligence, sports, finance, about
 
     var id: String { self.rawValue }
 
@@ -1583,6 +1595,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .fileShelf: "Manage temporary file storage, drag targets, and shelf behavior."
         case .notes: "Quick notes widget, click-to-expand behavior, and notch bar access."
         case .clipboard: "Clipboard history, monitoring, and notch clipboard shortcuts."
+        case .mirror: "Mirror widget showing live camera feed, with expandable fullscreen view."
         case .caffeine: "Keep your Mac awake, clamshell sleep behavior, and lid-angle display controls."
         case .music: "Music widget sources, playback controls, and media integrations."
         case .weather: "Weather widget data sources, units, and location-based behavior."
@@ -1614,6 +1627,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .fileShelf: ["file", "shelf", "drag", "drop", "storage"]
         case .notes: ["notes", "note", "memo", "quick note"]
         case .clipboard: ["clipboard", "pasteboard", "history", "copy", "paste"]
+        case .mirror: ["mirror", "camera", "camera feed", "selfie", "webcam"]
         case .caffeine: ["caffeinate", "caffeine", "sleep", "awake", "clamshell", "lid"]
         case .music: ["music", "media", "spotify", "playback"]
         case .weather: ["weather", "forecast", "temperature", "location"]
@@ -1642,19 +1656,19 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .general: "General"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .intelligence: "Blip"; case .sports: "Sports"; case .finance: "Finance"; case .about: "About"
+        case .general: "General"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"; case .mirror: "Mirror"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .intelligence: "Blip"; case .sports: "Sports"; case .finance: "Finance"; case .about: "About"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .general: "gear"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .audio: "speaker.circle.fill"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .notes: "note.text"; case .clipboard: "list.clipboard"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill"; case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .about: "info.circle"
+        case .general: "gear"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .audio: "speaker.circle.fill"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .notes: "note.text"; case .clipboard: "list.clipboard"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill"; case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .about: "info.circle"
         }
     }
 
     var iconBackgroundColor: Color {
         switch self {
-        case .general: .black; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .notes: .yellow; case .clipboard: .mint; case .caffeine: .brown; case .music: .pink; case .weather: .blue; case .calendar: .red; case .eyeBreak: .teal; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .about: .blue
+        case .general: .black; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .notes: .yellow; case .clipboard: .mint; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue; case .calendar: .red; case .eyeBreak: .teal; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .about: .blue
         }
     }
 }

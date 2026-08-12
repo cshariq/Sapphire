@@ -268,6 +268,8 @@ struct NotchController: View {
                 return settings.settings.notesWidgetEnabled
             case .clipboard:
                 return settings.settings.clipboardWidgetEnabled
+            case .mirror:
+                return settings.settings.mirrorWidgetEnabled
             }
         }
     }
@@ -284,6 +286,7 @@ struct NotchController: View {
             case .agent: return .agentS
             case .notes: return .notesPlayer
             case .clipboard: return .clipboardPlayer
+            case .mirror: return .mirrorPlayer
             }
         }
     }
@@ -509,24 +512,46 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     @ViewBuilder
     private var notchBackground: some View {
         let appearance = activeAppearanceSettings
-        ZStack {
-            Color.clear
-            if #available(macOS 26.0, *), appearance.liquidGlassLook {
+
+        if #available(macOS 26.0, *), appearance.liquidGlassLook {
+            let intensity = appearance.liquidGlassIntensity
+            let material = LiquidGlassMaterial.forIntensity(intensity)
+            let params = LiquidGlassIntensityParams.resolve(intensity)
+
+            ZStack {
+                // Base fill (gradient/solid/radial) - shows through the glass
                 activeShape
-                    .fill(.clear)
-                    .glassEffect(.clear, in: activeShape)
-            } else {
+                    .fill(notchFillMaterial)
+                    .opacity(appearance.opacity)
+
+                // Liquid glass effect on top with notch shape mask
+                LiquidGlassShapeFill(
+                    material: material,
+                    shape: activeShape,
+                    cornerRadius: 0, // Shape handles corners
+                    tint: nil,
+                    intensity: intensity,
+                    blendingMode: .behindWindow,
+                    appearance: .dark,
+                    interaction: .normal
+                )
+            }
+            .contentShape(activeShape)
+            .clipShape(activeShape)
+            .onTapGesture(perform: handleTap)
+        } else {
+            ZStack {
                 if appearance.enableTransparencyBlur {
                     VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 }
-                Rectangle()
+                activeShape
                     .fill(notchFillMaterial)
                     .opacity(appearance.opacity)
             }
+            .contentShape(activeShape)
+            .clipShape(activeShape)
+            .onTapGesture(perform: handleTap)
         }
-        .contentShape(activeShape)
-        .clipShape(activeShape)
-        .onTapGesture(perform: handleTap)
     }
 
     private var notchFillMaterial: AnyShapeStyle {
@@ -1327,6 +1352,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 animatedContentScale = 1.0
                 isPinned = false
             }
+
             DispatchQueue.main.asyncAfter(deadline: .now() + config.activityAnimationOutDelay) {
                 guard self.notchState == .initial else { return }
                 if wasShowingActivity { self.isAnimatingActivityOut = false }
@@ -1396,6 +1422,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 animatedHeight = max(measuredAutoContentSize.height, config.initialSize.height)
                 animatedContentScale = 1.0
             }
+            
             DispatchQueue.main.asyncAfter(deadline: .now() + config.activitySizeChangeDelay) {
                 withAnimation(config.blurRemovalAnimation) {
                     self.activityBlurRadius = 0; self.activityContentScale = 1.0
@@ -1579,6 +1606,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 animatedWidth = newSize.width
                 animatedHeight = newSize.height
             }
+            
         } else if state == .autoExpanded {
             updateAutoContentSize()
         }
@@ -1735,12 +1763,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func determineActiveDropZone() -> DropZone? {
-        guard let mainScreen = NSScreen.main else { return nil }
         let mouseLocation = NSEvent.mouseLocation
-        let globalMousePoint = CGPoint(x: mouseLocation.x, y: mainScreen.frame.height - mouseLocation.y)
 
         for (zone, frame) in self.dropZoneFrames {
-            if frame.contains(globalMousePoint) {
+            if frame.contains(mouseLocation) {
                 return zone
             }
         }
@@ -1826,6 +1852,17 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard !contentBounds.isEmpty else { return .zero }
 
         if notchState == .clickExpanded {
+            if isPinned {
+                let notchHeight = animatedHeight
+                let notchWidth = animatedWidth
+                let topInset = config.topBuffer
+                return CGRect(
+                    x: contentBounds.midX - (notchWidth / 2),
+                    y: contentBounds.maxY - notchHeight - topInset,
+                    width: notchWidth,
+                    height: notchHeight
+                ).integral.insetBy(dx: -1, dy: -1)
+            }
             return contentBounds.integral.insetBy(dx: -1, dy: -1)
         }
 
@@ -1866,6 +1903,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .financePlayer: return .financePlayer
         case .notesPlayer: return .notesPlayer
         case .clipboardPlayer: return .clipboardPlayer
+        case .mirrorPlayer: return .mirrorPlayer
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,

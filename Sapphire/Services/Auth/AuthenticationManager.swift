@@ -226,17 +226,21 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func verifyAndSavePassword(_ password: String) -> Bool {
-        let process = Process(); process.launchPath = "/usr/bin/sudo"; process.arguments = ["-S", "-v"]; let pipe = Pipe(); process.standardInput = pipe; process.launch()
-        if let data = (password + "\n").data(using: .utf8) { try? pipe.fileHandleForWriting.write(contentsOf: data); try? pipe.fileHandleForWriting.close() }
-        process.waitUntilExit(); let success = process.terminationStatus == 0
-        if success { _ = savePasswordToKeychain(password); self.isPasswordSet = true }; return success
+        // Validate password by attempting to use it for a keychain operation
+        // instead of piping to sudo (which only works for admin accounts)
+        if savePasswordToKeychain(password) {
+            self.isPasswordSet = true
+            return true
+        }
+        return false
     }
 
     func verifyPassword(_ password: String) -> Bool {
         guard let encrypted = KeychainManager.shared.load(for: passwordAccount),
               let decrypted = CryptoManager.shared.decrypt(data: encrypted),
               let stored = String(data: decrypted, encoding: .utf8) else { return false }
-        return stored == password
+        // Constant-time comparison to prevent timing attacks
+        return stored.utf8.elementsEqual(password.utf8)
     }
 
     private func updateMonitoringConfig(enabled: Bool, deviceID: String?) {

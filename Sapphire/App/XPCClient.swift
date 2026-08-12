@@ -48,4 +48,13 @@ class XPCClient {
         self.connection?.invalidate()
         self.connection = nil
     }
+
+    func ping() async -> Bool {
+        await withCheckedContinuation { continuation in
+            start()
+            helper?.getVersion { _ in
+                continuation.resume(returning: true)
+            }
+        }
+    }
 }

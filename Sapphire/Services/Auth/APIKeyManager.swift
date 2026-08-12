@@ -1,11 +1,15 @@
 //
-//  APIKeyManager.swift
-//  Sapphire
-//
-//  Created by Shariq Charolia on 2026-08-10
+ //  APIKeyManager.swift
+ //  Sapphire
+ //
+ //  Created by Shariq Charolia on 2026-08-10
 
 import Foundation
 import Security
+
+extension Notification.Name {
+    static let apiKeyManagerSpotifyCredentialsChanged = Notification.Name("apiKeyManagerSpotifyCredentialsChanged")
+}
 
 final class APIKeyManager {
     static let shared = APIKeyManager()
@@ -34,6 +38,12 @@ final class APIKeyManager {
     private let nvidiaKeychainKey = "nvidia_api_key"
     private let nvidiaUserDefaultsKey = "nvidiaAPIKey"
 
+    private let spotifyClientIdKeychainKey = "spotify_client_id"
+    private let spotifyClientIdUserDefaultsKey = "spotifyClientId"
+
+    private let spotifyClientSecretKeychainKey = "spotify_client_secret"
+    private let spotifyClientSecretUserDefaultsKey = "spotifyClientSecret"
+
     private init() {
         migrateExistingKeys()
     }
@@ -47,12 +57,17 @@ final class APIKeyManager {
                 }
             }
         }
+        for udKey in geminiUserDefaultsKeys {
+            defaults.removeObject(forKey: udKey)
+        }
         migrateIfNeeded(keychainKey: hackClubKeychainKey, defaultsKey: hackClubUserDefaultsKey)
         migrateIfNeeded(keychainKey: openAIKeychainKey, defaultsKey: openAIUserDefaultsKey)
         migrateIfNeeded(keychainKey: anthropicKeychainKey, defaultsKey: anthropicUserDefaultsKey)
         migrateIfNeeded(keychainKey: openRouterKeychainKey, defaultsKey: openRouterUserDefaultsKey)
         migrateIfNeeded(keychainKey: xaiKeychainKey, defaultsKey: xaiUserDefaultsKey)
         migrateIfNeeded(keychainKey: nvidiaKeychainKey, defaultsKey: nvidiaUserDefaultsKey)
+        migrateIfNeeded(keychainKey: spotifyClientIdKeychainKey, defaultsKey: spotifyClientIdUserDefaultsKey)
+        migrateIfNeeded(keychainKey: spotifyClientSecretKeychainKey, defaultsKey: spotifyClientSecretUserDefaultsKey)
     }
 
     private func migrateIfNeeded(keychainKey: String, defaultsKey: String) {
@@ -60,6 +75,7 @@ final class APIKeyManager {
            let existing = defaults.string(forKey: defaultsKey), !existing.isEmpty {
             keychain.save(existing, forKey: keychainKey)
         }
+        defaults.removeObject(forKey: defaultsKey)
     }
 
     // MARK: - Gemini API Key
@@ -104,15 +120,20 @@ final class APIKeyManager {
         set { saveKey(newValue, keychainKey: nvidiaKeychainKey, defaultsKeys: [nvidiaUserDefaultsKey]) }
     }
 
+    // MARK: - Spotify
+    var spotifyClientId: String {
+        get { loadKey(keychainKey: spotifyClientIdKeychainKey, defaultsKeys: [spotifyClientIdUserDefaultsKey]) }
+        set { saveKey(newValue, keychainKey: spotifyClientIdKeychainKey, defaultsKeys: [spotifyClientIdUserDefaultsKey]) }
+    }
+
+    var spotifyClientSecret: String {
+        get { loadKey(keychainKey: spotifyClientSecretKeychainKey, defaultsKeys: [spotifyClientSecretUserDefaultsKey]) }
+        set { saveKey(newValue, keychainKey: spotifyClientSecretKeychainKey, defaultsKeys: [spotifyClientSecretUserDefaultsKey]) }
+    }
+
     private func loadKey(keychainKey: String, defaultsKeys: [String]) -> String {
         if let keychainKey = keychain.load(forKey: keychainKey) {
             return keychainKey
-        }
-        for udKey in defaultsKeys {
-            if let existing = defaults.string(forKey: udKey), !existing.isEmpty {
-                keychain.save(existing, forKey: keychainKey)
-                return existing
-            }
         }
         return ""
     }
@@ -123,8 +144,8 @@ final class APIKeyManager {
         } else {
             keychain.save(newValue, forKey: keychainKey)
         }
-        for udKey in defaultsKeys {
-            defaults.set(newValue, forKey: udKey)
+        if keychainKey == spotifyClientIdKeychainKey || keychainKey == spotifyClientSecretKeychainKey {
+            NotificationCenter.default.post(name: .apiKeyManagerSpotifyCredentialsChanged, object: nil)
         }
     }
 
@@ -134,4 +155,5 @@ final class APIKeyManager {
     var hasAnthropicKey: Bool { !anthropicAPIKey.isEmpty }
     var hasOpenRouterKey: Bool { !openRouterAPIKey.isEmpty }
     var hasXAIKey: Bool { !xaiAPIKey.isEmpty }
+    var hasSpotifyCredentials: Bool { !spotifyClientId.isEmpty && !spotifyClientSecret.isEmpty }
 }
