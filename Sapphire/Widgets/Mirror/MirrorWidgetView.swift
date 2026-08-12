@@ -19,16 +19,31 @@ struct MirrorWidgetView: View {
                     session: camera.session,
                     flipHorizontally: settings.settings.mirrorFlipHorizontally
                 )
+                .transition(.opacity)
             } else {
                 idleView
+                    .transition(.opacity)
             }
         }
-        .frame(width: 130, height: 112)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .frame(width: 130, height: 100)
+        .background {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(MaterialChartPalette.surface)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(
+                    camera.isLive ? Color.green.opacity(0.4) : MaterialChartPalette.outline,
+                    lineWidth: camera.isLive ? 1.2 : 1
+                )
         )
+        .overlay(alignment: .topTrailing) {
+            if camera.isLive {
+                stopButton
+                    .padding(10)
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture {
             if camera.isLive {
@@ -48,16 +63,48 @@ struct MirrorWidgetView: View {
                 Button("Open Camera Privacy Settings") { camera.openSystemPrivacySettings() }
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: camera.isLive)
+    }
+
+    private var stopButton: some View {
+        Button {
+            camera.stop()
+        } label: {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(.black.opacity(0.45), in: Circle())
+                .overlay(
+                    Circle().stroke(.white.opacity(0.18), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Stop camera")
     }
 
     private var idleView: some View {
-        VStack(spacing: 6) {
-            Image(systemName: camera.isDenied ? "camera.slash" : "camera")
-                .font(.system(size: 28, weight: .light))
-                .foregroundStyle(.white.opacity(camera.isDenied ? 0.4 : 0.6))
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.indigo.opacity(0.5), Color.purple.opacity(0.35)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 46, height: 46)
+                Circle()
+                    .stroke(.white.opacity(0.22), lineWidth: 1)
+                    .frame(width: 46, height: 46)
+                Image(systemName: camera.isDenied ? "camera.slash" : "camera")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
             Text(camera.isDenied ? "Camera Denied" : (camera.isError ? "Unavailable" : "Tap to Start"))
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.5))
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
         }
     }
 }
