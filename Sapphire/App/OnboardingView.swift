@@ -627,7 +627,7 @@ private struct SubscriptionOverviewStepView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 50)
 
-                Link("Upgrade on website instead", destination: URL(string: "https://cshariq.github.io/Sapphire-Website/")!)
+                Link("Upgrade on website instead", destination: URL(string: "https://sapphire-app.tech/")!)
                     .font(.caption)
                     .foregroundStyle(.purple)
             }
@@ -841,7 +841,7 @@ private struct FinishStepView: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 12) {
-                Link(destination: URL(string: "https://cshariq.github.io/Sapphire-Website/")!) {
+                Link(destination: URL(string: "https://sapphire-app.tech/")!) {
                     Image(systemName: "link").resizable().aspectRatio(contentMode: .fit).frame(width: 18, height: 18).foregroundColor(.white).padding(6).background(Color.blue).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }.buttonStyle(PlainButtonStyle())
 

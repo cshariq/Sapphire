@@ -8323,7 +8323,7 @@ struct AboutSettingsView: View {
                         Text(versionLabel).foregroundStyle(.secondary).textSelection(.enabled)
 
                         HStack(spacing: 10) {
-                            Link(destination: URL(string: "https://cshariq.github.io/Sapphire-Website/")!) {
+                            Link(destination: URL(string: "https://sapphire-app.tech/")!) {
                                 Image(systemName: "link")
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
