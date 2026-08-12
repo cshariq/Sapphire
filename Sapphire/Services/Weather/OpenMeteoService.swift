@@ -242,7 +242,8 @@ final class OpenMeteoService {
         let twcIcon    = wmcCodeToTWCIcon(wmoCode, isDay: isDay)
         let feelsC     = current.apparentTemperature ?? tempC
         let humidity   = current.relativeHumidity2m ?? 0
-        let windMph    = Int((current.windspeed10m ?? 0).rounded())
+        let windKmh    = Int((current.windspeed10m ?? 0).rounded())
+        let windMph    = Int(((current.windspeed10m ?? 0) * 0.621371).rounded())
 
         let tempF    = celsiusToFahrenheit(tempC)
         let feelsF   = celsiusToFahrenheit(feelsC)
@@ -276,13 +277,16 @@ final class OpenMeteoService {
             feelsLike:          feelsF,
             feelsLikeMetric:    Int(feelsC.rounded()),
             windInfo:           "\(windMph) mph",
+            windInfoMetric:     "\(windKmh) km/h",
             humidity:           "\(humidity)%",
             precipChance:       precipPct,
             uvIndex:            "\(Int(uvRaw.rounded())) (\(uvDesc))",
             sunriseTime:        sunriseStr,
             sunsetTime:         sunsetStr,
             visibility:         "-- mi",
+            visibilityMetric:   "-- km",
             pressure:           "-- in",
+            pressureMetric:     "-- hPa",
             dailyForecasts:     dailyForecasts,
             hourlyForecasts:    hourlyForecasts,
             isAvailable:        true

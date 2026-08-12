@@ -7435,6 +7435,16 @@ struct WeatherSettingsView: View {
                     Rectangle().fill(Color.white.opacity(0.2)).frame(height: 1).padding(.leading, 20)
 
                     HStack {
+                        Text("Use Metric Units")
+                        Spacer()
+                        Toggle("", isOn: $settings.settings.weatherUseMetricSystem)
+                            .labelsHidden().toggleStyle(.switch)
+                    }
+                    .padding()
+
+                    Rectangle().fill(Color.white.opacity(0.2)).frame(height: 1).padding(.leading, 20)
+
+                    HStack {
                         Text("Open detailed Weather widget on live activity click")
                         Spacer()
                         Toggle("", isOn: $settings.settings.weatherOpenOnClick)

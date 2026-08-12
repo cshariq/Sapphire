@@ -845,6 +845,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             ))
         }
 
+        let fullScreenMusicPane = LockScreenFullScreenMusicPane()
+            .environmentObject(settingsModel)
+            .environmentObject(musicManager)
+
+        widgetConfigs.append(.init(
+            id: "fullScreenMusicPane",
+            view: AnyView(fullScreenMusicPane),
+            initialSize: .zero,
+            positioner: lockScreenManager.calculateFullScreenMusicFrame(size:screen:),
+            windowLevel: .mainMenu + 4
+        ))
+
         lockScreenManager.setupAndShowWindows(configs: widgetConfigs, on: mainScreen)
         NSApp.activate(ignoringOtherApps: true)
     }

@@ -69,17 +69,18 @@ class WeatherViewModel: ObservableObject {
 
     private func updateUI(with data: ProcessedWeatherData) {
         let useCelsius = settingsModel.settings.weatherUseCelsius
+        let useMetricSystem = settingsModel.settings.weatherUseMetricSystem
 
         self.locationName = data.locationName
         self.temperature = useCelsius ? "\(data.temperatureMetric)°" : "\(data.temperature)°"
         self.conditionDescription = data.conditionDescription
         self.highLowTemp = useCelsius ? "H: \(data.highTempMetric)° L: \(data.lowTempMetric)°" : "H: \(data.highTemp)° L: \(data.lowTemp)°"
         self.feelsLike = useCelsius ? "\(data.feelsLikeMetric)°" : "\(data.feelsLike)°"
-        self.windInfo = data.windInfo
+        self.windInfo = useMetricSystem ? data.windInfoMetric : data.windInfo
         self.humidity = data.humidity
         self.uvIndex = data.uvIndex
-        self.visibility = data.visibility
-        self.pressure = data.pressure
+        self.visibility = useMetricSystem ? data.visibilityMetric : data.visibility
+        self.pressure = useMetricSystem ? data.pressureMetric : data.pressure
         self.precipChance = "\(data.precipChance)%"
         self.iconName = WeatherIconMapper.map(from: data.iconCode)
         self.hourlyForecasts = data.hourlyForecasts
@@ -88,12 +89,13 @@ class WeatherViewModel: ObservableObject {
     }
 
     private func handleError(_ error: Error) {
+        let useMetricSystem = settingsModel.settings.weatherUseMetricSystem
         self.locationName = "Unavailable"
         self.temperature = "—°"
         self.conditionDescription = error.localizedDescription
         self.highLowTemp = "H: —° L: —°"
         self.feelsLike = "—°"
-        self.windInfo = "— mph"
+        self.windInfo = useMetricSystem ? "— km/h" : "— mph"
         self.humidity = "—%"
         self.uvIndex = "—"
         self.visibility = "—"

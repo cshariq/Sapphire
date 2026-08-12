@@ -129,7 +129,7 @@ struct LockScreenInfoWidgetView: View {
                 .font(.title2)
                 .symbolRenderingMode(.multicolor)
         case .wind:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "wind"); Text(data.windInfo) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "wind"); Text(settings.settings.weatherUseMetricSystem ? data.windInfoMetric : data.windInfo) }.font(textFont)
         case .humidity:
             HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "humidity.fill"); Text(data.humidity) }.font(textFont)
         case .feelsLike:
@@ -146,9 +146,9 @@ struct LockScreenInfoWidgetView: View {
         case .uvIndex:
             HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "sun.max.fill"); Text(data.uvIndex) }.font(textFont)
         case .visibility:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "eye.fill"); Text(data.visibility) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "eye.fill"); Text(settings.settings.weatherUseMetricSystem ? data.visibilityMetric : data.visibility) }.font(textFont)
         case .pressure:
-            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "gauge.medium"); Text(data.pressure) }.font(textFont)
+            HStack(spacing: LockScreenConfiguration.infoWidgetSmallIconHSpacing) { Image(systemName: "gauge.medium"); Text(settings.settings.weatherUseMetricSystem ? data.pressureMetric : data.pressure) }.font(textFont)
         case .locationName:
             Text(data.locationName).fontWeight(.semibold).font(textFont)
         case .conditionDescription:

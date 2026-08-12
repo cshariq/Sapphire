@@ -96,13 +96,16 @@ struct ProcessedWeatherData: Hashable {
     let feelsLike: Int
     let feelsLikeMetric: Int
     let windInfo: String
+    let windInfoMetric: String
     let humidity: String
     let precipChance: Int
     let uvIndex: String
     let sunriseTime: String
     let sunsetTime: String
     let visibility: String
+    let visibilityMetric: String
     let pressure: String
+    let pressureMetric: String
     let dailyForecasts: [DailyForecastUIData]
     let hourlyForecasts: [HourlyForecastUIData]
     let isAvailable: Bool
@@ -110,7 +113,7 @@ struct ProcessedWeatherData: Hashable {
     var isValid: Bool { isAvailable }
 
     static func empty() -> ProcessedWeatherData {
-        .init(locationName: "N/A", temperature: 0, temperatureMetric: 0, highTemp: 0, highTempMetric: 0, lowTemp: 0, lowTempMetric: 0, conditionDescription: "N/A", iconCode: 44, feelsLike: 0, feelsLikeMetric: 0, windInfo: "N/A", humidity: "N/A", precipChance: 0, uvIndex: "N/A", sunriseTime: "N/A", sunsetTime: "N/A", visibility: "N/A", pressure: "N/A", dailyForecasts: [], hourlyForecasts: [], isAvailable: false)
+        .init(locationName: "N/A", temperature: 0, temperatureMetric: 0, highTemp: 0, highTempMetric: 0, lowTemp: 0, lowTempMetric: 0, conditionDescription: "N/A", iconCode: 44, feelsLike: 0, feelsLikeMetric: 0, windInfo: "N/A", windInfoMetric: "N/A", humidity: "N/A", precipChance: 0, uvIndex: "N/A", sunriseTime: "N/A", sunsetTime: "N/A", visibility: "N/A", visibilityMetric: "N/A", pressure: "N/A", pressureMetric: "N/A", dailyForecasts: [], hourlyForecasts: [], isAvailable: false)
     }
 }
 

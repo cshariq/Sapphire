@@ -7,6 +7,23 @@
 import SwiftUI
 import AppKit
 
+private struct LockScreenPaneClickPassthrough: NSViewRepresentable {
+    let interactive: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        view.wantsLayer = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        let interactive = self.interactive
+        DispatchQueue.main.async {
+            nsView.window?.ignoresMouseEvents = !interactive
+        }
+    }
+}
+
 enum LockScreenMusicPaneOverlay: Identifiable, Equatable {
     case queue
     case devices
@@ -104,6 +121,7 @@ struct LockScreenFullScreenMusicPane: View {
         .frame(width: screenSize.width, height: screenSize.height)
         .opacity(controller.isPresented ? 1 : 0)
         .allowsHitTesting(controller.isPresented)
+        .background(LockScreenPaneClickPassthrough(interactive: controller.isPresented))
         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: controller.isPresented)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: controller.showLyrics)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: controller.overlay)

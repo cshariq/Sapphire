@@ -928,6 +928,7 @@ struct Settings: Codable, Equatable {
     var hoverToOpenFileShelf: Bool = true
     var launchpadLayout: [[LaunchpadPageItem]] = []
     var weatherUseCelsius: Bool = false
+    var weatherUseMetricSystem: Bool = false
     var weatherOpenOnClick: Bool = false
     var calendarShowAllDayEvents: Bool = true
     var calendarStartOfWeek: Day = .sunday
