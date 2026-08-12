@@ -117,7 +117,6 @@ class LiveActivityManager: ObservableObject {
     var isFullViewActivity: Bool {
         if case .full = activityContent { true } else { false }
     }
-    var fileShelfManager: FileShelfManager?
 
     // MARK: - Private Properties
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "LiveActivityManager")
@@ -147,6 +146,8 @@ class LiveActivityManager: ObservableObject {
     ]
     private var dismissedNotifications: [AnyHashable: Date] = [:]
     private var lastIntervalWeatherShowTime: Date?
+    private var lastWeatherLiveActivityEnabled: Bool?
+    private var lastPersistentWeatherLiveActivityEnabled: Bool?
     private var periodicCheckTimer: Timer?
     private var tickerRefreshTimer: Timer?
     private var sportsFinanceWatchTimer: Timer?
@@ -224,6 +225,15 @@ class LiveActivityManager: ObservableObject {
         setupSubscriptions()
         setupPeriodicTimer()
         updateSportsFinanceWatchTimer()
+        scheduleInitialUpdateActivityEvaluationIfNeeded()
+    }
+
+    private func scheduleInitialUpdateActivityEvaluationIfNeeded() {
+        guard UpdateChecker.shared.status.isUpdateAvailable else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.lastEvalTime = 0
+            self?.evaluateAndDisplayActivity()
+        }
     }
 
     // MARK: - Subscriptions
@@ -288,8 +298,79 @@ class LiveActivityManager: ObservableObject {
             }
             .store(in: &cancellables)
 
+        FileShelfManager.shared.$files
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.lastEvalTime = 0
+                self.evaluateAndDisplayActivity(allowImmediateDismiss: true)
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .sapphireUpdateAvailable)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.lastEvalTime = 0
+                self.evaluateAndDisplayActivity()
+            }
+            .store(in: &cancellables)
+
         subscribeToStateChangeTriggers()
         subscribeToSportsFinanceSettings()
+        subscribeToWeatherLiveActivitySettings()
+    }
+
+    private func subscribeToWeatherLiveActivitySettings() {
+        settingsModel.$settings
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] settings in
+                self?.handleWeatherLiveActivitySettingsChanged(
+                    isEnabled: settings.weatherLiveActivityEnabled,
+                    isPersistent: settings.showPersistentWeatherLiveActivity
+                )
+            }
+            .store(in: &cancellables)
+    }
+
+    private func handleWeatherLiveActivitySettingsChanged(isEnabled: Bool, isPersistent: Bool) {
+        guard let wasEnabled = lastWeatherLiveActivityEnabled,
+              let wasPersistent = lastPersistentWeatherLiveActivityEnabled else {
+            lastWeatherLiveActivityEnabled = isEnabled
+            lastPersistentWeatherLiveActivityEnabled = isPersistent
+            return
+        }
+
+        guard wasEnabled != isEnabled || wasPersistent != isPersistent else { return }
+
+        lastWeatherLiveActivityEnabled = isEnabled
+        lastPersistentWeatherLiveActivityEnabled = isPersistent
+
+        let becameDisabled = wasEnabled && !isEnabled
+        let becameEnabled = !wasEnabled && isEnabled
+        let persistentModeChanged = wasPersistent != isPersistent
+
+        if becameDisabled {
+            lastIntervalWeatherShowTime = nil
+            if currentActivity == .weather || currentActivity == .persistentWeather {
+                dismissalTimer?.invalidate()
+                dismissalTimer = nil
+                lastEvalTime = 0
+                setActivity(type: .none, content: .none)
+            }
+            lastEvalTime = 0
+            evaluateAndDisplayActivity(allowImmediateDismiss: true)
+            return
+        }
+
+        if becameEnabled || (isEnabled && persistentModeChanged) {
+            lastIntervalWeatherShowTime = nil
+            snoozedActivities.removeValue(forKey: .weather)
+            snoozedActivities.removeValue(forKey: .persistentWeather)
+            lastEvalTime = 0
+            evaluateAndDisplayActivity(allowImmediateDismiss: true)
+        }
     }
 
     private func subscribeToStateChangeTriggers() {
@@ -313,11 +394,6 @@ class LiveActivityManager: ObservableObject {
                 .removeDuplicates()
                 .map { _ in () }
                 .eraseToAnyPublisher()
-        }()
-
-        let fileShelfPublisher: AnyPublisher<Void, Never> = {
-            guard let fileShelfManager else { return Empty().eraseToAnyPublisher() }
-            return fileShelfManager.$files.mapToVoid().eraseToAnyPublisher()
         }()
 
         let stateChangeTriggers: [AnyPublisher<Void, Never>] = [
@@ -352,7 +428,6 @@ class LiveActivityManager: ObservableObject {
             musicWidget.trackDidChange.mapToVoid(),
             musicWidget.$showQuickPeek.removeDuplicates().mapToVoid(),
             musicWidget.$isHoveringAlbumArt.removeDuplicates().mapToVoid(),
-            fileShelfPublisher,
             settingsModel.$settings.removeDuplicates().mapToVoid(),
             activeAppMonitor.$isLyricsAllowedForActiveApp
                 .removeDuplicates()
@@ -670,9 +745,8 @@ class LiveActivityManager: ObservableObject {
         self.currentActivity = type
         self.activityContent = content
 
-        let shapeChanged = oldShape != notchShapeSignature
-        if oldType != type || shapeChanged {
-            self.contentUpdateID = UUID()
+        self.contentUpdateID = UUID()
+        if oldType != type || oldShape != notchShapeSignature {
             lastEvalTime = 0
         }
 
@@ -1192,10 +1266,11 @@ class LiveActivityManager: ObservableObject {
     }
 
     private func checkForFileShelf() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
-        guard let fileShelfManager = fileShelfManager, settingsModel.settings.fileShelfLiveActivityEnabled, !fileShelfManager.files.isEmpty else {
+        let files = FileShelfManager.shared.files
+        guard settingsModel.settings.fileShelfLiveActivityEnabled, !files.isEmpty else {
             return nil
         }
-        let count = fileShelfManager.files.count
+        let count = files.count
         return (
             .fileShelf,
             .standard(
@@ -1622,10 +1697,22 @@ where: {
         periodicCheckTimer?.invalidate()
         periodicCheckTimer = Timer
             .scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
-                if self?.currentActivity == .none {
-                    self?.evaluateAndDisplayActivity()
+                guard let self else { return }
+                UpdateChecker.shared.checkInBackgroundIfNeeded()
+
+                let updateIsAvailable = UpdateChecker.shared.status.isUpdateAvailable
+                let updateSnoozed = self.snoozedActivities[.updateAvailable] != nil
+                let shouldEvaluate = self.currentActivity == .none
+                    || (updateIsAvailable && self.currentActivity != .updateAvailable && !updateSnoozed)
+
+                if shouldEvaluate {
+                    self.lastEvalTime = 0
+                    self.evaluateAndDisplayActivity()
                 }
             }
+        if let periodicCheckTimer {
+            RunLoop.main.add(periodicCheckTimer, forMode: .common)
+        }
     }
 
     private func updateTickerRefreshTimer() {

@@ -106,8 +106,6 @@ final class DynamicFocusWindow: NSPanel {
             break
         }
 
-        // Refresh passthrough BEFORE processing so clicks outside the interactive
-        // frame are ignored (not absorbed by the expanded notch).
         switch event.type {
         case .leftMouseDown, .leftMouseUp, .leftMouseDragged,
                 .rightMouseDown, .rightMouseUp, .rightMouseDragged,
@@ -119,6 +117,13 @@ final class DynamicFocusWindow: NSPanel {
         }
 
         super.sendEvent(event)
+    }
+
+    func syncMouseEventPassthrough() {
+        if NSEvent.pressedMouseButtons == 0 {
+            isHandlingMouseInteraction = false
+        }
+        refreshMouseEventPassthrough(force: true)
     }
 
     private func refreshMouseEventPassthrough(force: Bool = false) {
@@ -166,6 +171,16 @@ final class DynamicFocusWindow: NSPanel {
 }
 
 final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+        sizingOptions = []
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let window = window as? DynamicFocusWindow else {
             return super.hitTest(point)
@@ -494,8 +509,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         Analytics.logEvent("onboarding_started", parameters: nil)
 
         if onboardingWindow == nil {
-            let window = KeyableWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 900), styleMask: [.borderless, .closable, .miniaturizable], backing: .buffered, defer: false)
-            window.center()
+            let size = UtilityWindowMetrics.fittedSize(
+                preferredWidth: NotchConfiguration.onboardingWindowWidth,
+                preferredHeight: NotchConfiguration.onboardingWindowHeight
+            )
+            let frame = UtilityWindowMetrics.centeredFrame(size: size)
+            let window = KeyableWindow(contentRect: frame, styleMask: [.borderless, .closable, .miniaturizable], backing: .buffered, defer: false)
+            window.setFrame(frame, display: false)
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.standardWindowButton(.closeButton)?.isHidden = true
@@ -505,9 +525,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             window.isMovableByWindowBackground = true
             window.isOpaque = false
             window.backgroundColor = .clear
-            window.minSize = NSSize(width: 1200, height: 900)
-            window.maxSize = NSSize(width: 1200, height: 900)
-            window.setContentSize(NSSize(width: 1200, height: 900))
+            window.minSize = size
+            window.maxSize = size
+            window.setContentSize(size)
             window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
             let hostingView = FocusableHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() }).environmentObject(settingsModel).environmentObject(musicManager))
             hostingView.wantsLayer = true
@@ -594,7 +614,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
 
-        liveActivityManager.fileShelfManager = fileShelfManager
         SystemControl.configureKeyboardBacklight()
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURL), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         setupSessionObservers()
@@ -904,6 +923,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Termination
 
     func applicationWillTerminate(_ aNotification: Notification) {
+        settingsModel.flushPendingSave()
         cleanupNotchWindow()
 
         if Thread.isMainThread {
@@ -1025,7 +1045,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var isCreatingNotchWindow = false
 
     func createNotchWindow() {
-        // Prevent concurrent/duplicate creation
         guard !isCreatingNotchWindow else { return }
         isCreatingNotchWindow = true
         defer { isCreatingNotchWindow = false }
@@ -1046,14 +1065,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         guard let mainScreen = targetScreen else { return }
 
-        // If window already exists on the correct screen, just ensure it's visible
         if let existingWindow = notchWindow, existingWindow.screen == mainScreen, existingWindow.isVisible {
-            // Update sharing type in case it changed
             existingWindow.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
             return
         }
 
-        // Clean up existing window synchronously
         if let oldWindow = notchWindow {
             cgsSpace?.windows.remove(oldWindow)
             oldWindow.orderOut(nil)
@@ -1062,10 +1078,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         let screenFrame = mainScreen.frame
         let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings)
-        let paddedWidth = ceil(max(initialConfig.initialSize.width + 8, screenFrame.width * 0.72))
+        let paddedWidth = ceil(screenFrame.width)
         let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
         let rect = NSRect(
-            x: screenFrame.midX - (paddedWidth / 2),
+            x: screenFrame.minX,
             y: screenFrame.maxY - paddedHeight,
             width: paddedWidth,
             height: paddedHeight
@@ -1090,9 +1106,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         cgsSpace?.windows.insert(window)
 
         let controllerView = NotchController(notchWindow: window)
-        let container = VStack(spacing: 0) {
+        let container = ZStack(alignment: .top) {
             controllerView
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
@@ -1120,6 +1135,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         )
         hosting.frame = NSRect(origin: .zero, size: rect.size)
         hosting.autoresizingMask = [.width, .height]
+        hosting.sizingOptions = []
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         window.contentView = hosting
@@ -1144,12 +1160,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard let window = notchWindow as? DynamicFocusWindow else { return }
         if window.isKeyWindow { window.resignKey() }
         window.isFocusable = false
-        window.ignoresMouseEvents = true
+        window.syncMouseEventPassthrough()
         if NSApp.activationPolicy() != .accessory {
             NSApp.setActivationPolicy(.accessory)
         }
         previouslyFrontmostApp?.activate(options: [.activateIgnoringOtherApps])
         previouslyFrontmostApp = nil
+    }
+
+    func refreshNotchMousePassthrough() {
+        (notchWindow as? DynamicFocusWindow)?.syncMouseEventPassthrough()
     }
 
     // MARK: - Settings Window
@@ -1161,15 +1181,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 950, height: 650)
+        let size = UtilityWindowMetrics.settingsDefaultSize()
+        let frame = UtilityWindowMetrics.centeredFrame(size: size)
         let window = KeyableWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 950, height: visibleFrame.height),
+            contentRect: frame,
             styleMask: [.borderless, .resizable, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        let windowSize = NSSize(width: 950, height: visibleFrame.height)
-        let windowOrigin = NSPoint(x: visibleFrame.midX - windowSize.width / 2, y: visibleFrame.minY)
-        window.setFrame(NSRect(origin: windowOrigin, size: windowSize), display: false)
+        window.setFrame(frame, display: false)
+        window.minSize = NSSize(
+            width: NotchConfiguration.settingsWindowMinWidth,
+            height: NotchConfiguration.settingsWindowMinHeight
+        )
+        window.maxSize = NSSize(
+            width: visibleFrame.width,
+            height: visibleFrame.height
+        )
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false

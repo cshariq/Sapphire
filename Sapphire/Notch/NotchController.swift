@@ -97,7 +97,8 @@ struct NotchController: View {
     }
 
     private static let widgetSwitchProtectionDuration: TimeInterval = 2.5
-    private static let hoverExitMargin: CGFloat = 8
+    private static let hoverDetectionMargin: CGFloat = 8
+    private static let hoverProximityMargin: CGFloat = 32
 
     // MARK: - Environment Objects
     @EnvironmentObject var liveActivityManager: LiveActivityManager
@@ -159,8 +160,6 @@ struct NotchController: View {
     @State private var hudOverlayOpacity: Double = 0.0
     @State private var hudOverlayBlur: CGFloat = 10.0
 
-    @State private var dropZoneFrames: [DropZone: CGRect] = [:]
-    @State private var hoverDetectionTimer: Timer?
     @State private var notchInteractionPollingTimer: Timer?
     @State private var lastSampledMouseLocation: CGPoint?
     @State private var lastPublishedInteractiveFrame: CGRect = .null
@@ -430,6 +429,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             .contentShape(activeShape)
             .onDrop(of: [UTType.fileURL, .plainText], isTargeted: $isFileDropTargeted, perform: handleItemDrop)
             .padding(.top, -config.topBuffer)
+            .frame(maxWidth: .infinity, alignment: .top)
             .onAppear(perform: setupMonitors)
             .onDisappear(perform: teardownMonitors)
             .onChange(of: fileShelfState.selectedItemForPreview, perform: handlePreviewItemChange)
@@ -476,6 +476,14 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 updateMouseEventHandling(isInteractive: newValue)
                 restartNotchInteractionMonitoring()
             }
+            .onChange(of: animatedWidth) { _, _ in
+                guard isInteractive else { return }
+                updateMouseEventHandling(isInteractive: true)
+            }
+            .onChange(of: animatedHeight) { _, _ in
+                guard isInteractive else { return }
+                updateMouseEventHandling(isInteractive: true)
+            }
             .onChange(of: shouldHideWindowForSharing) { _, newValue in updateWindowSharingBehavior(shouldBeHidden: newValue) }
             .onChange(of: isInteractive) { _, isNowInteractive in
                 if isNowInteractive {
@@ -489,9 +497,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 self.config = newConfig
                 self.expansionAnimation = newConfig.expandAnimation
                 handleStateChange(from: notchState, to: notchState)
-            }
-            .onPreferenceChange(DropZonePreferenceKey.self) { value in
-                self.dropZoneFrames = value
             }
         } else {
             Color.clear
@@ -516,28 +521,24 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         if #available(macOS 26.0, *), appearance.liquidGlassLook {
             let intensity = appearance.liquidGlassIntensity
             let material = LiquidGlassMaterial.forIntensity(intensity)
-            let params = LiquidGlassIntensityParams.resolve(intensity)
 
             ZStack {
-                // Base fill (gradient/solid/radial) - shows through the glass
-                activeShape
-                    .fill(notchFillMaterial)
-                    .opacity(appearance.opacity)
-
-                // Liquid glass effect on top with notch shape mask
                 LiquidGlassShapeFill(
                     material: material,
                     shape: activeShape,
-                    cornerRadius: 0, // Shape handles corners
+                    cornerRadius: 0,
                     tint: nil,
                     intensity: intensity,
                     blendingMode: .behindWindow,
                     appearance: .dark,
                     interaction: .normal
                 )
+
+                activeShape
+                    .fill(notchFillMaterial)
+                    .opacity(appearance.opacity)
             }
             .contentShape(activeShape)
-            .clipShape(activeShape)
             .onTapGesture(perform: handleTap)
         } else {
             ZStack {
@@ -1178,7 +1179,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         cancelWidgetSwitchProtection()
         cancellables.removeAll()
         stopNotchInteractionMonitoring()
-        stopHoverDetection()
         MenuBarInteractionManager.shared.startMonitoring()
     }
 
@@ -1422,7 +1422,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 animatedHeight = max(measuredAutoContentSize.height, config.initialSize.height)
                 animatedContentScale = 1.0
             }
-            
+
             DispatchQueue.main.asyncAfter(deadline: .now() + config.activitySizeChangeDelay) {
                 withAnimation(config.blurRemovalAnimation) {
                     self.activityBlurRadius = 0; self.activityContentScale = 1.0
@@ -1472,7 +1472,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func handleItemDrop(providers: [NSItemProvider]) -> Bool {
-        let capturedDropZone = determineActiveDropZone()
+        let capturedDropZone = activeDropZone
         dragState.didJustDrop = true
         NotificationCenter.default.post(name: .fileDropFlowCompleted, object: nil)
 
@@ -1525,8 +1525,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
             awaitingDropCompletion = false
 
-            startHoverDetection()
-
             if isFileDropTargeted {
                 (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
                 let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
@@ -1543,7 +1541,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
         } else {
             try? await Task.sleep(for: .milliseconds(50))
-            stopHoverDetection()
             (NSApp.delegate as? AppDelegate)?.revertNotchWindowFocus()
 
             if dragState.didJustDrop {
@@ -1606,7 +1603,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 animatedWidth = newSize.width
                 animatedHeight = newSize.height
             }
-            
+
         } else if state == .autoExpanded {
             updateAutoContentSize()
         }
@@ -1752,35 +1749,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     // MARK: - Helper Methods
-    private func startHoverDetection() {
-        stopHoverDetection()
-        hoverDetectionTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            let newActiveZone = self.determineActiveDropZone()
-            if self.activeDropZone != newActiveZone {
-                self.activeDropZone = newActiveZone
-            }
-        }
-    }
-
-    private func determineActiveDropZone() -> DropZone? {
-        let mouseLocation = NSEvent.mouseLocation
-
-        for (zone, frame) in self.dropZoneFrames {
-            if frame.contains(mouseLocation) {
-                return zone
-            }
-        }
-        return nil
-    }
-
-    private func stopHoverDetection() {
-        hoverDetectionTimer?.invalidate()
-        hoverDetectionTimer = nil
-        if activeDropZone != nil {
-            activeDropZone = nil
-        }
-    }
-
     private func startNotchInteractionMonitoring() {
         guard notchInteractionPollingTimer == nil else { return }
 
@@ -1814,14 +1782,15 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
         lastSampledMouseLocation = mouseLocation
 
-        if !isInteractive && !isMouseNearNotchWindow(window) {
+        let interactiveBounds = interactiveFrame(for: window, config: config)
+
+        if !isInteractive && !isMouseNearNotchFrame(interactiveBounds, mouseLocation: mouseLocation) {
             if isHovered {
                 handleHover(hovering: false)
             }
             return
         }
 
-        let interactiveBounds = interactiveFrame(for: window, config: config)
         if interactiveBounds != lastPublishedInteractiveFrame {
             lastPublishedInteractiveFrame = interactiveBounds
             updateMouseEventHandling(isInteractive: isInteractive)
@@ -1831,9 +1800,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             return
         }
 
-        let detectionBounds = isHovered
-            ? interactiveBounds.insetBy(dx: -Self.hoverExitMargin, dy: -Self.hoverExitMargin)
-            : interactiveBounds
+        let detectionBounds = interactiveBounds.insetBy(
+            dx: -Self.hoverDetectionMargin,
+            dy: -Self.hoverDetectionMargin
+        )
         let isPointerInside = detectionBounds.contains(mouseLocation)
 
         if isPointerInside != isHovered {
@@ -1841,9 +1811,12 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
     }
 
-    private func isMouseNearNotchWindow(_ window: NSWindow) -> Bool {
-        let mouseLocation = NSEvent.mouseLocation
-        let proximityFrame = window.frame.insetBy(dx: -240, dy: -140)
+    private func isMouseNearNotchFrame(_ notchFrame: CGRect, mouseLocation: CGPoint) -> Bool {
+        guard !notchFrame.isEmpty else { return false }
+        let proximityFrame = notchFrame.insetBy(
+            dx: -Self.hoverProximityMargin,
+            dy: -Self.hoverProximityMargin
+        )
         return proximityFrame.contains(mouseLocation)
     }
 
@@ -1851,40 +1824,24 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         let contentBounds = window.contentView?.bounds ?? .zero
         guard !contentBounds.isEmpty else { return .zero }
 
-        if notchState == .clickExpanded {
-            if isPinned {
-                let notchHeight = animatedHeight
-                let notchWidth = animatedWidth
-                let topInset = config.topBuffer
-                return CGRect(
-                    x: contentBounds.midX - (notchWidth / 2),
-                    y: contentBounds.maxY - notchHeight - topInset,
-                    width: notchWidth,
-                    height: notchHeight
-                ).integral.insetBy(dx: -1, dy: -1)
-            }
-            return contentBounds.integral.insetBy(dx: -1, dy: -1)
+        let notchWidth: CGFloat
+        let notchHeight: CGFloat
+        switch notchState {
+        case .initial:
+            notchWidth = config.initialSize.width
+            notchHeight = config.initialSize.height
+        case .hoverExpanded, .autoExpanded, .clickExpanded:
+            notchWidth = animatedWidth
+            notchHeight = animatedHeight
         }
 
-        let horizontalAllowance = min(4, max(1, config.contentHorizontalPadding * 0.08))
-        let topExtension = min(6, max(2, config.topBuffer + 2))
-        let bottomTrim = min(8, max(3, config.contentTopPadding * 0.45))
-        let frameWidth = min(contentBounds.width, animatedWidth + (horizontalAllowance * 2))
-        let frameHeight = min(contentBounds.height + topExtension, animatedHeight + topExtension)
-        let baseFrame = CGRect(
-            x: contentBounds.midX - (frameWidth / 2),
-            y: contentBounds.maxY - animatedHeight,
-            width: frameWidth,
-            height: frameHeight
-        )
-
+        let topInset = config.topBuffer
         return CGRect(
-            x: baseFrame.minX,
-            y: baseFrame.minY + bottomTrim,
-            width: baseFrame.width,
-            height: max(0, baseFrame.height - bottomTrim)
-        )
-        .integral
+            x: contentBounds.midX - (notchWidth / 2),
+            y: contentBounds.maxY - notchHeight - topInset,
+            width: notchWidth,
+            height: notchHeight
+        ).integral.insetBy(dx: -1, dy: -1)
     }
 
     private func toRestorableMenu(mode: NotchWidgetMode) -> RestorableNotchMenu? {
@@ -2000,6 +1957,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
         if let dynamicWindow = window as? DynamicFocusWindow {
             dynamicWindow.updateInteractiveContentFrame(interactiveFrame(for: dynamicWindow, config: config))
+            if isInteractive {
+                dynamicWindow.syncMouseEventPassthrough()
+            }
         } else if window.contentView != nil {
             let shouldIgnore = !isInteractive
             if window.ignoresMouseEvents != shouldIgnore {
@@ -2046,6 +2006,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard let window = notchWindow, let config = config, !isPinned else { return }
         let mouseLocation = window.mouseLocationOutsideOfEventStream
         let interactiveBounds = interactiveFrame(for: window, config: config)
+            .insetBy(dx: -Self.hoverDetectionMargin, dy: -Self.hoverDetectionMargin)
         guard !interactiveBounds.contains(mouseLocation) else { return }
         guard !dragManager.isDraggingInActivationZone && !activeAppMonitor.isWindowDragging else { return }
         scheduleCollapse(after: 0)

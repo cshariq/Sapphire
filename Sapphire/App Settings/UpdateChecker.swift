@@ -36,6 +36,16 @@ enum UpdateStatus: Equatable {
     case downloaded(path: URL)
     case installing
     case error(String)
+
+    var isUpdateAvailable: Bool {
+        if case .available = self { return true }
+        return false
+    }
+}
+
+private struct PersistedAvailableUpdate: Codable {
+    let version: String
+    let asset: GitHubReleaseAsset
 }
 
 @MainActor
@@ -50,9 +60,49 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var initialCheckWorkItem: DispatchWorkItem?
     private var lastBackgroundCheck: Date = .distantPast
     private let minimumBackgroundCheckGap: TimeInterval = 30 * 60
+    private let persistedAvailableUpdateKey = "SapphirePersistedAvailableUpdate"
 
     private override init() {
         super.init()
+        restorePersistedAvailableUpdateIfNeeded()
+    }
+
+    private func applyStatus(_ newStatus: UpdateStatus) {
+        let wasAvailable = status.isUpdateAvailable
+        guard status != newStatus else { return }
+        status = newStatus
+
+        switch newStatus {
+        case .available(let version, let asset):
+            persistAvailableUpdate(version: version, asset: asset)
+            if !wasAvailable {
+                NotificationCenter.default.post(name: .sapphireUpdateAvailable, object: version)
+            }
+        case .upToDate:
+            clearPersistedAvailableUpdate()
+        default:
+            break
+        }
+    }
+
+    private func persistAvailableUpdate(version: String, asset: GitHubReleaseAsset) {
+        let persisted = PersistedAvailableUpdate(version: version, asset: asset)
+        guard let data = try? JSONEncoder().encode(persisted) else { return }
+        UserDefaults.standard.set(data, forKey: persistedAvailableUpdateKey)
+    }
+
+    private func clearPersistedAvailableUpdate() {
+        UserDefaults.standard.removeObject(forKey: persistedAvailableUpdateKey)
+    }
+
+    private func restorePersistedAvailableUpdateIfNeeded() {
+        guard let data = UserDefaults.standard.data(forKey: persistedAvailableUpdateKey),
+              let persisted = try? JSONDecoder().decode(PersistedAvailableUpdate.self, from: data),
+              persisted.version.compare(currentAppVersion, options: .numeric) == .orderedDescending else {
+            clearPersistedAvailableUpdate()
+            return
+        }
+        status = .available(version: persisted.version, asset: persisted.asset)
     }
 
     func checkForUpdates() {
@@ -60,9 +110,9 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         if case .downloading = status { return }
         if case .installing = status { return }
 
-        self.status = .checking
+        applyStatus(.checking)
         guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases/latest") else {
-            self.status = .error("Invalid update URL"); return
+            applyStatus(.error("Invalid update URL")); return
         }
 
         let config = URLSessionConfiguration.default
@@ -70,23 +120,23 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         config.timeoutIntervalForResource = 15
         URLSession(configuration: config).dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
-                if let error = error { self.status = .error(error.localizedDescription); return }
-                guard let data = data else { self.status = .error("No data received."); return }
+                if let error = error { self.applyStatus(.error(error.localizedDescription)); return }
+                guard let data = data else { self.applyStatus(.error("No data received.")); return }
                 do {
                     let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
                     let latestVersion = release.name.replacingOccurrences(of: "v", with: "")
 
                     if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
                         if let asset = release.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? release.assets.first(where: { $0.name.hasSuffix(".pkg") }) {
-                            self.status = .available(version: latestVersion, asset: asset)
+                            self.applyStatus(.available(version: latestVersion, asset: asset))
                         } else {
-                            self.status = .error("No suitable download file found.")
+                            self.applyStatus(.error("No suitable download file found."))
                         }
                     } else {
-                        self.status = .upToDate
+                        self.applyStatus(.upToDate)
                     }
                 } catch {
-                    self.status = .error("Failed to parse update information.")
+                    self.applyStatus(.error("Failed to parse update information."))
                 }
             }
         }.resume()
@@ -97,9 +147,9 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         if case .downloading = status { return }
         if case .installing = status { return }
 
-        self.status = .checking
+        applyStatus(.checking)
         guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases?per_page=5") else {
-            self.status = .error("Invalid beta update URL"); return
+            applyStatus(.error("Invalid beta update URL")); return
         }
 
         let config = URLSessionConfiguration.default
@@ -107,26 +157,26 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         config.timeoutIntervalForResource = 15
         URLSession(configuration: config).dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
-                if let error = error { self.status = .error(error.localizedDescription); return }
-                guard let data = data else { self.status = .error("No data received."); return }
+                if let error = error { self.applyStatus(.error(error.localizedDescription)); return }
+                guard let data = data else { self.applyStatus(.error("No data received.")); return }
                 do {
                     let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
                     guard let betaRelease = releases.first(where: { $0.prerelease }) else {
-                        self.status = .upToDate
+                        self.applyStatus(.upToDate)
                         return
                     }
                     let latestVersion = betaRelease.name.replacingOccurrences(of: "v", with: "")
                     if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
                         if let asset = betaRelease.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? betaRelease.assets.first(where: { $0.name.hasSuffix(".pkg") }) {
-                            self.status = .available(version: latestVersion, asset: asset)
+                            self.applyStatus(.available(version: latestVersion, asset: asset))
                         } else {
-                            self.status = .error("No suitable beta download file found.")
+                            self.applyStatus(.error("No suitable beta download file found."))
                         }
                     } else {
-                        self.status = .upToDate
+                        self.applyStatus(.upToDate)
                     }
                 } catch {
-                    self.status = .error("Failed to parse beta update information.")
+                    self.applyStatus(.error("Failed to parse beta update information."))
                 }
             }
         }.resume()
@@ -164,7 +214,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
             self?.checkInBackgroundIfNeeded(force: true)
         }
         initialCheckWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: work)
 
         let safeInterval = max(interval, 60 * 60)
         timer = Timer.scheduledTimer(withTimeInterval: safeInterval, repeats: true) { [weak self] _ in
@@ -204,7 +254,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         downloadTask = session.downloadTask(with: asset.browserDownloadUrl)
         downloadTask?.resume()
 
-        self.status = .downloading(progress: 0.0)
+        applyStatus(.downloading(progress: 0.0))
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
@@ -218,19 +268,19 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
             try fileManager.copyItem(at: location, to: destinationURL)
             DispatchQueue.main.async {
                 self.downloadedAssetPath = destinationURL
-                self.status = .downloaded(path: destinationURL)
+                self.applyStatus(.downloaded(path: destinationURL))
             }
         } catch {
-            DispatchQueue.main.async { self.status = .error("Failed to move update to temp folder.") }
+            DispatchQueue.main.async { self.applyStatus(.error("Failed to move update to temp folder.")) }
         }
     }
 
     func installAndRelaunch() {
         guard let downloadedZipPath = downloadedAssetPath else {
-            self.status = .error("Downloaded file path not found."); return
+            applyStatus(.error("Downloaded file path not found.")); return
         }
 
-        self.status = .installing
+        applyStatus(.installing)
 
         Task.detached(priority: .userInitiated) {
             do {
@@ -276,9 +326,9 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 let success = await MainActor.run { () -> Bool in
                     if scriptObject.executeAndReturnError(&error) == nil {
                         if let err = error, let errNum = err[NSAppleScript.errorNumber] as? Int, errNum == -128 {
-                            self.status = .downloaded(path: downloadedZipPath)
+                            self.applyStatus(.downloaded(path: downloadedZipPath))
                         } else {
-                            self.status = .error("Installer script failed: \(error?[NSAppleScript.errorMessage] ?? "Unknown error")")
+                            self.applyStatus(.error("Installer script failed: \(error?[NSAppleScript.errorMessage] ?? "Unknown error")"))
                         }
                         return false
                     }
@@ -293,7 +343,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
             } catch {
                 await MainActor.run {
-                    self.status = .error(error.localizedDescription)
+                    self.applyStatus(.error(error.localizedDescription))
                 }
             }
         }
@@ -301,7 +351,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error, (error as NSError).code != NSURLErrorCancelled {
-            DispatchQueue.main.async { self.status = .error("Download failed: \(error.localizedDescription)") }
+            DispatchQueue.main.async { self.applyStatus(.error("Download failed: \(error.localizedDescription)")) }
         }
     }
 
@@ -310,7 +360,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
         DispatchQueue.main.async {
             if case .downloading = self.status {
-                self.status = .downloading(progress: progress)
+                self.applyStatus(.downloading(progress: progress))
             }
         }
     }

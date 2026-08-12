@@ -99,7 +99,7 @@ struct OnboardingView: View {
         }
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .frame(width: 1200, height: 900)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -643,7 +643,10 @@ private struct SubscriptionOverviewStepView: View {
             NativePaymentSheetView(tier: selectedCheckoutTier, deviceCount: 1, isAddingOnly: false) {
                 showUpgradeSheet = false
             }
-            .frame(width: 820, height: 750)
+            .frame(
+                width: min(820, (NSScreen.main?.visibleFrame.width ?? 820) * 0.80),
+                height: min(750, (NSScreen.main?.visibleFrame.height ?? 750) * 0.75)
+            )
         }
         .onAppear {
             Task { await subscriptionManager.bootstrap() }

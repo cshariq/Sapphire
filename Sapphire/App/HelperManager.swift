@@ -38,7 +38,7 @@ class HelperManager: ObservableObject {
     private var alertShowing = false
     private var lastAlertTime: Date?
     private let maxReactivationFailuresBeforeAlert = 3
-    private let alertCooldownInterval: TimeInterval = 3600 // 1 hour
+    private let alertCooldownInterval: TimeInterval = 3600
 
     private init() {
         helperLogger.info("[HelperManager] Initialized")
@@ -80,7 +80,6 @@ class HelperManager: ObservableObject {
                 if self.isRunning != running {
                     self.isRunning = running
                 }
-                // If helper is installed but not running, try to reactivate it
                 if self.status == .enabled && !running && !self.isReactivating {
                     helperLogger.warning("[HelperManager] Helper installed but not running - triggering reactivation")
                     self.reactivateHelper()
@@ -113,7 +112,6 @@ class HelperManager: ObservableObject {
 
         if reactivationFailureCount >= maxReactivationFailuresBeforeAlert {
             showHelperAlertIfNeeded()
-            // Switch to slower check interval (every minute) after showing alert
             startHealthCheckTimer(interval: 60)
         }
     }
@@ -138,7 +136,7 @@ class HelperManager: ObservableObject {
         }
     }
 
-    func startHealthCheckTimer(interval: TimeInterval = 30) {
+    func startHealthCheckTimer(interval: TimeInterval = 1800) {
         healthCheckTimer?.invalidate()
         healthCheckTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -148,7 +146,6 @@ class HelperManager: ObservableObject {
         if let timer = healthCheckTimer {
             RunLoop.main.add(timer, forMode: .common)
         }
-        // Initial check
         helperLogger.info("[HelperManager] Starting health check timer (interval: \(interval)s)")
         checkIfRunning()
     }

@@ -23,7 +23,6 @@ struct SettingsDetailView: View {
         )
     }
 
-
     var body: some View {
         VStack {
             if let selectedSection, isSelectedSectionLocked {
@@ -3369,7 +3368,10 @@ struct ProximityUnlockSettingsView: View {
             .padding(25)
         }
         .sheet(isPresented: $showPasswordPrompt) {
-            PasswordPromptView(isPresented: $showPasswordPrompt) { password in
+            PasswordPromptView(
+                isPresented: $showPasswordPrompt,
+                validate: { authManager.verifyMacLoginPassword($0) }
+            ) { password in
                 if authManager.verifyAndSavePassword(password) {
                     showPasswordPrompt = false
                 }
@@ -6435,7 +6437,7 @@ struct BatteryConfigurationView: View {
     @ViewBuilder private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Notifications & Live Activity").font(.headline).padding([.top, .horizontal])
-            CustomSliderRowView(label: "Notify when battery is below", value: Binding(get: { Double(settings.settings.lowBatteryNotificationPercentage) }, set: { settings.settings.lowBatteryNotificationPercentage = Int($0) }), range: 10...50, specifier: "%.0f %%")
+            CustomSliderRowView(label: "Notify when battery is below", value: Binding(get: { Double(settings.settings.lowBatteryNotificationPercentage) }, set: { settings.settings.lowBatteryNotificationPercentage = Int($0) }), range: 10...50, specifier: "%.0f %%", commitsContinuously: true)
             Divider().padding(.leading, 20)
             ToggleRow(title: "Play Sound for Low Battery Alert", description: "Get an audible alert when your battery is running low.", isOn: $settings.settings.lowBatteryNotificationSoundEnabled)
             Divider().padding(.leading, 20)
@@ -6448,16 +6450,16 @@ struct BatteryConfigurationView: View {
     @ViewBuilder private var coreFeaturesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Battery Management Features").font(.headline).padding([.top, .horizontal])
-            CustomSliderRowView(label: "Charge Limit", value: Binding(get: { Double(settings.settings.batteryChargeLimit) }, set: { settings.settings.batteryChargeLimit = Int($0) }), range: 50...100, specifier: "%.0f %%")
+            CustomSliderRowView(label: "Charge Limit", value: Binding(get: { Double(settings.settings.batteryChargeLimit) }, set: { settings.settings.batteryChargeLimit = Int($0) }), range: 50...100, specifier: "%.0f %%", commitsContinuously: true)
             Divider().padding(.leading, 20)
             ToggleRow(title: "Sailing Mode", description: "Prevents battery wear from constant micro-charging cycles when plugged in for long periods. Charging will pause at the limit and only resume when the battery drops by a set amount.", isOn: $settings.settings.sailingModeEnabled)
             if settings.settings.sailingModeEnabled {
-                 CustomSliderRowView(label: "Resume charging below", value: Binding(get: { Double(settings.settings.sailingModeLowerLimit) }, set: { settings.settings.sailingModeLowerLimit = Int($0) }), range: 5...20, specifier: "%.0f%% below limit")
+                 CustomSliderRowView(label: "Resume charging below", value: Binding(get: { Double(settings.settings.sailingModeLowerLimit) }, set: { settings.settings.sailingModeLowerLimit = Int($0) }), range: 5...20, specifier: "%.0f%% below limit", commitsContinuously: true)
             }
             Divider().padding(.leading, 20)
             ToggleRow(title: "Heat Protection", description: "Automatically pauses charging if the battery temperature gets too high to prevent heat-related damage and extend its lifespan.", isOn: $settings.settings.heatProtectionEnabled)
             if settings.settings.heatProtectionEnabled {
-                 CustomSliderRowView(label: "Pause charging above", value: $settings.settings.heatProtectionThreshold, range: 35...50, specifier: "%.0f °C")
+                 CustomSliderRowView(label: "Pause charging above", value: $settings.settings.heatProtectionThreshold, range: 35...50, specifier: "%.0f °C", commitsContinuously: true)
             }
         }
         .modifier(SettingsContainerModifier()).animation(.default, value: settings.settings.sailingModeEnabled || settings.settings.heatProtectionEnabled)

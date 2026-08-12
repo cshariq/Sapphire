@@ -74,7 +74,7 @@ final class MenuBarInteractionManager {
     private func startHoverMonitoring() {
         guard pollingTimer == nil else { return }
 
-        let interval: TimeInterval = NotchRuntimeState.shared.shouldReduceBackgroundWork ? 2.5 : 1.0
+        let interval: TimeInterval = 0.05
         let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.checkMousePosition()
         }

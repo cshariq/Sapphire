@@ -28,8 +28,7 @@ class SpotifyOfficialAPIManager: ObservableObject {
 
     private init() {
         loadCredentials()
-        
-        // Observe APIKeyManager changes for Spotify credentials
+
         NotificationCenter.default.publisher(for: .apiKeyManagerSpotifyCredentialsChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in

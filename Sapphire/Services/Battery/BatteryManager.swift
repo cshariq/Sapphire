@@ -250,12 +250,11 @@ class BatteryManager {
     private let connectionLock = NSLock()
     private var batteryService: io_connect_t = 0
 
-    // Circuit breaker state
     private var consecutiveFailures = 0
     private var lastFailureTime: Date?
     private let maxConsecutiveFailures = 3
-    private let circuitBreakerResetInterval: TimeInterval = 60 // 1 minute
-    private let circuitBreakerCooldownInterval: TimeInterval = 3600 // 1 hour
+    private let circuitBreakerResetInterval: TimeInterval = 60
+    private let circuitBreakerCooldownInterval: TimeInterval = 3600
     private var isCircuitOpen = false
     private var circuitBreakerTimer: Timer?
 
@@ -298,13 +297,11 @@ class BatteryManager {
 
         let timeSinceFailure = Date().timeIntervalSince(lastFailure)
 
-        // If cooldown period passed, try to reset circuit
         if timeSinceFailure >= circuitBreakerCooldownInterval {
             helperLogger.info("[BatteryManager] Circuit breaker cooldown passed, attempting reconnection...")
             isCircuitOpen = false
             consecutiveFailures = 0
             lastFailureTime = nil
-            // Try to reconnect
             if let connection = helperConnection {
                 connection.invalidationHandler = nil
                 connection.interruptionHandler = nil
@@ -385,7 +382,6 @@ class BatteryManager {
             connectionLock.lock()
         }
 
-        // Check circuit breaker
         if isCircuitOpen {
             connectionLock.unlock()
             return nil
@@ -398,7 +394,6 @@ class BatteryManager {
 
         return connection?.remoteObjectProxyWithErrorHandler { error in
             recordFailure()
-            // Only log first few failures, then silence
             if (self.consecutiveFailures) <= maxConsecutiveFailures {
                 print("[BatteryManager] XPC remote object error: \(error.localizedDescription)")
             }
@@ -436,7 +431,7 @@ class BatteryManager {
     ) async -> T {
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
-        
+
         return await withCheckedContinuation { (continuation: CheckedContinuation<T, Never>) in
             let lock = NSLock()
             var resumed = false

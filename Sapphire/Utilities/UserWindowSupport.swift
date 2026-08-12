@@ -12,6 +12,7 @@ extension Notification.Name {
     static let sapphireHelperConnectionRestored = Notification.Name("sapphireHelperConnectionRestored")
     static let sapphireSettingsWillClose = Notification.Name("sapphireSettingsWillClose")
     static let sapphireTrimSettingsMemory = Notification.Name("sapphireTrimSettingsMemory")
+    static let sapphireUpdateAvailable = Notification.Name("sapphireUpdateAvailable")
 }
 
 enum SapphireStandardMenu {
@@ -51,6 +52,47 @@ enum SapphireStandardMenu {
     }
 }
 
+enum UtilityWindowMetrics {
+    static func settingsDefaultSize(screen: NSScreen? = NSScreen.main) -> NSSize {
+        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 950, height: 650)
+        let width = min(
+            NotchConfiguration.settingsWindowWidth,
+            floor(visible.width * 0.92)
+        )
+        let height = floor(visible.height * 0.96)
+        return NSSize(
+            width: max(NotchConfiguration.settingsWindowMinWidth, width),
+            height: max(NotchConfiguration.settingsWindowMinHeight, height)
+        )
+    }
+
+    static func fittedSize(
+        preferredWidth: CGFloat,
+        preferredHeight: CGFloat,
+        screen: NSScreen? = NSScreen.main,
+        maxWidthFraction: CGFloat = 0.90,
+        maxHeightFraction: CGFloat = 0.82
+    ) -> NSSize {
+        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 720)
+        let maxWidth = floor(visible.width * maxWidthFraction)
+        let maxHeight = floor(visible.height * maxHeightFraction)
+        return NSSize(
+            width: min(preferredWidth, max(1, maxWidth)),
+            height: min(preferredHeight, max(1, maxHeight))
+        )
+    }
+
+    static func centeredFrame(size: NSSize, screen: NSScreen? = NSScreen.main) -> NSRect {
+        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 720)
+        return NSRect(
+            x: visible.midX - size.width / 2,
+            y: visible.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+}
+
 enum UtilityWindowPresenter {
     private static let elevatedWindowLevel = NSWindow.Level.normal
 
@@ -67,7 +109,6 @@ enum UtilityWindowPresenter {
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
-        window.center()
 
         DispatchQueue.main.async {
             window.orderFrontRegardless()

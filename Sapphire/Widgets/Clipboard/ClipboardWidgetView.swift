@@ -257,12 +257,10 @@ struct ClipboardPlayerView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                clipboardManager.copyItem(item)
-            } label: {
-                NotchCapsuleIconLabel(systemName: "doc.on.doc")
-            }
-            .buttonStyle(.plain)
+            CopyAgainButton(
+                isImage: item.isImage,
+                onTap: { clipboardManager.copyItem(item) }
+            )
             .help("Copy again")
         }
         .padding(12)
@@ -286,6 +284,37 @@ struct ClipboardPlayerView: View {
             Button("Copy") { clipboardManager.copyItem(item) }
             Button("Share…") { clipboardManager.shareItem(item) }
             Button("Delete", role: .destructive) { clipboardManager.removeItem(id: item.id) }
+        }
+    }
+
+    private struct CopyAgainButton: View {
+        let isImage: Bool
+        let onTap: () -> Void
+
+        @State private var copied = false
+
+        private var tint: Color { isImage ? .purple : .blue }
+
+        var body: some View {
+            Button {
+                onTap()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { copied = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    withAnimation(.easeInOut(duration: 0.25)) { copied = false }
+                }
+            } label: {
+                ZStack {
+                    NotchCapsuleIconLabel(
+                        systemName: copied ? "checkmark" : "doc.on.doc",
+                        isActive: copied,
+                        activeTint: tint
+                    )
+                    .scaleEffect(copied ? 1.12 : 1.0)
+                    .rotationEffect(.degrees(copied ? -6 : 0))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.55), value: copied)
+                }
+            }
+            .buttonStyle(.plain)
         }
     }
 

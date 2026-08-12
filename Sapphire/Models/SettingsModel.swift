@@ -1111,6 +1111,107 @@ enum ControlItemIconStyle: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Settings Persistence Helpers
+
+private enum SettingsPersistence {
+    static let payloadKey = "sapphire.settings.payload"
+    static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }()
+    static let decoder = JSONDecoder()
+
+    static let legacyAPIKeyUserDefaultsKeys: Set<String> = [
+        "geminiAPIKey",
+        "intelligenceApiKey",
+        "hackClubAPIKey",
+        "openAIAPIKey",
+        "anthropicAPIKey",
+        "openRouterAPIKey",
+        "xaiAPIKey",
+        "nvidiaAPIKey",
+        "spotifyClientId",
+        "spotifyClientSecret",
+        "geminiApiKey",
+        "agentSApiKey",
+    ]
+
+    static let settingsFileName = "settings.json"
+    static let settingsBackupFileName = "settings.backup.json"
+
+    static var directoryURL: URL {
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Sapphire", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    static var fileURL: URL { directoryURL.appendingPathComponent(settingsFileName) }
+    static var backupURL: URL { directoryURL.appendingPathComponent(settingsBackupFileName) }
+
+    static func purgeLegacyAPIKeyUserDefaults() {
+        let defaults = UserDefaults.standard
+        for key in legacyAPIKeyUserDefaultsKeys {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    static func encodeToDictionary(_ settings: Settings) -> [String: Any]? {
+        guard let data = try? encoder.encode(settings),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return object
+    }
+
+    static func decodeFromDictionary(_ dictionary: [String: Any]) -> Settings? {
+        guard JSONSerialization.isValidJSONObject(dictionary),
+              let data = try? JSONSerialization.data(withJSONObject: dictionary),
+              var settings = try? decoder.decode(Settings.self, from: data) else {
+            return nil
+        }
+        settings.normalizeCollectionOrders()
+        return settings
+    }
+
+    static func decodeFromPayload(_ data: Data) -> Settings? {
+        guard var settings = try? decoder.decode(Settings.self, from: data) else { return nil }
+        settings.normalizeCollectionOrders()
+        return settings
+    }
+
+    static func isJSONCompatible(_ value: Any) -> Bool {
+        if value is String || value is Bool || value is NSNull { return true }
+        if value is Int || value is Double || value is Float { return true }
+        if let number = value as? NSNumber { return true }
+        if let array = value as? [Any] { return array.allSatisfy(isJSONCompatible) }
+        if let dictionary = value as? [String: Any] { return dictionary.values.allSatisfy(isJSONCompatible) }
+        if let array = value as? NSArray { return array.allSatisfy { isJSONCompatible($0) } }
+        if let dictionary = value as? NSDictionary {
+            return dictionary.allKeys.allSatisfy { $0 is String } && dictionary.allValues.allSatisfy { isJSONCompatible($0) }
+        }
+        return false
+    }
+
+    static func loadImportedSettingsSnapshot() -> Settings? {
+        for url in [fileURL, backupURL] {
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let data = try? Data(contentsOf: url),
+                  let settings = decodeFromPayload(data) else {
+                continue
+            }
+            return settings
+        }
+        return nil
+    }
+
+    static func removeImportedSettingsSnapshots() {
+        try? FileManager.default.removeItem(at: fileURL)
+        try? FileManager.default.removeItem(at: backupURL)
+    }
+}
+
 // MARK: - SettingsModel Class
 class SettingsModel: ObservableObject {
     static let shared = SettingsModel()
@@ -1136,142 +1237,136 @@ class SettingsModel: ObservableObject {
     private let settingsAccessQueue = DispatchQueue(label: "com.shariq.sapphire.settings.sync.queue")
     private var isApplyingLoadedSettings = false
     private var pendingSaveWorkItem: DispatchWorkItem?
-    private var lastPersistedSnapshot: [String: Any] = [:]
 
     private var encodedCache: [String: Data] = [:]
     private let cacheQueue = DispatchQueue(label: "com.shariq.sapphire.settings.cache")
 
     private init() {
-        loadSettings()
+        _ = APIKeyManager.shared
+        let loaded = Self.readSettingsFromStorage()
+        isApplyingLoadedSettings = true
+        settings = loaded
+        isApplyingLoadedSettings = false
+        applyIntelligenceRuntimePreferences(from: loaded)
+        persistSettingsUnlocked(loaded)
+        SettingsPersistence.removeImportedSettingsSnapshots()
+
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.flushPendingSave()
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.flushPendingSave()
+        }
     }
 
-    private func loadSettings() {
-        settingsAccessQueue.sync {
-            let defaultSettings = Settings()
+    private static func readSettingsFromStorage() -> Settings {
+        SettingsPersistence.purgeLegacyAPIKeyUserDefaults()
+        let defaults = UserDefaults.standard
 
-            guard let data = try? JSONEncoder().encode(defaultSettings),
-                  var dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return
-            }
+        var loaded: Settings
+        if let payload = defaults.data(forKey: SettingsPersistence.payloadKey),
+           let decoded = SettingsPersistence.decodeFromPayload(payload) {
+            loaded = decoded
+        } else if let snapshot = SettingsPersistence.loadImportedSettingsSnapshot() {
+            loaded = snapshot
+        } else if let merged = decodeSettingsFromUserDefaults(defaults) {
+            loaded = merged
+        } else {
+            loaded = Settings()
+        }
 
-            for key in dict.keys {
-                if let savedValue = defaults.object(forKey: key) {
-                    dict[key] = savedValue
-                }
-            }
-
-            do {
-                let mergedData = try JSONSerialization.data(withJSONObject: dict)
-                var loadedSettings = try JSONDecoder().decode(Settings.self, from: mergedData)
-
-                loadedSettings.normalizeCollectionOrders()
-
-                if defaults.object(forKey: "musicLongPressPrevious") == nil {
-                    if loadedSettings.musicHoldSkipForSecondaryActions {
-                        loadedSettings.musicLongPressActionsEnabled = true
-                        loadedSettings.musicLongPressPrevious = .shuffle
-                        loadedSettings.musicLongPressNext = .repeatMode
-                    } else {
-                        loadedSettings.musicLongPressActionsEnabled = false
-                        loadedSettings.musicLongPressPrevious = .seek
-                        loadedSettings.musicLongPressNext = .seek
-                    }
-                }
-
-                loadedSettings.disableUnavailablePremiumFeatures()
-
-                UserDefaults.standard.set(loadedSettings.intelligenceGeminiModel.rawValue, forKey: "geminiModelID")
-                UserDefaults.standard.set(loadedSettings.intelligenceGeminiSpeedMode.rawValue, forKey: "geminiSpeedMode")
-                UserDefaults.standard.set(loadedSettings.intelligenceBackend.rawValue, forKey: "llmBackend")
-                BlipModelPreferences.openAIModel = loadedSettings.intelligenceOpenAIModel.rawValue
-                BlipModelPreferences.anthropicModel = loadedSettings.intelligenceAnthropicModel.rawValue
-                BlipModelPreferences.openRouterModelStored = loadedSettings.intelligenceOpenRouterModel
-                BlipModelPreferences.xaiModel = loadedSettings.intelligenceXAIModel.rawValue
-                BlipModelPreferences.nvidiaModel = loadedSettings.intelligenceNVIDIAModel.rawValue
-
-                if let snapshotData = try? JSONEncoder().encode(loadedSettings),
-                   let snapshot = try? JSONSerialization.jsonObject(with: snapshotData) as? [String: Any] {
-                    lastPersistedSnapshot = snapshot
-                }
-
-                DispatchQueue.main.async {
-                    self.isApplyingLoadedSettings = true
-                    self.settings = loadedSettings
-                    self.isApplyingLoadedSettings = false
-                }
-            } catch {
-                print("Error: Failed to decode settings. Using defaults. \(error)")
+        if defaults.object(forKey: "musicLongPressPrevious") == nil {
+            if loaded.musicHoldSkipForSecondaryActions {
+                loaded.musicLongPressActionsEnabled = true
+                loaded.musicLongPressPrevious = .shuffle
+                loaded.musicLongPressNext = .repeatMode
+            } else {
+                loaded.musicLongPressActionsEnabled = false
+                loaded.musicLongPressPrevious = .seek
+                loaded.musicLongPressNext = .seek
             }
         }
+
+        loaded.disableUnavailablePremiumFeatures()
+        return loaded
+    }
+
+    private static func decodeSettingsFromUserDefaults(_ defaults: UserDefaults) -> Settings? {
+        let fallback = Settings()
+        guard var dictionary = SettingsPersistence.encodeToDictionary(fallback) else {
+            return nil
+        }
+
+        for key in dictionary.keys {
+            guard !SettingsPersistence.legacyAPIKeyUserDefaultsKeys.contains(key),
+                  let savedValue = defaults.object(forKey: key),
+                  SettingsPersistence.isJSONCompatible(savedValue) else {
+                continue
+            }
+
+            var candidate = dictionary
+            candidate[key] = savedValue
+            if SettingsPersistence.decodeFromDictionary(candidate) != nil {
+                dictionary[key] = savedValue
+            }
+        }
+
+        return SettingsPersistence.decodeFromDictionary(dictionary)
+    }
+
+    private func applyIntelligenceRuntimePreferences(from loadedSettings: Settings) {
+        UserDefaults.standard.set(loadedSettings.intelligenceGeminiModel.rawValue, forKey: "geminiModelID")
+        UserDefaults.standard.set(loadedSettings.intelligenceGeminiSpeedMode.rawValue, forKey: "geminiSpeedMode")
+        UserDefaults.standard.set(loadedSettings.intelligenceBackend.rawValue, forKey: "llmBackend")
+        BlipModelPreferences.openAIModel = loadedSettings.intelligenceOpenAIModel.rawValue
+        BlipModelPreferences.anthropicModel = loadedSettings.intelligenceAnthropicModel.rawValue
+        BlipModelPreferences.openRouterModelStored = loadedSettings.intelligenceOpenRouterModel
+        BlipModelPreferences.xaiModel = loadedSettings.intelligenceXAIModel.rawValue
+        BlipModelPreferences.nvidiaModel = loadedSettings.intelligenceNVIDIAModel.rawValue
     }
 
     private func scheduleSaveSettings() {
         pendingSaveWorkItem?.cancel()
+        let snapshot = settings
         let work = DispatchWorkItem { [weak self] in
-            self?.saveSettings()
+            self?.persistSettingsUnlocked(snapshot)
         }
         pendingSaveWorkItem = work
-        settingsAccessQueue.asyncAfter(deadline: .now() + .milliseconds(500), execute: work)
+        settingsAccessQueue.asyncAfter(deadline: .now() + .milliseconds(150), execute: work)
     }
 
     func flushPendingSave() {
         pendingSaveWorkItem?.cancel()
         pendingSaveWorkItem = nil
-        settingsAccessQueue.sync {
-            persistSettingsUnlocked()
-        }
+        persistSettingsUnlocked(settings)
     }
 
-    private func saveSettings() {
-        settingsAccessQueue.async {
-            self.persistSettingsUnlocked()
-        }
-    }
+    private func persistSettingsUnlocked(_ settingsToPersist: Settings? = nil) {
+        var settingsToSave = settingsToPersist ?? settings
+        settingsToSave.normalizeCollectionOrders()
+        applyIntelligenceRuntimePreferences(from: settingsToSave)
 
-    private func persistSettingsUnlocked() {
-        guard let data = try? JSONEncoder().encode(self.settings),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let payload = try? SettingsPersistence.encoder.encode(settingsToSave) else {
+            print("[SettingsModel] Failed to encode settings payload.")
             return
         }
+        defaults.set(payload, forKey: SettingsPersistence.payloadKey)
 
-        for (key, value) in dict {
-            let previous = lastPersistedSnapshot[key]
-            if !Self.isEqualUserDefaultsValue(previous, value) {
+        if let dictionary = SettingsPersistence.encodeToDictionary(settingsToSave) {
+            for (key, value) in dictionary {
                 defaults.set(value, forKey: key)
             }
         }
-        for key in lastPersistedSnapshot.keys where dict[key] == nil {
-            defaults.removeObject(forKey: key)
-        }
-        lastPersistedSnapshot = dict
-    }
 
-    private static func isEqualUserDefaultsValue(_ lhs: Any?, _ rhs: Any?) -> Bool {
-        switch (lhs, rhs) {
-        case (nil, nil):
-            return true
-        case let (l as NSNumber, r as NSNumber):
-            return l.isEqual(to: r)
-        case let (l as String, r as String):
-            return l == r
-        case let (l as Data, r as Data):
-            return l == r
-        case let (l as Date, r as Date):
-            return l == r
-        case let (l as [Any], r as [Any]):
-            guard l.count == r.count else { return false }
-            return zip(l, r).allSatisfy { isEqualUserDefaultsValue($0, $1) }
-        case let (l as [String: Any], r as [String: Any]):
-            guard l.count == r.count else { return false }
-            for (key, lv) in l {
-                guard isEqualUserDefaultsValue(lv, r[key]) else { return false }
-            }
-            return true
-        case let (l as NSObject, r as NSObject):
-            return l.isEqual(r)
-        default:
-            return false
-        }
+        defaults.synchronize()
     }
 
     func makeBackupDocument() -> SettingsBackupDocument {
@@ -1440,9 +1535,6 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
     case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, caffeine, spacer, multiAudio, battery, pin
     var id: String { self.rawValue }
 
-    // `intelligenceLive` is kept as a decodable case so old persisted
-    // `notchButtonOrder` values migrate cleanly, but is excluded from the
-    // visible item list since it is redundant with `intelligence`.
     static let allCases: [NotchButtonType] = [
         .settings, .fileShelf, .notes, .clipboard, .intelligence,
         .caffeine, .spacer, .multiAudio, .battery, .pin,

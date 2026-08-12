@@ -219,8 +219,13 @@ struct NotchConfiguration {
     static var expandButtonAnimationScaleMultiplier: CGFloat = 1.05
 
     // MARK: - Settings Window Configuration
-    static var settingsWindowWidth: CGFloat = 950 * screenWidthAdjustment
-    static var settingsWindowHeight: CGFloat = (NSScreen.main?.visibleFrame.height ?? 650) * 0.95
+    static var settingsWindowWidth: CGFloat = 950
+    static var settingsWindowHeight: CGFloat = 720
+    static var settingsWindowMinWidth: CGFloat = 800
+    static var settingsWindowMinHeight: CGFloat = 520
+
+    static var onboardingWindowWidth: CGFloat = 1200
+    static var onboardingWindowHeight: CGFloat = 820
 
     static var hostWindowMaxWidth: CGFloat = 1400 * screenWidthAdjustment
     static var hostWindowMaxHeight: CGFloat = 720 * screenHeightAdjustment

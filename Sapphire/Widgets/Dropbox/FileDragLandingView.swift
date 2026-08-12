@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 import os.log
 
 extension Notification.Name { static let fileDropFlowCompleted = Notification.Name("fileDropFlowCompleted") }
@@ -35,6 +36,8 @@ struct FileDragLandingView: View {
     @Binding var activeZone: DropZone?
 
     @Environment(\.navigationStack) private var navigationStack
+    @State private var zoneFrames: [DropZone: CGRect] = [:]
+    @State private var pollingTimer: Timer?
 
     var body: some View {
         HStack(spacing: 15) {
@@ -70,6 +73,54 @@ struct FileDragLandingView: View {
         }
         .padding(15)
         .frame(width: mode == .newFile ? 520 : 360, height: 150)
+        .onPreferenceChange(DropZonePreferenceKey.self) { frames in
+            self.zoneFrames = frames
+        }
+        .onAppear(perform: startMonitoring)
+        .onDisappear(perform: stopMonitoring)
+    }
+
+    private func startMonitoring() {
+        stopMonitoring()
+
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { _ in
+            self.updateActiveState()
+        }
+    }
+
+    private func stopMonitoring() {
+        pollingTimer?.invalidate()
+        pollingTimer = nil
+        activeZone = nil
+    }
+
+    private func updateActiveState() {
+        guard let globalMousePoint = (notchWindow ?? NSWindow.visibleNotchWindow)?.swiftUIGlobalMouseLocation else {
+            return
+        }
+
+        if !zoneFrames.isEmpty {
+            let totalWidgetFrame = zoneFrames.values.reduce(CGRect.null) { $0.union($1) }
+            if !totalWidgetFrame.insetBy(dx: -50, dy: -50).contains(globalMousePoint) {
+                if activeZone != nil { activeZone = nil }
+                return
+            }
+        }
+
+        var newHover: DropZone? = nil
+
+        for (zone, frame) in zoneFrames {
+            guard frame.contains(globalMousePoint) else { continue }
+            newHover = zone
+            break
+        }
+
+        guard activeZone != newHover else { return }
+        activeZone = newHover
+    }
+
+    private var notchWindow: NSWindow? {
+        NSWindow.visibleNotchWindow
     }
 }
 

@@ -248,24 +248,28 @@ final class LiquidGlassHostView: NSView {
     private var effectView: NSView?
     private var currentBlendingMode: LiquidGlassBlendingMode = .behindWindow
     private var maskCGPath: CGPath?
+    private let pathMaskLayer: CAShapeLayer = {
+        let layer = CAShapeLayer()
+        layer.fillColor = NSColor.black.cgColor
+        layer.backgroundColor = nil
+        return layer
+    }()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.isOpaque = false
-        layer?.backgroundColor = NSColor.clear.cgColor
+        configureHostLayer()
         rebuildEffectView()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        wantsLayer = true
-        layer?.isOpaque = false
-        layer?.backgroundColor = NSColor.clear.cgColor
+        configureHostLayer()
         rebuildEffectView()
     }
 
     override var isOpaque: Bool { false }
+
+    override var isFlipped: Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -321,28 +325,34 @@ final class LiquidGlassHostView: NSView {
         applyPathMaskIfNeeded()
     }
 
+    private func configureHostLayer() {
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 0
+        layer?.masksToBounds = false
+    }
+
     private func rebuildEffectView() {
         effectView?.removeFromSuperview()
         let glass = GlassRuntime.makeEffectView(frame: bounds)
+        glass.wantsLayer = true
+        glass.layer?.masksToBounds = false
         addSubview(glass, positioned: .below, relativeTo: nil)
         effectView = glass
     }
 
     private func applyPathMaskIfNeeded() {
-        guard let path = maskCGPath else {
+        guard let path = maskCGPath, !bounds.isEmpty else {
             layer?.mask = nil
+            effectView?.layer?.mask = nil
             return
         }
 
-        var flip = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: bounds.height)
-        let layerPath = path.copy(using: &flip) ?? path
-
-        let mask = CAShapeLayer()
-        mask.frame = bounds
-        mask.path = layerPath
-        mask.fillColor = NSColor.black.cgColor
-        layer?.mask = mask
-        layer?.masksToBounds = true
+        pathMaskLayer.frame = bounds
+        pathMaskLayer.path = path
+        layer?.mask = pathMaskLayer
+        effectView?.layer?.mask = nil
     }
 }
 
@@ -411,18 +421,23 @@ struct LiquidGlassShapeFill<S: Shape>: View {
         GeometryReader { geo in
             let rect = CGRect(origin: .zero, size: geo.size)
             let path = shape.path(in: rect)
-            LiquidGlassView(
-                material: resolvedMaterial,
-                cornerRadius: cornerRadius,
-                tintColor: resolvedTint(alpha: params.tintAlpha),
-                blendingMode: blendingMode,
-                appearance: appearance,
-                interaction: interaction,
-                contentLensing: params.contentLensing,
-                scrim: params.scrim,
-                subdued: params.subdued,
-                maskPath: path.cgPath
-            )
+            ZStack {
+                LiquidGlassView(
+                    material: resolvedMaterial,
+                    cornerRadius: 0,
+                    tintColor: nil,
+                    blendingMode: blendingMode,
+                    appearance: appearance,
+                    interaction: interaction,
+                    contentLensing: params.contentLensing,
+                    scrim: params.scrim,
+                    subdued: params.subdued,
+                    maskPath: path.cgPath
+                )
+                if let tintNSColor = resolvedTint(alpha: params.tintAlpha) {
+                    shape.fill(Color(nsColor: tintNSColor))
+                }
+            }
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .allowsHitTesting(false)

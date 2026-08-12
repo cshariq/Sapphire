@@ -11,6 +11,7 @@ import AppKit
 import CoreBluetooth
 import Security
 import ApplicationServices
+import OpenDirectory
 import os.log
 
 @MainActor
@@ -226,8 +227,10 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func verifyAndSavePassword(_ password: String) -> Bool {
-        // Validate password by attempting to use it for a keychain operation
-        // instead of piping to sudo (which only works for admin accounts)
+        guard verifyMacLoginPassword(password) else {
+            print("[AuthManager] Refusing to save password: login verification failed.")
+            return false
+        }
         if savePasswordToKeychain(password) {
             self.isPasswordSet = true
             return true
@@ -235,11 +238,14 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         return false
     }
 
+    func verifyMacLoginPassword(_ password: String) -> Bool {
+        verifyLoginPassword(password)
+    }
+
     func verifyPassword(_ password: String) -> Bool {
         guard let encrypted = KeychainManager.shared.load(for: passwordAccount),
               let decrypted = CryptoManager.shared.decrypt(data: encrypted),
               let stored = String(data: decrypted, encoding: .utf8) else { return false }
-        // Constant-time comparison to prevent timing attacks
         return stored.utf8.elementsEqual(password.utf8)
     }
 
@@ -410,6 +416,34 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private func savePasswordToKeychain(_ password: String) -> Bool {
         guard let data = password.data(using: .utf8), let encrypted = CryptoManager.shared.encrypt(data: data) else { return false }
         return KeychainManager.shared.save(key: encrypted, for: passwordAccount)
+    }
+
+    private func verifyLoginPassword(_ password: String) -> Bool {
+        guard !password.isEmpty else { return false }
+
+        let userName = currentLoginUserName()
+        guard !userName.isEmpty else {
+            print("[AuthManager] Could not determine current login user name.")
+            return false
+        }
+
+        do {
+            let session = ODSession.default()
+            let node = try ODNode(session: session, type: ODNodeType(kODNodeTypeAuthentication))
+            let record = try node.record(withRecordType: kODRecordTypeUsers, name: userName, attributes: nil)
+            try record.verifyPassword(password)
+            return true
+        } catch {
+            print("[AuthManager] Login password verification failed for user '\(userName)': \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func currentLoginUserName() -> String {
+        if let passwd = getpwuid(getuid()) {
+            return String(cString: passwd.pointee.pw_name)
+        }
+        return NSUserName()
     }
 
     private func showPasswordPrompt() {
