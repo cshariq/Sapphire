@@ -282,7 +282,7 @@ struct NotesPlayerView: View {
                         .opacity(note.isDone ? 0.65 : 1)
                 }
                 Spacer(minLength: 0)
-                Text(note.updatedAt, style: .relative)
+                RelativeMinuteText(date: note.updatedAt)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }

@@ -1624,60 +1624,127 @@ struct OTPLiveActivityView: View {
     var fromNotification: Bool = false
 
     @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var liveActivityManager: LiveActivityManager
     @State private var didCopy = false
+    @State private var isShowing = false
+
+    private var seedColor: Color { Color(red: 0.22, green: 0.68, blue: 0.58) }
+    private var accentColor: Color { Color(red: 0.42, green: 0.84, blue: 0.72) }
+    private var gradient: LinearGradient {
+        LinearGradient(
+            colors: [seedColor, accentColor],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var digits: [String] {
+        Array(event.code).map(String.init)
+    }
+
+    private var cellWidth: CGFloat {
+        let available: CGFloat = 300
+        let spacing: CGFloat = 8
+        let totalSpacing = spacing * CGFloat(max(digits.count - 1, 0))
+        return min(44, max(30, (available - totalSpacing) / CGFloat(digits.count)))
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 12) {
             HStack(spacing: 10) {
-                Image(systemName: "lock.shield.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.green)
-                VStack(alignment: .leading, spacing: 2) {
+                ZStack {
+                    Circle()
+                        .fill(seedColor.opacity(0.2))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(seedColor)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
                     Text("Verification code")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(.secondary)
-                    Text(event.title)
-                        .font(.system(size: 13, weight: .medium))
+                    Text(event.title.isEmpty ? event.source : event.title)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .lineLimit(1)
                 }
-                Spacer()
-                Text(event.source)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
 
-            HStack {
-                Text(event.code)
-                    .font(.system(size: 28, weight: .bold, design: .monospaced))
-                    .contentTransition(.numericText())
+                Spacer(minLength: 8)
 
-                Spacer()
-
-                if settings.settings.showCopyButtonForVerificationCodes {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(event.code, forType: .string)
-                        withAnimation(.spring) { didCopy = true }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                            SmartInboxMonitor.shared.dismissOTP()
-                        }
-                    } label: {
-                        Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 13, weight: .semibold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.plain)
-                    .background(didCopy ? Color.green.opacity(0.25) : Color.primary.opacity(0.12))
-                    .clipShape(Capsule())
+                Button {
+                    liveActivityManager.dismissCurrentActivity()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 26)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Circle())
                 }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color.white.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            )
+
+            HStack(spacing: 8) {
+                ForEach(Array(digits.enumerated()), id: \.offset) { _, digit in
+                    Text(digit)
+                        .font(.system(size: 26, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .frame(width: cellWidth, height: 52)
+                        .background(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .fill(gradient)
+                        )
+                        .shadow(color: seedColor.opacity(0.35), radius: 8, y: 3)
+                }
+            }
+            .scaleEffect(isShowing ? 1 : 0.85)
+            .opacity(isShowing ? 1 : 0)
+
+            if settings.settings.showCopyButtonForVerificationCodes {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(event.code, forType: .string)
+                    withAnimation(.spring) { didCopy = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                        SmartInboxMonitor.shared.dismissOTP()
+                        liveActivityManager.dismissCurrentActivity()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                        Text(didCopy ? "Copied" : "Copy code")
+                    }
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
+                .background(didCopy ? seedColor.opacity(0.35) : Color.white.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(didCopy ? seedColor.opacity(0.5) : Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
         .padding(.top, NotchConfiguration.universalHeight)
-        .frame(minWidth: 320, maxWidth: 400)
+        .frame(minWidth: 340, maxWidth: 400)
         .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.72, blendDuration: 0.25)) {
+                isShowing = true
+            }
             if settings.settings.autoCopyVerificationCodes {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(event.code, forType: .string)

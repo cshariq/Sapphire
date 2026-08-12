@@ -705,6 +705,15 @@ class LiveActivityManager: ObservableObject {
         case .bluetooth: self.lastShownBluetoothEvent = self.bluetoothManager.lastEvent
         case .audioSwitch: self.lastShownAudioSwitchEventID = self.audioDeviceManager.lastSwitchEvent?.id
         case .music: self.isDismissingPausedMusic = true
+        case .otp:
+            SmartInboxMonitor.shared.dismissOTP()
+            if let id = self.activityContent.id {
+                dismissedNotifications[id] = Date().addingTimeInterval(300)
+            }
+            if let notification = notificationManager.latestNotification,
+               notification.verificationCode != nil {
+                dismissedNotifications["notif-\(notification.id)"] = Date().addingTimeInterval(300)
+            }
         case .notification:
             if let id = self.activityContent.id {
                 dismissedNotifications[id] = Date().addingTimeInterval(300)
@@ -1372,8 +1381,12 @@ where: {
         notificationManager.start()
         if let notification = notificationManager.latestNotification,
            let code = notification.verificationCode {
+            let eventID = "notif-\(notification.id)"
+            if let until = dismissedNotifications[eventID], until > Date() {
+                return nil
+            }
             let event = OTPEvent(
-                id: "notif-\(notification.id)",
+                id: eventID,
                 code: code,
                 source: notification.appName,
                 title: notification.title.isEmpty ? "Verification code" : notification.title,

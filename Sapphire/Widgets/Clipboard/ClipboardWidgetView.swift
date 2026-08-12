@@ -249,7 +249,7 @@ struct ClipboardPlayerView: View {
                         .foregroundStyle(item.isImage ? Color.purple.opacity(0.9) : Color.blue.opacity(0.9))
                     Text("·")
                         .foregroundStyle(.tertiary)
-                    Text(item.copiedAt, style: .relative)
+                    RelativeMinuteText(date: item.copiedAt)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

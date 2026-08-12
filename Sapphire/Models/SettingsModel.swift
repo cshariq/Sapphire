@@ -726,21 +726,21 @@ struct Settings: Codable, Equatable {
 
     mutating func normalizeCollectionOrders() {
         let allActivities = LiveActivityType.allCases
-        liveActivityOrder = liveActivityOrder.filter { allActivities.contains($0) }
+        liveActivityOrder = liveActivityOrder.filter { allActivities.contains($0) }.deduplicated()
         let missingActivities = allActivities.filter { !liveActivityOrder.contains($0) }
         if !missingActivities.isEmpty {
             liveActivityOrder.append(contentsOf: missingActivities)
         }
 
         let allWidgets = WidgetType.allCases
-        widgetOrder = widgetOrder.filter { allWidgets.contains($0) }
+        widgetOrder = widgetOrder.filter { allWidgets.contains($0) }.deduplicated()
         let missingWidgets = allWidgets.filter { !widgetOrder.contains($0) }
         if !missingWidgets.isEmpty {
             widgetOrder.append(contentsOf: missingWidgets)
         }
 
         let allNotchButtons = NotchButtonType.allCases
-        notchButtonOrder = notchButtonOrder.filter { allNotchButtons.contains($0) }
+        notchButtonOrder = notchButtonOrder.filter { allNotchButtons.contains($0) }.deduplicated()
         let missingNotchButtons = allNotchButtons.filter { !notchButtonOrder.contains($0) }
         if !missingNotchButtons.isEmpty {
             if let spacerIndex = notchButtonOrder.firstIndex(of: .spacer) {
@@ -1308,6 +1308,19 @@ class SettingsModel: ObservableObject {
 
 // MARK: - Supporting Enums and Structs
 
+private extension Array where Element: Equatable {
+    func deduplicated() -> [Element] {
+        var seen: [Element] = []
+        return filter { element in
+            if seen.contains(element) {
+                return false
+            }
+            seen.append(element)
+            return true
+        }
+    }
+}
+
 enum MagSafeLEDSetting: String, Codable, CaseIterable, Identifiable {
     case alwaysOn, off
     var id: String { self.rawValue }
@@ -1423,9 +1436,17 @@ enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
     }
 }
 
-enum NotchButtonType: String, Codable, CaseIterable, Identifiable, Equatable {
+enum NotchButtonType: String, Codable, Identifiable, Equatable {
     case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, caffeine, spacer, multiAudio, battery, pin
     var id: String { self.rawValue }
+
+    // `intelligenceLive` is kept as a decodable case so old persisted
+    // `notchButtonOrder` values migrate cleanly, but is excluded from the
+    // visible item list since it is redundant with `intelligence`.
+    static let allCases: [NotchButtonType] = [
+        .settings, .fileShelf, .notes, .clipboard, .intelligence,
+        .caffeine, .spacer, .multiAudio, .battery, .pin,
+    ]
 
     var displayName: String {
         switch self {

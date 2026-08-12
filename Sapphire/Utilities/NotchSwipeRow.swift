@@ -139,6 +139,7 @@ private struct NotchTrackpadSwipeCapture: NSViewRepresentable {
         let changeHorizontal: (CGFloat) -> Void
         let endHorizontal: () -> Void
         private var horizontalActive = false
+        private var eventMonitor: Any?
 
         init(
             beginHorizontal: @escaping () -> Void,
@@ -154,28 +155,49 @@ private struct NotchTrackpadSwipeCapture: NSViewRepresentable {
         }
 
         required init?(coder: NSCoder) { nil }
-        override var acceptsFirstResponder: Bool { true }
 
-        override func scrollWheel(with event: NSEvent) {
-            let dx = event.scrollingDeltaX
-            let dy = event.scrollingDeltaY
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            removeMonitor()
+            guard window != nil else { return }
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
+                self?.handleScroll(event) ?? event
+            }
+        }
+
+        deinit {
+            removeMonitor()
+        }
+
+        private func removeMonitor() {
+            if let eventMonitor {
+                NSEvent.removeMonitor(eventMonitor)
+                self.eventMonitor = nil
+            }
+        }
+
+        private func handleScroll(_ event: NSEvent) -> NSEvent? {
+            guard let window, event.window == nil || event.window === window else { return event }
+            let point = convert(event.locationInWindow, from: nil)
 
             if !horizontalActive {
-                if abs(dx) > abs(dy), abs(dx) > 0.5 {
-                    horizontalActive = true
-                    beginHorizontal()
-                } else {
-                    nextResponder?.scrollWheel(with: event)
-                    return
-                }
+                guard bounds.contains(point) else { return event }
+                let dx = event.scrollingDeltaX
+                let dy = event.scrollingDeltaY
+                guard abs(dx) > abs(dy), abs(dx) > 0.5 else { return event }
+                horizontalActive = true
+                beginHorizontal()
             }
 
             if event.phase == .ended || event.momentumPhase == .ended || event.phase == .cancelled {
                 horizontalActive = false
                 endHorizontal()
-                return
+                return nil
             }
-            changeHorizontal(dx)
+            changeHorizontal(event.scrollingDeltaX)
+            return nil
         }
     }
 }

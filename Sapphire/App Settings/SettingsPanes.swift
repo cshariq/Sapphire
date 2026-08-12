@@ -23,6 +23,7 @@ struct SettingsDetailView: View {
         )
     }
 
+
     var body: some View {
         VStack {
             if let selectedSection, isSelectedSectionLocked {
