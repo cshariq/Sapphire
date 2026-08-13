@@ -6384,9 +6384,20 @@ struct BatteryConfigurationView: View {
                 HStack(spacing: 15) {
                     switch helperManager.status {
                     case .enabled:
-                        Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green)
-                        Text("Helper Installed Successfully")
-                            .font(.headline)
+                        if helperManager.isRunning {
+                            Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green)
+                            Text("Helper Active")
+                                .font(.headline)
+                        } else {
+                            Image(systemName: "exclamationmark.circle.fill").font(.title2).foregroundColor(.orange)
+                            VStack(alignment: .leading) {
+                                Text("Helper Inactive")
+                                    .font(.headline)
+                                Text("Installed but not responding. Activate to restore battery management.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     case .requiresApproval:
                         Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundColor(.yellow)
                         VStack(alignment: .leading) {
@@ -6404,7 +6415,13 @@ struct BatteryConfigurationView: View {
 
                     Spacer()
 
-                    if helperManager.status != .enabled {
+                    if helperManager.status == .enabled && !helperManager.isRunning {
+                        Button("Activate") {
+                            helperManager.reactivateHelper()
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                    } else if helperManager.status != .enabled {
                         Button("Install") {
                             helperManager.installIfNeeded()
                         }
@@ -6416,6 +6433,7 @@ struct BatteryConfigurationView: View {
                 .background(.black.opacity(0.15))
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .onAppear { helperManager.checkIfRunning() }
 
                 notificationsSection
                 coreFeaturesSection

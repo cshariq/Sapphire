@@ -15,7 +15,35 @@ enum CodesignCheckError: Error {
 struct CodesignCheck {
 
     public static func codeSigningMatches(pid: pid_t) throws -> Bool {
+        // Prefer same Team ID so Development and Developer ID builds from the
+        // same team can talk. Fall back to exact certificate equality.
+        if let selfTeam = try teamID(forStaticCode: try requireSelfStaticCode()),
+           let clientTeam = try teamID(forStaticCode: try requireStaticCode(forPID: pid)),
+           !selfTeam.isEmpty, !clientTeam.isEmpty {
+            return selfTeam == clientTeam
+        }
         return try self.codeSigningCertificatesForSelf() == self.codeSigningCertificates(forPID: pid)
+    }
+
+    private static func teamID(forStaticCode secStaticCode: SecStaticCode) throws -> String? {
+        try isValid(secStaticCode: secStaticCode)
+        var info: CFDictionary?
+        try executeSecFunction { SecCodeCopySigningInformation(secStaticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) }
+        return (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
+    }
+
+    private static func requireSelfStaticCode() throws -> SecStaticCode {
+        guard let code = try secStaticCodeSelf() else {
+            throw CodesignCheckError.message("SecStaticCode returned empty for self")
+        }
+        return code
+    }
+
+    private static func requireStaticCode(forPID pid: pid_t) throws -> SecStaticCode {
+        guard let code = try secStaticCode(forPID: pid) else {
+            throw CodesignCheckError.message("SecStaticCode returned empty for pid \(pid)")
+        }
+        return code
     }
 
     public static func codeSigningCertificatesForSelf() throws -> [SecCertificate] {

@@ -50,6 +50,8 @@ enum NotchWidgetMode: Hashable {
     case musicLoginPrompt
     case timerDetailView
     case agentS
+    case blipHub
+    case circleToSearch
     func hash(into hasher: inout Hasher) {
         switch self {
         case .defaultWidgets:
@@ -111,6 +113,28 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(21)
         case .agentS:
             hasher.combine(22)
+        case .blipHub:
+            hasher.combine(23)
+        case .circleToSearch:
+            hasher.combine(28)
+        }
+    }
+}
+
+enum CircleSearchBrowserEngine: String, Codable, CaseIterable, Identifiable, Hashable {
+    case google
+    case bing
+    case yandex
+    case tineye
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .google: return "Google Lens"
+        case .bing: return "Bing"
+        case .yandex: return "Yandex"
+        case .tineye: return "TinEye"
         }
     }
 }
@@ -188,7 +212,7 @@ public struct StatsPayload: Equatable, Hashable {
 
 enum StandardActivityData: Equatable {
     case music(bottom: MusicBottomContentType)
-    case intelligenceAgent(status: String, current: Int, total: Int)
+    case intelligenceAgent(status: String, stepTitle: String, current: Int, total: Int)
     case weather(data: ProcessedWeatherData)
     case calendar(event: EKEvent)
     case battery(state: BatteryState, style: BatteryNotificationStyle, timeRemaining: String?, systemState: BatterySystemState)
@@ -236,6 +260,8 @@ enum StandardActivityData: Equatable {
         case let (.stats(a), .stats(b)): return a == b
         case let (.sports(a, bottomA), .sports(b, bottomB)): return a == b && bottomA == bottomB
         case let (.finance(a), .finance(b)): return a == b
+        case let (.intelligenceAgent(s1, t1, c1, tot1), .intelligenceAgent(s2, t2, c2, tot2)):
+            return s1 == s2 && t1 == t2 && c1 == c2 && tot1 == tot2
         default: return false
         }
     }

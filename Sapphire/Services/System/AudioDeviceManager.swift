@@ -21,6 +21,8 @@ struct AudioSwitchEvent: Hashable {
 }
 
 class AudioDeviceManager: ObservableObject {
+    static let shared = AudioDeviceManager()
+
     @Published var lastSwitchEvent: AudioSwitchEvent?
 
     private var previousDeviceName: String?

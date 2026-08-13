@@ -606,7 +606,7 @@ struct Settings: Codable, Equatable {
     var intelligenceEnabled: Bool = true
     var intelligenceBackend: LLMBackend = .auto
     var intelligenceGeminiSpeedMode: GeminiSpeedMode = .fast
-    var intelligenceGeminiModel: GeminiModelOption = .auto
+    var intelligenceGeminiModel: GeminiModelOption = .flash35Lite
     var intelligenceOpenAIModel: OpenAIModelOption = .auto
     var intelligenceAnthropicModel: AnthropicModelOption = .auto
     var intelligenceOpenRouterModel: String = OpenRouterModelPreset.auto.rawValue
@@ -616,6 +616,9 @@ struct Settings: Codable, Equatable {
     var hideNotchWhenInactive: Bool = false
     var releaseChannel: ReleaseChannel = .stable
     var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .spacer, .battery, .multiAudio, .caffeine, .pin]
+    var circleToSearchEnabled: Bool = true
+    var circleToSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "C", modifiers: [.control, .shift])
+    var circleToSearchBrowserEngine: CircleSearchBrowserEngine = .google
 
     // MARK: - Legacy migration shims (read-only computed, not persisted)
     var geminiEnabled: Bool { intelligenceEnabled }
@@ -684,7 +687,9 @@ struct Settings: Codable, Equatable {
 
     var sportsLiveActivityEnabled: Bool = false
     var sportsCommentaryInLiveActivity: Bool = false
+    var sportsLiveActivityWhenLiveOnly: Bool = false
     var financeLiveActivityEnabled: Bool = false
+    var financeLiveActivityActiveHoursOnly: Bool = false
     var sportsOpenOnClick: Bool = true
     var financeOpenOnClick: Bool = true
     var sportsPreferLogo: Bool = true
@@ -1176,9 +1181,18 @@ private enum SettingsPersistence {
     }
 
     static func decodeFromPayload(_ data: Data) -> Settings? {
-        guard var settings = try? decoder.decode(Settings.self, from: data) else { return nil }
-        settings.normalizeCollectionOrders()
-        return settings
+        if var settings = try? decoder.decode(Settings.self, from: data) {
+            settings.normalizeCollectionOrders()
+            return settings
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var dictionary = encodeToDictionary(Settings()) else {
+            return nil
+        }
+        for (key, value) in object {
+            dictionary[key] = value
+        }
+        return decodeFromDictionary(dictionary)
     }
 
     static func isJSONCompatible(_ value: Any) -> Bool {
@@ -1747,7 +1761,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .weather: ["weather", "forecast", "temperature", "location"]
         case .calendar: ["calendar", "reminders", "events", "schedule"]
         case .eyeBreak: ["eye", "break", "rest", "wellness", "focus"]
-        case .intelligence: ["intelligence", "blip", "facet", "nova", "octo", "claw", "connected", "accounts", "gmail", "github", "outlook", "findmy", "gemini", "ai", "assistant", "agent", "automation", "task", "voice", "live", "computer", "control", "accessibility", "memory", "skills", "personalization", "profiling", "monitoring", "privacy", "learning", "behavior", "screenshots", "calendar", "notes", "spotify", "clipboard", "settings", "data", "tracking"]
+        case .intelligence: ["intelligence", "blip", "facet", "nova", "octo", "claw", "connected", "accounts", "gmail", "github", "outlook", "findmy", "gemini", "ai", "assistant", "agent", "automation", "task", "voice", "live", "computer", "control", "accessibility", "memory", "skills", "personalization", "profiling", "monitoring", "privacy", "learning", "behavior", "screenshots", "calendar", "notes", "spotify", "clipboard", "settings", "data", "tracking", "circle", "search", "lasso"]
         case .sports: ["sports", "score", "game", "nfl", "nba", "mlb", "nhl", "team"]
         case .finance: ["finance", "stocks", "market", "ticker", "portfolio", "aapl"]
         case .about: ["about", "version", "credits", "support"]

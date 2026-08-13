@@ -94,8 +94,8 @@ final class MirrorCameraManager: ObservableObject {
         }
     }
 
-    func stop() {
-        guard !isTransitioning else { return }
+    func stop(force: Bool = false) {
+        if isTransitioning && !force { return }
         isTransitioning = true
         sessionQueue.async { [weak self] in
             guard let self else { return }
@@ -103,8 +103,28 @@ final class MirrorCameraManager: ObservableObject {
                 self.session.stopRunning()
             }
             Task { @MainActor in
+                self.previewLayer = nil
                 self.status = .idle
                 self.isTransitioning = false
+            }
+        }
+    }
+
+    func teardown() {
+        MirrorFullscreenWindowController.shared.dismiss(destroy: true)
+        stop(force: true)
+    }
+
+    func restartPreviewIfNeeded() {
+        guard isLive else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            if self.session.isRunning {
+                self.session.stopRunning()
+            }
+            self.session.startRunning()
+            Task { @MainActor in
+                self.status = .live
             }
         }
     }
@@ -121,8 +141,9 @@ final class MirrorCameraManager: ObservableObject {
     }
 
     func updateMirroring(flipHorizontally: Bool) {
-        if let connection = session.outputs.compactMap({ $0.connection(with: .video) }).first {
+        if let connection = previewLayer?.connection {
             if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
                 connection.isVideoMirrored = flipHorizontally
             }
         }

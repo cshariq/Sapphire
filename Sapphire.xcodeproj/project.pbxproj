@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in CopyFiles */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in CopyFiles */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; };
 		DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262ADF2EA4841B0027CA69 /* OSD.framework */; };
 		DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AE52EA485150027CA69 /* CoreDisplay.framework */; };
 		DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */; };
@@ -127,6 +127,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		DA452EB82EAA58100070E5C9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DA452EAE2EAA57C90070E5C9;
+			remoteInfo = com.shariq.sapphireHelper;
+		};
 		DA46CF802DCBCA0100F00EC5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
@@ -187,7 +194,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA262ADF2EA4841B0027CA69 /* OSD.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OSD.framework; path = ../../../../System/Library/PrivateFrameworks/OSD.framework; sourceTree = "<group>"; };
 		DA262AE22EA484A70027CA69 /* Sapphire.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Sapphire.xcodeproj; sourceTree = "<group>"; };
 		DA262AE52EA485150027CA69 /* CoreDisplay.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreDisplay.framework; path = ../../../../System/Library/Frameworks/CoreDisplay.framework; sourceTree = "<group>"; };
@@ -196,6 +202,7 @@
 		DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MultitouchSupport.framework; path = ../../../../System/Library/PrivateFrameworks/MultitouchSupport.framework; sourceTree = "<group>"; };
 		DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = com.shariq.sapphireHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA46CF762DCBCA0000F00EC5 /* Sapphire.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sapphire.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA5256782E162B9F00D8F42E /* NearDropDisplayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearDropDisplayState.swift; sourceTree = "<group>"; };
 		DA52567A2E162FA900D8F42E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		DA52567C2E162FBE00D8F42E /* DeviceListCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceListCell.swift; sourceTree = "<group>"; };
@@ -387,11 +394,6 @@
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = SapphireTests;
-			sourceTree = "<group>";
-		};
 		DA183FC92E122AF30056667D /* Sapphire */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -409,6 +411,11 @@
 				DABFA98F2EBFBA8B000C5A8B /* Exceptions for "com.shariq.sapphireHelper" folder in "Copy Files" phase from "Sapphire" target */,
 			);
 			path = com.shariq.sapphireHelper;
+			sourceTree = "<group>";
+		};
+		DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SapphireTests;
 			sourceTree = "<group>";
 		};
 		DA789CFA2FAFC26000EB906E /* Volume */ = {
@@ -439,13 +446,6 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		DA46CF842DCBCA0100F00EC5 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA452EAC2EAA57C90070E5C9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
@@ -478,6 +478,11 @@
 				DAC019172E9E9E3100CA587F /* FirebaseCrashlytics in Frameworks */,
 				DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */,
 				DA8FB0512E7D898F00C9BD1A /* MobileTimer.framework in Frameworks */,
+			);
+		};
+		DA46CF842DCBCA0100F00EC5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
 			);
 		};
 		DA7C497E2E15CCA50049937A /* Frameworks */ = {
@@ -758,27 +763,6 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
-		DA46CF862DCBCA0100F00EC5 /* SapphireTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DA46CF8A2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */;
-			buildPhases = (
-				DA46CF832DCBCA0100F00EC5 /* Sources */,
-				DA46CF842DCBCA0100F00EC5 /* Frameworks */,
-				DA46CF852DCBCA0100F00EC5 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				DA46CF812DCBCA0100F00EC5 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */,
-			);
-			name = SapphireTests;
-			productName = SapphireTests;
-			productReference = DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 		DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */;
@@ -807,11 +791,13 @@
 				DAF7D8AC2E207C5100AB0820 /* CopyFiles */,
 				DABFA98B2EBFBA35000C5A8B /* CopyFiles */,
 				DA262B242EA942750027CA69 /* CopyFiles */,
+				DA452EBA2EAA5A010070E5C9 /* Resign Sapphire Helper */,
 				DAC019182E9EA03E00CA587F /* ShellScript */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				DA452EB92EAA58100070E5C9 /* PBXTargetDependency */,
 				DA7C49B02E15D3800049937A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -833,6 +819,27 @@
 			productName = DynamicNotch;
 			productReference = DA46CF762DCBCA0000F00EC5 /* Sapphire.app */;
 			productType = "com.apple.product-type.application";
+		};
+		DA46CF862DCBCA0100F00EC5 /* SapphireTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DA46CF8A2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */;
+			buildPhases = (
+				DA46CF832DCBCA0100F00EC5 /* Sources */,
+				DA46CF842DCBCA0100F00EC5 /* Frameworks */,
+				DA46CF852DCBCA0100F00EC5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DA46CF812DCBCA0100F00EC5 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */,
+			);
+			name = SapphireTests;
+			productName = SapphireTests;
+			productReference = DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		DA7C497F2E15CCA50049937A /* NearbyShare */ = {
 			isa = PBXNativeTarget;
@@ -884,15 +891,15 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2650;
 				TargetAttributes = {
-					DA46CF862DCBCA0100F00EC5 = {
-						CreatedOnToolsVersion = 26.0;
-					};
 					DA452EAE2EAA57C90070E5C9 = {
 						CreatedOnToolsVersion = 26.0.1;
 						LastSwiftMigration = 2600;
 					};
 					DA46CF752DCBCA0000F00EC5 = {
 						CreatedOnToolsVersion = 16.3;
+					};
+					DA46CF862DCBCA0100F00EC5 = {
+						CreatedOnToolsVersion = 26.0;
 					};
 					DA7C497F2E15CCA50049937A = {
 						CreatedOnToolsVersion = 16.4;
@@ -941,13 +948,6 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		DA46CF852DCBCA0100F00EC5 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA46CF742DCBCA0000F00EC5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
@@ -1021,9 +1021,33 @@
 				DA91BE772E773AC8001E7836 /* drag to trash.aif in Resources */,
 			);
 		};
+		DA46CF852DCBCA0100F00EC5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		DA452EBA2EAA5A010070E5C9 /* Resign Sapphire Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Resign Sapphire Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "HELPER=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/com.shariq.sapphireHelper\"\nENTITLEMENTS=\"${SRCROOT}/com.shariq.sapphireHelper/sapphireHelper.entitlements\"\n\nif [ ! -f \"$HELPER\" ]; then\n  echo \"error: Sapphire helper missing at $HELPER\"\n  exit 1\nfi\n\nif [ -z \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] || [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" = \"-\" ]; then\n  echo \"warning: No code signing identity; leaving helper signature as-is\"\n  codesign -d --entitlements - \"$HELPER\" || true\n  exit 0\nfi\n\n# SMAppService daemons cannot carry restricted entitlements (application-identifier,\n# get-task-allow, etc.) without a matching profile. Sign as a plain hardened tool.\necho \"Re-signing Sapphire helper with empty entitlements (identity: ${EXPANDED_CODE_SIGN_IDENTITY})\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \\\n  --identifier com.shariq.sapphireHelper \\\n  --entitlements \"$ENTITLEMENTS\" \\\n  --generate-entitlement-der \\\n  --options runtime \\\n  --timestamp=none \\\n  \"$HELPER\"\n\necho \"Helper entitlements after resign:\"\ncodesign -d --entitlements :- \"$HELPER\" 2>&1 | sed 's/^/  /'\n";
+		};
 		DAC019182E9EA03E00CA587F /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			inputPaths = (
@@ -1043,19 +1067,17 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		DA46CF832DCBCA0100F00EC5 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA452EAB2EAA57C90070E5C9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
 			);
 		};
 		DA46CF722DCBCA0000F00EC5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		DA46CF832DCBCA0100F00EC5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
 			);
@@ -1090,6 +1112,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		DA452EB92EAA58100070E5C9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */;
+			targetProxy = DA452EB82EAA58100070E5C9 /* PBXContainerItemProxy */;
+		};
 		DA46CF812DCBCA0100F00EC5 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
@@ -1103,6 +1130,91 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		DA452EB42EAA57C90070E5C9 /* Debug configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				AUTOMATION_APPLE_EVENTS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = "";
+				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der";
+				OTHER_LDFLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "com.shariq.sapphireHelper/SapphireHelper-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		DA452EB52EAA57C90070E5C9 /* Release configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				AUTOMATION_APPLE_EVENTS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = "";
+				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
+				LIBRARY_SEARCH_PATHS = "";
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der";
+				OTHER_LDFLAGS = "";
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "com.shariq.sapphireHelper/SapphireHelper-Bridging-Header.h";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		DA46CF882DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "SapphireTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1146,79 +1258,6 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/Contents/MacOS/Sapphire";
-			};
-			name = Release;
-		};
-		DA452EB42EAA57C90070E5C9 /* Debug configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				AUTOMATION_APPLE_EVENTS = NO;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
-				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
-				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
-				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
-				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
-				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				FRAMEWORK_SEARCH_PATHS = "";
-				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
-				LIBRARY_SEARCH_PATHS = "";
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				OTHER_LDFLAGS = "";
-				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
-				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
-				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
-				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
-				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
-				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
-				SKIP_INSTALL = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "com.shariq.sapphireHelper/SapphireHelper-Bridging-Header.h";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		DA452EB52EAA57C90070E5C9 /* Release configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				AUTOMATION_APPLE_EVENTS = NO;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
-				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
-				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
-				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
-				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
-				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				FRAMEWORK_SEARCH_PATHS = "";
-				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
-				LIBRARY_SEARCH_PATHS = "";
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				OTHER_LDFLAGS = "";
-				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
-				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
-				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
-				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
-				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
-				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
-				SKIP_INSTALL = YES;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "com.shariq.sapphireHelper/SapphireHelper-Bridging-Header.h";
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -1281,7 +1320,6 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_CODE_SIGN_FLAGS = "--deep";
 				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1344,7 +1382,6 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				OTHER_CODE_SIGN_FLAGS = "--deep";
 				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1420,7 +1457,8 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.54;
+				MARKETING_VERSION = 2.55;
+				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;
@@ -1505,7 +1543,8 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.54;
+				MARKETING_VERSION = 2.55;
+				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;
@@ -1588,15 +1627,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		DA46CF8A2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA46CF882DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "SapphireTests" */,
-				DA46CF892DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "SapphireTests" */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1610,6 +1640,14 @@
 			buildConfigurations = (
 				DA46CF992DCBCA0100F00EC5 /* Debug configuration for PBXProject "Sapphire" */,
 				DA46CF9A2DCBCA0100F00EC5 /* Release configuration for PBXProject "Sapphire" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		DA46CF8A2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA46CF882DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "SapphireTests" */,
+				DA46CF892DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "SapphireTests" */,
 			);
 			defaultConfigurationName = Release;
 		};

@@ -26,6 +26,41 @@ class AppleMusicManager {
         return musicApp?.playerState == .playing
     }
 
+    func play() {
+        activateIfNeeded()
+        if musicApp?.playerState == .playing { return }
+        if musicApp?.playerState == .paused {
+            musicApp?.resume?()
+        } else {
+            musicApp?.play?(nil)
+        }
+    }
+
+    func pause() {
+        activateIfNeeded()
+        musicApp?.pause?()
+    }
+
+    func togglePlayPause() {
+        if isPlaying() {
+            pause()
+        } else {
+            play()
+        }
+    }
+
+    private func activateIfNeeded() {
+        if !isAppRunning() {
+            NSWorkspace.shared.launchApplication(
+                withBundleIdentifier: "com.apple.Music",
+                options: [],
+                additionalEventParamDescriptor: nil,
+                launchIdentifier: nil
+            )
+        }
+        musicApp?.activate()
+    }
+
     func getShuffleState() -> Bool {
         return musicApp?.shuffleEnabled ?? false
     }

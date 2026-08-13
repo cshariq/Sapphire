@@ -38,62 +38,48 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .zIndex(2)
 
-            ZStack {
-                switch currentStep {
-                case .welcome:
-                    WelcomeStepView(onGetStarted: { currentStep = .permissions })
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-                case .permissions:
-                    PermissionsStepView(onContinue: { currentStep = .helperInstallation })
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-
-                case .helperInstallation:
-                    HelperInstallationStepView(onContinue: { currentStep = .privacyPolicy })
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-
-                case .privacyPolicy:
-                    PrivacyStepView(onContinue: { currentStep = .musicChoice })
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-                case .musicChoice:
-                    MusicChoiceStepView(onNext: {
-                        if settings.settings.defaultMusicPlayer == .spotify {
-                            currentStep = .spotifySetup
-                        } else {
-                            currentStep = .batterySetup
-                        }
-                    })
-                    .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-                case .spotifySetup:
-                    SpotifySetupStepView(
-                        onNext: { currentStep = .batterySetup },
-                        isLoading: $isPrivateApiLoading,
-                        error: $privateApiError
-                    )
-                    .environmentObject(musicManager)
-                    .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-
-                case .batterySetup:
-                    BatterySetupStepView(onNext: { currentStep = .corePreferences })
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-
-                case .corePreferences:
-                    CorePreferencesStepView(onNext: { currentStep = .lockScreenSetup })
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-
-                case .lockScreenSetup:
-                    LockScreenSetupStepView(onNext: { currentStep = .subscriptionOverview })
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-
-                case .subscriptionOverview:
-                    SubscriptionOverviewStepView(onNext: { currentStep = .finish })
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
-
-                case .finish:
-                    FinishStepView(onComplete: onComplete)
-                        .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
+            ScrollView(.vertical, showsIndicators: true) {
+                Group {
+                    switch currentStep {
+                    case .welcome:
+                        WelcomeStepView(onGetStarted: { currentStep = .permissions })
+                    case .permissions:
+                        PermissionsStepView(onContinue: { currentStep = .helperInstallation })
+                    case .helperInstallation:
+                        HelperInstallationStepView(onContinue: { currentStep = .privacyPolicy })
+                    case .privacyPolicy:
+                        PrivacyStepView(onContinue: { currentStep = .musicChoice })
+                    case .musicChoice:
+                        MusicChoiceStepView(onNext: {
+                            if settings.settings.defaultMusicPlayer == .spotify {
+                                currentStep = .spotifySetup
+                            } else {
+                                currentStep = .batterySetup
+                            }
+                        })
+                    case .spotifySetup:
+                        SpotifySetupStepView(
+                            onNext: { currentStep = .batterySetup },
+                            isLoading: $isPrivateApiLoading,
+                            error: $privateApiError
+                        )
+                        .environmentObject(musicManager)
+                    case .batterySetup:
+                        BatterySetupStepView(onNext: { currentStep = .corePreferences })
+                    case .corePreferences:
+                        CorePreferencesStepView(onNext: { currentStep = .lockScreenSetup })
+                    case .lockScreenSetup:
+                        LockScreenSetupStepView(onNext: { currentStep = .subscriptionOverview })
+                    case .subscriptionOverview:
+                        SubscriptionOverviewStepView(onNext: { currentStep = .finish })
+                    case .finish:
+                        FinishStepView(onComplete: onComplete)
+                    }
                 }
+                .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.4), value: currentStep)
+                .frame(maxWidth: .infinity, minHeight: UtilityWindowMetrics.maxUserWindowHeight() - 40)
             }
-            .animation(.easeInOut(duration: 0.4), value: currentStep)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         }
@@ -216,7 +202,13 @@ private struct HelperInstallationStepView: View {
 
                 Spacer()
 
-                if helperManager.status != .enabled {
+                if helperManager.status == .enabled && !helperManager.isRunning {
+                    Button("Activate") {
+                        helperManager.reactivateHelper()
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                } else if helperManager.status != .enabled {
                     Button("Install") {
                         helperManager.installIfNeeded()
                     }
@@ -233,11 +225,13 @@ private struct HelperInstallationStepView: View {
             Spacer()
 
             OnboardingButton(title: "Continue", action: onContinue)
-                .disabled(helperManager.status != .enabled)
+                .disabled(helperManager.status != .enabled || !helperManager.isRunning)
                 .animation(.easeInOut, value: helperManager.status)
+                .animation(.easeInOut, value: helperManager.isRunning)
         }
         .onAppear {
             helperManager.updateStatus()
+            helperManager.checkIfRunning()
         }
     }
 

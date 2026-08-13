@@ -232,25 +232,71 @@ struct LiveActivityRowView: View {
     }
 
     var body: some View {
-        HStack {
-            Text(activityType.displayName)
-                .font(.system(size: 14, weight: .medium))
-            Spacer()
-            Toggle("", isOn: isEnabledBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(isPremiumLocked)
-            if isPremiumLocked {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            HStack {
+                Text(activityType.displayName)
+                    .font(.system(size: 14, weight: .medium))
+                Spacer()
+                Toggle("", isOn: isEnabledBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .disabled(isPremiumLocked)
+                if isPremiumLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.leading, 8)
             }
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.white.opacity(0.6))
-                .padding(.leading, 8)
+            .padding(EdgeInsets(top: 18, leading: 20, bottom: expandedOptionsPadding, trailing: 20))
+
+            if showsExpandedOptions {
+                expandedOptions
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+            }
         }
-        .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
+    }
+
+    private var expandedOptionsPadding: CGFloat {
+        showsExpandedOptions ? 10 : 18
+    }
+
+    private var showsExpandedOptions: Bool {
+        !isPremiumLocked && baseEnabledBinding.wrappedValue && (activityType == .sports || activityType == .finance)
+    }
+
+    @ViewBuilder
+    private var expandedOptions: some View {
+        switch activityType {
+        case .sports:
+            Toggle(isOn: $settings.settings.sportsLiveActivityWhenLiveOnly) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Only when live")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Hide the sports activity when no favorite team has a live game.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+        case .finance:
+            Toggle(isOn: $settings.settings.financeLiveActivityActiveHoursOnly) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Only during market hours")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Hide the finance activity outside regular US trading hours.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.switch)
+        default:
+            EmptyView()
+        }
     }
 }
 
@@ -576,7 +622,9 @@ struct SettingsDetailRow<Content: View>: View {
             Text(title)
             Spacer()
             HStack { content }.foregroundStyle(.secondary)
-        }.padding(.vertical, 10)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
     }
 }
 

@@ -61,14 +61,14 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
 
     init(key: String, modifiers: NSEvent.ModifierFlags) {
         self.key = key
-        self.modifiers = modifiers
+        self.modifiers = modifiers.intersection([.command, .option, .control, .shift])
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         key = try container.decode(String.self, forKey: .key)
         let rawValue = try container.decode(UInt.self, forKey: .modifiers)
-        modifiers = NSEvent.ModifierFlags(rawValue: rawValue)
+        modifiers = NSEvent.ModifierFlags(rawValue: rawValue).intersection([.command, .option, .control, .shift])
     }
 
     func encode(to encoder: Encoder) throws {
@@ -78,8 +78,21 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
     }
 
     func hash(into hasher: inout Hasher) {
-        hasher.combine(key)
-        hasher.combine(modifiers.rawValue)
+        hasher.combine(key.lowercased())
+        hasher.combine(significantModifiers.rawValue)
+    }
+
+    static func == (lhs: KeyboardShortcut, rhs: KeyboardShortcut) -> Bool {
+        lhs.matches(rhs)
+    }
+
+    var significantModifiers: NSEvent.ModifierFlags {
+        modifiers.intersection([.command, .option, .control, .shift])
+    }
+
+    func matches(_ other: KeyboardShortcut) -> Bool {
+        key.compare(other.key, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            && significantModifiers == other.significantModifiers
     }
 }
 

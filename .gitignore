@@ -27,3 +27,5 @@ Sapphire/App/GoogleService-Info.plist
 Sapphire/Services/Weather/WeatherAPIKey.swift
 /Sapphire/Services/CircleToSearch
 /Sapphire/Services/Gemini
+/Sapphire/Widgets/CircleToSearch
+/Sapphire/Services/Gemini

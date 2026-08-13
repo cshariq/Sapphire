@@ -127,10 +127,10 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     let latestVersion = release.name.replacingOccurrences(of: "v", with: "")
 
                     if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
-                        if let asset = release.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? release.assets.first(where: { $0.name.hasSuffix(".pkg") }) {
+                        if let asset = release.assets.first(where: { $0.name.hasSuffix(".zip") }) {
                             self.applyStatus(.available(version: latestVersion, asset: asset))
                         } else {
-                            self.applyStatus(.error("No suitable download file found."))
+                            self.applyStatus(.error("No zip download found for this release."))
                         }
                     } else {
                         self.applyStatus(.upToDate)
@@ -167,10 +167,10 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     }
                     let latestVersion = betaRelease.name.replacingOccurrences(of: "v", with: "")
                     if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
-                        if let asset = betaRelease.assets.first(where: { $0.name.hasSuffix(".zip") }) ?? betaRelease.assets.first(where: { $0.name.hasSuffix(".pkg") }) {
+                        if let asset = betaRelease.assets.first(where: { $0.name.hasSuffix(".zip") }) {
                             self.applyStatus(.available(version: latestVersion, asset: asset))
                         } else {
-                            self.applyStatus(.error("No suitable beta download file found."))
+                            self.applyStatus(.error("No zip beta download found for this release."))
                         }
                     } else {
                         self.applyStatus(.upToDate)
@@ -275,6 +275,26 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
     }
 
+    private func isInstallPathUserWritable() -> Bool {
+        let appURL = URL(fileURLWithPath: Bundle.main.bundlePath)
+        let parentPath = appURL.deletingLastPathComponent().path
+        return FileManager.default.isWritableFile(atPath: parentPath)
+    }
+
+    private func launchInstallerScript(
+        scriptPath: String,
+        processID: String,
+        newAppPath: String,
+        currentAppPath: String
+    ) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [scriptPath, processID, newAppPath, currentAppPath]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+    }
+
     func installAndRelaunch() {
         guard let downloadedZipPath = downloadedAssetPath else {
             applyStatus(.error("Downloaded file path not found.")); return
@@ -309,36 +329,31 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
                 let currentAppPath = Bundle.main.bundlePath
                 let processID = String(ProcessInfo.processInfo.processIdentifier)
+                let userWritable = await MainActor.run { self.isInstallPathUserWritable() }
 
-                let quotedScriptPath = "'\(scriptPath)'"
-                let quotedNewAppPath = "'\(fullNewAppPath)'"
-                let quotedCurrentAppPath = "'\(currentAppPath)'"
+                guard userWritable else {
+                    throw NSError(
+                        domain: "UpdateError",
+                        code: 5,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: """
+                            Sapphire can't replace itself in this location without administrator access.
 
-                let shellCommand = "sh \(quotedScriptPath) \(processID) \(quotedNewAppPath) \(quotedCurrentAppPath) > /dev/null 2>&1 &"
-
-                let appleScript = "do shell script \"\(shellCommand)\" with administrator privileges"
-
-                var error: NSDictionary?
-                guard let scriptObject = NSAppleScript(source: appleScript) else {
-                    throw NSError(domain: "UpdateError", code: 4, userInfo: [NSLocalizedDescriptionKey: "Could not create AppleScript object."])
+                            Move Sapphire to your user Applications folder (~/Applications), then install the update again for a password-free update.
+                            """
+                        ]
+                    )
                 }
 
-                let success = await MainActor.run { () -> Bool in
-                    if scriptObject.executeAndReturnError(&error) == nil {
-                        if let err = error, let errNum = err[NSAppleScript.errorNumber] as? Int, errNum == -128 {
-                            self.applyStatus(.downloaded(path: downloadedZipPath))
-                        } else {
-                            self.applyStatus(.error("Installer script failed: \(error?[NSAppleScript.errorMessage] ?? "Unknown error")"))
-                        }
-                        return false
-                    }
-                    return true
-                }
+                try await self.launchInstallerScript(
+                    scriptPath: scriptPath,
+                    processID: processID,
+                    newAppPath: fullNewAppPath,
+                    currentAppPath: currentAppPath
+                )
 
-                if success {
-                    await MainActor.run {
-                        NSApp.terminate(nil)
-                    }
+                await MainActor.run {
+                    NSApp.terminate(nil)
                 }
 
             } catch {

@@ -375,28 +375,80 @@ struct IntelligenceAgentActivityView {
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(
                 LinearGradient(
-                    colors: [Color.blue, Color.pink],
+                    colors: [Color(red: 0.36, green: 0.90, blue: 0.76), Color.pink.opacity(0.9)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
     }
 
-    static func right(status: String, current: Int, total: Int) -> some View {
-        HStack(spacing: 8) {
-            Text(status)
-                .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
+    static func right(status: String, stepTitle: String, current: Int, total: Int) -> some View {
+        let progress = total > 0 ? Double(current) / Double(total) : 0
+        let label = stepTitle.isEmpty ? status : stepTitle
 
+        return HStack(spacing: 10) {
             if total > 0 {
-                Text("\(current)/\(total)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .contentTransition(.numericText())
-                    .frame(maxWidth: 300)
+                BlipStepProgressRing(progress: progress, current: current, total: total, size: 22, lineWidth: 2.5)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+
+                if total > 0 {
+                    Text("Step \(current) of \(total)")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .contentTransition(.numericText())
+                } else if !status.isEmpty && status != label {
+                    Text(status)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .lineLimit(1)
+                }
             }
         }
-        .foregroundColor(.white.opacity(0.9))
+        .foregroundColor(.white.opacity(0.92))
+    }
+}
+
+struct BlipStepProgressRing: View {
+    let progress: Double
+    let current: Int
+    let total: Int
+    let size: CGFloat
+    let lineWidth: CGFloat
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.18), lineWidth: lineWidth)
+
+            Circle()
+                .trim(from: 0, to: min(max(progress, 0), 1))
+                .stroke(
+                    AngularGradient(
+                        colors: [
+                            Color(red: 0.36, green: 0.90, blue: 0.76),
+                            Color(red: 0.18, green: 0.62, blue: 0.55),
+                            Color(red: 0.36, green: 0.90, blue: 0.76)
+                        ],
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: progress)
+
+            if total > 0 {
+                Text("\(current)")
+                    .font(.system(size: size * 0.38, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .contentTransition(.numericText())
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
 

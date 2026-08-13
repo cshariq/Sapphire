@@ -396,6 +396,14 @@ class LiveActivityManager: ObservableObject {
                 .eraseToAnyPublisher()
         }()
 
+        let intelligenceStepPublisher: AnyPublisher<Void, Never> = {
+            guard let intelligenceVM else { return Empty().eraseToAnyPublisher() }
+            return intelligenceVM.$currentActionLabel
+                .removeDuplicates()
+                .mapToVoid()
+                .eraseToAnyPublisher()
+        }()
+
         let stateChangeTriggers: [AnyPublisher<Void, Never>] = [
             $isScreenLocked.removeDuplicates().mapToVoid(),
             $currentNearDropPayload.removeDuplicates().mapToVoid(),
@@ -444,9 +452,12 @@ class LiveActivityManager: ObservableObject {
             batteryStatusManager.$currentState.removeDuplicates().mapToVoid(),
             intelligenceRunningPublisher,
             intelligenceStatusPublisher
-                .throttle(for: .milliseconds(400), scheduler: RunLoop.main, latest: true)
+                .throttle(for: .milliseconds(750), scheduler: RunLoop.main, latest: true)
                 .eraseToAnyPublisher(),
             intelligenceProgressPublisher
+                .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
+                .eraseToAnyPublisher(),
+            intelligenceStepPublisher
                 .throttle(for: .milliseconds(500), scheduler: RunLoop.main, latest: true)
                 .eraseToAnyPublisher(),
         ]
@@ -781,12 +792,9 @@ class LiveActivityManager: ObservableObject {
         case .music: self.isDismissingPausedMusic = true
         case .otp:
             SmartInboxMonitor.shared.dismissOTP()
-            if let id = self.activityContent.id {
-                dismissedNotifications[id] = Date().addingTimeInterval(300)
-            }
             if let notification = notificationManager.latestNotification,
-               notification.verificationCode != nil {
-                dismissedNotifications["notif-\(notification.id)"] = Date().addingTimeInterval(300)
+               let code = notification.verificationCode {
+                SmartInboxMonitor.shared.consumeOTP(code)
             }
         case .notification:
             if let id = self.activityContent.id {
@@ -865,11 +873,11 @@ class LiveActivityManager: ObservableObject {
 
         let data = StandardActivityData.intelligenceAgent(
             status: vm.statusMessage,
-            current: vm.subtaskProgress.current,
-            total: vm.subtaskProgress.total
+            stepTitle: vm.currentStepTitle,
+            current: vm.displayStepIndex,
+            total: vm.displayStepTotal
         )
-        let id = "intelligence_agent_\(vm.statusMessage)_\(vm.subtaskProgress.current)_\(vm.subtaskProgress.total)"
-        return (.intelligenceAgent, .standard(data: data, id: id), nil)
+        return (.intelligenceAgent, .standard(data: data, id: "intelligence_agent_active"), nil)
     }
 
     private func checkForLockScreenActivity() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
@@ -1449,6 +1457,11 @@ where: {
         guard settingsModel.settings.otpLiveActivityEnabled else { return nil }
 
         if let event = SmartInboxMonitor.shared.latestOTP {
+            if SmartInboxMonitor.shared.hasConsumedOTP(event.code), currentActivity != .otp {
+                SmartInboxMonitor.shared.dismissOTP()
+                return nil
+            }
+            SmartInboxMonitor.shared.consumeOTP(event.code)
             let view = OTPLiveActivityView(event: event)
             return (.otp, .full(view: AnyView(view), id: event.id), 20.0)
         }
@@ -1456,10 +1469,11 @@ where: {
         notificationManager.start()
         if let notification = notificationManager.latestNotification,
            let code = notification.verificationCode {
-            let eventID = "notif-\(notification.id)"
-            if let until = dismissedNotifications[eventID], until > Date() {
+            if SmartInboxMonitor.shared.hasConsumedOTP(code) {
                 return nil
             }
+            SmartInboxMonitor.shared.consumeOTP(code)
+            let eventID = "notif-\(notification.id)"
             let event = OTPEvent(
                 id: eventID,
                 code: code,
@@ -1517,9 +1531,16 @@ where: {
         let teams = settingsModel.settings.sportsFavoriteTeams
         guard !teams.isEmpty else { return nil }
 
-        if let liveIndex = teams.firstIndex(where: { team in
+        let whenLiveOnly = settingsModel.settings.sportsLiveActivityWhenLiveOnly
+        let liveTeamIndex = teams.firstIndex(where: { team in
             SportsAPIService.shared.cachedLiveEvent(for: team)?.isLive == true
-        }) {
+        })
+
+        if whenLiveOnly, liveTeamIndex == nil {
+            return nil
+        }
+
+        if let liveIndex = liveTeamIndex {
             sportsActivityTeamIndex = liveIndex
         } else {
             sportsActivityTeamIndex = max(0, min(sportsActivityTeamIndex, teams.count - 1))
@@ -1528,6 +1549,10 @@ where: {
         let teamOrLeague = teams[sportsActivityTeamIndex]
 
         let liveEvent = SportsAPIService.shared.cachedLiveEvent(for: teamOrLeague)
+        if whenLiveOnly, liveEvent?.isLive != true {
+            return nil
+        }
+
         let payload: SportsPayload
         if let live = liveEvent {
             payload = SportsFinanceContentProvider.makeSportsPayload(from: live)
@@ -1585,6 +1610,10 @@ where: {
         let index = settingsModel.settings.financeFavoriteSymbolIndex
         let quote = FinanceAPIService.shared.cachedQuote(symbol: symbol)
         let payload = FinanceAPIService.shared.makePayload(symbol: symbol, index: index, quote: quote)
+
+        if settingsModel.settings.financeLiveActivityActiveHoursOnly, payload.isAfterHours {
+            return nil
+        }
 
         let id = payload.isAfterHours
             ? "finance_\(payload.symbol)_\(payload.price)"

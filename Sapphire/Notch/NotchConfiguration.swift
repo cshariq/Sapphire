@@ -53,7 +53,7 @@ public enum DisplayDetection {
 
 struct NotchConfiguration {
     // MARK: - Device-based Base Notch Sizes
-    private static func baseNotchSize() -> (width: CGFloat, height: CGFloat) {
+    fileprivate static func baseNotchSize() -> (width: CGFloat, height: CGFloat) {
         switch DisplayDetection.detectDeviceClass() {
         case .macBookPro14:
             return (width: 214, height: 36.2)
@@ -83,16 +83,24 @@ struct NotchConfiguration {
         }
     }
     // MARK: - Screen Size Adjustments
-    static var screenWidthAdjustment: CGFloat {
+    static func screenWidthAdjustment(for screen: NSScreen?) -> CGFloat {
         let baseline = deviceBaselineLogicalResolution()
-        let currentWidth = NSScreen.main?.frame.size.width ?? baseline.width
+        let currentWidth = (screen ?? NSScreen.main)?.frame.size.width ?? baseline.width
         return currentWidth / baseline.width
     }
 
-    static var screenHeightAdjustment: CGFloat {
+    static func screenHeightAdjustment(for screen: NSScreen?) -> CGFloat {
         let baseline = deviceBaselineLogicalResolution()
-        let currentHeight = NSScreen.main?.frame.size.height ?? baseline.height
+        let currentHeight = (screen ?? NSScreen.main)?.frame.size.height ?? baseline.height
         return currentHeight / baseline.height
+    }
+
+    static var screenWidthAdjustment: CGFloat {
+        screenWidthAdjustment(for: NSScreen.main)
+    }
+
+    static var screenHeightAdjustment: CGFloat {
+        screenHeightAdjustment(for: NSScreen.main)
     }
 
     // MARK: - Basic Size Configuration
@@ -233,7 +241,7 @@ struct NotchConfiguration {
     // MARK: - Menu Type Detection
     static func isLargeVerticalMenu(_ mode: NotchWidgetMode) -> Bool {
         switch mode {
-        case .musicPlayer, .sportsPlayer, .financePlayer, .notesPlayer, .clipboardPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS:
+        case .musicPlayer, .sportsPlayer, .financePlayer, .notesPlayer, .clipboardPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS, .blipHub, .circleToSearch, .multiAudio, .multiAudioDeviceAdjust, .multiAudioEQ, .multiAudioAppEQ:
             return true
         default:
             return false
@@ -312,11 +320,14 @@ struct ResolvedNotchConfiguration {
     let activityBlurUpdateDelay = NotchConfiguration.activityBlurUpdateDelay
     let activitySizeChangeDelay = NotchConfiguration.activitySizeChangeDelay
 
-    init(from settings: Settings) {
+    init(from settings: Settings, screen: NSScreen? = nil) {
+        let targetScreen = screen ?? CursorPosition.targetNotchScreen() ?? NSScreen.main
+        let screenWidthAdj = NotchConfiguration.screenWidthAdjustment(for: targetScreen)
+        let screenHeightAdj = NotchConfiguration.screenHeightAdjustment(for: targetScreen)
+        let baseSize = NotchConfiguration.baseNotchSize()
+
         if settings.useCustomNotchConfiguration {
             let custom = settings.customNotchConfiguration
-            let screenWidthAdj = NotchConfiguration.screenWidthAdjustment
-            let screenHeightAdj = NotchConfiguration.screenHeightAdjustment
 
             self.universalWidth = custom.universalWidth * screenWidthAdj
             self.universalHeight = custom.universalHeight * screenHeightAdj
@@ -346,14 +357,14 @@ struct ResolvedNotchConfiguration {
             self.contentHorizontalPadding = custom.contentHorizontalPadding * screenWidthAdj
 
         } else {
-            self.universalWidth = NotchConfiguration.universalWidth
-            self.universalHeight = NotchConfiguration.universalHeight
-            self.initialCornerRadius = NotchConfiguration.initialCornerRadius
+            self.universalWidth = baseSize.width * screenWidthAdj
+            self.universalHeight = baseSize.height * screenHeightAdj
+            self.initialCornerRadius = 10 * screenHeightAdj
             self.topBuffer = NotchConfiguration.topBuffer
             self.scaleFactor = NotchConfiguration.scaleFactor
-            self.hoverExpandedCornerRadius = NotchConfiguration.hoverExpandedCornerRadius
-            self.autoExpandedCornerRadius = NotchConfiguration.autoExpandedCornerRadius
-            self.autoExpandedTallHeight = NotchConfiguration.autoExpandedTallHeight
+            self.hoverExpandedCornerRadius = 18 * screenWidthAdj
+            self.autoExpandedCornerRadius = 13 * screenWidthAdj
+            self.autoExpandedTallHeight = 80 * screenHeightAdj
             self.autoExpandedContentVerticalPadding = NotchConfiguration.autoExpandedContentVerticalPadding
             self.clickExpandedCornerRadius = NotchConfiguration.clickExpandedCornerRadius
             self.liveActivityBottomCornerRadius = NotchConfiguration.liveActivityBottomCornerRadius
@@ -363,9 +374,9 @@ struct ResolvedNotchConfiguration {
             self.activityBlurRadiusMax = NotchConfiguration.activityBlurRadiusMax
             self.expandedShadowRadius = NotchConfiguration.expandedShadowRadius
             self.expandedShadowOffsetY = NotchConfiguration.expandedShadowOffset.y
-            self.contentTopPadding = NotchConfiguration.contentTopPadding
-            self.contentBottomPadding = NotchConfiguration.contentBottomPadding
-            self.contentHorizontalPadding = NotchConfiguration.contentHorizontalPadding
+            self.contentTopPadding = 10 * screenHeightAdj
+            self.contentBottomPadding = 10 * screenHeightAdj
+            self.contentHorizontalPadding = 35 * screenWidthAdj
         }
 
         let profile = settings.animationProfile

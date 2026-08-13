@@ -119,14 +119,14 @@ final class DynamicFocusWindow: NSPanel {
         super.sendEvent(event)
     }
 
-    func syncMouseEventPassthrough() {
+    func syncMouseEventPassthrough(forceEnable: Bool = false) {
         if NSEvent.pressedMouseButtons == 0 {
             isHandlingMouseInteraction = false
         }
-        refreshMouseEventPassthrough(force: true)
+        refreshMouseEventPassthrough(force: true, forceEnable: forceEnable)
     }
 
-    private func refreshMouseEventPassthrough(force: Bool = false) {
+    private func refreshMouseEventPassthrough(force: Bool = false, forceEnable: Bool = false) {
         guard contentView != nil else { return }
         guard force || isHandlingMouseInteraction || isVisible else {
             return
@@ -138,20 +138,25 @@ final class DynamicFocusWindow: NSPanel {
 
         lastPolledMousePoint = mousePoint
 
+        let effectiveInteractiveFrame = interactiveContentFrame.isEmpty ? (contentView?.bounds ?? .zero) : interactiveContentFrame
+        // Pad the enable region so the window starts receiving events again as
+        // the cursor re-enters, instead of staying stuck in ignoresMouseEvents.
+        let enableFrame = effectiveInteractiveFrame.insetBy(dx: -12, dy: -12)
+
         let shouldReceiveMouseEvents: Bool
-        if isHandlingMouseInteraction {
+        if isHandlingMouseInteraction || (forceEnable && enableFrame.contains(mousePoint)) {
             shouldReceiveMouseEvents = true
         } else {
-            let effectiveInteractiveFrame = interactiveContentFrame.isEmpty ? (contentView?.bounds ?? .zero) : interactiveContentFrame
-            shouldReceiveMouseEvents = effectiveInteractiveFrame.contains(mousePoint)
+            shouldReceiveMouseEvents = enableFrame.contains(mousePoint)
         }
 
         let shouldIgnoreMouseEvents = !shouldReceiveMouseEvents
         if ignoresMouseEvents != shouldIgnoreMouseEvents {
             ignoresMouseEvents = shouldIgnoreMouseEvents
+            ignoreStateFlipCount += 1
         }
 
-        let shouldAcceptMouseMovedEvents = shouldReceiveMouseEvents || isHandlingMouseInteraction
+        let shouldAcceptMouseMovedEvents = shouldReceiveMouseEvents || isHandlingMouseInteraction || isFocusable
         if acceptsMouseMovedEvents != shouldAcceptMouseMovedEvents {
             acceptsMouseMovedEvents = shouldAcceptMouseMovedEvents
         }
@@ -160,10 +165,11 @@ final class DynamicFocusWindow: NSPanel {
     private func shouldDropPassivePointerEvent(_ event: NSEvent) -> Bool {
         guard !isHandlingMouseInteraction else { return false }
         let effectiveInteractiveFrame = interactiveContentFrame.isEmpty ? (contentView?.bounds ?? .zero) : interactiveContentFrame
+        let enableFrame = effectiveInteractiveFrame.insetBy(dx: -12, dy: -12)
 
         switch event.type {
         case .mouseMoved, .mouseEntered, .mouseExited:
-            return !effectiveInteractiveFrame.contains(event.locationInWindow)
+            return !enableFrame.contains(event.locationInWindow)
         default:
             return false
         }
@@ -238,6 +244,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     lazy var fileShelfManager: FileShelfManager = .shared
     lazy var authManager: AuthenticationManager = .shared
     lazy var intelligenceViewModel: IntelligenceNotchViewModel = IntelligenceNotchViewModel()
+    lazy var circleToSearchManager: CircleToSearchManager = .shared
 
     var statusBarController: StatusBarController?
     var interactionManager: MenuBarInteractionManager?
@@ -414,6 +421,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
             .store(in: &cancellables)
 
+        settingsModel.$settings
+            .map(\.notchDisplayTarget)
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.createNotchWindow() }
+            .store(in: &cancellables)
+
         observeSubscriptionForBetaGate()
     }
 
@@ -509,10 +522,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         Analytics.logEvent("onboarding_started", parameters: nil)
 
         if onboardingWindow == nil {
-            let size = UtilityWindowMetrics.fittedSize(
-                preferredWidth: NotchConfiguration.onboardingWindowWidth,
-                preferredHeight: NotchConfiguration.onboardingWindowHeight
-            )
+            let visibleFrame = UtilityWindowMetrics.visibleFrame()
+            let size = UtilityWindowMetrics.onboardingWindowSize()
             let frame = UtilityWindowMetrics.centeredFrame(size: size)
             let window = KeyableWindow(contentRect: frame, styleMask: [.borderless, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.setFrame(frame, display: false)
@@ -525,8 +536,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             window.isMovableByWindowBackground = true
             window.isOpaque = false
             window.backgroundColor = .clear
-            window.minSize = size
-            window.maxSize = size
+            window.minSize = NSSize(
+                width: NotchConfiguration.settingsWindowMinWidth,
+                height: NotchConfiguration.settingsWindowMinHeight
+            )
+            window.maxSize = NSSize(
+                width: visibleFrame.width,
+                height: visibleFrame.height
+            )
             window.setContentSize(size)
             window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
             let hostingView = FocusableHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() }).environmentObject(settingsModel).environmentObject(musicManager))
@@ -601,6 +618,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         XPCClient.shared.start()
 
         createNotchWindow()
+        _ = circleToSearchManager
+        _ = keyboardShortcutManager
         _ = lidAngleAutomationManager
         setupStatusBarItem()
         transitionToAgentApp()
@@ -706,6 +725,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
+        HelperManager.shared.updateStatus()
         Task {
             await evaluateHelperConnection(showAlertOnFailure: true)
             await SubscriptionManager.shared.validateSubscriptionStatus()
@@ -1049,23 +1069,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         isCreatingNotchWindow = true
         defer { isCreatingNotchWindow = false }
 
-        let targetScreen: NSScreen? = {
-            switch settingsModel.settings.notchDisplayTarget {
-            case .macbookDisplay:
-                return NSScreen.screens.first {
-                    if let displayID = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
-                        return CGDisplayIsBuiltin(displayID) != 0
-                    }
-                    return false
-                } ?? NSScreen.main
-            case .mainDisplay, .allDisplays:
-                return NSScreen.main
-            }
-        }()
+        guard let targetScreen = CursorPosition.targetNotchScreen() else { return }
 
-        guard let mainScreen = targetScreen else { return }
-
-        if let existingWindow = notchWindow, existingWindow.screen == mainScreen, existingWindow.isVisible {
+        if let existingWindow = notchWindow, existingWindow.screen == targetScreen, existingWindow.isVisible {
             existingWindow.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
             return
         }
@@ -1076,8 +1082,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             oldWindow.close()
             notchWindow = nil
         }
-        let screenFrame = mainScreen.frame
-        let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings)
+        let screenFrame = targetScreen.frame
+        let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings, screen: targetScreen)
         let paddedWidth = ceil(screenFrame.width)
         let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
         let rect = NSRect(
@@ -1172,6 +1178,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         (notchWindow as? DynamicFocusWindow)?.syncMouseEventPassthrough()
     }
 
+    func updateNotchHostWindowHeight(requiredContentHeight: CGFloat) {
+        guard let window = notchWindow else { return }
+        let targetScreen = window.screen ?? CursorPosition.targetNotchScreen()
+        guard let targetScreen else { return }
+
+        let config = ResolvedNotchConfiguration(from: settingsModel.settings, screen: targetScreen)
+        let baselineHeight = max(
+            config.initialSize.height + config.topBuffer + 24,
+            targetScreen.frame.height * 0.42
+        )
+        let desiredHeight = max(baselineHeight, requiredContentHeight + config.topBuffer + 36)
+        let paddedHeight = min(ceil(desiredHeight), targetScreen.visibleFrame.height)
+        var frame = window.frame
+        let newY = targetScreen.frame.maxY - paddedHeight
+        guard abs(frame.height - paddedHeight) > 2 || abs(frame.origin.y - newY) > 2 else { return }
+        frame.origin.y = newY
+        frame.size.height = paddedHeight
+        window.setFrame(frame, display: true, animate: false)
+    }
+
     // MARK: - Settings Window
 
     func openSettingsWindow() {
@@ -1180,7 +1206,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
-        let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 950, height: 650)
+        let visibleFrame = UtilityWindowMetrics.visibleFrame()
         let size = UtilityWindowMetrics.settingsDefaultSize()
         let frame = UtilityWindowMetrics.centeredFrame(size: size)
         let window = KeyableWindow(
@@ -1293,6 +1319,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @objc func handleSubscriptionPaywallRequest(_ notification: Notification) {
         openSettingsWindow()
+        NotificationCenter.default.post(name: .sapphireOpenAccountPane, object: nil)
     }
 
     @objc func screenParametersChanged(notification: Notification) {

@@ -10,50 +10,89 @@ class XPCClient {
 
     static let shared = XPCClient()
 
-    var connection: NSXPCConnection?
+    private let lock = NSLock()
+    private var connection: NSXPCConnection?
 
     var helper: HelperProtocol? {
-        return self.connection?.remoteObjectProxyWithErrorHandler { error in
+        lock.lock()
+        let connection = self.connection
+        lock.unlock()
+        return connection?.remoteObjectProxyWithErrorHandler { [weak self] error in
             NSLog("[XPCClient] Connection Error: \(error)")
-            self.connection = nil
+            self?.stop()
         } as? HelperProtocol
     }
 
     private init() {}
 
-    func start() {
-        guard self.connection == nil else {
-            return
+    func start(force: Bool = false) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if force, let existing = connection {
+            existing.invalidationHandler = nil
+            existing.interruptionHandler = nil
+            existing.invalidate()
+            connection = nil
         }
+
+        guard connection == nil else { return }
 
         let newConnection = NSXPCConnection(machServiceName: "com.shariq.sapphireHelper", options: .privileged)
-
         newConnection.remoteObjectInterface = NSXPCInterface(with: HelperProtocol.self)
-
         newConnection.invalidationHandler = { [weak self] in
             NSLog("[XPCClient] Connection invalidated")
+            self?.lock.lock()
             self?.connection = nil
+            self?.lock.unlock()
         }
-
         newConnection.interruptionHandler = { [weak self] in
             NSLog("[XPCClient] Connection interrupted")
+            self?.lock.lock()
             self?.connection = nil
+            self?.lock.unlock()
         }
 
-        self.connection = newConnection
-        self.connection?.resume()
+        connection = newConnection
+        newConnection.resume()
     }
 
     func stop() {
-        self.connection?.invalidate()
-        self.connection = nil
+        lock.lock()
+        let existing = connection
+        existing?.invalidationHandler = nil
+        existing?.interruptionHandler = nil
+        connection = nil
+        lock.unlock()
+        existing?.invalidate()
     }
 
-    func ping() async -> Bool {
+    /// 2.54-style ping, but with a timeout so a dead helper cannot hang forever.
+    func ping(timeout: TimeInterval = 5) async -> Bool {
         await withCheckedContinuation { continuation in
-            start()
-            helper?.getVersion { _ in
-                continuation.resume(returning: true)
+            let lock = NSLock()
+            var resumed = false
+
+            func resumeOnce(_ value: Bool) {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: value)
+            }
+
+            start(force: true)
+            guard let helper else {
+                resumeOnce(false)
+                return
+            }
+
+            helper.getVersion { _ in
+                resumeOnce(true)
+            }
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                resumeOnce(false)
             }
         }
     }

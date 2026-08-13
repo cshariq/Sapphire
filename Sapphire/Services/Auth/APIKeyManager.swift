@@ -29,6 +29,46 @@ final class APIKeyManager {
 
     private init() {
         migrateLegacyUserDefaultsKeysIfNeeded()
+        migrateMisplacedProviderKeysIfNeeded()
+    }
+
+    /// Moves provider keys saved under the wrong slot (e.g. Hack Club key in Gemini).
+    private func migrateMisplacedProviderKeysIfNeeded() {
+        let gemini = loadKey(keychainKey: geminiKeychainKey) ?? ""
+        guard !gemini.isEmpty else { return }
+
+        if gemini.hasPrefix("sk-hc-") {
+            let hackClub = loadKey(keychainKey: hackClubKeychainKey) ?? ""
+            if hackClub.isEmpty {
+                saveKey(gemini, keychainKey: hackClubKeychainKey)
+            }
+            keychain.delete(forKey: geminiKeychainKey)
+            return
+        }
+
+        if gemini.hasPrefix("sk-or-") {
+            let openRouter = loadKey(keychainKey: openRouterKeychainKey) ?? ""
+            if openRouter.isEmpty {
+                saveKey(gemini, keychainKey: openRouterKeychainKey)
+            }
+            keychain.delete(forKey: geminiKeychainKey)
+        }
+    }
+
+    /// Returns true when `key` looks like a Google Gemini / Generative Language API key.
+    static func isValidGoogleGeminiAPIKey(_ key: String) -> Bool {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.hasPrefix("AIza") { return true }
+        let thirdPartyPrefixes = ["sk-hc-", "sk-or-", "sk-ant-", "sk-proj-", "sk-"]
+        return !thirdPartyPrefixes.contains(where: { trimmed.hasPrefix($0) })
+    }
+
+    /// Gemini key suitable for Google APIs (Live, Generative Language). Rejects OpenRouter / Hack Club keys.
+    var googleGeminiAPIKey: String {
+        let key = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isValidGoogleGeminiAPIKey(key) else { return "" }
+        return key
     }
 
     private func migrateLegacyUserDefaultsKeysIfNeeded() {
@@ -134,7 +174,7 @@ final class APIKeyManager {
         }
     }
 
-    var hasGeminiKey: Bool { !geminiAPIKey.isEmpty }
+    var hasGeminiKey: Bool { !googleGeminiAPIKey.isEmpty }
     var hasHackClubKey: Bool { !hackClubAPIKey.isEmpty }
     var hasOpenAIKey: Bool { !openAIAPIKey.isEmpty }
     var hasAnthropicKey: Bool { !anthropicAPIKey.isEmpty }

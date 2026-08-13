@@ -304,6 +304,24 @@ struct SystemControl {
 
     static func setVolume(to level: Float) {
         let cleanLevel = max(0.0, min(1.0, level))
+
+        if let deviceID = getDefaultOutputDeviceID() {
+            var volumeValue: Float = cleanLevel
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyVolumeScalar,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var size = UInt32(MemoryLayout<Float>.size)
+            if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &volumeValue) == noErr {
+                return
+            }
+            address.mElement = 0
+            if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &volumeValue) == noErr {
+                return
+            }
+        }
+
         let scriptVolume: Int
         if cleanLevel < 0.05 {
             scriptVolume = Int(ceil(cleanLevel * 100))
@@ -321,6 +339,29 @@ struct SystemControl {
     }
 
     static func isMuted() -> Bool {
+        if let deviceID = getDefaultOutputDeviceID() {
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyMute,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioObjectHasProperty(deviceID, &address) {
+                var muted: UInt32 = 0
+                var size = UInt32(MemoryLayout<UInt32>.size)
+                if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muted) == noErr {
+                    return muted != 0
+                }
+            }
+            address.mElement = 0
+            if AudioObjectHasProperty(deviceID, &address) {
+                var muted: UInt32 = 0
+                var size = UInt32(MemoryLayout<UInt32>.size)
+                if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muted) == noErr {
+                    return muted != 0
+                }
+            }
+        }
+
         let scriptSource = "output muted of (get volume settings)"
         if let script = NSAppleScript(source: scriptSource) {
             var error: NSDictionary?
@@ -333,6 +374,23 @@ struct SystemControl {
     }
 
     static func setMuted(to isMuted: Bool) {
+        if let deviceID = getDefaultOutputDeviceID() {
+            var value: UInt32 = isMuted ? 1 : 0
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyMute,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &value) == noErr {
+                return
+            }
+            address.mElement = 0
+            if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &value) == noErr {
+                return
+            }
+        }
+
         let scriptSource = isMuted ? "set volume with output muted" : "set volume without output muted"
         if let script = NSAppleScript(source: scriptSource) {
             var error: NSDictionary?

@@ -98,6 +98,7 @@ struct NotchController: View {
 
     private static let widgetSwitchProtectionDuration: TimeInterval = 2.5
     private static let hoverDetectionMargin: CGFloat = 8
+    private static let hoverCollapseMargin: CGFloat = 60
     private static let hoverProximityMargin: CGFloat = 32
 
     // MARK: - Environment Objects
@@ -306,10 +307,6 @@ struct NotchController: View {
         return settings.settings.defaultSnapLayout
     }
 
-    private var showMultiAudioIcon: Bool {
-        audioManager.availableOutputDevices.count > 1
-    }
-
     private var leftNotchButtons: [NotchButtonType] {
         let allButtons = settings.settings.notchButtonOrder
         if let spacerIndex = allButtons.firstIndex(of: .spacer) {
@@ -402,7 +399,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                                        value: liveActivityManager.activityAnimationKey)
                             .opacity(autoContentOpacity)
                             .scaleEffect(animatedContentScale)
-                            .allowsHitTesting(isHovered)
                     } else {
                         contentView
                             .mask(activeShape)
@@ -471,18 +467,18 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenMusicDevices)) { _ in
                 openMusicHub(mode: .musicDevices)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenCircleToSearch)) { notification in
+                openCircleToSearch(object: notification.object as? String)
+            }
             .onChange(of: showLyrics, perform: handleShowLyricsChange)
             .onChange(of: isInteractive) { _, newValue in
                 updateMouseEventHandling(isInteractive: newValue)
-                restartNotchInteractionMonitoring()
             }
             .onChange(of: animatedWidth) { _, _ in
-                guard isInteractive else { return }
-                updateMouseEventHandling(isInteractive: true)
+                updateMouseEventHandling(isInteractive: isInteractive)
             }
             .onChange(of: animatedHeight) { _, _ in
-                guard isInteractive else { return }
-                updateMouseEventHandling(isInteractive: true)
+                updateMouseEventHandling(isInteractive: isInteractive)
             }
             .onChange(of: shouldHideWindowForSharing) { _, newValue in updateWindowSharingBehavior(shouldBeHidden: newValue) }
             .onChange(of: isInteractive) { _, isNowInteractive in
@@ -493,7 +489,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 }
             }
             .onChange(of: settings.settings) { _, newSettings in
-                let newConfig = ResolvedNotchConfiguration(from: newSettings)
+                let targetScreen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
+                let newConfig = ResolvedNotchConfiguration(from: newSettings, screen: targetScreen)
                 self.config = newConfig
                 self.expansionAnimation = newConfig.expandAnimation
                 handleStateChange(from: notchState, to: notchState)
@@ -501,7 +498,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         } else {
             Color.clear
                 .onAppear {
-                    let initialConfig = ResolvedNotchConfiguration(from: settings.settings)
+                    let targetScreen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
+                    let initialConfig = ResolvedNotchConfiguration(from: settings.settings, screen: targetScreen)
                     self.config = initialConfig
                     self.animatedWidth = initialConfig.initialSize.width
                     self.animatedHeight = initialConfig.initialSize.height
@@ -859,11 +857,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             if isLiveRunning {
                 geminiLiveManager.stopSession()
             } else {
-                if settings.settings.geminiApiKey.isEmpty {
-                    navigationStack.append(.geminiApiKeysMissing)
-                } else {
-                    pickerHelper.showPicker()
-                }
+                openBlipHub()
             }
         }) {
             HStack(spacing: 4) {
@@ -895,7 +889,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     )
 
                 if isGeminiHovered {
-                    Text(isLiveRunning ? "Stop" : "Go live")
+                    Text(isLiveRunning ? "Stop" : "Blip")
                         .font(.system(size: NotchConfiguration.geminiButtonTextFontSize, weight: .semibold))
                         .fixedSize()
                         .foregroundColor(.white)
@@ -918,6 +912,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
+                openBlipHub()
                 navigationStack.append(.agentS)
             }
         )
@@ -1022,7 +1017,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     private func buildRightView(for data: StandardActivityData) -> some View {
         switch data {
         case .music: WaveformView()
-        case .intelligenceAgent(let status, let current, let total): IntelligenceAgentActivityView.right(status: status, current: current, total: total)
+        case .intelligenceAgent(let status, let stepTitle, let current, let total): IntelligenceAgentActivityView.right(status: status, stepTitle: stepTitle, current: current, total: total)
         case .weather(let data): WeatherActivityView.right(for: data)
         case .calendar(let event): CalendarProximityActivityView.right(event: event)
         case .reminder(let reminder): ReminderProximityActivityView.right(reminder: reminder)
@@ -1046,13 +1041,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             case .batteryLow: BluetoothBatteryLowView.right(for: device)
             }
         case .audioSwitch(let event): AudioSwitchActivityView.right(for: event)
-        case .geminiLive(let payload): GeminiActiveActivityView.right(isMuted: payload.isMicMuted) { geminiLiveManager.isMicMuted.toggle() }
-        case .sports(let payload, let bottom):
-            Text("\(payload.homeTeam) vs \(payload.awayTeam)")
-                .font(.system(size: 13, weight: .semibold))
+        case .geminiLive(let payload): GeminiActiveActivityView.right(isMuted: payload.isMicMuted) { geminiLiveManager.toggleMicrophone() }
+        case .sports(let payload, _):
+            SportsLiveActivityView.right(for: payload, preferLogo: settings.settings.sportsPreferLogo)
         case .finance(let payload):
-            Text("\(payload.symbol) \(payload.price)")
-                .font(.system(size: 13, weight: .semibold))
+            FinanceLiveActivityView.right(for: payload)
         case .microphone: MicrophoneLiveActivityView.right { MicrophoneUsageManager.shared.toggleMute() }
         case .nearDrop(let payload): NearDropCompactActivityView.right(payload: payload)
         case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: SettingsModel.shared)
@@ -1110,7 +1103,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 .padding(.horizontal, NotchConfiguration.batteryHorizontalPadding)
             }
         case .multiAudio:
-            if showMultiAudioIcon {
+            if settings.settings.showMultiAudioIcon {
                 SubtleIconButton(systemName: "hifispeaker.and.homepod.mini.fill", action: { navigationStack.append(.multiAudio) })
             }
         case .pin:
@@ -1215,7 +1208,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             if activityType == .calendar, settings.settings.calendarOpenOnClick { initiateWidgetView(.calendarPlayer); return }
             if activityType == .fileShelf, settings.settings.clickToOpenFileShelf { initiateWidgetView(.fileShelf); return }
             if activityType == .timer, settings.settings.clickToShowTimerView { initiateWidgetView(.timerDetailView); return }
-            if activityType == .intelligenceAgent { initiateWidgetView(.agentS); return }
+            if activityType == .intelligenceAgent { initiateWidgetView(.blipHub); return }
         }
 
         switch notchState {
@@ -1337,6 +1330,22 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
         if isContentUpdate { return }
 
+        if newState != .clickExpanded {
+            CircleToSearchManager.shared.endResultsPresentation()
+        }
+
+        if oldState == .clickExpanded && newState != .clickExpanded {
+            if navigationStack.contains(.mirrorPlayer) {
+                navigationStack.removeAll { $0 == .mirrorPlayer }
+                if navigationStack.isEmpty {
+                    navigationStack = [.defaultWidgets]
+                }
+            }
+            if MirrorCameraManager.shared.isLive {
+                MirrorCameraManager.shared.teardown()
+            }
+        }
+
         switch newState {
         case .initial:
             let wasShowingActivity = (oldState == .autoExpanded || oldState == .hoverExpanded)
@@ -1352,6 +1361,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 animatedContentScale = 1.0
                 isPinned = false
             }
+            syncNotchHostWindowHeight(contentHeight: config.initialSize.height)
 
             DispatchQueue.main.asyncAfter(deadline: .now() + config.activityAnimationOutDelay) {
                 guard self.notchState == .initial else { return }
@@ -1438,6 +1448,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             }
         }
         updateFPS()
+        updateMouseEventHandling(isInteractive: isInteractive)
     }
 
     private func handlePreviewItemChange(newItem: ShelfItem?) {
@@ -1452,8 +1463,14 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func handleNavigationStackChange(oldStack: [NotchWidgetMode], newStack: [NotchWidgetMode]) {
         guard let config = config else { return }
+        if oldStack.contains(.circleToSearch) && !newStack.contains(.circleToSearch) {
+            CircleToSearchManager.shared.endResultsPresentation()
+        }
         if oldStack.contains(.snapZones) && !newStack.contains(.snapZones) {
             SnapPreviewManager.shared.hidePreview()
+        }
+        if oldStack.contains(.mirrorPlayer) && !newStack.contains(.mirrorPlayer) {
+            MirrorCameraManager.shared.teardown()
         }
 
         if notchState == .clickExpanded && oldStack != newStack {
@@ -1603,6 +1620,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 animatedWidth = newSize.width
                 animatedHeight = newSize.height
             }
+            syncNotchHostWindowHeight(contentHeight: newSize.height)
 
         } else if state == .autoExpanded {
             updateAutoContentSize()
@@ -1721,6 +1739,27 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         notchState = .clickExpanded
     }
 
+    private func openBlipHub() {
+        measuredClickContentSize = .zero
+        navigationStack = [.blipHub]
+        notchState = .clickExpanded
+        (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
+    }
+
+    private func openCircleToSearch(object: String?) {
+        measuredClickContentSize = .zero
+        switch object {
+        case "askBlip":
+            navigationStack = [.agentS]
+        case "askBlipMissingKey":
+            navigationStack = [.geminiApiKeysMissing]
+        default:
+            navigationStack = [.circleToSearch]
+        }
+        notchState = .clickExpanded
+        (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
+    }
+
     private func handleTrackpadTwoFingerTap() {
         guard (notchState == .autoExpanded || notchState == .hoverExpanded) else { return }
 
@@ -1768,47 +1807,44 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         lastPublishedInteractiveFrame = .null
     }
 
-    private func restartNotchInteractionMonitoring() {
-        stopNotchInteractionMonitoring()
-        startNotchInteractionMonitoring()
-    }
-
     private func refreshNotchInteractionState() {
         guard let config = config, let window = notchWindow else { return }
         let mouseLocation = window.mouseLocationOutsideOfEventStream
-        if !isInteractive, lastSampledMouseLocation == mouseLocation {
+        let interactiveBounds = interactiveFrame(for: window, config: config)
+        let isNear = isMouseNearNotchFrame(interactiveBounds, mouseLocation: mouseLocation)
+        let hoverMargin = isHovered ? Self.hoverCollapseMargin : Self.hoverDetectionMargin
+        let detectionBounds = interactiveBounds.insetBy(
+            dx: -hoverMargin,
+            dy: -hoverMargin
+        )
+        let isPointerInside = detectionBounds.contains(mouseLocation)
+
+        if !isInteractive, !isNear, lastSampledMouseLocation == mouseLocation {
             return
         }
 
         lastSampledMouseLocation = mouseLocation
 
-        let interactiveBounds = interactiveFrame(for: window, config: config)
-
-        if !isInteractive && !isMouseNearNotchFrame(interactiveBounds, mouseLocation: mouseLocation) {
+        if !isInteractive && !isNear {
             if isHovered {
                 handleHover(hovering: false)
             }
+            updateMouseEventHandling(isInteractive: false)
             return
         }
 
         if interactiveBounds != lastPublishedInteractiveFrame {
             lastPublishedInteractiveFrame = interactiveBounds
-            updateMouseEventHandling(isInteractive: isInteractive)
         }
 
-        if dragManager.isDraggingInActivationZone || activeAppMonitor.isWindowDragging {
-            return
-        }
-
-        let detectionBounds = interactiveBounds.insetBy(
-            dx: -Self.hoverDetectionMargin,
-            dy: -Self.hoverDetectionMargin
-        )
-        let isPointerInside = detectionBounds.contains(mouseLocation)
-
-        if isPointerInside != isHovered {
+        if isPointerInside != isHovered, !dragManager.isDraggingInActivationZone, !activeAppMonitor.isWindowDragging {
             handleHover(hovering: isPointerInside)
         }
+
+        // Always re-sync passthrough while the cursor is over an expanded notch.
+        // Otherwise ignoresMouseEvents can stay true after the pointer leaves
+        // and never turn back on when it returns.
+        updateMouseEventHandling(isInteractive: isInteractive || isPointerInside)
     }
 
     private func isMouseNearNotchFrame(_ notchFrame: CGRect, mouseLocation: CGPoint) -> Bool {
@@ -1860,11 +1896,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .financePlayer: return .financePlayer
         case .notesPlayer: return .notesPlayer
         case .clipboardPlayer: return .clipboardPlayer
-        case .mirrorPlayer: return .mirrorPlayer
+        case .mirrorPlayer: return nil
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
-                .agentS:
+                .agentS, .blipHub, .circleToSearch:
             return nil
         }
     }
@@ -1957,9 +1993,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
         if let dynamicWindow = window as? DynamicFocusWindow {
             dynamicWindow.updateInteractiveContentFrame(interactiveFrame(for: dynamicWindow, config: config))
-            if isInteractive {
-                dynamicWindow.syncMouseEventPassthrough()
-            }
+            dynamicWindow.syncMouseEventPassthrough(forceEnable: isInteractive && notchState == .clickExpanded)
         } else if window.contentView != nil {
             let shouldIgnore = !isInteractive
             if window.ignoresMouseEvents != shouldIgnore {
@@ -1974,6 +2008,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         if window.sharingType != desired {
             window.sharingType = desired
         }
+    }
+
+    private func syncNotchHostWindowHeight(contentHeight: CGFloat) {
+        (NSApp.delegate as? AppDelegate)?.updateNotchHostWindowHeight(requiredContentHeight: contentHeight)
     }
 
     private func handleClickExpandedHoverOut(config: ResolvedNotchConfiguration) {
@@ -2006,7 +2044,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard let window = notchWindow, let config = config, !isPinned else { return }
         let mouseLocation = window.mouseLocationOutsideOfEventStream
         let interactiveBounds = interactiveFrame(for: window, config: config)
-            .insetBy(dx: -Self.hoverDetectionMargin, dy: -Self.hoverDetectionMargin)
+            .insetBy(dx: -Self.hoverCollapseMargin, dy: -Self.hoverCollapseMargin)
         guard !interactiveBounds.contains(mouseLocation) else { return }
         guard !dragManager.isDraggingInActivationZone && !activeAppMonitor.isWindowDragging else { return }
         scheduleCollapse(after: 0)

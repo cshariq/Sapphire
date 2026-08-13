@@ -11,10 +11,22 @@ import AppKit
 struct MultiAudioView: View {
     @Binding var navigationStack: [NotchWidgetMode]
 
+    private var panelSize: CGSize {
+        let screen = CursorPosition.targetNotchScreen() ?? NSScreen.main
+        let widthAdj = NotchConfiguration.screenWidthAdjustment(for: screen)
+        let heightAdj = NotchConfiguration.screenHeightAdjustment(for: screen)
+        let screenWidth = screen?.frame.width ?? 1512
+        let visibleHeight = screen?.visibleFrame.height ?? 800
+        return CGSize(
+            width: min(850 * widthAdj, screenWidth * 0.88),
+            height: min(420 * heightAdj, visibleHeight * 0.52)
+        )
+    }
+
     var body: some View {
         SystemAudioPanel(navigationStack: $navigationStack)
             .padding(.top, 8)
-            .frame(width: 850, height: 400)
+            .frame(width: panelSize.width, height: panelSize.height)
     }
 }
 

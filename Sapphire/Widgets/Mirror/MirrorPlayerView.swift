@@ -53,9 +53,14 @@ struct MirrorPlayerView: View {
                 .stroke(MaterialChartPalette.outlineStrong, lineWidth: 1)
         )
         .onAppear {
-            if !camera.isLive {
+            if camera.isLive {
+                camera.restartPreviewIfNeeded()
+            } else {
                 camera.start()
             }
+        }
+        .onDisappear {
+            MirrorCameraManager.shared.teardown()
         }
     }
 
@@ -364,11 +369,15 @@ final class MirrorFullscreenWindowController {
         self.window = window
     }
 
-    func dismiss() {
+    func dismiss(destroy: Bool = false) {
         if let escapeMonitor {
             NSEvent.removeMonitor(escapeMonitor)
             self.escapeMonitor = nil
         }
         window?.orderOut(nil)
+        if destroy {
+            window?.contentView = nil
+            window = nil
+        }
     }
 }

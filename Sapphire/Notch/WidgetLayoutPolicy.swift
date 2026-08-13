@@ -26,9 +26,10 @@ enum WidgetLayoutPolicy {
         }
     }
 
-    static func availableBarWidth(for screen: NSScreen? = NSScreen.main) -> CGFloat {
-        let screenWidth = screen?.frame.width ?? 1440
-        let adj = NotchConfiguration.screenWidthAdjustment
+    static func availableBarWidth(for screen: NSScreen? = nil) -> CGFloat {
+        let targetScreen = screen ?? CursorPosition.targetNotchScreen() ?? NSScreen.main
+        let screenWidth = targetScreen?.frame.width ?? 1440
+        let adj = NotchConfiguration.screenWidthAdjustment(for: targetScreen)
         return max(360, screenWidth * 0.72 - headerIconReserve * adj)
     }
 

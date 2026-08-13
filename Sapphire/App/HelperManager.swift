@@ -33,12 +33,13 @@ class HelperManager: ObservableObject {
     @Published var isRunning: Bool = false
 
     private var healthCheckTimer: Timer?
-    private var isReactivating = false
-    private var reactivationFailureCount = 0
-    private var alertShowing = false
-    private var lastAlertTime: Date?
-    private let maxReactivationFailuresBeforeAlert = 3
-    private let alertCooldownInterval: TimeInterval = 3600
+    private var isRegistering = false
+    private var lastRegisterAttempt: Date?
+    private let registerCooldown: TimeInterval = 8
+
+    private var daemonService: SMAppService {
+        SMAppService.daemon(plistName: "\(helperToolIdentifier).plist")
+    }
 
     private init() {
         helperLogger.info("[HelperManager] Initialized")
@@ -58,82 +59,59 @@ class HelperManager: ObservableObject {
     }
 
     @objc func updateStatus() {
-        let service = SMAppService.daemon(plistName: "\(helperToolIdentifier).plist")
-        let newStatus = service.status
-        if self.status != newStatus {
+        let newStatus = daemonService.status
+        if status != newStatus {
             helperLogger.info("[HelperManager] Status changed: \(String(describing: self.status)) -> \(String(describing: newStatus))")
-            self.status = newStatus
+            status = newStatus
         }
         checkIfRunning()
     }
 
     func checkIfRunning() {
-        guard !isReactivating else {
-            helperLogger.debug("[HelperManager] Skipping check - reactivation in progress")
-            return
-        }
         Task.detached(priority: .utility) {
-            helperLogger.debug("[HelperManager] Pinging helper...")
-            let running = await XPCClient.shared.ping()
+            let running = await XPCClient.shared.ping(timeout: 2)
             await MainActor.run {
                 helperLogger.info("[HelperManager] Ping result: \(running ? "running" : "NOT running"), current status: \(String(describing: self.status))")
                 if self.isRunning != running {
                     self.isRunning = running
                 }
-                if self.status == .enabled && !running && !self.isReactivating {
-                    helperLogger.warning("[HelperManager] Helper installed but not running - triggering reactivation")
-                    self.reactivateHelper()
+                if running {
+                    BatteryManager.shared.reconnectHelper()
                 }
             }
         }
     }
 
+    /// Settings "Activate" and launch recovery. Never unregisters — that drops Login Items approval.
     func reactivateHelper() {
-        isReactivating = true
-        helperLogger.info("[HelperManager] Starting reactivation...")
-        Task.detached(priority: .utility) {
-            do {
-                let service = SMAppService.daemon(plistName: "\(self.helperToolIdentifier).plist")
-                helperLogger.info("[HelperManager] Calling register() on service...")
-                try service.register()
-                helperLogger.info("[HelperManager] register() succeeded, waiting for helper to start...")
-                await MainActor.run { self.checkIfRunning() }
-            } catch {
-                helperLogger.error("[HelperManager] Helper reactivation failed: \(error.localizedDescription)")
-                await MainActor.run { self.handleReactivationFailure() }
-            }
-            await MainActor.run { self.isReactivating = false }
+        Task { await registerHelper(userInitiated: true) }
+    }
+
+    func installIfNeeded() {
+        updateStatusLocked()
+        switch status {
+        case .notRegistered, .notFound:
+            Task { await registerHelper(userInitiated: false) }
+        case .requiresApproval:
+            SMAppService.openSystemSettingsLoginItems()
+            Task { await registerHelper(userInitiated: false) }
+        case .enabled:
+            XPCClient.shared.start(force: true)
+            checkIfRunning()
+        @unknown default:
+            break
         }
     }
 
-    private func handleReactivationFailure() {
-        reactivationFailureCount += 1
-        helperLogger.warning("[HelperManager] Reactivation failure count: \(self.reactivationFailureCount)")
-
-        if reactivationFailureCount >= maxReactivationFailuresBeforeAlert {
-            showHelperAlertIfNeeded()
-            startHealthCheckTimer(interval: 60)
+    func uninstall() {
+        do {
+            try daemonService.unregister()
+            NSLog("[HelperManager] Helper unregistration successful.")
+            XPCClient.shared.stop()
+        } catch {
+            NSLog("[HelperManager] Helper unregistration failed with error: \(error.localizedDescription)")
         }
-    }
-
-    private func showHelperAlertIfNeeded() {
-        let now = Date()
-        if let lastAlert = lastAlertTime, now.timeIntervalSince(lastAlert) < alertCooldownInterval {
-            return
-        }
-        if alertShowing { return }
-
-        alertShowing = true
-        lastAlertTime = now
-        helperLogger.error("[HelperManager] Showing helper failure alert")
-
-        DispatchQueue.main.async {
-            AlertHelper.showAlert(
-                title: "Helper Service Unavailable",
-                message: "Sapphire's helper service is not responding. Battery management features will be limited. Please check System Settings > General > Login Items and ensure 'Sapphire Helper' is enabled, then restart Sapphire."
-            )
-            self.alertShowing = false
-        }
+        updateStatusLocked()
     }
 
     func startHealthCheckTimer(interval: TimeInterval = 1800) {
@@ -150,51 +128,97 @@ class HelperManager: ObservableObject {
         checkIfRunning()
     }
 
-    func installIfNeeded() {
-        guard status == .notRegistered || status == .notFound else {
-            if status == .requiresApproval {
-                DispatchQueue.main.async {
-                    AlertHelper.showAlert(
-                        title: "Helper Service Approval Required",
-                        message: "Sapphire needs you to enable its helper service in System Settings for certain functions like battery management to work correctly. Please go to System Settings > General > Login Items and enable it."
-                    )
-                    SMAppService.openSystemSettingsLoginItems()
-                }
-            }
-            return
+    // MARK: - Register (main actor only)
+
+    /// `SMAppService.register()` must run on the main thread so macOS can show the
+    /// Login Items prompt. Calling it from a detached task returns "Operation not permitted".
+    @discardableResult
+    private func registerHelper(userInitiated: Bool) async -> Bool {
+        if isRegistering { return false }
+        if let last = lastRegisterAttempt, Date().timeIntervalSince(last) < registerCooldown, !userInitiated {
+            return false
         }
 
-        Task.detached(priority: .utility) {
-            do {
-                try SMAppService.daemon(plistName: "\(self.helperToolIdentifier).plist").register()
-                await MainActor.run {
+        isRegistering = true
+        lastRegisterAttempt = Date()
+        defer { isRegistering = false }
+
+        let service = daemonService
+        helperLogger.info("[HelperManager] register() on main actor, current status: \(String(describing: service.status))")
+
+        do {
+            try service.register()
+            helperLogger.info("[HelperManager] register() succeeded")
+        } catch {
+            let nsError = error as NSError
+            helperLogger.error("[HelperManager] register() failed: \(error.localizedDescription) domain=\(nsError.domain) code=\(nsError.code)")
+
+            updateStatusLocked()
+
+            // Already registered / already enabled is success.
+            if service.status == .enabled {
+                helperLogger.info("[HelperManager] Service is enabled after register() error — continuing")
+            } else if service.status == .requiresApproval || isPermissionError(nsError) {
+                SMAppService.openSystemSettingsLoginItems()
+                if userInitiated {
                     AlertHelper.showAlert(
-                        title: "Helper Service Installed",
-                        message: "The helper service for Sapphire has been properly installed."
+                        title: "Enable Sapphire Helper",
+                        message: "macOS needs Sapphire Helper turned on in System Settings → General → Login Items. Enable it, then return to Sapphire."
                     )
                 }
-            } catch {
-                NSLog("[HelperManager] Helper registration failed with error: \(error.localizedDescription)")
-                await MainActor.run {
-                    AlertHelper.showAlert(
-                        title: "Installation Failed",
-                        message: "Failed to install the helper service. Please try again. Error: \(error.localizedDescription)"
-                    )
-                }
+                return false
+            } else if userInitiated {
+                AlertHelper.showAlert(
+                    title: "Installation Failed",
+                    message: "Failed to install the helper service. \(error.localizedDescription)"
+                )
+                return false
+            } else {
+                return false
             }
-            await MainActor.run { self.updateStatus() }
         }
+
+        updateStatusLocked()
+
+        if status == .requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+            return false
+        }
+
+        XPCClient.shared.start(force: true)
+        BatteryManager.shared.reconnectHelper()
+
+        for attempt in 1...6 {
+            let running = await XPCClient.shared.ping(timeout: 1.5)
+            isRunning = running
+            helperLogger.info("[HelperManager] Post-register ping \(attempt)/6: \(running ? "running" : "not running")")
+            if running {
+                BatteryManager.shared.reconnectHelper()
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(400))
+            XPCClient.shared.start(force: true)
+        }
+
+        if userInitiated, status != .enabled {
+            SMAppService.openSystemSettingsLoginItems()
+        }
+        return isRunning
     }
 
-    func uninstall() {
-        do {
-            try SMAppService.daemon(plistName: "\(helperToolIdentifier).plist").unregister()
-            NSLog("[HelperManager] Helper unregistration successful.")
-            XPCClient.shared.stop()
-        } catch {
-            NSLog("[HelperManager] Helper unregistration failed with error: \(error.localizedDescription)")
+    private func isPermissionError(_ error: NSError) -> Bool {
+        if error.domain == NSPOSIXErrorDomain && error.code == 1 { return true }
+        if error.localizedDescription.lowercased().contains("not permitted") { return true }
+        if error.localizedDescription.lowercased().contains("denied") { return true }
+        return false
+    }
+
+    private func updateStatusLocked() {
+        let newStatus = daemonService.status
+        if status != newStatus {
+            helperLogger.info("[HelperManager] Status changed: \(String(describing: self.status)) -> \(String(describing: newStatus))")
+            status = newStatus
         }
-        updateStatus()
     }
 }
 

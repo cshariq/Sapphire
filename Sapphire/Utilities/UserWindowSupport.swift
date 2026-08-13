@@ -53,13 +53,34 @@ enum SapphireStandardMenu {
 }
 
 enum UtilityWindowMetrics {
+    static func visibleFrame(for screen: NSScreen? = NSScreen.main) -> NSRect {
+        screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 950, height: 650)
+    }
+
+    static func maxUserWindowHeight(screen: NSScreen? = NSScreen.main) -> CGFloat {
+        visibleFrame(for: screen).height
+    }
+
     static func settingsDefaultSize(screen: NSScreen? = NSScreen.main) -> NSSize {
-        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 950, height: 650)
+        let visible = visibleFrame(for: screen)
         let width = min(
             NotchConfiguration.settingsWindowWidth,
             floor(visible.width * 0.92)
         )
-        let height = floor(visible.height * 0.96)
+        let height = floor(visible.height)
+        return NSSize(
+            width: max(NotchConfiguration.settingsWindowMinWidth, width),
+            height: max(NotchConfiguration.settingsWindowMinHeight, height)
+        )
+    }
+
+    static func onboardingWindowSize(screen: NSScreen? = NSScreen.main) -> NSSize {
+        let visible = visibleFrame(for: screen)
+        let width = min(
+            NotchConfiguration.onboardingWindowWidth,
+            floor(visible.width * 0.92)
+        )
+        let height = floor(visible.height)
         return NSSize(
             width: max(NotchConfiguration.settingsWindowMinWidth, width),
             height: max(NotchConfiguration.settingsWindowMinHeight, height)

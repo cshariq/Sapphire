@@ -232,8 +232,21 @@ class MusicManager: ObservableObject {
 
     // MARK: - Core Playback Actions
 
-    func play() { defaultControls.play() }
-    func pause() { defaultControls.pause() }
+    func play() {
+        if lastKnownBundleID == "com.apple.Music" {
+            appleMusic.play()
+            return
+        }
+        defaultControls.play()
+    }
+
+    func pause() {
+        if lastKnownBundleID == "com.apple.Music" {
+            appleMusic.pause()
+            return
+        }
+        defaultControls.pause()
+    }
     func nextTrack() { defaultControls.nextTrack() }
     func previousTrack() { defaultControls.previousTrack() }
 
