@@ -127,6 +127,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		DA46CF802DCBCA0100F00EC5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DA46CF752DCBCA0000F00EC5;
+			remoteInfo = Sapphire;
+		};
 		DA7C49AF2E15D3800049937A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
@@ -180,6 +187,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA262ADF2EA4841B0027CA69 /* OSD.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OSD.framework; path = ../../../../System/Library/PrivateFrameworks/OSD.framework; sourceTree = "<group>"; };
 		DA262AE22EA484A70027CA69 /* Sapphire.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Sapphire.xcodeproj; sourceTree = "<group>"; };
 		DA262AE52EA485150027CA69 /* CoreDisplay.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreDisplay.framework; path = ../../../../System/Library/Frameworks/CoreDisplay.framework; sourceTree = "<group>"; };
@@ -379,6 +387,11 @@
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SapphireTests;
+			sourceTree = "<group>";
+		};
 		DA183FC92E122AF30056667D /* Sapphire */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -426,6 +439,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		DA46CF842DCBCA0100F00EC5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA452EAC2EAA57C90070E5C9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
@@ -486,6 +506,7 @@
 		DA46CF6D2DCBCA0000F00EC5 = {
 			isa = PBXGroup;
 			children = (
+				DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */,
 				DA91BDE72E773A9D001E7836 /* SystemSounds */,
 				DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */,
 				DA183FC92E122AF30056667D /* Sapphire */,
@@ -506,6 +527,7 @@
 			isa = PBXGroup;
 			children = (
 				DA46CF762DCBCA0000F00EC5 /* Sapphire.app */,
+				DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */,
 				DA7C49802E15CCA50049937A /* libNearbyShare.dylib */,
 				DAA7D9D42E8633B20032748B /* abt */,
 				DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
@@ -736,6 +758,27 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
+		DA46CF862DCBCA0100F00EC5 /* SapphireTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DA46CF8A2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */;
+			buildPhases = (
+				DA46CF832DCBCA0100F00EC5 /* Sources */,
+				DA46CF842DCBCA0100F00EC5 /* Frameworks */,
+				DA46CF852DCBCA0100F00EC5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DA46CF812DCBCA0100F00EC5 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */,
+			);
+			name = SapphireTests;
+			productName = SapphireTests;
+			productReference = DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */;
@@ -841,6 +884,9 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2650;
 				TargetAttributes = {
+					DA46CF862DCBCA0100F00EC5 = {
+						CreatedOnToolsVersion = 26.0;
+					};
 					DA452EAE2EAA57C90070E5C9 = {
 						CreatedOnToolsVersion = 26.0.1;
 						LastSwiftMigration = 2600;
@@ -886,6 +932,7 @@
 			projectRoot = "";
 			targets = (
 				DA46CF752DCBCA0000F00EC5 /* Sapphire */,
+				DA46CF862DCBCA0100F00EC5 /* SapphireTests */,
 				DA7C497F2E15CCA50049937A /* NearbyShare */,
 				DAA7D9D32E8633B20032748B /* abt */,
 				DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
@@ -894,6 +941,13 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		DA46CF852DCBCA0100F00EC5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA46CF742DCBCA0000F00EC5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
@@ -989,6 +1043,13 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		DA46CF832DCBCA0100F00EC5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		DA452EAB2EAA57C90070E5C9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
@@ -1029,6 +1090,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		DA46CF812DCBCA0100F00EC5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
+			targetProxy = DA46CF802DCBCA0100F00EC5 /* PBXContainerItemProxy */;
+		};
 		DA7C49B02E15D3800049937A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DA7C497F2E15CCA50049937A /* NearbyShare */;
@@ -1037,6 +1103,52 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		DA46CF882DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "SapphireTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.SapphireTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/Contents/MacOS/Sapphire";
+			};
+			name = Debug;
+		};
+		DA46CF892DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "SapphireTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.SapphireTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sapphire.app/Contents/MacOS/Sapphire";
+			};
+			name = Release;
+		};
 		DA452EB42EAA57C90070E5C9 /* Debug configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1476,6 +1588,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		DA46CF8A2DCBCA0100F00EC5 /* Build configuration list for PBXNativeTarget "SapphireTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DA46CF882DCBCA0100F00EC5 /* Debug configuration for PBXNativeTarget "SapphireTests" */,
+				DA46CF892DCBCA0100F00EC5 /* Release configuration for PBXNativeTarget "SapphireTests" */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

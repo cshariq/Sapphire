@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AppKit
 import SwiftUI
 
 struct MonthGridItem: Identifiable {
@@ -22,21 +23,45 @@ class InteractiveCalendarViewModel: ObservableObject {
         }
     }
     @Published var monthGrid: [MonthGridItem] = []
+    @Published private(set) var today: Date
 
-    let today: Date = Calendar.current.startOfDay(for: Date())
+    private let calendar: () -> Calendar
+    private let now: () -> Date
+    private var notificationObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
 
     var selectedMonthAbbreviated: String {
         selectedDate.format(as: "MMM")
     }
 
-    init() {
-        self.selectedDate = self.today
-        generateDates()
-        generateMonthGrid()
+    init(
+        calendar: @escaping () -> Calendar = { Calendar.current },
+        now: @escaping () -> Date = { Date() },
+        notificationCenter: NotificationCenter = .default,
+        workspaceNotificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter
+    ) {
+        self.calendar = calendar
+        self.now = now
+
+        let currentCalendar = calendar()
+        let currentDay = currentCalendar.startOfDay(for: now())
+        self.today = currentDay
+        self.selectedDate = currentDay
+
+        generateDates(using: currentCalendar)
+        generateMonthGrid(using: currentCalendar)
+        observeCurrentDayChanges(
+            notificationCenter: notificationCenter,
+            workspaceNotificationCenter: workspaceNotificationCenter
+        )
     }
 
-    private func generateDates() {
-        let calendar = Calendar.current
+    deinit {
+        notificationObservers.forEach { observer in
+            observer.center.removeObserver(observer.token)
+        }
+    }
+
+    private func generateDates(using calendar: Calendar) {
         let dateRange = -90...90
 
         self.dates = dateRange.compactMap { dayOffset in
@@ -44,8 +69,8 @@ class InteractiveCalendarViewModel: ObservableObject {
         }
     }
 
-    private func generateMonthGrid() {
-        let calendar = Calendar.current
+    private func generateMonthGrid(using calendar: Calendar? = nil) {
+        let calendar = calendar ?? self.calendar()
         guard let monthInterval = calendar.dateInterval(of: .month, for: selectedDate),
               let firstDayOfMonth = monthInterval.start as Date?,
               let firstWeekday = calendar.ordinality(of: .weekday, in: .weekOfYear, for: firstDayOfMonth) else {
@@ -83,8 +108,45 @@ class InteractiveCalendarViewModel: ObservableObject {
         self.monthGrid = grid
     }
 
+    private func observeCurrentDayChanges(
+        notificationCenter: NotificationCenter,
+        workspaceNotificationCenter: NotificationCenter
+    ) {
+        observe(
+            [.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange,
+             NSApplication.didBecomeActiveNotification],
+            in: notificationCenter
+        )
+        observe([NSWorkspace.didWakeNotification], in: workspaceNotificationCenter)
+    }
+
+    private func observe(_ names: [Notification.Name], in center: NotificationCenter) {
+        for name in names {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                self?.refreshCurrentDay(for: notification.name)
+            }
+            notificationObservers.append((center, token))
+        }
+    }
+
+    private func refreshCurrentDay(for notificationName: Notification.Name) {
+        let calendar = calendar()
+        let currentDay = calendar.startOfDay(for: now())
+        guard currentDay != today else { return }
+
+        let wasFollowingToday = selectedDate == today
+        today = currentDay
+        generateDates(using: calendar)
+
+        if wasFollowingToday {
+            selectedDate = currentDay
+        } else if notificationName == .NSSystemTimeZoneDidChange {
+            generateMonthGrid(using: calendar)
+        }
+    }
+
     func datesInWeek(for date: Date) -> [Date] {
-        let calendar = Calendar.current
+        let calendar = calendar()
         guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: date) else { return [] }
         var dates: [Date] = []
         var currentDate = weekInterval.start
@@ -98,6 +160,6 @@ class InteractiveCalendarViewModel: ObservableObject {
     }
 
     func selectDate(_ date: Date) {
-        self.selectedDate = Calendar.current.startOfDay(for: date)
+        self.selectedDate = calendar().startOfDay(for: date)
     }
 }
