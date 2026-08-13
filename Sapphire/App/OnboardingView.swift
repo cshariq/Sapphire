@@ -179,48 +179,12 @@ private struct HelperInstallationStepView: View {
                 .padding(.horizontal, 50)
                 .padding(.bottom, 30)
 
-            HStack(spacing: 15) {
-                switch helperManager.status {
-                case .enabled:
-                    Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green)
-                    Text("Helper Installed Successfully")
-                        .font(.headline)
-                case .requiresApproval:
-                    Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundColor(.yellow)
-                    VStack(alignment: .leading) {
-                        Text("Approval Required")
-                            .font(.headline)
-                        Text("Find \"Sapphire Helper\" in the list, toggle it on, then authenticate.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                default:
-                    Image(systemName: "xmark.circle.fill").font(.title2).foregroundColor(.red)
-                    Text("Helper Not Installed")
-                        .font(.headline)
-                }
-
-                Spacer()
-
-                if helperManager.status == .enabled && !helperManager.isRunning {
-                    Button("Activate") {
-                        helperManager.reactivateHelper()
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.orange)
-                } else if helperManager.status != .enabled {
-                    Button("Install") {
-                        helperManager.installIfNeeded()
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.accentColor)
-                }
-            }
-            .padding()
-            .background(.black.opacity(0.15))
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
-            .padding(.horizontal, 50)
+            HelperStatusBanner(helperManager: helperManager)
+                .padding()
+                .background(.black.opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .padding(.horizontal, 50)
 
             Spacer()
 

@@ -17,9 +17,9 @@ class XPCClient {
         lock.lock()
         let connection = self.connection
         lock.unlock()
-        return connection?.remoteObjectProxyWithErrorHandler { [weak self] error in
+        guard let connection else { return nil }
+        return connection.remoteObjectProxyWithErrorHandler { error in
             NSLog("[XPCClient] Connection Error: \(error)")
-            self?.stop()
         } as? HelperProtocol
     }
 
@@ -67,8 +67,14 @@ class XPCClient {
         existing?.invalidate()
     }
 
-    /// 2.54-style ping, but with a timeout so a dead helper cannot hang forever.
     func ping(timeout: TimeInterval = 5) async -> Bool {
+        if await pingOnce(timeout: timeout, forceReconnect: false) {
+            return true
+        }
+        return await pingOnce(timeout: timeout, forceReconnect: true)
+    }
+
+    private func pingOnce(timeout: TimeInterval, forceReconnect: Bool) async -> Bool {
         await withCheckedContinuation { continuation in
             let lock = NSLock()
             var resumed = false
@@ -81,7 +87,7 @@ class XPCClient {
                 continuation.resume(returning: value)
             }
 
-            start(force: true)
+            start(force: forceReconnect)
             guard let helper else {
                 resumeOnce(false)
                 return

@@ -4983,39 +4983,7 @@ struct ModernBatteryStatsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 DateRangePickerView(selection: $selectedTimeRange)
                 HStack(spacing: 15) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        switch helperManager.status {
-                        case .enabled:
-                            Label("Helper Installed", systemImage: "checkmark.circle.fill")
-                                .font(.headline)
-                                .foregroundColor(.green)
-                        case .requiresApproval:
-                            Label("Approval Required", systemImage: "exclamationmark.triangle.fill")
-                                .font(.headline)
-                                .foregroundColor(.yellow)
-                        default:
-                            Label("Helper Not Installed", systemImage: "xmark.circle.fill")
-                                .font(.headline)
-                                .foregroundColor(.red)
-                        }
-
-                        if helperManager.status == .enabled {
-                            Label(helperManager.isRunning ? "Running" : "Inactive",
-                                  systemImage: helperManager.isRunning ? "circle.fill" : "circle")
-                                .font(.caption)
-                                .foregroundColor(helperManager.isRunning ? .green : .orange)
-                        }
-                    }
-
-                    Spacer()
-
-                    if helperManager.status != .enabled {
-                        Button("Install") {
-                            helperManager.installIfNeeded()
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.accentColor)
-                    }
+                    HelperStatusBanner(helperManager: helperManager)
                 }
                 .padding()
                 .materialChartCard(accent: helperManager.status == .enabled ? MaterialChartPalette.tertiary : MaterialChartPalette.warning)
@@ -6382,52 +6350,7 @@ struct BatteryConfigurationView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 15) {
-                    switch helperManager.status {
-                    case .enabled:
-                        if helperManager.isRunning {
-                            Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green)
-                            Text("Helper Active")
-                                .font(.headline)
-                        } else {
-                            Image(systemName: "exclamationmark.circle.fill").font(.title2).foregroundColor(.orange)
-                            VStack(alignment: .leading) {
-                                Text("Helper Inactive")
-                                    .font(.headline)
-                                Text("Installed but not responding. Activate to restore battery management.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    case .requiresApproval:
-                        Image(systemName: "exclamationmark.triangle.fill").font(.title2).foregroundColor(.yellow)
-                        VStack(alignment: .leading) {
-                            Text("Approval Required")
-                                .font(.headline)
-                            Text("Please enable in System Settings > Login Items.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    default:
-                        Image(systemName: "xmark.circle.fill").font(.title2).foregroundColor(.red)
-                        Text("Helper Not Installed")
-                            .font(.headline)
-                    }
-
-                    Spacer()
-
-                    if helperManager.status == .enabled && !helperManager.isRunning {
-                        Button("Activate") {
-                            helperManager.reactivateHelper()
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.orange)
-                    } else if helperManager.status != .enabled {
-                        Button("Install") {
-                            helperManager.installIfNeeded()
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.accentColor)
-                    }
+                    HelperStatusBanner(helperManager: helperManager)
                 }
                 .padding()
                 .background(.black.opacity(0.15))

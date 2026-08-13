@@ -1032,21 +1032,38 @@
 		DA452EBA2EAA5A010070E5C9 /* Resign Sapphire Helper */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
 			name = "Resign Sapphire Helper";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "HELPER=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/com.shariq.sapphireHelper\"\nENTITLEMENTS=\"${SRCROOT}/com.shariq.sapphireHelper/sapphireHelper.entitlements\"\n\nif [ ! -f \"$HELPER\" ]; then\n  echo \"error: Sapphire helper missing at $HELPER\"\n  exit 1\nfi\n\nif [ -z \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] || [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" = \"-\" ]; then\n  echo \"warning: No code signing identity; leaving helper signature as-is\"\n  codesign -d --entitlements - \"$HELPER\" || true\n  exit 0\nfi\n\n# SMAppService daemons cannot carry restricted entitlements (application-identifier,\n# get-task-allow, etc.) without a matching profile. Sign as a plain hardened tool.\necho \"Re-signing Sapphire helper with empty entitlements (identity: ${EXPANDED_CODE_SIGN_IDENTITY})\"\ncodesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \\\n  --identifier com.shariq.sapphireHelper \\\n  --entitlements \"$ENTITLEMENTS\" \\\n  --generate-entitlement-der \\\n  --options runtime \\\n  --timestamp=none \\\n  \"$HELPER\"\n\necho \"Helper entitlements after resign:\"\ncodesign -d --entitlements :- \"$HELPER\" 2>&1 | sed 's/^/  /'\n";
+			shellScript = (
+				"HELPER=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/com.shariq.sapphireHelper\"",
+				"ENTITLEMENTS=\"${SRCROOT}/com.shariq.sapphireHelper/sapphireHelper.entitlements\"",
+				"",
+				"if [ ! -f \"$HELPER\" ]; then",
+				"  echo \"error: Sapphire helper missing at $HELPER\"",
+				"  exit 1",
+				"fi",
+				"",
+				"if [ -z \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] || [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" = \"-\" ]; then",
+				"  echo \"warning: No code signing identity; leaving helper signature as-is\"",
+				"  codesign -d --entitlements - \"$HELPER\" || true",
+				"  exit 0",
+				"fi",
+				"",
+				"# SMAppService daemons cannot carry restricted entitlements (application-identifier,",
+				"# get-task-allow, etc.) without a matching profile. Sign as a plain hardened tool.",
+				"echo \"Re-signing Sapphire helper with empty entitlements (identity: ${EXPANDED_CODE_SIGN_IDENTITY})\"",
+				"codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \\",
+				"  --identifier com.shariq.sapphireHelper \\",
+				"  --entitlements \"$ENTITLEMENTS\" \\",
+				"  --generate-entitlement-der \\",
+				"  --options runtime \\",
+				"  --timestamp=none \\",
+				"  \"$HELPER\"",
+				"",
+				"echo \"Helper entitlements after resign:\"",
+				"codesign -d --entitlements :- \"$HELPER\" 2>&1 | sed 's/^/  /'",
+				"",
+			);
 		};
 		DAC019182E9EA03E00CA587F /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -1135,10 +1152,10 @@
 			buildSettings = {
 				AUTOMATION_APPLE_EVENTS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Manual;
-				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1156,8 +1173,8 @@
 				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der";
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
 				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
@@ -1178,10 +1195,10 @@
 			buildSettings = {
 				AUTOMATION_APPLE_EVENTS = NO;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Manual;
-				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1199,8 +1216,8 @@
 				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der";
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
-				PROVISIONING_PROFILE_SPECIFIER = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
 				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
@@ -1407,6 +1424,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
@@ -1493,6 +1511,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;

@@ -6,24 +6,6 @@
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
       buildArchitectures = "Automatic">
-      <PostActions>
-         <ExecutionAction
-            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
-            <ActionContent
-               title = "Resign Sapphire Helper after codesign"
-               scriptText = "HELPER=&quot;${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}/Contents/MacOS/com.shariq.sapphireHelper&quot;&#10;ENTITLEMENTS=&quot;${SRCROOT}/com.shariq.sapphireHelper/sapphireHelper.entitlements&quot;&#10;if [ ! -f &quot;$HELPER&quot; ]; then echo &quot;helper missing at $HELPER&quot;; exit 0; fi&#10;IDENTITY=&quot;${EXPANDED_CODE_SIGN_IDENTITY}&quot;&#10;if [ -z &quot;$IDENTITY&quot; ] || [ &quot;$IDENTITY&quot; = &quot;-&quot; ]; then echo &quot;no signing identity; skip helper resign&quot;; exit 0; fi&#10;echo &quot;Post-codesign resign of Sapphire helper ($IDENTITY)&quot;&#10;codesign --force --sign &quot;$IDENTITY&quot; --identifier com.shariq.sapphireHelper --entitlements &quot;$ENTITLEMENTS&quot; --generate-entitlement-der --options runtime --timestamp=none &quot;$HELPER&quot;&#10;codesign -d --entitlements :- &quot;$HELPER&quot;">
-               <EnvironmentBuildable>
-                  <BuildableReference
-                     BuildableIdentifier = "primary"
-                     BlueprintIdentifier = "DA46CF752DCBCA0000F00EC5"
-                     BuildableName = "Sapphire.app"
-                     BlueprintName = "Sapphire"
-                     ReferencedContainer = "container:Sapphire.xcodeproj">
-                  </BuildableReference>
-               </EnvironmentBuildable>
-            </ActionContent>
-         </ExecutionAction>
-      </PostActions>
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"

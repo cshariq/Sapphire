@@ -6,6 +6,7 @@
 
 import AppKit
 import SwiftUI
+import ServiceManagement
 
 extension Notification.Name {
     static let sapphireHelperConnectionLost = Notification.Name("sapphireHelperConnectionLost")
@@ -185,6 +186,53 @@ enum HelperAlertPresenter {
             buttonTitles: ["OK"]
         ) { _ in
             onDismiss?()
+        }
+    }
+
+    static func present(_ issue: HelperIssue) {
+        let buttons: [String]
+        switch issue {
+        case .notFound:
+            buttons = ["Relaunch Sapphire", "OK"]
+        case .needsApproval:
+            buttons = ["Open Login Items", "OK"]
+        case .spawnFailed:
+            buttons = ["Copy Command", "Open Login Items", "OK"]
+        }
+
+        presentModal(
+            messageText: "Sapphire Helper  ·  \(issue.code)",
+            informativeText: issue.instructions,
+            alertStyle: issue == .spawnFailed ? .critical : .warning,
+            buttonTitles: buttons
+        ) { index in
+            switch issue {
+            case .notFound:
+                if index == 0 {
+                    HelperManager.relaunchApp()
+                }
+            case .needsApproval:
+                if index == 0 {
+                    SMAppService.openSystemSettingsLoginItems()
+                }
+            case .spawnFailed:
+                if index == 0 {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(HelperIssue.resetBTMCommand, forType: .string)
+                    presentModal(
+                        messageText: "Command copied",
+                        informativeText: """
+                        Paste this in Terminal, then restart your Mac:
+
+                        \(HelperIssue.resetBTMCommand)
+                        """,
+                        alertStyle: .informational,
+                        buttonTitles: ["OK"]
+                    ) { _ in }
+                } else if index == 1 {
+                    SMAppService.openSystemSettingsLoginItems()
+                }
+            }
         }
     }
 
