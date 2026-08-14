@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AVKit
+import ServiceManagement
 
 // MARK: - Main Onboarding View
 struct OnboardingView: View {
@@ -156,8 +157,12 @@ private struct HelperInstallationStepView: View {
     @StateObject private var helperManager = HelperManager.shared
     var onContinue: () -> Void
 
-    @State private var player: AVPlayer?
-    @State private var playerObserver: Any?
+    @State private var didStartInstall = false
+    @State private var pollTimer: Timer?
+
+    private var helperReady: Bool {
+        helperManager.status == .enabled && helperManager.isRunning
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -165,19 +170,19 @@ private struct HelperInstallationStepView: View {
                 .font(.system(size: 32, weight: .bold, design: .rounded))
                 .padding(.top, 40).padding(.bottom, 10)
 
-            Text("Sapphire uses a helper for advanced features like battery management and system integrations.")
+            Text("Sapphire needs a privileged helper for battery management and system integrations. macOS will ask you to allow it under Login Items → Background Activity.")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 50)
-                .padding(.bottom, 4)
+                .padding(.bottom, 8)
 
-            Text("Tap \"Install\". Then through the notification, allow Sapphire to run in the background. A System Prompt will open asking for authentication. Once done you can continue! Alternatively, if you don't see the notifcation, you can also go to Settings --> General --> Login Items --> Background Activity --> Enable Sapphire.")
+            Text(stepGuidance)
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 50)
-                .padding(.bottom, 30)
+                .padding(.bottom, 24)
 
             HelperStatusBanner(helperManager: helperManager)
                 .padding()
@@ -186,30 +191,91 @@ private struct HelperInstallationStepView: View {
                 .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
                 .padding(.horizontal, 50)
 
+            if !helperReady {
+                Button {
+                    if helperManager.status == .requiresApproval {
+                        SMAppService.openSystemSettingsLoginItems()
+                    }
+                    if helperManager.status == .enabled && !helperManager.isRunning {
+                        helperManager.reactivateHelper()
+                    } else {
+                        helperManager.beginInstallation()
+                    }
+                } label: {
+                    Text(primaryActionTitle)
+                        .font(.headline)
+                        .frame(maxWidth: 280)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+                .padding(.top, 20)
+            }
+
             Spacer()
 
-            OnboardingButton(title: "Continue", action: onContinue)
-                .disabled(helperManager.status != .enabled || !helperManager.isRunning)
+            OnboardingButton(title: helperReady ? "Continue" : "Waiting for Helper…", action: onContinue)
+                .disabled(!helperReady)
                 .animation(.easeInOut, value: helperManager.status)
                 .animation(.easeInOut, value: helperManager.isRunning)
         }
         .onAppear {
             helperManager.updateStatus()
             helperManager.checkIfRunning()
+            if !didStartInstall {
+                didStartInstall = true
+                // Register immediately so Sapphire + Sapphire Helper appear in Login Items.
+                helperManager.beginInstallation()
+            }
+            startPolling()
+        }
+        .onDisappear {
+            pollTimer?.invalidate()
+            pollTimer = nil
+        }
+        .onChange(of: helperManager.status) { _, newStatus in
+            if newStatus == .requiresApproval {
+                SMAppService.openSystemSettingsLoginItems()
+            }
         }
     }
 
-    private func setupPlayer() {
-
-        return
+    private var primaryActionTitle: String {
+        switch helperManager.status {
+        case .requiresApproval:
+            return "Open Login Items"
+        case .enabled:
+            return "Activate Helper"
+        default:
+            return "Install Helper"
+        }
     }
 
-    private func cleanupPlayer() {
-        player?.pause()
-        player = nil
-        if let observer = playerObserver {
-            NotificationCenter.default.removeObserver(observer)
-            playerObserver = nil
+    private var stepGuidance: String {
+        switch helperManager.status {
+        case .requiresApproval:
+            return "System Settings should be open. Under Allow in the Background, turn on both Sapphire and Sapphire Helper, then return here."
+        case .enabled where !helperManager.isRunning:
+            return "The helper is approved but not responding yet. Tap Activate Helper, or wait a moment."
+        case .enabled:
+            return "Helper is ready. You can continue."
+        case .notFound:
+            return "macOS lost the helper registration (SAP-H3). Tap Instructions, then Relaunch Sapphire."
+        default:
+            return "Tap Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity."
+        }
+    }
+
+    private func startPolling() {
+        pollTimer?.invalidate()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            Task { @MainActor in
+                helperManager.updateStatus()
+                helperManager.checkIfRunning()
+            }
+        }
+        if let pollTimer {
+            RunLoop.main.add(pollTimer, forMode: .common)
         }
     }
 }

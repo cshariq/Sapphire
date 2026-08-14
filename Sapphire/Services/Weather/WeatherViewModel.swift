@@ -60,6 +60,17 @@ class WeatherViewModel: ObservableObject {
                     self.weatherData = data
                     self.updateUI(with: data)
                 case .failure(let error):
+                    // Transient Core Location warm-up errors should not wipe the UI.
+                    if Self.isTransientLocationError(error) {
+                        if self.weatherData == nil {
+                            self.conditionDescription = "Locating…"
+                        }
+                        // Retry shortly; WeatherService also retries, this catches any leak-through.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                            self?.fetch()
+                        }
+                        return
+                    }
                     self.weatherData = nil
                     self.handleError(error)
                 }
@@ -88,11 +99,30 @@ class WeatherViewModel: ObservableObject {
         self.lastUpdated = Date()
     }
 
+    private static func isTransientLocationError(_ error: Error) -> Bool {
+        if let clError = error as? CLError, clError.code == .locationUnknown {
+            return true
+        }
+        let nsError = error as NSError
+        return nsError.domain == kCLErrorDomain && nsError.code == CLError.Code.locationUnknown.rawValue
+    }
+
     private func handleError(_ error: Error) {
         let useMetricSystem = settingsModel.settings.weatherUseMetricSystem
+        let message: String
+        if let weatherError = error as? WeatherServiceError {
+            message = weatherError.localizedDescription
+        } else if Self.isTransientLocationError(error) {
+            message = "Locating…"
+        } else if (error as NSError).domain == kCLErrorDomain {
+            message = "Could not determine your location."
+        } else {
+            message = error.localizedDescription
+        }
+
         self.locationName = "Unavailable"
         self.temperature = "—°"
-        self.conditionDescription = error.localizedDescription
+        self.conditionDescription = message
         self.highLowTemp = "H: —° L: —°"
         self.feelsLike = "—°"
         self.windInfo = useMetricSystem ? "— km/h" : "— mph"

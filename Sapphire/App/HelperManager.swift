@@ -161,11 +161,18 @@ struct HelperStatusBanner: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
+                } else if helperManager.status == .requiresApproval {
+                    Button("Open Login Items") {
+                        SMAppService.openSystemSettingsLoginItems()
+                        helperManager.beginInstallation()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
                 } else if helperManager.status != .enabled {
                     Button("Install") {
-                        helperManager.installIfNeeded()
+                        helperManager.beginInstallation()
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
                     .tint(.accentColor)
                 }
             }
@@ -280,6 +287,13 @@ class HelperManager: ObservableObject {
         Task { await registerHelper(userInitiated: true, forceReinstall: true) }
     }
 
+    /// Onboarding / Install button. Always user-initiated so Login Items opens and SAP-H2/H3 popups appear.
+    func beginInstallation() {
+        updateStatusLocked()
+        helperLogger.info("[HelperManager] beginInstallation status=\(String(describing: self.status))")
+        Task { await registerHelper(userInitiated: true, forceReinstall: false) }
+    }
+
     func installIfNeeded() {
         updateStatusLocked()
         let appStatus = SMAppService.mainApp.status
@@ -289,6 +303,7 @@ class HelperManager: ObservableObject {
         case .notFound:
             Task { await registerHelper(userInitiated: true, forceReinstall: false) }
         case .notRegistered:
+            // Quiet auto-install at app launch. Still creates the Login Items entry.
             Task { await registerHelper(userInitiated: false, forceReinstall: false) }
         case .enabled:
             Task {
@@ -362,7 +377,8 @@ class HelperManager: ObservableObject {
         }
 
         if status == .requiresApproval {
-            presentIssue(.needsApproval, force: userInitiated)
+            SMAppService.openSystemSettingsLoginItems()
+            presentIssue(.needsApproval, force: true)
             return false
         }
 
