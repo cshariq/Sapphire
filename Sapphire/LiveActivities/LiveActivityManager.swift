@@ -426,6 +426,8 @@ class LiveActivityManager: ObservableObject {
             batteryMonitor.$currentState.removeDuplicates().mapToVoid(),
             audioDeviceManager.$lastSwitchEvent.removeDuplicates().mapToVoid(),
             bluetoothManager.$lastEvent.removeDuplicates().mapToVoid(),
+            NotificationCenter.default.publisher(for: NSNotification.Name("IOBluetoothHostControllerPoweredOnNotification")).mapToVoid(),
+            NotificationCenter.default.publisher(for: NSNotification.Name("IOBluetoothHostControllerPoweredOffNotification")).mapToVoid(),
             eyeBreakManager.$isBreakTime.removeDuplicates().mapToVoid(),
             timerManager.$isRunning.removeDuplicates().mapToVoid(),
             WeatherViewModel.shared.$weatherData
@@ -1512,6 +1514,17 @@ where: {
         guard let event = bluetoothManager.lastEvent, event != lastShownBluetoothEvent else {
             return nil
         }
+
+        let settings = settingsModel.settings
+        let isBlocked = !bluetoothManager.isBluetoothPoweredOn
+            || !settings.bluetoothLiveActivityEnabled
+            || (event.isContinuityDevice && !settings.showBluetoothContinuityDevices)
+
+        if isBlocked {
+            lastShownBluetoothEvent = event
+            return nil
+        }
+
         let duration: TimeInterval = switch event.eventType {
         case .connected: 6.0; case .disconnected: 5.0; case .batteryLow: 12.0
         }

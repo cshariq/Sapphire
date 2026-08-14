@@ -210,7 +210,7 @@ struct IconMapper {
         case UInt32(kBluetoothDeviceClassMajorComputer): return "desktopcomputer"
         case UInt32(kBluetoothDeviceClassMajorPhone): return "iphone"
         case UInt32(kBluetoothDeviceClassMajorWearable): return "applewatch"
-        default: return "b.circle.fill"
+        default: return "bluetooth"
         }
     }
 }

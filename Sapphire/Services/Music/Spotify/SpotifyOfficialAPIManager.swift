@@ -178,6 +178,19 @@ class SpotifyOfficialAPIManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "spotifyRefreshToken")
     }
 
+    func adoptExternalTokens(accessToken: String, refreshToken: String?, clientID: String, clientSecret: String?) {
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+        if !clientID.isEmpty { self.clientId = clientID }
+        if let clientSecret, !clientSecret.isEmpty { self.clientSecret = clientSecret }
+        UserDefaults.standard.set(accessToken, forKey: "spotifyAccessToken")
+        if let refreshToken {
+            UserDefaults.standard.set(refreshToken, forKey: "spotifyRefreshToken")
+        }
+        self.isAuthenticated = true
+        Task { await fetchUserProfile() }
+    }
+
     // MARK: - API Requests
 
     func fetchUserProfile() async {

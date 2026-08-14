@@ -8145,6 +8145,10 @@ struct BluetoothSettingsView: View {
 
                 VStack(spacing: 0) {
                     Text("Live Activity").font(.headline).padding([.top, .horizontal])
+                    ToggleRow(title: "Show Bluetooth Live Activity", description: "Show connection, disconnection, and battery events for Bluetooth devices.", isOn: $settings.settings.bluetoothLiveActivityEnabled)
+                    Divider().padding(.leading, 20)
+                    ToggleRow(title: "Show Continuity Devices", description: "Show live activity events for Apple devices like iPhone, iPad, Mac, and Apple Watch.", isOn: $settings.settings.showBluetoothContinuityDevices)
+                    Divider().padding(.leading, 20)
                     ToggleRow(title: "Show Device Name", description: "Display the device name in the live activity for connection and battery events.", isOn: $settings.settings.showBluetoothDeviceName)
                 }
                 .modifier(SettingsContainerModifier())

@@ -197,16 +197,17 @@ private struct HelperInstallationStepView: View {
                         SMAppService.openSystemSettingsLoginItems()
                     }
                     if helperManager.status == .enabled && !helperManager.isRunning {
-                        helperManager.reactivateHelper()
+                        helperManager.resetOwnBackgroundActivity()
                     } else {
                         helperManager.beginInstallation()
                     }
                 } label: {
-                    Text(primaryActionTitle)
+                    Text(helperManager.isResettingHelper ? "Resetting…" : primaryActionTitle)
                         .font(.headline)
                         .frame(maxWidth: 280)
                         .padding(.vertical, 12)
                 }
+                .disabled(helperManager.isResettingHelper)
                 .buttonStyle(.borderedProminent)
                 .tint(.accentColor)
                 .padding(.top, 20)
@@ -245,7 +246,7 @@ private struct HelperInstallationStepView: View {
         case .requiresApproval:
             return "Open Login Items"
         case .enabled:
-            return "Activate Helper"
+            return "Reset Helper"
         default:
             return "Install Helper"
         }
@@ -256,7 +257,7 @@ private struct HelperInstallationStepView: View {
         case .requiresApproval:
             return "System Settings should be open. Under Allow in the Background, turn on both Sapphire and Sapphire Helper, then return here."
         case .enabled where !helperManager.isRunning:
-            return "The helper is approved but not responding yet. Tap Activate Helper, or wait a moment."
+            return "The helper is approved but not responding. Tap Reset Helper so Sapphire can unregister its own background items and reinstall the helper."
         case .enabled:
             return "Helper is ready. You can continue."
         case .notFound:

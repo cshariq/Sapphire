@@ -66,7 +66,7 @@ enum HelperIssue: Equatable {
                • Sapphire
                • Sapphire Helper
 
-            If SAP-H3 appears again right after relaunch, use SAP-H1 recovery (reset background items).
+            If SAP-H3 appears again right after relaunch, use Reset Helper to unregister Sapphire’s own background items and reinstall the helper.
             """
         case .needsApproval:
             return """
@@ -88,26 +88,18 @@ enum HelperIssue: Equatable {
             return """
             Error code: SAP-H1
 
-            Login Items permission is already granted (status 1), but macOS still will not spawn the helper. This usually means a stuck background-item database (launchd error 78 / EX_CONFIG).
+            Login Items permission is already granted (status 1), but macOS still will not spawn the helper. This usually means Sapphire’s own helper registration is stuck (launchd error 78 / EX_CONFIG).
 
-            Do this:
-            1. Quit Sapphire.
-            2. Open Terminal.
-            3. Paste and run this command (enter your Mac password when asked):
+            Click “Reset Helper” below. Sapphire will:
+            1. Unregister only its own helper and login item
+            2. Stop leftover Sapphire helper jobs
+            3. Reinstall the helper
+            4. Relaunch Sapphire
 
-               sudo sfltool resetbtm
-
-            4. Restart your Mac. macOS requires a reboot after that command.
-            5. Open Sapphire.
-            6. In System Settings → General → Login Items, enable both Sapphire and Sapphire Helper.
-            7. Click Activate if the helper still shows as inactive.
-
-            Note: resetbtm clears ALL login items and background apps, not only Sapphire. You will need to re-enable other apps’ background items afterward.
+            Other apps’ login items and background activity are not changed. If macOS asks for your password, that is only to remove Sapphire’s helper from the system launchd database.
             """
         }
     }
-
-    static let resetBTMCommand = "sudo sfltool resetbtm"
 }
 
 struct HelperStatusBanner: View {
@@ -150,10 +142,11 @@ struct HelperStatusBanner: View {
                 }
 
                 if helperManager.status == .enabled && !helperManager.isRunning {
-                    Button("Activate") {
-                        helperManager.reactivateHelper()
+                    Button(helperManager.isResettingHelper ? "Resetting…" : "Reset Helper") {
+                        helperManager.resetOwnBackgroundActivity()
                     }
-                    .buttonStyle(.bordered)
+                    .disabled(helperManager.isResettingHelper)
+                    .buttonStyle(.borderedProminent)
                     .tint(.orange)
                 } else if helperManager.status == .notFound {
                     Button("Relaunch") {
@@ -189,6 +182,7 @@ class HelperManager: ObservableObject {
     @Published var status: SMAppService.Status = .notRegistered
     @Published var isRunning: Bool = false
     @Published var lastIssue: HelperIssue?
+    @Published var isResettingHelper = false
 
     private var healthCheckTimer: Timer?
     private var isRegistering = false
@@ -287,6 +281,12 @@ class HelperManager: ObservableObject {
         Task { await registerHelper(userInitiated: true, forceReinstall: true) }
     }
 
+    /// Unregisters only Sapphire’s helper and login item, stops leftover jobs, reinstalls, then relaunches.
+    func resetOwnBackgroundActivity() {
+        guard !isResettingHelper else { return }
+        Task { await performOwnBackgroundActivityReset() }
+    }
+
     /// Onboarding / Install button. Always user-initiated so Login Items opens and SAP-H2/H3 popups appear.
     func beginInstallation() {
         updateStatusLocked()
@@ -330,6 +330,141 @@ class HelperManager: ObservableObject {
         }
         updateStatusLocked()
         refreshIssue()
+    }
+
+    private func performOwnBackgroundActivityReset() async {
+        isResettingHelper = true
+        isRegistering = true
+        defer {
+            isRegistering = false
+            isResettingHelper = false
+        }
+
+        helperLogger.info("[HelperManager] Resetting Sapphire’s own background activity")
+        XPCClient.shared.stop()
+
+        let uid = getuid()
+        let helperLabel = helperToolIdentifier
+        let appBundle = Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire"
+        let loginItemWasEnabled = SMAppService.mainApp.status == .enabled
+
+        do {
+            try await daemonService.unregister()
+            helperLogger.info("[HelperManager] Unregistered privileged helper")
+        } catch {
+            helperLogger.error("[HelperManager] Helper unregister failed: \(error.localizedDescription)")
+        }
+
+        do {
+            try await SMAppService.mainApp.unregister()
+            helperLogger.info("[HelperManager] Unregistered main-app login item")
+        } catch {
+            helperLogger.error("[HelperManager] Main-app unregister failed: \(error.localizedDescription)")
+        }
+
+        bootoutLaunchdJob(domain: "gui/\(uid)", label: helperLabel)
+        bootoutLaunchdJob(domain: "gui/\(uid)", label: appBundle)
+        bootoutLaunchdJob(domain: "user/\(uid)", label: helperLabel)
+        bootoutLaunchdJob(domain: "user/\(uid)", label: appBundle)
+        bootoutLaunchdJob(domain: "system", label: helperLabel)
+        terminateOwnHelperProcess()
+        removeUserLaunchAgentPlist()
+
+        try? await Task.sleep(for: .milliseconds(1200))
+        updateStatusLocked()
+
+        _ = await submitRegistration(service: daemonService)
+        if loginItemWasEnabled {
+            do {
+                try await SMAppService.mainApp.register()
+            } catch {
+                helperLogger.error("[HelperManager] Main-app re-register failed: \(error.localizedDescription)")
+            }
+        }
+
+        updateStatusLocked()
+        refreshIssue()
+
+        if await pingUntilRunning() {
+            helperLogger.info("[HelperManager] Helper recovered after background-item reset")
+            return
+        }
+
+        helperLogger.info("[HelperManager] Helper still stuck; requesting admin to remove Sapphire’s system job only")
+        _ = bootoutSystemHelperWithAdminIfNeeded()
+        try? await Task.sleep(for: .milliseconds(800))
+        _ = await submitRegistration(service: daemonService)
+        updateStatusLocked()
+        refreshIssue()
+
+        if await pingUntilRunning() {
+            helperLogger.info("[HelperManager] Helper recovered after system-job cleanup")
+            return
+        }
+
+        helperLogger.info("[HelperManager] Helper still not running; relaunching Sapphire to rebuild BTM")
+        HelperManager.relaunchApp()
+    }
+
+    @discardableResult
+    private func bootoutLaunchdJob(domain: String, label: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["bootout", "\(domain)/\(label)"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            helperLogger.info("[HelperManager] launchctl bootout \(domain)/\(label) status=\(process.terminationStatus)")
+            return process.terminationStatus == 0
+        } catch {
+            helperLogger.error("[HelperManager] launchctl bootout \(domain)/\(label) failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func terminateOwnHelperProcess() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        process.arguments = [helperToolIdentifier]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+    }
+
+    private func removeUserLaunchAgentPlist() {
+        let path = (NSHomeDirectory() as NSString)
+            .appendingPathComponent("Library/LaunchAgents/\(helperToolIdentifier).plist")
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        do {
+            try FileManager.default.removeItem(atPath: path)
+            helperLogger.info("[HelperManager] Removed leftover LaunchAgent \(path)")
+        } catch {
+            helperLogger.error("[HelperManager] Could not remove LaunchAgent: \(error.localizedDescription)")
+        }
+    }
+
+    /// Prompts for admin only to boot out / remove Sapphire’s system helper job. Never resets other apps.
+    @discardableResult
+    private func bootoutSystemHelperWithAdminIfNeeded() -> Bool {
+        let label = helperToolIdentifier
+        let plist = "/Library/LaunchDaemons/\(label).plist"
+        let command = "launchctl bootout system/\(label) >/dev/null 2>&1; rm -f \(plist); true"
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = "do shell script \"\(escaped)\" with administrator privileges"
+        var error: NSDictionary?
+        guard let appleScript = NSAppleScript(source: source) else { return false }
+        if appleScript.executeAndReturnError(&error) == nil {
+            let code = error?[NSAppleScript.errorNumber] as? Int ?? 0
+            helperLogger.error("[HelperManager] Admin helper bootout failed code=\(code)")
+            return false
+        }
+        helperLogger.info("[HelperManager] Admin bootout of Sapphire helper succeeded")
+        return true
     }
 
     func startHealthCheckTimer(interval: TimeInterval = 1800) {

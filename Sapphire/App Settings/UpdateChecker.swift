@@ -281,6 +281,15 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return FileManager.default.isWritableFile(atPath: parentPath)
     }
 
+    private func copyInstallerToTemporaryDirectory(scriptPath: String) throws -> String {
+        let tempScript = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sapphire_install_update_\(ProcessInfo.processInfo.processIdentifier).sh")
+        try? FileManager.default.removeItem(at: tempScript)
+        try FileManager.default.copyItem(atPath: scriptPath, toPath: tempScript.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tempScript.path)
+        return tempScript.path
+    }
+
     private func launchInstallerScript(
         scriptPath: String,
         processID: String,
@@ -293,6 +302,43 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
+    }
+
+    /// Presents the system admin-password dialog, then starts the installer as root.
+    private func launchInstallerWithAdministratorPrivileges(
+        scriptPath: String,
+        processID: String,
+        newAppPath: String,
+        currentAppPath: String
+    ) throws {
+        func shQuote(_ value: String) -> String {
+            "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }
+        let command = "nohup /bin/sh \(shQuote(scriptPath)) \(processID) \(shQuote(newAppPath)) \(shQuote(currentAppPath)) >/dev/null 2>&1 &"
+        let escaped = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let source = "do shell script \"\(escaped)\" with administrator privileges"
+        var error: NSDictionary?
+        guard let appleScript = NSAppleScript(source: source) else {
+            throw NSError(
+                domain: "UpdateError",
+                code: 6,
+                userInfo: [NSLocalizedDescriptionKey: "Could not build the administrator prompt."]
+            )
+        }
+        if appleScript.executeAndReturnError(&error) == nil {
+            let code = error?[NSAppleScript.errorNumber] as? Int ?? 0
+            if code == -128 {
+                throw NSError(
+                    domain: "UpdateError",
+                    code: 7,
+                    userInfo: [NSLocalizedDescriptionKey: "Update cancelled. Administrator access is required to replace Sapphire in this location."]
+                )
+            }
+            let message = error?[NSAppleScript.errorMessage] as? String ?? "Administrator authentication failed."
+            throw NSError(domain: "UpdateError", code: 8, userInfo: [NSLocalizedDescriptionKey: message])
+        }
     }
 
     func installAndRelaunch() {
@@ -330,27 +376,27 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 let currentAppPath = Bundle.main.bundlePath
                 let processID = String(ProcessInfo.processInfo.processIdentifier)
                 let userWritable = await MainActor.run { self.isInstallPathUserWritable() }
-
-                guard userWritable else {
-                    throw NSError(
-                        domain: "UpdateError",
-                        code: 5,
-                        userInfo: [
-                            NSLocalizedDescriptionKey: """
-                            Sapphire can't replace itself in this location without administrator access.
-
-                            Move Sapphire to your user Applications folder (~/Applications), then install the update again for a password-free update.
-                            """
-                        ]
-                    )
+                let tempScriptPath = try await MainActor.run {
+                    try self.copyInstallerToTemporaryDirectory(scriptPath: scriptPath)
                 }
 
-                try await self.launchInstallerScript(
-                    scriptPath: scriptPath,
-                    processID: processID,
-                    newAppPath: fullNewAppPath,
-                    currentAppPath: currentAppPath
-                )
+                if userWritable {
+                    try await self.launchInstallerScript(
+                        scriptPath: tempScriptPath,
+                        processID: processID,
+                        newAppPath: fullNewAppPath,
+                        currentAppPath: currentAppPath
+                    )
+                } else {
+                    try await MainActor.run {
+                        try self.launchInstallerWithAdministratorPrivileges(
+                            scriptPath: tempScriptPath,
+                            processID: processID,
+                            newAppPath: fullNewAppPath,
+                            currentAppPath: currentAppPath
+                        )
+                    }
+                }
 
                 await MainActor.run {
                     NSApp.terminate(nil)

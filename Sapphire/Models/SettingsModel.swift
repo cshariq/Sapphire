@@ -896,6 +896,8 @@ struct Settings: Codable, Equatable {
     var bluetoothNotifyLowBattery: Bool = true
     var bluetoothNotifySound: Bool = true
     var showBluetoothDeviceName: Bool = false
+    var bluetoothLiveActivityEnabled: Bool = true
+    var showBluetoothContinuityDevices: Bool = true
     var bluetoothUnlockEnabled: Bool = false
     var bluetoothUnlockDeviceID: String? = nil
     var bluetoothUnlockUnlockRSSI: Int = -65

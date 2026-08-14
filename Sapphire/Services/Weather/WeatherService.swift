@@ -19,9 +19,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     private var lastFetchDate: Date?
     private let cacheDuration: TimeInterval = 10 * 60
     private var isFetchingLocation = false
-    private var locationRetryCount = 0
-    private let maxLocationRetries = 6
-    private var locationRetryWorkItem: DispatchWorkItem?
+    private var locationTimeoutWorkItem: DispatchWorkItem?
 
     private var weatherAPIKey: String {
         if let envKey = ProcessInfo.processInfo.environment["WEATHER_API_KEY"], !envKey.isEmpty {
@@ -57,7 +55,8 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     private override init() {
         super.init()
         locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+        locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+        locationManager.distanceFilter = 500
     }
 
     public func fetchWeather(completion: @escaping (Result<ProcessedWeatherData, Error>) -> Void) {
@@ -80,20 +79,9 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     private func requestLocationIfAuthorized() {
-        guard !isFetchingLocation else { return }
-
         switch locationManager.authorizationStatus {
         case .authorized, .authorizedAlways, .authorizedWhenInUse:
-            isFetchingLocation = true
-            // Prefer a fresh fix, but fall back to the last known location while
-            // Core Location is still warming up after launch.
-            if let last = locationManager.location,
-               Date().timeIntervalSince(last.timestamp) < 15 * 60 {
-                isFetchingLocation = false
-                fetchAPIs(for: last)
-                return
-            }
-            locationManager.requestLocation()
+            startLocationUpdates()
         case .denied, .restricted:
             finishPending(with: .failure(WeatherServiceError.locationDenied))
         case .notDetermined:
@@ -101,6 +89,41 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         @unknown default:
             finishPending(with: .failure(WeatherServiceError.unknownAuthorization))
         }
+    }
+
+    private func startLocationUpdates() {
+        if isFetchingLocation { return }
+        isFetchingLocation = true
+
+        if let last = locationManager.location, last.horizontalAccuracy >= 0,
+           Date().timeIntervalSince(last.timestamp) < 30 * 60 {
+            finishLocationSearch(with: last)
+            return
+        }
+
+        locationManager.startUpdatingLocation()
+
+        locationTimeoutWorkItem?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.locationManager.stopUpdatingLocation()
+            self.isFetchingLocation = false
+            if let last = self.locationManager.location, last.horizontalAccuracy >= 0 {
+                self.fetchAPIs(for: last)
+            } else {
+                self.finishPending(with: .failure(WeatherServiceError.locationUnavailable))
+            }
+        }
+        locationTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
+    }
+
+    private func finishLocationSearch(with location: CLLocation) {
+        locationTimeoutWorkItem?.cancel()
+        locationTimeoutWorkItem = nil
+        locationManager.stopUpdatingLocation()
+        isFetchingLocation = false
+        fetchAPIs(for: location)
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -117,55 +140,31 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        locationRetryWorkItem?.cancel()
-        locationRetryWorkItem = nil
-        locationRetryCount = 0
-        isFetchingLocation = false
-        guard let location = locations.last else {
-            finishPending(with: .failure(WeatherServiceError.locationUnavailable))
-            return
-        }
-        fetchAPIs(for: location)
+        guard let location = locations.last, location.horizontalAccuracy >= 0 else { return }
+        finishLocationSearch(with: location)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // kCLErrorDomain code 0 = locationUnknown: Core Location often returns this
-        // for a few minutes after launch before a fix is ready. Retry instead of
-        // failing the weather widget.
-        if let clError = error as? CLError, clError.code == .locationUnknown {
-            if let last = manager.location,
-               Date().timeIntervalSince(last.timestamp) < 30 * 60 {
-                locationRetryWorkItem?.cancel()
-                locationRetryCount = 0
-                isFetchingLocation = false
-                fetchAPIs(for: last)
-                return
-            }
+        // kCLErrorDomain 0 / locationUnknown is expected while Core Location warms up.
+        // Keep listening until the timeout; do not fail the widget.
+        if Self.isLocationUnknown(error) { return }
 
-            guard locationRetryCount < maxLocationRetries else {
-                isFetchingLocation = false
-                locationRetryCount = 0
-                finishPending(with: .failure(WeatherServiceError.locationUnavailable))
-                return
-            }
+        locationTimeoutWorkItem?.cancel()
+        locationTimeoutWorkItem = nil
+        locationManager.stopUpdatingLocation()
+        isFetchingLocation = false
 
-            locationRetryCount += 1
-            isFetchingLocation = false
-            let delay = min(2.0 * Double(locationRetryCount), 12.0)
-            locationRetryWorkItem?.cancel()
-            let work = DispatchWorkItem { [weak self] in
-                self?.requestLocationIfAuthorized()
-            }
-            locationRetryWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        if let last = manager.location, last.horizontalAccuracy >= 0 {
+            fetchAPIs(for: last)
             return
         }
-
-        locationRetryWorkItem?.cancel()
-        locationRetryWorkItem = nil
-        locationRetryCount = 0
-        isFetchingLocation = false
         finishPending(with: .failure(error))
+    }
+
+    private static func isLocationUnknown(_ error: Error) -> Bool {
+        if let clError = error as? CLError { return clError.code == .locationUnknown }
+        let nsError = error as NSError
+        return nsError.domain == kCLErrorDomain && nsError.code == 0
     }
 
     private func fetchAPIs(for location: CLLocation) {
@@ -223,6 +222,10 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     private func finishPending(with result: Result<ProcessedWeatherData, Error>) {
+        locationTimeoutWorkItem?.cancel()
+        locationTimeoutWorkItem = nil
+        locationManager.stopUpdatingLocation()
+        isFetchingLocation = false
         let completions = pendingCompletions
         pendingCompletions.removeAll()
         completions.forEach { $0(result) }

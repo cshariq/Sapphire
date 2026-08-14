@@ -26,6 +26,10 @@ struct BluetoothDeviceState: Hashable {
 class BluetoothManager: NSObject, ObservableObject {
     @Published var lastEvent: BluetoothDeviceState?
 
+    var isBluetoothPoweredOn: Bool {
+        IOBluetoothHostController.default()?.powerState == kBluetoothHCIPowerStateON
+    }
+
     private var connectionNotification: IOBluetoothUserNotification?
     private var disconnectionNotifications: [String: IOBluetoothUserNotification] = [:]
     private var recentlyConnectedDebounceSet: Set<String> = []

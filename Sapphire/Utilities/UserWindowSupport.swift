@@ -177,14 +177,14 @@ enum HelperAlertPresenter {
             informativeText: """
             Sapphire lost connection to its system helper.
 
-            1. Open System Settings → General → Login Items & Extensions
-            2. Turn Background App Activity for Sapphire off, then on again
-            3. Quit Sapphire completely (Sapphire → Quit Sapphire, or press ⌘Q)
-            4. Reopen Sapphire
+            Click “Reset Helper” to unregister Sapphire’s own background items, reinstall the helper, and relaunch. Other apps are not affected.
             """,
             alertStyle: .warning,
-            buttonTitles: ["OK"]
-        ) { _ in
+            buttonTitles: ["Reset Helper", "OK"]
+        ) { index in
+            if index == 0 {
+                HelperManager.shared.resetOwnBackgroundActivity()
+            }
             onDismiss?()
         }
     }
@@ -197,7 +197,7 @@ enum HelperAlertPresenter {
         case .needsApproval:
             buttons = ["Open Login Items", "OK"]
         case .spawnFailed:
-            buttons = ["Copy Command", "Open Login Items", "OK"]
+            buttons = ["Reset Helper", "Open Login Items", "OK"]
         }
 
         presentModal(
@@ -217,18 +217,7 @@ enum HelperAlertPresenter {
                 }
             case .spawnFailed:
                 if index == 0 {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(HelperIssue.resetBTMCommand, forType: .string)
-                    presentModal(
-                        messageText: "Command copied",
-                        informativeText: """
-                        Paste this in Terminal, then restart your Mac:
-
-                        \(HelperIssue.resetBTMCommand)
-                        """,
-                        alertStyle: .informational,
-                        buttonTitles: ["OK"]
-                    ) { _ in }
+                    HelperManager.shared.resetOwnBackgroundActivity()
                 } else if index == 1 {
                     SMAppService.openSystemSettingsLoginItems()
                 }
