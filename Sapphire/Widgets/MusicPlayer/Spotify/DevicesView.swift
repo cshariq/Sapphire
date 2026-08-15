@@ -30,6 +30,34 @@ fileprivate class Throttler {
 fileprivate enum DeviceTab: Int {
     case spotify = 0
     case airplay = 1
+    case system = 2
+}
+
+enum MusicAudioHubSection: Int, CaseIterable {
+    case spotify = 0
+    case airplay = 1
+    case apps = 2
+    case system = 3
+
+    var title: String {
+        switch self {
+        case .spotify: return "Spotify"
+        case .airplay: return "AirPlay"
+        case .apps: return "Apps"
+        case .system: return "System"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .spotify: return "music.note"
+        case .airplay: return "airplayaudio"
+        case .apps: return "square.grid.2x2"
+        case .system: return "hifispeaker.and.homepod.mini.fill"
+        }
+    }
+
+    static let defaultsKey = "lastSelectedAudioHubSection"
 }
 
 struct DevicesView: View {
@@ -37,6 +65,7 @@ struct DevicesView: View {
     @EnvironmentObject var settings: SettingsModel
 
     @Binding var navigationStack: [NotchWidgetMode]
+    @Binding var audioHubSection: MusicAudioHubSection
 
     @State private var selectedTab: DeviceTab
 
@@ -48,6 +77,9 @@ struct DevicesView: View {
     @State private var isLoading = true
 
     var isLockScreenMode: Bool = false
+    /// When true, omit the outer welcome chrome — used inside the unified Music Hub.
+    /// Parent owns the Spotify/AirPlay/Apps/System filter in the primary hub bar.
+    var embedded: Bool = false
 
     private let volumeThrottler = Throttler(delay: 0.1)
 
@@ -61,11 +93,30 @@ struct DevicesView: View {
         musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated
     }
 
-    init(navigationStack: Binding<[NotchWidgetMode]>, isLockScreenMode: Bool = false) {
+    private var showsSpotifyTab: Bool {
+        !isAppleMusic && isLoggedIn
+    }
+
+    var availableAudioHubSections: [MusicAudioHubSection] {
+        var sections: [MusicAudioHubSection] = []
+        if showsSpotifyTab { sections.append(.spotify) }
+        sections.append(contentsOf: [.airplay, .apps, .system])
+        return sections
+    }
+
+    init(
+        navigationStack: Binding<[NotchWidgetMode]>,
+        audioHubSection: Binding<MusicAudioHubSection>,
+        isLockScreenMode: Bool = false,
+        preferSystemTab: Bool = false,
+        embedded: Bool = false
+    ) {
         self._navigationStack = navigationStack
-        let savedTab = UserDefaults.standard.integer(forKey: lastSelectedTabKey)
-        self._selectedTab = State(initialValue: DeviceTab(rawValue: savedTab) ?? .spotify)
+        self._audioHubSection = audioHubSection
         self.isLockScreenMode = isLockScreenMode
+        self.embedded = embedded
+        let savedTab = DeviceTab(rawValue: UserDefaults.standard.integer(forKey: lastSelectedTabKey)) ?? .spotify
+        self._selectedTab = State(initialValue: preferSystemTab ? .system : savedTab)
     }
 
     private func sendVolumeUpdate() {
@@ -75,90 +126,195 @@ struct DevicesView: View {
     }
 
     var body: some View {
-        VStack() {
-            if isAppleMusic {
-                contentBody(for: .airplay)
-            } else if !isLoggedIn {
-                contentBody(for: .airplay)
+        Group {
+            if embedded {
+                unifiedAudioBody
             } else {
-                HStack {
-                    if let user = musicManager.spotifyOfficialAPI.userProfile {
-                        Text("Welcome, \(user.displayName)").font(.caption.bold()).foregroundColor(.secondary)
-                    } else if let nativeUser = musicManager.spotifyPrivateAPI.userProfile {
-                        Text("Welcome, \(nativeUser.profile.username)").font(.caption.bold()).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    HStack(spacing: 10) {
-                        TabButton(title: "Spotify", systemImage: "music.note", isSelected: selectedTab == .spotify) { selectedTab = .spotify }
-                        TabButton(title: "AirPlay", systemImage: "airplayaudio", isSelected: selectedTab == .airplay) { selectedTab = .airplay }
-                        Button {
-                            navigationStack.append(.multiAudio)
-                        } label: {
-                            Label("Audio Control", systemImage: "hifispeaker.and.homepod.mini.fill")
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Color.white.opacity(0.08))
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }.padding(6).background(Color.black.opacity(0.2)).clipShape(Capsule())
-
-                    if musicManager.isOfficialAPIAuthenticated {
-                        Button("Log out") { musicManager.spotifyOfficialAPI.logout() }.buttonStyle(.plain).font(.caption).foregroundColor(.secondary)
-                    }
-                }
-
-                ZStack {
-                    if isLoading {
-                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        if selectedTab == .spotify {
-                            spotifyDeviceList
-                                .transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .move(edge: .leading).combined(with: .opacity)))
-                        } else {
-                            appleMusicDeviceList
-                                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .move(edge: .trailing).combined(with: .opacity)))
-                        }
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: selectedTab)
-                .frame(minHeight: 200)
+                legacyTabbedBody
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, embedded ? 0 : 20)
         .padding(.top, 0)
-        .frame(width: 700)
-        .frame(maxHeight: 350)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: embedded ? nil : 760)
+        .frame(maxWidth: embedded ? .infinity : nil)
+        .frame(maxHeight: embedded ? .infinity : 360)
+        .fixedSize(horizontal: false, vertical: !embedded)
         .onAppear {
-            Task.detached(priority: .userInitiated) {
-                await fetchInitialData()
-            }
+            normalizeSelectedTab()
+            normalizeAudioHubSection()
         }
-        .onChange(of: selectedTab) { _, newValue in
-            UserDefaults.standard.set(newValue.rawValue, forKey: lastSelectedTabKey)
+        .onChange(of: showsSpotifyTab) { _, _ in
+            normalizeSelectedTab()
+            normalizeAudioHubSection()
+        }
+        .onChange(of: audioHubSection) { _, newValue in
+            UserDefaults.standard.set(newValue.rawValue, forKey: MusicAudioHubSection.defaultsKey)
+        }
+        .task(id: embedded ? "\(audioHubSection)" : "\(effectiveDeviceTab)") {
+            if embedded {
+                await fetchDataForAudioHubSection(audioHubSection)
+            } else {
+                await fetchData(for: effectiveDeviceTab)
+            }
         }
     }
 
-    // MARK: - Views
-
-    @ViewBuilder
-    private func contentBody(for type: DeviceTab) -> some View {
+    /// Content only — Spotify/AirPlay/Apps/System live in the Music Hub primary bar.
+    private var unifiedAudioBody: some View {
         ZStack {
-            if isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if isLoading && (audioHubSection == .spotify || audioHubSection == .airplay) {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                switch type {
-                case .airplay:
-                    appleMusicDeviceList
+                switch effectiveAudioHubSection {
                 case .spotify:
-                    spotifyDeviceList
+                    ScrollView(.vertical, showsIndicators: false) {
+                        spotifyDeviceListContent
+                            .padding(.bottom, 16)
+                    }
+                case .airplay:
+                    ScrollView(.vertical, showsIndicators: false) {
+                        appleMusicDeviceListContent
+                            .padding(.bottom, 16)
+                    }
+                case .apps:
+                    ScrollView(.vertical, showsIndicators: false) {
+                        AppSectionView(navigationStack: $navigationStack, omitOuterPadding: true)
+                            .padding(.bottom, 16)
+                    }
+                case .system:
+                    ScrollView(.vertical, showsIndicators: false) {
+                        DeviceSectionView(navigationStack: $navigationStack, omitOuterPadding: true)
+                            .padding(.bottom, 16)
+                    }
                 }
             }
         }
-        .frame(minHeight: 200)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.18), value: effectiveAudioHubSection)
+    }
+
+    private var effectiveAudioHubSection: MusicAudioHubSection {
+        if audioHubSection == .spotify && !showsSpotifyTab { return .apps }
+        return audioHubSection
+    }
+
+    private func normalizeAudioHubSection() {
+        if audioHubSection == .spotify && !showsSpotifyTab {
+            audioHubSection = .apps
+        }
+    }
+
+    private func fetchDataForAudioHubSection(_ section: MusicAudioHubSection) async {
+        switch section {
+        case .spotify:
+            await loadSpotifyDevices(manageLoading: true)
+        case .airplay:
+            await MainActor.run { isLoading = true }
+            await musicManager.updateAirPlayDevices()
+            await MainActor.run { isLoading = false }
+        case .apps, .system:
+            await MainActor.run { isLoading = false }
+        }
+    }
+
+    private var legacyTabbedBody: some View {
+        VStack(spacing: 10) {
+            HStack {
+                if let user = musicManager.spotifyOfficialAPI.userProfile {
+                    Text("Welcome, \(user.displayName)").font(.caption.bold()).foregroundColor(.secondary)
+                } else if let nativeUser = musicManager.spotifyPrivateAPI.userProfile {
+                    Text("Welcome, \(nativeUser.profile.friendlyName)").font(.caption.bold()).foregroundColor(.secondary)
+                }
+                Spacer()
+                deviceSubTabBar
+                if musicManager.isOfficialAPIAuthenticated {
+                    Button("Log out") { musicManager.spotifyOfficialAPI.logout() }
+                        .buttonStyle(.plain).font(.caption).foregroundColor(.secondary)
+                }
+            }
+
+            ZStack {
+                if isLoading && selectedTab != .system {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    switch effectiveDeviceTab {
+                    case .spotify:
+                        spotifyDeviceList
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .leading).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                    case .airplay:
+                        appleMusicDeviceList
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .move(edge: .trailing).combined(with: .opacity)
+                            ))
+                    case .system:
+                        SystemAudioPanel(navigationStack: $navigationStack)
+                            .transition(.opacity)
+                    }
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: effectiveDeviceTab)
+            .frame(minHeight: 220)
+        }
+    }
+
+    private var deviceSubTabBar: some View {
+        HStack(spacing: 6) {
+            if showsSpotifyTab {
+                TabButton(title: "Spotify", systemImage: "music.note", isSelected: selectedTab == .spotify) {
+                    selectedTab = .spotify
+                }
+            }
+            TabButton(title: "AirPlay", systemImage: "airplayaudio", isSelected: selectedTab == .airplay) {
+                selectedTab = .airplay
+            }
+            TabButton(title: "System", systemImage: "hifispeaker.and.homepod.mini.fill", isSelected: selectedTab == .system) {
+                selectedTab = .system
+            }
+        }
+        .padding(5)
+        .background(Color.black.opacity(0.2))
+        .clipShape(Capsule())
+    }
+
+    private var effectiveDeviceTab: DeviceTab {
+        if selectedTab == .spotify && !showsSpotifyTab { return .airplay }
+        return selectedTab
+    }
+
+    private func normalizeSelectedTab() {
+        if selectedTab == .spotify && !showsSpotifyTab {
+            selectedTab = settings.settings.preferAirPlayOverSpotify ? .airplay : .system
+        }
+    }
+
+    @ViewBuilder
+    private var appleMusicDeviceListContent: some View {
+        if musicManager.airplayDevices.isEmpty {
+            Text("No AirPlay devices found.")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(musicManager.airplayDevices) { device in
+                    AppleMusicDeviceRow(
+                        device: device,
+                        onSelect: {
+                            Task {
+                                await musicManager.appleMusic.switchToAirPlayDevice(device)
+                                try await Task.sleep(for: .seconds(1))
+                                await musicManager.updateAirPlayDevices()
+                            }
+                        }
+                    )
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -190,7 +346,7 @@ struct DevicesView: View {
     }
 
     @ViewBuilder
-    private var spotifyDeviceList: some View {
+    private var spotifyDeviceListContent: some View {
         let sortedNativeDevices = spotifyNativeDevices.sorted { d1, d2 in
             let d1IsActive = d1.deviceId == musicManager.spotifyPrivateAPI.activePlayerDeviceID
             let d2IsActive = d2.deviceId == musicManager.spotifyPrivateAPI.activePlayerDeviceID
@@ -205,61 +361,114 @@ struct DevicesView: View {
             return d1.name.localizedCompare(d2.name) == .orderedAscending
         }
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 15) {
-                if !sortedNativeDevices.isEmpty {
-                    SectionHeader(title: "All Devices (Private API)")
-                    ForEach(sortedNativeDevices, id: \.deviceId) { device in
-                        SpotifyNativeDeviceRow(
-                            device: device,
-                            isActive: device.deviceId == musicManager.spotifyPrivateAPI.activePlayerDeviceID,
-                            volume: $spotifyVolume,
-                            onTransfer: {
-                                Task.detached(priority: .userInitiated) {
-                                    _ = await musicManager.transferSpotifyPlayback(to: device.deviceId)
-                                    try? await Task.sleep(for: .seconds(1))
-                                    await fetchInitialData()
-                                }
-                            },
-                            onCommit: { sendVolumeUpdate() }
-                        )
-                    }
-                } else if !sortedOfficialDevices.isEmpty {
-                    SectionHeader(title: "Premium Devices (Official API)")
-                    ForEach(sortedOfficialDevices) { device in
-                        SpotifyDeviceRow(
-                            device: device,
-                            volume: $spotifyVolume,
-                            onTransfer: {
-                                guard let deviceId = device.id else { return }
-                                Task.detached(priority: .userInitiated) {
-                                    _ = await musicManager.transferSpotifyPlayback(to: deviceId)
-                                    try? await Task.sleep(for: .seconds(1))
-                                    await fetchInitialData()
-                                }
-                            },
-                            onCommit: { sendVolumeUpdate() }
-                        )
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            if let notice = musicManager.spotifyPrivateAPI.deviceTransferNotice {
+                Text(notice)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.orange)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            if musicManager.isPrivateAPIAuthenticated,
+               sortedNativeDevices.filter({ $0.deviceId != musicManager.spotifyPrivateAPI.controllerDeviceID }).isEmpty,
+               sortedOfficialDevices.isEmpty {
+                Text("No Spotify speakers online. Open the Spotify desktop app (or another Connect device) to play audio — Sapphire only controls playback.")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            if !sortedNativeDevices.isEmpty {
+                ForEach(sortedNativeDevices, id: \.deviceId) { device in
+                    let isSapphireController = device.deviceId == musicManager.spotifyPrivateAPI.controllerDeviceID
+                    SpotifyNativeDeviceRow(
+                        device: device,
+                        isActive: device.deviceId == musicManager.spotifyPrivateAPI.activePlayerDeviceID,
+                        isControllerOnly: isSapphireController,
+                        volume: $spotifyVolume,
+                        onTransfer: {
+                            Task.detached(priority: .userInitiated) {
+                                _ = await musicManager.transferSpotifyPlayback(to: device.deviceId)
+                                try? await Task.sleep(for: .seconds(1))
+                                await fetchInitialData()
+                            }
+                        },
+                        onCommit: { sendVolumeUpdate() }
+                    )
+                }
+            } else if !sortedOfficialDevices.isEmpty {
+                ForEach(sortedOfficialDevices) { device in
+                    SpotifyDeviceRow(
+                        device: device,
+                        volume: $spotifyVolume,
+                        onTransfer: {
+                            guard let deviceId = device.id else { return }
+                            Task.detached(priority: .userInitiated) {
+                                _ = await musicManager.transferSpotifyPlayback(to: deviceId)
+                                try? await Task.sleep(for: .seconds(1))
+                                await fetchInitialData()
+                            }
+                        },
+                        onCommit: { sendVolumeUpdate() }
+                    )
                 }
             }
-            .padding(.bottom, 30)
+
+            if !musicManager.isPremiumUser && spotifyNativeDevices.isEmpty {
+                FreeUserNoticeView()
+            }
         }
-        .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.9), .init(color: .clear, location: 1.0)]), startPoint: .top, endPoint: .bottom))
         .onChange(of: spotifyVolume) { _, _ in
             volumeThrottler.throttle { sendVolumeUpdate() }
         }
-        if !musicManager.isPremiumUser && spotifyNativeDevices.isEmpty { FreeUserNoticeView() }
     }
+
+    @ViewBuilder
+    private var spotifyDeviceList: some View {
+        ScrollView {
+            spotifyDeviceListContent
+                .padding(.bottom, 30)
+        }
+        .mask(LinearGradient(gradient: Gradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.9), .init(color: .clear, location: 1.0)]), startPoint: .top, endPoint: .bottom))
+    }
+
     // MARK: - Data Fetching
 
-    private func fetchInitialData() async {
-        await MainActor.run {
-            isLoading = true
+    private func fetchAllAudioData() async {
+        await MainActor.run { isLoading = true }
+        async let airplay: Void = musicManager.updateAirPlayDevices()
+        if showsSpotifyTab {
+            await loadSpotifyDevices(manageLoading: false)
         }
+        _ = await airplay
+        await MainActor.run { isLoading = false }
+    }
 
-        await musicManager.updateAirPlayDevices()
+    /// Loads only what the active tab needs. Never kicks off Music.app ScriptingBridge
+    /// when opening the Spotify devices list — that was freezing the notch UI.
+    private func fetchData(for tab: DeviceTab) async {
+        UserDefaults.standard.set(tab.rawValue, forKey: lastSelectedTabKey)
 
+        switch tab {
+        case .system:
+            await MainActor.run { isLoading = false }
+
+        case .airplay:
+            await MainActor.run { isLoading = true }
+            await musicManager.updateAirPlayDevices()
+            await MainActor.run { isLoading = false }
+
+        case .spotify:
+            await loadSpotifyDevices(manageLoading: true)
+        }
+    }
+
+    private func loadSpotifyDevices(manageLoading: Bool) async {
+        if manageLoading { await MainActor.run { isLoading = true } }
         var fetchedNativeDevices: [SpotifyNativeDevice] = []
         var fetchedOfficialDevices: [SpotifyDevice] = []
 
@@ -269,31 +478,36 @@ struct DevicesView: View {
                 fetchedNativeDevices = musicManager.spotifyPrivateAPI.devices
             }
             if musicManager.isOfficialAPIAuthenticated {
-                 fetchedOfficialDevices = await musicManager.spotifyOfficialAPI.fetchDevices()
+                fetchedOfficialDevices = await musicManager.spotifyOfficialAPI.fetchDevices()
             }
 
             var newVolume: Double?
             if let activeNativeID = musicManager.spotifyPrivateAPI.activePlayerDeviceID,
                let activeNativeDevice = fetchedNativeDevices.first(where: { $0.deviceId == activeNativeID }) {
                 newVolume = (Double(activeNativeDevice.volume ?? 65535) / 65535.0) * 100.0
-            } else if let activeOfficial = fetchedOfficialDevices.first(where: { $0.isActive }), let currentVolume = activeOfficial.volumePercent {
+            } else if let activeOfficial = fetchedOfficialDevices.first(where: { $0.isActive }),
+                      let currentVolume = activeOfficial.volumePercent {
                 newVolume = Double(currentVolume)
-            } else if let localVolume = musicManager.spotifyAppleScript.getLocalVolume() {
+            } else if let localVolume = await musicManager.spotifyAppleScript.getLocalVolumeAsync() {
                 newVolume = Double(localVolume)
             }
 
             await MainActor.run {
                 self.spotifyNativeDevices = fetchedNativeDevices
                 self.spotifyOfficialDevices = fetchedOfficialDevices
-                if let newVolume = newVolume {
-                    self.spotifyVolume = newVolume
-                }
-                self.isLoading = false
+                if let newVolume { self.spotifyVolume = newVolume }
+                if manageLoading { self.isLoading = false }
             }
+        } else if manageLoading {
+            await MainActor.run { isLoading = false }
+        }
+    }
+
+    private func fetchInitialData() async {
+        if embedded {
+            await fetchAllAudioData()
         } else {
-            await MainActor.run {
-                self.isLoading = false
-            }
+            await fetchData(for: selectedTab)
         }
     }
 }
@@ -392,6 +606,7 @@ fileprivate struct SpotifyDeviceRow: View {
 fileprivate struct SpotifyNativeDeviceRow: View {
     let device: SpotifyNativeDevice
     let isActive: Bool
+    var isControllerOnly: Bool = false
     @Binding var volume: Double
     let onTransfer: () -> Void
     let onCommit: () -> Void
@@ -399,10 +614,25 @@ fileprivate struct SpotifyNativeDeviceRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 15) {
-                Image(systemName: iconName(for: device.deviceType)).font(.title2).frame(width: 30).foregroundColor(isActive ? .green : .primary)
-                Text(device.name).fontWeight(.medium)
+                Image(systemName: iconName(for: device.deviceType))
+                    .font(.title2)
+                    .frame(width: 30)
+                    .foregroundColor(isActive ? .green : (isControllerOnly ? .secondary : .primary))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(device.name).fontWeight(.medium)
+                    if isControllerOnly {
+                        Text("This Mac · controls only (no audio)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
-                if isActive { Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green).transition(.opacity.combined(with: .scale(scale: 0.8))) }
+                if isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.green)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                }
             }
             if isActive && (device.capabilities.volumeSteps ?? 0) > 0 {
                 BoldPillSlider(label: "Volume", value: $volume, range: 0...100, specifier: "%.0f %%", onCommit: onCommit)
@@ -410,8 +640,16 @@ fileprivate struct SpotifyNativeDeviceRow: View {
                     .transition(.opacity.combined(with: .offset(y: 5)))
             }
         }
-        .padding(.horizontal, 20).padding(.vertical, 16).background(.gray.opacity(0.13)).clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous)).contentShape(Rectangle())
-        .onTapGesture { if !isActive { onTransfer() } }
+        .padding(.horizontal, 20).padding(.vertical, 16)
+        .background(.gray.opacity(isControllerOnly ? 0.08 : 0.13))
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .contentShape(Rectangle())
+        .opacity(isControllerOnly ? 0.72 : 1)
+        .onTapGesture {
+            guard !isActive else { return }
+            if isControllerOnly { return }
+            onTransfer()
+        }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isActive)
     }
 

@@ -13,6 +13,9 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
     private let accessToken: String
     private var isConnected = false
     private(set) var isConnecting = false
+    private(set) var lastPlayerStateReceivedAt: Date?
+
+    var hasActiveConnection: Bool { isConnected }
 
     public let controllerDeviceID: String
 
@@ -22,8 +25,8 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
 
     private weak var privateAPIManager: SpotifyPrivateAPIManager?
 
-    private let playerStateSubject = PassthroughSubject<PlayerState, Never>()
-    var playerStatePublisher: AnyPublisher<PlayerState, Never> {
+    private let playerStateSubject = PassthroughSubject<PlayerStateClusterUpdate, Never>()
+    var playerStatePublisher: AnyPublisher<PlayerStateClusterUpdate, Never> {
         return playerStateSubject.eraseToAnyPublisher()
     }
 
@@ -137,11 +140,19 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         guard let data = message.data(using: .utf8) else { return }
         do {
             let webSocketMessage = try JSONDecoder().decode(WebSocketMessage.self, from: data)
-            if let playerState = webSocketMessage.payloads?.first?.cluster?.playerState ?? webSocketMessage.payloads?.first?.state {
+            if let cluster = webSocketMessage.payloads?.first?.cluster,
+               let playerState = cluster.playerState ?? webSocketMessage.payloads?.first?.state {
                 let signature = PlayerStateSignature(playerState)
                 guard signature != lastPublishedPlayerStateSignature else { return }
                 lastPublishedPlayerStateSignature = signature
-                playerStateSubject.send(playerState)
+                lastPlayerStateReceivedAt = Date()
+                playerStateSubject.send(PlayerStateClusterUpdate(playerState: playerState, activeDeviceId: cluster.activeDeviceId))
+            } else if let playerState = webSocketMessage.payloads?.first?.state {
+                let signature = PlayerStateSignature(playerState)
+                guard signature != lastPublishedPlayerStateSignature else { return }
+                lastPublishedPlayerStateSignature = signature
+                lastPlayerStateReceivedAt = Date()
+                playerStateSubject.send(PlayerStateClusterUpdate(playerState: playerState, activeDeviceId: nil))
             }
         } catch {
             return
@@ -244,7 +255,19 @@ private struct PlayerStateSignature: Equatable {
     }
 }
 
+struct PlayerStateClusterUpdate {
+    let playerState: PlayerState
+    let activeDeviceId: String?
+}
+
 // MARK: - Decoding Structs
 struct WebSocketMessage: Decodable { let payloads: [Payload]? }
 struct Payload: Decodable { let cluster: Cluster?; let state: PlayerState? }
-struct Cluster: Decodable { let playerState: PlayerState?; enum CodingKeys: String, CodingKey { case playerState = "player_state" } }
+struct Cluster: Decodable {
+    let playerState: PlayerState?
+    let activeDeviceId: String?
+    enum CodingKeys: String, CodingKey {
+        case playerState = "player_state"
+        case activeDeviceId = "active_device_id"
+    }
+}

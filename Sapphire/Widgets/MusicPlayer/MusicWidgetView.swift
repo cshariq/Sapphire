@@ -14,11 +14,8 @@ struct MusicWidgetView: View {
     @EnvironmentObject var settings: SettingsModel
     @State private var isHoveringArtwork = false
 
+    /// When set (e.g. lock screen), tap expands via this callback instead of notch navigation.
     var onExpand: (() -> Void)? = nil
-
-    init(onExpand: (() -> Void)? = nil) {
-        self.onExpand = onExpand
-    }
 
     var body: some View {
         if let title = musicManager.title, !title.isEmpty {

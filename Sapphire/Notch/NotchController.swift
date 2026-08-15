@@ -1898,7 +1898,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .clipboardPlayer: return .clipboardPlayer
         case .mirrorPlayer: return nil
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
-                .musicPlaylistDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
+                .musicPlaylistDetail, .musicArtistDetail, .musicAlbumDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
                 .agentS, .blipHub, .circleToSearch:
             return nil

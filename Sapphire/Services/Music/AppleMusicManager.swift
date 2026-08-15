@@ -26,41 +26,6 @@ class AppleMusicManager {
         return musicApp?.playerState == .playing
     }
 
-    func play() {
-        activateIfNeeded()
-        if musicApp?.playerState == .playing { return }
-        if musicApp?.playerState == .paused {
-            musicApp?.resume?()
-        } else {
-            musicApp?.play?(nil)
-        }
-    }
-
-    func pause() {
-        activateIfNeeded()
-        musicApp?.pause?()
-    }
-
-    func togglePlayPause() {
-        if isPlaying() {
-            pause()
-        } else {
-            play()
-        }
-    }
-
-    private func activateIfNeeded() {
-        if !isAppRunning() {
-            NSWorkspace.shared.launchApplication(
-                withBundleIdentifier: "com.apple.Music",
-                options: [],
-                additionalEventParamDescriptor: nil,
-                launchIdentifier: nil
-            )
-        }
-        musicApp?.activate()
-    }
-
     func getShuffleState() -> Bool {
         return musicApp?.shuffleEnabled ?? false
     }
@@ -131,14 +96,28 @@ class AppleMusicManager {
     }
 
     func fetchAirPlayDevices() async -> [AirPlayDevice] {
-        guard let sbDevices = musicApp?.AirPlayDevices?().get() as? [MusicAirPlayDevice] else { return [] }
-
-        return sbDevices.compactMap { device in
-            guard let name = device.name, let kind = device.kind else { return nil }
-            return AirPlayDevice(
-                name: name, kind: kind, isSelected: device.selected ?? false,
-                volume: device.soundVolume
-            )
+        // ScriptingBridge can hang for seconds if Music.app is unresponsive.
+        // Never block the notch UI — time out and return whatever we have.
+        await withTaskGroup(of: [AirPlayDevice].self) { group in
+            group.addTask { @MainActor in
+                guard let sbDevices = self.musicApp?.AirPlayDevices?().get() as? [MusicAirPlayDevice] else {
+                    return []
+                }
+                return sbDevices.compactMap { device in
+                    guard let name = device.name, let kind = device.kind else { return nil }
+                    return AirPlayDevice(
+                        name: name, kind: kind, isSelected: device.selected ?? false,
+                        volume: device.soundVolume
+                    )
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(1.5))
+                return []
+            }
+            let first = await group.next() ?? []
+            group.cancelAll()
+            return first
         }
     }
 
@@ -159,5 +138,71 @@ class AppleMusicManager {
     func revealCurrentTrack() {
         musicApp?.currentTrack?.reveal?()
         musicApp?.activate()
+    }
+
+    struct QueueTrack: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let artist: String
+    }
+
+    func fetchUpNextTracks() async -> [QueueTrack] {
+        guard isAppRunning() else { return [] }
+        let script = """
+        tell application "Music"
+            if not running then return ""
+            set queueNames to {"Queue", "Music Queue", "Up Next"}
+            repeat with queueName in queueNames
+                try
+                    if not (exists playlist queueName) then error "missing"
+                    set rows to {}
+                    repeat with t in (tracks of playlist queueName)
+                        try
+                            set trackID to persistent ID of t as string
+                            set trackTitle to name of t as string
+                            set trackArtist to artist of t as string
+                            set end of rows to trackID & "|" & trackTitle & "|" & trackArtist
+                        end try
+                    end repeat
+                    set AppleScript's text item delimiters to linefeed
+                    set joined to rows as string
+                    set AppleScript's text item delimiters to ""
+                    return joined
+                end try
+            end repeat
+            return ""
+        end tell
+        """
+        let raw: String = await Task.detached(priority: .utility) {
+            Self.runOsascript(script) ?? ""
+        }.value
+        guard !raw.isEmpty else { return [] }
+        return raw.split(separator: "\n").compactMap { line -> QueueTrack? in
+            let parts = line.split(separator: "|", maxSplits: 2).map(String.init)
+            guard parts.count == 3 else { return nil }
+            return QueueTrack(id: parts[0], title: parts[1], artist: parts[2])
+        }
+    }
+
+    private nonisolated static func runOsascript(_ script: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            let timeoutItem = DispatchWorkItem { process.terminate() }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 5.0, execute: timeoutItem)
+            process.waitUntilExit()
+            timeoutItem.cancel()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return output?.isEmpty == false ? output : nil
+        } catch {
+            return nil
+        }
     }
 }

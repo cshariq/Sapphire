@@ -83,7 +83,5 @@ extension SBObject: MusicAirPlayDevice {}
     @objc optional func setShuffleEnabled(_ shuffleEnabled: Bool)
     @objc optional func setSongRepeat(_ songRepeat: MusicERpt)
     @objc optional func play(_: SBObject!)
-    @objc optional func pause()
-    @objc optional func resume()
 }
 extension SBApplication: MusicApplication {}

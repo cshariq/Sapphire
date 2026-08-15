@@ -22,10 +22,9 @@ struct LoginPromptView: View {
             Text("Please log in to Spotify via the Music section in Sapphire's settings to use this feature.")
                 .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
 
-            Button("Go Back", action: {
-                if !navigationStack.isEmpty { navigationStack.removeLast() }
-            })
-            .buttonStyle(.bordered).tint(.accentColor)
+            Text("Use the back control in the notch to return.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .padding(30)
         .frame(width: 400)
@@ -47,10 +46,9 @@ struct ApiKeysMissingView: View {
             Text("To enable Spotify integration, please add your API credentials in Sapphire's settings.")
                 .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
 
-            Button("Go Back", action: {
-                if !navigationStack.isEmpty { navigationStack.removeLast() }
-            })
-            .buttonStyle(.bordered).tint(.accentColor)
+            Text("Use the back control in the notch to return.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .padding(30)
         .frame(width: 400)
@@ -72,10 +70,9 @@ struct GeminiApiKeysMissingView: View {
             Text("To use Gemini Live, please add your Google AI Studio API key in Sapphire's settings.")
                 .font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
 
-            Button("Go Back", action: {
-                if !navigationStack.isEmpty { navigationStack.removeLast() }
-            })
-            .buttonStyle(.bordered).tint(.accentColor)
+            Text("Use the back control in the notch to return.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .padding(30)
         .frame(width: 400)

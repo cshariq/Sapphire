@@ -2,7 +2,8 @@
 //  SpotifyLoginWebView.swift
 //  Sapphire
 //
-//  Created by Shariq Charolia on 2026-08-10.
+//  WKWebView-based Spotify accounts login. Harvests fresh session cookies
+//  (sp_dc / sp_key / sp_t) after a real sign-in for the private API client.
 //
 
 import SwiftUI
@@ -30,11 +31,13 @@ struct SpotifyLoginWebView: View {
 private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
     let onComplete: ([[String: Any]]) -> Void
 
+    /// Desktop Chrome UA — Spotify's mobile/WebKit default UA often breaks social login / captcha iframes.
     static let desktopUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        // Ephemeral store so revoked/global-sign-out cookies cannot resurrect a fake session.
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
@@ -45,6 +48,7 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
 
+        print("[SpotifyLogin] Clearing residual Spotify website data, then loading a fresh login.")
         Self.clearSharedSpotifyWebsiteData {
             context.coordinator.loadLoginPage(in: webView)
         }
@@ -62,6 +66,8 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
         coordinator.tearDown()
     }
 
+    /// Also wipe the shared default store so CookieManager/UserDefaults path
+    /// and any leftover default-store cookies from older builds cannot interfere.
     static func clearSharedSpotifyWebsiteData(completion: @escaping () -> Void) {
         let store = WKWebsiteDataStore.default()
         store.httpCookieStore.getAllCookies { cookies in
@@ -127,18 +133,28 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
             startCookiePolling(for: webView)
         }
 
+        // MARK: - WKNavigationDelegate
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard let url = webView.url else { return }
+            // Ignore popup navigations for the primary login-state machine, but still poll cookies
+            // from the shared ephemeral store (popups share the parent's data store).
             if popupWindows[webView] != nil {
+                print("[SpotifyLogin] Popup finished: \(url.absoluteString)")
                 checkForFreshSessionCookies(in: webView)
                 return
             }
+
+            print("[SpotifyLogin] Finished loading URL: \(url.absoluteString)")
 
             if Self.looksLikeAuthenticatedDestination(url) {
                 didPassLoginForm = true
                 checkForFreshSessionCookies(in: webView)
             } else if Self.looksLikeLoginPage(url) {
+                // Stay on the form — never complete from leftover cookies on first paint.
+                print("[SpotifyLogin] Login form visible; waiting for a real sign-in.")
             } else if url.host?.contains("spotify.com") == true {
+                // Intermediate accounts redirects after credentials.
                 didPassLoginForm = true
                 checkForFreshSessionCookies(in: webView)
             }
@@ -152,12 +168,15 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
             decisionHandler(.allow)
         }
 
+        // MARK: - WKUIDelegate (social login / captcha popups)
+
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
+            // target=_blank / window.open — required for Google/Apple/Facebook and some captchas.
             let popup = WKWebView(frame: .zero, configuration: configuration)
             popup.customUserAgent = SpotifyLoginWebViewRepresentable.desktopUserAgent
             popup.navigationDelegate = self
@@ -180,6 +199,7 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
             window.makeKeyAndOrderFront(nil)
 
             popupWindows[popup] = window
+            print("[SpotifyLogin] Opened auth popup for \(navigationAction.request.url?.absoluteString ?? "unknown")")
 
             if let url = navigationAction.request.url {
                 popup.load(navigationAction.request)
@@ -191,6 +211,7 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
         func webViewDidClose(_ webView: WKWebView) {
             if let window = popupWindows.removeValue(forKey: webView) {
                 window.close()
+                print("[SpotifyLogin] Auth popup closed by page.")
             }
         }
 
@@ -222,6 +243,8 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
             completionHandler(alert.runModal() == .alertFirstButtonReturn)
         }
 
+        // MARK: - Cookie harvest
+
         private func startCookiePolling(for webView: WKWebView) {
             cookiePollTimer?.invalidate()
             cookiePollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self, weak webView] _ in
@@ -242,10 +265,13 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
                 let spotifyCookies = cookies.filter { SpotifyLoginWebViewRepresentable.isSpotifyCookie($0) }
                 let hasDC = spotifyCookies.contains { $0.name == "sp_dc" }
                 let hasKey = spotifyCookies.contains { $0.name == "sp_key" }
+                // sp_t is issued after a real web-player session handshake and helps avoid
+                // accepting half-dead account cookies that still linger after global sign-out.
                 let hasT = spotifyCookies.contains { $0.name == "sp_t" }
 
                 guard hasDC, hasKey else { return }
 
+                // Prefer waiting until we also have sp_t or have left the login host.
                 let url = webView.url
                 let leftAccountsLogin = url.map { !Self.looksLikeLoginPage($0) } ?? false
                 guard hasT || leftAccountsLogin || Self.looksLikeAuthenticatedDestination(url) else {
@@ -254,6 +280,7 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
 
                 self.isCompleting = true
                 self.cookiePollTimer?.invalidate()
+                print("[SpotifyLogin] SUCCESS: Fresh session cookies detected. Completing login.")
 
                 let cookieProperties = spotifyCookies.compactMap { cookie -> [String: Any]? in
                     guard let properties = cookie.properties else { return nil }

@@ -102,29 +102,30 @@ class BrowserAppleScriptManager {
     }
 
     private func runAppleScriptInBackground(_ script: String) async -> String {
-        print("[BrowserAppleScriptManager] LOG: Executing AppleScript on a background thread...")
-        var error: NSDictionary?
-        guard let scriptObject = NSAppleScript(source: script) else {
-            print("[BrowserAppleScriptManager] ERROR: Failed to create NSAppleScript object.")
-            return "ERROR"
-        }
-
-        let resultDescriptor = await Task.detached {
-            return scriptObject.executeAndReturnError(&error)
-        }.value
-
-        if let error = error {
-            print("[BrowserAppleScriptManager] ERROR: AppleScript execution failed.")
-            print("--- ERROR DETAILS ---")
-            for (key, value) in error {
-                print("\(key): \(value)")
+        print("[BrowserAppleScriptManager] LOG: Executing AppleScript via osascript...")
+        return await Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            process.arguments = ["-e", script]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = Pipe()
+            do {
+                try process.run()
+                let timeoutItem = DispatchWorkItem { process.terminate() }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 5.0, execute: timeoutItem)
+                process.waitUntilExit()
+                timeoutItem.cancel()
+                if process.terminationStatus != 0 { return "ERROR" }
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let resultString = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? "No result string"
+                print("[BrowserAppleScriptManager] LOG: AppleScript execution SUCCEEDED. Result: \(resultString)")
+                return resultString
+            } catch {
+                print("[BrowserAppleScriptManager] ERROR: AppleScript execution failed: \(error.localizedDescription)")
+                return "ERROR"
             }
-            print("-----------------------")
-            return "ERROR"
-        } else {
-            let resultString = resultDescriptor.stringValue ?? "No result string"
-            print("[BrowserAppleScriptManager] LOG: AppleScript execution SUCCEEDED. Result: \(resultString)")
-            return resultString
-        }
+        }.value
     }
 }

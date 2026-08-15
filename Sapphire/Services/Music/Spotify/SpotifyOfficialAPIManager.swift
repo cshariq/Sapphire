@@ -24,17 +24,14 @@ class SpotifyOfficialAPIManager: ObservableObject {
     private var clientSecret = ""
     private let redirectURI = "sapphire://callback"
 
+    private let settingsModel = SettingsModel.shared
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
-        loadCredentials()
-
-        NotificationCenter.default.publisher(for: .apiKeyManagerSpotifyCredentialsChanged)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.loadCredentials()
-            }
-            .store(in: &cancellables)
+        updateCredentials(clientId: settingsModel.settings.spotifyClientId, clientSecret: settingsModel.settings.spotifyClientSecret)
+        settingsModel.$settings.receive(on: DispatchQueue.main).sink { [weak self] newSettings in
+            self?.updateCredentials(clientId: newSettings.spotifyClientId, clientSecret: newSettings.spotifyClientSecret)
+        }.store(in: &cancellables)
 
         self.accessToken = UserDefaults.standard.string(forKey: "spotifyAccessToken")
         self.refreshToken = UserDefaults.standard.string(forKey: "spotifyRefreshToken")
@@ -44,12 +41,10 @@ class SpotifyOfficialAPIManager: ObservableObject {
         }
     }
 
-    private func loadCredentials() {
-        let newClientId = APIKeyManager.shared.spotifyClientId
-        let newClientSecret = APIKeyManager.shared.spotifyClientSecret
-        self.clientId = newClientId
-        self.clientSecret = newClientSecret
-        let nowHasKeys = !newClientId.isEmpty && !newClientSecret.isEmpty
+    private func updateCredentials(clientId: String, clientSecret: String) {
+        self.clientId = clientId
+        self.clientSecret = clientSecret
+        let nowHasKeys = !clientId.isEmpty && !clientSecret.isEmpty
         if self.hasApiKeys != nowHasKeys {
             self.hasApiKeys = nowHasKeys
         }
@@ -176,19 +171,6 @@ class SpotifyOfficialAPIManager: ObservableObject {
         self.isAuthenticated = false
         UserDefaults.standard.removeObject(forKey: "spotifyAccessToken")
         UserDefaults.standard.removeObject(forKey: "spotifyRefreshToken")
-    }
-
-    func adoptExternalTokens(accessToken: String, refreshToken: String?, clientID: String, clientSecret: String?) {
-        self.accessToken = accessToken
-        self.refreshToken = refreshToken
-        if !clientID.isEmpty { self.clientId = clientID }
-        if let clientSecret, !clientSecret.isEmpty { self.clientSecret = clientSecret }
-        UserDefaults.standard.set(accessToken, forKey: "spotifyAccessToken")
-        if let refreshToken {
-            UserDefaults.standard.set(refreshToken, forKey: "spotifyRefreshToken")
-        }
-        self.isAuthenticated = true
-        Task { await fetchUserProfile() }
     }
 
     // MARK: - API Requests

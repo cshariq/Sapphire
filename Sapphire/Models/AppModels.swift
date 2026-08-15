@@ -35,6 +35,8 @@ enum NotchWidgetMode: Hashable {
     case musicDevices
     case musicLyrics
     case musicPlaylistDetail(SpotifyPlaylist)
+    case musicArtistDetail(uri: String, name: String)
+    case musicAlbumDetail(uri: String, name: String)
 
     case nearDrop
     case fileShelf
@@ -85,6 +87,14 @@ enum NotchWidgetMode: Hashable {
         case .musicPlaylistDetail(let playlist):
             hasher.combine(9)
             hasher.combine(playlist)
+        case .musicArtistDetail(let uri, let name):
+            hasher.combine(29)
+            hasher.combine(uri)
+            hasher.combine(name)
+        case .musicAlbumDetail(let uri, let name):
+            hasher.combine(30)
+            hasher.combine(uri)
+            hasher.combine(name)
         case .nearDrop:
             hasher.combine(10)
         case .fileShelf:

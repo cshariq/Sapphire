@@ -1,9 +1,3 @@
-//
-//  LyricsFetcher.swift
-//  Sapphire
-//
-//  Created by Shariq Charolia on 2026-08-10
-
 import Foundation
 
 class LyricsFetcher {
@@ -76,7 +70,7 @@ class LyricsFetcher {
             URLQueryItem(name: "sl", value: "auto"),
             URLQueryItem(name: "tl", value: "en"),
             URLQueryItem(name: "dt", value: "t"),
-            URLQueryItem(name: "q", value: trimmedText.prefix(500).description)
+            URLQueryItem(name: "q", value: trimmedText.description)
         ]
 
         guard let url = components.url else { return nil }
@@ -102,9 +96,11 @@ class LyricsFetcher {
         return nil
     }
 
+    // High performance batch translation of lyric strings
     func translate(lyrics: inout [LyricLine], from sourceLanguage: String, to targetLanguage: String) async {
         guard !lyrics.isEmpty else { return }
 
+        // We group lyric lines to fit safely under standard API character limitations
         var chunks: [[(index: Int, text: String)]] = []
         var currentChunk: [(index: Int, text: String)] = []
         var currentLength = 0
@@ -115,13 +111,13 @@ class LyricsFetcher {
                 lyrics[i].translatedText = ""
                 continue
             }
-
+            
             if currentLength + originalText.count + 1 > 1800 && !currentChunk.isEmpty {
                 chunks.append(currentChunk)
                 currentChunk = []
                 currentLength = 0
             }
-
+            
             currentChunk.append((index: i, text: originalText))
             currentLength += originalText.count + 1
         }
@@ -156,7 +152,7 @@ class LyricsFetcher {
             for chunk in chunks {
                 group.addTask {
                     let combinedText = chunk.map { $0.text }.joined(separator: "\n")
-
+                    
                     var components = URLComponents(string: "https://translate.googleapis.com/translate_a/single")!
                     components.queryItems = [
                         URLQueryItem(name: "client", value: "gtx"),
@@ -171,7 +167,7 @@ class LyricsFetcher {
                     do {
                         let (data, _) = try await URLSession.shared.data(from: url)
                         let unofficialResponse = try Self.decoder.decode(UnofficialGoogleTranslateResponse.self, from: data)
-
+                        
                         if let translatedResult = unofficialResponse.translatedText {
                             let translatedLines = translatedResult.components(separatedBy: "\n")
                             var results: [(Int, String)] = []

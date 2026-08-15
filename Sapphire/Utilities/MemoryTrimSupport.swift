@@ -16,7 +16,7 @@ enum MemoryTrimSupport {
 
     @MainActor
     static func trimAfterNotchCollapse(musicManager: MusicManager) {
-        musicManager.trimExpandedUIMemory()
+//        musicManager.trimExpandedUIMemory()
         Task { await FileImageCache.shared.trimMemoryCache() }
         NSImage.trimEdgeColorCache()
     }
@@ -25,7 +25,7 @@ enum MemoryTrimSupport {
     static func trimAfterUserWindowClose(musicManager: MusicManager) {
         SettingsModel.shared.flushPendingSave()
         releaseSettingsPaneCaches()
-        musicManager.trimExpandedUIMemory()
+//        musicManager.trimExpandedUIMemory()
         Task { await FileImageCache.shared.trimMemoryCache() }
         NSImage.trimEdgeColorCache()
         URLCache.shared.removeAllCachedResponses()

@@ -1,9 +1,3 @@
-//
-//  LyricsDetachedWindowView.swift
-//  Sapphire
-//
-//  Created by Shariq Charolia on 2026-08-10
-
 import SwiftUI
 import AppKit
 
@@ -26,6 +20,7 @@ struct WindowAccessor: NSViewRepresentable {
 
 struct LyricsDetachedWindowView: View {
     @EnvironmentObject var musicManager: MusicManager
+    @EnvironmentObject var settings: SettingsModel
     @State private var hostingWindow: NSWindow? = nil
 
     var body: some View {
@@ -33,23 +28,27 @@ struct LyricsDetachedWindowView: View {
             // MARK: - Apple TV Ambient Background (Micro-Blur optimized)
             GeometryReader { geo in
                 ZStack {
+                    // 1. Base Ambient Artwork
                     if let image = musicManager.artwork ?? musicManager.appIcon {
                         Image(nsImage: image)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
+                            // Downsample mathematically to bypass heavy GPU processing
                             .frame(width: geo.size.width / 10, height: geo.size.height / 10)
-                            .blur(radius: 12, opaque: true)
-                            .saturation(1.2)
-                            .scaleEffect(10.5)
+                            .blur(radius: 12, opaque: true) // Low-cost blur on small frame
+                            .saturation(1.2) // Enhance colors
+                            .scaleEffect(10.5) // Scale back to fill original geometry
                             .animation(.easeInOut(duration: 1.5), value: image)
                     } else {
                         musicManager.accentColor
                             .opacity(0.4)
                             .blur(radius: 100)
                     }
-
+                    
+                    // 2. Heavy Dark TV Overlay
                     Color.black.opacity(0.65)
-
+                    
+                    // 3. Ultra-thin glass texture
                     Rectangle()
                         .fill(.ultraThinMaterial)
                         .opacity(0.5)
@@ -77,16 +76,18 @@ struct LyricsDetachedWindowView: View {
 
                 // MARK: - Middle Content (Art + Lyrics)
                 HStack(alignment: .center, spacing: 60) {
+                    // LEFT: Album Art & Info
                     LyricsDetachedLeftPane()
                         .frame(width: 320)
-
+                    
+                    // RIGHT: Massive Lyrics
                     LyricsDetachedRightPane()
                         .frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, 60)
                 .padding(.top, 20)
                 .padding(.bottom, 40)
-
+                
                 // MARK: - Bottom Player Controls (Scrubber & Buttons)
                 LyricsDetachedBottomBar()
                     .padding(.horizontal, 60)
@@ -94,30 +95,32 @@ struct LyricsDetachedWindowView: View {
             }
         }
         .frame(minWidth: 1100, idealWidth: 1280, minHeight: 650, idealHeight: 760)
-        .environment(\.colorScheme, .dark)
+        .environment(\.colorScheme, .dark) // Force dark mode contrast
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
         )
+        // Background accessor dynamically configures the host NSWindow details
         .background(
             WindowAccessor { window in
                 self.hostingWindow = window
                 window.titleVisibility = .hidden
                 window.titlebarAppearsTransparent = true
                 window.styleMask.insert(.fullSizeContentView)
-                window.isMovableByWindowBackground = true
-
+                window.isMovableByWindowBackground = true // Draggable from background canvas
+                
+                // Hide system standard window control buttons
                 window.standardWindowButton(.closeButton)?.isHidden = true
                 window.standardWindowButton(.miniaturizeButton)?.isHidden = true
                 window.standardWindowButton(.zoomButton)?.isHidden = true
             }
         )
         .onAppear {
-            musicManager.setDetachedLyricsOpen(true)
+            Task { await musicManager.setDetachedLyricsOpen(true) }
         }
         .onDisappear {
-            musicManager.setDetachedLyricsOpen(false)
+            Task { await musicManager.setDetachedLyricsOpen(false) }
         }
     }
 }
@@ -128,7 +131,8 @@ private struct LyricsDetachedLeftPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-
+            
+            // Artwork
             Group {
                 if let image = musicManager.artwork ?? musicManager.appIcon {
                     Image(nsImage: image)
@@ -153,18 +157,19 @@ private struct LyricsDetachedLeftPane: View {
             .scaleEffect(musicManager.isPlaying ? 1.0 : 0.95)
             .animation(.spring(response: 0.6, dampingFraction: 0.7), value: musicManager.isPlaying)
 
+            // Track Info
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Image(systemName: "music.note.tv.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.6))
-
+                    
                     Text(displayTitle)
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                 }
-
+                
                 Text(displayArtist)
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.white.opacity(0.5))
@@ -190,77 +195,85 @@ private struct LyricsDetachedRightPane: View {
     @EnvironmentObject var musicManager: MusicManager
 
     private var lyrics: [LyricLine] { musicManager.lyrics }
-    private var currentLyricID: UUID? { musicManager.currentLyric?.id }
 
     var body: some View {
-        Group {
-            if lyrics.isEmpty {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Lyrics aren't available.")
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundColor(.white.opacity(0.4))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        LazyVStack(alignment: .leading, spacing: 32) {
-                            Spacer().frame(height: 120)
+        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.2 : 1.0)) { context in
+            let currentIndex = musicManager.lyricIndex(at: context.date)
+            let currentLyricID = currentIndex.flatMap { lyrics.indices.contains($0) ? lyrics[$0].id : nil }
 
-                            ForEach(lyrics) { lyric in
-                                let isCurrent = lyric.id == currentLyricID
+            Group {
+                if lyrics.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Lyrics aren't available.")
+                            .font(.system(size: 36, weight: .bold))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView(showsIndicators: false) {
+                            LazyVStack(alignment: .leading, spacing: 32) {
+                                Spacer().frame(height: 120) // Padding for smooth scroll centering
 
-                                LyricLineView(
-                                    lyric: lyric,
-                                    isCurrent: isCurrent,
-                                    accentColor: .white
-                                )
-                                .id(lyric.id)
-                                .multilineTextAlignment(.leading)
-                                .font(.system(
-                                    size: isCurrent ? 44 : 36,
-                                    weight: .bold
-                                ))
-                                .foregroundStyle(.white)
-                                .scaleEffect(isCurrent ? 1.0 : 0.95, anchor: .leading)
-                                .opacity(isCurrent ? 1.0 : 0.35)
-                                .animation(
-                                    .spring(response: 0.45, dampingFraction: 0.8, blendDuration: 0.1),
-                                    value: isCurrent
-                                )
+                                ForEach(lyrics) { lyric in
+                                    let isCurrent = lyric.id == currentLyricID
+
+                                    LyricLineView(
+                                        lyric: lyric,
+                                        isCurrent: isCurrent,
+                                        accentColor: .white
+                                    )
+                                    .id(lyric.id)
+                                    .multilineTextAlignment(.leading)
+                                    .font(.system(
+                                        size: isCurrent ? 44 : 36, // Apple TV massive fonts
+                                        weight: .bold
+                                    ))
+                                    .foregroundStyle(.white)
+                                    .scaleEffect(isCurrent ? 1.0 : 0.95, anchor: .leading)
+                                    .opacity(isCurrent ? 1.0 : 0.35)
+                                    .animation(
+                                        .spring(response: 0.45, dampingFraction: 0.8, blendDuration: 0.1),
+                                        value: isCurrent
+                                    )
+                                }
+
+                                Spacer().frame(height: 200)
                             }
-
-                            Spacer().frame(height: 200)
+                        }
+                        .mask(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: .clear, location: 0.0),
+                                    .init(color: .black, location: 0.2),
+                                    .init(color: .black, location: 0.8),
+                                    .init(color: .clear, location: 1.0)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .onAppear { scrollToCurrentLyric(using: proxy, id: currentLyricID, animated: false) }
+                        .onChange(of: currentLyricID) { _, newID in
+                            scrollToCurrentLyric(using: proxy, id: newID, animated: true)
+                        }
+                        .onChange(of: lyrics.count) { _, _ in
+                            scrollToCurrentLyric(using: proxy, id: currentLyricID, animated: false)
                         }
                     }
-                    .mask(
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: .clear, location: 0.0),
-                                .init(color: .black, location: 0.2),
-                                .init(color: .black, location: 0.8),
-                                .init(color: .clear, location: 1.0)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .onAppear { scrollToCurrentLyric(using: proxy, animated: false) }
-                    .onChange(of: currentLyricID) { _, _ in scrollToCurrentLyric(using: proxy, animated: true) }
-                    .onChange(of: lyrics.count) { _, _ in scrollToCurrentLyric(using: proxy, animated: false) }
                 }
             }
         }
     }
 
-    private func scrollToCurrentLyric(using proxy: ScrollViewProxy, animated: Bool) {
-        guard let currentLyricID = currentLyricID else { return }
+    private func scrollToCurrentLyric(using proxy: ScrollViewProxy, id: UUID?, animated: Bool) {
+        guard let id else { return }
         if animated {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-                proxy.scrollTo(currentLyricID, anchor: .center)
+                proxy.scrollTo(id, anchor: .center)
             }
         } else {
-            proxy.scrollTo(currentLyricID, anchor: .center)
+            proxy.scrollTo(id, anchor: .center)
         }
     }
 }
@@ -268,12 +281,14 @@ private struct LyricsDetachedRightPane: View {
 // MARK: - Bottom Pane (Scrubber & Playback)
 private struct LyricsDetachedBottomBar: View {
     @EnvironmentObject var musicManager: MusicManager
+    @EnvironmentObject var settings: SettingsModel
     @State private var currentProgress: Double = 0.0
     @State private var displayedElapsedTime: TimeInterval = 0
 
     var body: some View {
         VStack(spacing: 20) {
-
+            
+            // Ultra-thin Scrubber Line
             VStack(spacing: 8) {
                 InteractiveProgressBar(
                     value: $currentProgress,
@@ -281,39 +296,57 @@ private struct LyricsDetachedBottomBar: View {
                     onSeek: { newProgress in
                         let seekTime = newProgress * musicManager.totalDuration
                         if seekTime.isFinite && musicManager.totalDuration > 0 {
-                            musicManager.seek(to: seekTime)
+                            Task { await musicManager.seek(to: seekTime) }
                         }
                     }
                 )
-                .frame(height: 4)
+                .frame(height: 4) // Extremely thin TV style
                 .background(Color.white.opacity(0.2))
                 .clipShape(Capsule())
 
+                // Time Labels
                 HStack {
                     Text(formatTime(displayedElapsedTime))
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.6))
-
+                    
                     Spacer()
-
+                    
                     Text("-" + formatTime(max(0, musicManager.totalDuration - displayedElapsedTime)))
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.6))
                 }
             }
-
+            
+            // Minimal Playback Controls
             HStack(spacing: 32) {
                 SeekButton(
                     systemName: "backward.fill",
-                    onTap: { musicManager.previousTrack() },
-                    onSeek: { isForward in musicManager.seek(by: isForward ? 5.0 : -5.0) }
+                    onTap: { Task { await musicManager.previousTrack() } },
+                    onSeek: { isForward in Task { await musicManager.seek(by: isForward ? 5.0 : -5.0) } },
+                    onLongPressAction: MusicLongPressUI.skipHoldHandler(
+                        for: .previous,
+                        settings: settings.settings,
+                        musicManager: musicManager,
+                        navigation: .notifications
+                    )
                 )
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.8))
+                .help(MusicLongPressUI.skipHelp(primary: "Previous", target: .previous, settings: settings.settings))
 
-                Button(action: {
-                    musicManager.isPlaying ? musicManager.pause() : musicManager.play()
-                }) {
+                LongPressControlButton(
+                    onTap: {
+                        Task {
+                            if musicManager.isPlaying {
+                                await musicManager.pause()
+                            } else {
+                                await musicManager.play()
+                            }
+                        }
+                    },
+                    onLongPress: lyricsDetachedHoldHandler(for: .playPause)
+                ) {
                     Image(systemName: musicManager.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(.white)
@@ -322,14 +355,22 @@ private struct LyricsDetachedBottomBar: View {
                 }
                 .buttonStyle(.plain)
                 .scaleEffect(musicManager.isPlaying ? 1.0 : 0.95)
+                .help(MusicLongPressUI.accessoryHelp(primary: "Play / Pause", target: .playPause, settings: settings.settings))
 
                 SeekButton(
                     systemName: "forward.fill",
-                    onTap: { musicManager.nextTrack() },
-                    onSeek: { isForward in musicManager.seek(by: isForward ? 5.0 : -5.0) }
+                    onTap: { Task { await musicManager.nextTrack() } },
+                    onSeek: { isForward in Task { await musicManager.seek(by: isForward ? 5.0 : -5.0) } },
+                    onLongPressAction: MusicLongPressUI.skipHoldHandler(
+                        for: .next,
+                        settings: settings.settings,
+                        musicManager: musicManager,
+                        navigation: .notifications
+                    )
                 )
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.8))
+                .help(MusicLongPressUI.skipHelp(primary: "Next", target: .next, settings: settings.settings))
             }
         }
         .onAppear {
@@ -339,6 +380,13 @@ private struct LyricsDetachedBottomBar: View {
         .onReceive(musicManager.playbackTimePublisher) { payload in
             displayedElapsedTime = payload.elapsed
             currentProgress = payload.progress
+        }
+    }
+
+    private func lyricsDetachedHoldHandler(for target: MusicLongPressTarget) -> (() -> Void)? {
+        guard let action = settings.settings.resolvedAccessoryHoldAction(for: target) else { return nil }
+        return {
+            Task { await musicManager.performLongPressAction(action, navigation: .notifications) }
         }
     }
 

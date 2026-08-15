@@ -8,6 +8,7 @@
 import Foundation
 
 // MARK: - Flexible JSON number helpers
+// Spotify often encodes timestamps/positions as strings in connect-state payloads.
 
 enum SpotifyFlexibleNumber {
     static func decodeInt64<K: CodingKey>(from container: KeyedDecodingContainer<K>, forKey key: K) -> Int64? {
@@ -30,6 +31,7 @@ enum SpotifyFlexibleNumber {
 enum SpotifyIDConverter {
     private static let base62Alphabet = Array("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
+    /// Extracts a raw Spotify ID from a URI or bare ID.
     static func rawID(from value: String) -> String {
         if value.hasPrefix("spotify:"), let id = value.split(separator: ":").last {
             return String(id)
@@ -40,12 +42,14 @@ enum SpotifyIDConverter {
         return value
     }
 
+    /// Builds a full Spotify URI (`spotify:track:…`) from a type + ID/URI.
     static func uri(type: String, from value: String) -> String {
         let id = rawID(from: value)
         if value.hasPrefix("spotify:") { return value }
         return "spotify:\(type):\(id)"
     }
 
+    /// Converts a Spotify base62 track/album/artist ID into the hex GID used by metadata/4 APIs.
     static func gid(fromBase62 id: String) -> String? {
         let cleaned = rawID(from: id)
         if cleaned.count == 32, cleaned.allSatisfy(\.isHexDigit) {
@@ -65,6 +69,7 @@ enum SpotifyIDConverter {
         return value.map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Converts a hex GID back into a Spotify base62 ID.
     static func base62(fromGID gid: String) -> String? {
         let cleaned = gid.lowercased()
         guard cleaned.count == 32, cleaned.allSatisfy(\.isHexDigit) else { return nil }
@@ -98,6 +103,7 @@ enum SpotifyIDConverter {
         return String(digits.reversed().map { base62Alphabet[$0] })
     }
 
+    /// Percent-encodes Spotify URIs for path/query usage (`:` → `%3A`).
     static func pathEncodedURI(_ uri: String) -> String {
         uri.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"))
             ?? uri.replacingOccurrences(of: ":", with: "%3A")
@@ -254,6 +260,7 @@ struct SpotifyNativeUserProfile: Decodable {
         let username: String
         var displayName: String?
 
+        /// Prefer human-readable name over the opaque Spotify user id.
         var friendlyName: String {
             let trimmed = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
             if let trimmed, !trimmed.isEmpty { return trimmed }
@@ -271,6 +278,7 @@ struct SpotifyNativeUserProfile: Decodable {
             birthdate = try container.decodeIfPresent(String.self, forKey: .birthdate)
             country = try container.decodeIfPresent(String.self, forKey: .country)
             username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+            // account-settings may use display_name; Pathfinder profileAttributes uses name.
             displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
                 ?? container.decodeIfPresent(String.self, forKey: .name)
         }
@@ -365,6 +373,7 @@ struct PlayerState: Decodable {
         queueRevision = try container.decodeIfPresent(String.self, forKey: .queueRevision)
     }
 
+    /// Connect-state realtime position (ms): when paused use the sample; otherwise advance by wall-clock delta.
     func realtimePositionMilliseconds(at now: Date = Date()) -> Int? {
         guard let sampleMs = positionAsOfTimestamp, let timestamp else { return nil }
         let paused = (isPaused == true) || (isPlaying == false)
@@ -380,6 +389,7 @@ struct PlayerState: Decodable {
         if isPaused == true { return false }
         if isPlaying == true { return true }
         if isPlaying == false { return false }
+        // Some Connect payloads only include is_paused.
         if isPaused == false { return true }
         return false
     }

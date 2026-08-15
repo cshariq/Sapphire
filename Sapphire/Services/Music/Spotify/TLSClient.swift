@@ -24,11 +24,79 @@ actor CookieManager {
     func clear() { cookies.removeAll() }
 }
 
+/// Serializes requests and reuses one TLS connection per host to avoid handshake cost on every fetch.
+private actor ReusableTLSConnection {
+    private let host: NWEndpoint.Host
+    private let port: NWEndpoint.Port
+    private let queue: DispatchQueue
+    private var connection: NWConnection?
+
+    init(host: NWEndpoint.Host, port: NWEndpoint.Port, queue: DispatchQueue) {
+        self.host = host
+        self.port = port
+        self.queue = queue
+    }
+
+    func invalidate() {
+        connection?.cancel()
+        connection = nil
+    }
+
+    func perform(_ work: @Sendable (NWConnection) async throws -> HTTPResponse) async throws -> HTTPResponse {
+        do {
+            let connection = try await readyConnection()
+            return try await work(connection)
+        } catch {
+            invalidate()
+            throw error
+        }
+    }
+
+    private func readyConnection() async throws -> NWConnection {
+        if let connection, connection.state == .ready {
+            return connection
+        }
+        invalidate()
+
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.enableKeepalive = true
+        tcpOptions.noDelay = true
+        let tlsOptions = NWProtocolTLS.Options()
+        let parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
+        let connection = NWConnection(to: .hostPort(host: host, port: port), using: parameters)
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            var hasResumed = false
+            connection.stateUpdateHandler = { newState in
+                if hasResumed { return }
+                switch newState {
+                case .ready:
+                    hasResumed = true
+                    continuation.resume()
+                case .failed(let error):
+                    hasResumed = true
+                    continuation.resume(throwing: error)
+                case .cancelled:
+                    hasResumed = true
+                    continuation.resume(throwing: URLError(.cancelled))
+                default:
+                    break
+                }
+            }
+            connection.start(queue: queue)
+        }
+
+        self.connection = connection
+        return connection
+    }
+}
+
 class CustomTLSClient {
     private let host: NWEndpoint.Host
     private let port: NWEndpoint.Port
     internal let userAgent: String
     private let cookieManager: CookieManager
+    private let reusableConnection: ReusableTLSConnection
     internal var accessToken: String?
     internal var clientToken: String?
     internal var clientVersion: String?
@@ -40,6 +108,7 @@ class CustomTLSClient {
         self.userAgent = userAgent
         self.cookieManager = cookieManager
         self.queue = DispatchQueue(label: "com.shariq.sapphire.customtlsclient.\(host).\(UUID().uuidString)")
+        self.reusableConnection = ReusableTLSConnection(host: self.host, port: self.port, queue: self.queue)
     }
 
     private func send(data: Data, on connection: NWConnection) async throws {
@@ -176,38 +245,8 @@ class CustomTLSClient {
     }
 
     private func performRequest(method: String, path: String, queryItems: [URLQueryItem]? = nil, body: Data? = nil, contentType: String? = nil, acceptType: String = "*/*", additionalHeaders: [String: String]? = nil, authenticate: Bool = true) async throws -> HTTPResponse {
-        
-        let tcpOptions = NWProtocolTCP.Options()
-        tcpOptions.enableKeepalive = true
-        tcpOptions.noDelay = true
-        let tlsOptions = NWProtocolTLS.Options()
-        let parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
-        let connection = NWConnection(to: .hostPort(host: host, port: port), using: parameters)
 
-        do {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                var hasResumed = false
-                
-                connection.stateUpdateHandler = { newState in
-                    if hasResumed { return }
-
-                    switch newState {
-                    case .ready:
-                        hasResumed = true
-                        continuation.resume()
-                    case .failed(let error):
-                        hasResumed = true
-                        continuation.resume(throwing: error)
-                    case .cancelled:
-                        hasResumed = true
-                        continuation.resume(throwing: URLError(.cancelled))
-                    default:
-                        break
-                    }
-                }
-                connection.start(queue: self.queue)
-            }
-            
+        return try await reusableConnection.perform { connection in
             var fullPath = path
             if let queryItems = queryItems, !queryItems.isEmpty {
                 var components = URLComponents()
@@ -216,26 +255,37 @@ class CustomTLSClient {
             }
 
             var httpHeaders: [String: String] = [
-                "Host": self.host.debugDescription, "User-Agent": self.userAgent,
-                "Accept": acceptType, "Accept-Language": "en-US,en;q=0.9", "app-platform": "WebPlayer",
-                "Connection": "keep-alive", "sec-ch-ua": "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
-                "sec-ch-ua-mobile": "?0", "sec-ch-ua-platform": "\"macOS\"", "Referer": "https://\(self.host.debugDescription)/"
+                "Host": self.host.debugDescription,
+                "User-Agent": self.userAgent,
+                "Accept": acceptType,
+                "Accept-Language": "en",
+                "Connection": "keep-alive",
+                "Referer": "https://open.spotify.com/",
+                "sec-ch-ua": "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"",
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": "\"macOS\""
             ]
-            
+
+            let hostName = self.host.debugDescription
+            if !hostName.hasPrefix("clienttoken.") {
+                httpHeaders["Origin"] = "https://open.spotify.com"
+                httpHeaders["app-platform"] = "WebPlayer"
+            }
+
             if let type = contentType { httpHeaders["Content-Type"] = type }
             if let b = body { httpHeaders["Content-Length"] = "\(b.count)" }
-            
+
             if authenticate {
-                if let token = accessToken { httpHeaders["Authorization"] = "Bearer \(token)" }
-                if let cToken = clientToken { httpHeaders["Client-Token"] = cToken }
-                if let cVersion = clientVersion { httpHeaders["Spotify-App-Version"] = cVersion }
+                if let token = accessToken { httpHeaders["authorization"] = "Bearer \(token)" }
+                if let cToken = clientToken { httpHeaders["client-token"] = cToken }
+                if let cVersion = clientVersion { httpHeaders["spotify-app-version"] = cVersion }
             }
-            
+
             let currentCookies = await cookieManager.allCookies()
             if !currentCookies.isEmpty {
                 httpHeaders["Cookie"] = currentCookies.values.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             }
-            
+
             additionalHeaders?.forEach { key, value in httpHeaders[key] = value }
 
             let headerLines = httpHeaders.map { "\($0.key): \($0.value)" }.joined(separator: "\r\n")
@@ -245,15 +295,8 @@ class CustomTLSClient {
 
             if let b = body { requestData.append(b) }
 
-            try await send(data: requestData, on: connection)
-            
-            let response = try await readData(on: connection)
-            connection.cancel()
-            return response
-            
-        } catch {
-            connection.cancel()
-            throw error
+            try await self.send(data: requestData, on: connection)
+            return try await self.readData(on: connection)
         }
     }
     
@@ -273,6 +316,8 @@ class CustomTLSClient {
 
         if let json = jsonBody {
             bodyData = try? JSONSerialization.data(withJSONObject: json)
+            // clienttoken.spotify.com (and several other Spotify endpoints) reject
+            // `application/json;charset=UTF-8` with HTTP 400 + empty body.
             contentType = "application/json"
             acceptType = "application/json"
         } else if let urlEncoded = urlEncodedBody {

@@ -220,6 +220,10 @@ struct NotchWidgetView: View {
             LyricsView()
         case .musicPlaylistDetail(let playlist):
             PlaylistView(playlist: playlist)
+        case .musicArtistDetail(let uri, let name):
+            SpotifyArtistDetailView(uri: uri, name: name, navigationStack: navigationStack)
+        case .musicAlbumDetail(let uri, let name):
+            SpotifyAlbumDetailView(uri: uri, name: name, navigationStack: navigationStack)
         case .nearDrop:
             FileTaskView(navigationStack: navigationStack)
         case .weatherPlayer:

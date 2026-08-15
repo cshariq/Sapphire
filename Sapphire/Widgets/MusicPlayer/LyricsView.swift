@@ -37,92 +37,90 @@ struct LyricLineView: View {
 
 struct LyricsView: View {
     @EnvironmentObject var musicManager: MusicManager
-    @State private var displayedElapsedTime: TimeInterval = 0
 
     private var lyrics: [LyricLine] { musicManager.lyrics }
-    private var currentLyricID: UUID? { musicManager.currentLyric?.id }
     private var accentColor: Color { musicManager.accentColor }
 
     private let lineSpacing: CGFloat = 70.0
 
     var body: some View {
-        GeometryReader { geometry in
-            let computedOffset = calculateScrollOffset(fullViewHeight: geometry.size.height)
+        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.2 : 1.0)) { context in
+            let currentIndex = musicManager.lyricIndex(at: context.date)
+            let currentLyricID = currentIndex.flatMap { lyrics.indices.contains($0) ? lyrics[$0].id : nil }
+            let elapsed = musicManager.elapsedTime(at: context.date)
 
-            ZStack(alignment: .topLeading) {
-                Group {
-                    if lyrics.isEmpty {
-                        emptyLyricsView
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(lyrics) { lyric in
-                                LyricLineView(
-                                    lyric: lyric,
-                                    isCurrent: lyric.id == currentLyricID,
-                                    accentColor: accentColor
-                                )
-                                .frame(height: lineSpacing)
+            GeometryReader { geometry in
+                let computedOffset = calculateScrollOffset(
+                    fullViewHeight: geometry.size.height,
+                    currentLyricID: currentLyricID
+                )
+
+                ZStack(alignment: .topLeading) {
+                    Group {
+                        if lyrics.isEmpty {
+                            emptyLyricsView
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(lyrics) { lyric in
+                                    LyricLineView(
+                                        lyric: lyric,
+                                        isCurrent: lyric.id == currentLyricID,
+                                        accentColor: accentColor
+                                    )
+                                    .frame(height: lineSpacing)
+                                }
                             }
+                            .frame(width: geometry.size.width)
+                            .offset(y: computedOffset)
+                            .animation(.spring(response: 0.8, dampingFraction: 0.8), value: currentLyricID)
                         }
-                        .frame(width: geometry.size.width)
-                        .offset(y: computedOffset)
-                        .animation(.spring(response: 0.8, dampingFraction: 0.8), value: computedOffset)
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .mask {
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .mask {
+                        let viewHeight = geometry.size.height
 
-                    let viewHeight = geometry.size.height
+                        if viewHeight > 0 {
+                            let topFadeLength: CGFloat = 10
+                            let bottomFadeLength: CGFloat = 18
+                            let topFadePercentage = topFadeLength / viewHeight
+                            let bottomFadePercentage = bottomFadeLength / viewHeight
 
-                    if viewHeight > 0 {
-                        let topFadeLength: CGFloat = 10
-                        let bottomFadeLength: CGFloat = 18
-                        let topFadePercentage = topFadeLength / viewHeight
-                        let bottomFadePercentage = bottomFadeLength / viewHeight
+                            let solidStartLocation = min(topFadePercentage, 0.5)
+                            let solidEndLocation = max(1.0 - bottomFadePercentage, 0.5)
 
-                        let solidStartLocation = min(topFadePercentage, 0.5)
-                        let solidEndLocation = max(1.0 - bottomFadePercentage, 0.5)
-
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-
-                                .init(color: .clear, location: 0.0),
-
-                                .init(color: .black, location: solidStartLocation),
-
-                                .init(color: .black, location: solidEndLocation),
-
-                                .init(color: .clear, location: 1.0)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        Color.black
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: .clear, location: 0.0),
+                                    .init(color: .black, location: solidStartLocation),
+                                    .init(color: .black, location: solidEndLocation),
+                                    .init(color: .clear, location: 1.0)
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            Color.black
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
-                }
 
-                trackHeaderView
-                    .padding(.leading, 5)
+                    trackHeaderView(elapsed: elapsed)
+                        .padding(.leading, 5)
+                }
             }
         }
         .frame(width: 550, height: 250)
         .onAppear {
-            displayedElapsedTime = musicManager.currentElapsedTime
-            musicManager.setLyricsDetailOpen(true)
+            Task { await musicManager.setLyricsDetailOpen(true) }
         }
         .onDisappear {
-            musicManager.setLyricsDetailOpen(false)
-        }
-        .onReceive(musicManager.playbackTimePublisher) { payload in
-            displayedElapsedTime = payload.elapsed
+            Task { await musicManager.setLyricsDetailOpen(false) }
         }
     }
 
-    private func calculateScrollOffset(fullViewHeight: CGFloat) -> CGFloat {
+    private func calculateScrollOffset(fullViewHeight: CGFloat, currentLyricID: UUID?) -> CGFloat {
         guard let currentIndex = lyrics.firstIndex(where: { $0.id == currentLyricID }) else {
             let totalContentHeight = CGFloat(lyrics.count) * lineSpacing
             return (fullViewHeight - totalContentHeight) / 2
@@ -138,7 +136,7 @@ struct LyricsView: View {
             .foregroundColor(.secondary)
     }
 
-    private var trackHeaderView: some View {
+    private func trackHeaderView(elapsed: TimeInterval) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .center, spacing: 10) {
                 Group {
@@ -173,10 +171,9 @@ struct LyricsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-
             }
 
-            Text("\(formatTime(displayedElapsedTime)) / \(formatTime(musicManager.totalDuration))")
+            Text("\(formatTime(elapsed)) / \(formatTime(musicManager.totalDuration))")
                 .font(.system(size: 8, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
 

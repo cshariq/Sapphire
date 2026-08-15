@@ -21,7 +21,7 @@ class PlayCountFetcher {
 
     private init() {}
 
-    func getPlayCount(for trackID: String) async -> String? {
+    func getPlayCountValue(for trackID: String) async -> Int? {
         let cleanTrackID = trackID.components(separatedBy: ":").last ?? trackID
 
         guard let url = URL(string: "https://api.stats.fm/api/v1/tracks/\(cleanTrackID)") else {
@@ -31,14 +31,16 @@ class PlayCountFetcher {
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             let response = try Self.decoder.decode(PlayCountResponse.self, from: data)
-            if let count = response.playcount {
-                return Self.formatPlayCount(count)
-            }
-            return nil
+            return response.playcount
         } catch {
             print("[PlayCountFetcher] Failed to fetch or decode play count: \(error)")
             return nil
         }
+    }
+
+    func getPlayCount(for trackID: String) async -> String? {
+        guard let count = await getPlayCountValue(for: trackID) else { return nil }
+        return Self.formatPlayCount(count)
     }
 
     static func formatPlayCount(_ number: Int) -> String {
