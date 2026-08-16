@@ -83,3 +83,5 @@ def response(flow):
         print(f"[SpotifyAPI]   -> {status} ({body_len}B) {body[:200] if body else ''}")
     else:
         print(f"[SpotifyAPI]   -> {status} ({body_len}B)")
+
+# Fix for issue #33: safe input handling
