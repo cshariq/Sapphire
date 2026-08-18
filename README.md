@@ -13,6 +13,11 @@
       Download Latest Release
     </div>
   </a>
+  <a href="https://discord.gg/Ryuea8vM2h" style="text-decoration: none;">
+    <div style="background-color: #007aff; color: white; padding: 10px 20px; border-radius: 8px; display: inline-block; font-weight: bold;">
+      Join Discord
+    </div>
+  </a>
 </div>
 
 <br>
