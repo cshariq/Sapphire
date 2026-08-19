@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import Security
 
 let currentAppVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0"
 
@@ -373,6 +374,11 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 }
                 let fullNewAppPath = tempUnzipDirectory.appendingPathComponent(newAppPath).path
 
+                // Verify the downloaded bundle is validly signed by the same developer
+                // BEFORE it replaces the running app (potentially as root). Transport
+                // security (TLS to GitHub) alone does not guarantee payload integrity.
+                try Self.verifyDownloadedApp(at: fullNewAppPath)
+
                 let currentAppPath = Bundle.main.bundlePath
                 let processID = String(ProcessInfo.processInfo.processIdentifier)
                 let userWritable = await MainActor.run { self.isInstallPathUserWritable() }
@@ -408,6 +414,54 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 }
             }
         }
+    }
+
+    // MARK: - Update Integrity Verification
+
+    /// Validates that the downloaded `.app` carries a well-formed Apple-anchored
+    /// signature and, when the running app is itself team-signed, that the update
+    /// is signed by the *same* Team ID. This pins updates to the original developer
+    /// and prevents a spoofed/tampered release from being installed.
+    nonisolated private static func verifyDownloadedApp(at appPath: String) throws {
+        let appURL = URL(fileURLWithPath: appPath)
+
+        var staticCode: SecStaticCode?
+        let createStatus = SecStaticCodeCreateWithPath(appURL as CFURL, [], &staticCode)
+        guard createStatus == errSecSuccess, let code = staticCode else {
+            throw NSError(domain: "UpdateError", code: 10, userInfo: [NSLocalizedDescriptionKey: "Could not read the downloaded update's code signature. Installation aborted."])
+        }
+
+        var requirement: SecRequirement?
+        if let team = currentAppTeamID(), !team.isEmpty {
+            // Signed distribution build: require Apple anchor + matching Team ID.
+            let requirementText = "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
+            let reqStatus = SecRequirementCreateWithString(requirementText as CFString, [], &requirement)
+            guard reqStatus == errSecSuccess, requirement != nil else {
+                throw NSError(domain: "UpdateError", code: 11, userInfo: [NSLocalizedDescriptionKey: "Could not build the update verification policy. Installation aborted."])
+            }
+        }
+        // If the running app has no Team ID (ad-hoc/development build) we cannot pin
+        // to a developer, so we fall back to verifying the signature is at least
+        // internally valid (requirement == nil below).
+
+        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode)
+        let validStatus = SecStaticCodeCheckValidity(code, flags, requirement)
+        guard validStatus == errSecSuccess else {
+            let message = (SecCopyErrorMessageString(validStatus, nil) as String?) ?? "unknown error (\(validStatus))"
+            throw NSError(domain: "UpdateError", code: 12, userInfo: [NSLocalizedDescriptionKey: "The downloaded update failed code-signature verification: \(message). Installation aborted."])
+        }
+    }
+
+    /// Team Identifier of the currently running application, if it is team-signed.
+    nonisolated private static func currentAppTeamID() -> String? {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let selfCode = code else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(selfCode, [], &staticCode) == errSecSuccess, let sc = staticCode else { return nil }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(sc, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let dict = info as? [String: Any] else { return nil }
+        return dict[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

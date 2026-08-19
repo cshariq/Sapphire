@@ -14,6 +14,14 @@ class SpotifyAppleScriptManager {
 
     private init() {}
 
+    /// Escapes a string for safe interpolation inside an AppleScript double-quoted
+    /// literal. Backslash must be escaped first, then the double quote.
+    private func escapeForAppleScript(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     func isAppRunning() -> Bool {
         return NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.spotify.client" }
     }
@@ -43,7 +51,7 @@ class SpotifyAppleScriptManager {
         if !isAppRunning() {
             return .requiresSpotifyAppOpen
         }
-        let script = "tell application \"Spotify\" to play track \"\(uri)\""
+        let script = "tell application \"Spotify\" to play track \"\(escapeForAppleScript(uri))\""
         let success = await runAppleScriptInBackground(script)
         return success ? .success : .failure(reason: "AppleScript command failed.")
     }
