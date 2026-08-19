@@ -28,7 +28,10 @@ class XPCServer: NSObject {
 
     private func isValidClient(forConnection connection: NSXPCConnection) -> Bool {
         do {
-            return try CodesignCheck.codeSigningMatches(pid: connection.processIdentifier)
+            // Validate via the connection's audit token rather than its PID. A PID can
+            // be reused/recycled between the check and use (TOCTOU race), whereas the
+            // audit token unambiguously identifies the peer of this specific connection.
+            return try CodesignCheck.codeSigningMatches(auditToken: connection.auditToken)
         } catch {
             NSLog("[SMJBS]: Code signing check failed with error: \(error)")
             return false

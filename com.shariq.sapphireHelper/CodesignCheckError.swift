@@ -14,6 +14,19 @@ enum CodesignCheckError: Error {
 
 struct CodesignCheck {
 
+    /// Validate a client identified by its XPC connection's audit token. Preferred
+    /// over the PID-based variant, which is subject to a PID-reuse race.
+    public static func codeSigningMatches(auditToken: audit_token_t) throws -> Bool {
+        // Prefer same Team ID so Development and Developer ID builds from the
+        // same team can talk. Fall back to exact certificate equality.
+        if let selfTeam = try teamID(forStaticCode: try requireSelfStaticCode()),
+           let clientTeam = try teamID(forStaticCode: try requireStaticCode(forAuditToken: auditToken)),
+           !selfTeam.isEmpty, !clientTeam.isEmpty {
+            return selfTeam == clientTeam
+        }
+        return try self.codeSigningCertificatesForSelf() == self.codeSigningCertificates(forAuditToken: auditToken)
+    }
+
     public static func codeSigningMatches(pid: pid_t) throws -> Bool {
         // Prefer same Team ID so Development and Developer ID builds from the
         // same team can talk. Fall back to exact certificate equality.
@@ -46,6 +59,13 @@ struct CodesignCheck {
         return code
     }
 
+    private static func requireStaticCode(forAuditToken auditToken: audit_token_t) throws -> SecStaticCode {
+        guard let code = try secStaticCode(forAuditToken: auditToken) else {
+            throw CodesignCheckError.message("SecStaticCode returned empty for audit token")
+        }
+        return code
+    }
+
     public static func codeSigningCertificatesForSelf() throws -> [SecCertificate] {
         guard let secStaticCode = try secStaticCodeSelf() else { return [] }
         return try codeSigningCertificates(forStaticCode: secStaticCode)
@@ -53,6 +73,11 @@ struct CodesignCheck {
 
     public static func codeSigningCertificates(forPID pid: pid_t) throws -> [SecCertificate] {
         guard let secStaticCode = try secStaticCode(forPID: pid) else { return [] }
+        return try codeSigningCertificates(forStaticCode: secStaticCode)
+    }
+
+    public static func codeSigningCertificates(forAuditToken auditToken: audit_token_t) throws -> [SecCertificate] {
+        guard let secStaticCode = try secStaticCode(forAuditToken: auditToken) else { return [] }
         return try codeSigningCertificates(forStaticCode: secStaticCode)
     }
 
@@ -81,6 +106,19 @@ struct CodesignCheck {
         try executeSecFunction { SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &secCodePID) }
         guard let secCode = secCodePID else {
             throw CodesignCheckError.message("SecCode returned empty from SecCodeCopyGuestWithAttributes")
+        }
+        return try secStaticCode(forSecCode: secCode)
+    }
+
+    private static func secStaticCode(forAuditToken auditToken: audit_token_t) throws -> SecStaticCode? {
+        var token = auditToken
+        let tokenData = Data(bytes: &token, count: MemoryLayout<audit_token_t>.size)
+        var secCodeToken: SecCode?
+        try executeSecFunction {
+            SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributeAudit: tokenData] as CFDictionary, [], &secCodeToken)
+        }
+        guard let secCode = secCodeToken else {
+            throw CodesignCheckError.message("SecCode returned empty from SecCodeCopyGuestWithAttributes (audit token)")
         }
         return try secStaticCode(forSecCode: secCode)
     }

@@ -51,7 +51,7 @@ else
     type=$2
     id=$3
     
-    data=`$syslog $type -u $id --process SpringBoard -m '"Accessory Category" = Pencil;' -T SpringBoard`
+    data=`"$syslog" "$type" -u "$id" --process SpringBoard -m '"Accessory Category" = Pencil;' -T SpringBoard`
     batt=`echo "$data"|grep "Current Capacity"|grep -o "[0-9]*"|sed -n '$p'`
     stat=`echo "$data"|grep "Is Charging"|grep -o "[0-9]*"|sed -n '$p'`
     model=`echo "$data"|grep "Product ID"|grep -o "[0-9]*"|sed -n '$p'`

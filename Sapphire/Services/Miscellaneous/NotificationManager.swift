@@ -78,6 +78,16 @@ class iMessageActionManager {
     private var audioPlayer: AVPlayer?
     private var chatDbConnection: Connection?
     private init() { setupChatDatabaseConnection() }
+
+    /// Escapes a string for safe interpolation inside an AppleScript double-quoted
+    /// literal. Backslash must be escaped first, then the double quote — otherwise a
+    /// trailing/embedded backslash in remote-influenced message or contact text can
+    /// unbalance the escaping and break out of the string (AppleScript injection).
+    private func escapeForAppleScript(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
     private func setupChatDatabaseConnection() {
         let chatDbPath = ("~/Library/Messages/chat.db" as NSString).expandingTildeInPath
         do { chatDbConnection = try Connection(chatDbPath, readonly: true) } catch { print("iMessageActionManager: ERROR: Could not connect to chat.db: \(error)") }
@@ -86,8 +96,8 @@ class iMessageActionManager {
         Task(priority: .userInitiated) {
             let contactIdentifiers = await _getContactIdentifiers(forName: recipientName)
             guard !contactIdentifiers.isEmpty else { return }
-            let identifiersString = contactIdentifiers.map { "\"\($0)\"" }.joined(separator: ", ")
-            let sanitizedMessage = message.replacingOccurrences(of: "\"", with: "\\\"")
+            let identifiersString = contactIdentifiers.map { "\"\(escapeForAppleScript($0))\"" }.joined(separator: ", ")
+            let sanitizedMessage = escapeForAppleScript(message)
             let scriptTemplate = """
             tell application "Messages"
                 set identifierList to {%@}
@@ -112,7 +122,7 @@ class iMessageActionManager {
         Task(priority: .userInitiated) {
             let contactIdentifiers = await _getContactIdentifiers(forName: recipientName)
             guard let primaryIdentifier = contactIdentifiers.first else { return }
-            let sanitizedIdentifier = primaryIdentifier.replacingOccurrences(of: "\"", with: "\\\"")
+            let sanitizedIdentifier = escapeForAppleScript(primaryIdentifier)
             let tapbackValue = tapbackType.rawValue
             let script = """
             tell application "Messages"
@@ -140,7 +150,7 @@ class iMessageActionManager {
     }
     func replyToLastMessage() { if !NSWorkspace.shared.launchApplication("Messages") { print("iMessageActionManager: Could not launch Messages.app") } }
     func markConversationAsRead(senderName: String) {
-        let sanitizedSenderName = senderName.replacingOccurrences(of: "\"", with: "\\\"")
+        let sanitizedSenderName = escapeForAppleScript(senderName)
         let script = """
         tell application "Messages"
             try
