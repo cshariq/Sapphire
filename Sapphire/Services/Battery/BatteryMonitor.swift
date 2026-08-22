@@ -7,6 +7,7 @@
 
 import Foundation
 import IOKit.ps
+import AppKit
 
 @MainActor
 class BatteryMonitor: ObservableObject {
@@ -19,9 +20,11 @@ class BatteryMonitor: ObservableObject {
     private var lastPeriodicLogTime: Date = .distantPast
     private let periodicLogInterval: TimeInterval = 300
     private var periodicLogTimer: Timer?
+    private var sleepObservers: [NSObjectProtocol] = []
 
     private init() {
         setupBatteryChangeNotification()
+        setupSleepWakeObservers()
         updateBatteryState()
         startPeriodicLogging()
     }
@@ -38,6 +41,24 @@ class BatteryMonitor: ObservableObject {
         }
     }
 
+    private func setupSleepWakeObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        sleepObservers = [
+            center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    self?.updateBatteryState()
+                    self?.forceLogSnapshot()
+                }
+            },
+            center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    self?.updateBatteryState()
+                    self?.forceLogSnapshot()
+                }
+            }
+        ]
+    }
+
     private func logPeriodicSnapshot() {
         let now = Date()
         guard now.timeIntervalSince(lastPeriodicLogTime) >= periodicLogInterval - 1 else { return }
@@ -45,8 +66,14 @@ class BatteryMonitor: ObservableObject {
         BatteryDataLogger.shared.logCurrentState()
     }
 
+    private func forceLogSnapshot() {
+        lastPeriodicLogTime = Date()
+        BatteryDataLogger.shared.logCurrentState()
+    }
+
     deinit {
         periodicLogTimer?.invalidate()
+        sleepObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode)
         }

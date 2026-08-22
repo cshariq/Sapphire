@@ -30,3 +30,7 @@ Sapphire/Services/Weather/WeatherAPIKey.swift
 /Sapphire/Widgets/CircleToSearch
 /Sapphire/Services/Gemini
 /output
+collect_sapphire_files.py
+
+.tmp/
+Sapphire/Services/FaceID/Models/PassiveLiveness.enc

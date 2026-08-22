@@ -1,4 +1,9 @@
-// FineTune/Audio/Extensions/AudioDeviceID+Classification.swift
+//
+//  AudioDeviceID+Classification.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 import AudioToolbox
 
@@ -30,9 +35,6 @@ extension AudioDeviceID {
 // MARK: - AutoEQ Eligibility
 
 extension AudioDeviceID {
-    /// Returns `true` if this device is likely headphones and can benefit from AutoEQ correction.
-    /// HDMI, DisplayPort, AirPlay, virtual, and known speaker-only devices return `false`.
-    /// Built-in devices delegate to `builtInHasHeadphonesActive()` for headphone jack detection.
     func supportsAutoEQ() -> Bool {
         let transport = readTransportType()
 
@@ -45,19 +47,15 @@ extension AudioDeviceID {
             break
         }
 
-        // Exclude known speaker-only devices by name
         let name = (try? readDeviceName()) ?? ""
         let excludedNames = ["HomePod", "Apple TV", "Studio Display", "Pro Display XDR"]
         for excluded in excludedNames {
             if name.localizedCaseInsensitiveContains(excluded) { return false }
         }
 
-        // Bluetooth, USB, Thunderbolt, aggregate, unknown → likely headphones
         return true
     }
 
-    /// Checks if the built-in audio device currently has headphones plugged in
-    /// by reading the active data source ID.
     func builtInHasHeadphonesActive() -> Bool {
         guard let sourceID: UInt32 = try? read(
             kAudioDevicePropertyDataSource,
@@ -67,7 +65,6 @@ extension AudioDeviceID {
             return false
         }
 
-        // 0x6864706E = 'hdpn' — CoreAudio-internal FourCC for headphones, language-independent
         return sourceID == 0x6864706E
     }
 }
@@ -85,7 +82,6 @@ extension AudioDeviceID {
         var iconURL: Unmanaged<CFURL>?
         let err = AudioObjectGetPropertyData(self, &address, 0, nil, &size, &iconURL)
 
-        // CoreAudio returns CF objects with +1 retain; takeRetainedValue transfers ownership to ARC
         guard err == noErr, let url = iconURL?.takeRetainedValue() as URL? else {
             return nil
         }
@@ -93,69 +89,51 @@ extension AudioDeviceID {
         return NSImage(contentsOf: url)
     }
 
-    /// Returns an appropriate SF Symbol name based on device name and transport type.
-    /// Used as fallback when kAudioDevicePropertyIcon is not available.
     func suggestedIconSymbol() -> String {
         let name = (try? readDeviceName()) ?? ""
         let transport = readTransportType()
 
-        // AirPods vintelligencents
         if name.contains("AirPods Pro") { return "airpodspro" }
         if name.contains("AirPods Max") { return "airpodsmax" }
         if name.contains("AirPods") { return "airpods.gen3" }
 
-        // HomePod vintelligencents
         if name.contains("HomePod mini") { return "homepodmini" }
         if name.contains("HomePod") { return "homepod" }
 
-        // Apple TV
         if name.contains("Apple TV") { return "appletv" }
 
-        // Beats
         if name.contains("Beats") { return "beats.headphones" }
-        
-        // Mac vintelligencents
+
         if name.contains("Mac Studio") { return "macstudio.fill" }
         if name.contains("Mac mini") { return "macmini.fill" }
         if name.contains("MacBook") { return "macbook" }
         if name.contains("iMac") { return "desktopcomputer" }
-        
-        // Display speakers
+
         if name.contains("Studio Display") { return "display" }
         if name.contains("Pro Display XDR") { return "display" }
 
-        // Fall back to transport type default
         return transport.defaultIconSymbol
     }
 
-    /// Returns an appropriate SF Symbol name for input devices based on device name and transport type.
-    /// Used as fallback when kAudioDevicePropertyIcon is not available.
     func suggestedInputIconSymbol() -> String {
         let name = (try? readDeviceName()) ?? ""
         let transport = readTransportType()
 
-        // iPhone (Continuity Camera)
         if name.contains("iPhone") { return "iphone" }
 
-        // iPad
         if name.contains("iPad") { return "ipad" }
 
-        // AirPods vintelligencents (work as both input/output)
         if name.contains("AirPods Pro") { return "airpodspro" }
         if name.contains("AirPods Max") { return "airpodsmax" }
         if name.contains("AirPods") { return "airpods.gen3" }
 
-        // Beats
         if name.contains("Beats") { return "beats.headphones" }
 
-        // MacBook built-in
         if name.contains("MacBook") { return "laptopcomputer" }
-        
-        // Display mic
+
         if name.contains("Studio Display") { return "display" }
         if name.contains("Pro Display XDR") { return "display" }
 
-        // Transport-based fallbacks
         switch transport {
         case .builtIn:
             return "mic"

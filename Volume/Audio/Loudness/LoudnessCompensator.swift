@@ -1,23 +1,16 @@
+//
+//  LoudnessCompensator.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 import Accelerate
 
-/// RT-safe loudness compensation processor based on ISO 226:2023 equal-loudness contours.
-///
-/// Applies frequency-dependent gain to counteract the human ear's reduced sensitivity
-/// to bass and treble at low listening levels. At the reference level (~80 phon),
-/// compensation is flat (bypassed). At lower levels, the contour difference is
-/// normalized around 1 kHz so only spectral balance is corrected. The app then fits
-/// that target curve with a low-cost four-section shelf/bell cascade. The downstream
-/// SoftLimiter handles any peaks that exceed unity after EQ boost.
-///
-/// Subclass of `BiquadProcessor` — inherits atomic setup swaps, stereo biquad processing,
-/// delay buffer management, and NaN safety. Follows the same pattern as `EQProcessor`.
 final class LoudnessCompensator: BiquadProcessor, @unchecked Sendable {
 
     // MARK: - Configuration
 
-    /// Four-section topology chosen to approximate the ISO-derived loudness target with
-    /// minimal runtime DSP cost: low shelf, low-mid bell, upper-mid bell, high shelf.
     private enum LoudnessFilterKind {
         case lowShelf
         case peaking
@@ -44,7 +37,6 @@ final class LoudnessCompensator: BiquadProcessor, @unchecked Sendable {
 
     // MARK: - State
 
-    /// Phon level used for the last coefficient computation.
     private var _currentPhon: Double = 80.0
 
     // MARK: - Init
@@ -60,26 +52,14 @@ final class LoudnessCompensator: BiquadProcessor, @unchecked Sendable {
 
     // MARK: - Volume Update
 
-    /// Update compensation coefficients for a new system volume level.
-    ///
-    /// Converts volume → estimated phon, skips recomputation if phon changed by less
-    /// than 1.0 (coalesces rapid slider drags), bypasses processor when at reference level.
-    ///
-    /// - Important: **Main thread only.** This method mutates `_eqSetup` and `_isEnabled`
-    ///   which the RT audio callback reads via `nonisolated(unsafe)`. Calling from any other
-    ///   thread creates a data race. Not annotated `@MainActor` because `BiquadProcessor`
-    ///   is not actor-isolated and test call sites run on arbitrary Swift Testing threads.
     func updateForVolume(_ systemVolume: Float) {
         let phon = ISO226Contours.estimatedPhon(fromSystemVolume: systemVolume)
 
-        // Coalesce rapid updates, but never skip a disabled processor because re-enabling
-        // loudness from the UI must rebuild coefficients immediately even at the same volume.
         guard !isEnabled || abs(phon - _currentPhon) >= 1.0 else { return }
         _currentPhon = phon
 
         let gains = computeBandGains(phon: phon)
 
-        // Bypass when all gains are negligible (near reference level)
         let allNegligible = gains.allSatisfy { abs($0) < 0.1 }
         if allNegligible {
             setEnabled(false)
@@ -97,12 +77,10 @@ final class LoudnessCompensator: BiquadProcessor, @unchecked Sendable {
 
     // MARK: - Coefficient Computation
 
-    /// Compute per-section gains (dB) for the fixed four-filter loudness topology.
     private func computeBandGains(phon: Double) -> [Float] {
         Self.fittedSectionGains(forPhon: phon, sampleRate: sampleRate)
     }
 
-    /// Fit the fixed four-section loudness topology to the ISO-derived target curve.
     static func fittedSectionGains(forPhon phon: Double, sampleRate: Double) -> [Float] {
         let targetCurve = targetCurveDB(forPhon: phon)
         let basisResponses = basisResponsesDB(sampleRate: sampleRate)
@@ -128,7 +106,6 @@ final class LoudnessCompensator: BiquadProcessor, @unchecked Sendable {
         return sectionGains.map(Float.init)
     }
 
-    /// Build the flat coefficient array for `vDSP_biquad_CreateSetup`.
     static func coefficientsForBands(gains: [Float], sampleRate: Double) -> [Double] {
         guard gains.count == bandCount else {
             return (0..<bandCount).flatMap { _ in [1.0, 0.0, 0.0, 0.0, 0.0] }
@@ -173,7 +150,6 @@ final class LoudnessCompensator: BiquadProcessor, @unchecked Sendable {
     // MARK: - BiquadProcessor Overrides
 
     override func recomputeCoefficients() -> (coefficients: [Double], sectionCount: Int)? {
-        // Called by updateSampleRate() — recompute for current phon at new sample rate
         let gains = computeBandGains(phon: _currentPhon)
         let allNegligible = gains.allSatisfy { abs($0) < 0.1 }
         guard !allNegligible else { return nil }

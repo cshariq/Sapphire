@@ -255,12 +255,10 @@ struct SystemControl {
     static func getVolume() -> Float {
         guard let deviceID = getDefaultOutputDeviceID() else {
             let scriptSource = "output volume of (get volume settings)"
-            if let script = NSAppleScript(source: scriptSource) {
-                var error: NSDictionary?
-                let result = script.executeAndReturnError(&error)
-                if error == nil {
-                    return Float(result.int32Value) / 100.0
-                }
+            var error: NSDictionary?
+            if let result = AppleScriptRunner.execute(scriptSource, error: &error),
+               error == nil {
+                return Float(result.int32Value) / 100.0
             }
             return 0.5
         }
@@ -279,12 +277,10 @@ struct SystemControl {
             return volume
         }
         let scriptSource = "output volume of (get volume settings)"
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            let result = script.executeAndReturnError(&error)
-            if error == nil {
-                return Float(result.int32Value) / 100.0
-            }
+        var error: NSDictionary?
+        if let result = AppleScriptRunner.execute(scriptSource, error: &error),
+           error == nil {
+            return Float(result.int32Value) / 100.0
         }
         return 0.5
     }
@@ -329,12 +325,10 @@ struct SystemControl {
             scriptVolume = Int((cleanLevel * 100).rounded(.toNearestOrAwayFromZero))
         }
         let scriptSource = "set volume output volume \(scriptVolume)"
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            script.executeAndReturnError(&error)
-            if let err = error {
-                print("[SystemControl] ERROR: AppleScript failed to set volume: \(err)")
-            }
+        var error: NSDictionary?
+        AppleScriptRunner.execute(scriptSource, error: &error)
+        if let err = error {
+            print("[SystemControl] ERROR: AppleScript failed to set volume: \(err)")
         }
     }
 
@@ -363,12 +357,10 @@ struct SystemControl {
         }
 
         let scriptSource = "output muted of (get volume settings)"
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            let result = script.executeAndReturnError(&error)
-            if error == nil {
-                return result.booleanValue
-            }
+        var error: NSDictionary?
+        if let result = AppleScriptRunner.execute(scriptSource, error: &error),
+           error == nil {
+            return result.booleanValue
         }
         return false
     }
@@ -392,12 +384,10 @@ struct SystemControl {
         }
 
         let scriptSource = isMuted ? "set volume with output muted" : "set volume without output muted"
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            script.executeAndReturnError(&error)
-            if let err = error {
-                print("[SystemControl] ERROR: AppleScript failed to set mute state: \(err)")
-            }
+        var error: NSDictionary?
+        AppleScriptRunner.execute(scriptSource, error: &error)
+        if let err = error {
+            print("[SystemControl] ERROR: AppleScript failed to set mute state: \(err)")
         }
     }
 

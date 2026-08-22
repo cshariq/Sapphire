@@ -1,4 +1,9 @@
-// FineTune/Audio/Monitors/AudioDeviceMonitor.swift
+//
+//  AudioDeviceMonitor.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 import AudioToolbox
 import os
@@ -10,38 +15,28 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
 
     private(set) var outputDevices: [AudioDevice] = []
 
-    /// O(1) device lookup by UID
     private(set) var devicesByUID: [String: AudioDevice] = [:]
 
-    /// O(1) device lookup by AudioDeviceID
     private(set) var devicesByID: [AudioDeviceID: AudioDevice] = [:]
 
-    /// Called immediately when output device disappears (passes UID and name)
     var onDeviceDisconnected: ((_ uid: String, _ name: String) -> Void)?
 
-    /// Called when an output device appears (passes UID and name)
     var onDeviceConnected: ((_ uid: String, _ name: String) -> Void)?
 
     // MARK: - Input Devices
 
     private(set) var inputDevices: [AudioDevice] = []
 
-    /// O(1) input device lookup by UID
     private(set) var inputDevicesByUID: [String: AudioDevice] = [:]
 
-    /// O(1) input device lookup by AudioDeviceID
     private(set) var inputDevicesByID: [AudioDeviceID: AudioDevice] = [:]
 
-    /// Called immediately when input device disappears (passes UID and name)
     var onInputDeviceDisconnected: ((_ uid: String, _ name: String) -> Void)?
 
-    /// Called when an input device appears (passes UID and name)
     var onInputDeviceConnected: ((_ uid: String, _ name: String) -> Void)?
 
-    /// Returns current output device priority order (highest priority first) for deterministic callback ordering
     var outputPriorityOrder: (() -> [String])?
 
-    /// Returns current input device priority order (highest priority first) for deterministic callback ordering
     var inputPriorityOrder: (() -> [String])?
 
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "AudioDeviceMonitor")
@@ -56,12 +51,8 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
     private var knownDeviceUIDs: Set<String> = []
     private var knownInputDeviceUIDs: Set<String> = []
 
-    /// Listeners for kAudioDevicePropertyDataSource changes on built-in devices (headphone jack detection)
     @ObservationIgnored private var dataSourceListeners: [AudioDeviceID: AudioObjectPropertyListenerBlock] = [:]
 
-    /// Debounces rapid HAL device-list notifications (e.g. Bluetooth connect fires 2-3 in ~20ms).
-    /// Querying device properties during the burst produces HALC_ShellObject errors because
-    /// HAL proxy objects are mid-transition. 50ms lets the HAL stabilize before we enumerate.
     private var deviceListDebounceTask: Task<Void, Never>?
 
     func start() {
@@ -102,22 +93,18 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
         removeAllDataSourceListeners()
     }
 
-    /// O(1) lookup by device UID (output devices)
     func device(for uid: String) -> AudioDevice? {
         devicesByUID[uid]
     }
 
-    /// O(1) lookup by AudioDeviceID (output devices)
     func device(for id: AudioDeviceID) -> AudioDevice? {
         devicesByID[id]
     }
 
-    /// O(1) lookup by device UID (input devices)
     func inputDevice(for uid: String) -> AudioDevice? {
         inputDevicesByUID[uid]
     }
 
-    /// O(1) lookup by AudioDeviceID (input devices)
     func inputDevice(for id: AudioDeviceID) -> AudioDevice? {
         inputDevicesByID[id]
     }
@@ -134,23 +121,11 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
                     continue
                 }
 
-                // FineTune's own internal aggregates (used for process taps) are
-                // `kAudioAggregateDeviceIsPrivateKey: true`, but still visible to the
-                // creating process. Skip them by name prefix so they don't appear in
-                // our own picker. User-created aggregates (Audio MIDI Setup Multi-Output,
-                // etc.) pass through.
                 if deviceID.isAggregateDevice() && name.hasPrefix("FineTune-") { continue }
 
-                // Respect the driver's own opt-out. `kAudioDevicePropertyIsHidden` is
-                // how drivers signal "maintenance/utility device, don't show in
-                // pickers" — mirrors what Apple's System Settings does.
                 if deviceID.isHidden() { continue }
 
-                // Output devices. Virtual outputs (BlackHole, Loopback, Teams Audio)
-                // are NOT filtered out here — users who don't want them in their
-                // picker can hide them per-device via the reorder-mode eye toggle.
                 if deviceID.hasOutputStreams() {
-                    // Try Core Audio icon first (via LRU cache), fall back to SF Symbol
                     let icon = DeviceIconCache.shared.icon(for: uid) {
                         deviceID.readDeviceIcon()
                     } ?? NSImage(systemSymbolName: deviceID.suggestedIconSymbol(), accessibilityDescription: name)
@@ -165,11 +140,7 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
                     outputDeviceList.append(device)
                 }
 
-                // Input devices. Zombie virtuals (registered but not alive — e.g.
-                // Teams Audio when Teams isn't running) are no longer filtered
-                // here; the hide toggle provides per-device suppression.
                 if deviceID.hasInputStreams() {
-                    // Try Core Audio icon first, fall back to smart detection
                     let icon = DeviceIconCache.shared.icon(for: uid) {
                         deviceID.readDeviceIcon()
                     } ?? NSImage(systemSymbolName: deviceID.suggestedInputIconSymbol(),
@@ -186,13 +157,11 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
                 }
             }
 
-            // Update output devices
             outputDevices = outputDeviceList.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             knownDeviceUIDs = Set(outputDeviceList.map(\.uid))
             devicesByUID = Dictionary(uniqueKeysWithValues: outputDevices.map { ($0.uid, $0) })
             devicesByID = Dictionary(uniqueKeysWithValues: outputDevices.map { ($0.id, $0) })
 
-            // Update input devices
             inputDevices = inputDeviceList.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             knownInputDeviceUIDs = Set(inputDeviceList.map(\.uid))
             inputDevicesByUID = Dictionary(uniqueKeysWithValues: inputDevices.map { ($0.uid, $0) })
@@ -205,18 +174,14 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
         }
     }
 
-    /// Installs/removes kAudioDevicePropertyDataSource listeners on built-in output devices
-    /// so headphone jack plug/unplug triggers a refresh.
     private func syncDataSourceListeners(outputDeviceIDs: [AudioDeviceID]) {
         let builtInIDs = Set(outputDeviceIDs.filter { $0.readTransportType() == .builtIn })
         let currentIDs = Set(dataSourceListeners.keys)
 
-        // Remove listeners for devices no longer present
         for deviceID in currentIDs.subtracting(builtInIDs) {
             removeDataSourceListener(for: deviceID)
         }
 
-        // Add listeners for new built-in devices
         for deviceID in builtInIDs.subtracting(currentIDs) {
             var address = AudioObjectPropertyAddress(
                 mSelector: kAudioDevicePropertyDataSource,
@@ -245,7 +210,6 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
             mElement: kAudioObjectPropertyElementMain
         )
         let status = AudioObjectRemovePropertyListenerBlock(deviceID, &address, .main, block)
-        // Tolerate kAudioHardwareBadObjectError (-66680): device was already destroyed
         if status != noErr && status != OSStatus(kAudioHardwareBadObjectError) {
             logger.warning("Failed to remove data source listener for device \(deviceID): \(status)")
         }
@@ -257,8 +221,6 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
         }
     }
 
-    /// Sorts UIDs by priority order: UIDs in the priority list come first (in priority order),
-    /// followed by any remaining UIDs sorted alphabetically for determinism.
     private func sortByPriority(uids: Set<String>, priorityOrder: [String]) -> [String] {
         guard uids.count > 1 else { return Array(uids) }
         var sorted: [String] = []
@@ -270,9 +232,6 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
         return sorted
     }
 
-    /// Coalesces rapid HAL notifications into a single refresh after 50ms of quiet.
-    /// Without this, querying device properties mid-burst produces HALC_ShellObject errors
-    /// because HAL proxy objects haven't stabilized yet.
     private func scheduleDeviceListRefresh() {
         deviceListDebounceTask?.cancel()
         deviceListDebounceTask = Task { @MainActor [weak self] in
@@ -286,7 +245,6 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
         let previousOutputUIDs = knownDeviceUIDs
         let previousInputUIDs = knownInputDeviceUIDs
 
-        // Capture names before refresh removes devices from list
         var outputDeviceNames: [String: String] = [:]
         for device in outputDevices {
             outputDeviceNames[device.uid] = device.name
@@ -298,7 +256,6 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
 
         refresh()
 
-        // Handle output device changes
         let currentOutputUIDs = knownDeviceUIDs
         let disconnectedOutputUIDs = previousOutputUIDs.subtracting(currentOutputUIDs)
         for uid in disconnectedOutputUIDs {
@@ -315,7 +272,6 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
             }
         }
 
-        // Handle input device changes
         let currentInputUIDs = knownInputDeviceUIDs
         let disconnectedInputUIDs = previousInputUIDs.subtracting(currentInputUIDs)
         for uid in disconnectedInputUIDs {

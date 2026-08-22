@@ -26,6 +26,7 @@ final class MirrorCameraManager: ObservableObject {
 
     @Published private(set) var status: CameraStatus = .idle
     @Published private(set) var hasUsableCamera: Bool = false
+    @Published private(set) var sessionEpoch: UInt64 = 0
 
     var isLive: Bool {
         if case .live = status { return true }
@@ -52,6 +53,7 @@ final class MirrorCameraManager: ObservableObject {
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var isConfigured = false
     private var isTransitioning = false
+    private var startGeneration: UInt64 = 0
 
     private init() {
         self.session = AVCaptureSession()
@@ -81,29 +83,46 @@ final class MirrorCameraManager: ObservableObject {
     func start() {
         guard !isTransitioning else { return }
         isTransitioning = true
+        status = .starting
+        startGeneration &+= 1
+        let generation = startGeneration
+
         Task { @MainActor in
             let granted = await requestPermissionIfNeeded()
+            guard generation == self.startGeneration else {
+                self.isTransitioning = false
+                return
+            }
             if !granted {
                 self.status = .denied
                 self.isTransitioning = false
                 return
             }
-            self.configureIfNeeded()
-            self.startSession()
-            self.isTransitioning = false
+
+            let configured = await self.reconfigureSession()
+            guard generation == self.startGeneration else {
+                self.isTransitioning = false
+                return
+            }
+            guard configured else {
+                self.isTransitioning = false
+                return
+            }
+
+            self.startSession(generation: generation)
         }
     }
 
     func stop(force: Bool = false) {
         if isTransitioning && !force { return }
         isTransitioning = true
+        startGeneration &+= 1
         sessionQueue.async { [weak self] in
             guard let self else { return }
-            if self.session.isRunning {
-                self.session.stopRunning()
-            }
+            self.dismantleSessionLocked()
             Task { @MainActor in
                 self.previewLayer = nil
+                self.isConfigured = false
                 self.status = .idle
                 self.isTransitioning = false
             }
@@ -117,15 +136,12 @@ final class MirrorCameraManager: ObservableObject {
 
     func restartPreviewIfNeeded() {
         guard isLive else { return }
-        sessionQueue.async { [weak self] in
-            guard let self else { return }
-            if self.session.isRunning {
-                self.session.stopRunning()
-            }
-            self.session.startRunning()
-            Task { @MainActor in
-                self.status = .live
-            }
+        startGeneration &+= 1
+        let generation = startGeneration
+        Task { @MainActor in
+            _ = await self.reconfigureSession()
+            guard generation == self.startGeneration else { return }
+            self.startSession(generation: generation)
         }
     }
 
@@ -157,6 +173,7 @@ final class MirrorCameraManager: ObservableObject {
         case .authorized:
             return true
         case .notDetermined:
+            self.status = .requestingPermission
             return await withCheckedContinuation { continuation in
                 AVCaptureDevice.requestAccess(for: .video) { granted in
                     continuation.resume(returning: granted)
@@ -171,38 +188,59 @@ final class MirrorCameraManager: ObservableObject {
 
     // MARK: - Configuration
 
-    private func configureIfNeeded() {
-        guard !isConfigured else { return }
-        sessionQueue.sync {
-            self.session.beginConfiguration()
-            defer { self.session.commitConfiguration() }
+    private func reconfigureSession() async -> Bool {
+        await withCheckedContinuation { continuation in
+            sessionQueue.async {
+                self.dismantleSessionLocked()
 
-            if let existingInput = self.session.inputs.first as? AVCaptureDeviceInput {
-                self.session.removeInput(existingInput)
-            }
+                self.session.beginConfiguration()
+                defer { self.session.commitConfiguration() }
 
-            guard let device = self.preferredDevice() else {
-                Task { @MainActor in self.status = .error("No camera available.") }
-                return
-            }
-
-            do {
-                let input = try AVCaptureDeviceInput(device: device)
-                if self.session.canAddInput(input) {
-                    self.session.addInput(input)
-                    self.isConfigured = true
+                guard let device = self.preferredDevice() else {
                     Task { @MainActor in
-                        if let connection = self.session.outputs.compactMap({ $0.connection(with: .video) }).first {
-                            connection.isVideoMirrored = self.currentMirrorSetting
-                        }
+                        self.status = .error("No camera available.")
+                        continuation.resume(returning: false)
                     }
-                } else {
-                    Task { @MainActor in self.status = .error("Unable to add camera input.") }
+                    return
                 }
-            } catch {
-                Task { @MainActor in self.status = .error(error.localizedDescription) }
+
+                do {
+                    let input = try AVCaptureDeviceInput(device: device)
+                    guard self.session.canAddInput(input) else {
+                        Task { @MainActor in
+                            self.status = .error("Unable to add camera input.")
+                            continuation.resume(returning: false)
+                        }
+                        return
+                    }
+                    self.session.addInput(input)
+                    Task { @MainActor in
+                        self.isConfigured = true
+                        self.sessionEpoch &+= 1
+                        continuation.resume(returning: true)
+                    }
+                } catch {
+                    Task { @MainActor in
+                        self.status = .error(error.localizedDescription)
+                        continuation.resume(returning: false)
+                    }
+                }
             }
         }
+    }
+
+    private func dismantleSessionLocked() {
+        if session.isRunning {
+            session.stopRunning()
+        }
+        session.beginConfiguration()
+        for input in session.inputs {
+            session.removeInput(input)
+        }
+        for output in session.outputs {
+            session.removeOutput(output)
+        }
+        session.commitConfiguration()
     }
 
     private var currentMirrorSetting: Bool {
@@ -222,13 +260,16 @@ final class MirrorCameraManager: ObservableObject {
             ?? AVCaptureDevice.default(for: .video)
     }
 
-    private func startSession() {
+    private func startSession(generation: UInt64) {
         sessionQueue.async {
             if !self.session.isRunning {
                 self.session.startRunning()
             }
             Task { @MainActor in
+                guard generation == self.startGeneration else { return }
                 self.status = .live
+                self.isTransitioning = false
+                self.updateMirroring(flipHorizontally: self.currentMirrorSetting)
             }
         }
     }

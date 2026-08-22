@@ -158,10 +158,9 @@ private struct HelperInstallationStepView: View {
     var onContinue: () -> Void
 
     @State private var didStartInstall = false
-    @State private var pollTimer: Timer?
 
     private var helperReady: Bool {
-        helperManager.status == .enabled && helperManager.isRunning
+        helperManager.isRunning
     }
 
     var body: some View {
@@ -198,6 +197,8 @@ private struct HelperInstallationStepView: View {
                     }
                     if helperManager.status == .enabled && !helperManager.isRunning {
                         helperManager.resetOwnBackgroundActivity()
+                    } else if helperManager.status == .notFound {
+                        helperManager.resetOwnBackgroundActivity()
                     } else {
                         helperManager.beginInstallation()
                     }
@@ -225,14 +226,8 @@ private struct HelperInstallationStepView: View {
             helperManager.checkIfRunning()
             if !didStartInstall {
                 didStartInstall = true
-                // Register immediately so Sapphire + Sapphire Helper appear in Login Items.
                 helperManager.beginInstallation()
             }
-            startPolling()
-        }
-        .onDisappear {
-            pollTimer?.invalidate()
-            pollTimer = nil
         }
         .onChange(of: helperManager.status) { _, newStatus in
             if newStatus == .requiresApproval {
@@ -245,7 +240,7 @@ private struct HelperInstallationStepView: View {
         switch helperManager.status {
         case .requiresApproval:
             return "Open Login Items"
-        case .enabled:
+        case .enabled, .notFound:
             return "Reset Helper"
         default:
             return "Install Helper"
@@ -261,24 +256,12 @@ private struct HelperInstallationStepView: View {
         case .enabled:
             return "Helper is ready. You can continue."
         case .notFound:
-            return "macOS lost the helper registration (SAP-H3). Tap Instructions, then Relaunch Sapphire."
+            return "macOS lost the helper registration (SAP-H3). Tap Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck."
         default:
             return "Tap Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity."
         }
     }
 
-    private func startPolling() {
-        pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            Task { @MainActor in
-                helperManager.updateStatus()
-                helperManager.checkIfRunning()
-            }
-        }
-        if let pollTimer {
-            RunLoop.main.add(pollTimer, forMode: .common)
-        }
-    }
 }
 
 private struct PrivacyStepView: View {

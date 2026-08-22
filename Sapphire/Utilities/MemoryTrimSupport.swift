@@ -16,7 +16,6 @@ enum MemoryTrimSupport {
 
     @MainActor
     static func trimAfterNotchCollapse(musicManager: MusicManager) {
-//        musicManager.trimExpandedUIMemory()
         Task { await FileImageCache.shared.trimMemoryCache() }
         NSImage.trimEdgeColorCache()
     }
@@ -25,7 +24,6 @@ enum MemoryTrimSupport {
     static func trimAfterUserWindowClose(musicManager: MusicManager) {
         SettingsModel.shared.flushPendingSave()
         releaseSettingsPaneCaches()
-//        musicManager.trimExpandedUIMemory()
         Task { await FileImageCache.shared.trimMemoryCache() }
         NSImage.trimEdgeColorCache()
         URLCache.shared.removeAllCachedResponses()
@@ -33,7 +31,8 @@ enum MemoryTrimSupport {
 
         DispatchQueue.global(qos: .utility).async {
             autoreleasepool {
-                _ = malloc_zone_pressure_relief(nil, 0)
+                SapphireMemoryFlushAllMallocZones()
+                SapphireMemoryDrainAutoreleasePools()
             }
         }
 
@@ -42,7 +41,8 @@ enum MemoryTrimSupport {
             URLCache.shared.removeAllCachedResponses()
             DispatchQueue.global(qos: .utility).async {
                 autoreleasepool {
-                    _ = malloc_zone_pressure_relief(nil, 0)
+                    SapphireMemoryFlushAllMallocZones()
+                    SapphireMemoryDrainAutoreleasePools()
                 }
             }
         }

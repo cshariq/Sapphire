@@ -36,46 +36,47 @@ struct SettingsDetailView: View {
         .animation(.easeOut(duration: 0.15), value: subscriptionManager.activeTier)
     }
 
-    @ViewBuilder
-    private func settingsPane(for selectedSection: SettingsSection?) -> some View {
+    private func settingsPane(for selectedSection: SettingsSection?) -> AnyView {
         switch selectedSection {
-        case .general: GeneralSettingsView()
-        case .widgets: WidgetsSettingsView()
-        case .liveActivities: LiveActivitiesSettingsView()
-        case .appearance: AppearanceSettingsView()
-        case .lockScreen: LockScreenSettingsView()
-        case .bluetoothUnlock: ProximityUnlockSettingsView()
-        case .shortcuts: ShortcutsSettingsView()
-        case .snapZones: SnapZonesSettingsView()
-        case .audio: AudioSettingsView()
-        case .battery: BatterySettingsView()
-        case .bluetooth: BluetoothSettingsView()
-        case .hud: HUDSettingsView()
-        case .notifications: NotificationsSettingsView()
-        case .neardrop: NeardropSettingsView()
-        case .fileShelf: FileShelfSettingsView()
-        case .notes: NotesSettingsView()
-        case .clipboard: ClipboardSettingsView()
-        case .mirror: MirrorSettingsView()
-        case .caffeine: CaffeineSettingsView()
-        case .music: MusicSettingsView()
-        case .weather: WeatherSettingsView()
-        case .calendar: CalendarSettingsView()
-        case .eyeBreak: EyeBreakSettingsView()
-        case .intelligence: IntelligenceSettingsView()
-        case .sports: SportsSettingsView()
-        case .finance: FinanceSettingsView()
-        case .about: AboutSettingsView()
+        case .general: return AnyView(GeneralSettingsView())
+        case .widgets: return AnyView(WidgetsSettingsView())
+        case .liveActivities: return AnyView(LiveActivitiesSettingsView())
+        case .appearance: return AnyView(AppearanceSettingsView())
+        case .lockScreen: return AnyView(LockScreenSettingsView())
+        case .bluetoothUnlock: return AnyView(ProximityUnlockSettingsView())
+        case .shortcuts: return AnyView(ShortcutsSettingsView())
+        case .snapZones: return AnyView(SnapZonesSettingsView())
+        case .audio: return AnyView(AudioSettingsView())
+        case .battery: return AnyView(BatterySettingsView())
+        case .bluetooth: return AnyView(BluetoothSettingsView())
+        case .hud: return AnyView(HUDSettingsView())
+        case .notifications: return AnyView(NotificationsSettingsView())
+        case .neardrop: return AnyView(NeardropSettingsView())
+        case .fileShelf: return AnyView(FileShelfSettingsView())
+        case .notes: return AnyView(NotesSettingsView())
+        case .clipboard: return AnyView(ClipboardSettingsView())
+        case .mirror: return AnyView(MirrorSettingsView())
+        case .caffeine: return AnyView(CaffeineSettingsView())
+        case .music: return AnyView(MusicSettingsView())
+        case .weather: return AnyView(WeatherSettingsView())
+        case .calendar: return AnyView(CalendarSettingsView())
+        case .eyeBreak: return AnyView(EyeBreakSettingsView())
+        case .intelligence: return AnyView(IntelligenceSettingsView())
+        case .sports: return AnyView(SportsSettingsView())
+        case .finance: return AnyView(FinanceSettingsView())
+        case .about: return AnyView(AboutSettingsView())
         case nil:
-            VStack {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 50))
-                    .foregroundStyle(.tertiary)
-                Text("Select a category")
-                    .font(.title)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            return AnyView(
+                VStack {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 50))
+                        .foregroundStyle(.tertiary)
+                    Text("Select a category")
+                        .font(.title)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            )
         }
     }
 }
@@ -346,6 +347,16 @@ struct GeneralSettingsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 ForEach(GeneralSettingType.allCases) { setting in
                     GeneralSettingToggleRowView(setting: setting, isEnabled: binding(for: setting))
+                    if setting == .expandOnHover, settings.settings.expandOnHover {
+                        CustomSliderRowView(
+                            label: "Hover Delay",
+                            value: $settings.settings.expandOnHoverDelay,
+                            range: 0.0...1.0,
+                            specifier: "%.2fs"
+                        )
+                        .padding(.horizontal, 60)
+                        .padding(.bottom, 8)
+                    }
                     if setting != GeneralSettingType.allCases.last {
                         Divider().padding(.leading, 60)
                     }
@@ -423,7 +434,25 @@ struct GeneralSettingsView: View {
                     ToggleRow(title: "Google Analytics", description: "Send anonymous usage events to Google to help improve Sapphire. Disable this to opt out of analytics collection.", isOn: $settings.settings.googleAnalyticsEnabled)
                     Divider().padding(.leading, 20)
 
-                    ToggleRow(title: "Hide Notch When Inactive", description: "Hide the notch entirely whenever Sapphire is idle and not showing content.", isOn: $settings.settings.hideNotchWhenInactive)
+                    ToggleRow(
+                        title: "Hide Notch When Inactive",
+                        description: "Hide the notch completely when no live activity is showing (including when live activities are hidden in full screen). Swipe down near the notch area to bring it back.",
+                        isOn: $settings.settings.hideNotchWhenInactive
+                    )
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Swipe to Hide Notch",
+                        description: "When the notch is collapsed, swipe up over it to hide it completely. Swipe down near the notch area to bring it back.",
+                        isOn: $settings.settings.swipeToHideNotch
+                    )
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Don't Expand While Locked",
+                        description: "Prevent hover, click, and swipe from expanding the notch while the Mac is locked.",
+                        isOn: $settings.settings.preventNotchExpandWhenLocked
+                    )
                     Divider().padding(.leading, 20)
 
                     HStack {
@@ -896,6 +925,14 @@ struct FileShelfSettingsView: View {
                         description: "Clicking the File Shelf live activity opens the shelf instead of the default widgets.",
                         isOn: $settings.settings.clickToOpenFileShelf
                     )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Remove File After Drag Out",
+                        description: "When you drag a file out of the shelf, remove it from the shelf automatically.",
+                        isOn: $settings.settings.removeFileFromShelfAfterDrag
+                    )
                 }
                 .modifier(SettingsContainerModifier())
             }
@@ -936,6 +973,38 @@ struct NotesSettingsView: View {
                         title: "Show Notes in Notch Bar",
                         description: "Add a notes icon to the expanded notch header for quick access.",
                         isOn: $settings.settings.notesIconEnabled
+                    )
+                }
+                .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Swipe Actions")
+                        .font(.headline)
+                        .padding([.top, .horizontal])
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text("Customize what happens when you swipe a note row left or right in the full notes view.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom, 5)
+
+                    SwipeActionPickerRow(
+                        title: "Swipe Right",
+                        description: "Leading swipe on a note row.",
+                        selection: $settings.settings.swipeActionSettings.notesLeading,
+                        options: NotesSwipeAction.allCases,
+                        label: { $0.displayName }
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    SwipeActionPickerRow(
+                        title: "Swipe Left",
+                        description: "Trailing swipe on a note row.",
+                        selection: $settings.settings.swipeActionSettings.notesTrailing,
+                        options: NotesSwipeAction.allCases,
+                        label: { $0.displayName }
                     )
                 }
                 .modifier(SettingsContainerModifier())
@@ -1053,6 +1122,38 @@ struct ClipboardSettingsView: View {
                     .padding()
                 }
                 .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Swipe Actions")
+                        .font(.headline)
+                        .padding([.top, .horizontal])
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text("Customize what happens when you swipe a clipboard row left or right in the full clipboard view.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom, 5)
+
+                    SwipeActionPickerRow(
+                        title: "Swipe Right",
+                        description: "Leading swipe on a clipboard row.",
+                        selection: $settings.settings.swipeActionSettings.clipboardLeading,
+                        options: ClipboardSwipeAction.allCases,
+                        label: { $0.displayName }
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    SwipeActionPickerRow(
+                        title: "Swipe Left",
+                        description: "Trailing swipe on a clipboard row.",
+                        selection: $settings.settings.swipeActionSettings.clipboardTrailing,
+                        options: ClipboardSwipeAction.allCases,
+                        label: { $0.displayName }
+                    )
+                }
+                .modifier(SettingsContainerModifier())
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1134,6 +1235,30 @@ struct CaffeineSettingsView: View {
                         description: "Continue preventing sleep after leaving clamshell mode instead of turning caffeinate off automatically.",
                         isOn: $settings.settings.persistentCaffeinateAfterClamshell
                     )
+
+                    Divider().padding(.leading, 20)
+
+                    HStack {
+                        Text("Auto-Off Timeout")
+                        Spacer()
+                        Picker("", selection: $settings.settings.caffeinateTimeoutMinutes) {
+                            Text("Never").tag(0.0)
+                            Text("15 minutes").tag(15.0)
+                            Text("30 minutes").tag(30.0)
+                            Text("1 hour").tag(60.0)
+                            Text("2 hours").tag(120.0)
+                            Text("4 hours").tag(240.0)
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+                    .padding()
+
+                    Text("Automatically turn caffeinate off after the selected duration.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom, 10)
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -3293,17 +3418,26 @@ struct ProximityUnlockSettingsView: View {
     private struct FaceProfileAction: Identifiable {
         enum Kind {
             case register
+            case append
             case delete
         }
 
         let id = UUID()
         let kind: Kind
         let profileName: String
+
+        var message: String {
+            switch kind {
+            case .register: return "register the '\(profileName)' face profile"
+            case .append: return "add captures to the '\(profileName)' face profile"
+            case .delete: return "delete the '\(profileName)' face profile"
+            }
+        }
     }
 
     private func performFaceProfileAction(_ action: FaceProfileAction) {
         switch action.kind {
-        case .register:
+        case .register, .append:
             authManager.beginFaceRegistration(profileName: action.profileName)
         case .delete:
             authManager.deleteFaceProfile(name: action.profileName)
@@ -3315,8 +3449,11 @@ struct ProximityUnlockSettingsView: View {
             get: { settings.settings.bluetoothUnlockEnabled },
             set: { newValue in
                 if newValue {
-                    if !authManager.isPasswordSet { showPasswordPrompt = true }
-                    else { settings.settings.bluetoothUnlockEnabled = true }
+                    if !authManager.isPasswordSet {
+                        showPasswordPrompt = true
+                    } else {
+                        settings.settings.bluetoothUnlockEnabled = true
+                    }
                 } else {
                     settings.settings.bluetoothUnlockEnabled = false
                 }
@@ -3385,7 +3522,7 @@ struct ProximityUnlockSettingsView: View {
                 ),
                 validate: { authManager.verifyPassword($0) },
                 title: "Face ID Authentication Required",
-                message: "Enter your Mac's password to \(action.kind == .delete ? "delete the '\(action.profileName)' face profile" : "register the '\(action.profileName)' face profile")."
+                message: "Enter your Mac's password to \(action.message)."
             ) { _ in
                 pendingFaceProfileAction = nil
                 performFaceProfileAction(action)
@@ -3404,6 +3541,9 @@ struct ProximityUnlockSettingsView: View {
         }
         .sheet(isPresented: $isCalibratingRSSI) {
             CalibrateRSSIView().environmentObject(settings)
+        }
+        .onAppear {
+            authManager.fetchRegisteredFaces()
         }
         .onDisappear {
             if authManager.isScanning {
@@ -3492,6 +3632,9 @@ struct ProximityUnlockSettingsView: View {
                     }.padding(.bottom)
                 }
 
+                Divider().padding(.leading, 20)
+                faceIDSecuritySection
+
                 Divider().padding(.horizontal)
             }
         }
@@ -3500,10 +3643,39 @@ struct ProximityUnlockSettingsView: View {
     }
 
     @ViewBuilder
+    private var faceIDSecuritySection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Security").font(.subheadline).bold().padding([.horizontal, .top])
+            CustomSliderRowView(
+                label: "Spoof Lock Duration",
+                value: $settings.settings.faceIDSpoofLockDuration,
+                range: 1...15,
+                specifier: "%.0f sec"
+            )
+            Text("Locks Face ID and requires your password after this much sustained clear spoof detection (not borderline frames).")
+                .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 4)
+            Divider().padding(.leading, 20)
+            CustomSliderRowView(
+                label: "No-Match Timeout",
+                value: $settings.settings.faceIDMismatchTimeout,
+                range: 5...120,
+                specifier: "%.0f sec"
+            )
+            Text("Stops Face ID scanning when your face isn't recognized for this long.")
+                .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 8)
+        }
+    }
+
+    @ViewBuilder
     private var bluetoothUnlockSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ToggleRow(title: "Enable Bluetooth Unlock", description: "Automatically lock and unlock your Mac using a trusted Bluetooth device.", isOn: isBluetoothEnabled)
-                .disabled(!authManager.isPasswordSet)
+            ToggleRow(
+                title: "Enable Bluetooth Unlock",
+                description: "Automatically lock and unlock your Mac using a trusted Bluetooth device.",
+                isOn: isBluetoothEnabled
+            )
+            .disabled(!authManager.isPasswordSet)
+
             Group {
                 if settings.settings.bluetoothUnlockEnabled {
                     Divider().padding(.leading, 20)
@@ -4028,15 +4200,18 @@ struct FanControlSectionView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Fan Control").font(.headline).padding([.top, .horizontal])
 
-            InfoContainer(text: "Fan control is in beta and may not work if the current fan speed is 0 rpm.", iconName: "fanblades.fill", color: .red)
+            InfoContainer(text: "Fan control is in beta. Idle fans at 0 RPM are normal", iconName: "fanblades.fill", color: .orange)
                 .padding()
 
             if fanManager.fans.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("No fans detected on this system.")
                         .foregroundColor(.secondary)
+                    Text("Fanless Macs (some MacBook Air models) will show this permanently. Otherwise, ensure the Sapphire helper is installed and retry.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     Button("Retry Detection") {
-                        Task { await fanManager.refreshHardwareState() }
+                        Task { await fanManager.refreshHardwareState(forceRediscovery: true) }
                     }
                     .buttonStyle(.bordered)
                 }
@@ -4498,7 +4673,9 @@ struct LidAngleCaffeineSettingsView: View {
                     specifier: "%.0f°"
                 )
             }
+
         }
+        .modifier(SettingsContainerModifier())
         .onAppear {
             lidAngleSensor.acquire(.settingsPreview)
         }
@@ -4506,6 +4683,7 @@ struct LidAngleCaffeineSettingsView: View {
             lidAngleSensor.release(.settingsPreview)
         }
     }
+
 }
 
 struct BatterySettingsView: View {
@@ -4973,6 +5151,7 @@ struct ModernBatteryStatsView: View {
     @StateObject private var historyViewModel = BatteryHistoryViewModel()
     @StateObject private var energyViewModel = EnergyViewModel()
     @StateObject private var helperManager = HelperManager.shared
+    @ObservedObject private var debugMode = DebugMode.shared
     @State private var selectedTimeRange: TimeRange = .last24Hours
     @State private var historyRefreshTimer: AnyCancellable?
 
@@ -4981,6 +5160,9 @@ struct ModernBatteryStatsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
+                if debugMode.isEnabled {
+                    BatteryDebugMenu()
+                }
                 DateRangePickerView(selection: $selectedTimeRange)
                 HStack(spacing: 15) {
                     HelperStatusBanner(helperManager: helperManager)
@@ -5010,6 +5192,8 @@ struct ModernBatteryStatsView: View {
         }
         .onAppear {
             viewModel.start()
+            viewModel.setHighFrequencyPolling(true)
+            StatsManager.shared.setPolling(for: "BatterySettingsView", requiredStats: [.batteryPower], interval: .seconds(1))
             historyViewModel.fetchHistory()
             energyViewModel.start()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -5045,8 +5229,10 @@ struct ModernBatteryStatsView: View {
 
     private func tearDownBatteryStats() {
         energyViewModel.stop()
+        viewModel.setHighFrequencyPolling(false)
         viewModel.stop()
         historyViewModel.releaseMemory()
+        StatsManager.shared.setPolling(for: "BatterySettingsView", requiredStats: [])
     }
 }
 
@@ -5205,7 +5391,7 @@ struct MaxCapacityGraphCard: View {
                 .chartYScale(domain: yDomainMin...yDomainMax)
                 .dynamicXAxis(for: selectedTimeRange, isVisible: true)
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
-                .chartOverlay { proxy in chartInteraction(proxy: proxy, chartData: chartData) }
+                .chartXSelection(value: $selectedDate)
                 .frame(height: 150)
                 .padding(.horizontal, 12)
             }
@@ -5214,12 +5400,6 @@ struct MaxCapacityGraphCard: View {
         }
         .materialChartCard(height: 220)
         .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
-    }
-
-    private func chartInteraction(proxy: ChartProxy, chartData: [BatteryLogEntry]) -> some View {
-        MaterialChartHoverOverlay(proxy: proxy) { date in
-            self.selectedDate = date
-        }
     }
 
     private func findClosest(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
@@ -5288,7 +5468,7 @@ struct CycleCountGraphCard: View {
                 .chartYScale(domain: yDomainMin...yDomainMax)
                 .dynamicXAxis(for: selectedTimeRange, isVisible: true)
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
-                .chartOverlay { proxy in chartInteraction(proxy: proxy, chartData: chartData) }
+                .chartXSelection(value: $selectedDate)
                 .frame(height: 150)
                 .padding(.horizontal, 12)
             }
@@ -5297,12 +5477,6 @@ struct CycleCountGraphCard: View {
         }
         .materialChartCard(height: 220)
         .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
-    }
-
-    private func chartInteraction(proxy: ChartProxy, chartData: [BatteryLogEntry]) -> some View {
-        MaterialChartHoverOverlay(proxy: proxy) { date in
-            self.selectedDate = date
-        }
     }
 
     private func findClosest(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
@@ -5368,7 +5542,7 @@ struct TemperatureGraphCard: View {
                 .chartYScale(domain: 20...55)
                 .dynamicXAxis(for: selectedTimeRange, isVisible: true)
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) }
-                .chartOverlay { proxy in chartInteraction(proxy: proxy, chartData: chartData) }
+                .chartXSelection(value: $selectedDate)
                 .frame(height: 150)
                 .padding(.horizontal, 12)
             }
@@ -5377,12 +5551,6 @@ struct TemperatureGraphCard: View {
         }
         .materialChartCard(height: 220)
         .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
-    }
-
-    private func chartInteraction(proxy: ChartProxy, chartData: [BatteryLogEntry]) -> some View {
-        MaterialChartHoverOverlay(proxy: proxy) { date in
-            self.selectedDate = date
-        }
     }
 
     private func findClosest(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
@@ -5452,11 +5620,7 @@ struct PowerTimeHistoryGraphView: View {
                 ])
                 .dynamicXAxis(for: selectedTimeRange, isVisible: true)
                 .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
-                .chartOverlay { proxy in
-                    MaterialChartHoverOverlay(proxy: proxy) { date in
-                        selectedDate = date
-                    }
-                }
+                .chartXSelection(value: $selectedDate)
                 .frame(height: 150)
                 .padding(.horizontal, 12)
             }
@@ -5486,12 +5650,6 @@ struct PowerTimeHistoryGraphView: View {
         .cornerRadius(4)
     }
 
-    private func chartInteraction(proxy: ChartProxy, chartData: [BatteryLogEntry]) -> some View {
-        MaterialChartHoverOverlay(proxy: proxy) { date in
-            self.selectedDate = date
-        }
-    }
-
     private func findClosest(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
         data.min(by: { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) })
     }
@@ -5500,7 +5658,12 @@ struct PowerTimeHistoryGraphView: View {
 struct BatteryHistoryView: View {
     @ObservedObject var historyViewModel: BatteryHistoryViewModel
     @State private var selectedEntry: BatteryLogEntry?
-    @State private var hoveredEntry: BatteryLogEntry?
+    @State private var hoveredDate: Date?
+
+    private var hoveredEntry: BatteryLogEntry? {
+        guard let hoveredDate else { return nil }
+        return findClosestEntry(to: hoveredDate, in: historyViewModel.chartData)
+    }
 
     private var summaryStats: (min: Int, max: Int, avg: Int, avgTemp: Double, avgPower: Double)? {
         let data = historyViewModel.chartData
@@ -5725,54 +5888,18 @@ struct BatteryHistoryView: View {
                 }
             }
         }
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            guard let plotFrame = proxy.plotFrame else {
-                                if selectedEntry == nil { hoveredEntry = nil }
-                                return
-                            }
-                            let plotAreaFrame = geometry[plotFrame]
-                            guard plotAreaFrame.contains(location) else {
-                                if selectedEntry == nil { hoveredEntry = nil }
-                                return
-                            }
-                            let translatedX = location.x - plotAreaFrame.minX
-                            if let date: Date = proxy.value(atX: translatedX),
-                               let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
-                                hoveredEntry = entry
-                            }
-                        case .ended:
-                            if selectedEntry == nil { hoveredEntry = nil }
-                        }
+        .chartXSelection(value: $hoveredDate)
+        .simultaneousGesture(TapGesture().onEnded {
+            if let entry = hoveredEntry {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    if selectedEntry?.id == entry.id {
+                        selectedEntry = nil
+                    } else {
+                        selectedEntry = entry
                     }
-                    .onTapGesture { location in
-                        guard let plotFrame = proxy.plotFrame else { return }
-                        let plotAreaFrame = geometry[plotFrame]
-                        guard plotAreaFrame.contains(location) else {
-                            selectedEntry = nil
-                            return
-                        }
-                        let translatedX = location.x - plotAreaFrame.minX
-                        if let date: Date = proxy.value(atX: translatedX),
-                           let entry = findClosestEntry(to: date, in: historyViewModel.chartData) {
-                            withAnimation(.easeOut(duration: 0.18)) {
-                                if selectedEntry?.id == entry.id {
-                                    selectedEntry = nil
-                                } else {
-                                    selectedEntry = entry
-                                    hoveredEntry = nil
-                                }
-                            }
-                        }
-                    }
+                }
             }
-        }
+        })
         .padding(.bottom, 8)
     }
 
@@ -6360,9 +6487,9 @@ struct BatteryConfigurationView: View {
 
                 notificationsSection
                 coreFeaturesSection
+                chargingAndSleepSection
                 automaticDischargeSection
                 OneTimeDischargeView()
-                chargingAndSleepSection
                 schedulingSection
                 CalibrationView()
                 advancedSection
@@ -6422,6 +6549,11 @@ struct BatteryConfigurationView: View {
             Text("Charging & Sleep").font(.headline).padding([.top, .horizontal])
             InfoContainer(text: "Although functionality is in place to keep the battery management functinal even when the device is sleeping it may not always work. Use these settings if you want to be certain of the behaviour when the device is sleeping.", iconName: "info.circle", color: .yellow).padding()
             ToggleRow(title: "Stop charging when sleeping", description: "Prevents your Mac from sitting at 100% charge overnight, which can degrade the battery over time. Charging resumes on wake.", isOn: $settings.settings.stopChargingWhenSleeping)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Log battery during sleep", description: "Wakes the Mac briefly (display stays off) at a set interval to record battery state and re-assert your charge limit overnight. Sleep is never disabled.", isOn: $settings.settings.logBatteryDuringSleep)
+            if settings.settings.logBatteryDuringSleep {
+                CustomSliderRowView(label: "Log every", value: Binding(get: { Double(settings.settings.sleepLoggingIntervalMinutes) }, set: { settings.settings.sleepLoggingIntervalMinutes = Int($0) }), range: 15...120, specifier: "%.0f min", commitsContinuously: true)
+            }
             Divider().padding(.leading, 20)
             ToggleRow(title: "Stop charging when app closed", description: "The helper tool ensures your charging rules are still applied even if the Sapphire app isn't running.", isOn: .constant(true)).disabled(true)
             Divider().padding(.leading, 20)
@@ -7041,11 +7173,35 @@ struct MusicSettingsView: View {
                     }.padding()
                     if settings.settings.mediaSource != .system {
                         Divider().padding(.leading, 20)
-                        ToggleRow(title: "Prioritize Selected Source", description: "Only show media from your selected source, ignoring others (e.g., web browsers).", isOn: $settings.settings.prioritizeMediaSource)
+                        ToggleRow(title: "Prioritize Selected Source", description: "Only show media from your selected source, ignoring browsers and other apps.", isOn: $settings.settings.prioritizeMediaSource)
                     }
                 }
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: settings.settings.mediaSource)
+
+                if settings.settings.mediaSource == .system {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Show Now Playing From").font(.headline).padding([.horizontal, .top])
+                        Text("Choose which apps can appear in the music widget and media switcher. All apps, including browsers, are on by default.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                Text("Browsers").font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
+                                ForEach(browserApps) { app in
+                                    SystemAppRowView(app: app, isEnabled: mediaVisibilityBinding(for: app, isBrowser: true))
+                                }
+                                Text("Other Apps").font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
+                                ForEach(otherApps) { app in
+                                    SystemAppRowView(app: app, isEnabled: mediaVisibilityBinding(for: app, isBrowser: false))
+                                }
+                            }
+                        }.frame(maxHeight: 280)
+                    }
+                    .modifier(SettingsContainerModifier())
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Gestures").font(.headline).padding([.top, .horizontal])
@@ -7063,14 +7219,28 @@ struct MusicSettingsView: View {
                     Text("Hold Actions").font(.headline).padding([.top, .horizontal])
                     ToggleRow(
                         title: "Enable Hold Actions",
-                        description: "Press and hold music controls to run a secondary action. When off, Previous/Next hold seeks through the track.",
+                        description: "Press and hold secondary player buttons (Queue, Devices, Like, Shuffle, Repeat) for an alternate action. Previous / Next / Play are tap-only unless you assign a hold action below. When this is off, Previous/Next still seek while held.",
                         isOn: $settings.settings.musicLongPressActionsEnabled
                     )
                     if settings.settings.musicLongPressActionsEnabled {
                         Divider().padding(.leading, 20)
-                        ForEach(MusicLongPressTarget.allCases) { target in
+                        Text("Secondary Buttons")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                        ForEach(settings.settings.musicPlayerButtonOrder.compactMap { MusicLongPressTarget.from(buttonType: $0) }) { target in
                             MusicLongPressActionPickerRow(target: target)
-                            if target != MusicLongPressTarget.allCases.last {
+                            Divider().padding(.leading, 20)
+                        }
+                        Text("Transport (optional)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                            .padding(.top, 4)
+                        ForEach([MusicLongPressTarget.previous, .next, .playPause]) { target in
+                            MusicLongPressActionPickerRow(target: target)
+                            if target != .playPause {
                                 Divider().padding(.leading, 20)
                             }
                         }
@@ -7287,6 +7457,16 @@ VStack(alignment: .leading, spacing: 8) {
         .init(
             get: { settings.settings.musicAppStates[app.id, default: !isBrowser] },
             set: { settings.settings.musicAppStates[app.id] = $0 }
+        )
+    }
+
+    private func mediaVisibilityBinding(for app: SystemApp, isBrowser: Bool) -> Binding<Bool> {
+        .init(
+            get: {
+                settings.settings.mediaAppVisibility[app.id]
+                    ?? true
+            },
+            set: { settings.settings.mediaAppVisibility[app.id] = $0 }
         )
     }
 }
@@ -7848,8 +8028,12 @@ struct EyeBreakSettingsView: View {
 
 struct EyeBreakGraphView: View {
     let summaries: [EyeBreakDailySummary]
-    @State private var selectedSummary: EyeBreakDailySummary?
     @EnvironmentObject var settings: SettingsModel
+    @State private var selectedDayName: String?
+
+    private var selectedSummary: EyeBreakDailySummary? {
+        chartData.first { $0.dayName == selectedDayName }?.originalSummary
+    }
 
     private struct ChartableBreakData: Identifiable {
         var id: String { dayName }
@@ -7966,19 +8150,7 @@ struct EyeBreakGraphView: View {
             }
         }
         .chartLegend(position: .top, alignment: .trailing)
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onTapGesture { location in
-                        if let day: String = proxy.value(atX: location.x),
-                           let tappedData = chartData.first(where: { $0.dayName == day }) {
-                            selectedSummary = tappedData.originalSummary
-                        }
-                    }
-            }
-        }
+        .chartXSelection(value: $selectedDayName)
     }
 
     private var dailySummariesView: some View {
@@ -7992,7 +8164,7 @@ struct EyeBreakGraphView: View {
                     ForEach(summaries) { summary in
                         DailySummaryCard(summary: summary, isSelected: selectedSummary?.id == summary.id)
                             .onTapGesture {
-                                selectedSummary = summary
+                                selectedDayName = summary.dayName
                             }
                     }
                 }
@@ -8261,6 +8433,38 @@ struct NeardropSettingsView: View {
                     }
                     .modifier(SettingsContainerModifier())
                     .animation(.easeInOut, value: settings.settings.neardropEnabled)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Swipe Actions")
+                            .font(.headline)
+                            .padding([.top, .horizontal])
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Text("Customize what happens when you swipe a file drop row left or right. Share only applies to File Shelf items.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+                            .padding(.bottom, 5)
+
+                        SwipeActionPickerRow(
+                            title: "Swipe Right",
+                            description: "Leading swipe on a file drop row.",
+                            selection: $settings.settings.swipeActionSettings.fileDropLeading,
+                            options: FileDropSwipeAction.allCases,
+                            label: { $0.displayName }
+                        )
+
+                        Divider().padding(.leading, 20)
+
+                        SwipeActionPickerRow(
+                            title: "Swipe Left",
+                            description: "Trailing swipe on a file drop row.",
+                            selection: $settings.settings.swipeActionSettings.fileDropTrailing,
+                            options: FileDropSwipeAction.allCases,
+                            label: { $0.displayName }
+                        )
+                    }
+                    .modifier(SettingsContainerModifier())
                 }
                 OpenBubblesActivationView()
 
@@ -8302,11 +8506,14 @@ struct AboutSettingsView: View {
     @EnvironmentObject var settingsModel: SettingsModel
     @ObservedObject private var updateChecker = UpdateChecker.shared
     @ObservedObject private var permissionsManager = PermissionsManager.shared
+    @ObservedObject private var debugMode = DebugMode.shared
     @State private var isExportingSettings = false
     @State private var isImportingSettings = false
     @State private var backupDocument = SettingsBackupDocument(settings: Settings())
     @State private var backupStatusMessage: BackupStatusMessage?
     @State private var showingResetConfirmation = false
+    @State private var debugTapCount = 0
+    @State private var debugTapResetTask: Task<Void, Never>?
 
     private var displayedReleaseChannel: ReleaseChannel {
         ReleaseChannelPolicy.displayedChannel(for: settingsModel.settings)
@@ -8316,7 +8523,6 @@ struct AboutSettingsView: View {
         Binding(
             get: { displayedReleaseChannel },
             set: { newValue in
-                guard ReleaseChannelPolicy.canChangePreferredChannel() else { return }
                 guard SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates) || newValue == .stable else { return }
                 settingsModel.settings.releaseChannel = newValue
             }
@@ -8336,10 +8542,33 @@ struct AboutSettingsView: View {
                 Text("About").font(.largeTitle.bold()).padding(.bottom)
 
                 HStack {
-                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 100, height: 100).clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous)).padding(.trailing, 10)
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 100, height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay(alignment: .bottomTrailing) {
+                            if debugMode.isEnabled {
+                                Image(systemName: "hammer.fill")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(6)
+                                    .background(Circle().fill(Color.orange))
+                                    .offset(x: 6, y: 6)
+                            }
+                        }
+                        .padding(.trailing, 10)
+                        .contentShape(Rectangle())
+                        .onTapGesture { handleDebugIconTap() }
+                        .help(debugMode.isEnabled ? "Debug mode is ON — tap 5× quickly to disable" : "Tap 5× quickly to enable debug mode")
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Sapphire").font(.largeTitle.weight(.bold))
                         Text(versionLabel).foregroundStyle(.secondary).textSelection(.enabled)
+
+                        if debugMode.isEnabled {
+                            Label("Debug Mode Enabled", systemImage: "hammer.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.orange)
+                        }
 
                         HStack(spacing: 10) {
                             Link(destination: URL(string: "https://sapphire-app.tech/")!) {
@@ -8459,13 +8688,13 @@ struct AboutSettingsView: View {
                         ModernChannelSwitcher(
                             selection: releaseChannelBinding,
                             hasBetaAccess: SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates),
-                            isLockedToRunningBuild: !ReleaseChannelPolicy.canChangePreferredChannel()
+                            isLockedToRunningBuild: false
                         )
                         .padding(.horizontal)
                         .padding(.bottom)
 
-                        if !ReleaseChannelPolicy.canChangePreferredChannel() {
-                            Text("You're running a beta build. Updates come from the beta channel.")
+                        if BetaEntitlementRuntime.isBetaBuild && settingsModel.settings.releaseChannel == .stable {
+                            Text("You're on a beta build. Switching to Stable lets you install the latest stable release.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal)
@@ -8576,6 +8805,24 @@ struct AboutSettingsView: View {
         return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "N/A"
     }
 
+    private func handleDebugIconTap() {
+        debugTapCount += 1
+        debugTapResetTask?.cancel()
+        debugTapResetTask = Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if !Task.isCancelled {
+                await MainActor.run { debugTapCount = 0 }
+            }
+        }
+
+        if debugTapCount >= DebugMode.requiredTapCount {
+            debugTapCount = 0
+            debugTapResetTask?.cancel()
+            debugTapResetTask = nil
+            debugMode.isEnabled.toggle()
+        }
+    }
+
     private var backupFilename: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmm"
@@ -8603,6 +8850,16 @@ fileprivate struct AboutLinkStyle: ViewModifier {
 struct ModernUpdateStatusView: View {
     @ObservedObject var updateChecker: UpdateChecker
     @State private var upToDateAnimationTrigger = false
+    @State private var showingReleaseNotes = false
+
+    private var canShowReleaseNotes: Bool {
+        switch updateChecker.status {
+        case .upToDate, .available, .downloading, .downloaded:
+            return updateChecker.releaseNotes != nil || updateChecker.releaseNotesURL != nil
+        default:
+            return false
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -8620,6 +8877,9 @@ struct ModernUpdateStatusView: View {
                         .symbolEffect(.bounce, value: upToDateAnimationTrigger)
                     Text("You are up to date!")
                         .foregroundStyle(.secondary)
+                    if canShowReleaseNotes {
+                        releaseNotesButton
+                    }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 .onAppear {
@@ -8644,12 +8904,21 @@ struct ModernUpdateStatusView: View {
                         .shadow(color: .accentColor.opacity(0.4), radius: 8, y: 4)
                     }
                     .buttonStyle(.plain)
+
+                    if canShowReleaseNotes {
+                        releaseNotesButton
+                    }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             case .downloading(let progress):
-                DownloadingView(progress: progress, onCancel: {
-                    updateChecker.cancelDownload()
-                })
+                VStack(spacing: 12) {
+                    DownloadingView(progress: progress, onCancel: {
+                        updateChecker.cancelDownload()
+                    })
+                    if canShowReleaseNotes {
+                        releaseNotesButton
+                    }
+                }
                 .transition(.opacity)
             case .downloaded:
                 VStack(spacing: 12) {
@@ -8669,6 +8938,9 @@ struct ModernUpdateStatusView: View {
                         .shadow(color: .green.opacity(0.4), radius: 8, y: 4)
                     }
                     .buttonStyle(.plain)
+                    if canShowReleaseNotes {
+                        releaseNotesButton
+                    }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             case .installing:
@@ -8688,6 +8960,92 @@ struct ModernUpdateStatusView: View {
         .padding()
         .modifier(SettingsContainerModifier())
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: updateChecker.status)
+        .sheet(isPresented: $showingReleaseNotes) {
+            ReleaseNotesSheet(
+                version: updateChecker.releaseNotesVersion ?? currentAppVersion,
+                notes: updateChecker.releaseNotes,
+                url: updateChecker.releaseNotesURL
+            )
+        }
+    }
+
+    private var releaseNotesButton: some View {
+        Button {
+            showingReleaseNotes = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text")
+                Text("Release Notes")
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ReleaseNotesSheet: View {
+    let version: String
+    let notes: String?
+    let url: URL?
+    @Environment(\.dismiss) private var dismiss
+
+    private var attributedNotes: AttributedString? {
+        guard let notes else { return nil }
+        var options = AttributedString.MarkdownParsingOptions()
+        options.interpretedSyntax = .inlineOnlyPreservingWhitespace
+        return try? AttributedString(markdown: notes, options: options)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Release Notes")
+                        .font(.headline)
+                    Text("Version \(version)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let url {
+                    Link(destination: url) {
+                        Label("GitHub", systemImage: "arrow.up.right.square")
+                            .font(.subheadline.weight(.medium))
+                    }
+                }
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                Group {
+                    if let attributedNotes {
+                        Text(attributedNotes)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    } else if let notes, !notes.isEmpty {
+                        Text(notes)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    } else {
+                        VStack(spacing: 10) {
+                            Text("No release notes were included for this version.")
+                                .foregroundStyle(.secondary)
+                            if let url {
+                                Link("View on GitHub", destination: url)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding()
+            }
+        }
+        .frame(minWidth: 480, idealWidth: 560, minHeight: 360, idealHeight: 480)
     }
 }
 

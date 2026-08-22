@@ -35,7 +35,11 @@ class KeyboardShortcutManager {
     private let cacheLock = NSLock()
     private var lastTriggerAt = Date.distantPast
 
+    private var isAccessibilitySuspended = false
+
     private init() {
+        registerTrustAwareness()
+
         SettingsModel.shared.$settings
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -44,15 +48,23 @@ class KeyboardShortcutManager {
             .store(in: &cancellables)
     }
 
+    private func registerTrustAwareness() {
+        AccessibilityTrustMonitor.shared.register(name: "KeyboardShortcutManager") { [weak self] in
+            self?.isAccessibilitySuspended = true
+            self?.stopMonitoring()
+        } reinstall: { [weak self] in
+            self?.isAccessibilitySuspended = false
+            self?.setupMonitor()
+        }
+    }
+
     func setupMonitor() {
-        print("[KeyboardShortcutManager] setupMonitor() called")
+        guard !isAccessibilitySuspended else { return }
         stopMonitoring()
 
         let planesWithShortcuts = SettingsModel.shared.settings.planes.filter { $0.shortcut != nil }
-        print("[KeyboardShortcutManager] Planes with shortcuts: \(planesWithShortcuts.count)")
         for plane in planesWithShortcuts {
             if let shortcut = plane.shortcut {
-                print("[KeyboardShortcutManager]   -> plane '\(plane.name)': \(KeyboardShortcutHelper.description(for: shortcut.significantModifiers))\(shortcut.key)")
             }
         }
 
@@ -66,24 +78,7 @@ class KeyboardShortcutManager {
         }
 
         if planesWithShortcuts.isEmpty {
-            print("[KeyboardShortcutManager] No planes with shortcuts — nothing to monitor.")
             return
-        }
-
-        let axTrusted = AXIsProcessTrusted()
-        let inputMonitoring = InputMonitoringAccess.isGranted
-        print("[KeyboardShortcutManager] Permissions -> Accessibility: \(axTrusted) | Input Monitoring: \(inputMonitoring)")
-
-        if !axTrusted {
-            print("[KeyboardShortcutManager] Requesting Accessibility permission...")
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-            AXIsProcessTrustedWithOptions(options)
-        }
-
-        if !inputMonitoring {
-            print("[KeyboardShortcutManager] Requesting Input Monitoring permission...")
-            let granted = InputMonitoringAccess.request()
-            print("[KeyboardShortcutManager] Input Monitoring request result: \(granted) (granted now: \(InputMonitoringAccess.isGranted))")
         }
 
         let eventsToMonitor: CGEventMask = (1 << CGEventType.keyDown.rawValue)
@@ -104,9 +99,6 @@ class KeyboardShortcutManager {
                 CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
             }
             CGEvent.tapEnable(tap: eventTap, enable: true)
-            print("[KeyboardShortcutManager] Session event tap CREATED & enabled (Input Monitoring present: \(InputMonitoringAccess.isGranted)). Waiting for key events...")
-        } else {
-            print("[KeyboardShortcutManager] FAILED to create session event tap — Input Monitoring permission missing or denied.")
         }
 
         installFallbackMonitors()
@@ -114,26 +106,15 @@ class KeyboardShortcutManager {
 
     private func installFallbackMonitors() {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            print("[KeyboardShortcutManager] [GLOBAL MONITOR] keyDown keyCode=\(event.keyCode) chars=\(event.charactersIgnoringModifiers ?? "nil") flags=0x\(String(event.modifierFlags.rawValue, radix: 16))")
             Task { @MainActor in
                 self?.handleNSEvent(event, swallow: false)
             }
-        }
-        if globalMonitor == nil {
-            print("[KeyboardShortcutManager] GLOBAL MONITOR failed to install — requires Accessibility permission.")
-        } else {
-            print("[KeyboardShortcutManager] GLOBAL MONITOR installed.")
         }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             print("[KeyboardShortcutManager] [LOCAL MONITOR] keyDown keyCode=\(event.keyCode) chars=\(event.charactersIgnoringModifiers ?? "nil") flags=0x\(String(event.modifierFlags.rawValue, radix: 16))")
             return self.handleNSEvent(event, swallow: true) ? nil : event
-        }
-        if localMonitor == nil {
-            print("[KeyboardShortcutManager] LOCAL MONITOR failed to install.")
-        } else {
-            print("[KeyboardShortcutManager] LOCAL MONITOR installed.")
         }
     }
 
@@ -153,6 +134,7 @@ class KeyboardShortcutManager {
     func stopMonitoring() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
         }
         if let runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
@@ -184,11 +166,8 @@ class KeyboardShortcutManager {
         let flags = nsEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
         guard let keyString = KeyCodeTranslator.shared.string(for: keyCode, from: nsEvent) else {
-            print("[KeyboardShortcutManager] [TAP] keyDown keyCode=\(keyCode) flags=0x\(String(flags.rawValue, radix: 16)) (untranslatable key)")
             return Unmanaged.passRetained(event)
         }
-
-        print("[KeyboardShortcutManager] [TAP] keyDown keyCode=\(keyCode) key=\(keyString) flags=0x\(String(flags.rawValue, radix: 16))")
 
         let currentShortcut = KeyboardShortcut(key: keyString, modifiers: flags)
 
@@ -203,7 +182,6 @@ class KeyboardShortcutManager {
         guard now.timeIntervalSince(lastTriggerAt) > 0.3 else { return nil }
         lastTriggerAt = now
 
-        print("[KeyboardShortcutManager] MATCH '\(plane.name)' via event tap. Consuming event.")
         Task { @MainActor in
             WindowArrangementManager.shared.activate(plane: plane)
         }
@@ -233,7 +211,6 @@ class KeyboardShortcutManager {
         guard now.timeIntervalSince(lastTriggerAt) > 0.3 else { return swallow }
         lastTriggerAt = now
 
-        print("[KeyboardShortcutManager] MATCH '\(plane.name)' via \(swallow ? "local" : "global") monitor. Swallow=\(swallow)")
         Task { @MainActor in
             WindowArrangementManager.shared.activate(plane: plane)
         }

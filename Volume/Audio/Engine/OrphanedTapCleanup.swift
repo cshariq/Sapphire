@@ -1,15 +1,15 @@
-// FineTune/Audio/Engine/OrphanedTapCleanup.swift
+//
+//  OrphanedTapCleanup.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 import os
 
 private let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "OrphanedTapCleanup")
 
-/// Scans CoreAudio for orphaned FineTune aggregate devices and destroys them.
-/// Orphans occur when FineTune crashes or is force-killed (`kill -9`), leaving
-/// aggregate devices with `.mutedWhenTapped` process taps that silently mute apps.
 enum OrphanedTapCleanup {
-    /// Destroys any aggregate devices named "FineTune-*" left over from a previous session.
-    /// Call on startup before creating any new taps.
     static func destroyOrphanedDevices() {
         let devices: [AudioDeviceID]
         do {

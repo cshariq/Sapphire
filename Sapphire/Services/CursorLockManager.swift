@@ -35,6 +35,30 @@ final class CursorLockManager {
     private var capsRunLoopSource: CFRunLoopSource?
 
     private init() {
+        registerTrustAwareness()
+        installTaps()
+
+        MainActor.assumeIsolated {
+            ActiveAppMonitor.shared.$activeAppBundleID
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] bundleID in
+                    self?.currentActiveAppBundleID = bundleID
+                    self?.updateLockState(capsOn: self?.lastCapsOn ?? false)
+                }
+                .store(in: &cancellables)
+            currentActiveAppBundleID = ActiveAppMonitor.shared.activeAppBundleID
+        }
+    }
+
+    private func registerTrustAwareness() {
+        AccessibilityTrustMonitor.shared.register(name: "CursorLock") { [weak self] in
+            self?.teardownTaps()
+        } reinstall: { [weak self] in
+            self?.installTaps()
+        }
+    }
+
+    private func installTaps() {
         let initialCapsOn = NSEvent.modifierFlags.contains(.capsLock)
         updateLockState(capsOn: initialCapsOn)
 
@@ -114,17 +138,28 @@ final class CursorLockManager {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
             CGEvent.tapEnable(tap: mouseTap, enable: true)
         }
+    }
 
-        MainActor.assumeIsolated {
-            ActiveAppMonitor.shared.$activeAppBundleID
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] bundleID in
-                    self?.currentActiveAppBundleID = bundleID
-                    self?.updateLockState(capsOn: self?.lastCapsOn ?? false)
-                }
-                .store(in: &cancellables)
-            currentActiveAppBundleID = ActiveAppMonitor.shared.activeAppBundleID
+    private func teardownTaps() {
+        if let source = mouseRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
+        if let tap = mouseEventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        mouseEventTap = nil
+        mouseRunLoopSource = nil
+
+        if let source = capsRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+        }
+        if let tap = capsEventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        capsEventTap = nil
+        capsRunLoopSource = nil
     }
 
     private func isActiveAppAllowed() -> Bool {

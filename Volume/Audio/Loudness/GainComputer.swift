@@ -1,12 +1,14 @@
+//
+//  GainComputer.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 
-/// Computes the desired gain in dB given a smoothed loudness level.
-/// Pure, stateless value type — RT-safe.
 struct GainComputer: Sendable {
     let settings: LoudnessEqualizerSettings
 
-    /// Returns the desired gain (dB) for a wideband leveler that boosts quiet material
-    /// and applies a gentle soft-knee cut to louder passages.
     func desiredGainDb(forLevelDb smoothedLevelDb: Float) -> Float {
         let boost = desiredBoostDb(forLevelDb: smoothedLevelDb)
         let cut = desiredCutDb(forLevelDb: smoothedLevelDb)
@@ -17,7 +19,6 @@ struct GainComputer: Sendable {
         let raw = settings.targetLoudnessDb - smoothedLevelDb
         var clamped = LoudnessEqualizerMath.clamp(raw, min: 0, max: settings.maxBoostDb)
 
-        // Step 3: noise-floor protection — cap upward gain when signal is very quiet
         if smoothedLevelDb < settings.noiseFloorThresholdDb, clamped > 0 {
             clamped = min(clamped, settings.lowLevelMaxBoostDb)
         }

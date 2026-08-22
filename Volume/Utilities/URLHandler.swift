@@ -1,9 +1,12 @@
-// FineTune/Utilities/URLHandler.swift
+//
+//  URLHandler.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 import os
 
-/// Protocol for the AudioEngine surface that URLHandler depends on.
-/// Extracted for testability (allows mock injection).
 @MainActor
 protocol URLHandlerEngine {
     var apps: [AudioApp] { get }
@@ -18,7 +21,6 @@ protocol URLHandlerEngine {
     func getMuteForInactive(identifier: String) -> Bool
 }
 
-/// Handles URL scheme actions for FineTune (finetune://...)
 @MainActor
 final class URLHandler {
     private let audioEngine: any URLHandlerEngine
@@ -27,31 +29,28 @@ final class URLHandler {
     init(audioEngine: any URLHandlerEngine) {
         self.audioEngine = audioEngine
     }
-    
+
     func handleURL(_ url: URL) {
         logger.info("Received URL: \(url.absoluteString)")
-        
+
         guard url.scheme == "finetune" else {
             logger.warning("Unknown URL scheme: \(url.scheme ?? "nil")")
             return
         }
-        
+
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let host = components?.host
         let queryItems = components?.queryItems ?? []
-      
+
         switch host {
-        // Volume actions
         case "set-volumes":
             handleSetVolumes(queryItems: queryItems)
         case "step-volume":
             handleStepVolume(queryItems: queryItems)
-        // Mute actions
         case "set-mute":
             handleSetMute(queryItems: queryItems)
         case "toggle-mute":
             handleToggleMute(queryItems: queryItems)
-        // Other actions
         case "set-device":
             handleSetDevice(queryItems: queryItems)
         case "reset":
@@ -60,17 +59,13 @@ final class URLHandler {
             logger.warning("Unknown URL action: \(host ?? "nil")")
         }
     }
-    
+
     // MARK: - Volume Actions
 
-    /// Set volumes for one or more apps
-    /// URL format: finetune://set-volumes?app=com.a&volume=100&app=com.b&volume=50
-    /// Volume is percentage: 0-100 (gain only, boost is per-app and set separately)
     private func handleSetVolumes(queryItems: [URLQueryItem]) {
         var pairs: [(identifier: String, volume: Int)] = []
         var currentApp: String?
 
-        // Parse app/volume pairs in order
         for item in queryItems {
             switch item.name.lowercased() {
             case "app":
@@ -94,7 +89,6 @@ final class URLHandler {
             }
         }
 
-        // Warn about trailing app without volume
         if let trailing = currentApp {
             logger.warning("set-volumes: trailing app '\(trailing)' without volume parameter")
         }
@@ -105,23 +99,18 @@ final class URLHandler {
         }
 
         for (identifier, volumePercent) in pairs {
-            // Linear conversion: volume=100 → gain 1.0
             let gain = Float(volumePercent) / 100.0
 
             if let app = findApp(by: identifier) {
                 audioEngine.setVolume(for: app, to: gain)
                 logger.info("Set volume for \(app.name) to \(volumePercent)%")
             } else {
-                // App not active - persist for when it launches
                 audioEngine.setVolumeForInactive(identifier: identifier, to: gain)
                 logger.info("Set volume for inactive app \(identifier) to \(volumePercent)%")
             }
         }
     }
 
-    /// Step volume up or down for an app
-    /// URL format: finetune://step-volume?app=com.a&direction=up (or down)
-    /// Steps by 5% slider position
     private func handleStepVolume(queryItems: [URLQueryItem]) {
         guard let appIdentifier = queryItems.first(where: { $0.name == "app" })?.value else {
             logger.error("step-volume: missing app parameter")
@@ -139,7 +128,7 @@ final class URLHandler {
         }
 
         let currentGain = audioEngine.getVolume(for: app)
-        let stepAmount: Double = 0.05 // 5% slider position
+        let stepAmount: Double = 0.05
         var sliderPosition = VolumeMapping.gainToSlider(currentGain)
 
         switch direction.lowercased() {
@@ -160,8 +149,6 @@ final class URLHandler {
 
     // MARK: - Mute Actions
 
-    /// Set mute state for one or more apps
-    /// URL format: finetune://set-mute?app=com.a&muted=true&app=com.b&muted=false
     private func handleSetMute(queryItems: [URLQueryItem]) {
         var pairs: [(identifier: String, muted: Bool)] = []
         var currentApp: String?
@@ -188,7 +175,6 @@ final class URLHandler {
             }
         }
 
-        // Warn about trailing app without muted value
         if let trailing = currentApp {
             logger.warning("set-mute: trailing app '\(trailing)' without muted parameter")
         }
@@ -209,8 +195,6 @@ final class URLHandler {
         }
     }
 
-    /// Toggle mute state for apps
-    /// URL format: finetune://toggle-mute?app=com.a&app=com.b
     private func handleToggleMute(queryItems: [URLQueryItem]) {
         let identifiers = queryItems
             .filter { $0.name.lowercased() == "app" }
@@ -236,8 +220,6 @@ final class URLHandler {
 
     // MARK: - Other Actions
 
-    /// Set output device for an app
-    /// URL format: finetune://set-device?app=com.a&device=<deviceUID>
     private func handleSetDevice(queryItems: [URLQueryItem]) {
         guard let appIdentifier = queryItems.first(where: { $0.name == "app" })?.value else {
             logger.error("set-device: missing app parameter")
@@ -258,15 +240,12 @@ final class URLHandler {
         logger.info("Routed \(app.name) to device \(deviceUID)")
     }
 
-    /// Reset apps to 100% volume and unmute
-    /// URL format: finetune://reset?app=com.a&app=com.b or finetune://reset (all apps)
     private func handleReset(queryItems: [URLQueryItem]) {
         let identifiers = queryItems
             .filter { $0.name.lowercased() == "app" }
             .compactMap { $0.value }
 
         if identifiers.isEmpty {
-            // Reset all active apps to 100% and unmute
             let apps = audioEngine.apps
             for app in apps {
                 audioEngine.setVolume(for: app, to: 1.0)
@@ -290,12 +269,10 @@ final class URLHandler {
 
     // MARK: - Helpers
 
-    /// Find an app by bundle ID or persistence identifier
     private func findApp(by identifier: String) -> AudioApp? {
         audioEngine.apps.first { $0.persistenceIdentifier == identifier }
     }
 
-    /// Parse boolean from string (supports true/false, 1/0, yes/no)
     private func parseBool(_ value: String) -> Bool? {
         switch value.lowercased() {
         case "true", "1", "yes": return true

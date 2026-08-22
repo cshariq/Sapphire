@@ -12,12 +12,9 @@ import SwiftUI
 import OSLog
 
 private let helperLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "HelperManager")
+private let sapphireHelperPlistName = "com.shariq.sapphireHelper.plist"
 
 // MARK: - Error codes
-//
-// SAP-H1  Permission granted, helper still will not spawn (launchd EX_CONFIG)
-// SAP-H2  macOS is waiting for Login Items approval (status 2)
-// SAP-H3  Helper record missing (status 3 / notFound) — relaunch required
 
 enum HelperIssue: Equatable {
     case spawnFailed
@@ -47,7 +44,7 @@ enum HelperIssue: Equatable {
         case .needsApproval:
             return "Turn on Sapphire and Sapphire Helper in Login Items."
         case .notFound:
-            return "macOS lost the helper (status 3). Quit and reopen Sapphire."
+            return "macOS lost the helper (status 3). Reset the helper; Sapphire will relaunch if it stays stuck."
         }
     }
 
@@ -57,16 +54,15 @@ enum HelperIssue: Equatable {
             return """
             Error code: SAP-H3
 
-            macOS reports the helper as “Not Found” (SMAppService status 3). The Login Items database no longer has a record for this copy of Sapphire, so the helper cannot start until the app is relaunched.
+            macOS reports the helper as “Not Found” (SMAppService status 3). The Login Items database no longer has a record for this copy of Sapphire, so the helper cannot start until its registration is rebuilt.
 
             Do this:
-            1. Click “Relaunch Sapphire” below (or quit Sapphire completely and open it again).
-            2. When Sapphire opens, click Install if asked.
-            3. In System Settings → General → Login Items, enable both:
-               • Sapphire
-               • Sapphire Helper
+            1. Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again.
+            2. If the helper still does not start, Sapphire will relaunch itself — or click “Relaunch Sapphire”.
+            3. When Sapphire opens, click Install if asked.
+            4. In System Settings → General → Login Items, enable Sapphire Helper under Allow in the Background.
 
-            If SAP-H3 appears again right after relaunch, use Reset Helper to unregister Sapphire’s own background items and reinstall the helper.
+            Try Reset Helper first. Only relaunch the app if the helper is still stuck after that.
             """
         case .needsApproval:
             return """
@@ -82,7 +78,7 @@ enum HelperIssue: Equatable {
             3. Authenticate if macOS asks for your password.
             4. Return to Sapphire and click Install / Activate.
 
-            Both items must be on. Enabling only the helper is not enough.
+            Both items must be on. Enabling only the helper is not enough. If the helper is labeled “unidentified developer,” enable it anyway, then install a freshly notarized Sapphire build so the label clears.
             """
         case .spawnFailed:
             return """
@@ -90,13 +86,9 @@ enum HelperIssue: Equatable {
 
             Login Items permission is already granted (status 1), but macOS still will not spawn the helper. This usually means Sapphire’s own helper registration is stuck (launchd error 78 / EX_CONFIG).
 
-            Click “Reset Helper” below. Sapphire will:
-            1. Unregister only its own helper and login item
-            2. Stop leftover Sapphire helper jobs
-            3. Reinstall the helper
-            4. Relaunch Sapphire
+            Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again, then relaunch if macOS still will not spawn it.
 
-            Other apps’ login items and background activity are not changed. If macOS asks for your password, that is only to remove Sapphire’s helper from the system launchd database.
+            Other apps’ login items are not changed.
             """
         }
     }
@@ -141,32 +133,39 @@ struct HelperStatusBanner: View {
                     .buttonStyle(.bordered)
                 }
 
-                if helperManager.status == .enabled && !helperManager.isRunning {
-                    Button(helperManager.isResettingHelper ? "Resetting…" : "Reset Helper") {
-                        helperManager.resetOwnBackgroundActivity()
+                if !helperManager.isRunning {
+                    if helperManager.status == .enabled {
+                        Button(helperManager.isResettingHelper ? "Resetting…" : "Reset Helper") {
+                            helperManager.resetOwnBackgroundActivity()
+                        }
+                        .disabled(helperManager.isResettingHelper)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+                    } else if helperManager.status == .notFound {
+                        Button(helperManager.isResettingHelper ? "Resetting…" : "Reset Helper") {
+                            helperManager.resetOwnBackgroundActivity()
+                        }
+                        .disabled(helperManager.isResettingHelper)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+                        Button("Relaunch") {
+                            HelperManager.relaunchApp()
+                        }
+                        .buttonStyle(.bordered)
+                    } else if helperManager.status == .requiresApproval {
+                        Button("Open Login Items") {
+                            SMAppService.openSystemSettingsLoginItems()
+                            helperManager.beginInstallation()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+                    } else if helperManager.status != .enabled {
+                        Button("Install") {
+                            helperManager.beginInstallation()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.accentColor)
                     }
-                    .disabled(helperManager.isResettingHelper)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                } else if helperManager.status == .notFound {
-                    Button("Relaunch") {
-                        HelperManager.relaunchApp()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                } else if helperManager.status == .requiresApproval {
-                    Button("Open Login Items") {
-                        SMAppService.openSystemSettingsLoginItems()
-                        helperManager.beginInstallation()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                } else if helperManager.status != .enabled {
-                    Button("Install") {
-                        helperManager.beginInstallation()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.accentColor)
                 }
             }
         }
@@ -184,31 +183,36 @@ class HelperManager: ObservableObject {
     @Published var lastIssue: HelperIssue?
     @Published var isResettingHelper = false
 
-    private var healthCheckTimer: Timer?
     private var isRegistering = false
+    private var healthCheckInFlight = false
+    private var connectionObservers: [NSObjectProtocol] = []
+    private var lastHealthCheck = Date.distantPast
+    private let healthCheckMinimumInterval: TimeInterval = 5
     private var lastRegisterAttempt: Date?
     private var consecutiveMissedPings = 0
     private var presentedIssuesThisSession = Set<String>()
     private let registerCooldown: TimeInterval = 8
 
-    private var daemonService: SMAppService {
-        SMAppService.daemon(plistName: "\(helperToolIdentifier).plist")
+    private static var bundledPlistURL: URL {
+        Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Library/LaunchDaemons", isDirectory: true)
+            .appendingPathComponent(sapphireHelperPlistName, isDirectory: false)
     }
 
     var bannerTitle: String {
-        if isRunning, status == .enabled { return "Helper Active" }
+        if isRunning { return "Helper Active" }
         return lastIssue?.title ?? "Helper Not Installed"
     }
 
     var bannerSubtitle: String {
-        if isRunning, status == .enabled {
+        if isRunning {
             return "Privileged helper is running."
         }
         return lastIssue?.shortSummary ?? "Install the helper to enable battery management and system integrations."
     }
 
     var bannerSymbol: String {
-        if isRunning, status == .enabled { return "checkmark.circle.fill" }
+        if isRunning { return "checkmark.circle.fill" }
         switch lastIssue {
         case .spawnFailed: return "exclamationmark.octagon.fill"
         case .needsApproval: return "exclamationmark.triangle.fill"
@@ -218,7 +222,7 @@ class HelperManager: ObservableObject {
     }
 
     var bannerColor: Color {
-        if isRunning, status == .enabled { return .green }
+        if isRunning { return .green }
         switch lastIssue {
         case .spawnFailed: return .red
         case .needsApproval: return .yellow
@@ -228,9 +232,9 @@ class HelperManager: ObservableObject {
     }
 
     private init() {
-        helperLogger.info("[HelperManager] Initialized")
-        updateStatus()
-        startHealthCheckTimer()
+        let plistURL = Self.bundledPlistURL
+        let plistExists = FileManager.default.fileExists(atPath: plistURL.path)
+        helperLogger.info("[HelperManager] Initialized bundle=\(Bundle.main.bundlePath, privacy: .public) plist=\(plistURL.path, privacy: .public) exists=\(plistExists)")
 
         NotificationCenter.default.addObserver(
             self,
@@ -238,10 +242,34 @@ class HelperManager: ObservableObject {
             name: NSApplication.didBecomeActiveNotification,
             object: nil
         )
+
+        let center = NotificationCenter.default
+        connectionObservers = [
+            center.addObserver(forName: .sapphireHelperConnectionLost, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.helperConnectionDidFail() }
+            },
+            center.addObserver(forName: .sapphireHelperConnectionRestored, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.helperConnectionDidRecover() }
+            }
+        ]
+
+        Task { _ = await refreshStatus() }
     }
 
     deinit {
-        healthCheckTimer?.invalidate()
+        connectionObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
+    private func helperConnectionDidFail() {
+        consecutiveMissedPings = 3
+        isRunning = false
+        refreshIssue()
+    }
+
+    private func helperConnectionDidRecover() {
+        consecutiveMissedPings = 0
+        isRunning = true
+        refreshIssue()
     }
 
     nonisolated static func relaunchApp() {
@@ -256,80 +284,179 @@ class HelperManager: ObservableObject {
     }
 
     @objc func updateStatus() {
-        let newStatus = daemonService.status
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.refreshStatus()
+            if self.status == .enabled {
+                self.checkIfRunning(force: false)
+            }
+        }
+    }
+
+    private func bundledPlistIsReadable() -> Bool {
+        let url = Self.bundledPlistURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            helperLogger.error("[HelperManager] Bundled LaunchDaemon plist is missing at \(url.path, privacy: .public)")
+            return false
+        }
+        guard let data = try? Data(contentsOf: url),
+              (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) != nil else {
+            helperLogger.error("[HelperManager] Bundled LaunchDaemon plist is not a readable property list at \(url.path, privacy: .public)")
+            return false
+        }
+        return true
+    }
+
+    private func refreshStatus() async -> SMAppService.Status {
+        guard bundledPlistIsReadable() else {
+            applyStatus(.notFound)
+            return .notFound
+        }
+        let newStatus = await Self.fetchDaemonStatus()
+        applyStatus(newStatus)
+        return newStatus
+    }
+
+    private func applyStatus(_ newStatus: SMAppService.Status) {
         if status != newStatus {
             helperLogger.info("[HelperManager] Status changed: \(String(describing: self.status)) -> \(String(describing: newStatus))")
             status = newStatus
         }
         refreshIssue()
-        checkIfRunning()
     }
 
-    func checkIfRunning() {
-        if isRegistering { return }
-        Task.detached(priority: .utility) {
-            let running = await XPCClient.shared.ping(timeout: 2)
-            await MainActor.run {
-                helperLogger.info("[HelperManager] Ping result: \(running ? "running" : "NOT running"), current status: \(String(describing: self.status))")
-                self.applyPingResult(running)
+    nonisolated private static func fetchDaemonStatus() async -> SMAppService.Status {
+        await Task.detached(priority: .utility) {
+            SMAppService.daemon(plistName: sapphireHelperPlistName).status
+        }.value
+    }
+
+    nonisolated private static func registerDaemon() async -> String? {
+        await Task.detached(priority: .utility) {
+            let service = SMAppService.daemon(plistName: sapphireHelperPlistName)
+            do {
+                try service.register()
+                return nil
+            } catch {
+                let status = service.status
+                if status == .enabled || status == .requiresApproval {
+                    return nil
+                }
+                return error.localizedDescription
             }
+        }.value
+    }
+
+    nonisolated private static func unregisterDaemon() async -> String? {
+        await Task.detached(priority: .utility) {
+            let service = SMAppService.daemon(plistName: sapphireHelperPlistName)
+            do {
+                try service.unregister()
+                return nil
+            } catch {
+                let status = service.status
+                if status == .notRegistered || status == .notFound {
+                    return nil
+                }
+                return error.localizedDescription
+            }
+        }.value
+    }
+
+    func checkIfRunning(force: Bool = false) {
+        guard !isRegistering, !healthCheckInFlight else { return }
+        let now = Date()
+        guard force || now.timeIntervalSince(lastHealthCheck) >= healthCheckMinimumInterval else { return }
+        healthCheckInFlight = true
+        lastHealthCheck = now
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let running = await XPCClient.shared.ping(timeout: 2)
+            self.healthCheckInFlight = false
+            helperLogger.info("[HelperManager] Ping result: \(running ? "running" : "NOT running"), current status: \(String(describing: self.status))")
+            self.applyPingResult(running)
         }
     }
 
-    /// Settings "Activate". Forces unregister + register so launchd rebuilds LWCR.
     func reactivateHelper() {
         Task { await registerHelper(userInitiated: true, forceReinstall: true) }
     }
 
-    /// Unregisters only Sapphire’s helper and login item, stops leftover jobs, reinstalls, then relaunches.
     func resetOwnBackgroundActivity() {
         guard !isResettingHelper else { return }
         Task { await performOwnBackgroundActivityReset() }
     }
 
-    /// Onboarding / Install button. Always user-initiated so Login Items opens and SAP-H2/H3 popups appear.
     func beginInstallation() {
-        updateStatusLocked()
-        helperLogger.info("[HelperManager] beginInstallation status=\(String(describing: self.status))")
-        Task { await registerHelper(userInitiated: true, forceReinstall: false) }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let currentStatus = await self.refreshStatus()
+            helperLogger.info("[HelperManager] beginInstallation status=\(String(describing: currentStatus))")
+            _ = await self.registerHelper(userInitiated: true, forceReinstall: false)
+        }
     }
 
     func installIfNeeded() {
-        updateStatusLocked()
-        let appStatus = SMAppService.mainApp.status
-        helperLogger.info("[HelperManager] installIfNeeded daemon=\(String(describing: self.status)) mainApp=\(String(describing: appStatus)) issue=\(self.lastIssue?.code ?? "none")")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let currentStatus = await self.refreshStatus()
+            helperLogger.info("[HelperManager] installIfNeeded daemon=\(String(describing: currentStatus)) issue=\(self.lastIssue?.code ?? "none")")
 
-        switch status {
-        case .notFound:
-            Task { await registerHelper(userInitiated: true, forceReinstall: false) }
-        case .notRegistered:
-            // Quiet auto-install at app launch. Still creates the Login Items entry.
-            Task { await registerHelper(userInitiated: false, forceReinstall: false) }
-        case .enabled:
-            Task {
-                if await XPCClient.shared.ping(timeout: 2) {
-                    applyPingResult(true)
+            switch currentStatus {
+            case .notFound:
+                _ = await self.registerHelper(userInitiated: true, forceReinstall: true)
+            case .notRegistered:
+                _ = await self.registerHelper(userInitiated: false, forceReinstall: false)
+            case .enabled:
+                if await self.helperIsRunningAndCurrent() {
+                    self.applyPingResult(true)
                     return
                 }
-                await registerHelper(userInitiated: false, forceReinstall: false)
+                helperLogger.info("[HelperManager] Helper enabled but down or stale; rebuilding registration")
+                _ = await self.registerHelper(userInitiated: false, forceReinstall: true)
+            case .requiresApproval:
+                _ = await self.registerHelper(userInitiated: true, forceReinstall: false)
+            @unknown default:
+                break
             }
-        case .requiresApproval:
-            Task { await registerHelper(userInitiated: true, forceReinstall: false) }
-        @unknown default:
-            break
         }
     }
 
-    func uninstall() {
-        do {
-            try daemonService.unregister()
-            NSLog("[HelperManager] Helper unregistration successful.")
-            XPCClient.shared.stop()
-        } catch {
-            NSLog("[HelperManager] Helper unregistration failed with error: \(error.localizedDescription)")
+    private func helperIsRunningAndCurrent() async -> Bool {
+        XPCClient.shared.start(force: false)
+        for attempt in 1...4 {
+            if await XPCClient.shared.ping(timeout: 2) {
+                let current = await helperProtocolVersionMatches()
+                helperLogger.info("[HelperManager] Helper ping ok on attempt \(attempt), current=\(current)")
+                return current
+            }
+            try? await Task.sleep(for: .milliseconds(500))
         }
-        updateStatusLocked()
-        refreshIssue()
+        helperLogger.info("[HelperManager] Helper did not respond during startup reconciliation")
+        return false
+    }
+
+    private func helperProtocolVersionMatches() async -> Bool {
+        guard let running = await XPCClient.shared.helperProtocolVersion(timeout: 2) else {
+            helperLogger.info("[HelperManager] Helper protocol version query failed")
+            return false
+        }
+        helperLogger.info("[HelperManager] Helper protocol version: running=\(running) expected=\(SapphireHelperProtocolVersion)")
+        return running == SapphireHelperProtocolVersion
+    }
+
+    func uninstall() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            XPCClient.shared.stop()
+            if let errorDescription = await Self.unregisterDaemon() {
+                helperLogger.error("[HelperManager] Helper unregistration failed: \(errorDescription)")
+            } else {
+                helperLogger.info("[HelperManager] Helper unregistration successful")
+            }
+            _ = await self.refreshStatus()
+        }
     }
 
     private func performOwnBackgroundActivityReset() async {
@@ -340,148 +467,28 @@ class HelperManager: ObservableObject {
             isResettingHelper = false
         }
 
-        helperLogger.info("[HelperManager] Resetting Sapphire’s own background activity")
+        helperLogger.info("[HelperManager] Resetting helper via SMAppService unregister/register")
         XPCClient.shared.stop()
 
-        let uid = getuid()
-        let helperLabel = helperToolIdentifier
-        let appBundle = Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire"
-        let loginItemWasEnabled = SMAppService.mainApp.status == .enabled
-
-        do {
-            try await daemonService.unregister()
+        if let errorDescription = await Self.unregisterDaemon() {
+            helperLogger.error("[HelperManager] Helper unregister failed: \(errorDescription)")
+        } else {
             helperLogger.info("[HelperManager] Unregistered privileged helper")
-        } catch {
-            helperLogger.error("[HelperManager] Helper unregister failed: \(error.localizedDescription)")
         }
 
-        do {
-            try await SMAppService.mainApp.unregister()
-            helperLogger.info("[HelperManager] Unregistered main-app login item")
-        } catch {
-            helperLogger.error("[HelperManager] Main-app unregister failed: \(error.localizedDescription)")
-        }
-
-        bootoutLaunchdJob(domain: "gui/\(uid)", label: helperLabel)
-        bootoutLaunchdJob(domain: "gui/\(uid)", label: appBundle)
-        bootoutLaunchdJob(domain: "user/\(uid)", label: helperLabel)
-        bootoutLaunchdJob(domain: "user/\(uid)", label: appBundle)
-        bootoutLaunchdJob(domain: "system", label: helperLabel)
-        terminateOwnHelperProcess()
-        removeUserLaunchAgentPlist()
-
-        try? await Task.sleep(for: .milliseconds(1200))
-        updateStatusLocked()
-
-        _ = await submitRegistration(service: daemonService)
-        if loginItemWasEnabled {
-            do {
-                try await SMAppService.mainApp.register()
-            } catch {
-                helperLogger.error("[HelperManager] Main-app re-register failed: \(error.localizedDescription)")
-            }
-        }
-
-        updateStatusLocked()
-        refreshIssue()
-
-        if await pingUntilRunning() {
-            helperLogger.info("[HelperManager] Helper recovered after background-item reset")
-            return
-        }
-
-        helperLogger.info("[HelperManager] Helper still stuck; requesting admin to remove Sapphire’s system job only")
-        _ = bootoutSystemHelperWithAdminIfNeeded()
         try? await Task.sleep(for: .milliseconds(800))
-        _ = await submitRegistration(service: daemonService)
-        updateStatusLocked()
+        _ = await submitRegistration()
+        _ = await refreshStatus()
         refreshIssue()
 
         if await pingUntilRunning() {
-            helperLogger.info("[HelperManager] Helper recovered after system-job cleanup")
+            helperLogger.info("[HelperManager] Helper recovered after SMAppService reset")
             return
         }
 
         helperLogger.info("[HelperManager] Helper still not running; relaunching Sapphire to rebuild BTM")
         HelperManager.relaunchApp()
     }
-
-    @discardableResult
-    private func bootoutLaunchdJob(domain: String, label: String) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["bootout", "\(domain)/\(label)"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            helperLogger.info("[HelperManager] launchctl bootout \(domain)/\(label) status=\(process.terminationStatus)")
-            return process.terminationStatus == 0
-        } catch {
-            helperLogger.error("[HelperManager] launchctl bootout \(domain)/\(label) failed: \(error.localizedDescription)")
-            return false
-        }
-    }
-
-    private func terminateOwnHelperProcess() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-        process.arguments = [helperToolIdentifier]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try? process.run()
-        process.waitUntilExit()
-    }
-
-    private func removeUserLaunchAgentPlist() {
-        let path = (NSHomeDirectory() as NSString)
-            .appendingPathComponent("Library/LaunchAgents/\(helperToolIdentifier).plist")
-        guard FileManager.default.fileExists(atPath: path) else { return }
-        do {
-            try FileManager.default.removeItem(atPath: path)
-            helperLogger.info("[HelperManager] Removed leftover LaunchAgent \(path)")
-        } catch {
-            helperLogger.error("[HelperManager] Could not remove LaunchAgent: \(error.localizedDescription)")
-        }
-    }
-
-    /// Prompts for admin only to boot out / remove Sapphire’s system helper job. Never resets other apps.
-    @discardableResult
-    private func bootoutSystemHelperWithAdminIfNeeded() -> Bool {
-        let label = helperToolIdentifier
-        let plist = "/Library/LaunchDaemons/\(label).plist"
-        let command = "launchctl bootout system/\(label) >/dev/null 2>&1; rm -f \(plist); true"
-        let escaped = command
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let source = "do shell script \"\(escaped)\" with administrator privileges"
-        var error: NSDictionary?
-        guard let appleScript = NSAppleScript(source: source) else { return false }
-        if appleScript.executeAndReturnError(&error) == nil {
-            let code = error?[NSAppleScript.errorNumber] as? Int ?? 0
-            helperLogger.error("[HelperManager] Admin helper bootout failed code=\(code)")
-            return false
-        }
-        helperLogger.info("[HelperManager] Admin bootout of Sapphire helper succeeded")
-        return true
-    }
-
-    func startHealthCheckTimer(interval: TimeInterval = 1800) {
-        healthCheckTimer?.invalidate()
-        healthCheckTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkIfRunning()
-            }
-        }
-        if let timer = healthCheckTimer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
-        helperLogger.info("[HelperManager] Starting health check timer (interval: \(interval)s)")
-        checkIfRunning()
-    }
-
-    // MARK: - Register (main actor only)
 
     @discardableResult
     private func registerHelper(userInitiated: Bool, forceReinstall: Bool) async -> Bool {
@@ -494,22 +501,21 @@ class HelperManager: ObservableObject {
         lastRegisterAttempt = Date()
         defer { isRegistering = false }
 
-        let service = daemonService
-        helperLogger.info("[HelperManager] register() on main actor, status=\(String(describing: service.status)), bundle=\(Bundle.main.bundlePath), forceReinstall=\(forceReinstall)")
+        guard bundledPlistIsReadable() else {
+            presentIssue(.notFound, force: userInitiated)
+            return false
+        }
+
+        helperLogger.info("[HelperManager] register() status=\(String(describing: self.status)), bundle=\(Bundle.main.bundlePath, privacy: .public), forceReinstall=\(forceReinstall)")
 
         if forceReinstall {
             _ = await reinstallHelper()
         } else {
-            _ = await submitRegistration(service: service)
+            _ = await submitRegistration()
         }
 
-        updateStatusLocked()
+        _ = await refreshStatus()
         refreshIssue()
-
-        if status == .notFound {
-            presentIssue(.notFound, force: userInitiated)
-            return false
-        }
 
         if status == .requiresApproval {
             SMAppService.openSystemSettingsLoginItems()
@@ -517,8 +523,23 @@ class HelperManager: ObservableObject {
             return false
         }
 
+        if status == .notFound {
+            if await pingUntilRunning() {
+                return true
+            }
+            presentIssue(.notFound, force: userInitiated)
+            return false
+        }
+
         if await pingUntilRunning() {
-            return true
+            if await helperProtocolVersionMatches() {
+                return true
+            }
+            helperLogger.info("[HelperManager] Running helper is an old build; reinstalling")
+            _ = await reinstallHelper()
+            if await pingUntilRunning(), await helperProtocolVersionMatches() {
+                return true
+            }
         }
 
         refreshIssue()
@@ -528,50 +549,44 @@ class HelperManager: ObservableObject {
         return isRunning
     }
 
-    private func submitRegistration(service: SMAppService) async -> Bool {
-        do {
-            try service.register()
-            helperLogger.info("[HelperManager] register() returned success")
-            return true
-        } catch {
-            let nsError = error as NSError
-            helperLogger.error("[HelperManager] register() failed: \(error.localizedDescription) domain=\(nsError.domain) code=\(nsError.code)")
-            updateStatusLocked()
-            refreshIssue()
-            return service.status == .enabled
+    private func submitRegistration() async -> Bool {
+        if let errorDescription = await Self.registerDaemon() {
+            helperLogger.error("[HelperManager] register() failed: \(errorDescription)")
+            _ = await refreshStatus()
+            return false
         }
+        helperLogger.info("[HelperManager] register() returned success")
+        return true
     }
 
     @discardableResult
     private func reinstallHelper() async -> Bool {
-        let service = daemonService
-        helperLogger.info("[HelperManager] unregister() to rebuild LWCR, current status=\(String(describing: service.status))")
-        do {
-            try await service.unregister()
+        helperLogger.info("[HelperManager] unregister() then register() to rebuild the SMAppService job")
+        if let errorDescription = await Self.unregisterDaemon() {
+            helperLogger.error("[HelperManager] unregister() failed: \(errorDescription)")
+        } else {
             helperLogger.info("[HelperManager] unregister() succeeded")
-        } catch {
-            helperLogger.error("[HelperManager] unregister() failed: \(error.localizedDescription)")
         }
 
         XPCClient.shared.stop()
-        try? await Task.sleep(for: .milliseconds(1000))
-        updateStatusLocked()
-        return await submitRegistration(service: service)
+        try? await Task.sleep(for: .milliseconds(800))
+        return await submitRegistration()
     }
 
     private func pingUntilRunning() async -> Bool {
-        XPCClient.shared.start(force: false)
-        try? await Task.sleep(for: .milliseconds(800))
+        XPCClient.shared.start(force: true)
+        try? await Task.sleep(for: .milliseconds(600))
 
-        for attempt in 1...8 {
-            let running = await XPCClient.shared.ping(timeout: 1.5)
-            helperLogger.info("[HelperManager] Post-register ping \(attempt)/8: \(running ? "running" : "not running")")
+        for attempt in 1...5 {
+            let running = await XPCClient.shared.ping(timeout: 2)
+            helperLogger.info("[HelperManager] Post-register ping \(attempt)/5: \(running ? "running" : "not running")")
             if running {
                 applyPingResult(true)
-                BatteryManager.shared.reconnectHelper()
+                BatteryManager.shared.helperDidBecomeReachable()
                 return true
             }
-            try? await Task.sleep(for: .milliseconds(400))
+            XPCClient.shared.start(force: true)
+            try? await Task.sleep(for: .milliseconds(700))
         }
         applyPingResult(false)
         return false
@@ -594,7 +609,7 @@ class HelperManager: ObservableObject {
     }
 
     private func refreshIssue() {
-        if isRunning, status == .enabled {
+        if isRunning {
             lastIssue = nil
             return
         }
@@ -616,15 +631,6 @@ class HelperManager: ObservableObject {
         if !force, presentedIssuesThisSession.contains(issue.code) { return }
         presentedIssuesThisSession.insert(issue.code)
         HelperAlertPresenter.present(issue)
-    }
-
-    private func updateStatusLocked() {
-        let newStatus = daemonService.status
-        if status != newStatus {
-            helperLogger.info("[HelperManager] Status changed: \(String(describing: self.status)) -> \(String(describing: newStatus))")
-            status = newStatus
-        }
-        refreshIssue()
     }
 }
 

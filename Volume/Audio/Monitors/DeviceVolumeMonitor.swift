@@ -1,4 +1,9 @@
-// FineTune/Audio/Monitors/DeviceVolumeMonitor.swift
+//
+//  DeviceVolumeMonitor.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 import AudioToolbox
 import os
@@ -8,61 +13,42 @@ import os
 final class DeviceVolumeMonitor: DeviceVolumeProviding {
     // MARK: - Output Device State
 
-    /// Volumes for all tracked output devices (keyed by AudioDeviceID)
     private(set) var volumes: [AudioDeviceID: Float] = [:]
 
-    /// Mute states for all tracked output devices (keyed by AudioDeviceID)
     private(set) var muteStates: [AudioDeviceID: Bool] = [:]
 
-    /// The current default output device ID
     private(set) var defaultDeviceID: AudioDeviceID = .unknown
 
-    /// The current default output device UID (cached to avoid redundant Core Audio calls)
     private(set) var defaultDeviceUID: String?
 
-    /// The current system output device ID (for alerts, notifications, system sounds)
     private(set) var systemDeviceID: AudioDeviceID = .unknown
 
-    /// The current system output device UID
     private(set) var systemDeviceUID: String?
 
-    /// Whether system sounds should follow the macOS default output device
     private(set) var isSystemFollowingDefault: Bool = true
 
-    /// System alert volume (0.0–1.0), matches System Settings > Sound > Alert volume.
-    /// Read/written via AppleScript since no CoreAudio property exists for this.
     private(set) var alertVolume: Float = 1.0
 
-    /// Called when any output device's volume changes (deviceID, newVolume)
     var onVolumeChanged: ((AudioDeviceID, Float) -> Void)?
 
-    /// Called when any output device's mute state changes (deviceID, isMuted)
     var onMuteChanged: ((AudioDeviceID, Bool) -> Void)?
 
-    /// Called when the default output device changes (newDeviceUID)
     var onDefaultDeviceChanged: ((String) -> Void)?
 
     // MARK: - Input Device State
 
-    /// Volumes for all tracked input devices (keyed by AudioDeviceID)
     private(set) var inputVolumes: [AudioDeviceID: Float] = [:]
 
-    /// Mute states for all tracked input devices (keyed by AudioDeviceID)
     private(set) var inputMuteStates: [AudioDeviceID: Bool] = [:]
 
-    /// The current default input device ID
     private(set) var defaultInputDeviceID: AudioDeviceID = .unknown
 
-    /// The current default input device UID (cached to avoid redundant Core Audio calls)
     private(set) var defaultInputDeviceUID: String?
 
-    /// Called when any input device's volume changes (deviceID, newVolume)
     var onInputVolumeChanged: ((AudioDeviceID, Float) -> Void)?
 
-    /// Called when any input device's mute state changes (deviceID, isMuted)
     var onInputMuteChanged: ((AudioDeviceID, Bool) -> Void)?
 
-    /// Called when the default input device changes (newDeviceUID)
     var onDefaultInputDeviceChanged: ((String) -> Void)?
 
     private let deviceMonitor: AudioDeviceMonitor
@@ -73,32 +59,24 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
     private let ddcController: DDCController?
     #endif
 
-    /// Volume listeners for each tracked output device
     private var volumeListeners: [AudioDeviceID: AudioObjectPropertyListenerBlock] = [:]
-    /// Mute listeners for each tracked output device
     private var muteListeners: [AudioDeviceID: AudioObjectPropertyListenerBlock] = [:]
     private var defaultDeviceListenerBlock: AudioObjectPropertyListenerBlock?
     private var systemDeviceListenerBlock: AudioObjectPropertyListenerBlock?
 
-    /// Volume listeners for each tracked input device
     private var inputVolumeListeners: [AudioDeviceID: AudioObjectPropertyListenerBlock] = [:]
-    /// Mute listeners for each tracked input device
     private var inputMuteListeners: [AudioDeviceID: AudioObjectPropertyListenerBlock] = [:]
     private var defaultInputDeviceListenerBlock: AudioObjectPropertyListenerBlock?
 
-    /// Tracks which volume property address was successfully registered per device (for fallback removal)
     private var registeredVolumeAddresses: [AudioDeviceID: AudioObjectPropertyAddress] = [:]
 
-    /// Flag to control the recursive observation loop
     private var isObservingDeviceList = false
     private var isObservingInputDeviceList = false
     private var pendingBluetoothOutputConfirmTasks: [AudioDeviceID: Task<Void, Never>] = [:]
     private var pendingBluetoothInputConfirmTasks: [AudioDeviceID: Task<Void, Never>] = [:]
 
-    /// Debounced volume log tasks — log settled value at .info after 300ms instead of every change at .debug
     private var pendingVolumeLogTasks: [AudioDeviceID: Task<Void, Never>] = [:]
 
-    /// Debounce task for alert volume writes (NSAppleScript is heavy — throttle during drag)
     private var alertVolumeDebounceTask: Task<Void, Never>?
 
     private var defaultDeviceAddress = AudioObjectPropertyAddress(
@@ -165,8 +143,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         return autoDetectBackend(for: deviceID)
     }
 
-    /// Returns the tier that auto-detection would pick, ignoring any saved override.
-    /// Used by the detail sheet to display the "Auto: <tier>" badge.
     func autoDetectedOutputVolumeBackend(for deviceID: AudioDeviceID) -> VolumeControlTier {
         guard deviceID.isValid else { return .software }
         return autoDetectBackend(for: deviceID)
@@ -206,19 +182,14 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
         logger.debug("Starting device volume monitor")
 
-        // Load persisted "follow default" state for system sounds
         isSystemFollowingDefault = settingsManager.isSystemSoundsFollowingDefault
 
-        // Read initial default device
         refreshDefaultDevice()
 
-        // Read initial system device
         refreshSystemDevice()
 
-        // Read volumes for all devices and set up listeners
         refreshDeviceListeners()
 
-        // Listen for default output device changes
         defaultDeviceListenerBlock = { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.handleDefaultDeviceChanged()
@@ -236,7 +207,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             logger.error("Failed to add default device listener: \(defaultDeviceStatus)")
         }
 
-        // Listen for system output device changes
         systemDeviceListenerBlock = { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.handleSystemDeviceChanged()
@@ -254,14 +224,11 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             logger.error("Failed to add system device listener: \(systemDeviceStatus)")
         }
 
-        // Observe device list changes from deviceMonitor using withObservationTracking
         startObservingDeviceList()
 
-        // Input device monitoring
         refreshDefaultInputDevice()
         refreshInputDeviceListeners()
 
-        // Listen for default input device changes
         defaultInputDeviceListenerBlock = { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.handleDefaultInputDeviceChanged()
@@ -281,54 +248,44 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
         startObservingInputDeviceList()
 
-        // Read initial alert volume
         refreshAlertVolume()
 
-        // Validate system sound state matches persisted preference
         validateSystemSoundState()
     }
 
     func stop() {
         logger.debug("Stopping device volume monitor")
 
-        // Stop the device list observation loops
         isObservingDeviceList = false
         isObservingInputDeviceList = false
 
-        // Remove default device listener
         if let block = defaultDeviceListenerBlock {
             AudioObjectRemovePropertyListenerBlock(.system, &defaultDeviceAddress, .main, block)
             defaultDeviceListenerBlock = nil
         }
 
-        // Remove system device listener
         if let block = systemDeviceListenerBlock {
             AudioObjectRemovePropertyListenerBlock(.system, &systemDeviceAddress, .main, block)
             systemDeviceListenerBlock = nil
         }
 
-        // Remove default input device listener
         if let block = defaultInputDeviceListenerBlock {
             AudioObjectRemovePropertyListenerBlock(.system, &defaultInputDeviceAddress, .main, block)
             defaultInputDeviceListenerBlock = nil
         }
 
-        // Remove all output volume listeners
         for deviceID in Array(volumeListeners.keys) {
             removeVolumeListener(for: deviceID)
         }
 
-        // Remove all output mute listeners
         for deviceID in Array(muteListeners.keys) {
             removeMuteListener(for: deviceID)
         }
 
-        // Remove all input volume listeners
         for deviceID in Array(inputVolumeListeners.keys) {
             removeInputVolumeListener(for: deviceID)
         }
 
-        // Remove all input mute listeners
         for deviceID in Array(inputMuteListeners.keys) {
             removeInputMuteListener(for: deviceID)
         }
@@ -347,14 +304,10 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         defaultInputDeviceUID = nil
     }
 
-    /// Threshold clamp: sub-1% scalar → true silence.
-    /// On audio-tapered devices, scalar 0.01 ≈ -99 dB (empirically measured on built-in output).
-    /// On software-volume devices, 0.01 gain = -40 dB (linear). Either way, inaudible.
     private func clampedVolume(_ volume: Float) -> Float {
         volume < 0.01 ? 0 : volume
     }
 
-    /// Sets the volume for a specific device
     func setVolume(for deviceID: AudioDeviceID, to volume: Float) {
         guard deviceID.isValid else {
             logger.warning("Cannot set volume: invalid device ID")
@@ -395,7 +348,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Sets a device as the macOS system default output device
     @discardableResult
     func setDefaultDevice(_ deviceID: AudioDeviceID) -> Bool {
         guard deviceID.isValid else {
@@ -413,7 +365,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Sets the mute state for a specific device
     func setMute(for deviceID: AudioDeviceID, to muted: Bool) {
         guard deviceID.isValid else {
             logger.warning("Cannot set mute: invalid device ID")
@@ -480,7 +431,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
     }
 
     #if !APP_STORE
-    /// Re-reads volume/mute states after DDC probe discovers (or loses) displays.
     func refreshAfterDDCProbe() {
         refreshOutputDeviceStates()
     }
@@ -488,7 +438,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
     // MARK: - Input Device Control
 
-    /// Sets the volume for a specific input device
     func setInputVolume(for deviceID: AudioDeviceID, to volume: Float) {
         guard deviceID.isValid else {
             logger.warning("Cannot set input volume: invalid device ID")
@@ -503,7 +452,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Sets the mute state for a specific input device
     func setInputMute(for deviceID: AudioDeviceID, to muted: Bool) {
         guard deviceID.isValid else {
             logger.warning("Cannot set input mute: invalid device ID")
@@ -518,7 +466,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Sets a device as the macOS system default input device
     @discardableResult
     func setDefaultInputDevice(_ deviceID: AudioDeviceID) -> Bool {
         guard deviceID.isValid else {
@@ -564,9 +511,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         if let newUID = defaultDeviceUID, newUID != oldUID {
             onDefaultDeviceChanged?(newUID)
 
-            // If system sounds follows default, update it too.
-            // Re-read default first — the callback above may have overridden it
-            // (e.g., AudioEngine enforcing priority-based routing).
             if isSystemFollowingDefault {
                 refreshDefaultDevice()
                 if defaultDeviceID.isValid {
@@ -601,8 +545,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Validates that persisted system sound state matches actual macOS state on startup.
-    /// If "follow default" is enabled but system device differs from default, enforces the preference.
     private func validateSystemSoundState() {
         guard defaultDeviceUID != nil, systemDeviceUID != nil else {
             logger.debug("Cannot validate system sound state: missing device UIDs")
@@ -612,7 +554,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         let systemMatchesDefault = (systemDeviceUID == defaultDeviceUID)
 
         if isSystemFollowingDefault && !systemMatchesDefault {
-            // Persisted says "follow default" but actual state differs - enforce preference
             if defaultDeviceID.isValid {
                 setSystemDevice(defaultDeviceID)
                 refreshSystemDevice()
@@ -629,11 +570,9 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         logger.debug("System output device changed")
         refreshSystemDevice()
 
-        // Detect if external change broke "follow default" state
         if isSystemFollowingDefault {
             let stillFollowing = (systemDeviceUID == defaultDeviceUID)
             if !stillFollowing {
-                // External change broke "follow default" - update our state
                 isSystemFollowingDefault = false
                 settingsManager.setSystemSoundsFollowDefault(false)
                 logger.info("System device changed externally, no longer following default")
@@ -641,7 +580,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Sets the system output device (for alerts, notifications, system sounds)
     func setSystemDevice(_ deviceID: AudioDeviceID) {
         guard deviceID.isValid else {
             logger.warning("Cannot set system device: invalid device ID")
@@ -656,19 +594,16 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Sets system sounds to follow macOS default output device
     func setSystemFollowDefault() {
         isSystemFollowingDefault = true
         settingsManager.setSystemSoundsFollowDefault(true)
 
-        // Immediately sync to current default
         if defaultDeviceID.isValid {
             setSystemDevice(defaultDeviceID)
         }
         logger.debug("System sounds now following default")
     }
 
-    /// Sets system sounds to explicit device (stops following default)
     func setSystemDeviceExplicit(_ deviceID: AudioDeviceID) {
         isSystemFollowingDefault = false
         settingsManager.setSystemSoundsFollowDefault(false)
@@ -678,10 +613,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
     // MARK: - Alert Volume
 
-    /// Reads the current system alert volume asynchronously via osascript subprocess.
-    /// No CoreAudio property exists for alert volume — osascript is the canonical API.
-    /// Uses a subprocess with terminationHandler so the main thread is never blocked.
-    /// Safe to call periodically for live sync; skip if a debounced write is pending.
     func refreshAlertVolume() {
         guard alertVolumeDebounceTask == nil else { return }
 
@@ -703,18 +634,11 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         try? process.run()
     }
 
-    /// Sets the system alert volume (same as System Settings > Sound > Alert volume).
-    /// Updates the local property immediately for responsive UI, then debounces the
-    /// AppleScript call by 100ms to avoid blocking during rapid slider drags.
-    /// - Parameter volume: Alert volume from 0.0 to 1.0
     func setAlertVolume(_ volume: Float) {
         let clamped = max(0, min(1, volume))
         let pct = Int(round(clamped * 100))
         let newVolume = Float(pct) / 100.0
 
-        // Deduplicate: @Observable update → SwiftUI re-render → Slider re-sends same value
-        // through Binding set. Without this guard, each re-render cancels the pending debounce
-        // task before the 100ms elapses, so the NSAppleScript write never fires.
         guard newVolume != alertVolume else { return }
 
         alertVolume = newVolume
@@ -724,13 +648,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled, let self else { return }
 
-            // Use osascript subprocess instead of NSAppleScript — the in-process
-            // NSAppleScript `set volume` silently fails under Hardened Runtime without
-            // com.apple.security.automation.apple-events entitlement. Spawning osascript
-            // as a child process bypasses this restriction.
-            //
-            // Process.run() is non-blocking (just fork+exec). terminationHandler fires
-            // on a background thread when osascript exits — no main thread blocking.
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
             process.arguments = ["-e", "set volume alert volume \(pct)"]
@@ -753,13 +670,11 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Synchronizes volume and mute listeners with the current device list from deviceMonitor
     private func refreshDeviceListeners() {
         let currentDeviceIDs = Set(deviceMonitor.outputDevices.map(\.id))
         let trackedVolumeIDs = Set(volumeListeners.keys)
         let trackedMuteIDs = Set(muteListeners.keys)
 
-        // Add listeners for new devices (computed separately so mute retries independently)
         let newVolumeIDs = currentDeviceIDs.subtracting(trackedVolumeIDs)
         let newMuteIDs = currentDeviceIDs.subtracting(trackedMuteIDs)
         for deviceID in newVolumeIDs {
@@ -769,7 +684,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             addMuteListener(for: deviceID)
         }
 
-        // Remove listeners for stale devices
         let staleVolumeIDs = trackedVolumeIDs.subtracting(currentDeviceIDs)
         for deviceID in staleVolumeIDs {
             removeVolumeListener(for: deviceID)
@@ -783,7 +697,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             muteStates.removeValue(forKey: deviceID)
         }
 
-        // Read volumes and mute states for all current devices
         readAllStates()
     }
 
@@ -799,7 +712,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
         volumeListeners[deviceID] = block
 
-        // Try VirtualMainVolume first (preferred — matches system slider)
         var address = volumeAddress
         let status = AudioObjectAddPropertyListenerBlock(
             deviceID,
@@ -812,7 +724,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             return
         }
 
-        // Fallback 1: kAudioDevicePropertyVolumeScalar element 0 (master)
         var fallbackAddr = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyVolumeScalar,
             mScope: kAudioObjectPropertyScopeOutput,
@@ -831,7 +742,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             return
         }
 
-        // Fallback 2: kAudioDevicePropertyVolumeScalar element 1 (left channel)
         var fallbackAddr2 = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyVolumeScalar,
             mScope: kAudioObjectPropertyScopeOutput,
@@ -865,7 +775,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             var address = volumeAddress
             status = AudioObjectRemovePropertyListenerBlock(deviceID, &address, .main, block)
         }
-        // Tolerate kAudioHardwareBadObjectError (-66680): device already destroyed
         if status != noErr && status != OSStatus(kAudioHardwareBadObjectError) {
             logger.warning("Failed to remove volume listener for device \(deviceID): \(status)")
         }
@@ -877,21 +786,16 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         if outputVolumeBackend(for: deviceID) == .software { return }
 
         #if !APP_STORE
-        // DDC-backed devices don't have real CoreAudio volume changes;
-        // ignore HAL callbacks (they always report 1.0)
         if let ddcController, ddcController.isDDCBacked(deviceID) { return }
         #endif
 
         let newVolume = clampedVolume(deviceID.readOutputVolumeScalar())
 
-        // Deduplicate: HAL often fires L/R channel notifications for the same volume value.
-        // Both values come from the same CoreAudio API (not computed), so == is safe for Float32.
         if let currentVolume = volumes[deviceID], currentVolume == newVolume { return }
 
         volumes[deviceID] = newVolume
         onVolumeChanged?(deviceID, newVolume)
 
-        // Debounced logging: log the settled value at .info after 300ms instead of every tick
         pendingVolumeLogTasks[deviceID]?.cancel()
         pendingVolumeLogTasks[deviceID] = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
@@ -947,20 +851,13 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         logger.debug("Mute changed for device \(deviceID): \(newMuteState)")
     }
 
-    /// Reads the current volume and mute state for all tracked devices.
-    /// For Bluetooth devices, schedules a delayed re-read because the HAL may report
-    /// default volume (1.0) for 50-200ms after the device appears.
     private func readAllStates() {
         for device in deviceMonitor.outputDevices {
             readOneState(for: device.id, device: device)
         }
     }
 
-    /// Reads the current volume and mute state for a single tracked device.
-    /// Extracted from `readAllStates()` so a tier override change can refresh
-    /// one device without enumerating the whole device list.
     private func readOneState(for deviceID: AudioDeviceID, device: AudioDevice) {
-        // Skip devices that HAL reports as dead (mid-disconnect)
         guard deviceID.isDeviceAlive() else { return }
 
         let backend = outputVolumeBackend(for: deviceID)
@@ -975,7 +872,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
 
         #if !APP_STORE
-        // For DDC-backed devices, use cached DDC volume instead of CoreAudio
         if backend == .ddc, let ddcController {
             if let ddcVolume = ddcController.getVolume(for: deviceID) {
                 volumes[deviceID] = Float(ddcVolume) / 100.0
@@ -993,35 +889,23 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         let muted = deviceID.readMuteState()
         muteStates[deviceID] = muted
 
-        // Bluetooth devices may not have valid volume immediately after appearing.
-        // The HAL returns 1.0 (default) until the BT firmware handshake completes.
-        // Schedule a delayed re-read to get the actual volume.
         let transportType = deviceID.readTransportType()
         if transportType == .bluetooth || transportType == .bluetoothLE {
             scheduleBluetoothOutputConfirmation(for: deviceID)
         }
     }
 
-    /// Refreshes volume/mute state for a single device after a tier override change.
-    /// Syncs mute authority across the tier boundary so the user's mute intent
-    /// survives the transition in either direction without a user-visible jump.
     func applyTierOverrideChange(for deviceID: AudioDeviceID) {
         guard let device = deviceMonitor.device(for: deviceID) else { return }
         let newBackend = outputVolumeBackend(for: deviceID)
         let previousMute = muteStates[deviceID] ?? false
         switch newBackend {
         case .software:
-            // Promote to software: hand authority to the software gain path and
-            // clear hardware mute so it isn't double-attenuating.
             settingsManager.setSoftwareDeviceMuteState(for: device.uid, to: previousMute)
             if previousMute {
                 _ = deviceID.setMuteState(false)
             }
         case .hardware, .ddc:
-            // Revert to hardware/DDC: if the software path was muted, re-apply
-            // that mute at the hardware/DDC layer so the user's mute intent
-            // doesn't silently get dropped when the software attenuator is no
-            // longer the authority.
             let softwareMute = settingsManager.getSoftwareDeviceMuteState(for: device.uid)
             if softwareMute {
                 if newBackend == .hardware {
@@ -1041,7 +925,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         deviceMonitor.device(for: deviceID)?.uid
     }
 
-    /// Starts observing deviceMonitor.outputDevices for changes
     private func startObservingDeviceList() {
         guard !isObservingDeviceList else { return }
         isObservingDeviceList = true
@@ -1092,20 +975,17 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Synchronizes input volume and mute listeners with the current input device list
     private func refreshInputDeviceListeners() {
         let currentDeviceIDs = Set(deviceMonitor.inputDevices.map(\.id))
         let trackedVolumeIDs = Set(inputVolumeListeners.keys)
         let trackedMuteIDs = Set(inputMuteListeners.keys)
 
-        // Add listeners for new devices
         let newDeviceIDs = currentDeviceIDs.subtracting(trackedVolumeIDs)
         for deviceID in newDeviceIDs {
             addInputVolumeListener(for: deviceID)
             addInputMuteListener(for: deviceID)
         }
 
-        // Remove listeners for stale devices
         let staleVolumeIDs = trackedVolumeIDs.subtracting(currentDeviceIDs)
         for deviceID in staleVolumeIDs {
             removeInputVolumeListener(for: deviceID)
@@ -1119,7 +999,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             inputMuteStates.removeValue(forKey: deviceID)
         }
 
-        // Read volumes and mute states for all current input devices
         readAllInputStates()
     }
 
@@ -1163,7 +1042,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         guard deviceID.isValid else { return }
         let newVolume = deviceID.readInputVolumeScalar()
 
-        // Deduplicate: same logic as output volume
         if let currentVolume = inputVolumes[deviceID], currentVolume == newVolume { return }
 
         inputVolumes[deviceID] = newVolume
@@ -1215,10 +1093,8 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         logger.debug("Input mute changed for device \(deviceID): \(newMuteState)")
     }
 
-    /// Reads the current volume and mute state for all tracked input devices
     private func readAllInputStates() {
         for device in deviceMonitor.inputDevices {
-            // Skip devices that HAL reports as dead (mid-disconnect)
             guard device.id.isDeviceAlive() else { continue }
 
             let volume = device.id.readInputVolumeScalar()
@@ -1227,7 +1103,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
             let muted = device.id.readInputMuteState()
             inputMuteStates[device.id] = muted
 
-            // Bluetooth devices may not have valid volume immediately after appearing
             let transportType = device.id.readTransportType()
             if transportType == .bluetooth || transportType == .bluetoothLE {
                 scheduleBluetoothInputConfirmation(for: device.id)
@@ -1235,7 +1110,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Starts observing deviceMonitor.inputDevices for changes
     private func startObservingInputDeviceList() {
         guard !isObservingInputDeviceList else { return }
         isObservingInputDeviceList = true
@@ -1258,8 +1132,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
 
     // MARK: - Bluetooth Confirmation Tasks
 
-    /// Schedules a delayed re-read of volume/mute for a Bluetooth output device.
-    /// Cancels any existing task for the same device to avoid stale reads.
     private func scheduleBluetoothOutputConfirmation(for deviceID: AudioDeviceID) {
         pendingBluetoothOutputConfirmTasks[deviceID]?.cancel()
         pendingBluetoothOutputConfirmTasks[deviceID] = Task { @MainActor [weak self] in
@@ -1274,13 +1146,10 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Cancels a pending Bluetooth output confirmation task for a specific device.
     private func cancelBluetoothOutputConfirmation(for deviceID: AudioDeviceID) {
         pendingBluetoothOutputConfirmTasks.removeValue(forKey: deviceID)?.cancel()
     }
 
-    /// Schedules a delayed re-read of volume/mute for a Bluetooth input device.
-    /// Cancels any existing task for the same device to avoid stale reads.
     private func scheduleBluetoothInputConfirmation(for deviceID: AudioDeviceID) {
         pendingBluetoothInputConfirmTasks[deviceID]?.cancel()
         pendingBluetoothInputConfirmTasks[deviceID] = Task { @MainActor [weak self] in
@@ -1295,12 +1164,10 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         }
     }
 
-    /// Cancels a pending Bluetooth input confirmation task for a specific device.
     private func cancelBluetoothInputConfirmation(for deviceID: AudioDeviceID) {
         pendingBluetoothInputConfirmTasks.removeValue(forKey: deviceID)?.cancel()
     }
 
-    /// Cancels all pending Bluetooth confirmation tasks (called from stop()).
     private func cancelAllBluetoothConfirmationTasks() {
         for (_, task) in pendingBluetoothOutputConfirmTasks { task.cancel() }
         pendingBluetoothOutputConfirmTasks.removeAll()
@@ -1308,7 +1175,6 @@ final class DeviceVolumeMonitor: DeviceVolumeProviding {
         pendingBluetoothInputConfirmTasks.removeAll()
     }
 
-    /// Cancels all pending volume log debounce tasks (called from stop()).
     private func cancelAllVolumeLogTasks() {
         for (_, task) in pendingVolumeLogTasks { task.cancel() }
         pendingVolumeLogTasks.removeAll()

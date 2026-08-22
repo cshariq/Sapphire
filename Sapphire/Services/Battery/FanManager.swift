@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import AppKit
 
 // MARK: - Data Models
 
@@ -97,20 +98,33 @@ class FanManager: ObservableObject {
     @Published private(set) var fanModes: [Int: FanControlMode] = [:]
 
     private var updateTimer: Timer?
-    private var helperRetryTimer: Timer?
+    private enum AppliedFanCommand: Equatable {
+        case automatic
+        case constant(Int)
+        case target(Int)
+    }
+    private var lastAppliedFanCommands: [Int: AppliedFanCommand] = [:]
     private var notificationObservers: [NSObjectProtocol] = []
-    private var pollingConsumers = 0
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var updateInFlight = false
+    private var hardwareRefreshInFlight = false
+    private var restoredPersistedModes = false
+    private var fanCommandTasks: [Int: Task<Void, Never>] = [:]
+    private var acceptedFanless = false
 
     private var needsControlLoop: Bool {
         fanModes.values.contains {
-            if case .auto = $0 { return false }
-            return true
+            switch $0 {
+            case .sensor, .customCurve: return true
+            case .auto, .constant: return false
+            }
         }
     }
 
     private init() {
         loadPersistedModes()
         registerHelperObservers()
+        registerSleepWakeObservers()
         Task {
             await refreshHardwareState()
             refreshPollingState()
@@ -119,22 +133,20 @@ class FanManager: ObservableObject {
 
     deinit {
         notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
     }
 
     func beginPolling() {
-        pollingConsumers += 1
-        refreshPollingState()
         Task { await refreshHardwareState() }
     }
 
     func endPolling() {
-        pollingConsumers = max(0, pollingConsumers - 1)
-        refreshPollingState()
+        if !needsControlLoop { stopMonitoring() }
     }
 
     private func refreshPollingState() {
-        if needsControlLoop || pollingConsumers > 0 {
-            startMonitoring(interval: needsControlLoop ? 3.0 : 5.0)
+        if needsControlLoop {
+            startMonitoring(interval: 3.0)
         } else {
             stopMonitoring()
         }
@@ -144,43 +156,58 @@ class FanManager: ObservableObject {
         let center = NotificationCenter.default
         notificationObservers = [
             center.addObserver(forName: .sapphireHelperConnectionRestored, object: nil, queue: .main) { [weak self] _ in
-                Task { await self?.refreshHardwareState() }
+                Task { await self?.refreshHardwareState(forceRediscovery: true) }
             },
             center.addObserver(forName: .sapphireHelperConnectionLost, object: nil, queue: .main) { [weak self] _ in
-                self?.startHelperRetryIfNeeded()
+                Task { @MainActor in
+                    self?.acceptedFanless = false
+                    self?.restoredPersistedModes = false
+                    self?.lastAppliedFanCommands.removeAll()
+                }
             }
         ]
     }
 
-    func refreshHardwareState() async {
-        await initializeFans()
-        await initializeSensors()
-        restorePersistedModes()
-        refreshPollingState()
-        if !fans.isEmpty {
-            helperRetryTimer?.invalidate()
-            helperRetryTimer = nil
-        }
+    private func registerSleepWakeObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers = [
+            center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { await self?.refreshHardwareState() }
+            }
+        ]
     }
 
-    private func startHelperRetryIfNeeded() {
-        guard helperRetryTimer == nil else { return }
-        helperRetryTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { await self?.refreshHardwareState() }
+    func refreshHardwareState(forceRediscovery: Bool = false) async {
+        guard !hardwareRefreshInFlight else { return }
+        hardwareRefreshInFlight = true
+        defer { hardwareRefreshInFlight = false }
+
+        if forceRediscovery {
+            acceptedFanless = false
+            restoredPersistedModes = false
         }
+        await initializeFans()
+        await initializeSensors()
+
+        if !restoredPersistedModes {
+            restoredPersistedModes = true
+            restorePersistedModes()
+        }
+        refreshPollingState()
     }
 
     private func initializeFans() async {
-        guard let helper = getHelper() else {
-            startHelperRetryIfNeeded()
-            return
-        }
+        guard let helper = getHelper() else { return }
 
         let fanCount = await helper.getFanCount()
         guard fanCount > 0 else {
-            startHelperRetryIfNeeded()
+            acceptedFanless = true
+            fans = []
+            lastAppliedFanCommands.removeAll()
             return
         }
+
+        acceptedFanless = false
 
         var fanArray: [FanInfo] = []
         for index in 0..<fanCount {
@@ -193,7 +220,9 @@ class FanManager: ObservableObject {
         }
 
         if fanArray.isEmpty {
-            startHelperRetryIfNeeded()
+            acceptedFanless = true
+            fans = []
+            lastAppliedFanCommands.removeAll()
             return
         }
 
@@ -232,7 +261,7 @@ class FanManager: ObservableObject {
         }
         updateTimer?.invalidate()
         updateTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            self?.updateData()
+            Task { @MainActor in self?.updateData() }
         }
         if let updateTimer {
             RunLoop.main.add(updateTimer, forMode: .common)
@@ -246,40 +275,40 @@ class FanManager: ObservableObject {
     }
 
     private func updateData() {
-        Task {
+        guard !updateInFlight else { return }
+        updateInFlight = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { updateInFlight = false }
             guard let helper = getHelper() else { return }
 
-            let currentFans = fans
             let currentSensors = sensors
-
-            await withTaskGroup(of: Void.self) { group in
-                for fan in currentFans {
-                    let fanID = fan.id
-                    group.addTask {
-                        if let updatedFan = await helper.getFanInfo(fanIndex: fanID) {
-                            await MainActor.run {
-                                guard let index = self.fans.firstIndex(where: { $0.id == fanID }) else { return }
-                                self.fans[index].currentRPM = updatedFan.currentRPM
-                            }
-                        }
-                    }
+            let controlSensorKeys = Set(fanModes.values.compactMap { mode -> String? in
+                switch mode {
+                case .sensor(let key, _, _), .customCurve(let key, _): return key
+                case .auto, .constant: return nil
                 }
-                for sensor in currentSensors {
-                    let key = sensor.key
-                    group.addTask {
-                        let newValue = await helper.getSensorValue(key: key)
-                        if newValue >= 0 {
-                            await MainActor.run {
-                                guard let index = self.sensors.firstIndex(where: { $0.key == key }) else { return }
-                                self.sensors[index].value = newValue
-                            }
-                        }
-                    }
+            })
+            guard !controlSensorKeys.isEmpty else { return }
+            let sensorValues = await helper.getSensorValues(keys: Array(controlSensorKeys))
+
+            for sensor in currentSensors where controlSensorKeys.contains(sensor.key) {
+                guard let value = sensorValues[sensor.key] as? NSNumber else { continue }
+                let newValue = value.doubleValue
+                if newValue >= 0, let currentIndex = self.sensors.firstIndex(where: { $0.key == sensor.key }) {
+                    self.sensors[currentIndex].value = newValue
                 }
             }
 
             applyActiveControlModes()
         }
+
+    }
+
+    private func shouldApply(_ command: AppliedFanCommand, to fanID: Int) -> Bool {
+        guard lastAppliedFanCommands[fanID] != command else { return false }
+        lastAppliedFanCommands[fanID] = command
+        return true
     }
 
     private func applyActiveControlModes() {
@@ -289,6 +318,7 @@ class FanManager: ObservableObject {
             case .auto:
                 continue
             case .constant(let rpm):
+                guard shouldApply(.constant(rpm), to: fan.id) else { continue }
                 Task { await getHelper()?.setFanToConstantRPM(fanIndex: fan.id, speed: rpm) }
             case .sensor(let sensorKey, let minTemp, let maxTemp):
                 applyLinearCurve(
@@ -331,29 +361,43 @@ class FanManager: ObservableObject {
         }
 
         targetRPM = max(fan.minRPM, min(fan.maxRPM, targetRPM))
+        guard shouldApply(.target(targetRPM), to: fan.id) else { return }
         Task { await getHelper()?.setFanTargetSpeed(fanIndex: fan.id, speed: targetRPM) }
     }
 
     func setFanMode(for fanID: Int, to mode: FanControlMode) {
         guard fans.contains(where: { $0.id == fanID }) else { return }
+        guard fanModes[fanID] != mode else { return }
         fanModes[fanID] = mode
+        lastAppliedFanCommands[fanID] = nil
         persistModes()
         refreshPollingState()
+        applyFanMode(fanID: fanID, mode: mode)
+    }
 
-        Task {
+    private func applyFanMode(fanID: Int, mode: FanControlMode) {
+        fanCommandTasks[fanID]?.cancel()
+        fanCommandTasks[fanID] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { fanCommandTasks[fanID] = nil }
             guard let helper = getHelper() else { return }
+
             switch mode {
             case .auto:
+                lastAppliedFanCommands[fanID] = .automatic
                 await helper.setFanMode(fanIndex: fanID, mode: 0)
             case .constant(let rpm):
+                lastAppliedFanCommands[fanID] = .constant(rpm)
                 await helper.setFanToConstantRPM(fanIndex: fanID, speed: rpm)
             case .sensor(_, _, _):
                 let minRPM = fans.first(where: { $0.id == fanID })?.minRPM ?? 2000
+                lastAppliedFanCommands[fanID] = .constant(minRPM)
                 await helper.setFanToConstantRPM(fanIndex: fanID, speed: minRPM)
             case .customCurve(_, let points):
                 let startRPM = points.sorted { $0.temperature < $1.temperature }.first?.rpm
                     ?? fans.first(where: { $0.id == fanID })?.minRPM
                     ?? 2000
+                lastAppliedFanCommands[fanID] = .constant(startRPM)
                 await helper.setFanToConstantRPM(fanIndex: fanID, speed: startRPM)
             }
         }
@@ -392,7 +436,7 @@ class FanManager: ObservableObject {
         for fan in fans {
             guard let mode = fanModes[fan.id] else { continue }
             if case .auto = mode { continue }
-            setFanMode(for: fan.id, to: mode)
+            applyFanMode(fanID: fan.id, mode: mode)
         }
     }
 
@@ -412,7 +456,7 @@ class FanManager: ObservableObject {
 // MARK: - Async Helper Wrappers
 
 private enum HelperAsyncTimeout {
-    static let seconds: TimeInterval = 3.0
+    static let seconds: TimeInterval = 8.0
 }
 
 extension HelperProtocol {
@@ -425,6 +469,12 @@ extension HelperProtocol {
     func getFanInfo(fanIndex: Int) async -> FanInfo? {
         await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: nil as FanInfo?) { finish in
             getFanInfo(fanIndex: fanIndex, reply: finish)
+        }
+    }
+
+    func getSensorValues(keys: [String]) async -> NSDictionary {
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: NSDictionary()) { finish in
+            getSensorValues(keys: keys, reply: finish)
         }
     }
 

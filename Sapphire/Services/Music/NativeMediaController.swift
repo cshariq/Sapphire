@@ -1,3 +1,9 @@
+//
+//  NativeMediaController.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 import Darwin
 import AppKit
@@ -18,7 +24,7 @@ struct PlaybackTimingAnchor: Equatable {
     }
 }
 
-struct TrackInfo {
+struct TrackInfo: Equatable {
     struct Payload: Equatable {
         let processIdentifier: Int?
         let bundleIdentifier: String?
@@ -63,7 +69,7 @@ struct TrackInfo {
         let mediaType: String?
         let artwork: NSImage?
         let artworkMimeType: String?
-        
+
         var calculatedElapsedTime: TimeInterval {
             interpolatedElapsedTime(at: Date())
         }
@@ -75,12 +81,9 @@ struct TrackInfo {
             return anchor.elapsed(at: now)
         }
 
-        // Creates a highly precise timing anchor using absolute OS timestamps
         func playbackTimingAnchor(isPlayingNow: Bool) -> PlaybackTimingAnchor? {
             guard let elapsed = currentElapsedTime else { return nil }
 
-            // Spotify MediaRemote often reports playbackRate 0 while still playing —
-            // treat any non-positive rate as 1x when actively playing so the scrubber ticks.
             let rate: Double
             if isPlayingNow {
                 let reported = Double(playbackRate ?? 1.0)
@@ -89,7 +92,7 @@ struct TrackInfo {
                 rate = 0.0
             }
             let sampleEpoch: TimeInterval
-            
+
             if let micros = timestampEpochMicros {
                 sampleEpoch = Double(micros) / 1_000_000.0
             } else if let ts = timestamp?.doubleValue {
@@ -111,10 +114,10 @@ struct TrackInfo {
 
 @MainActor
 final class NativeMediaController: NSObject {
-    var onTrackInfoReceived: ((TrackInfo?) -> Void)?
     var onActiveClientsChanged: (([String: TrackInfo]) -> Void)?
     var onListenerTerminated: (() -> Void)?
     var onDecodingError: ((String, String?) -> Void)?
+    var onTrackInfoReceived: ((TrackInfo?) -> Void)?
 
     @Published var activeClients: [String: TrackInfo] = [:]
 
@@ -122,15 +125,13 @@ final class NativeMediaController: NSObject {
     private var isListening = false
     private var streamProcess: Process?
     private var buffer = Data()
-    private var lastKnownTrackInfo: TrackInfo?
-    private var lastTrackIdentityByKey: [String: String] = [:]
-    private var lastMediaFingerprintByKey: [String: String] = [:]
-    private var artworkPrefetchTasks: [String: Task<Void, Never>] = [:]
-    private var mergedMetadataByKey: [String: [String: Any]] = [:]
-    private var snapshotRefreshTask: Task<Void, Never>?
-    private var lastSnapshotRefreshInstant: TimeInterval = 0
+    private var lastActiveClientKey: String?
+    private var lastTrackIdentity: String?
+    private var lastMediaFingerprint: String?
+    private var currentMergedMetadata: [String: Any] = [:]
+    private var lastDecodedArtworkHash: Int?
+    private var lastDecodedArtworkImage: NSImage?
 
-    // Cached Paths (Avoids continuous disk hits)
     private static let cachedPaths: (script: String, adapter: String, testClient: String?)? = {
         let fm = FileManager.default
         guard let resourcePath = Bundle.main.resourcePath else { return nil }
@@ -146,12 +147,12 @@ final class NativeMediaController: NSObject {
         _NSGetExecutablePath(nil, &size)
         let buffer = UnsafeMutablePointer<Int8>.allocate(capacity: Int(size))
         defer { buffer.deallocate() }
-        
+
         if _NSGetExecutablePath(buffer, &size) == 0 {
             let exeDir = (String(cString: buffer) as NSString).deletingLastPathComponent
             let fbScript = (exeDir as NSString).appendingPathComponent("mediaremote-adapter.pl")
             let fbAdapter = (exeDir as NSString).appendingPathComponent("MediaRemoteAdapter.framework")
-            
+
             if fm.fileExists(atPath: fbScript) && fm.fileExists(atPath: fbAdapter) {
                 return (fbScript, fbAdapter, nil)
             }
@@ -171,36 +172,17 @@ final class NativeMediaController: NSObject {
         }
     }
 
-    private static func runArtworkFetch(script: String, adapter: String) -> (NSImage?, String?) {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        task.arguments = [script, adapter, "get"]
-        task.standardError = FileHandle.nullDevice
-        let stdout = Pipe()
-        task.standardOutput = stdout
-        try? task.run()
-
-        let timeoutItem = DispatchWorkItem { task.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.35, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let base64 = json["artworkData"] as? String,
-              let imageData = Data(base64Encoded: base64),
-              let image = NSImage(data: imageData) else {
-            return (nil, nil)
+    func restartListeningIfNeeded() {
+        guard isListening else {
+            startListening()
+            return
         }
-        return (image, json["artworkMimeType"] as? String)
-    }
-
-    func fetchCurrentArtwork() async -> (NSImage?, String?) {
-        guard let paths = resolveAdapterPaths() else { return (nil, nil) }
-        return await withCheckedContinuation { continuation in
-            pollQueue.async {
-                let result = Self.runArtworkFetch(script: paths.script, adapter: paths.adapter)
-                continuation.resume(returning: result)
+        pollQueue.async { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.streamProcess?.terminate()
+                self.streamProcess = nil
+                self.launchStream()
             }
         }
     }
@@ -218,6 +200,7 @@ final class NativeMediaController: NSObject {
 
     deinit { streamProcess?.terminate() }
 
+    // MARK: - Native Media Remote Transport Commands
     func play() { runAdapterCommand(["send", "0"]) }
     func pause() { runAdapterCommand(["send", "1"]) }
     func togglePlayPause() { runAdapterCommand(["send", "2"]) }
@@ -227,17 +210,18 @@ final class NativeMediaController: NSObject {
     func toggleShuffle() { runAdapterCommand(["send", "6"]) }
     func toggleRepeat() { runAdapterCommand(["send", "7"]) }
     func beginForwardSeek() { runAdapterCommand(["send", "8"]) }
-    func endForwardSeek() { runAdapterCommand(["send", "9"]) }
+    func endForwardSeek() { runAdapterCommand(["send", "8"]) }
     func beginBackwardSeek() { runAdapterCommand(["send", "10"]) }
     func endBackwardSeek() { runAdapterCommand(["send", "11"]) }
     func skipBack15Seconds() { runAdapterCommand(["send", "12"]) }
     func skipForward15Seconds() { runAdapterCommand(["send", "13"]) }
-    func setTime(seconds: Double) { runAdapterCommand(["seek", String(Int(seconds * 1_000_000))]) }
-    func likeTrack(trackID: String?, stationID: String?, stationHash: String?) { runAdapterCommand(["send", "106"]) }
+    func setTime(seconds: Double) {
+        runAdapterCommand(["seek", String(Self.micros(fromSeconds: seconds) ?? 0)])
+    }
 
     private func runAdapterCommand(_ args: [String]) {
         pollQueue.async {
-            guard let paths = self.resolveAdapterPaths() else { return }
+            guard let paths = Self.cachedPaths else { return }
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
             var arguments = [paths.script, paths.adapter]
@@ -250,13 +234,13 @@ final class NativeMediaController: NSObject {
     }
 
     private func launchStream() {
-        guard let paths = resolveAdapterPaths() else { return }
+        guard let paths = Self.cachedPaths else { return }
 
+        print("[NativeMediaController]  Starting mediaremote-adapter.pl stream...")
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        // OPTIMIZATION: Passed "--micros" option to enforce microsecond epoch time formats natively
         task.arguments = [paths.script, paths.adapter, "stream", "--debounce=100", "--micros"]
-        
+
         var env = ProcessInfo.processInfo.environment
         env["PERLIO"] = ":unix"
         task.environment = env
@@ -265,7 +249,9 @@ final class NativeMediaController: NSObject {
         task.standardOutput = stdout
         task.standardError = FileHandle.nullDevice
         streamProcess = task
-        buffer.removeAll()
+        pollQueue.async { [weak self] in
+            self?.buffer.removeAll()
+        }
 
         stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
@@ -280,10 +266,11 @@ final class NativeMediaController: NSObject {
 
         task.terminationHandler = { [weak self] _ in
             Task { @MainActor in
-                guard let self = self else { return }
+                guard let self else { return }
+                print("[NativeMediaController] ️ Stream process terminated.")
                 self.onListenerTerminated?()
                 if self.isListening {
-                    try? await Task.sleep(for: .seconds(2))
+                    try? await Task.sleep(for: .seconds(1.5))
                     guard self.isListening else { return }
                     self.launchStream()
                 }
@@ -300,14 +287,15 @@ final class NativeMediaController: NSObject {
             buffer.removeSubrange(buffer.startIndex..<range.upperBound)
             guard !lineData.isEmpty else { continue }
 
-            guard let parsed = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
-            let payload: [String: Any]
-            if let type = parsed["type"] as? String, type == "data", let inner = parsed["payload"] as? [String: Any] {
-                payload = inner
-            } else if parsed["type"] == nil {
-                payload = parsed
-            } else {
+            guard let parsed = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
                 continue
+            }
+
+            let payload: [String: Any]
+            if let inner = parsed["payload"] as? [String: Any] {
+                payload = inner
+            } else {
+                payload = parsed
             }
 
             Task { @MainActor in
@@ -316,215 +304,164 @@ final class NativeMediaController: NSObject {
         }
     }
 
+    private func clearActiveSystemMedia(notify: Bool = true) {
+        print("[NativeMediaController]  Clearing active system media source.")
+        activeClients.removeAll()
+        currentMergedMetadata.removeAll()
+        lastActiveClientKey = nil
+        lastTrackIdentity = nil
+        lastMediaFingerprint = nil
+        lastDecodedArtworkHash = nil
+        lastDecodedArtworkImage = nil
+        if notify {
+            onActiveClientsChanged?([:])
+            onTrackInfoReceived?(nil)
+        }
+    }
+
     private func handleTrackUpdate(_ metadata: [String: Any]) {
         if metadata.isEmpty {
-            mergedMetadataByKey.removeAll()
-            activeClients.removeAll()
-            onActiveClientsChanged?(activeClients)
-            lastKnownTrackInfo = nil
-            onTrackInfoReceived?(nil)
+            clearActiveSystemMedia(notify: true)
             return
         }
 
         guard isListening else { return }
 
-        let key = metadataKey(for: metadata)
-        var merged = mergedMetadataByKey[key] ?? [:]
-        
-        for (entryKey, value) in metadata {
-            if entryKey == "artworkData" || entryKey == "artworkMimeType" || entryKey == "_sapphireSnapshot" { continue }
-            
-            // OPTIMIZATION: Safely prune keys that have been explicitly nullified (diff tracking)
-            if value is NSNull {
-                merged.removeValue(forKey: entryKey)
-            } else if Self.shouldMergeField(key: entryKey, value: value) {
-                merged[entryKey] = value
+        let incomingBundle: String? = {
+            if let raw = metadata["bundleIdentifier"] as? String {
+                return Self.normalizeBundleID(raw) ?? raw
             }
-        }
-        
-        if Self.shouldAcceptIncomingArtwork(from: metadata, for: merged) {
-            if let artworkData = metadata["artworkData"] {
-                merged["artworkData"] = artworkData
-            }
-            if let artworkMimeType = metadata["artworkMimeType"] {
-                merged["artworkMimeType"] = artworkMimeType
-            }
+            return nil
+        }()
+
+        let targetKey: String
+        if let incomingBundle, !incomingBundle.isEmpty {
+            targetKey = incomingBundle
+        } else if let last = lastActiveClientKey {
+            targetKey = last
         } else {
-            merged.removeValue(forKey: "artworkData")
-            merged.removeValue(forKey: "artworkMimeType")
+            targetKey = "unknown"
         }
+
+        if let last = lastActiveClientKey, last != targetKey {
+            print("[NativeMediaController]  Switching active system source: '\(last)' -> '\(targetKey)'")
+            currentMergedMetadata.removeAll()
+            lastTrackIdentity = nil
+            lastMediaFingerprint = nil
+            lastDecodedArtworkHash = nil
+            lastDecodedArtworkImage = nil
+        }
+        lastActiveClientKey = targetKey
+
+        for (entryKey, value) in metadata {
+            if entryKey == "_sapphireSnapshot" { continue }
+            if value is NSNull || Self.isEmptyMergeValue(value) {
+                currentMergedMetadata.removeValue(forKey: entryKey)
+            } else {
+                currentMergedMetadata[entryKey] = value
+            }
+        }
+
+        let playbackState = currentMergedMetadata["playbackState"] as? Int
+        let isStopped = playbackState == 3
+        let title = (currentMergedMetadata["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if title.isEmpty || isStopped {
+            clearActiveSystemMedia(notify: true)
+            return
+        }
+
         if let playing = Self.normalizedPlaying(from: metadata) {
-            merged["playing"] = playing
+            currentMergedMetadata["playing"] = playing
         } else if metadata["playbackRate"] != nil {
             let rate = (metadata["playbackRate"] as? NSNumber)?.floatValue ?? 0
-            merged["playing"] = rate != 0
+            currentMergedMetadata["playing"] = rate != 0
         }
-        mergedMetadataByKey[key] = merged
 
-        let provisionalClientKey = clientKey(fromMerged: merged)
-        let previousClient = activeClients[provisionalClientKey]
-
-        let mergedIdentity = Self.trackIdentity(merged)
-        let previousIdentity = lastTrackIdentityByKey[key]
-        let fingerprint = Self.mediaFingerprint(merged)
-        let previousFingerprint = lastMediaFingerprintByKey[key]
+        let mergedIdentity = Self.trackIdentity(currentMergedMetadata)
+        let fingerprint = Self.mediaFingerprint(currentMergedMetadata)
         let transportOnly = Self.isTransportOnlyMetadata(metadata)
 
         var trackChanged = false
         if !transportOnly {
-            if !fingerprint.isEmpty, fingerprint != previousFingerprint {
-                trackChanged = true
-            } else if fingerprint.isEmpty, mergedIdentity != previousIdentity {
-                trackChanged = true
-            } else if Self.incomingMetadataDeclaresNewTrack(metadata, previous: previousClient?.payload) {
+            if !fingerprint.isEmpty {
+                trackChanged = fingerprint != lastMediaFingerprint
+            } else if let lastTrackIdentity, mergedIdentity != "unknown" {
+                trackChanged = mergedIdentity != lastTrackIdentity
+            } else if lastTrackIdentity == nil, mergedIdentity != "unknown" {
                 trackChanged = true
             }
         }
 
         if trackChanged {
-            lastTrackIdentityByKey[key] = mergedIdentity
+            print("[NativeMediaController]  System track changed: [\(targetKey)] -> \(title)")
+            lastTrackIdentity = mergedIdentity
             if !fingerprint.isEmpty {
-                lastMediaFingerprintByKey[key] = fingerprint
+                lastMediaFingerprint = fingerprint
             }
-            merged.removeValue(forKey: "artworkData")
-            merged.removeValue(forKey: "artworkMimeType")
-            mergedMetadataByKey[key] = merged
-            
-            let streamHasCompleteData = merged["title"] != nil && merged["artist"] != nil && (merged["durationMicros"] != nil || merged["duration"] != nil)
-            if !streamHasCompleteData {
-                requestImmediateSnapshot(for: key, urgent: true)
+            if metadata["artworkData"] == nil {
+                lastDecodedArtworkHash = nil
+                lastDecodedArtworkImage = nil
             }
         }
 
-        let transportChanged = Self.transportFieldsChanged(in: metadata)
-
-        let previousArtwork = previousClient?.payload.artwork
-        let previousTitle = previousClient?.payload.title
-
-        guard let track = buildTrackInfo(
-            from: merged,
-            trackChanged: trackChanged,
-            previousArtwork: previousArtwork,
-            previousTitle: previousTitle,
-            previousIsPlaying: previousClient?.payload.isPlaying
-        ) else { return }
-
-        let clientKey = clientKey(for: track)
-        let existingClient = activeClients[clientKey]
-        let trackIdentity = Self.trackIdentityFor(track.payload)
-
-        if trackChanged,
-           metadata["_sapphireSnapshot"] as? Bool == true,
-           track.payload.artwork == nil {
-            prefetchArtworkIfNeeded(identity: trackIdentity, clientKey: clientKey, payload: track.payload)
+        var artworkImage = lastDecodedArtworkImage
+        if let base64 = currentMergedMetadata["artworkData"] as? String, !base64.isEmpty {
+            let currentHash = base64.hashValue
+            if currentHash == lastDecodedArtworkHash, let cached = lastDecodedArtworkImage {
+                artworkImage = cached
+            } else if let data = Data(base64Encoded: base64), let decoded = NSImage(data: data) {
+                lastDecodedArtworkHash = currentHash
+                lastDecodedArtworkImage = decoded
+                artworkImage = decoded
+            }
         }
 
+        guard let track = buildTrackInfo(from: currentMergedMetadata, artwork: artworkImage) else {
+            clearActiveSystemMedia(notify: true)
+            return
+        }
+
+        let existingClient = activeClients[targetKey]
         let playStateChanged = existingClient?.payload.isPlaying != track.payload.isPlaying
             || existingClient?.payload.playbackRate != track.payload.playbackRate
-        let positionChanged = playbackPositionChanged(
-            from: existingClient?.payload,
-            to: track.payload
-        )
-
-        activeClients[clientKey] = track
-
-        let activeKeys = activeClients.keys
-        if activeKeys.count > 5 { activeClients.removeValue(forKey: activeKeys.first!) }
-
-        let artworkUpdated = metadata["artworkData"] != nil
+        let positionChanged = playbackPositionChanged(from: existingClient?.payload, to: track.payload)
         let artworkArrived = track.payload.artwork != nil && existingClient?.payload.artwork == nil
-        let shouldNotify = trackChanged || playStateChanged || positionChanged || transportChanged || artworkUpdated || artworkArrived
-        lastKnownTrackInfo = track
+        let artworkUpdated = trackChanged && metadata["artworkData"] != nil
+
+        let shouldNotify = trackChanged || playStateChanged || positionChanged || artworkUpdated || artworkArrived
+
+        activeClients = [targetKey: track]
+
         if shouldNotify {
             onActiveClientsChanged?(activeClients)
             onTrackInfoReceived?(track)
         }
     }
 
-    private func metadataKey(for metadata: [String: Any]) -> String {
-        let bundle = metadata["bundleIdentifier"] as? String ?? "unknown"
-        let pid = (metadata["processIdentifier"] as? NSNumber)?.intValue
-            ?? metadata["processIdentifier"] as? Int
-            ?? 0
-        return "\(bundle):\(pid)"
-    }
-
-    private func clientKey(fromMerged metadata: [String: Any]) -> String {
-        let bundle = metadata["bundleIdentifier"] as? String ?? "unknown"
-        let pid = (metadata["processIdentifier"] as? NSNumber)?.intValue
-            ?? metadata["processIdentifier"] as? Int
-            ?? 0
-        return "\(bundle):\(pid)"
-    }
-
     private func playbackPositionChanged(from previous: TrackInfo.Payload?, to current: TrackInfo.Payload) -> Bool {
-        guard let previousElapsed = previous?.currentElapsedTime,
-              let currentElapsed = current.currentElapsedTime else {
+        guard let prev = previous, let prevElapsed = prev.currentElapsedTime else {
             return previous?.currentElapsedTime != current.currentElapsedTime
         }
-        return abs(previousElapsed - currentElapsed) >= 0.5
+        guard let currElapsed = current.currentElapsedTime else { return true }
+
+        let expectedElapsed = prev.interpolatedElapsedTime(at: Date())
+
+        return abs(expectedElapsed - currElapsed) > 1.5
     }
 
     func trimArtworkCache(keeping identity: String?) {
-        artworkPrefetchTasks.values.forEach { $0.cancel() }
-        artworkPrefetchTasks.removeAll()
-
-        mergedMetadataByKey.removeAll(keepingCapacity: false)
-        lastTrackIdentityByKey.removeAll(keepingCapacity: false)
-        lastMediaFingerprintByKey.removeAll(keepingCapacity: false)
-
-        activeClients = activeClients.mapValues { track in
-            TrackInfo(payload: track.payload.updatingArtwork(nil, mimeType: nil))
-        }
+        lastDecodedArtworkHash = nil
+        lastDecodedArtworkImage = nil
     }
 
-    private func requestImmediateSnapshot(for metadataKey: String, urgent: Bool = false) {
-        if !urgent {
-            let now = Date().timeIntervalSinceReferenceDate
-            guard now - lastSnapshotRefreshInstant > 0.08 else { return }
-            lastSnapshotRefreshInstant = now
+    nonisolated private static func micros(fromSeconds seconds: Double) -> Int64? {
+        guard seconds.isFinite else { return nil }
+        let micros = seconds * 1_000_000
+        guard micros.isFinite, micros >= Double(Int64.min), micros < Double(Int64.max) else {
+            return nil
         }
-
-        snapshotRefreshTask?.cancel()
-        snapshotRefreshTask = Task { @MainActor in
-            let snapshot = await self.fetchMetadataSnapshot()
-            guard !Task.isCancelled, let snapshot = snapshot, !snapshot.isEmpty else { return }
-            var tagged = snapshot
-            tagged["_sapphireSnapshot"] = true
-            self.handleTrackUpdate(tagged)
-        }
-    }
-
-    private func fetchMetadataSnapshot() async -> [String: Any]? {
-        await withCheckedContinuation { continuation in
-            pollQueue.async {
-                continuation.resume(returning: Self.fetchMetadataSnapshotSync(paths: self.resolveAdapterPaths()))
-            }
-        }
-    }
-
-    nonisolated private static func fetchMetadataSnapshotSync(paths: (script: String, adapter: String, testClient: String?)?) -> [String: Any]? {
-        guard let paths = paths else { return nil }
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        task.arguments = [paths.script, paths.adapter, "get", "--micros"]
-        task.standardError = FileHandle.nullDevice
-        let stdout = Pipe()
-        task.standardOutput = stdout
-        try? task.run()
-
-        let timeoutItem = DispatchWorkItem { task.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.35, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        guard let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        if let type = parsed["type"] as? String, type == "data", let inner = parsed["payload"] as? [String: Any] {
-            return inner
-        }
-        return parsed["type"] == nil ? parsed : nil
+        return Int64(micros)
     }
 
     nonisolated private static func normalizedPlaying(from metadata: [String: Any]) -> Bool? {
@@ -535,166 +472,12 @@ final class NativeMediaController: NSObject {
     }
 
     nonisolated private static func transportFieldsChanged(in metadata: [String: Any]) -> Bool {
-        metadata["playing"] != nil || metadata["playbackRate"] != nil
-    }
-
-    private func prefetchArtworkIfNeeded(identity: String, clientKey: String, payload: TrackInfo.Payload) {
-        artworkPrefetchTasks[identity]?.cancel()
-        artworkPrefetchTasks[identity] = Task { @MainActor in
-            defer { self.artworkPrefetchTasks[identity] = nil }
-            let (image, mimeType) = await self.fetchArtworkForTrack(
-                expectedIdentity: identity,
-                title: payload.title,
-                artist: payload.artist,
-                album: payload.album
-            )
-            guard !Task.isCancelled, let image = image else { return }
-
-            guard let existing = self.activeClients[clientKey] else { return }
-            guard Self.trackIdentityFor(existing.payload) == identity else { return }
-
-            let updatedPayload = existing.payload.updatingArtwork(image, mimeType: mimeType)
-            let updated = TrackInfo(payload: updatedPayload)
-            self.activeClients[clientKey] = updated
-            self.lastKnownTrackInfo = updated
-            self.onActiveClientsChanged?(self.activeClients)
-            self.onTrackInfoReceived?(updated)
-        }
-    }
-
-    // Directly fetch artwork from the adapter with zero caching
-    func fetchArtworkForTrack(
-        expectedIdentity: String,
-        title: String?,
-        artist: String?,
-        album: String?
-    ) async -> (NSImage?, String?) {
-        guard let paths = resolveAdapterPaths() else { return (nil, nil) }
-        return await withCheckedContinuation { continuation in
-            pollQueue.async {
-                let result = Self.runValidatedArtworkFetch(
-                    script: paths.script,
-                    adapter: paths.adapter,
-                    expectedIdentity: expectedIdentity,
-                    expectedTitle: title,
-                    expectedArtist: artist,
-                    expectedAlbum: album
-                )
-                continuation.resume(returning: result)
-            }
-        }
-    }
-
-    nonisolated private static func runValidatedArtworkFetch(
-        script: String,
-        adapter: String,
-        expectedIdentity: String,
-        expectedTitle: String?,
-        expectedArtist: String?,
-        expectedAlbum: String?
-    ) -> (NSImage?, String?) {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-        task.arguments = [script, adapter, "get"]
-        task.standardError = FileHandle.nullDevice
-        let stdout = Pipe()
-        task.standardOutput = stdout
-        try? task.run()
-
-        let timeoutItem = DispatchWorkItem { task.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.35, execute: timeoutItem)
-        task.waitUntilExit()
-        timeoutItem.cancel()
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              artworkMatchesTrack(
-                metadata: json,
-                expectedIdentity: expectedIdentity,
-                expectedTitle: expectedTitle,
-                expectedArtist: expectedArtist,
-                expectedAlbum: expectedAlbum
-              ),
-              let base64 = json["artworkData"] as? String,
-              let imageData = Data(base64Encoded: base64),
-              let image = NSImage(data: imageData) else {
-            return (nil, nil)
-        }
-        return (image, json["artworkMimeType"] as? String)
-    }
-
-    nonisolated private static func shouldAcceptIncomingArtwork(from metadata: [String: Any], for merged: [String: Any]) -> Bool {
-        guard metadata["artworkData"] != nil else { return false }
-        return artworkMatchesTrack(
-            metadata: metadata,
-            expectedIdentity: trackIdentity(merged),
-            expectedTitle: merged["title"] as? String,
-            expectedArtist: merged["artist"] as? String,
-            expectedAlbum: merged["album"] as? String
-        )
-    }
-
-    nonisolated private static func artworkMatchesTrack(
-        metadata: [String: Any],
-        expectedIdentity: String,
-        expectedTitle: String?,
-        expectedArtist: String?,
-        expectedAlbum: String?
-    ) -> Bool {
-        let responseIdentity = trackIdentity(metadata)
-        if responseIdentity == expectedIdentity { return true }
-
-        guard let title = metadata["title"] as? String, !title.isEmpty,
-              title == (expectedTitle ?? "") else { return false }
-
-        if let expectedArtist, !expectedArtist.isEmpty {
-            let responseArtist = metadata["artist"] as? String ?? ""
-            if responseArtist != expectedArtist { return false }
-        }
-
-        if let expectedAlbum, !expectedAlbum.isEmpty {
-            let responseAlbum = metadata["album"] as? String ?? ""
-            if responseAlbum != expectedAlbum { return false }
-        }
-
-        return true
-    }
-
-    nonisolated private static func trackIdentity(_ m: [String: Any]) -> String {
-        if let id = m["contentItemIdentifier"] as? String, !id.isEmpty { return "cid:\(id)" }
-        if let id = m["uniqueIdentifier"] as? String, !id.isEmpty { return "uid:\(id)" }
-        let fingerprint = mediaFingerprint(m)
-        return fingerprint.isEmpty ? "unknown" : "fp:\(fingerprint)"
-    }
-
-    nonisolated private static func mediaFingerprint(_ m: [String: Any]) -> String {
-        [m["title"] as? String, m["artist"] as? String, m["album"] as? String]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "|")
-            .lowercased()
-    }
-
-    nonisolated private static func isEmptyMergeValue(_ value: Any) -> Bool {
-        if value is NSNull { return true }
-        if let string = value as? String {
-            return string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        return false
-    }
-
-    nonisolated private static func shouldMergeField(key: String, value: Any) -> Bool {
-        let identityFields: Set<String> = [
-            "title", "artist", "album", "albumArtist",
-            "contentItemIdentifier", "uniqueIdentifier"
-        ]
-        if identityFields.contains(key), isEmptyMergeValue(value) { return false }
-        return true
+        metadata["playing"] != nil || metadata["playbackRate"] != nil || metadata["playbackState"] != nil
     }
 
     nonisolated private static func isTransportOnlyMetadata(_ metadata: [String: Any]) -> Bool {
         let transportKeys: Set<String> = [
-            "playing", "playbackRate",
+            "playing", "playbackRate", "playbackState",
             "elapsedTime", "elapsedTimeMicros",
             "elapsedTimeNow", "elapsedTimeNowMicros",
             "timestamp", "timestampEpochMicros",
@@ -710,69 +493,55 @@ final class NativeMediaController: NSObject {
         return !keys.isDisjoint(with: transportKeys) && keys.isDisjoint(with: identityKeys)
     }
 
-    nonisolated private static func incomingMetadataDeclaresNewTrack(
-        _ metadata: [String: Any],
-        previous: TrackInfo.Payload?
-    ) -> Bool {
-        if let incomingID = metadata["contentItemIdentifier"] as? String, !incomingID.isEmpty,
-           incomingID != previous?.contentItemIdentifier {
-            return true
-        }
-        if let incomingID = metadata["uniqueIdentifier"] as? String, !incomingID.isEmpty,
-           incomingID != previous?.uniqueIdentifier {
-            return true
-        }
-        if let incomingTitle = metadata["title"] as? String, !incomingTitle.isEmpty,
-           incomingTitle != previous?.title {
-            return true
-        }
-        return false
-    }
-
-    private static func trackIdentityFor(_ payload: TrackInfo.Payload) -> String {
-        if let id = payload.contentItemIdentifier, !id.isEmpty { return "cid:\(id)" }
-        if let id = payload.uniqueIdentifier, !id.isEmpty { return "uid:\(id)" }
-        let fingerprint = mediaFingerprint(payload)
+    nonisolated private static func trackIdentity(_ m: [String: Any]) -> String {
+        if let id = m["contentItemIdentifier"] as? String, !id.isEmpty { return "cid:\(id)" }
+        if let id = m["uniqueIdentifier"] as? String, !id.isEmpty { return "uid:\(id)" }
+        let fingerprint = mediaFingerprint(m)
         return fingerprint.isEmpty ? "unknown" : "fp:\(fingerprint)"
     }
 
-    nonisolated private static func mediaFingerprint(_ payload: TrackInfo.Payload) -> String {
-        [payload.title, payload.artist, payload.album]
+    nonisolated private static func mediaFingerprint(_ m: [String: Any]) -> String {
+        [m["title"] as? String, m["artist"] as? String]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "|")
             .lowercased()
     }
 
-    nonisolated private func resolveAdapterPaths() -> (script: String, adapter: String, testClient: String?)? {
-        return Self.cachedPaths
+    nonisolated private static func isEmptyMergeValue(_ value: Any) -> Bool {
+        if let string = value as? String {
+            return string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return false
     }
 
-    nonisolated private func clientKey(for track: TrackInfo) -> String {
-        let bundle = track.payload.bundleIdentifier ?? "unknown"
-        let pid = track.payload.processIdentifier.map(String.init) ?? "0"
-        return "\(bundle):\(pid)"
+    nonisolated private static func normalizeBundleID(_ bundleID: String?) -> String? {
+        guard let bundleID else { return nil }
+        switch bundleID {
+        case "com.apple.WebKit.GPU", "com.apple.WebKit.WebContent": return "com.apple.Safari"
+        case let id where id.starts(with: "com.google.Chrome.helper"): return "com.google.Chrome"
+        case let id where id.starts(with: "com.microsoft.edgemac.helper"): return "com.microsoft.edgemac"
+        case "company.thebrowser.Browser.helper": return "company.thebrowser.Browser"
+        default: return bundleID
+        }
     }
 
-    nonisolated private func buildTrackInfo(
-        from metadata: [String: Any],
-        trackChanged: Bool,
-        previousArtwork: NSImage?,
-        previousTitle: String?,
-        previousIsPlaying: Bool?
-    ) -> TrackInfo? {
+    nonisolated private func buildTrackInfo(from metadata: [String: Any], artwork: NSImage?) -> TrackInfo? {
         let title = metadata["title"] as? String
         let artist = metadata["artist"] as? String
-        let bundleId = metadata["bundleIdentifier"] as? String
-        
+        let rawBundle = metadata["bundleIdentifier"] as? String
+        let bundleId = Self.normalizeBundleID(rawBundle) ?? rawBundle
+
         let hasIdentity = (title?.isEmpty == false) || (bundleId?.isEmpty == false)
         guard hasIdentity else { return nil }
 
         let durationMicros: Int64?
         if let micros = (metadata["durationMicros"] as? NSNumber)?.int64Value, micros > 0 {
             durationMicros = micros
-        } else if let d = (metadata["duration"] as? NSNumber)?.doubleValue, d > 0 {
-            durationMicros = Int64(d * 1_000_000)
+        } else if let d = (metadata["duration"] as? NSNumber)?.doubleValue,
+                  d > 0,
+                  let micros = Self.micros(fromSeconds: d), micros > 0 {
+            durationMicros = micros
         } else {
             durationMicros = nil
         }
@@ -792,7 +561,7 @@ final class NativeMediaController: NSObject {
 
         let playbackRateNumber = metadata["playbackRate"] as? NSNumber
         let playbackRate = playbackRateNumber?.floatValue
-        let isPlaying = Self.normalizedPlaying(from: metadata) ?? previousIsPlaying
+        let isPlaying = Self.normalizedPlaying(from: metadata)
 
         let timestamp: NSNumber?
         let timestampEpochMicros: Int64?
@@ -807,18 +576,14 @@ final class NativeMediaController: NSObject {
             timestampEpochMicros = nil
         }
 
-        var artwork: NSImage?
-        
-        // Directly decode base64
-        if let base64 = metadata["artworkData"] as? String,
-           let data = Data(base64Encoded: base64) {
-            artwork = NSImage(data: data)
-        } else if !trackChanged, let previousArtwork, previousTitle == title {
-            artwork = previousArtwork
-        }
+        let processIdentifier: Int? = {
+            if let value = metadata["processIdentifier"] as? Int { return value }
+            if let value = metadata["processIdentifier"] as? NSNumber { return value.intValue }
+            return nil
+        }()
 
         let payload = TrackInfo.Payload(
-            processIdentifier: metadata["processIdentifier"] as? Int,
+            processIdentifier: processIdentifier,
             bundleIdentifier: bundleId,
             parentApplicationBundleIdentifier: metadata["parentApplicationBundleIdentifier"] as? String,
             title: title,
@@ -837,7 +602,7 @@ final class NativeMediaController: NSObject {
             isPlaying: isPlaying,
             durationMicros: durationMicros,
             currentElapsedTime: elapsed,
-            elapsedTimeMicros: elapsed.map { Int64($0 * 1_000_000) },
+            elapsedTimeMicros: elapsed.flatMap { Self.micros(fromSeconds: $0) },
             playbackRate: playbackRate,
             startTime: metadata["startTime"] as? NSNumber,
             timestamp: timestamp,
@@ -863,56 +628,5 @@ final class NativeMediaController: NSObject {
             artworkMimeType: metadata["artworkMimeType"] as? String
         )
         return TrackInfo(payload: payload)
-    }
-}
-
-// MARK: - TrackInfo.Payload Extension
-extension TrackInfo.Payload {
-    func updatingArtwork(_ artwork: NSImage?, mimeType: String?) -> TrackInfo.Payload {
-        TrackInfo.Payload(
-            processIdentifier: processIdentifier,
-            bundleIdentifier: bundleIdentifier,
-            parentApplicationBundleIdentifier: parentApplicationBundleIdentifier,
-            title: title,
-            artist: artist,
-            album: album,
-            albumArtist: albumArtist,
-            composer: composer,
-            genre: genre,
-            chapterNumber: chapterNumber,
-            totalChapterCount: totalChapterCount,
-            trackNumber: trackNumber,
-            discNumber: discNumber,
-            totalTrackCount: totalTrackCount,
-            queueIndex: queueIndex,
-            totalQueueCount: totalQueueCount,
-            isPlaying: isPlaying,
-            durationMicros: durationMicros,
-            currentElapsedTime: currentElapsedTime,
-            elapsedTimeMicros: elapsedTimeMicros,
-            playbackRate: playbackRate,
-            startTime: startTime,
-            timestamp: timestamp,
-            timestampEpochMicros: timestampEpochMicros,
-            repeatMode: repeatMode,
-            shuffleMode: shuffleMode,
-            isLiked: isLiked,
-            isBanned: isBanned,
-            isInWishList: isLiked,
-            isAdvertisement: isAdvertisement,
-            isMusicApp: isMusicApp,
-            supportsIsLiked: supportsIsLiked,
-            supportsIsBanned: supportsIsBanned,
-            supportsFastForward15Seconds: supportsFastForward15Seconds,
-            supportsRewind15Seconds: supportsRewind15Seconds,
-            prohibitsSkip: prohibitsSkip,
-            radioStationIdentifier: radioStationIdentifier,
-            radioStationHash: radioStationHash,
-            contentItemIdentifier: contentItemIdentifier,
-            uniqueIdentifier: uniqueIdentifier,
-            mediaType: mediaType,
-            artwork: artwork,
-            artworkMimeType: mimeType
-        )
     }
 }

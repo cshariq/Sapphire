@@ -100,6 +100,7 @@ struct NotchController: View {
     private static let hoverDetectionMargin: CGFloat = 8
     private static let hoverCollapseMargin: CGFloat = 60
     private static let hoverProximityMargin: CGFloat = 32
+    private static let revealSettlingInterval: TimeInterval = 0.7
 
     // MARK: - Environment Objects
     @EnvironmentObject var liveActivityManager: LiveActivityManager
@@ -129,6 +130,8 @@ struct NotchController: View {
     @State private var collapseTask: Task<Void, Never>?
     @State private var isCollapseTimerActive: Bool = false
     @State private var widgetSwitchProtectionTask: Task<Void, Never>?
+    /// Bumps whenever protection restarts so a cancelled task can't clear the new one.
+    @State private var widgetSwitchProtectionGeneration: UInt64 = 0
     @State private var isPinned = false
     @State private var settingsWindow: NSWindow?
     @State private var settingsDelegate: SettingsWindowDelegate?
@@ -142,6 +145,11 @@ struct NotchController: View {
     @State private var shadowOpacity: Double = 0
     @State private var measuredClickContentSize: CGSize = .zero
     @State private var measuredAutoContentSize: CGSize = .zero
+    /// Intrinsic widths of the default-mode icon rows (settings, shelf, battery, ...).
+    /// The click-expanded pill must never be narrower than these combined, or the
+    /// icons get clipped when only a single small widget is shown.
+    @State private var notchIconsLeftWidth: CGFloat = 0
+    @State private var notchIconsRightWidth: CGFloat = 0
     @State private var navigationStack: [NotchWidgetMode] = [.defaultWidgets]
     @State private var autoContentOpacity: Double = 0
     @State private var activityBlurRadius: CGFloat = 0
@@ -168,6 +176,26 @@ struct NotchController: View {
     @State private var lastActivityShapeSignature: String = ""
     @State private var isCalendarHovered: Bool = false
     @State private var fileDropFlowObserver: NSObjectProtocol?
+    @State private var completeHideReason: NotchCompleteHideReason? = nil
+    @State private var inactiveHideUserOverride: Bool = false
+    @State private var suppressHoverAfterReveal = false
+    @State private var revealSettlingUntil: Date = .distantPast
+    /// Pending expand-on-hover task. Cancelled if the cursor leaves the notch before the delay elapses.
+    @State private var hoverExpandTask: Task<Void, Never>?
+
+    private enum NotchCompleteHideReason {
+        case manualSwipe
+        case inactive
+        case fullScreen
+    }
+
+    private var isManuallyHidden: Bool { completeHideReason != nil }
+
+    /// Whether the display this notch window sits on is showing a full screen app.
+    private var isNotchScreenFullScreen: Bool {
+        let screen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
+        return activeAppMonitor.isScreenFullScreen(screen)
+    }
 
     // MARK: - Computed Properties
     private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
@@ -181,6 +209,10 @@ struct NotchController: View {
     }
 
     private var currentMode: NotchWidgetMode { navigationStack.last ?? .defaultWidgets }
+
+    private var notchIconsIntrinsicWidth: CGFloat {
+        notchIconsLeftWidth + notchIconsRightWidth + NotchConfiguration.defaultModeIconsHorizontalPadding * 2
+    }
 
     private var activeAppearanceSettings: NotchAppearanceSettings {
         switch notchState {
@@ -196,11 +228,17 @@ struct NotchController: View {
     }
 
     private var isInteractive: Bool {
-        notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || activeAppMonitor.isWindowDragging
+        !isManuallyHidden && (notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || activeAppMonitor.isWindowDragging)
     }
 
     private var shouldHideWindowForSharing: Bool {
         settings.settings.hideFromScreenSharing || (notchState == .initial)
+    }
+
+    /// Blocks click / hover / swipe expansion while the Mac is locked (live activities still allowed).
+    private var shouldBlockNotchExpansionWhileLocked: Bool {
+        settings.settings.preventNotchExpandWhenLocked
+            && ((NSApp.delegate as? AppDelegate)?.isScreenLocked == true)
     }
 
     private var geminiShadowGradient: LinearGradient {
@@ -369,132 +407,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     // MARK: - Body
     var body: some View {
         if let config = config {
-            ZStack(alignment: .top) {
-                if isGeminiActive {
-                    let isShadowVisible = (notchState != .initial)
-                    let shadowRadius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
-                    let shadowYOffset = notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
-                    activeShape
-                        .fill(geminiShadowGradient)
-                        .blur(radius: shadowRadius)
-                        .offset(y: shadowYOffset)
-                        .opacity(isShadowVisible ? 0.75 : 0)
-                        .allowsHitTesting(false)
-                }
-
-                notchBackground
-                    .mask(activeShape)
-
-                ZStack(alignment: .top) {
-                    let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
-                    if showActivityView && isLiveActivityActive && canRenderAutoContent {
-                        autoActivityView
-                            .fixedSize(horizontal: true, vertical: false)
-                            .blur(radius: activityBlurRadius)
-                            .scaleEffect(activityContentScale)
-                            .id(liveActivityManager.currentActivity)
-                            .animation(liveActivityManager.activityHasBottomContent ?
-                                       config.bottomContentTransitionAnimation :
-                                        config.activityToActivityAnimation,
-                                       value: liveActivityManager.activityAnimationKey)
-                            .opacity(autoContentOpacity)
-                            .scaleEffect(animatedContentScale)
-                    } else {
-                        contentView
-                            .mask(activeShape)
-                    }
-
-                    if notchState == .clickExpanded {
-                        expandedOverlayIcons
-                            .transition(.opacity.animation(.easeInOut(duration: 0.2)))
-                            .zIndex(1)
-
-                        hudOverlayView
-                            .transition(.opacity.animation(.easeOut(duration: 0.18)))
-                            .zIndex(3)
-                    }
-                }
-            }
-            // MARK: - SHADOW LOGIC
-            .shadow(
-                color: isGeminiActive ? .clear : config.expandedShadowColor.opacity(shadowOpacity),
-                radius: isGeminiActive ? 0 : (notchState == .clickExpanded ? config.expandedShadowRadius : (notchState == .hoverExpanded ? 12 : 0)),
-                y: isGeminiActive ? 0 : (notchState == .clickExpanded ? config.expandedShadowOffsetY : (notchState == .hoverExpanded ? 6 : 0))
-            )
-            .frame(width: animatedWidth, height: animatedHeight)
-            .contentShape(activeShape)
-            .onDrop(of: [UTType.fileURL, .plainText], isTargeted: $isFileDropTargeted, perform: handleItemDrop)
-            .padding(.top, -config.topBuffer)
-            .frame(maxWidth: .infinity, alignment: .top)
-            .onAppear(perform: setupMonitors)
-            .onDisappear(perform: teardownMonitors)
-            .onChange(of: fileShelfState.selectedItemForPreview, perform: handlePreviewItemChange)
-            .onChange(of: liveActivityManager.currentActivity, perform: handleActivityChange)
-            .onChange(of: showRightHUDOverlay) { _, _ in
-                updateHUDOverlayAnimation()
-            }
-            .onChange(of: liveActivityManager.contentUpdateID) {
-                if notchState == .autoExpanded || notchState == .hoverExpanded {
-                    let shapeSignature = liveActivityManager.notchShapeSignature
-                    if shapeSignature != lastActivityShapeSignature {
-                        lastActivityShapeSignature = shapeSignature
-                        handleStateChange(from: notchState, to: notchState)
-                    } else {
-                        updateAutoContentSize()
-                    }
-                }
-            }
-            .preferredColorScheme(.dark)
-            .onChange(of: notchState, handleStateChange)
-            .onChange(of: navigationStack, handleNavigationStackChange)
-            .onChange(of: dragManager.isDraggingInActivationZone) { _, isDragging in
-                Task {
-                    await handleDragActivationChange(isDragging: isDragging)
-                }
-            }
-            .onChange(of: activeAppMonitor.isWindowDragging) { _, isDragging in
-                if settings.settings.snapOnWindowDragEnabled {
-                    handleWindowDragChange(isDragging: isDragging)
-                }
-            }
-            .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
-            .onChange(of: measuredClickContentSize) { _, newSize in handleSizeChange(newSize, for: .clickExpanded) }
-            .onChange(of: measuredAutoContentSize) { _, newSize in handleSizeChange(newSize, for: .autoExpanded) }
-            .onReceive(pickerHelper.pickerResultPublisher, perform: handlePickerResult)
-            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenMusicQueue)) { _ in
-                openMusicHub(mode: .musicQueueAndPlaylists)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenMusicDevices)) { _ in
-                openMusicHub(mode: .musicDevices)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenCircleToSearch)) { notification in
-                openCircleToSearch(object: notification.object as? String)
-            }
-            .onChange(of: showLyrics, perform: handleShowLyricsChange)
-            .onChange(of: isInteractive) { _, newValue in
-                updateMouseEventHandling(isInteractive: newValue)
-            }
-            .onChange(of: animatedWidth) { _, _ in
-                updateMouseEventHandling(isInteractive: isInteractive)
-            }
-            .onChange(of: animatedHeight) { _, _ in
-                updateMouseEventHandling(isInteractive: isInteractive)
-            }
-            .onChange(of: shouldHideWindowForSharing) { _, newValue in updateWindowSharingBehavior(shouldBeHidden: newValue) }
-            .onChange(of: isInteractive) { _, isNowInteractive in
-                if isNowInteractive {
-                    MenuBarInteractionManager.shared.stopMonitoring()
-                } else {
-                    MenuBarInteractionManager.shared.startMonitoring()
-                }
-            }
-            .onChange(of: settings.settings) { _, newSettings in
-                let targetScreen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
-                let newConfig = ResolvedNotchConfiguration(from: newSettings, screen: targetScreen)
-                self.config = newConfig
-                self.expansionAnimation = newConfig.expandAnimation
-                handleStateChange(from: notchState, to: notchState)
-            }
+            configuredNotchView(config: config)
         } else {
             Color.clear
                 .onAppear {
@@ -509,6 +422,252 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     self.liveActivityHorizontalPadding = initialConfig.activityDefaultHorizontalPadding
                 }
         }
+    }
+
+    @ViewBuilder
+    private func configuredNotchView(config: ResolvedNotchConfiguration) -> some View {
+        let chrome = applyNotchChrome(to: notchVisualStack(config: config), config: config)
+        applyNotchSettingsHandlers(
+            to: applyNotchNotificationHandlers(
+                to: applyNotchStateHandlers(to: chrome)
+            )
+        )
+    }
+
+    @ViewBuilder
+    private func notchVisualStack(config: ResolvedNotchConfiguration) -> some View {
+        ZStack(alignment: .top) {
+            if isGeminiActive {
+                let isShadowVisible = (notchState != .initial)
+                let shadowRadius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
+                let shadowYOffset = notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
+                activeShape
+                    .fill(geminiShadowGradient)
+                    .blur(radius: shadowRadius)
+                    .offset(y: shadowYOffset)
+                    .opacity(isShadowVisible ? 0.75 : 0)
+                    .allowsHitTesting(false)
+            }
+
+            notchBackground
+                .mask(activeShape)
+
+            ZStack(alignment: .top) {
+                let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
+                if showActivityView && isLiveActivityActive && canRenderAutoContent {
+                    let activityTransition = liveActivityManager.activityHasBottomContent
+                        ? config.bottomContentTransitionAnimation
+                        : config.activityToActivityAnimation
+                    autoActivityView
+                        .fixedSize(horizontal: true, vertical: false)
+                        .blur(radius: activityBlurRadius)
+                        .scaleEffect(activityContentScale)
+                        .id(liveActivityManager.currentActivity)
+                        .animation(activityTransition, value: liveActivityManager.activityAnimationKey)
+                        .opacity(autoContentOpacity)
+                        .scaleEffect(animatedContentScale)
+                } else {
+                    contentView
+                        .mask(activeShape)
+                }
+
+                if notchState == .clickExpanded {
+                    expandedOverlayIcons
+                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+                        .zIndex(1)
+
+                    hudOverlayView
+                        .transition(.opacity.animation(.easeOut(duration: 0.18)))
+                        .zIndex(3)
+                }
+            }
+        }
+    }
+
+    private func applyNotchChrome<V: View>(to view: V, config: ResolvedNotchConfiguration) -> some View {
+        let shadowRadius: CGFloat = {
+            if isGeminiActive { return 0 }
+            switch notchState {
+            case .clickExpanded: return config.expandedShadowRadius
+            case .hoverExpanded: return 12
+            default: return 0
+            }
+        }()
+        let shadowY: CGFloat = {
+            if isGeminiActive { return 0 }
+            switch notchState {
+            case .clickExpanded: return config.expandedShadowOffsetY
+            case .hoverExpanded: return 6
+            default: return 0
+            }
+        }()
+        return view
+            .shadow(
+                color: isGeminiActive ? .clear : config.expandedShadowColor.opacity(shadowOpacity),
+                radius: shadowRadius,
+                y: shadowY
+            )
+            .frame(width: animatedWidth, height: animatedHeight)
+            .contentShape(activeShape)
+            .onDrop(of: [UTType.fileURL, .plainText], isTargeted: $isFileDropTargeted, perform: handleItemDrop)
+            .padding(.top, -config.topBuffer)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .preferredColorScheme(.dark)
+    }
+
+    private func applyNotchStateHandlers<V: View>(to view: V) -> some View {
+        view
+            .onAppear(perform: setupMonitors)
+            .onDisappear(perform: teardownMonitors)
+            .onChange(of: fileShelfState.selectedItemForPreview, perform: handlePreviewItemChange)
+            .onChange(of: liveActivityManager.currentActivity, perform: handleActivityChange)
+            .onChange(of: showRightHUDOverlay) { _, _ in
+                updateHUDOverlayAnimation()
+            }
+            .onChange(of: liveActivityManager.contentUpdateID) {
+                handleLiveActivityContentUpdate()
+            }
+            .onChange(of: notchState, handleStateChange)
+            .onChange(of: navigationStack, handleNavigationStackChange)
+            .onChange(of: dragManager.isDraggingInActivationZone, perform: handleDragActivationZoneChange)
+            .onChange(of: activeAppMonitor.isWindowDragging, perform: handleActiveWindowDragChange)
+            .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
+            .onChange(of: measuredClickContentSize, perform: handleMeasuredClickSizeChange)
+            .onChange(of: measuredAutoContentSize, perform: handleMeasuredAutoSizeChange)
+    }
+
+    private func applyNotchNotificationHandlers<V: View>(to view: V) -> some View {
+        view
+            .onReceive(pickerHelper.pickerResultPublisher, perform: handlePickerResult)
+            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenMusicQueue), perform: handleOpenMusicQueueNotification)
+            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenMusicDevices), perform: handleOpenMusicDevicesNotification)
+            .onReceive(NotificationCenter.default.publisher(for: .sapphireRevealHiddenNotch), perform: handleRevealHiddenNotchNotification)
+            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenCircleToSearch), perform: handleOpenCircleToSearchNotification)
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+                handleScreenParametersChange()
+            }
+    }
+
+    private func applyNotchSettingsHandlers<V: View>(to view: V) -> some View {
+        view
+            .onChange(of: showLyrics, perform: handleShowLyricsChange)
+            .onChange(of: isInteractive, perform: handleInteractiveChange)
+            .onChange(of: animatedWidth, perform: handleAnimatedSizeChange)
+            .onChange(of: animatedHeight, perform: handleAnimatedSizeChange)
+            .onChange(of: notchIconsIntrinsicWidth) { _, _ in
+                applyNotchIconsWidthFloor()
+            }
+            .onChange(of: shouldHideWindowForSharing, perform: handleSharingVisibilityChange)
+            .onChange(of: isInteractive, perform: handleMenuBarMonitoringChange)
+            .onChange(of: settings.settings, perform: handleSettingsChange)
+            .onChange(of: activeAppMonitor.fullScreenDisplayIDs) { _ in
+                evaluateInactiveNotchVisibility()
+            }
+    }
+
+    private func handleDragActivationZoneChange(_ isDragging: Bool) {
+        Task {
+            await handleDragActivationChange(isDragging: isDragging)
+        }
+    }
+
+    private func handleActiveWindowDragChange(_ isDragging: Bool) {
+        if settings.settings.snapOnWindowDragEnabled {
+            handleWindowDragChange(isDragging: isDragging)
+        }
+    }
+
+    private func handleMeasuredClickSizeChange(_ newSize: CGSize) {
+        handleSizeChange(newSize, for: .clickExpanded)
+    }
+
+    private func handleMeasuredAutoSizeChange(_ newSize: CGSize) {
+        handleSizeChange(newSize, for: .autoExpanded)
+    }
+
+    private func handleOpenMusicQueueNotification(_ notification: Notification) {
+        openMusicHub(mode: .musicQueueAndPlaylists)
+    }
+
+    private func handleOpenMusicDevicesNotification(_ notification: Notification) {
+        openMusicHub(mode: .musicDevices)
+    }
+
+    private func handleRevealHiddenNotchNotification(_ notification: Notification) {
+        guard isManuallyHidden else { return }
+        haptic()
+        inactiveHideUserOverride = true
+        revealNotchFromCompleteHide()
+    }
+
+    private func handleOpenCircleToSearchNotification(_ notification: Notification) {
+        openCircleToSearch(object: notification.object as? String)
+    }
+
+    private func handleInteractiveChange(_ isInteractive: Bool) {
+        updateMouseEventHandling(isInteractive: isInteractive)
+    }
+
+    private func handleAnimatedSizeChange(_ _: CGFloat) {
+        updateMouseEventHandling(isInteractive: isInteractive)
+    }
+
+    private func handleSharingVisibilityChange(_ shouldBeHidden: Bool) {
+        updateWindowSharingBehavior(shouldBeHidden: shouldBeHidden)
+    }
+
+    private func handleMenuBarMonitoringChange(_ isNowInteractive: Bool) {
+        if isNowInteractive {
+            MenuBarInteractionManager.shared.stopMonitoring()
+        } else {
+            MenuBarInteractionManager.shared.startMonitoring()
+        }
+    }
+
+    private func handleLiveActivityContentUpdate() {
+        guard notchState == .autoExpanded || notchState == .hoverExpanded else { return }
+        let shapeSignature = liveActivityManager.notchShapeSignature
+        if shapeSignature != lastActivityShapeSignature {
+            lastActivityShapeSignature = shapeSignature
+            handleStateChange(from: notchState, to: notchState)
+        } else {
+            updateAutoContentSize()
+        }
+    }
+
+    private func handleSettingsChange(_ newSettings: Settings) {
+        let targetScreen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
+        let newConfig = ResolvedNotchConfiguration(from: newSettings, screen: targetScreen)
+        self.config = newConfig
+        self.expansionAnimation = newConfig.expandAnimation
+        handleStateChange(from: notchState, to: notchState)
+        if !newSettings.swipeToHideNotch, completeHideReason == .manualSwipe {
+            revealNotchFromCompleteHide()
+        }
+        if !newSettings.hideNotchWhenInactive {
+            inactiveHideUserOverride = false
+            if completeHideReason == .inactive {
+                revealNotchFromCompleteHide()
+            }
+        }
+        evaluateInactiveNotchVisibility()
+    }
+
+    /// Re-measures the notch when the display changes (resolution/scaling
+    /// changes fire this even when the window stays on the same screen).
+    private func handleScreenParametersChange() {
+        let targetScreen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
+        let newConfig = ResolvedNotchConfiguration(from: settings.settings, screen: targetScreen)
+
+        guard let currentConfig = config,
+              currentConfig.initialSize != newConfig.initialSize ||
+              currentConfig.initialCornerRadius != newConfig.initialCornerRadius else {
+            return
+        }
+
+        self.config = newConfig
+        self.expansionAnimation = newConfig.expandAnimation
+        handleStateChange(from: notchState, to: notchState)
     }
 
     // MARK: - Subviews
@@ -611,7 +770,13 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     Color.clear
                         .onAppear { measuredClickContentSize = geo.size }
                         .onChange(of: geo.size) { _, newSize in measuredClickContentSize = newSize }
-                        .onDisappear { measuredClickContentSize = .zero }
+            .onDisappear {
+                // Keep the last measured size while click-expanded so a brief view swap
+                // (music player ↔ Now) doesn't zero the geometry and confuse hover hit-testing.
+                if notchState != .clickExpanded {
+                    measuredClickContentSize = .zero
+                }
+            }
                 })
                 .frame(width: animatedWidth, height: animatedHeight, alignment: .top)
                 .clipped()
@@ -763,13 +928,19 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     @ViewBuilder
     private var hudOverlayView: some View {
         if let config = config, showRightHUDOverlay, let hud = systemHUD.currentHUD {
+            let trailingPadding = NotchConfiguration.defaultModeIconsHorizontalPadding
+            let availableWidth = max(0, animatedWidth - trailingPadding)
             HStack {
                 Spacer()
                 HStack(spacing: 8) {
                     SystemHUDSlimActivityView.left(type: hud, settings: settings)
-                    SystemHUDSlimActivityView.right(type: hud, settings: settings)
+                    SystemHUDSlimActivityView.right(
+                        type: hud,
+                        settings: settings,
+                        availableWidth: availableWidth
+                    )
                 }
-                .padding(.trailing, NotchConfiguration.defaultModeIconsHorizontalPadding)
+                .padding(.trailing, trailingPadding)
             }
             .frame(height: config.initialSize.height)
             .opacity(hudOverlayOpacity)
@@ -798,6 +969,13 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     .padding(.top, NotchConfiguration.navHeaderTopPadding)
                     .buttonStyle(.plain)
 
+                    if currentMode == .musicPlayer, musicWidget.activeMediaSources.count > 1 {
+                        NotchMediaSourceSwitcher()
+                            .environmentObject(musicWidget)
+                            .padding(.top, NotchConfiguration.navHeaderTopPadding)
+                            .padding(.leading, 6)
+                    }
+
                     if let title = currentViewTitle {
                         Text(title)
                             .font(.system(size: NotchConfiguration.navHeaderTitleFontSize, weight: .bold))
@@ -823,7 +1001,17 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                         notchButton(for: buttonType)
                     }
                 }
+                .fixedSize(horizontal: true, vertical: false)
+                .background(GeometryReader { geo in
+                    Color.clear
+                        .onAppear { notchIconsLeftWidth = geo.size.width }
+                        .onChange(of: geo.size.width) { _, newWidth in
+                            notchIconsLeftWidth = newWidth
+                        }
+                })
+
                 Spacer()
+
                 HStack(spacing: 0) {
                     ForEach(rightNotchButtons) { buttonType in
                         notchButton(for: buttonType)
@@ -831,10 +1019,18 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 }
                 .opacity(showRightHUDOverlay ? 0.0 : 1.0)
                 .animation(.easeInOut(duration: 0.12), value: showRightHUDOverlay)
+                .fixedSize(horizontal: true, vertical: false)
+                .background(GeometryReader { geo in
+                    Color.clear
+                        .onAppear { notchIconsRightWidth = geo.size.width }
+                        .onChange(of: geo.size.width) { _, newWidth in
+                            notchIconsRightWidth = newWidth
+                        }
+                })
             }
             .padding(.horizontal, NotchConfiguration.defaultModeIconsHorizontalPadding)
             .frame(height: config.initialSize.height)
-            .frame(width: animatedWidth)
+            .frame(width: max(animatedWidth, notchIconsIntrinsicWidth))
         }
     }
 
@@ -1157,6 +1353,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         updateMouseEventHandling(isInteractive: isInteractive)
         updateWindowSharingBehavior(shouldBeHidden: shouldHideWindowForSharing)
         lastActivityShapeSignature = liveActivityManager.notchShapeSignature
+        evaluateInactiveNotchVisibility()
     }
 
     private func teardownMonitors() {
@@ -1164,6 +1361,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         TrackpadGestureHandler.shared.stopMonitoring()
         TrackpadGestureHandler.shared.onSwipe = nil
         TrackpadGestureHandler.shared.onTwoFingerTap = nil
+        HiddenNotchRevealMonitor.shared.stop()
         if let fileDropFlowObserver {
             NotificationCenter.default.removeObserver(fileDropFlowObserver)
             self.fileDropFlowObserver = nil
@@ -1177,6 +1375,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     // MARK: - Event Handlers
     private func handleTap() {
+        guard !isManuallyHidden else { return }
+        guard !shouldBlockNotchExpansionWhileLocked else { return }
         guard let config = config else { return }
         if notchState == .clickExpanded { return }
 
@@ -1209,6 +1409,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             if activityType == .fileShelf, settings.settings.clickToOpenFileShelf { initiateWidgetView(.fileShelf); return }
             if activityType == .timer, settings.settings.clickToShowTimerView { initiateWidgetView(.timerDetailView); return }
             if activityType == .intelligenceAgent { initiateWidgetView(.blipHub); return }
+            if activityType == .updateAvailable { initiateWidgetView(.updateAvailable); return }
         }
 
         switch notchState {
@@ -1231,6 +1432,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func handleHover(hovering: Bool) {
+        guard !isManuallyHidden else { return }
         guard let config = config else { return }
         self.isHovered = hovering
 
@@ -1238,14 +1440,24 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             TrackpadGestureHandler.shared.startMonitoring()
         } else {
             TrackpadGestureHandler.shared.stopMonitoring()
+            suppressHoverAfterReveal = false
+            // Cursor left — drop any pending expand-on-hover action.
+            cancelHoverExpandTask()
         }
 
         if hovering {
+            // A swipe-reveal leaves the cursor parked on the freshly shown notch;
+            // don't treat that as a deliberate hover (no auto-expansion) until the
+            // cursor has left and come back. Gesture monitoring still runs so a
+            // fresh swipe-down can expand right away.
+            guard !suppressHoverAfterReveal else { return }
+            guard !shouldBlockNotchExpansionWhileLocked else { return }
             collapseTask?.cancel()
             isCollapseTimerActive = false
             let activityType = liveActivityManager.currentActivity
 
             if activityType == .fileShelf, settings.settings.hoverToOpenFileShelf {
+                cancelHoverExpandTask()
                 if notchState != .clickExpanded {
                     navigationStack = [.fileShelf]
                     notchState = .clickExpanded
@@ -1264,9 +1476,26 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                         targetStack = [.defaultWidgets]
                     }
                     navigationStack = targetStack
-                    notchState = .clickExpanded
+                    let delay = settings.settings.expandOnHoverDelay
+                    if delay > 0 {
+                        cancelHoverExpandTask()
+                        hoverExpandTask = Task { @MainActor in
+                            do {
+                                try await Task.sleep(for: .milliseconds(Int(delay * 1000)))
+                            } catch { return }
+                            guard !Task.isCancelled, self.isHovered else { return }
+                            guard !self.dragManager.isDraggingInActivationZone else { return }
+                            guard self.notchState != .clickExpanded else { return }
+                            guard settings.settings.expandOnHover else { return }
+                            self.notchState = .clickExpanded
+                        }
+                    } else {
+                        cancelHoverExpandTask()
+                        notchState = .clickExpanded
+                    }
                 }
             } else {
+                cancelHoverExpandTask()
                 if notchState == .initial || notchState == .autoExpanded {
                     notchState = .hoverExpanded
                     haptic()
@@ -1282,7 +1511,26 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func handleActivityChange(_ newActivity: ActivityType) {
-        guard notchState != .clickExpanded, let config = config else { return }
+        if newActivity != .none {
+            inactiveHideUserOverride = false
+            if completeHideReason == .inactive {
+                revealNotchFromCompleteHide()
+            } else if completeHideReason == .manualSwipe {
+                // Manual swipe-hide stays until the user swipes down to restore.
+                return
+            }
+        } else if completeHideReason == .manualSwipe {
+            return
+        } else if completeHideReason == .inactive {
+            // Already fully hidden for inactivity; nothing visual to update.
+            updateFPS()
+            return
+        }
+
+        guard notchState != .clickExpanded, let config = config else {
+            evaluateInactiveNotchVisibility()
+            return
+        }
 
         if newActivity != .none {
             activityBlurRadius = config.activityBlurRadiusMax
@@ -1302,10 +1550,17 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             lastActivityShapeSignature = liveActivityManager.notchShapeSignature
         }
         updateFPS()
+        evaluateInactiveNotchVisibility()
     }
 
     private func handleStateChange(from oldState: NotchState, to newState: NotchState) {
         guard let config = config else { return }
+        if isManuallyHidden {
+            animatedWidth = 0
+            animatedHeight = 0
+            notchWindow?.alphaValue = 0
+            return
+        }
 
         let isContentUpdate = oldState == newState
         let animation: Animation
@@ -1314,7 +1569,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         } else {
             switch newState {
             case .initial:
-                animation = .spring(response: 0.12, dampingFraction: 1.0)
+                // Match live-activity morph: snappy 0.12 spring felt janky next to activity transitions.
+                animation = (oldState == .clickExpanded) ? config.collapseAnimation : config.activityToActivityAnimation
             case .hoverExpanded: animation = config.hoverAnimation
             case .clickExpanded: animation = self.expansionAnimation
             case .autoExpanded: animation = (oldState == .clickExpanded) ? config.collapseAnimation : config.activityToActivityAnimation
@@ -1352,9 +1608,14 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             if wasShowingActivity { isAnimatingActivityOut = true }
             self.canRenderAutoContent = false
             collapseTask?.cancel(); isCollapseTimerActive = false
+            cancelHoverExpandTask()
             cancelWidgetSwitchProtection()
 
-            withAnimation(.spring(response: 0.12, dampingFraction: 1.0)) {
+            let idleMorphAnimation = (oldState == .clickExpanded)
+                ? config.collapseAnimation
+                : config.activityToActivityAnimation
+
+            withAnimation(idleMorphAnimation) {
                 shadowOpacity = 0
                 if wasShowingActivity { activityBlurRadius = 20; activityContentScale = 0.9; autoContentOpacity = 0 }
                 animatedWidth = config.initialSize.width; animatedHeight = config.initialSize.height
@@ -1615,15 +1876,32 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard let config = config else { return }
         if state == .clickExpanded && notchState == .clickExpanded {
             guard newSize.width > 1 && newSize.height > 1 else { return }
-            guard abs(newSize.width - animatedWidth) > 1 || abs(newSize.height - animatedHeight) > 1 else { return }
+            // Keep the pill wide enough for the default-mode icon rows. Otherwise,
+            // with only one or a few small widgets, the notch shrinks to the widget
+            // width and clips items like the settings gear.
+            let minimumWidth = currentMode == .defaultWidgets ? notchIconsIntrinsicWidth : 0
+            let targetWidth = max(newSize.width, minimumWidth)
+            guard abs(targetWidth - animatedWidth) > 1 || abs(newSize.height - animatedHeight) > 1 else { return }
             withAnimation(self.expansionAnimation) {
-                animatedWidth = newSize.width
+                animatedWidth = targetWidth
                 animatedHeight = newSize.height
             }
             syncNotchHostWindowHeight(contentHeight: newSize.height)
 
         } else if state == .autoExpanded {
             updateAutoContentSize()
+        }
+    }
+
+    /// Widens the click-expanded pill so the default-mode icon rows are never
+    /// clipped, even when the widget strip is narrower than the icons (e.g. a
+    /// single small widget, or icons added/reordered while expanded).
+    private func applyNotchIconsWidthFloor() {
+        guard notchState == .clickExpanded, currentMode == .defaultWidgets else { return }
+        let targetWidth = max(animatedWidth, notchIconsIntrinsicWidth)
+        guard abs(targetWidth - animatedWidth) > 1 else { return }
+        withAnimation(self.expansionAnimation) {
+            animatedWidth = targetWidth
         }
     }
 
@@ -1651,9 +1929,39 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
         guard let config = config else { return }
 
-        if (notchState == .initial || notchState == .hoverExpanded) {
+        if isManuallyHidden {
+            return
+        }
+
+        // Right after a swipe-reveal the same gesture is still delivering
+        // events (fingers/momentum). Ignore them so the reveal swipe doesn't
+        // immediately expand the notch.
+        guard Date() >= revealSettlingUntil else { return }
+
+        let isCollapsed = notchState == .initial || notchState == .hoverExpanded
+        // NSEvent: negative scrollingDeltaY ≈ fingers moving up (swipe up),
+        // positive ≈ fingers moving down (swipe down).
+        let isSwipeUp = vector.dy < 0
+        let isSwipeDown = vector.dy > 0
+
+        if settings.settings.swipeToHideNotch, isCollapsed {
+            let verticalThreshold: CGFloat = 10.0
+            let isVertical = abs(vector.dy) > abs(vector.dx) && abs(vector.dy) > verticalThreshold
+            if isVertical, isSwipeUp {
+                haptic()
+                hideNotchCompletely(reason: .manualSwipe)
+                return
+            }
+        }
+
+        if isCollapsed {
             let verticalThreshold: CGFloat = 10.0
             if abs(vector.dy) > abs(vector.dx) && abs(vector.dy) > verticalThreshold {
+                // Swipe-up-to-hide owns upward swipes when enabled; only swipe-down opens.
+                if settings.settings.swipeToHideNotch, isSwipeUp {
+                    return
+                }
+                guard !shouldBlockNotchExpansionWhileLocked else { return }
                 haptic()
                 self.expansionAnimation = config.swipeOpenAnimation
                 measuredClickContentSize = .zero
@@ -1667,7 +1975,13 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 return
             }
 
-            if abs(vector.dx) > abs(vector.dy) && abs(vector.dx) > 10 {
+            // Only switch top-level home ↔ file shelf. Nested menus (music player, Now,
+            // Discover, Spotify/Apple Music) own horizontal scrolling / row swipes.
+            let allowsMenuSwitch = settings.settings.swipeToSwitchWidgets
+                && navigationStack.count <= 1
+                && (currentMode == .defaultWidgets || currentMode == .fileShelf)
+
+            if allowsMenuSwitch, abs(vector.dx) > abs(vector.dy) && abs(vector.dx) > 10 {
                 haptic()
                 let isSwipeRight = vector.dx > 0
                 let invertGestures = settings.settings.invertMusicGestures
@@ -1683,19 +1997,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 } else {
                     if currentMode == .defaultWidgets {
                         navigationStack.append(.fileShelf)
-
                     } else if currentMode == .fileShelf {
                         navigationStack = [.defaultWidgets]
-
-                    } else {
-                        let switchableModes = self.switchableWidgetModes
-                        if !switchableModes.isEmpty, let currentIndex = switchableModes.firstIndex(of: currentMode) {
-                            let nextIndex = (currentIndex + 1) % switchableModes.count
-                            let nextMode = switchableModes[nextIndex]
-                            if !navigationStack.isEmpty {
-                                navigationStack[navigationStack.count - 1] = nextMode
-                            }
-                        }
                     }
                 }
                 return
@@ -1731,6 +2034,147 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 liveActivityManager.dismissCurrentActivity()
             }
         }
+    }
+
+    private func hideNotchCompletely(reason: NotchCompleteHideReason) {
+        switch reason {
+        case .manualSwipe:
+            guard settings.settings.swipeToHideNotch else { return }
+        case .inactive:
+            guard settings.settings.hideNotchWhenInactive else { return }
+            guard !inactiveHideUserOverride else { return }
+        case .fullScreen:
+            guard settings.settings.hideLiveActivityInFullScreen else { return }
+        }
+        guard completeHideReason == nil else {
+            completeHideReason = reason
+            // A full screen hide supersedes a swipe/inactive hide; it is lifted by
+            // the app exiting full screen, so the swipe-reveal monitor is not needed.
+            if reason == .fullScreen {
+                stopHiddenNotchSwipeMonitor()
+            }
+            return
+        }
+
+        completeHideReason = reason
+        if reason == .manualSwipe {
+            inactiveHideUserOverride = false
+        }
+        isPinned = false
+        isHovered = false
+        collapseTask?.cancel()
+        isCollapseTimerActive = false
+        cancelHoverExpandTask()
+        cancelWidgetSwitchProtection()
+        navigationStack = [.defaultWidgets]
+        notchState = .initial
+        TrackpadGestureHandler.shared.stopMonitoring()
+
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+            animatedWidth = 0
+            animatedHeight = 0
+            shadowOpacity = 0
+        }
+        if let dynamicWindow = notchWindow as? DynamicFocusWindow {
+            dynamicWindow.forceMouseEventPassthrough = true
+            dynamicWindow.updateInteractiveContentFrame(.zero)
+        }
+        notchWindow?.alphaValue = 0
+        notchWindow?.ignoresMouseEvents = true
+        syncNotchHostWindowHeight(contentHeight: 0)
+        // A full screen hide is lifted by the app exiting full screen, not by a swipe.
+        if reason != .fullScreen {
+            startHiddenNotchSwipeMonitor()
+        }
+    }
+
+    private func revealNotchFromCompleteHide() {
+        guard completeHideReason != nil else { return }
+        // While the display is still in full screen the notch stays hidden; it is
+        // revealed by the full screen ending (fullScreenDisplayIDs changing).
+        if completeHideReason == .fullScreen, settings.settings.hideLiveActivityInFullScreen, isNotchScreenFullScreen {
+            return
+        }
+        let wasManualSwipeReveal = completeHideReason == .manualSwipe
+        completeHideReason = nil
+        stopHiddenNotchSwipeMonitor()
+        if let dynamicWindow = notchWindow as? DynamicFocusWindow {
+            dynamicWindow.forceMouseEventPassthrough = false
+        }
+        notchWindow?.alphaValue = 1
+        if wasManualSwipeReveal {
+            // The reveal swipe is still settling: its momentum could be read as
+            // a new swipe-down, and the cursor sits right on the revealed notch.
+            // Suppress both until the gesture passes / the cursor leaves.
+            revealSettlingUntil = Date().addingTimeInterval(Self.revealSettlingInterval)
+            suppressHoverAfterReveal = true
+        }
+        guard let config else { return }
+
+        let hasActivity = liveActivityManager.currentActivity != .none
+        if hasActivity, notchState != .clickExpanded {
+            // onChange(of: notchState) drives sizing for the live activity.
+            notchState = .autoExpanded
+        } else {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                animatedWidth = config.initialSize.width
+                animatedHeight = config.initialSize.height
+            }
+            syncNotchHostWindowHeight(contentHeight: config.initialSize.height)
+        }
+        updateMouseEventHandling(isInteractive: isInteractive)
+    }
+
+    private func evaluateInactiveNotchVisibility() {
+        // "Hide All in Full Screen" hides the notch entirely on the display that is
+        // in full screen. This works independently of hideNotchWhenInactive and only
+        // affects the display that is actually full screen, leaving the notch visible
+        // on other displays in a multi-display setup.
+        if settings.settings.hideLiveActivityInFullScreen && isNotchScreenFullScreen {
+            if completeHideReason == nil {
+                hideNotchCompletely(reason: .fullScreen)
+            }
+            return
+        }
+        if completeHideReason == .fullScreen {
+            revealNotchFromCompleteHide()
+            return
+        }
+
+        guard settings.settings.hideNotchWhenInactive else { return }
+        if completeHideReason == .manualSwipe { return }
+
+        let hasActivity = liveActivityManager.currentActivity != .none
+        let isBusy = notchState == .clickExpanded
+            || isPinned
+            || isHovered
+            || dragManager.isDraggingInActivationZone
+            || activeAppMonitor.isWindowDragging
+
+        if hasActivity {
+            inactiveHideUserOverride = false
+            if completeHideReason == .inactive {
+                revealNotchFromCompleteHide()
+            }
+            return
+        }
+
+        guard !isBusy else { return }
+        guard !inactiveHideUserOverride else { return }
+
+        if completeHideReason == nil, notchState == .initial || notchState == .hoverExpanded {
+            hideNotchCompletely(reason: .inactive)
+        }
+    }
+
+    private func startHiddenNotchSwipeMonitor() {
+        HiddenNotchRevealMonitor.shared.start(
+            screen: notchWindow?.screen ?? CursorPosition.targetNotchScreen()
+        )
+    }
+
+    private func stopHiddenNotchSwipeMonitor() {
+        HiddenNotchRevealMonitor.shared.stop()
     }
 
     private func openMusicHub(mode: NotchWidgetMode) {
@@ -1809,10 +2253,24 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func refreshNotchInteractionState() {
         guard let config = config, let window = notchWindow else { return }
+        if isManuallyHidden {
+            window.ignoresMouseEvents = true
+            if let dynamicWindow = window as? DynamicFocusWindow {
+                dynamicWindow.forceMouseEventPassthrough = true
+            }
+            if isHovered { isHovered = false }
+            return
+        }
+
         let mouseLocation = window.mouseLocationOutsideOfEventStream
         let interactiveBounds = interactiveFrame(for: window, config: config)
         let isNear = isMouseNearNotchFrame(interactiveBounds, mouseLocation: mouseLocation)
-        let hoverMargin = isHovered ? Self.hoverCollapseMargin : Self.hoverDetectionMargin
+        // The generous hover-out padding exists to keep an *expanded* notch open while
+        // the cursor wanders just outside it. isHovered can linger true after a collapse
+        // (e.g. a live activity ending mid-hover), so only apply it while expanded —
+        // otherwise a stale isHovered leaves a large dead zone around the collapsed pill.
+        let isExpanded = notchState != .initial
+        let hoverMargin = (isHovered && isExpanded) ? Self.hoverCollapseMargin : Self.hoverDetectionMargin
         let detectionBounds = interactiveBounds.insetBy(
             dx: -hoverMargin,
             dy: -hoverMargin
@@ -1837,7 +2295,18 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             lastPublishedInteractiveFrame = interactiveBounds
         }
 
+        // After a swipe-reveal the cursor is parked on the notch; once it moves
+        // off the notch, arm hover interactions again.
+        if suppressHoverAfterReveal, !isPointerInside {
+            suppressHoverAfterReveal = false
+        }
+
         if isPointerInside != isHovered, !dragManager.isDraggingInActivationZone, !activeAppMonitor.isWindowDragging {
+            // Don't drop hover while a page switch is resizing the notch — the cursor often
+            // sits outside the shrinking bounds for a moment and would collapse the menu.
+            if !isPointerInside, notchState == .clickExpanded, widgetSwitchProtectionTask != nil {
+                return
+            }
             handleHover(hovering: isPointerInside)
         }
 
@@ -1857,6 +2326,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func interactiveFrame(for window: NSWindow, config: ResolvedNotchConfiguration) -> CGRect {
+        if isManuallyHidden { return .zero }
+
         let contentBounds = window.contentView?.bounds ?? .zero
         guard !contentBounds.isEmpty else { return .zero }
 
@@ -1900,7 +2371,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .musicArtistDetail, .musicAlbumDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
-                .agentS, .blipHub, .circleToSearch:
+                .agentS, .blipHub, .circleToSearch, .updateAvailable:
             return nil
         }
     }
@@ -1991,7 +2462,17 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     private func updateMouseEventHandling(isInteractive: Bool) {
         guard let window = notchWindow, let config = config else { return }
 
+        if isManuallyHidden {
+            window.ignoresMouseEvents = true
+            if let dynamicWindow = window as? DynamicFocusWindow {
+                dynamicWindow.forceMouseEventPassthrough = true
+                dynamicWindow.updateInteractiveContentFrame(.zero)
+            }
+            return
+        }
+
         if let dynamicWindow = window as? DynamicFocusWindow {
+            dynamicWindow.forceMouseEventPassthrough = false
             dynamicWindow.updateInteractiveContentFrame(interactiveFrame(for: dynamicWindow, config: config))
             dynamicWindow.syncMouseEventPassthrough(forceEnable: isInteractive && notchState == .clickExpanded)
         } else if window.contentView != nil {
@@ -2016,26 +2497,71 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func handleClickExpandedHoverOut(config: ResolvedNotchConfiguration) {
         guard !isPinned else { return }
+        // While switching music/hub pages the notch shrinks; keep it open until protection ends.
         guard widgetSwitchProtectionTask == nil else { return }
         scheduleCollapse(after: 0)
     }
 
     private func startWidgetSwitchProtection() {
         widgetSwitchProtectionTask?.cancel()
+        widgetSwitchProtectionGeneration &+= 1
+        let generation = widgetSwitchProtectionGeneration
 
         widgetSwitchProtectionTask = Task { @MainActor in
-            do {
-                try await Task.sleep(for: .seconds(NotchController.widgetSwitchProtectionDuration))
-                guard !Task.isCancelled else { return }
-                self.widgetSwitchProtectionTask = nil
-                self.evaluateCollapseIfCursorOutsideHoverZone()
-            } catch {
-                self.widgetSwitchProtectionTask = nil
+            defer {
+                // Only the active generation may clear the handle — a cancelled prior
+                // task used to nil this out and allow an immediate hover-out collapse.
+                if generation == self.widgetSwitchProtectionGeneration {
+                    self.widgetSwitchProtectionTask = nil
+                }
             }
+            // The protection must stay up while the page switch is resizing the notch —
+            // the cursor can briefly fall outside the shrinking bounds. Once the size has
+            // settled, though, the remaining delay is pointless if the cursor is still
+            // hovering within the hover area: dismiss it so a later hover-out collapses
+            // the notch immediately instead of after the full protection window.
+            let settleThreshold: TimeInterval = 0.25
+            let pollInterval: TimeInterval = 0.1
+            let deadline = Date().addingTimeInterval(NotchController.widgetSwitchProtectionDuration)
+            var lastSample: (width: CGFloat, height: CGFloat)?
+            var stableSince: Date?
+
+            while Date() < deadline {
+                guard !Task.isCancelled else { return }
+                if let window = self.notchWindow, let config = self.config {
+                    let mouseLocation = window.mouseLocationOutsideOfEventStream
+                    let interactiveBounds = self.interactiveFrame(for: window, config: config)
+                        .insetBy(dx: -Self.hoverCollapseMargin, dy: -Self.hoverCollapseMargin)
+                    if interactiveBounds.contains(mouseLocation) {
+                        let sample = (width: self.animatedWidth, height: self.animatedHeight)
+                        if let last = lastSample,
+                           abs(last.width - sample.width) < 0.5,
+                           abs(last.height - sample.height) < 0.5 {
+                            if let since = stableSince,
+                               Date().timeIntervalSince(since) >= settleThreshold {
+                                return // Transition settled & cursor still hovering — dismiss.
+                            }
+                            stableSince = stableSince ?? Date()
+                        } else {
+                            stableSince = nil
+                        }
+                        lastSample = sample
+                    } else {
+                        lastSample = nil
+                        stableSince = nil
+                    }
+                }
+                try? await Task.sleep(for: .milliseconds(Int(pollInterval * 1000)))
+            }
+
+            guard !Task.isCancelled else { return }
+            guard generation == self.widgetSwitchProtectionGeneration else { return }
+            self.evaluateCollapseIfCursorOutsideHoverZone()
         }
     }
 
     private func cancelWidgetSwitchProtection() {
+        widgetSwitchProtectionGeneration &+= 1
         widgetSwitchProtectionTask?.cancel()
         widgetSwitchProtectionTask = nil
     }
@@ -2060,12 +2586,20 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 guard !Task.isCancelled else { return }
                 if !self.isHovered && !self.dragManager.isDraggingInActivationZone && !self.activeAppMonitor.isWindowDragging {
                     self.notchState = isLiveActivityActive ? .autoExpanded : .initial
+                    self.evaluateInactiveNotchVisibility()
                 }
                 self.isCollapseTimerActive = false
             } catch {
                 self.isCollapseTimerActive = false
             }
         }
+    }
+
+    /// Cancels any pending expand-on-hover action so it never fires after the
+    /// notch is collapsed, hidden, or the hover-target is no longer valid.
+    private func cancelHoverExpandTask() {
+        hoverExpandTask?.cancel()
+        hoverExpandTask = nil
     }
 }
 

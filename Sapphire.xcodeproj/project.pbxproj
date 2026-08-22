@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in CopyFiles */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; };
+		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in Embed Helper Executable */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; };
 		DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262ADF2EA4841B0027CA69 /* OSD.framework */; };
 		DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AE52EA485150027CA69 /* CoreDisplay.framework */; };
 		DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */; };
@@ -151,13 +151,14 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		DA262B242EA942750027CA69 /* CopyFiles */ = {
+		DA262B242EA942750027CA69 /* Embed Helper Executable */ = {
 			isa = PBXCopyFilesBuildPhase;
 			dstPath = "";
 			dstSubfolder = Executables;
 			files = (
-				DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in CopyFiles */,
+				DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in Embed Helper Executable */,
 			);
+			name = "Embed Helper Executable";
 		};
 		DAA7D9D22E8633B20032748B /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -167,12 +168,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
-		DABFA98B2EBFBA35000C5A8B /* CopyFiles */ = {
+		DABFA98B2EBFBA35000C5A8B /* Embed Helper LaunchDaemon Plist */ = {
 			isa = PBXCopyFilesBuildPhase;
 			dstPath = Contents/Library/LaunchDaemons;
 			dstSubfolder = Wrapper;
 			files = (
 			);
+			name = "Embed Helper LaunchDaemon Plist";
 		};
 		DAE70B782E12300B001F0890 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -350,7 +352,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				App/Info.plist,
-				Services/FaceID/ImageExtensions.swift,
 				Services/Music/MediaRemoteAdapter.framework,
 			);
 			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
@@ -377,16 +378,12 @@
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = DA46CF742DCBCA0000F00EC5 /* Resources */;
 			membershipExceptions = (
-				Services/FaceID/ImageExtensions.swift,
 				Services/Music/MediaRemoteAdapter.framework,
 			);
 		};
-		DABFA98F2EBFBA8B000C5A8B /* Exceptions for "com.shariq.sapphireHelper" folder in "Copy Files" phase from "Sapphire" target */ = {
+		DABFA98F2EBFBA8B000C5A8B /* Exceptions for "com.shariq.sapphireHelper" folder in "Embed Helper LaunchDaemon Plist" phase from "Sapphire" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			attributesByRelativePath = {
-				com.shariq.sapphireHelper.plist = (CodeSignOnCopy, );
-			};
-			buildPhase = DABFA98B2EBFBA35000C5A8B /* CopyFiles */;
+			buildPhase = DABFA98B2EBFBA35000C5A8B /* Embed Helper LaunchDaemon Plist */;
 			membershipExceptions = (
 				com.shariq.sapphireHelper.plist,
 			);
@@ -408,7 +405,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				DA1D1AB22EAA74CB00E7F1B4 /* Exceptions for "com.shariq.sapphireHelper" folder in "Sapphire" target */,
-				DABFA98F2EBFBA8B000C5A8B /* Exceptions for "com.shariq.sapphireHelper" folder in "Copy Files" phase from "Sapphire" target */,
+				DABFA98F2EBFBA8B000C5A8B /* Exceptions for "com.shariq.sapphireHelper" folder in "Embed Helper LaunchDaemon Plist" phase from "Sapphire" target */,
 			);
 			path = com.shariq.sapphireHelper;
 			sourceTree = "<group>";
@@ -789,8 +786,8 @@
 				DA46CF742DCBCA0000F00EC5 /* Resources */,
 				DAE70B782E12300B001F0890 /* Embed Frameworks */,
 				DAF7D8AC2E207C5100AB0820 /* CopyFiles */,
-				DABFA98B2EBFBA35000C5A8B /* CopyFiles */,
-				DA262B242EA942750027CA69 /* CopyFiles */,
+				DABFA98B2EBFBA35000C5A8B /* Embed Helper LaunchDaemon Plist */,
+				DA262B242EA942750027CA69 /* Embed Helper Executable */,
 				DA452EBA2EAA5A010070E5C9 /* Resign Sapphire Helper */,
 				DAC019182E9EA03E00CA587F /* ShellScript */,
 			);
@@ -1051,17 +1048,28 @@
 				"",
 				"# SMAppService daemons cannot carry restricted entitlements (application-identifier,",
 				"# get-task-allow, etc.) without a matching profile. Sign as a plain hardened tool.",
+				"# Use a secure timestamp so Gatekeeper / Login Items do not label the helper as an",
+				"# \"unidentified developer\" item (regression from --timestamp=none in 2.55).",
 				"echo \"Re-signing Sapphire helper with empty entitlements (identity: ${EXPANDED_CODE_SIGN_IDENTITY})\"",
 				"codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" \\",
 				"  --identifier com.shariq.sapphireHelper \\",
 				"  --entitlements \"$ENTITLEMENTS\" \\",
 				"  --generate-entitlement-der \\",
 				"  --options runtime \\",
-				"  --timestamp=none \\",
+				"  --timestamp \\",
 				"  \"$HELPER\"",
+				"",
+				"RESIGN_RC=$?",
 				"",
 				"echo \"Helper entitlements after resign:\"",
 				"codesign -d --entitlements :- \"$HELPER\" 2>&1 | sed 's/^/  /'",
+				"echo \"Helper signature:\"",
+				"codesign -dv --verbose=2 \"$HELPER\" 2>&1 | sed 's/^/  /'",
+				"",
+				"if [ \"$RESIGN_RC\" -ne 0 ]; then",
+				"  echo \"error: Failed to re-sign helper (exit $RESIGN_RC)\"",
+				"  exit 1",
+				"fi",
 				"",
 			);
 		};
@@ -1170,7 +1178,7 @@
 				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
 				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der";
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der --timestamp";
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1213,7 +1221,7 @@
 				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
 				LIBRARY_SEARCH_PATHS = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der";
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der --timestamp";
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1475,10 +1483,10 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.58;
+				MARKETING_VERSION = 2.68;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
-				OTHER_SWIFT_FLAGS = "";
+				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1562,10 +1570,10 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.58;
+				MARKETING_VERSION = 2.68;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
-				OTHER_SWIFT_FLAGS = "";
+				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1726,7 +1734,7 @@
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 12.4.0;
+				minimumVersion = 12.17.0;
 			};
 		};
 		DAA7D8E02E8488800032748B /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {

@@ -59,7 +59,9 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     @Published var automationStatus: PermissionStatus = .notRequested
 
     private var locationManager: CLLocationManager?
-    private var bluetoothManager: CBCentralManager?
+    private lazy var bluetoothManager = CBCentralManager(delegate: self, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: 0])
+
+    private let automationPermissionRequestedKey = "automationPermissionRequested"
 
     private var localNetworkListener: NWListener?
     private var dummyNetService: NetService?
@@ -109,7 +111,6 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
         super.init()
         self.locationManager = CLLocationManager()
         self.locationManager?.delegate = self
-        self.bluetoothManager = CBCentralManager(delegate: self, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: 0])
         checkAllPermissions()
 
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
@@ -118,6 +119,12 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
                 self?.checkFullDiskAccessStatus()
                 self?.checkScreenRecordingStatus()
                 self?.checkAutomationStatus()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: AccessibilityTrustMonitor.trustDidChange)
+            .sink { [weak self] _ in
+                self?.checkAccessibilityStatus()
             }
             .store(in: &cancellables)
     }
@@ -265,9 +272,9 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
                 let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth")!
                 NSWorkspace.shared.open(url)
             } else {
-                bluetoothManager?.scanForPeripherals(withServices: nil, options: nil)
+                bluetoothManager.scanForPeripherals(withServices: nil, options: nil)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self.bluetoothManager?.stopScan()
+                    self.bluetoothManager.stopScan()
                 }
             }
 
@@ -281,6 +288,11 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     // MARK: - Automation Logic
 
     private func checkAutomationStatus() {
+        guard UserDefaults.standard.bool(forKey: automationPermissionRequestedKey) else {
+            automationStatus = PermissionStatus.notRequested
+            return
+        }
+
         Task {
             let spotifyStatus = await getAutomationPermissionStatus(for: "Spotify")
             let musicStatus = await getAutomationPermissionStatus(for: "Music")
@@ -297,6 +309,8 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
     private func triggerAutomationPermissionRequest() {
         Task(priority: .userInitiated) {
+            UserDefaults.standard.set(true, forKey: automationPermissionRequestedKey)
+
             print("[PermissionsManager] Triggering Automation permission for Spotify...")
             _ = await executeAppleScript(command: #"tell application "Spotify" to activate"#, for: "Spotify")
 
@@ -304,6 +318,8 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
             print("[PermissionsManager] Triggering Automation permission for Music...")
             _ = await executeAppleScript(command: #"tell application "Music" to activate"#, for: "Music")
+
+            self.checkAutomationStatus()
         }
     }
 
@@ -328,15 +344,9 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             return ["error": "\(appName) not found"]
         }
 
-        guard let script = NSAppleScript(source: command) else {
-            return ["error": "Failed to create AppleScript object"]
-        }
-
         var errorInfo: NSDictionary?
-        return await Task.detached {
-            script.executeAndReturnError(&errorInfo)
-            return errorInfo
-        }.value
+        AppleScriptRunner.execute(command, error: &errorInfo)
+        return errorInfo
     }
 
     // MARK: - Full Disk Access
@@ -452,7 +462,11 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
     // MARK: - CLLocationManagerDelegate
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let wasGranted = locationStatus == PermissionStatus.granted
         updateLocationStatus(for: manager.authorizationStatus)
+        if locationStatus == PermissionStatus.granted && !wasGranted {
+            WeatherViewModel.shared.fetch()
+        }
     }
 
 private func updateLocationStatus(for status: CLAuthorizationStatus) {

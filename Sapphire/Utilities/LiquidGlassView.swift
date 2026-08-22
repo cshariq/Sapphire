@@ -246,6 +246,7 @@ private enum GlassRuntime {
 
 final class LiquidGlassHostView: NSView {
     private var effectView: NSView?
+    private var isGlassEffectView = false
     private var currentBlendingMode: LiquidGlassBlendingMode = .behindWindow
     private var maskCGPath: CGPath?
     private let pathMaskLayer: CAShapeLayer = {
@@ -254,6 +255,24 @@ final class LiquidGlassHostView: NSView {
         layer.backgroundColor = nil
         return layer
     }()
+
+    // MARK: - Backdrop pinning
+    private var observedBackdropLayers: [CALayer] = []
+    private var hasScheduledBackdropSetup = false
+    private var isConfiguringBackdrops = false
+    private let windowServerAwareKeyPath = "windowServerAware"
+    private let scaleKeyPath = "scale"
+    private static let windowServerAwareSetter = NSSelectorFromString("setWindowServerAware:")
+    private static let scaleSetter = NSSelectorFromString("setScale:")
+
+    deinit {
+        removeBackdropObservers()
+    }
+
+    override func removeFromSuperview() {
+        removeBackdropObservers()
+        super.removeFromSuperview()
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -275,8 +294,11 @@ final class LiquidGlassHostView: NSView {
 
     override func layout() {
         super.layout()
+        guard bounds.origin.x.isFinite, bounds.origin.y.isFinite,
+              bounds.width.isFinite, bounds.height.isFinite else { return }
         effectView?.frame = bounds
         applyPathMaskIfNeeded()
+        scheduleBackdropSetup()
     }
 
     override func viewDidMoveToWindow() {
@@ -284,9 +306,100 @@ final class LiquidGlassHostView: NSView {
         if currentBlendingMode == .behindWindow {
             GlassRuntime.prepareWindowForBehindGlass(window)
         }
+        scheduleBackdropSetup()
+    }
+
+    // MARK: - Backdrop pinning
+
+    func scheduleBackdropSetup() {
+        guard isGlassEffectView, !hasScheduledBackdropSetup else { return }
+        hasScheduledBackdropSetup = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self else { return }
+            self.hasScheduledBackdropSetup = false
+            self.configureBackdropLayers()
+        }
+    }
+
+    private func configureBackdropLayers() {
+        guard isGlassEffectView, let effectView, let rootLayer = effectView.layer else {
+            scheduleBackdropSetup()
+            return
+        }
+        guard !isConfiguringBackdrops else { return }
+        isConfiguringBackdrops = true
+        defer { isConfiguringBackdrops = false }
+
+        setBackdropProperties(in: rootLayer)
+        let backdropLayers = collectBackdropLayers(in: rootLayer)
+
+        removeBackdropObservers()
+        var observed: [CALayer] = []
+        for backdrop in backdropLayers {
+            guard backdrop.responds(to: Self.windowServerAwareSetter),
+                  backdrop.responds(to: Self.scaleSetter) else { continue }
+            backdrop.addObserver(self, forKeyPath: windowServerAwareKeyPath, options: [.old, .new], context: nil)
+            backdrop.addObserver(self, forKeyPath: scaleKeyPath, options: [.old, .new], context: nil)
+            observed.append(backdrop)
+        }
+        observedBackdropLayers = observed
+    }
+
+    private func setBackdropProperties(in layer: CALayer) {
+        if NSStringFromClass(type(of: layer)).contains("CABackdropLayer") {
+            layer.setValue(true, forKey: windowServerAwareKeyPath)
+            layer.setValue(1.0, forKey: scaleKeyPath)
+        }
+        layer.sublayers?.forEach { setBackdropProperties(in: $0) }
+    }
+
+    private func collectBackdropLayers(in layer: CALayer) -> [CALayer] {
+        var results: [CALayer] = []
+        if NSStringFromClass(type(of: layer)).contains("CABackdropLayer") {
+            results.append(layer)
+        }
+        layer.sublayers?.forEach { results.append(contentsOf: collectBackdropLayers(in: $0)) }
+        return results
+    }
+
+    override func observeValue(
+        forKeyPath keyPath: String?,
+        of object: Any?,
+        change: [NSKeyValueChangeKey: Any]?,
+        context: UnsafeMutableRawPointer?
+    ) {
+        if keyPath == windowServerAwareKeyPath {
+            if change?[.newKey] as? Bool == false {
+                configureBackdropLayers()
+            }
+        } else if keyPath == scaleKeyPath {
+            guard let layer = object as? CALayer else { return }
+            if let newScale = (change?[.newKey] as? NSNumber)?.doubleValue, newScale != 1.0 {
+                layer.setValue(1.0, forKey: scaleKeyPath)
+            }
+        } else {
+            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+        }
+    }
+
+    private func removeBackdropObservers() {
+        for layer in observedBackdropLayers {
+            layer.removeObserver(self, forKeyPath: windowServerAwareKeyPath)
+            layer.removeObserver(self, forKeyPath: scaleKeyPath)
+        }
+        observedBackdropLayers.removeAll()
     }
 
     func setMaskPath(_ path: CGPath?) {
+        if let path {
+            let pathBounds = path.boundingBox
+            guard pathBounds.origin.x.isFinite, pathBounds.origin.y.isFinite,
+                  pathBounds.width.isFinite, pathBounds.height.isFinite else {
+                maskCGPath = nil
+                applyPathMaskIfNeeded()
+                return
+            }
+        }
         maskCGPath = path
         applyPathMaskIfNeeded()
     }
@@ -335,15 +448,29 @@ final class LiquidGlassHostView: NSView {
 
     private func rebuildEffectView() {
         effectView?.removeFromSuperview()
+        removeBackdropObservers()
         let glass = GlassRuntime.makeEffectView(frame: bounds)
+        isGlassEffectView = !(glass is NSVisualEffectView)
         glass.wantsLayer = true
         glass.layer?.masksToBounds = false
         addSubview(glass, positioned: .below, relativeTo: nil)
         effectView = glass
+        scheduleBackdropSetup()
     }
 
     private func applyPathMaskIfNeeded() {
-        guard let path = maskCGPath, !bounds.isEmpty else {
+        guard let path = maskCGPath,
+              bounds.origin.x.isFinite, bounds.origin.y.isFinite,
+              bounds.width.isFinite, bounds.height.isFinite,
+              !bounds.isEmpty else {
+            layer?.mask = nil
+            effectView?.layer?.mask = nil
+            return
+        }
+
+        let pathBounds = path.boundingBox
+        guard pathBounds.origin.x.isFinite, pathBounds.origin.y.isFinite,
+              pathBounds.width.isFinite, pathBounds.height.isFinite else {
             layer?.mask = nil
             effectView?.layer?.mask = nil
             return
@@ -419,26 +546,33 @@ struct LiquidGlassShapeFill<S: Shape>: View {
         let params = LiquidGlassIntensityParams.resolve(intensity)
         let resolvedMaterial = material ?? params.material
         GeometryReader { geo in
-            let rect = CGRect(origin: .zero, size: geo.size)
-            let path = shape.path(in: rect)
-            ZStack {
-                LiquidGlassView(
-                    material: resolvedMaterial,
-                    cornerRadius: 0,
-                    tintColor: nil,
-                    blendingMode: blendingMode,
-                    appearance: appearance,
-                    interaction: interaction,
-                    contentLensing: params.contentLensing,
-                    scrim: params.scrim,
-                    subdued: params.subdued,
-                    maskPath: path.cgPath
-                )
-                if let tintNSColor = resolvedTint(alpha: params.tintAlpha) {
-                    shape.fill(Color(nsColor: tintNSColor))
+            let size = geo.size
+            if size.width.isFinite, size.height.isFinite {
+                let rect = CGRect(origin: .zero, size: size)
+                let path: CGPath? = (size.width > 0 && size.height > 0)
+                    ? shape.path(in: rect).cgPath
+                    : nil
+                ZStack {
+                    LiquidGlassView(
+                        material: resolvedMaterial,
+                        cornerRadius: 0,
+                        tintColor: nil,
+                        blendingMode: blendingMode,
+                        appearance: appearance,
+                        interaction: interaction,
+                        contentLensing: params.contentLensing,
+                        scrim: params.scrim,
+                        subdued: params.subdued,
+                        maskPath: path
+                    )
+                    if let tintNSColor = resolvedTint(alpha: params.tintAlpha) {
+                        shape.fill(Color(nsColor: tintNSColor))
+                    }
                 }
+                .frame(width: size.width, height: size.height)
+            } else {
+                Color.clear
             }
-            .frame(width: geo.size.width, height: geo.size.height)
         }
         .allowsHitTesting(false)
     }

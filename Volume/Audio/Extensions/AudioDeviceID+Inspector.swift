@@ -1,4 +1,9 @@
-// FineTune/Audio/Extensions/AudioDeviceID+Inspector.swift
+//
+//  AudioDeviceID+Inspector.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 import Foundation
 import os
@@ -19,8 +24,6 @@ extension AudioDeviceID {
 // MARK: - Physical Format
 
 extension AudioDeviceID {
-    /// Reads the physical format (ASBD) of the device's first output stream.
-    /// Returns nil on Bluetooth since the format is negotiated below the HAL layer.
     func readPhysicalFormat(
         scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeOutput
     ) -> AudioStreamBasicDescription? {
@@ -63,9 +66,6 @@ extension AudioDeviceID {
 // MARK: - Available Sample Rates
 
 extension AudioDeviceID {
-    /// Reads available nominal sample rates. Discrete devices report
-    /// `mMinimum == mMaximum` per range; continuous-range pro-audio devices
-    /// emit `[min, max]` rather than an enumerated continuum.
     func readAvailableSampleRates(
         scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
     ) -> [Double] {
@@ -105,8 +105,6 @@ extension AudioDeviceID {
 // MARK: - Hog Mode
 
 extension AudioDeviceID {
-    /// Reads the hog-mode owner PID, or -1 when nobody holds it. Callers
-    /// should compare against `getpid()` to suppress self-owned hog mode.
     func readHogModeOwner() -> pid_t {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyHogMode,
@@ -127,10 +125,6 @@ extension AudioDeviceID {
 // MARK: - Nominal Sample Rate Write
 
 extension AudioDeviceID {
-    /// Writes a new nominal sample rate. Throws `InspectorError.writeFailed`
-    /// when the device refuses the change. Callers should gate this via
-    /// `isPropertySettable` first. Global scope: the property is device-wide,
-    /// and output-scope writes silently no-op on some drivers.
     func writeNominalSampleRate(
         _ rate: Double,
         scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
@@ -154,8 +148,6 @@ extension AudioDeviceID {
 // MARK: - Settability
 
 extension AudioDeviceID {
-    /// Wraps `AudioObjectIsPropertySettable`. Returns `false` on call failure
-    /// so the UI never shows a picker that would silently no-op.
     func isPropertySettable(
         _ selector: AudioObjectPropertySelector,
         scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeOutput

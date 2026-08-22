@@ -10,6 +10,41 @@ import AppKit
 
 let currentAppVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0"
 
+enum AppVersionOrdering {
+    static func compare(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let a = normalize(lhs)
+        let b = normalize(rhs)
+        if a == b { return .orderedSame }
+
+        let aParts = a.split(separator: ".").map(String.init)
+        let bParts = b.split(separator: ".").map(String.init)
+
+        if aParts.count <= 2, bParts.count <= 2,
+           let aVal = Double(a), let bVal = Double(b) {
+            if aVal > bVal { return .orderedDescending }
+            if aVal < bVal { return .orderedAscending }
+            return .orderedSame
+        }
+
+        let count = max(aParts.count, bParts.count)
+        for i in 0..<count {
+            let ai = i < aParts.count ? (Int(aParts[i].filter(\.isNumber)) ?? 0) : 0
+            let bi = i < bParts.count ? (Int(bParts[i].filter(\.isNumber)) ?? 0) : 0
+            if ai != bi { return ai > bi ? .orderedDescending : .orderedAscending }
+        }
+        return .orderedSame
+    }
+
+    static func isNewer(_ candidate: String, than current: String) -> Bool {
+        compare(candidate, current) == .orderedDescending
+    }
+
+    private static func normalize(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "v", with: "", options: .caseInsensitive)
+    }
+}
+
 struct GitHubReleaseAsset: Codable, Equatable {
     let name: String
     let browserDownloadUrl: URL
@@ -21,10 +56,24 @@ struct GitHubReleaseAsset: Codable, Equatable {
 struct GitHubRelease: Codable {
     let name: String
     let tagName: String
+    let body: String?
+    let htmlUrl: String?
     let prerelease: Bool
     let assets: [GitHubReleaseAsset]
     enum CodingKeys: String, CodingKey {
-        case name, tagName = "tag_name", prerelease, assets
+        case name, tagName = "tag_name", body, htmlUrl = "html_url", prerelease, assets
+    }
+
+    var marketingVersion: String {
+        let cleanTag = tagName.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "v", with: "", options: .caseInsensitive)
+        if cleanTag.contains(where: \.isNumber) {
+            return cleanTag
+        }
+        let fromName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "v", with: "", options: .caseInsensitive)
+        if !fromName.isEmpty { return fromName }
+        return cleanTag
     }
 }
 
@@ -53,6 +102,9 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     static let shared = UpdateChecker()
 
     @Published var status: UpdateStatus = .upToDate
+    @Published var releaseNotes: String?
+    @Published var releaseNotesVersion: String?
+    @Published var releaseNotesURL: URL?
     private var downloadTask: URLSessionDownloadTask?
     private var downloadedAssetPath: URL?
     private var timer: Timer?
@@ -97,8 +149,17 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
     private func restorePersistedAvailableUpdateIfNeeded() {
         guard let data = UserDefaults.standard.data(forKey: persistedAvailableUpdateKey),
-              let persisted = try? JSONDecoder().decode(PersistedAvailableUpdate.self, from: data),
-              persisted.version.compare(currentAppVersion, options: .numeric) == .orderedDescending else {
+              let persisted = try? JSONDecoder().decode(PersistedAvailableUpdate.self, from: data) else {
+            clearPersistedAvailableUpdate()
+            return
+        }
+        let offerStableDowngrade = ReleaseChannelPolicy.shouldOfferStableDowngrade(
+            for: SettingsModel.shared.settings
+        )
+        let stillRelevant = AppVersionOrdering.isNewer(persisted.version, than: currentAppVersion)
+            || (offerStableDowngrade
+                && AppVersionOrdering.compare(persisted.version, currentAppVersion) != .orderedSame)
+        guard stillRelevant else {
             clearPersistedAvailableUpdate()
             return
         }
@@ -111,7 +172,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         if case .installing = status { return }
 
         applyStatus(.checking)
-        guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases/latest") else {
+        guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases?per_page=30") else {
             applyStatus(.error("Invalid update URL")); return
         }
 
@@ -123,16 +184,32 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 if let error = error { self.applyStatus(.error(error.localizedDescription)); return }
                 guard let data = data else { self.applyStatus(.error("No data received.")); return }
                 do {
-                    let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-                    let latestVersion = release.name.replacingOccurrences(of: "v", with: "")
+                    let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
+                    let stable = releases.filter { !$0.prerelease }
+                    guard let release = stable.max(by: {
+                        AppVersionOrdering.compare($0.marketingVersion, $1.marketingVersion) == .orderedAscending
+                    }) else {
+                        self.applyReleaseNotes(from: releases, offeredVersion: nil)
+                        self.applyStatus(.upToDate)
+                        return
+                    }
+                    let latestVersion = release.marketingVersion
+                    let offerStableDowngrade = ReleaseChannelPolicy.shouldOfferStableDowngrade(
+                        for: SettingsModel.shared.settings
+                    )
+                    let shouldOffer = AppVersionOrdering.isNewer(latestVersion, than: currentAppVersion)
+                        || (offerStableDowngrade
+                            && AppVersionOrdering.compare(latestVersion, currentAppVersion) != .orderedSame)
 
-                    if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
+                    if shouldOffer {
                         if let asset = release.assets.first(where: { $0.name.hasSuffix(".zip") }) {
+                            self.applyReleaseNotes(from: releases, offeredVersion: latestVersion)
                             self.applyStatus(.available(version: latestVersion, asset: asset))
                         } else {
                             self.applyStatus(.error("No zip download found for this release."))
                         }
                     } else {
+                        self.applyReleaseNotes(from: releases, offeredVersion: nil)
                         self.applyStatus(.upToDate)
                     }
                 } catch {
@@ -148,7 +225,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         if case .installing = status { return }
 
         applyStatus(.checking)
-        guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases?per_page=5") else {
+        guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases?per_page=30") else {
             applyStatus(.error("Invalid beta update URL")); return
         }
 
@@ -161,18 +238,23 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 guard let data = data else { self.applyStatus(.error("No data received.")); return }
                 do {
                     let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
-                    guard let betaRelease = releases.first(where: { $0.prerelease }) else {
+                    guard let candidateRelease = releases.max(by: {
+                        AppVersionOrdering.compare($0.marketingVersion, $1.marketingVersion) == .orderedAscending
+                    }) else {
+                        self.applyReleaseNotes(from: releases, offeredVersion: nil)
                         self.applyStatus(.upToDate)
                         return
                     }
-                    let latestVersion = betaRelease.name.replacingOccurrences(of: "v", with: "")
-                    if latestVersion.compare(currentAppVersion, options: .numeric) == .orderedDescending {
-                        if let asset = betaRelease.assets.first(where: { $0.name.hasSuffix(".zip") }) {
+                    let latestVersion = candidateRelease.marketingVersion
+                    if AppVersionOrdering.isNewer(latestVersion, than: currentAppVersion) {
+                        if let asset = candidateRelease.assets.first(where: { $0.name.hasSuffix(".zip") }) {
+                            self.applyReleaseNotes(from: releases, offeredVersion: latestVersion)
                             self.applyStatus(.available(version: latestVersion, asset: asset))
                         } else {
-                            self.applyStatus(.error("No zip beta download found for this release."))
+                            self.applyStatus(.error("No zip download found for this release."))
                         }
                     } else {
+                        self.applyReleaseNotes(from: releases, offeredVersion: nil)
                         self.applyStatus(.upToDate)
                     }
                 } catch {
@@ -188,6 +270,38 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
             checkForBetaUpdates()
         } else {
             checkForUpdates()
+        }
+    }
+
+    private func applyReleaseNotes(from releases: [GitHubRelease], offeredVersion: String?) {
+        let targetVersion = offeredVersion ?? currentAppVersion
+        if let match = Self.findRelease(version: targetVersion, in: releases) {
+            releaseNotesVersion = match.marketingVersion
+            releaseNotes = Self.normalizedNotes(match.body)
+            releaseNotesURL = match.htmlUrl.flatMap { URL(string: $0) }
+            return
+        }
+        releaseNotesVersion = targetVersion
+        releaseNotes = nil
+        releaseNotesURL = URL(string: "https://github.com/cshariq/Sapphire/releases")
+    }
+
+    private static func normalizedNotes(_ body: String?) -> String? {
+        guard let body = body?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty else {
+            return nil
+        }
+        return body
+    }
+
+    private static func findRelease(version: String, in releases: [GitHubRelease]) -> GitHubRelease? {
+        releases.first { release in
+            AppVersionOrdering.compare(release.marketingVersion, version) == .orderedSame
+                || AppVersionOrdering.compare(
+                    release.tagName
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .replacingOccurrences(of: "v", with: "", options: .caseInsensitive),
+                    version
+                ) == .orderedSame
         }
     }
 
@@ -276,9 +390,18 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     }
 
     private func isInstallPathUserWritable() -> Bool {
+        let fileManager = FileManager.default
         let appURL = URL(fileURLWithPath: Bundle.main.bundlePath)
         let parentPath = appURL.deletingLastPathComponent().path
-        return FileManager.default.isWritableFile(atPath: parentPath)
+
+        guard fileManager.isWritableFile(atPath: parentPath),
+              let attributes = try? fileManager.attributesOfItem(atPath: appURL.path),
+              let owner = attributes[.ownerAccountName] as? String,
+              owner == NSUserName() else {
+            return false
+        }
+
+        return true
     }
 
     private func copyInstallerToTemporaryDirectory(scriptPath: String) throws -> String {
@@ -304,7 +427,6 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         try process.run()
     }
 
-    /// Presents the system admin-password dialog, then starts the installer as root.
     private func launchInstallerWithAdministratorPrivileges(
         scriptPath: String,
         processID: String,

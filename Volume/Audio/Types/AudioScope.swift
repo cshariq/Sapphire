@@ -1,11 +1,11 @@
-// FineTune/Audio/Types/AudioScope.swift
+//
+//  AudioScope.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 
-/// Represents Core Audio property scopes for type-safe property access.
-///
-/// Future additions if needed:
-/// - `playthrough` (kAudioDevicePropertyScopePlayThrough)
-/// - `wildcard` (kAudioObjectPropertyScopeWildcard)
 enum AudioScope: Sendable {
     case global
     case input

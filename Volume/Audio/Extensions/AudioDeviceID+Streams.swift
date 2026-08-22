@@ -1,4 +1,9 @@
-// FineTune/Audio/Extensions/AudioDeviceID+Streams.swift
+//
+//  AudioDeviceID+Streams.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 import Foundation
 
@@ -31,7 +36,6 @@ extension AudioDeviceID {
         return size > 0
     }
 
-    /// Reads stream object IDs for a given scope.
     private func readStreams(scope: AudioObjectPropertyScope) throws -> [AudioObjectID] {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreams,
@@ -54,8 +58,6 @@ extension AudioDeviceID {
         return streams
     }
 
-    /// Returns the first output stream index in the device's global stream list.
-    /// CATapDescription(deviceUID:stream:) expects this global index, not an output-only index.
     func firstOutputStreamIndex() throws -> UInt {
         let globalStreams = try readStreams(scope: kAudioObjectPropertyScopeGlobal)
         for (index, streamID) in globalStreams.enumerated() {
@@ -65,7 +67,6 @@ extension AudioDeviceID {
             }
         }
 
-        // Fallback for devices that do not expose direction on global stream list.
         let outputStreams = try readStreams(scope: kAudioObjectPropertyScopeOutput)
         if !outputStreams.isEmpty {
             return 0
@@ -74,8 +75,6 @@ extension AudioDeviceID {
         throw NSError(domain: "AudioDeviceID+Streams", code: -1, userInfo: [NSLocalizedDescriptionKey: "No output stream found"])
     }
 
-    /// Returns preferred stereo channels as zero-based indices.
-    /// CoreAudio reports channels as 1-based element numbers.
     func preferredStereoChannelIndices() -> (left: Int, right: Int) {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyPreferredChannelsForStereo,
@@ -93,8 +92,6 @@ extension AudioDeviceID {
         return (left, right)
     }
 
-    /// Returns the total number of output channels reported by the device's
-    /// stream configuration (sum of all output buffers).
     func outputChannelCount() -> Int {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamConfiguration,

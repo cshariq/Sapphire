@@ -1,4 +1,9 @@
-// FineTune/Audio/Extensions/AudioDeviceID+Info.swift
+//
+//  AudioDeviceID+Info.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 import Foundation
 

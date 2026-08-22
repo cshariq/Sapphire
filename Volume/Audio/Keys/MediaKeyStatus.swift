@@ -1,9 +1,11 @@
-// FineTune/Audio/Keys/MediaKeyStatus.swift
+//
+//  MediaKeyStatus.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 
-/// Transient status for the media-key feature.
-/// - `isOffline`: tap disabled twice inside the watchdog window.
-/// - `suppressionDegraded`: native HUD fired within 500ms of our swallow.
 @Observable
 @MainActor
 final class MediaKeyStatus {

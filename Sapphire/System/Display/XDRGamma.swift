@@ -7,6 +7,7 @@
 
 import Foundation
 import Cocoa
+import Combine
 
 @MainActor
 class BrightnessTechnique {
@@ -53,6 +54,28 @@ class GammaTable {
 
         CGSetDisplayTransferByTable(displayId, GammaTable.tableSize, &newRedTable, &newGreenTable, &newBlueTable)
     }
+
+    func scaledTable(factor: Float) -> (red: [CGGammaValue], green: [CGGammaValue], blue: [CGGammaValue]) {
+        return (
+            red: redTable.map { $0 * factor },
+            green: greenTable.map { $0 * factor },
+            blue: blueTable.map { $0 * factor }
+        )
+    }
+
+    func matches(red: [CGGammaValue], green: [CGGammaValue], blue: [CGGammaValue], tolerance: Float) -> Bool {
+        let sampleCount = min(red.count, green.count, blue.count, redTable.count)
+        guard sampleCount > 0 else { return false }
+
+        for index in 0..<sampleCount {
+            if abs(red[index] - redTable[index]) > tolerance
+                || abs(green[index] - greenTable[index]) > tolerance
+                || abs(blue[index] - blueTable[index]) > tolerance {
+                return false
+            }
+        }
+        return true
+    }
 }
 
 @MainActor
@@ -60,10 +83,17 @@ class GammaTechnique: BrightnessTechnique {
     private var overlayWindowControllers: [CGDirectDisplayID: OverlayWindowController] = [:]
     private var gammaTables: [CGDirectDisplayID: GammaTable] = [:]
 
+    private var gammaEnforcerTimer: Timer?
+    private var fullScreenStateCancellable: AnyCancellable?
+    private let gammaEnforcerInterval: TimeInterval = 30.0
+    private let gammaEnforcerTolerance: Float = 0.005
+
     override func enable() {
         getXDRDisplays().forEach { enableScreen(screen: $0) }
         isEnabled = true
         adjustBrightness()
+        registerFullScreenObserver()
+        updateGammaEnforcer()
     }
 
     override func enableScreen(screen: NSScreen) {
@@ -92,12 +122,74 @@ class GammaTechnique: BrightnessTechnique {
     }
 
     override func disable() {
+        stopGammaEnforcer()
+        unregisterFullScreenObserver()
         isEnabled = false
-        overlayWindowControllers.values.forEach { $0.window?.close() }
+        overlayWindowControllers.values.forEach { controller in
+            RemoteViewCrashGuardRunBlock { controller.window?.close() }
+        }
         overlayWindowControllers.removeAll()
         gammaTables.removeAll()
         resetGammaTable()
         print("[GammaTechnique] Disabled and closed all overlay windows.")
+    }
+
+    private func startGammaEnforcer() {
+        guard gammaEnforcerTimer == nil else { return }
+        let timer = Timer.scheduledTimer(withTimeInterval: gammaEnforcerInterval, repeats: true) { [weak self] _ in
+            self?.enforceGamma()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        gammaEnforcerTimer = timer
+    }
+
+    private func stopGammaEnforcer() {
+        gammaEnforcerTimer?.invalidate()
+        gammaEnforcerTimer = nil
+    }
+
+    private func updateGammaEnforcer() {
+        guard isEnabled else { return }
+        if ActiveAppMonitor.shared.fullScreenDisplayIDs.isEmpty {
+            stopGammaEnforcer()
+        } else {
+            startGammaEnforcer()
+            enforceGamma()
+        }
+    }
+
+    private func registerFullScreenObserver() {
+        guard fullScreenStateCancellable == nil else { return }
+        fullScreenStateCancellable = ActiveAppMonitor.shared.$fullScreenDisplayIDs
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.updateGammaEnforcer()
+            }
+    }
+
+    private func unregisterFullScreenObserver() {
+        fullScreenStateCancellable?.cancel()
+        fullScreenStateCancellable = nil
+    }
+
+    private func enforceGamma() {
+        guard isEnabled else { return }
+        let factor = SettingsModel.shared.settings.brightness
+
+        for (displayId, gammaTable) in gammaTables {
+            guard let screen = NSScreen.screens.first(where: { $0.displayId == displayId }),
+                  ActiveAppMonitor.shared.isScreenFullScreen(screen) else {
+                continue
+            }
+            guard let currentTable = GammaTable.createFromCurrentGammaTable(displayId: displayId) else { continue }
+            let expected = gammaTable.scaledTable(factor: factor)
+            let drifted = !currentTable.matches(red: expected.red, green: expected.green, blue: expected.blue, tolerance: gammaEnforcerTolerance)
+
+            if drifted {
+                gammaTable.setTableForScreen(displayId: displayId, factor: factor)
+                print("[GammaEnforcer] Re-applied gamma table for display \(displayId) — compensation had been reset by the system.")
+            }
+        }
     }
 
     override func adjustBrightness() {
@@ -123,7 +215,9 @@ class GammaTechnique: BrightnessTechnique {
         let toBeDeactivated = overlayWindowControllers.keys.filter { !allDisplayIds.contains($0) }
 
         toBeDeactivated.forEach { displayId in
-            overlayWindowControllers[displayId]?.window?.close()
+            RemoteViewCrashGuardRunBlock {
+                self.overlayWindowControllers[displayId]?.window?.close()
+            }
             gammaTables[displayId]?.setTableForScreen(displayId: displayId, factor: 1.0)
             gammaTables.removeValue(forKey: displayId)
             overlayWindowControllers.removeValue(forKey: displayId)

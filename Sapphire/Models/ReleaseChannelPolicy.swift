@@ -19,19 +19,18 @@ enum ReleaseChannelPolicy {
     }
 
     static func displayedChannel(for settings: Settings) -> ReleaseChannel {
-        if runningBuildChannel == .beta {
-            return .beta
-        }
-        return preferredChannel(from: settings)
+        preferredChannel(from: settings)
     }
 
     static func canChangePreferredChannel() -> Bool {
-        runningBuildChannel != .beta
+        true
+    }
+
+    static func shouldOfferStableDowngrade(for settings: Settings) -> Bool {
+        runningBuildChannel == .beta && preferredChannel(from: settings) == .stable
     }
 
     static func reconcileStoredPreference(_ settings: inout Settings) {
-        if !SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates) {
-            settings.releaseChannel = .stable
-        }
+        _ = settings
     }
 }

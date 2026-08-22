@@ -125,6 +125,9 @@ struct LockScreenFullScreenMusicPane: View {
         .animation(.spring(response: 0.5, dampingFraction: 0.82), value: controller.isPresented)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: controller.showLyrics)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: controller.overlay)
+        .onAppear {
+            isAnimatingIn = controller.isPresented
+        }
         .onChange(of: controller.isPresented) { _, presented in
             if presented {
                 isAnimatingIn = false

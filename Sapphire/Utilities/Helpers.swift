@@ -89,10 +89,15 @@ struct SeekButton: View {
     let onTap: () -> Void
     let onSeek: (Bool) -> Void
     var onLongPressAction: (() -> Void)? = nil
+    var holdAction: MusicLongPressAction? = nil
+    var onHoldBegan: ((MusicLongPressAction) -> Void)? = nil
+    var onHoldEnded: (() -> Void)? = nil
+    var displayedSystemName: String? = nil
 
     @GestureState private var isPressing = false
     @State private var longPressTimer: Timer?
     @State private var seekTimer: Timer?
+    @State private var repeatTimer: Timer?
     @State private var tapIsEligible = false
     @State private var didFireLongPress = false
 
@@ -100,8 +105,10 @@ struct SeekButton: View {
         systemName.contains("forward")
     }
 
+    private var iconName: String { displayedSystemName ?? systemName }
+
     var body: some View {
-        Image(systemName: systemName)
+        Image(systemName: iconName)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -114,37 +121,61 @@ struct SeekButton: View {
                     tapIsEligible = true
                     didFireLongPress = false
                     longPressTimer?.invalidate()
-                    longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { _ in
+                    seekTimer?.invalidate()
+                    repeatTimer?.invalidate()
+                    let timer = Timer(timeInterval: 0.45, repeats: false) { _ in
                         tapIsEligible = false
                         if let onLongPressAction {
                             didFireLongPress = true
                             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+                            if let holdAction {
+                                onHoldBegan?(holdAction)
+                            }
                             onLongPressAction()
+                            if holdAction?.isRepeatableWhileHeld == true {
+                                let repeating = Timer(timeInterval: 0.55, repeats: true) { _ in
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                                    onLongPressAction()
+                                }
+                                RunLoop.main.add(repeating, forMode: .common)
+                                repeatTimer = repeating
+                            }
                         } else {
                             startSeeking()
                         }
                     }
+                    RunLoop.main.add(timer, forMode: .common)
+                    longPressTimer = timer
                 } else {
                     longPressTimer?.invalidate()
                     seekTimer?.invalidate()
                     seekTimer = nil
-                    if tapIsEligible, !didFireLongPress {
+                    repeatTimer?.invalidate()
+                    repeatTimer = nil
+                    if didFireLongPress {
+                        onHoldEnded?()
+                    } else if tapIsEligible {
                         onTap()
                     }
                     didFireLongPress = false
                 }
             }
-            .blur(radius: isPressing ? 4 : 0)
-            .scaleEffect(isPressing ? 0.9 : 1.0)
-            .opacity(isPressing ? 0.8 : 1.0)
+            .contentTransition(.symbolEffect(.replace))
+            .blur(radius: (isPressing && !didFireLongPress) ? 3 : 0)
+            .scaleEffect(isPressing ? 0.92 : 1.0)
+            .opacity((isPressing && !didFireLongPress) ? 0.85 : 1.0)
             .animation(.spring(response: 0.35, dampingFraction: 0.5), value: isPressing)
+            .animation(.easeInOut(duration: 0.15), value: iconName)
+            .animation(.easeInOut(duration: 0.12), value: didFireLongPress)
     }
 
     private func startSeeking() {
         seekTimer?.invalidate()
-        seekTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+        let timer = Timer(timeInterval: 0.1, repeats: true) { _ in
             onSeek(isForward)
         }
+        RunLoop.main.add(timer, forMode: .common)
+        seekTimer = timer
     }
 }
 
@@ -211,11 +242,11 @@ struct VisualEffectView: NSViewRepresentable {
 
 struct PlayCountIndicator: View {
     let playCount: Int
-    private var metrics: (color: Color, bars: [CGFloat]) {
-        if playCount > 500_000_000 { return (.green, [5, 7, 9, 11]) }
-        if playCount > 100_000_000 { return (.yellow, [5, 7, 9, 7]) }
-        if playCount > 10_000_000 { return (.secondary, [5, 7, 7, 5]) }
-        return (.secondary.opacity(0.3), [5, 5, 5, 5])
+    private var color: Color {
+        if playCount > 500_000_000 { return .green }
+        if playCount > 100_000_000 { return .yellow }
+        if playCount > 10_000_000 { return .secondary }
+        return .secondary.opacity(0.5)
     }
     private func formatNumber(_ n: Int) -> String {
         let num = Double(n)
@@ -225,24 +256,52 @@ struct PlayCountIndicator: View {
         return "\(n)"
     }
     var body: some View {
-        let TMetrics = metrics
         HStack(spacing: 4) {
-            HStack(alignment: .bottom, spacing: 2) { ForEach(0..<4) { index in Capsule().fill(TMetrics.bars.indices.contains(index) ? TMetrics.color : Color.clear).frame(width: 3, height: TMetrics.bars.indices.contains(index) ? TMetrics.bars[index] : 5) } }
-            Text(formatNumber(playCount)).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(TMetrics.color.opacity(0.8))
-        }.help("Total Plays: \(playCount.formatted())")
+            Image(systemName: "play.fill")
+                .font(.system(size: 7, weight: .black))
+            Text(formatNumber(playCount))
+                .font(.system(size: 11, weight: .heavy, design: .rounded))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule(style: .continuous).fill(color.opacity(0.14)))
+        .help("Total Plays: \(playCount.formatted())")
     }
 }
 
 struct PopularityIndicator: View {
     let popularity: Int
-    private var color: Color { if popularity >= 75 { return .green }; if popularity >= 40 { return .yellow }; return .secondary }
-    private var estimatedPlays: Int { let p = Double(popularity); let basePlays = pow(p / 10, 4) * 100; let randomFactor = Double.random(in: 0.8...1.2); return Int(basePlays * randomFactor) }
-    private func formatNumber(_ n: Int) -> String { let num = Double(n); if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }; if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }; if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }; return "\(n)" }
+    private var color: Color {
+        if popularity >= 75 { return .green }
+        if popularity >= 40 { return .yellow }
+        return .secondary
+    }
+    private var estimatedPlays: Int {
+        let p = Double(popularity)
+        let basePlays = pow(p / 10, 4) * 100
+        let randomFactor = Double.random(in: 0.8...1.2)
+        return Int(basePlays * randomFactor)
+    }
+    private func formatNumber(_ n: Int) -> String {
+        let num = Double(n)
+        if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }
+        if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }
+        if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }
+        return "\(n)"
+    }
     var body: some View {
         HStack(spacing: 4) {
-            HStack(alignment: .bottom, spacing: 2) { ForEach(0..<4) { index in Capsule().fill(popularity > (index * 25) ? color : Color.secondary.opacity(0.3)).frame(width: 3, height: CGFloat(index * 2 + 5)) } }
-            Text(formatNumber(estimatedPlays)).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(color.opacity(0.8))
-        }.help("Popularity Score: \(popularity)/100")
+            Image(systemName: "flame.fill")
+                .font(.system(size: 7, weight: .black))
+            Text(formatNumber(estimatedPlays))
+                .font(.system(size: 11, weight: .heavy, design: .rounded))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule(style: .continuous).fill(color.opacity(0.14)))
+        .help("Popularity Score: \(popularity)/100")
     }
 }
 

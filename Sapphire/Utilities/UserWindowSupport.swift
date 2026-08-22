@@ -119,38 +119,39 @@ enum UtilityWindowPresenter {
     private static let elevatedWindowLevel = NSWindow.Level.normal
 
     static func presentSettingsWindow(_ window: NSWindow) {
-        if NSApp.activationPolicy() != .regular {
-            NSApp.setActivationPolicy(.regular)
-        }
-        if NSApp.isHidden {
-            NSApp.unhide(nil)
-        }
+        DispatchQueue.main.async { [weak window] in
+            guard let window else { return }
 
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.level = .normal
-        if window.isMiniaturized {
-            window.deminiaturize(nil)
-        }
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
+            if NSApp.isHidden {
+                NSApp.unhide(nil)
+            }
 
-        DispatchQueue.main.async {
-            window.orderFrontRegardless()
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            window.level = .normal
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }
     }
 
     static func present(_ window: NSWindow) {
-        activateAsRegularApp()
-        window.collectionBehavior.insert(.canJoinAllSpaces)
-        window.level = elevatedWindowLevel
-        if window.isMiniaturized {
-            window.deminiaturize(nil)
-        }
-        window.center()
+        DispatchQueue.main.async { [weak window] in
+            guard let window else { return }
 
-        DispatchQueue.main.async {
-            window.orderFrontRegardless()
-            NSApp.activate(ignoringOtherApps: true)
+            activateAsRegularApp()
+            window.collectionBehavior.insert(.canJoinAllSpaces)
+            window.level = elevatedWindowLevel
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.center()
+
             window.makeKeyAndOrderFront(nil)
         }
     }
@@ -193,7 +194,7 @@ enum HelperAlertPresenter {
         let buttons: [String]
         switch issue {
         case .notFound:
-            buttons = ["Relaunch Sapphire", "OK"]
+            buttons = ["Reset Helper", "Relaunch Sapphire", "OK"]
         case .needsApproval:
             buttons = ["Open Login Items", "OK"]
         case .spawnFailed:
@@ -209,6 +210,8 @@ enum HelperAlertPresenter {
             switch issue {
             case .notFound:
                 if index == 0 {
+                    HelperManager.shared.resetOwnBackgroundActivity()
+                } else if index == 1 {
                     HelperManager.relaunchApp()
                 }
             case .needsApproval:

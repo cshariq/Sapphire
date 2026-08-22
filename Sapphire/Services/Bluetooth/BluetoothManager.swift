@@ -82,6 +82,13 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func handleAirPodsUpdate(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            self?.handleAirPodsUpdateOnMain(notification)
+        }
+    }
+
+    @MainActor
+    private func handleAirPodsUpdateOnMain(_ notification: Notification) {
         guard !isProximityScanActive else { return }
 
         guard let userInfo = notification.userInfo,
@@ -113,6 +120,13 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func deviceConnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        Task { @MainActor [weak self] in
+            self?.handleDeviceConnected(device: device)
+        }
+    }
+
+    @MainActor
+    private func handleDeviceConnected(device: IOBluetoothDevice) {
         guard !isProximityScanActive else {
             registerForDisconnect(device: device)
             return
@@ -126,10 +140,12 @@ class BluetoothManager: NSObject, ObservableObject {
             self?.recentlyConnectedDebounceSet.remove(address)
         }
 
-        if let soundURL = Bundle.main.url(forResource: "head_gestures_double_nod", withExtension: "caf") {
-            NSSound(contentsOf: soundURL, byReference: true)?.play()
-        } else {
-            NSSound(named: "Tink")?.play()
+        if SettingsModel.shared.settings.bluetoothNotifySound {
+            if let soundURL = Bundle.main.url(forResource: "head_gestures_double_nod", withExtension: "caf") {
+                NSSound(contentsOf: soundURL, byReference: true)?.play()
+            } else {
+                NSSound(named: "Tink")?.play()
+            }
         }
 
         let lowercasedName = name.lowercased()
@@ -247,6 +263,13 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @objc private func deviceDisconnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        Task { @MainActor [weak self] in
+            self?.handleDeviceDisconnected(device: device)
+        }
+    }
+
+    @MainActor
+    private func handleDeviceDisconnected(device: IOBluetoothDevice) {
         guard !isProximityScanActive else {
             if let address = device.addressString, let notificationToRemove = disconnectionNotifications.removeValue(forKey: address) {
                 notificationToRemove.unregister()
@@ -256,10 +279,12 @@ class BluetoothManager: NSObject, ObservableObject {
 
         guard let address = device.addressString, let name = device.name else { return }
 
-        if let soundURL = Bundle.main.url(forResource: "jbl_cancel", withExtension: "caf") {
-            NSSound(contentsOf: soundURL, byReference: true)?.play()
-        } else {
-            NSSound(named: "Tink")?.play()
+        if SettingsModel.shared.settings.bluetoothNotifySound {
+            if let soundURL = Bundle.main.url(forResource: "jbl_cancel", withExtension: "caf") {
+                NSSound(contentsOf: soundURL, byReference: true)?.play()
+            } else {
+                NSSound(named: "Tink")?.play()
+            }
         }
 
         let iconName = IconMapper.icon(for: device)
@@ -278,7 +303,7 @@ class BluetoothManager: NSObject, ObservableObject {
     private func checkForInitiallyConnectedDevices() {
         guard let pairedDevices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else { return }
         for device in pairedDevices where device.isConnected() {
-            deviceConnected(IOBluetoothUserNotification(), device: device)
+            handleDeviceConnected(device: device)
         }
     }
 

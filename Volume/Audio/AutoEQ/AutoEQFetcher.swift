@@ -1,9 +1,12 @@
-// FineTune/Audio/AutoEQ/AutoEQFetcher.swift
+//
+//  AutoEQFetcher.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 import os
 
-/// Fetches AutoEQ profiles on-demand from the AutoEQ GitHub repository.
-/// Caches the catalog index and individual profiles to disk.
 @Observable
 @MainActor
 final class AutoEQFetcher {
@@ -36,25 +39,20 @@ final class AutoEQFetcher {
         cacheDirectory.appendingPathComponent("AutoEQ").appendingPathComponent("fetched")
     }
 
-    /// Source priority for deduplication (lower index = preferred).
     private static let sourcePriority = [
         "oratory1990", "crinacle", "Rtings", "Innerfidelity", "Super Review", "Headphone.com Legacy"
     ]
 
-    /// Catalog cache TTL: 7 days.
     private static let catalogTTL: TimeInterval = 7 * 24 * 3600
 
     // MARK: - Catalog
 
-    /// Load catalog from cache first, then refresh from GitHub in the background.
     func loadCatalog() async {
-        // Try cached catalog first
         if let cached = loadCatalogFromCache() {
             catalog = cached
             catalogState = .loaded
             logger.info("Loaded \(cached.count) catalog entries from cache")
 
-            // Refresh in background if cache is stale
             if isCatalogCacheStale() {
                 Task { @MainActor in
                     await refreshCatalogFromGitHub()
@@ -63,11 +61,9 @@ final class AutoEQFetcher {
             return
         }
 
-        // No cache — must fetch
         await refreshCatalogFromGitHub()
     }
 
-    /// Fetch the catalog from GitHub INDEX.md and cache it.
     func refreshCatalogFromGitHub() async {
         catalogState = .loading
         do {
@@ -90,10 +86,8 @@ final class AutoEQFetcher {
             catalogState = .loaded
             logger.info("Fetched \(entries.count) catalog entries from GitHub")
 
-            // Cache to disk
             saveCatalogToCache(entries)
         } catch {
-            // Keep existing cached catalog if we have one
             if catalog.isEmpty {
                 catalogState = .error("Network error: \(error.localizedDescription)")
             }
@@ -103,15 +97,11 @@ final class AutoEQFetcher {
 
     // MARK: - Profile Fetching
 
-    /// Fetch a single profile. Checks local cache first, then GitHub.
     func fetchProfile(for entry: AutoEQCatalogEntry) async throws -> AutoEQProfile {
-        // Check local cache
         if let cached = loadCachedProfile(id: entry.id, name: entry.name, measuredBy: entry.measuredBy) {
             return cached
         }
 
-        // Construct URL: relativePath is already URL-decoded from parsing,
-        // but the filename needs percent-encoding for spaces/special chars
         let decodedPath = entry.relativePath
         let lastComponent = decodedPath.components(separatedBy: "/").last ?? entry.name
         let fileName = "\(lastComponent) ParametricEQ.txt"
@@ -138,7 +128,6 @@ final class AutoEQFetcher {
             throw FetchError.parseFailed(entry.name)
         }
 
-        // Attach measuredBy from catalog entry
         let enrichedProfile = AutoEQProfile(
             id: profile.id,
             name: profile.name,
@@ -149,7 +138,6 @@ final class AutoEQFetcher {
             optimizedSampleRate: 48000
         )
 
-        // Cache the .txt to disk for offline use
         cacheProfileText(text, id: entry.id)
 
         logger.info("Fetched profile: \(entry.name)")
@@ -158,7 +146,6 @@ final class AutoEQFetcher {
 
     // MARK: - Cache Management
 
-    /// Check if a profile is already cached locally.
     func hasCachedProfile(id: String) -> Bool {
         let file = Self.fetchedProfilesDirectory.appendingPathComponent("\(id).txt")
         return FileManager.default.fileExists(atPath: file.path)
@@ -166,14 +153,9 @@ final class AutoEQFetcher {
 
     // MARK: - INDEX.md Parsing
 
-    /// Parse INDEX.md markdown into catalog entries with deduplication.
-    /// Keeps the highest-priority source for each headphone name.
     static func parseIndexMarkdown(_ text: String) -> [AutoEQCatalogEntry] {
-        // Pattern: - [Name](./relative/path) by Source
-        // or:      - [Name](./relative/path) by Source on Rig
         let lines = text.components(separatedBy: .newlines)
 
-        // name → (entry, priority)
         var bestByName: [String: (entry: AutoEQCatalogEntry, priority: Int)] = [:]
         bestByName.reserveCapacity(lines.count)
 
@@ -197,42 +179,28 @@ final class AutoEQFetcher {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    /// Parse a single INDEX.md line into a catalog entry.
-    /// Handles headphone names with parentheses (e.g., "64 Audio A12t (m15 Apex module)")
-    /// by using `](` and `) by ` as structural boundaries instead of bare `(` / `)`.
     private static func parseCatalogLine(_ line: String) -> AutoEQCatalogEntry? {
-        // Format: "- [Name](./relative/path%20encoded) by Source on Rig"
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix("- [") else { return nil }
 
-        // Find "](", the boundary between name and URL in markdown link syntax.
-        // This avoids confusion with () inside headphone names.
         guard let linkBoundary = trimmed.range(of: "](") else { return nil }
 
-        // Name is between "- [" and "]("
-        let nameStart = trimmed.index(trimmed.startIndex, offsetBy: 2) // skip "- "
+        let nameStart = trimmed.index(trimmed.startIndex, offsetBy: 2)
         let name = String(trimmed[trimmed.index(after: nameStart)..<linkBoundary.lowerBound])
         guard !name.isEmpty else { return nil }
 
-        // Find ") by " searching backwards — the URL itself may contain () in the path
-        // (e.g., "(m15%20Apex%20module)"), so the LAST ") by " marks the true URL end.
         guard let urlEnd = trimmed.range(of: ") by ", options: .backwards) else { return nil }
 
-        // URL is between "](" and ") by "
         var rawPath = String(trimmed[linkBoundary.upperBound..<urlEnd.lowerBound])
 
-        // Strip leading "./" prefix
         if rawPath.hasPrefix("./") {
             rawPath = String(rawPath.dropFirst(2))
         }
 
-        // URL-decode the path (spaces are %20 in INDEX.md)
         let relativePath = rawPath.removingPercentEncoding ?? rawPath
 
-        // Source (and optional rig) is everything after ") by "
         let sourceAndRig = String(trimmed[urlEnd.upperBound...])
 
-        // Source is everything before " on " (if present)
         let measuredBy: String
         if let onRange = sourceAndRig.range(of: " on ") {
             measuredBy = String(sourceAndRig[..<onRange.lowerBound])

@@ -1,11 +1,14 @@
-// FineTune/Audio/Extensions/AudioDeviceID+Volume.swift
+//
+//  AudioDeviceID+Volume.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 
 // MARK: - Volume Control Detection
 
 extension AudioDeviceID {
-    /// Returns true if this device supports CoreAudio volume control.
-    /// Monitors connected via HDMI/DisplayPort often return false here.
     func hasOutputVolumeControl() -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
@@ -22,14 +25,7 @@ extension AudioDeviceID {
 // MARK: - Device Volume
 
 extension AudioDeviceID {
-    /// Reads the scalar volume (0.0 to 1.0) for the device.
-    /// Tries multiple strategies to find the most representative volume:
-    /// 1. Virtual main volume via VirtualMainVolume (matches system volume slider)
-    /// 2. Master volume scalar (element 0)
-    /// 3. Left channel volume (element 1)
-    /// Returns 1.0 for devices without volume control.
     func readOutputVolumeScalar() -> Float {
-        // Strategy 1: Try virtual main volume (preferred - matches system slider)
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
             mScope: kAudioObjectPropertyScopeOutput,
@@ -45,7 +41,6 @@ extension AudioDeviceID {
             }
         }
 
-        // Strategy 2: Try master volume scalar (element 0)
         address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyVolumeScalar,
             mScope: kAudioObjectPropertyScopeOutput,
@@ -61,7 +56,6 @@ extension AudioDeviceID {
             }
         }
 
-        // Strategy 3: Try left channel (element 1) - common for stereo devices
         address.mElement = 1
         if AudioObjectHasProperty(self, &address) {
             var volume: Float32 = 1.0
@@ -72,13 +66,9 @@ extension AudioDeviceID {
             }
         }
 
-        // No volume control available
         return 1.0
     }
 
-    /// Sets the scalar volume (0.0 to 1.0) for the device.
-    /// Uses VirtualMainVolume via VirtualMainVolume to match system volume slider behavior.
-    /// Returns true if successful, false otherwise.
     func setOutputVolumeScalar(_ volume: Float) -> Bool {
         let clampedVolume = Swift.max(0.0, Swift.min(1.0, volume))
 
@@ -102,8 +92,6 @@ extension AudioDeviceID {
 // MARK: - Device Mute
 
 extension AudioDeviceID {
-    /// Reads the mute state for the device.
-    /// Returns true if muted, false if unmuted or if mute is not supported.
     func readMuteState() -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
@@ -121,8 +109,6 @@ extension AudioDeviceID {
         return err == noErr && muted != 0
     }
 
-    /// Sets the mute state for the device.
-    /// Returns true if successful, false otherwise.
     func setMuteState(_ muted: Bool) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
@@ -144,14 +130,7 @@ extension AudioDeviceID {
 // MARK: - Input Device Volume
 
 extension AudioDeviceID {
-    /// Reads the scalar volume (0.0 to 1.0) for the input device (microphone).
-    /// Tries multiple strategies to find the most representative volume:
-    /// 1. Virtual main volume via VirtualMainVolume (matches system input slider)
-    /// 2. Master volume scalar (element 0)
-    /// 3. Left channel volume (element 1)
-    /// Returns 1.0 for devices without volume control.
     func readInputVolumeScalar() -> Float {
-        // Strategy 1: Try virtual main volume (preferred - matches system slider)
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
             mScope: kAudioObjectPropertyScopeInput,
@@ -167,7 +146,6 @@ extension AudioDeviceID {
             }
         }
 
-        // Strategy 2: Try master volume scalar (element 0)
         address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyVolumeScalar,
             mScope: kAudioObjectPropertyScopeInput,
@@ -183,7 +161,6 @@ extension AudioDeviceID {
             }
         }
 
-        // Strategy 3: Try left channel (element 1) - common for stereo devices
         address.mElement = 1
         if AudioObjectHasProperty(self, &address) {
             var volume: Float32 = 1.0
@@ -194,13 +171,9 @@ extension AudioDeviceID {
             }
         }
 
-        // No volume control available
         return 1.0
     }
 
-    /// Sets the scalar volume (0.0 to 1.0) for the input device (microphone).
-    /// Uses VirtualMainVolume via VirtualMainVolume to match system input slider behavior.
-    /// Returns true if successful, false otherwise.
     func setInputVolumeScalar(_ volume: Float) -> Bool {
         let clampedVolume = Swift.max(0.0, Swift.min(1.0, volume))
 
@@ -224,8 +197,6 @@ extension AudioDeviceID {
 // MARK: - Input Device Mute
 
 extension AudioDeviceID {
-    /// Reads the mute state for the input device (microphone).
-    /// Returns true if muted, false if unmuted or if mute is not supported.
     func readInputMuteState() -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
@@ -243,8 +214,6 @@ extension AudioDeviceID {
         return err == noErr && muted != 0
     }
 
-    /// Sets the mute state for the input device (microphone).
-    /// Returns true if successful, false otherwise.
     func setInputMuteState(_ muted: Bool) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,

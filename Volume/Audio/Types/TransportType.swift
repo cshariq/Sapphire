@@ -1,8 +1,11 @@
-// FineTune/Audio/Types/TransportType.swift
+//
+//  TransportType.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 
-/// Represents how an audio device connects to the system.
-/// See kAudioDeviceTransportType* constants in AudioHardware.h
 enum TransportType: Sendable, Hashable, CustomStringConvertible {
     case builtIn
     case usb
@@ -48,8 +51,6 @@ enum TransportType: Sendable, Hashable, CustomStringConvertible {
         }
     }
 
-    /// Default SF Symbol for this transport type.
-    /// Used as fallback when device-specific icon unavailable.
     var defaultIconSymbol: String {
         switch self {
         case .builtIn:     return "hifispeaker"

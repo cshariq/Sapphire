@@ -17,7 +17,8 @@ struct MirrorWidgetView: View {
             if camera.isLive {
                 MirrorCameraPreviewView(
                     session: camera.session,
-                    flipHorizontally: settings.settings.mirrorFlipHorizontally
+                    flipHorizontally: settings.settings.mirrorFlipHorizontally,
+                    sessionEpoch: camera.sessionEpoch
                 )
                 .transition(.opacity)
             } else {

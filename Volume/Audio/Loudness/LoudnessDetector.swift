@@ -1,11 +1,11 @@
+//
+//  LoudnessDetector.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 
-/// Measures signal loudness using a ring-buffer RMS estimator and applies
-/// asymmetric attack/release envelope smoothing in the dB domain.
-///
-/// Thread-safety: all mutation must occur on a single real-time audio thread.
-/// The class is marked @unchecked Sendable because its mutable state is
-/// exclusively owned by that thread.
 final class LoudnessDetector: @unchecked Sendable {
 
     // MARK: - Private state
@@ -13,22 +13,18 @@ final class LoudnessDetector: @unchecked Sendable {
     private var settings: LoudnessEqualizerSettings
     private var sampleRate: Float
 
-    // Ring buffer (stores squared samples)
     private var ringBuffer: [Float]
     private var writeIndex: Int = 0
     private var hopCounter: Int = 0
     private var runningSquareSum: Float = 0
 
-    // Derived sizes
     private var windowSamples: Int
     private var inverseWindowSamples: Float
     private var hopSamples: Int
 
-    // Envelope coefficients
     private var attackCoeff: Float
     private var releaseCoeff: Float
 
-    // Smoothed level in dB
     private var smoothedLevel: Float = -120.0
 
     // MARK: - Init
@@ -58,11 +54,7 @@ final class LoudnessDetector: @unchecked Sendable {
 
     // MARK: - Real-time ingest
 
-    /// Ingest one K-weighted sample. Returns a new smoothed level (dB) when a
-    /// hop boundary is reached, otherwise returns nil.
-    /// RT-safe: no allocations, no logging, no ObjC.
     func ingest(weightedSample: Float) -> Float? {
-        // Update running sum: subtract old squared value, store new squared value, add it
         runningSquareSum -= ringBuffer[writeIndex]
         ringBuffer[writeIndex] = weightedSample * weightedSample
         runningSquareSum += ringBuffer[writeIndex]
@@ -84,7 +76,6 @@ final class LoudnessDetector: @unchecked Sendable {
 
     // MARK: - Envelope smoothing
 
-    /// Apply asymmetric attack/release smoothing. Returns the updated smoothed level.
     func updateEnvelope(with measuredLevelDb: Float) -> Float {
         let coeff: Float
         if measuredLevelDb > smoothedLevel {

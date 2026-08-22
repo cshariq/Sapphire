@@ -91,7 +91,22 @@ class FileDropManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        UniversalFileTransferManager.shared.startMonitoring()
+        SettingsModel.shared.$settings
+            .map(\.fileProgressLiveActivityEnabled)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isEnabled in
+                if isEnabled {
+                    UniversalFileTransferManager.shared.startMonitoring()
+                } else {
+                    UniversalFileTransferManager.shared.stopMonitoring()
+                }
+            }
+            .store(in: &cancellables)
+
+        if SettingsModel.shared.settings.fileProgressLiveActivityEnabled {
+            UniversalFileTransferManager.shared.startMonitoring()
+        }
     }
 
     private func scheduleTaskDismissal(for taskID: String, after delay: TimeInterval) {

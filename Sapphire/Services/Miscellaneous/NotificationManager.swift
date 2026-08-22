@@ -188,10 +188,8 @@ class iMessageActionManager {
     private func _runAppleScript(_ script: String) {
         DispatchQueue.global(qos: .userInitiated).async {
             var error: NSDictionary?
-            if let scriptObject = NSAppleScript(source: script) {
-                _ = scriptObject.executeAndReturnError(&error)
-                if let err = error { print("iMessageActionManager: AppleScript Error: \(err)") }
-            }
+            AppleScriptRunner.execute(script, error: &error)
+            if let err = error { print("iMessageActionManager: AppleScript Error: \(err)") }
         }
     }
 }

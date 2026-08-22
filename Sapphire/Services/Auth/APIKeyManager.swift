@@ -32,7 +32,6 @@ final class APIKeyManager {
         migrateMisplacedProviderKeysIfNeeded()
     }
 
-    /// Moves provider keys saved under the wrong slot (e.g. Hack Club key in Gemini).
     private func migrateMisplacedProviderKeysIfNeeded() {
         let gemini = loadKey(keychainKey: geminiKeychainKey) ?? ""
         guard !gemini.isEmpty else { return }
@@ -55,7 +54,6 @@ final class APIKeyManager {
         }
     }
 
-    /// Returns true when `key` looks like a Google Gemini / Generative Language API key.
     static func isValidGoogleGeminiAPIKey(_ key: String) -> Bool {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -64,7 +62,6 @@ final class APIKeyManager {
         return !thirdPartyPrefixes.contains(where: { trimmed.hasPrefix($0) })
     }
 
-    /// Gemini key suitable for Google APIs (Live, Generative Language). Rejects OpenRouter / Hack Club keys.
     var googleGeminiAPIKey: String {
         let key = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Self.isValidGoogleGeminiAPIKey(key) else { return "" }

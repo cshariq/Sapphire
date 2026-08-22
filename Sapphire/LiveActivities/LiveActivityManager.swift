@@ -118,8 +118,14 @@ class LiveActivityManager: ObservableObject {
         if case .full = activityContent { true } else { false }
     }
 
+    private var notchDisplayIsFullScreen: Bool {
+        let screen = NSWindow.visibleNotchWindow?.screen ?? CursorPosition.targetNotchScreen()
+        return activeAppMonitor.isScreenFullScreen(screen)
+    }
+
     // MARK: - Private Properties
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "LiveActivityManager")
+    private var hasStarted = false
     private var dismissalTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     private var activityCheckers: [ActivityType: () -> (ActivityType, LiveActivityContent, TimeInterval?)?] = [:]
@@ -222,9 +228,16 @@ class LiveActivityManager: ObservableObject {
             .sports: { self.checkForSports() },
             .finance: { self.checkForFinance() },
         ]
+    }
+
+    func start() {
+        guard !hasStarted else { return }
+        hasStarted = true
         setupSubscriptions()
         setupPeriodicTimer()
         updateSportsFinanceWatchTimer()
+        lastEvalTime = 0
+        evaluateAndDisplayActivity()
         scheduleInitialUpdateActivityEvaluationIfNeeded()
     }
 
@@ -435,21 +448,26 @@ class LiveActivityManager: ObservableObject {
                 .mapToVoid(),
             musicWidget.$shouldShowLiveActivity.removeDuplicates().mapToVoid(),
             musicWidget.$isPlaying.removeDuplicates().mapToVoid(),
+            musicWidget.$title.removeDuplicates().mapToVoid(),
+            musicWidget.$artist.removeDuplicates().mapToVoid(),
+            musicWidget.$album.removeDuplicates().mapToVoid(),
             musicWidget.trackDidChange.mapToVoid(),
             musicWidget.$showQuickPeek.removeDuplicates().mapToVoid(),
             musicWidget.$isHoveringAlbumArt.removeDuplicates().mapToVoid(),
+            musicWidget.$currentLyric.map(\.?.id).removeDuplicates().mapToVoid(),
             settingsModel.$settings.removeDuplicates().mapToVoid(),
             activeAppMonitor.$isLyricsAllowedForActiveApp
                 .removeDuplicates()
                 .mapToVoid(),
-            activeAppMonitor.$isFullScreen.removeDuplicates().mapToVoid(),
+            activeAppMonitor.$fullScreenDisplayIDs.removeDuplicates().mapToVoid(),
+            activeAppMonitor.$activeSpaceRevision.removeDuplicates().mapToVoid(),
             activeAppMonitor.$activeAppBundleID.removeDuplicates().mapToVoid(),
             focusModeManager.$currentStatus.removeDuplicates().mapToVoid(),
             UpdateChecker.shared.$status.mapToVoid(),
             StatsManager.shared.$currentStats
                 .removeDuplicates()
                 .compactMap { $0 }
-                .throttle(for: .seconds(2), scheduler: RunLoop.main, latest: true)
+                .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
                 .mapToVoid(),
             batteryStatusManager.$currentState.removeDuplicates().mapToVoid(),
             intelligenceRunningPublisher,
@@ -601,7 +619,7 @@ class LiveActivityManager: ObservableObject {
         if self.currentActivity == .battery, let state = batteryMonitor.currentState, !state.isPluggedIn, self.dismissalTimer != nil {
             return
         }
-        if activeAppMonitor.isFullScreen && settingsModel.settings.hideLiveActivityInFullScreen {
+        if notchDisplayIsFullScreen && settingsModel.settings.hideLiveActivityInFullScreen {
             consumeBlockedEphemeralActivities(winningType: nil)
             if currentActivity != .none {
                 setActivity(type: .none, content: .none)
@@ -637,7 +655,7 @@ class LiveActivityManager: ObservableObject {
             guard snoozedActivities[activityType] == nil else { continue }
             guard let checker = activityCheckers[activityType] else { continue }
 
-            if activeAppMonitor.isFullScreen {
+            if notchDisplayIsFullScreen {
                 if let liveActivitySettingsType = activityType.toLiveActivityType(),
                    settingsModel.settings.hideActivitiesInFullScreen[liveActivitySettingsType.rawValue] == true {
                     continue
@@ -651,7 +669,7 @@ class LiveActivityManager: ObservableObject {
         }
 
         let fullScreenSettingsType = settingsModel.settings.hideActivitiesInFullScreen
-        let isFullScreen = activeAppMonitor.isFullScreen
+        let isFullScreen = notchDisplayIsFullScreen
 
         if winningCandidate == nil,
            !(isFullScreen && fullScreenSettingsType[LiveActivityType.stats.rawValue] == true),
@@ -690,7 +708,7 @@ class LiveActivityManager: ObservableObject {
             guard snoozedActivities[activityType] == nil else { continue }
             guard let checker = activityCheckers[activityType] else { continue }
 
-            if activeAppMonitor.isFullScreen {
+            if notchDisplayIsFullScreen {
                 if let liveActivitySettingsType = activityType.toLiveActivityType(),
                    settingsModel.settings.hideActivitiesInFullScreen[liveActivitySettingsType.rawValue] == true {
                     continue
@@ -1101,7 +1119,7 @@ class LiveActivityManager: ObservableObject {
             }
         }
 
-        let id = "\((musicWidget.title ?? "") + (musicWidget.artist ?? ""))-\(bottomContentIdentifier)-\(isPlaying)"
+        let id = "\((musicWidget.title ?? "") + (musicWidget.artist ?? "") + (musicWidget.album ?? ""))-\(bottomContentIdentifier)-\(isPlaying)"
         let duration: TimeInterval? = isPlaying ? nil : 5.0
         return (
             .music,

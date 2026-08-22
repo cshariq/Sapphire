@@ -1,3 +1,9 @@
+//
+//  LoudnessEqualizerSettings.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 struct LoudnessEqualizerSettings: Codable, Equatable, Sendable {
     var targetLoudnessDb: Float = -12
     var maxBoostDb: Float = 15

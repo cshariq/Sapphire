@@ -7,6 +7,14 @@
 
 import Foundation
 
+let SapphireHelperProtocolVersion: Int = 4
+
+public enum ChargeControlMode: Int {
+    case unsupported = 0
+    case legacy = 1
+    case firmware = 2
+}
+
 @objc(FanInfo)
 public class FanInfo: NSObject, NSSecureCoding, Identifiable {
     public static var supportsSecureCoding: Bool = true
@@ -46,8 +54,11 @@ public class FanInfo: NSObject, NSSecureCoding, Identifiable {
     func setFanToConstantRPM(fanIndex: Int, speed: Int, reply: @escaping (Error?) -> Void)
     func getBatteryTemperature(reply: @escaping (Double) -> Void)
     func getAllSMCKeys(reply: @escaping ([String]) -> Void)
+    func getSensorValues(keys: [String], reply: @escaping (NSDictionary) -> Void)
     func getSensorValue(key: String, reply: @escaping (Double) -> Void)
     func getVersion(reply: @escaping (String) -> Void)
+    func getProtocolVersion(reply: @escaping (Int) -> Void)
+    func getChargeControlMode(reply: @escaping (Int) -> Void)
 
     func enableLowPowerMode(reply: @escaping (Error?) -> Void)
     func disableLowPowerMode(reply: @escaping (Error?) -> Void)
@@ -61,5 +72,8 @@ public class FanInfo: NSObject, NSSecureCoding, Identifiable {
 
     func preventSystemSleep(reply: @escaping (Error?) -> Void)
     func allowSystemSleep(reply: @escaping (Error?) -> Void)
+
+    func startSleepBatteryMonitoring(intervalMinutes: Int, chargeLimit: Int, stopChargingWhileAsleep: Bool, logPath: String, reply: @escaping (Error?) -> Void)
+    func stopSleepBatteryMonitoring(reply: @escaping (Error?) -> Void)
 
 }

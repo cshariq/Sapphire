@@ -28,7 +28,6 @@ class CalendarService: ObservableObject {
             name: .EKEventStoreChanged,
             object: eventStore
         )
-        requestAccess()
     }
 
     deinit {

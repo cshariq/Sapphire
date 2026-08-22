@@ -1,26 +1,28 @@
-// FineTune/Models/VolumeState.swift
+//
+//  VolumeState.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 
-/// Device selection mode for an app's audio output
 enum DeviceSelectionMode: String, Codable, Equatable {
-    case single  // Route to one device (default)
-    case multi   // Route to multiple devices simultaneously
+    case single
+    case multi
 }
 
-/// Consolidated state for a single app's audio settings
 struct AppAudioState {
     var volume: Float
     var muted: Bool
     var persistenceIdentifier: String
     var boost: BoostLevel = .x1
     var deviceSelectionMode: DeviceSelectionMode = .single
-    var selectedDeviceUIDs: Set<String> = []  // Used in multi mode
+    var selectedDeviceUIDs: Set<String> = []
 }
 
 @Observable
 @MainActor
 final class VolumeState {
-    /// Single source of truth for per-app audio state
     private var states: [pid_t: AppAudioState] = [:]
     private let settingsManager: SettingsManager?
 
@@ -46,7 +48,6 @@ final class VolumeState {
             states[pid] = AppAudioState(volume: volume, muted: false, persistenceIdentifier: identifier)
             settingsManager?.setVolume(for: identifier, to: volume)
         }
-        // If no identifier provided and no existing state, volume is not persisted
     }
 
     func loadSavedVolume(for pid: pid_t, identifier: String) -> Float? {
@@ -109,7 +110,6 @@ final class VolumeState {
             states[pid] = AppAudioState(volume: defaultVolume, muted: muted, persistenceIdentifier: identifier)
             settingsManager?.setMute(for: identifier, to: muted)
         }
-        // If no identifier provided and no existing state, mute is not persisted
     }
 
     func loadSavedMute(for pid: pid_t, identifier: String) -> Bool? {

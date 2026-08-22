@@ -1,11 +1,13 @@
-// FineTune/Utilities/ProcessNameLookup.swift
+//
+//  ProcessNameLookup.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Darwin
 import Foundation
 
-/// Resolves a PID to its `p_comm` short executable name via sysctl.
 enum ProcessNameLookup {
-    /// Returns the short executable name for a PID, or nil when the PID is
-    /// invalid or the lookup fails.
     static func name(for pid: pid_t) -> String? {
         guard pid > 0 else { return nil }
 
@@ -17,7 +19,6 @@ enum ProcessNameLookup {
             return nil
         }
 
-        // `sysctl` zeroes `size` when the PID is not found.
         guard size > 0 else { return nil }
 
         let name = withUnsafePointer(to: &info.kp_proc.p_comm) { tuplePtr -> String in

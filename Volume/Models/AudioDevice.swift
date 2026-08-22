@@ -1,4 +1,9 @@
-// FineTune/Models/AudioDevice.swift
+//
+//  AudioDevice.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 import AudioToolbox
 

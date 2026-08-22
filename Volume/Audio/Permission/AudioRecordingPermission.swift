@@ -1,4 +1,9 @@
-// FineTune/Audio/Permission/AudioRecordingPermission.swift
+//
+//  AudioRecordingPermission.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 import AppKit
 import os
@@ -26,7 +31,6 @@ final class AudioRecordingPermission {
         registerForActivation()
     }
 
-    /// Check current TCC status without prompting.
     func refreshStatus() {
         #if ENABLE_TCC_SPI
         let result = Self.preflight()
@@ -44,8 +48,6 @@ final class AudioRecordingPermission {
         #endif
     }
 
-    /// Trigger the system permission dialog. Only shows once per app per TCC service.
-    /// Subsequent calls are no-ops at the OS level.
     func request() {
         #if ENABLE_TCC_SPI
         guard status != .authorized else { return }
@@ -97,7 +99,6 @@ final class AudioRecordingPermission {
         return unsafeBitCast(sym, to: RequestFunc.self)
     }()
 
-    /// Returns: 0 = authorized, 1 = denied, -1 = SPI unavailable
     private static func preflight() -> Int {
         guard let spi = preflightSPI else {
             logger.warning("TCC preflight SPI unavailable")

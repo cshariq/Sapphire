@@ -1,18 +1,16 @@
-// FineTune/Audio/EQ/EQProcessor.swift
+//
+//  EQProcessor.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 import Accelerate
 
-/// RT-safe 10-band graphic EQ processor using vDSP_biquad.
-///
-/// Subclass of `BiquadProcessor` — inherits delay buffer management, atomic setup swaps,
-/// stereo biquad processing, and NaN safety. This class adds EQ-specific settings
-/// management and coefficient computation.
 final class EQProcessor: BiquadProcessor, @unchecked Sendable {
 
-    /// Currently applied EQ settings (needed for sample rate recalculation)
     private var _currentSettings: EQSettings?
 
-    /// Read-only access to current settings
     var currentSettings: EQSettings? { _currentSettings }
 
     init(sampleRate: Double) {
@@ -22,13 +20,11 @@ final class EQProcessor: BiquadProcessor, @unchecked Sendable {
             category: "EQProcessor",
             initiallyEnabled: true
         )
-        // Initialize with flat EQ
         updateSettings(EQSettings.flat)
     }
 
     // MARK: - Settings Update
 
-    /// Update EQ settings (call from main thread).
     func updateSettings(_ settings: EQSettings) {
         setEnabled(settings.isEnabled)
         _currentSettings = settings
@@ -44,9 +40,6 @@ final class EQProcessor: BiquadProcessor, @unchecked Sendable {
 
         swapSetup(newSetup)
 
-        // Note: Do NOT reset delay buffers here - the filter naturally adapts to new
-        // coefficients using existing state, producing smooth transitions without clicks.
-        // Delay buffers are only reset on init and sample rate changes.
     }
 
     // MARK: - BiquadProcessor Overrides

@@ -1,9 +1,12 @@
-// FineTune/Models/DisplayableApp.swift
+//
+//  DisplayableApp.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 import UniformTypeIdentifiers
 
-/// Represents an app that can be displayed in the UI, either active (currently playing audio)
-/// or pinned but inactive (not currently running or producing audio).
 enum DisplayableApp: Identifiable {
     case active(AudioApp)
     case pinnedInactive(PinnedAppInfo)
@@ -17,8 +20,6 @@ enum DisplayableApp: Identifiable {
         }
     }
 
-    /// Whether this represents a pinned-but-inactive app.
-    /// Note: Active apps may also be pinned - check the pinned list directly for that case.
     var isPinnedInactive: Bool {
         switch self {
         case .active:
@@ -55,7 +56,6 @@ enum DisplayableApp: Identifiable {
         }
     }
 
-    /// Loads the app icon from a bundle ID, or returns a generic placeholder.
     static func loadIcon(bundleID: String?) -> NSImage {
         if let bundleID,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {

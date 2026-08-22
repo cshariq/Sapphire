@@ -48,6 +48,7 @@ class BatteryDataLogger {
             print("[BatteryDataLogger] FATAL: Could not create log directory: \(error)")
         }
         self.logFileURL = logDirURL.appendingPathComponent("battery_log.json")
+        self.sleepLogFileURL = logDirURL.appendingPathComponent("battery_sleep_log.jsonl")
 
         if !fileManager.fileExists(atPath: logFileURL.path) {
             writeLogFile(entries: [])
@@ -68,14 +69,27 @@ class BatteryDataLogger {
     }
 
     func readLogFile() -> [BatteryLogEntry] {
+        var entries: [BatteryLogEntry] = []
         do {
             let data = try Data(contentsOf: logFileURL)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode([BatteryLogEntry].self, from: data)
+            entries = try decoder.decode([BatteryLogEntry].self, from: data)
         } catch {
             print("[BatteryDataLogger] ERROR: Could not read or decode log file: \(error)")
-            return []
+        }
+        entries.append(contentsOf: readSleepLogFile())
+        return entries
+    }
+
+    private let sleepLogFileURL: URL
+
+    private func readSleepLogFile() -> [BatteryLogEntry] {
+        guard let data = try? Data(contentsOf: sleepLogFileURL) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return data.split(separator: 0x0A).compactMap { line in
+            try? decoder.decode(BatteryLogEntry.self, from: Data(line))
         }
     }
 

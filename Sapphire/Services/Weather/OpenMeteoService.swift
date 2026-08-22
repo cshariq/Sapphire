@@ -147,6 +147,7 @@ enum OpenMeteoServiceError: LocalizedError {
     }
 }
 
+@MainActor
 final class OpenMeteoService {
 
     static let shared = OpenMeteoService()

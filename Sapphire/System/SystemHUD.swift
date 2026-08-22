@@ -86,6 +86,25 @@ enum HUDType: Hashable {
         }
     }
     enum CaseIdentifier { case volume, brightness, multiDisplayBrightness, keyboardBrightness, externalDeviceVolume, appVolume }
+
+    func sameKind(as other: HUDType) -> Bool {
+        caseIdentifier == other.caseIdentifier
+    }
+
+    var primaryLevel: Float {
+        switch self {
+        case .volume(let level, _): return level
+        case .brightness(let level), .keyboardBrightness(let level): return level
+        case .externalDeviceVolume(_, _, let deviceVolume, let systemVolume, let isControllingExternal, _):
+            return isControllingExternal ? deviceVolume : systemVolume
+        case .appVolume(_, _, let appVolume): return appVolume
+        case .multiDisplayBrightness(let displays): return displays.first?.level ?? 0
+        }
+    }
+
+    func displayValueChanged(from other: HUDType, threshold: Float) -> Bool {
+        abs(primaryLevel - other.primaryLevel) >= threshold
+    }
 }
 
 private enum MediaKeyAction {
@@ -112,10 +131,12 @@ class SystemHUDManager: ObservableObject {
     private var currentAction: MediaKeyAction?
     private var verificationTimer: Timer?
 
-    private let keyRepeatDelay: TimeInterval = 0.25
-    private let keyRepeatInterval: TimeInterval = 0.03
+    private let keyRepeatDelay: TimeInterval = 0.22
+    private let keyRepeatInterval: TimeInterval = 0.055
 
     private var isInitialKeyPress = true
+
+    private var isAccessibilitySuspended = false
 
     private var spotifyStateForAction: ActiveSpotifyDeviceState?
     private var lastKnownSpotifyState: ActiveSpotifyDeviceState?
@@ -131,7 +152,14 @@ class SystemHUDManager: ObservableObject {
     private var isControllingAppVolume = false
     var currentAppIcon: NSImage?
 
+    private var cachedOutputDevice: AudioDevice?
+    @Published private(set) var hudOutputDevice: AudioDevice?
+    private var lastPublishedHUD: HUDType?
+    private var lastHUDPublishAt: Date = .distantPast
+    private let hudPublishMinInterval: TimeInterval = 0.05
+
     private init() {
+        registerTrustAwareness()
         setupEventTap()
         startVerificationTimer()
 
@@ -167,6 +195,7 @@ class SystemHUDManager: ObservableObject {
         }
         if let existingTap = eventTap {
             CGEvent.tapEnable(tap: existingTap, enable: false)
+            CFMachPortInvalidate(existingTap)
         }
         eventTap = nil
 
@@ -201,7 +230,43 @@ class SystemHUDManager: ObservableObject {
         ensureEventTapIsEnabled(forceRebuild: true)
     }
 
+    private func registerTrustAwareness() {
+        AccessibilityTrustMonitor.shared.register(name: "SystemHUD") { [weak self] in
+            self?.suspendEventTap()
+        } reinstall: { [weak self] in
+            self?.resumeEventTap()
+        }
+    }
+
+    private func suspendEventTap() {
+        isAccessibilitySuspended = true
+        teardownEventTap()
+    }
+
+    private func resumeEventTap() {
+        isAccessibilitySuspended = false
+        setupEventTap()
+    }
+
+    private func teardownEventTap() {
+        if let source = eventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+            eventTapRunLoopSource = nil
+        }
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        eventTap = nil
+    }
+
     private func ensureEventTapIsEnabled(forceRebuild: Bool = false) {
+        guard AXIsProcessTrusted() else {
+            teardownEventTap()
+            return
+        }
+        guard !isAccessibilitySuspended else { return }
+
         guard let eventTap else {
             setupEventTap()
             return
@@ -305,13 +370,18 @@ class SystemHUDManager: ObservableObject {
     @MainActor private func startContinuousChange(for action: MediaKeyAction) {
         currentAction = action
         isInitialKeyPress = true
+        cachedOutputDevice = AudioDeviceManager().getCurrentOutputDevice()
+        hudOutputDevice = cachedOutputDevice
 
         if action == .volumeUp || action == .volumeDown {
             let requestID = UUID()
             spotifyFetchRequestID = requestID
 
-            if settings.settings.showSpotifyVolumeHUD, let cachedState = self.lastKnownSpotifyState, musicManager.lastKnownBundleID == "com.spotify.client", musicManager.isPlaying {
+            if settings.settings.showSpotifyVolumeHUD,
+               musicManager.lastKnownBundleID == "com.spotify.client",
+               let cachedState = musicManager.getActiveCachedSpotifyDeviceState() ?? self.lastKnownSpotifyState {
                 self.spotifyStateForAction = cachedState
+                self.lastKnownSpotifyState = cachedState
                 self.updateVolumeHUD()
             }
 
@@ -319,17 +389,16 @@ class SystemHUDManager: ObservableObject {
                 isFetchingSpotifyState = true
                 Task { @MainActor in
                     defer { self.isFetchingSpotifyState = false }
-                    if let freshState = await musicManager.fetchActiveSpotifyDeviceState() {
+                    if let freshState = await musicManager.fetchActiveSpotifyDeviceState(forceRefresh: false) {
                         guard self.spotifyFetchRequestID == requestID, self.currentAction == action else { return }
                         self.spotifyStateForAction = freshState
                         self.lastKnownSpotifyState = freshState
                         if self.currentHUD != nil {
                             self.updateVolumeHUD()
                         }
-                    } else {
-                        guard self.spotifyFetchRequestID == requestID, self.currentAction == action else { return }
-                        self.spotifyStateForAction = nil
-                        self.lastKnownSpotifyState = nil
+                    }
+                    Task.detached(priority: .utility) {
+                        _ = await MusicManager.shared.fetchActiveSpotifyDeviceState(forceRefresh: true)
                     }
                 }
             }
@@ -337,9 +406,7 @@ class SystemHUDManager: ObservableObject {
 
         performChange()
 
-        withAnimation(.spring()) {
-            glowIntensity = 0.2
-        }
+        glowIntensity = 0.15
 
         keyRepeatTimer?.invalidate()
         keyRepeatTimer = Timer.scheduledTimer(
@@ -370,7 +437,7 @@ class SystemHUDManager: ObservableObject {
                  self.lastCommittedAppVolume = self.currentAppVolume
              }
 
-             if settings.settings.volumeHUDSoundEnabled {
+             if SystemSoundFeedback.isVolumeChangeFeedbackEnabled {
                  if let soundURL = Bundle.main.url(forResource: "Media Keys", withExtension: "aif") {
                      NSSound(contentsOf: soundURL, byReference: true)?.play()
                  } else {
@@ -383,10 +450,9 @@ class SystemHUDManager: ObservableObject {
          keyRepeatTimer = nil
          currentAction = nil
          spotifyFetchRequestID = UUID()
+         cachedOutputDevice = nil
 
-         withAnimation(.spring()) {
-             glowIntensity = 0.0
-         }
+         glowIntensity = 0.0
      }
 
     @objc private func startRepeatingChange() {
@@ -407,9 +473,7 @@ class SystemHUDManager: ObservableObject {
         }
 
         if !isInitialKeyPress {
-            withAnimation(.spring()) {
-                glowIntensity = min(1.0, glowIntensity + 0.05)
-            }
+            glowIntensity = min(1.0, glowIntensity + 0.04)
         }
 
         let currentModifiers = NSEvent.modifierFlags
@@ -435,8 +499,6 @@ class SystemHUDManager: ObservableObject {
                    } else if settings.settings.showAppVolumeHUD && isSpotifyModifierPressed && !isSystemFineTune {
                        self.isControllingSpotify = false
                        self.performAppVolumeChange(action: action)
-                   } else if isFetchingSpotifyState {
-                       return
                    } else {
                        self.isControllingSpotify = false
                        self.isControllingAppVolume = false
@@ -748,7 +810,8 @@ class SystemHUDManager: ObservableObject {
                 let appIconImage = self.currentAppIcon ?? runningApp?.icon
                 showHUD(for: .appVolume(appName: appName, appIcon: appIconImage, appVolume: self.currentAppVolume))
             } else {
-                let device = AudioDeviceManager().getCurrentOutputDevice()
+                let device = cachedOutputDevice ?? AudioDeviceManager().getCurrentOutputDevice()
+                cachedOutputDevice = device
 
                 if settings.settings.showAppVolumeHUD && settings.settings.showAppVolumeInNormalHUD {
                     let musicManager = MusicManager.shared
@@ -800,11 +863,26 @@ class SystemHUDManager: ObservableObject {
        }
 
      private func showHUD(for hudType: HUDType) {
+         if let last = lastPublishedHUD,
+            last.sameKind(as: hudType),
+            !last.displayValueChanged(from: hudType, threshold: 0.008),
+            Date().timeIntervalSince(lastHUDPublishAt) < hudPublishMinInterval {
+             return
+         }
+
          DispatchQueue.main.async {
              self.currentHUD = hudType
+             self.lastPublishedHUD = hudType
+             self.lastHUDPublishAt = Date()
+             if case .volume(_, let device) = hudType {
+                 self.hudOutputDevice = device ?? self.cachedOutputDevice
+             } else if self.hudOutputDevice == nil {
+                 self.hudOutputDevice = self.cachedOutputDevice
+             }
              self.hudDismissalTimer?.invalidate()
              self.hudDismissalTimer = Timer.scheduledTimer(withTimeInterval: self.settings.settings.hudDuration, repeats: false) { [weak self] _ in
                  self?.currentHUD = nil
+                 self?.lastPublishedHUD = nil
                  self?.spotifyStateForAction = nil
                  self?.currentSpotifyVolumeForAction = nil
                  self?.lastCommittedSpotifyVolume = nil
@@ -813,6 +891,8 @@ class SystemHUDManager: ObservableObject {
                  self?.currentAppVolume = 0.5
                  self?.lastCommittedAppVolume = nil
                  self?.isControllingAppVolume = false
+                 self?.cachedOutputDevice = nil
+                 self?.hudOutputDevice = nil
              }
          }
      }
@@ -833,6 +913,12 @@ class SystemHUDManager: ObservableObject {
              self?.isControllingAppVolume = false
          }
      }
+
+     @MainActor
+     func spotifySliderDragged(percent: Float) {
+         currentSpotifyVolumeForAction = percent
+         lastCommittedSpotifyVolume = percent
+     }
 }
 
 struct SystemHUDView: View {
@@ -852,10 +938,9 @@ struct SystemHUDView: View {
                  case .keyboardBrightness(let level):
                      keyboardBrightnessContent(level: level)
                   case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, let systemVolume, let isControllingExternal, let canControlVolume):
-                      let systemDevice = AudioDeviceManager().getCurrentOutputDevice()
                       systemVolumeContent(
                           level: systemVolume,
-                          device: systemDevice,
+                          device: hudManager.hudOutputDevice,
                           isControllingExternal: isControllingExternal
                       )
                       ExternalDeviceIndicatorHUD(level: deviceVolume, deviceName: deviceName, deviceIcon: deviceIcon, appIcon: hudManager.currentAppIcon, canControlVolume: canControlVolume)
@@ -864,14 +949,13 @@ struct SystemHUDView: View {
                      appVolumeContent(appName: appName, appIcon: appIcon, appVolume: appVolume)
                  }
              }
-             .id(type)
              .padding(.horizontal, 16)
              .padding(.vertical, 12)
              .frame(width: 280)
              .shadow(color: .black.opacity(0.3), radius: 15, y: 5)
              .padding(.top, 30)
              .transition(.opacity.combined(with: .move(edge: .bottom)))
-             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: type)
+             .animation(.easeOut(duration: 0.12), value: type.caseIdentifier)
          }
      }
 
@@ -1087,6 +1171,7 @@ struct SystemHUDView: View {
 
 struct ExternalDeviceIndicatorHUD: View {
     @State var level: Float
+    let externalLevel: Float
     let deviceName: String
     let deviceIcon: String
     var appIcon: NSImage? = nil
@@ -1095,6 +1180,17 @@ struct ExternalDeviceIndicatorHUD: View {
     var showName: Bool = true
 
     private let sliderDebouncer = Debouncer(delay: 0.2)
+
+    init(level: Float, deviceName: String, deviceIcon: String, appIcon: NSImage? = nil, canControlVolume: Bool = true, isBrightness: Bool = false, showName: Bool = true) {
+        self.externalLevel = level
+        self._level = State(initialValue: level)
+        self.deviceName = deviceName
+        self.deviceIcon = deviceIcon
+        self.appIcon = appIcon
+        self.canControlVolume = canControlVolume
+        self.isBrightness = isBrightness
+        self.showName = showName
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -1125,7 +1221,13 @@ struct ExternalDeviceIndicatorHUD: View {
                         BoldPillSlider(
                             value: Binding(
                                 get: { Double(level) },
-                                set: { level = Float($0) }
+                                set: { newValue in
+                                    let newLevel = Float(newValue)
+                                    level = newLevel
+                                    if !isBrightness {
+                                        SystemHUDManager.shared.spotifySliderDragged(percent: newLevel * 100)
+                                    }
+                                }
                             ),
                             range: 0...1,
                             isBrightness: isBrightness
@@ -1154,6 +1256,9 @@ struct ExternalDeviceIndicatorHUD: View {
                     _ = await MusicManager.shared.setSpotifyVolume(percent: Int((newValue * 100).rounded(.toNearestOrAwayFromZero)))
                 }
             }
+        }
+        .onChange(of: externalLevel) { _, newLevel in
+            level = newLevel
         }
     }
 }
@@ -1387,7 +1492,7 @@ struct SystemHUDSlimActivityView {
          }
      }
 
-     static func right(type: HUDType, settings: SettingsModel) -> some View {
+     static func right(type: HUDType, settings: SettingsModel, availableWidth: CGFloat? = nil) -> some View {
          let level: Float
          let isExternalControl: Bool
          let isXDR: Bool
@@ -1425,7 +1530,23 @@ struct SystemHUDSlimActivityView {
              percentageFrameWidth = 30
          }
 
-         return HStack(spacing: 6) {
+         let rightSpacing: CGFloat = 6
+         let desiredSliderWidth: CGFloat = settings.settings.hudShowPercentage ? 70 : 100
+
+         var sliderWidth = desiredSliderWidth
+         var showPercentage = settings.settings.hudShowPercentage
+
+         if let availableWidth {
+             let leftReserve: CGFloat = isXDR ? 52 : 28
+             let available = max(0, availableWidth - leftReserve)
+             let fullWidth = leftReserve + desiredSliderWidth + (showPercentage ? rightSpacing + percentageFrameWidth : 0)
+             if fullWidth > availableWidth {
+                 showPercentage = false
+                 sliderWidth = max(36, min(desiredSliderWidth, available))
+             }
+         }
+
+         return HStack(spacing: rightSpacing) {
              DynamicSliderIndicator(
                  level: displayLevel,
                  forceGreen: isExternalControl,
@@ -1433,10 +1554,10 @@ struct SystemHUDSlimActivityView {
                  showInternalXDRText: false,
                  onChanged: nil
              )
-             .frame(width: settings.settings.hudShowPercentage ? 70 : 100, height: 6)
+             .frame(width: sliderWidth, height: 6)
              .fixedSize()
 
-             if settings.settings.hudShowPercentage {
+             if showPercentage {
                  Text(percentageText)
                      .font(.system(size: 10, weight: .semibold, design: .monospaced))
                      .foregroundColor(.white.opacity(0.6))

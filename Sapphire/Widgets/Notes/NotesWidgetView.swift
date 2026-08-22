@@ -87,6 +87,7 @@ struct NotesWidgetView: View {
 
 struct NotesPlayerView: View {
     @Binding var navigationStack: [NotchWidgetMode]
+    @EnvironmentObject var settings: SettingsModel
     @ObservedObject private var notesManager = NotesManager.shared
     @StateObject private var editorGate = NoteEditorGate()
     @State private var searchText = ""
@@ -178,23 +179,8 @@ struct NotesPlayerView: View {
                     LazyVStack(spacing: 8) {
                         ForEach(filteredNotes) { note in
                             NotchSwipeRow(
-                                leading: NotchSwipeAction(
-                                    systemImage: note.isDone ? "arrow.uturn.backward" : "checkmark",
-                                    tint: note.isDone ? .orange : .green
-                                ) {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                        notesManager.toggleNoteDone(id: note.id)
-                                    }
-                                },
-                                trailing: NotchSwipeAction(
-                                    systemImage: "trash.fill",
-                                    tint: .red
-                                ) {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                        if editorGate.editingNoteID == note.id { editorGate.editingNoteID = nil }
-                                        notesManager.deleteNote(id: note.id)
-                                    }
-                                }
+                                leading: leadingAction(for: note),
+                                trailing: trailingAction(for: note)
                             ) {
                                 noteRow(note)
                             }
@@ -316,6 +302,66 @@ struct NotesPlayerView: View {
                 notesManager.deleteNote(id: note.id)
             }
         }
+    }
+
+    private func leadingAction(for note: QuickNote) -> NotchSwipeAction? {
+        switch settings.settings.swipeActionSettings.notesLeading {
+        case .none:
+            return nil
+        case .toggleDone:
+            return NotchSwipeAction(
+                systemImage: note.isDone ? "arrow.uturn.backward" : "checkmark",
+                tint: note.isDone ? .orange : .green
+            ) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    notesManager.toggleNoteDone(id: note.id)
+                }
+            }
+        case .copy:
+            return NotchSwipeAction(systemImage: "doc.on.doc", tint: .yellow) {
+                copyNote(note)
+            }
+        case .delete:
+            return NotchSwipeAction(systemImage: "trash.fill", tint: .red) {
+                deleteNote(note)
+            }
+        }
+    }
+
+    private func trailingAction(for note: QuickNote) -> NotchSwipeAction? {
+        switch settings.settings.swipeActionSettings.notesTrailing {
+        case .none:
+            return nil
+        case .toggleDone:
+            return NotchSwipeAction(
+                systemImage: note.isDone ? "arrow.uturn.backward" : "checkmark",
+                tint: note.isDone ? .orange : .green
+            ) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    notesManager.toggleNoteDone(id: note.id)
+                }
+            }
+        case .copy:
+            return NotchSwipeAction(systemImage: "doc.on.doc", tint: .yellow) {
+                copyNote(note)
+            }
+        case .delete:
+            return NotchSwipeAction(systemImage: "trash.fill", tint: .red) {
+                deleteNote(note)
+            }
+        }
+    }
+
+    private func deleteNote(_ note: QuickNote) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            if editorGate.editingNoteID == note.id { editorGate.editingNoteID = nil }
+            notesManager.deleteNote(id: note.id)
+        }
+    }
+
+    private func copyNote(_ note: QuickNote) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("\(note.title)\n\(note.body)", forType: .string)
     }
 
     private var emptyState: some View {

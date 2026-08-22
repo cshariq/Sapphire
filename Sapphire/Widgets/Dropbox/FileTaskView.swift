@@ -20,23 +20,23 @@ private struct HorizontalSwipeActivePreferenceKey: PreferenceKey {
 }
 
 private struct SwipeToDismissWrapper<Content: View>: View {
+    let leading: NotchSwipeAction?
+    let trailing: NotchSwipeAction?
     let content: Content
-    let onDelete: () -> Void
-    let onAction: (() -> Void)?
     let onHover: ((Bool) -> Void)?
 
-    init(onDelete: @escaping () -> Void, onAction: (() -> Void)? = nil, onHover: ((Bool) -> Void)? = nil, @ViewBuilder content: () -> Content) {
+    init(leading: NotchSwipeAction? = nil, trailing: NotchSwipeAction? = nil, onHover: ((Bool) -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        self.leading = leading
+        self.trailing = trailing
         self.content = content()
-        self.onDelete = onDelete
-        self.onAction = onAction
         self.onHover = onHover
     }
 
     @State private var offset: CGFloat = 0
     @State private var isSwipingHorizontally = false
 
-    private let deleteThreshold: CGFloat = -80
-    private let actionThreshold: CGFloat = 80
+    private let leadingThreshold: CGFloat = 80
+    private let trailingThreshold: CGFloat = -80
     private let releaseAnimation = Animation.spring(response: 0.4, dampingFraction: 0.7)
     private let dragAnimation = Animation.interactiveSpring(response: 0.2, dampingFraction: 0.8, blendDuration: 0.1)
 
@@ -52,34 +52,32 @@ private struct SwipeToDismissWrapper<Content: View>: View {
 
     var body: some View {
         ZStack {
-            if onAction != nil {
-                HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                if let leading {
                     RoundedRectangle(cornerRadius: dynamicCornerRadius, style: .continuous)
-                        .fill(Color.blue)
+                        .fill(leading.tint)
                         .frame(width: max(0, offset))
                         .overlay(
-                            Image(systemName: "square.and.arrow.up")
+                            Image(systemName: leading.systemImage)
                                 .font(.title3.weight(.semibold))
                                 .foregroundColor(.white)
                                 .opacity(min(1, offset / 40.0))
                                 .animation(.easeIn(duration: 0.15), value: offset)
                         )
-                    Spacer(minLength: 0)
                 }
-            }
-
-            HStack(spacing: 0) {
                 Spacer(minLength: 0)
-                RoundedRectangle(cornerRadius: dynamicCornerRadius, style: .continuous)
-                    .fill(Color.red)
-                    .frame(width: max(0, -offset))
-                    .overlay(
-                        Image(systemName: "trash.fill")
-                            .font(.title3.weight(.semibold))
-                            .foregroundColor(.white)
-                            .opacity(min(1, -offset / 40))
-                            .animation(.easeIn(duration: 0.15), value: offset)
-                    )
+                if let trailing {
+                    RoundedRectangle(cornerRadius: dynamicCornerRadius, style: .continuous)
+                        .fill(trailing.tint)
+                        .frame(width: max(0, -offset))
+                        .overlay(
+                            Image(systemName: trailing.systemImage)
+                                .font(.title3.weight(.semibold))
+                                .foregroundColor(.white)
+                                .opacity(min(1, -offset / 40))
+                                .animation(.easeIn(duration: 0.15), value: offset)
+                        )
+                }
             }
 
             content
@@ -98,9 +96,8 @@ private struct SwipeToDismissWrapper<Content: View>: View {
                             guard isSwipingHorizontally else { return }
 
                             var newOffset = gesture.translation.width
-                            if onAction == nil {
-                                newOffset = min(0, newOffset)
-                            }
+                            if leading == nil { newOffset = min(0, newOffset) }
+                            if trailing == nil { newOffset = max(0, newOffset) }
 
                             withAnimation(dragAnimation) {
                                 self.offset = newOffset
@@ -108,15 +105,7 @@ private struct SwipeToDismissWrapper<Content: View>: View {
                         }
                         .onEnded { gesture in
                             defer { isSwipingHorizontally = false }
-
-                            if gesture.translation.width < deleteThreshold {
-                                withAnimation { onDelete() }
-                            } else if gesture.translation.width > actionThreshold, let onAction = onAction {
-                                onAction()
-                                withAnimation(releaseAnimation) { self.offset = 0 }
-                            } else {
-                                withAnimation(releaseAnimation) { self.offset = 0 }
-                            }
+                            settle()
                         }
                     , including: .subviews
                 )
@@ -128,22 +117,14 @@ private struct SwipeToDismissWrapper<Content: View>: View {
                         },
                         changeHorizontal: { dx in
                             var proposed = offset - dx
-                            if onAction == nil {
-                                proposed = min(0, proposed)
-                            }
+                            if leading == nil { proposed = min(0, proposed) }
+                            if trailing == nil { proposed = max(0, proposed) }
                             withAnimation(dragAnimation) {
                                 self.offset = proposed
                             }
                         },
                         endHorizontal: {
-                            if self.offset < deleteThreshold {
-                                withAnimation { onDelete() }
-                            } else if self.offset > actionThreshold, let onAction = onAction {
-                                onAction()
-                                withAnimation(releaseAnimation) { self.offset = 0 }
-                            } else {
-                                withAnimation(releaseAnimation) { self.offset = 0 }
-                            }
+                            settle()
                             isSwipingHorizontally = false
                         }
                     )
@@ -154,6 +135,18 @@ private struct SwipeToDismissWrapper<Content: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onHover { isHovering in
             onHover?(isHovering)
+        }
+    }
+
+    private func settle() {
+        if offset > leadingThreshold, let leading {
+            leading.handler()
+            withAnimation(releaseAnimation) { offset = 0 }
+        } else if offset < trailingThreshold, let trailing {
+            trailing.handler()
+            withAnimation(releaseAnimation) { offset = 0 }
+        } else {
+            withAnimation(releaseAnimation) { offset = 0 }
         }
     }
 }
@@ -221,6 +214,7 @@ private struct TrackpadSwipeCapture: NSViewRepresentable {
 struct FileTaskView: View {
     @Binding var navigationStack: [NotchWidgetMode]
 
+    @EnvironmentObject var settings: SettingsModel
     @StateObject private var fileDropManager = FileDropManager.shared
     @StateObject private var shelfManager = FileShelfManager.shared
     @EnvironmentObject var liveActivityManager: LiveActivityManager
@@ -304,38 +298,77 @@ struct FileTaskView: View {
 private struct UnifiedRowView: View {
     let item: FileTask
     let onSelectDetails: (ShelfItem) -> Void
+    @EnvironmentObject var settings: SettingsModel
+
+    private var leadingAction: NotchSwipeAction? {
+        swipeAction(settings.settings.swipeActionSettings.fileDropLeading)
+    }
+
+    private var trailingAction: NotchSwipeAction? {
+        swipeAction(settings.settings.swipeActionSettings.fileDropTrailing)
+    }
 
     var body: some View {
         switch item {
         case .incomingTransfer(let transfer):
-            SwipeToDismissWrapper(
-                onDelete: {
-                    switch transfer.state {
-                    case .waiting:
-                        NearbyConnectionManager.shared.submitUserConsent(transferID: transfer.id, accept: false)
-                    case .inProgress:
-                        NearbyConnectionManager.shared.cancelIncomingTransfer(id: transfer.id)
-                    default:
-                        FileDropManager.shared.removeTask(withID: item.id)
-                    }
-                }
-            ) {
+            SwipeToDismissWrapper(leading: leadingAction, trailing: trailingAction) {
                 ModernTransferRowView(transfer: transfer, onSelectDetails: onSelectDetails)
             }
         case .universalTransfer(let transferTask):
-            SwipeToDismissWrapper(onDelete: { FileDropManager.shared.removeTask(withID: item.id) }) {
+            SwipeToDismissWrapper(leading: leadingAction, trailing: trailingAction) {
                 UniversalTransferRowView(task: transferTask)
             }
         case .airDrop(let airDropTask):
-            SwipeToDismissWrapper(onDelete: { FileDropManager.shared.removeTask(withID: item.id) }) {
+            SwipeToDismissWrapper(leading: leadingAction, trailing: trailingAction) {
                 AirDropRowView(task: airDropTask)
             }
         case .fileConversion(let conversionTask):
-            SwipeToDismissWrapper(onDelete: { FileDropManager.shared.removeTask(withID: item.id) }) {
+            SwipeToDismissWrapper(leading: leadingAction, trailing: trailingAction) {
                 ConversionRowView(task: conversionTask)
             }
         case .local(let shelfItem):
-            LocalFileRowWithHover(item: shelfItem, onSelectDetails: onSelectDetails)
+            LocalFileRowWithHover(
+                item: shelfItem,
+                onSelectDetails: onSelectDetails,
+                leading: leadingAction,
+                trailing: trailingAction
+            )
+        }
+    }
+
+    private func swipeAction(_ action: FileDropSwipeAction) -> NotchSwipeAction? {
+        switch action {
+        case .none:
+            return nil
+        case .delete:
+            return NotchSwipeAction(systemImage: "trash.fill", tint: .red) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    delete(item)
+                }
+            }
+        case .share:
+            guard case .local(let shelfItem) = item else { return nil }
+            return NotchSwipeAction(systemImage: "square.and.arrow.up", tint: .blue) {
+                NSSharingService(named: .sendViaAirDrop)?.perform(withItems: [shelfItem.storedAt])
+            }
+        }
+    }
+
+    private func delete(_ item: FileTask) {
+        switch item {
+        case .incomingTransfer(let transfer):
+            switch transfer.state {
+            case .waiting:
+                NearbyConnectionManager.shared.submitUserConsent(transferID: transfer.id, accept: false)
+            case .inProgress:
+                NearbyConnectionManager.shared.cancelIncomingTransfer(id: transfer.id)
+            default:
+                FileDropManager.shared.removeTask(withID: item.id)
+            }
+        case .local(let shelfItem):
+            FileShelfManager.shared.removeFile(shelfItem)
+        default:
+            FileDropManager.shared.removeTask(withID: item.id)
         }
     }
 }
@@ -343,14 +376,14 @@ private struct UnifiedRowView: View {
 private struct LocalFileRowWithHover: View {
     let item: ShelfItem
     let onSelectDetails: (ShelfItem) -> Void
+    let leading: NotchSwipeAction?
+    let trailing: NotchSwipeAction?
     @State private var isHovering = false
 
     var body: some View {
         SwipeToDismissWrapper(
-            onDelete: { FileShelfManager.shared.removeFile(item) },
-            onAction: {
-                NSSharingService(named: .sendViaAirDrop)?.perform(withItems: [item.storedAt])
-            },
+            leading: leading,
+            trailing: trailing,
             onHover: { hovering in
                 withAnimation(.easeInOut(duration: 0.1)) {
                     isHovering = hovering
@@ -482,7 +515,7 @@ private struct LocalFileRowView: View {
         .background(Color.black.opacity(isHovering ? 0.2 : 0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onDrag {
-            DragStateManager.shared.isDraggingFromShelf = true
+            DragStateManager.shared.beginShelfDrag(item: item)
             return NSItemProvider(object: item.storedAt as NSURL)
         }
     }

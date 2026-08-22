@@ -36,6 +36,11 @@ class BatteryStatsViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var refreshTimer: Timer?
     private var isStarted = false
+    private let normalPollInterval: TimeInterval = 1.5
+    private let highFrequencyPollInterval: TimeInterval = 1.0
+    private var isHighFrequency = false
+    private var lastSlowRefresh = Date.distantPast
+    private var fetchInFlight = false
 
     init() {}
 
@@ -46,11 +51,27 @@ class BatteryStatsViewModel: ObservableObject {
         isStarted = true
         setupBindings()
         fetchStats()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
+        startTimer()
+    }
+
+    func setHighFrequencyPolling(_ enabled: Bool) {
+        guard enabled != isHighFrequency else { return }
+        isHighFrequency = enabled
+        guard isStarted else { return }
+        startTimer()
+        fetchStats()
+    }
+
+    private func startTimer() {
+        refreshTimer?.invalidate()
+        let interval = isHighFrequency ? highFrequencyPollInterval : normalPollInterval
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.fetchStats()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        refreshTimer = timer
     }
 
     func stop() {
@@ -58,6 +79,7 @@ class BatteryStatsViewModel: ObservableObject {
         refreshTimer = nil
         cancellables.removeAll()
         isStarted = false
+        isHighFrequency = false
     }
 
     private func setupBindings() {
@@ -78,18 +100,27 @@ class BatteryStatsViewModel: ObservableObject {
     }
 
     func fetchStats() {
-        Task {
+        guard !fetchInFlight else { return }
+        fetchInFlight = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { fetchInFlight = false }
+
+            self.temperature = await batteryManager.getBatteryTemperature()
+            self.lowPowerModeEnabled = powerModeManager.isLowPowerModeEnabled()
+
+            let now = Date()
+            guard now.timeIntervalSince(lastSlowRefresh) >= 10 else { return }
+            lastSlowRefresh = now
+
             async let designCap = batteryManager.getDesignCapacity()
             async let maxCap = batteryManager.getMaxCapacity()
             async let appleMaxCap = batteryManager.getAppleMaxCapacity()
             async let cycles = batteryManager.getCycleCount()
             async let health = batteryManager.getBatteryHealth()
-            async let temp = batteryManager.getBatteryTemperature()
             async let adapter = batteryManager.getPowerAdapterInfo()
 
-            (self.designCapacity, self.maxCapacity, self.appleMaxCapacity, self.cycleCount, self.health, self.temperature, self.powerAdapterInfo) = await (designCap, maxCap, appleMaxCap, cycles, health, temp, adapter)
-
-            self.lowPowerModeEnabled = powerModeManager.isLowPowerModeEnabled()
+            (self.designCapacity, self.maxCapacity, self.appleMaxCapacity, self.cycleCount, self.health, self.powerAdapterInfo) = await (designCap, maxCap, appleMaxCap, cycles, health, adapter)
         }
     }
 

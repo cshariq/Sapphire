@@ -36,6 +36,8 @@ class CaffeineManager: ObservableObject {
 
     private var consecutiveClamshellOpenReadings = 0
     private let clamshellOpenReadingsRequired = 10
+    private var timeoutTask: Task<Void, Never>?
+    @Published private(set) var timeoutEndsAt: Date?
 
     private init() {
         lidAngleSensor.$angle
@@ -60,7 +62,8 @@ class CaffeineManager: ObservableObject {
                     $0.sleepInClamshell,
                     $0.persistentCaffeinateAfterClamshell,
                     $0.caffeinateTurnOffScreenUsingLidAngle,
-                    $0.caffeinateLidAngleTrigger
+                    $0.caffeinateLidAngleTrigger,
+                    $0.caffeinateTimeoutMinutes
                 )
             }
             .removeDuplicates { $0 == $1 }
@@ -69,6 +72,7 @@ class CaffeineManager: ObservableObject {
                 self?.updateLidAngleSensorRequirement()
                 self?.evaluateLidAngleScreenOff()
                 self?.schedulePowerGuardRefresh()
+                self?.rescheduleTimeoutIfNeeded()
             }
             .store(in: &cancellables)
 
@@ -119,18 +123,21 @@ class CaffeineManager: ObservableObject {
         if isActive {
             refreshAllPowerGuards()
             evaluateLidAngleScreenOff()
+            scheduleTimeout()
             return
         }
 
         refreshAllPowerGuards()
         startWatchdogIfNeeded()
         evaluateLidAngleScreenOff()
+        scheduleTimeout()
     }
 
     func stop() {
         shouldRemainActive = false
         forceClamshellGuard = false
         autoStartedByBatteryDischarge = false
+        cancelTimeout()
         stopWatchdog()
         clamshellReleaseDebounceTask?.cancel()
         powerGuardRefreshDebounceTask?.cancel()
@@ -146,6 +153,35 @@ class CaffeineManager: ObservableObject {
         isActive = false
         updateLidAngleSensorRequirement()
         restoreBrightnessIfNeeded()
+    }
+
+    private func scheduleTimeout() {
+        cancelTimeout()
+        let minutes = settings.settings.caffeinateTimeoutMinutes
+        guard shouldRemainActive, minutes > 0 else { return }
+
+        let endsAt = Date().addingTimeInterval(minutes * 60)
+        timeoutEndsAt = endsAt
+        timeoutTask = Task { @MainActor [weak self] in
+            let nanos = UInt64(max(0, minutes) * 60 * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled, let self, self.shouldRemainActive else { return }
+            self.stop()
+        }
+    }
+
+    private func rescheduleTimeoutIfNeeded() {
+        guard shouldRemainActive else {
+            cancelTimeout()
+            return
+        }
+        scheduleTimeout()
+    }
+
+    private func cancelTimeout() {
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        timeoutEndsAt = nil
     }
 
     func stopIfAutoStartedByBatteryDischarge() {

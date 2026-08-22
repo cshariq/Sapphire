@@ -50,9 +50,8 @@ struct LockScreenInfoWidgetView: View {
         let timerState = timerManager.isRunning ? "\(Int(timerManager.displayTime))" : "off"
         let notesCount = notesManager.notes.count
         let clipboardCount = clipboardManager.recentItems.count
-        let cpu = Int(((statsManager.currentStats?.cpu?.totalUsage ?? 0) * 100).rounded())
 
-        return "\(widgetTypes)-\(musicState)-\(eventId)-\(focusState)-\(bluetoothId)-\(caffeineState)-\(timerState)-\(notesCount)-\(clipboardCount)-\(cpu)"
+        return "\(widgetTypes)-\(musicState)-\(eventId)-\(focusState)-\(bluetoothId)-\(caffeineState)-\(timerState)-\(notesCount)-\(clipboardCount)"
     }
 
     var body: some View {
@@ -94,7 +93,7 @@ struct LockScreenInfoWidgetView: View {
                 }
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationValue)
+        .animation(.easeInOut(duration: 0.2), value: animationValue)
         .padding(.horizontal, LockScreenConfiguration.infoWidgetContainerHorizontalPadding)
         .fixedSize()
     }

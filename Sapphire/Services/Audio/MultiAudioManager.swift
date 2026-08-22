@@ -71,14 +71,29 @@ class MultiAudioManager: ObservableObject {
         setupDeviceListeners()
         configureProcessMonitor()
         if isAuthorized { startProcessMonitorIfNeeded() }
+
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshAuthorization()
+            }
+        }
+    }
+
+    func refreshAuthorization() {
+        guard !isAuthorized else { return }
+        if CGPreflightScreenCaptureAccess() {
+            isAuthorized = true
+            startProcessMonitorIfNeeded()
+        }
     }
 
     private func requestCapturePermissions() {
         if CGPreflightScreenCaptureAccess() {
             self.isAuthorized = true
-        } else if !UserDefaults.standard.bool(forKey: "screenRecordingRequested") {
-            CGRequestScreenCaptureAccess()
-            UserDefaults.standard.set(true, forKey: "screenRecordingRequested")
         }
     }
 

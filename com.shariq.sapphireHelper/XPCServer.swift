@@ -11,19 +11,24 @@ class XPCServer: NSObject {
 
     internal static let shared = XPCServer()
     private var listener: NSXPCListener?
+    private let helper = Helper()
 
     internal func start() {
-        listener = NSXPCListener(machServiceName: Constant.helperMachLabel)
-        listener?.delegate = self
-        listener?.resume()
+        guard listener == nil else { return }
+
+        let newListener = NSXPCListener(machServiceName: Constant.helperMachLabel)
+        newListener.delegate = self
+        listener = newListener
+        newListener.resume()
+        NSLog("[SMJBS]: XPC listener resumed for \(Constant.helperMachLabel)")
     }
 
-    private func connetionInterruptionHandler() {
-        NSLog("[SMJBS]: Connection interrupted.")
+    private func connectionInterruptionHandler(_ connection: NSXPCConnection) {
+        NSLog("[SMJBS]: Client connection interrupted (pid=\(connection.processIdentifier)).")
     }
 
-    private func connectionInvalidationHandler() {
-        NSLog("[SMJBS]: Connection invalidated.")
+    private func connectionInvalidationHandler(_ connection: NSXPCConnection) {
+        NSLog("[SMJBS]: Client connection invalidated (pid=\(connection.processIdentifier)).")
     }
 
     private func isValidClient(forConnection connection: NSXPCConnection) -> Bool {
@@ -47,8 +52,6 @@ extension XPCServer: NSXPCListenerDelegate {
 
         NSLog("[SMJBS]: Client is valid. Accepting connection.")
 
-        let helper = Helper()
-
         let interface = NSXPCInterface(with: HelperProtocol.self)
         interface.setClasses(
             NSSet(array: [FanInfo.self, NSNull.self]) as! Set<AnyHashable>,
@@ -61,8 +64,14 @@ extension XPCServer: NSXPCListenerDelegate {
 
         newConnection.remoteObjectInterface = NSXPCInterface(with: InstallationClient.self)
 
-        newConnection.interruptionHandler = connetionInterruptionHandler
-        newConnection.invalidationHandler = connectionInvalidationHandler
+        newConnection.interruptionHandler = { [weak self, weak newConnection] in
+            guard let newConnection else { return }
+            self?.connectionInterruptionHandler(newConnection)
+        }
+        newConnection.invalidationHandler = { [weak self, weak newConnection] in
+            guard let newConnection else { return }
+            self?.connectionInvalidationHandler(newConnection)
+        }
 
         newConnection.resume()
 

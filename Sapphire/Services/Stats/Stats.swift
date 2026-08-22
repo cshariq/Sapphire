@@ -323,6 +323,25 @@ public class StatsManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.updatePollingBasedOnSettings()
             }
+
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshActiveReaders()
+        }
+    }
+
+    private func refreshActiveReaders() {
+        let activeStats = pollingRequesters.values.reduce(Set<StatType>()) { $0.union($1) }
+        guard !activeStats.isEmpty else { return }
+        if activeStats.contains(.cpu) { cpuReader.refresh() }
+        if activeStats.contains(.ram) { ramReader.refresh() }
+        if activeStats.contains(.gpu) { gpuReader.refresh() }
+        if activeStats.contains(.disk) { diskReader.refresh() }
+        let needsPower = activeStats.contains(.systemPower) || activeStats.contains(.batteryPower)
+        if needsPower {
+            Task { @MainActor in await sensorsReader.readNow() }
+            batteryReader.refresh()
+        }
     }
 
     private func updatePollingBasedOnSettings() {
@@ -344,11 +363,17 @@ public class StatsManager: ObservableObject {
         self.setPolling(for: "LiveActivitySettings", requiredStats: requiredStats)
     }
 
-    public func setPolling(for requester: String, requiredStats: Set<StatType>) {
+    private var pollingIntervals: [String: DispatchTimeInterval] = [:]
+
+    public func setPolling(for requester: String, requiredStats: Set<StatType>, interval: DispatchTimeInterval? = nil) {
         if requiredStats.isEmpty {
             pollingRequesters.removeValue(forKey: requester)
+            pollingIntervals.removeValue(forKey: requester)
         } else {
             pollingRequesters[requester] = requiredStats
+            if let interval {
+                pollingIntervals[requester] = interval
+            }
         }
         updatePollingState()
     }
@@ -363,6 +388,12 @@ public class StatsManager: ObservableObject {
         let needsPowerStats = activeStats.contains(.systemPower) || activeStats.contains(.batteryPower)
         update(reader: sensorsReader, for: .systemPower, in: activeStats, force: needsPowerStats)
         update(reader: batteryReader, for: .batteryPower, in: activeStats, force: needsPowerStats)
+
+        let fastestBattery = pollingIntervals
+            .filter { pollingRequesters[$0.key]?.contains(.batteryPower) == true }
+            .values
+            .min { $0.nanoseconds < $1.nanoseconds }
+        batteryReader.setInterval(fastestBattery ?? .milliseconds(1000))
     }
 
     private func update<R: Reader<T>, T>(reader: R, for statType: StatType, in activeStats: Set<StatType>, force: Bool = false) {
@@ -450,6 +481,21 @@ internal class Reader<T> {
         }
     }
 
+    public func setInterval(_ interval: DispatchTimeInterval) {
+        self.interval = interval
+        guard active else { return }
+        queue.async { [weak self] in
+            self?.startTimer()
+        }
+    }
+
+    public func refresh() {
+        guard active else { return }
+        queue.async { [weak self] in
+            self?.read()
+        }
+    }
+
     private func startTimer() {
         source?.cancel()
         let s = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
@@ -457,7 +503,7 @@ internal class Reader<T> {
         guard nano > 0 else { return }
         let intervalTI = DispatchTimeInterval.nanoseconds(nano)
         let leeway = DispatchTimeInterval.nanoseconds(Int(Double(nano) * 0.3))
-        s.schedule(deadline: .now() + intervalTI, repeating: intervalTI, leeway: leeway)
+        s.schedule(deadline: .now(), repeating: intervalTI, leeway: leeway)
         s.setEventHandler { [weak self] in self?.read() }
         s.resume()
         source = s
@@ -814,11 +860,14 @@ internal class DiskActivityReader: Reader<Disks> {
 }
 
 // MARK: - Sensors Readers
+@MainActor
 internal class SensorsStatsReader {
     private var timer: Timer?
+    private var readInFlight = false
     internal let callback: (Sensors_List?) -> Void
     private var list: Sensors_List = Sensors_List()
     private var initialized: Bool = false
+    private let pollInterval: TimeInterval = 3.0
 
     init(callback: @escaping (Sensors_List?) -> Void) {
         self.callback = callback
@@ -834,11 +883,13 @@ internal class SensorsStatsReader {
             }
             await self.read()
 
-            self.timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            let timer = Timer.scheduledTimer(withTimeInterval: self.pollInterval, repeats: true) { [weak self] _ in
                 Task {
                     await self?.read()
                 }
             }
+            RunLoop.main.add(timer, forMode: .common)
+            self.timer = timer
         }
     }
 
@@ -846,6 +897,15 @@ internal class SensorsStatsReader {
         guard self.timer != nil else { return }
         self.timer?.invalidate()
         self.timer = nil
+    }
+
+    @MainActor
+    func readNow() async {
+        if !initialized {
+            await initializeSensors()
+            initialized = true
+        }
+        await read()
     }
 
     private func initializeSensors() async {
@@ -882,33 +942,25 @@ internal class SensorsStatsReader {
     }
 
     private func read() async {
+        guard !readInFlight else { return }
         guard initialized, let helper = BatteryManager.shared.getHelper() else { return }
+        readInFlight = true
+        defer { readInFlight = false }
 
         let sensors = self.list.sensors
         let count = sensors.count
         guard count > 0 else { return }
 
-        var results: [(Int, Double)] = []
-        results.reserveCapacity(count)
-        await withTaskGroup(of: (Int, Double).self) { group in
-            for i in 0..<count {
-                group.addTask { [key = sensors[i].key] in
-                    let value = await helper.getSensorValue(key: key)
-                    return (i, value)
-                }
-            }
-            for await result in group {
-                results.append(result)
-            }
-        }
-
+        let values = await helper.getSensorValues(keys: sensors.map(\.key))
         var updatedSensors = self.list.sensors
-        for (i, newValue) in results {
+        for (index, sensor) in sensors.enumerated() {
+            guard let number = values[sensor.key] as? NSNumber else { continue }
+            let newValue = number.doubleValue
             if newValue >= 0 {
-                if updatedSensors[i].type == .temperature && newValue < 10.0 {
+                if updatedSensors[index].type == .temperature && newValue < 10.0 {
                     continue
                 }
-                updatedSensors[i].value = newValue
+                updatedSensors[index].value = newValue
             }
         }
         self.list.sensors = updatedSensors

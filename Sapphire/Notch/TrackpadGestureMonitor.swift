@@ -73,6 +73,9 @@ class TrackpadGestureHandler {
                         self.onSwipe?(dx, dy)
                     }
 
+                    if abs(dx) > abs(dy) {
+                        return event
+                    }
                     return nil
                 }
             }

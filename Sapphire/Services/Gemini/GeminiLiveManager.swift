@@ -26,8 +26,6 @@ final class GeminiLiveManager: NSObject, ObservableObject, AVCaptureAudioDataOut
     private let liveSession = GeminiLiveSession()
     private var cancellables = Set<AnyCancellable>()
 
-    /// Playback-only engine. Never opens the input node, so Gemini TTS does not
-    /// reconfigure the default output as a duplex 16/24 kHz device.
     private let playbackEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private var playerAttached = false
@@ -319,7 +317,6 @@ final class GeminiLiveManager: NSObject, ObservableObject, AVCaptureAudioDataOut
             print("[GeminiLiveManager] Tool calls cancelled: \(ids)")
 
         case .error(let message):
-            // Transient server warnings can arrive after a turn already succeeded.
             if isSessionRunning {
                 print("[GeminiLiveManager] API warning during active session: \(message)")
             } else {

@@ -1,9 +1,9 @@
-// FineTune/Audio/Extensions/AudioObjectID+Properties.swift
 //
-// Error handling convention for extension methods:
-//   throws    → Callers must handle failure; no safe default (readDeviceName, readDeviceUID, readProcessPID)
-//   -> T      → Safe default exists; returns it on failure (readTransportType → .unknown, readMuteState → false)
-//   -> T?     → Value may legitimately not exist (readProcessBundleID, readDeviceIcon)
+//  AudioObjectID+Properties.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 import Foundation
 
@@ -76,8 +76,6 @@ extension AudioObjectID {
         )
         guard AudioObjectHasProperty(self, &address) else { return nil }
 
-        // Get actual data size — some HAL plugins write more than MemoryLayout<CFString>.size,
-        // corrupting the stack if we use a stack-allocated buffer.
         var qual = qualifier
         var dataSize: UInt32 = 0
         var err = AudioObjectGetPropertyDataSize(
@@ -87,7 +85,6 @@ extension AudioObjectID {
         )
         guard err == noErr, dataSize > 0 else { return nil }
 
-        // Heap-allocate to avoid stack buffer overflow from buggy drivers
         let capacity = Swift.max(1, Int(dataSize) / MemoryLayout<CFString>.size)
         let buffer = UnsafeMutablePointer<CFString>.allocate(capacity: capacity)
         defer { buffer.deinitialize(count: 1); buffer.deallocate() }

@@ -15,8 +15,6 @@ enum CodesignCheckError: Error {
 struct CodesignCheck {
 
     public static func codeSigningMatches(pid: pid_t) throws -> Bool {
-        // Prefer same Team ID so Development and Developer ID builds from the
-        // same team can talk. Fall back to exact certificate equality.
         if let selfTeam = try teamID(forStaticCode: try requireSelfStaticCode()),
            let clientTeam = try teamID(forStaticCode: try requireStaticCode(forPID: pid)),
            !selfTeam.isEmpty, !clientTeam.isEmpty {

@@ -9,7 +9,8 @@ import Foundation
 import CoreLocation
 import SwiftUI
 
-final class WeatherService: NSObject, CLLocationManagerDelegate {
+@MainActor
+final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
     static let shared = WeatherService()
 
     private let locationManager = CLLocationManager()
@@ -18,8 +19,17 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     private var cachedWeatherData: ProcessedWeatherData?
     private var lastFetchDate: Date?
     private let cacheDuration: TimeInterval = 10 * 60
+
+    private var lastKnownLocation: CLLocation?
+    private var lastLocationDate: Date?
+    private let locationCacheDuration: TimeInterval = 60 * 60
+    private var lastLocationFailureDate: Date?
+    private let locationFailureBackoff: TimeInterval = 3 * 60
+
     private var isFetchingLocation = false
     private var locationTimeoutWorkItem: DispatchWorkItem?
+
+    private var lastAuthorizationStatus: CLAuthorizationStatus = .notDetermined
 
     private var weatherAPIKey: String {
         if let envKey = ProcessInfo.processInfo.environment["WEATHER_API_KEY"], !envKey.isEmpty {
@@ -75,7 +85,37 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
             return
         }
 
+        if let location = cachedLocationIfValid() {
+            fetchAPIs(for: location)
+            return
+        }
+
+        if let failureDate = lastLocationFailureDate,
+           Date().timeIntervalSince(failureDate) < locationFailureBackoff {
+            finishPending(with: .failure(WeatherServiceError.locationUnavailable))
+            return
+        }
+
         requestLocationIfAuthorized()
+    }
+
+    private func cachedLocationIfValid() -> CLLocation? {
+        if let cached = lastKnownLocation,
+           let date = lastLocationDate,
+           cached.horizontalAccuracy >= 0,
+           Date().timeIntervalSince(date) < locationCacheDuration {
+            return cached
+        }
+
+        if let last = locationManager.location,
+           last.horizontalAccuracy >= 0,
+           Date().timeIntervalSince(last.timestamp) < locationCacheDuration {
+            lastKnownLocation = last
+            lastLocationDate = last.timestamp
+            return last
+        }
+
+        return nil
     }
 
     private func requestLocationIfAuthorized() {
@@ -85,7 +125,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         case .denied, .restricted:
             finishPending(with: .failure(WeatherServiceError.locationDenied))
         case .notDetermined:
-            locationManager.requestWhenInUseAuthorization()
+            finishPending(with: .failure(WeatherServiceError.locationNotDetermined))
         @unknown default:
             finishPending(with: .failure(WeatherServiceError.unknownAuthorization))
         }
@@ -95,22 +135,24 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         if isFetchingLocation { return }
         isFetchingLocation = true
 
-        if let last = locationManager.location, last.horizontalAccuracy >= 0,
-           Date().timeIntervalSince(last.timestamp) < 30 * 60 {
-            finishLocationSearch(with: last)
+        if let location = cachedLocationIfValid() {
+            finishLocationSearch(with: location)
             return
         }
 
-        locationManager.startUpdatingLocation()
+        locationManager.requestLocation()
 
         locationTimeoutWorkItem?.cancel()
         let timeout = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.locationManager.stopUpdatingLocation()
             self.isFetchingLocation = false
-            if let last = self.locationManager.location, last.horizontalAccuracy >= 0 {
-                self.fetchAPIs(for: last)
+            if let location = self.cachedLocationIfValid() ?? self.locationManager.location,
+               location.horizontalAccuracy >= 0 {
+                self.rememberLocation(location)
+                self.fetchAPIs(for: location)
             } else {
+                self.lastLocationFailureDate = Date()
                 self.finishPending(with: .failure(WeatherServiceError.locationUnavailable))
             }
         }
@@ -118,24 +160,51 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
     }
 
+    private func rememberLocation(_ location: CLLocation) {
+        lastKnownLocation = location
+        lastLocationDate = Date()
+        lastLocationFailureDate = nil
+    }
+
     private func finishLocationSearch(with location: CLLocation) {
         locationTimeoutWorkItem?.cancel()
         locationTimeoutWorkItem = nil
         locationManager.stopUpdatingLocation()
         isFetchingLocation = false
+        rememberLocation(location)
         fetchAPIs(for: location)
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        switch manager.authorizationStatus {
+        let status = manager.authorizationStatus
+        let wasAuthorized = Self.isAuthorized(status: lastAuthorizationStatus)
+        lastAuthorizationStatus = status
+
+        switch status {
         case .authorized, .authorizedAlways, .authorizedWhenInUse:
-            requestLocationIfAuthorized()
+            if wasAuthorized {
+                break
+            }
+            if pendingCompletions.isEmpty {
+                NotificationCenter.default.post(name: .weatherLocationAuthorizationGranted, object: nil)
+            } else {
+                requestLocationIfAuthorized()
+            }
         case .denied, .restricted:
+            guard !pendingCompletions.isEmpty else { return }
             finishPending(with: .failure(WeatherServiceError.locationDenied))
         case .notDetermined:
             break
         @unknown default:
+            guard !pendingCompletions.isEmpty else { return }
             finishPending(with: .failure(WeatherServiceError.unknownAuthorization))
+        }
+    }
+
+    private static func isAuthorized(status: CLAuthorizationStatus) -> Bool {
+        switch status {
+        case .authorized, .authorizedAlways, .authorizedWhenInUse: return true
+        default: return false
         }
     }
 
@@ -145,8 +214,6 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // kCLErrorDomain 0 / locationUnknown is expected while Core Location warms up.
-        // Keep listening until the timeout; do not fail the widget.
         if Self.isLocationUnknown(error) { return }
 
         locationTimeoutWorkItem?.cancel()
@@ -154,10 +221,12 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
         locationManager.stopUpdatingLocation()
         isFetchingLocation = false
 
-        if let last = manager.location, last.horizontalAccuracy >= 0 {
+        if let last = cachedLocationIfValid() ?? manager.location, last.horizontalAccuracy >= 0 {
+            rememberLocation(last)
             fetchAPIs(for: last)
             return
         }
+        lastLocationFailureDate = Date()
         finishPending(with: .failure(error))
     }
 
@@ -168,7 +237,7 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 
     private func fetchAPIs(for location: CLLocation) {
-        Task {
+        Task { @MainActor in
             let placemarks   = try? await CLGeocoder().reverseGeocodeLocation(location)
             let locationName = placemarks?.first?.locality ?? placemarks?.first?.name ?? "Unknown Location"
 
@@ -305,10 +374,15 @@ final class WeatherService: NSObject, CLLocationManagerDelegate {
     }
 }
 
+extension Notification.Name {
+    static let weatherLocationAuthorizationGranted = Notification.Name("weatherLocationAuthorizationGranted")
+}
+
 enum WeatherServiceError: LocalizedError {
     case missingAPIKey
     case locationDisabled
     case locationDenied
+    case locationNotDetermined
     case locationUnavailable
     case unknownAuthorization
     case invalidURL
@@ -319,6 +393,7 @@ enum WeatherServiceError: LocalizedError {
         case .missingAPIKey: return "Weather API key is not configured."
         case .locationDisabled: return "Location services are disabled system-wide."
         case .locationDenied: return "Location access was denied. Please enable it in System Settings."
+        case .locationNotDetermined: return "Grant Location access in Sapphire's Permissions settings to show weather."
         case .locationUnavailable: return "Could not determine your location."
         case .unknownAuthorization: return "Unknown location authorization status."
         case .invalidURL: return "Invalid weather API URL."

@@ -186,7 +186,8 @@ final class LidAngleSensor: ObservableObject {
     private static let movementTimeout: TimeInterval = 0.05
     private static let velocityDecay = 0.5
     private static let additionalDecay = 0.8
-    private static let pollInterval: TimeInterval = 1.0
+    private static let pollInterval: TimeInterval = 0.5
+    private static let settingsPreviewPollInterval: TimeInterval = 0.15
     nonisolated private static let noOptions = IOOptionBits(kIOHIDOptionsTypeNone)
 
     private init() {
@@ -209,10 +210,18 @@ final class LidAngleSensor: ObservableObject {
         }
     }
 
+    private var currentPollInterval: TimeInterval {
+        activeClients.contains(.settingsPreview) ? Self.settingsPreviewPollInterval : Self.pollInterval
+    }
+
     func acquire(_ client: Client) {
         let inserted = activeClients.insert(client).inserted
         guard inserted else { return }
-        startIfNeeded()
+        if timer == nil {
+            startIfNeeded()
+        } else {
+            restartTimer()
+        }
     }
 
     func release(_ client: Client) {
@@ -220,6 +229,8 @@ final class LidAngleSensor: ObservableObject {
         guard removed else { return }
         if activeClients.isEmpty {
             stop()
+        } else {
+            restartTimer()
         }
     }
 
@@ -228,12 +239,24 @@ final class LidAngleSensor: ObservableObject {
         guard IOHIDDeviceOpen(hidDevice, Self.noOptions) == kIOReturnSuccess else { return }
 
         isDeviceOpen = true
-        let timer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+        startTimer()
+    }
+
+    private func restartTimer() {
+        guard timer != nil else { return }
+        timer?.invalidate()
+        timer = nil
+        startTimer()
+    }
+
+    private func startTimer() {
+        let interval = currentPollInterval
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.poll()
             }
         }
-        timer.tolerance = 0.2
+        timer.tolerance = min(0.2, interval * 0.2)
         self.timer = timer
     }
 

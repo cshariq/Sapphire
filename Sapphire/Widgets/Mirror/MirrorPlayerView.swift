@@ -22,7 +22,8 @@ struct MirrorPlayerView: View {
                 if camera.isLive {
                     MirrorCameraPreviewView(
                         session: camera.session,
-                        flipHorizontally: settings.settings.mirrorFlipHorizontally
+                        flipHorizontally: settings.settings.mirrorFlipHorizontally,
+                        sessionEpoch: camera.sessionEpoch
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
@@ -245,7 +246,8 @@ struct MirrorFullscreenView: View {
             if camera.isLive {
                 MirrorCameraPreviewView(
                     session: camera.session,
-                    flipHorizontally: settings.settings.mirrorFlipHorizontally
+                    flipHorizontally: settings.settings.mirrorFlipHorizontally,
+                    sessionEpoch: camera.sessionEpoch
                 )
                 .ignoresSafeArea()
             }

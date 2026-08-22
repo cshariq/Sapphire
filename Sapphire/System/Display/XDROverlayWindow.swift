@@ -50,15 +50,20 @@ final class OverlayWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         guard let window = self.window as? OverlayWindow else { return }
-        window.setFrame(rect, display: true)
-        reposition(screen: screen)
-        window.orderFrontRegardless()
-        window.addMetalOverlay(screen: screen)
+
+        RemoteViewCrashGuardRunBlock {
+            window.setFrame(rect, display: true)
+            self.reposition(screen: self.screen)
+            window.orderFrontRegardless()
+            window.addMetalOverlay(screen: self.screen)
+        }
     }
 
     func reposition(screen: NSScreen) {
         var position = screen.frame.origin
         position.y += screen.frame.height - 1
-        window?.setFrameOrigin(position)
+        RemoteViewCrashGuardRunBlock {
+            self.window?.setFrameOrigin(position)
+        }
     }
 }

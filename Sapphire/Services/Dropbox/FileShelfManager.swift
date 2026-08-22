@@ -254,7 +254,7 @@ private struct FileShelfItemView: View {
         .background(.white.opacity(isHovering ? 0.15 : 0), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .scaleEffect(isHovering ? 1.05 : 1.0)
         .onDrag {
-            dragState.isDraggingFromShelf = true
+            dragState.beginShelfDrag(item: item)
             return NSItemProvider(object: item.storedAt as NSURL)
         }
         .onHover { hovering in

@@ -8,7 +8,6 @@
 import Foundation
 
 // MARK: - Flexible JSON number helpers
-// Spotify often encodes timestamps/positions as strings in connect-state payloads.
 
 enum SpotifyFlexibleNumber {
     static func decodeInt64<K: CodingKey>(from container: KeyedDecodingContainer<K>, forKey key: K) -> Int64? {
@@ -28,10 +27,32 @@ enum SpotifyFlexibleNumber {
     }
 }
 
+struct SpotifyFlexKey: CodingKey {
+    var stringValue: String
+    init(_ string: String) { stringValue = string }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    var intValue: Int? { nil }
+    init?(intValue: Int) { nil }
+}
+
+extension KeyedDecodingContainer where K == SpotifyFlexKey {
+    func decodeFlex<T: Decodable>(_ type: T.Type, camel: String, snake: String) -> T? {
+        (try? decodeIfPresent(type, forKey: SpotifyFlexKey(camel)))
+            ?? (try? decodeIfPresent(type, forKey: SpotifyFlexKey(snake)))
+    }
+
+    func decodeFlexString(camel: String, snake: String) -> String? {
+        decodeFlex(String.self, camel: camel, snake: snake)
+    }
+
+    func decodeFlexBool(camel: String, snake: String) -> Bool? {
+        decodeFlex(Bool.self, camel: camel, snake: snake)
+    }
+}
+
 enum SpotifyIDConverter {
     private static let base62Alphabet = Array("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-    /// Extracts a raw Spotify ID from a URI or bare ID.
     static func rawID(from value: String) -> String {
         if value.hasPrefix("spotify:"), let id = value.split(separator: ":").last {
             return String(id)
@@ -42,14 +63,12 @@ enum SpotifyIDConverter {
         return value
     }
 
-    /// Builds a full Spotify URI (`spotify:track:…`) from a type + ID/URI.
     static func uri(type: String, from value: String) -> String {
         let id = rawID(from: value)
         if value.hasPrefix("spotify:") { return value }
         return "spotify:\(type):\(id)"
     }
 
-    /// Converts a Spotify base62 track/album/artist ID into the hex GID used by metadata/4 APIs.
     static func gid(fromBase62 id: String) -> String? {
         let cleaned = rawID(from: id)
         if cleaned.count == 32, cleaned.allSatisfy(\.isHexDigit) {
@@ -69,7 +88,6 @@ enum SpotifyIDConverter {
         return value.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Converts a hex GID back into a Spotify base62 ID.
     static func base62(fromGID gid: String) -> String? {
         let cleaned = gid.lowercased()
         guard cleaned.count == 32, cleaned.allSatisfy(\.isHexDigit) else { return nil }
@@ -103,7 +121,6 @@ enum SpotifyIDConverter {
         return String(digits.reversed().map { base62Alphabet[$0] })
     }
 
-    /// Percent-encodes Spotify URIs for path/query usage (`:` → `%3A`).
     static func pathEncodedURI(_ uri: String) -> String {
         uri.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"))
             ?? uri.replacingOccurrences(of: ":", with: "%3A")
@@ -260,7 +277,6 @@ struct SpotifyNativeUserProfile: Decodable {
         let username: String
         var displayName: String?
 
-        /// Prefer human-readable name over the opaque Spotify user id.
         var friendlyName: String {
             let trimmed = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
             if let trimmed, !trimmed.isEmpty { return trimmed }
@@ -278,10 +294,22 @@ struct SpotifyNativeUserProfile: Decodable {
             birthdate = try container.decodeIfPresent(String.self, forKey: .birthdate)
             country = try container.decodeIfPresent(String.self, forKey: .country)
             username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
-            // account-settings may use display_name; Pathfinder profileAttributes uses name.
             displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
                 ?? container.decodeIfPresent(String.self, forKey: .name)
         }
+
+        init(email: String?, gender: String?, birthdate: String?, country: String?, username: String, displayName: String?) {
+            self.email = email
+            self.gender = gender
+            self.birthdate = birthdate
+            self.country = country
+            self.username = username
+            self.displayName = displayName
+        }
+    }
+
+    init(profile: Profile) {
+        self.profile = profile
     }
 }
 
@@ -358,22 +386,25 @@ struct PlayerState: Decodable {
     }
 
     init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        track = try container.decodeIfPresent(Track.self, forKey: .track)
-        isPlaying = try container.decodeIfPresent(Bool.self, forKey: .isPlaying)
-        isPaused = try container.decodeIfPresent(Bool.self, forKey: .isPaused)
-        timestamp = SpotifyFlexibleNumber.decodeInt64(from: container, forKey: .timestamp)
-        positionAsOfTimestamp = SpotifyFlexibleNumber.decodeInt(from: container, forKey: .positionAsOfTimestamp)
-        duration = SpotifyFlexibleNumber.decodeInt(from: container, forKey: .duration)
-        options = try container.decodeIfPresent(Options.self, forKey: .options)
-        prevTracks = try container.decodeIfPresent([Track].self, forKey: .prevTracks)
-        nextTracks = try container.decodeIfPresent([Track].self, forKey: .nextTracks)
-        contextUri = try container.decodeIfPresent(String.self, forKey: .contextUri)
-        playOrigin = try container.decodeIfPresent(PlayOrigin.self, forKey: .playOrigin)
-        queueRevision = try container.decodeIfPresent(String.self, forKey: .queueRevision)
+        let flex = try decoder.container(keyedBy: SpotifyFlexKey.self)
+        track = try flex.decodeIfPresent(Track.self, forKey: SpotifyFlexKey("track"))
+        isPlaying = flex.decodeFlexBool(camel: "isPlaying", snake: "is_playing")
+        isPaused = flex.decodeFlexBool(camel: "isPaused", snake: "is_paused")
+        timestamp = SpotifyFlexibleNumber.decodeInt64(from: flex, forKey: SpotifyFlexKey("timestamp"))
+        positionAsOfTimestamp = SpotifyFlexibleNumber.decodeInt(from: flex, forKey: SpotifyFlexKey("positionAsOfTimestamp"))
+            ?? SpotifyFlexibleNumber.decodeInt(from: flex, forKey: SpotifyFlexKey("position_as_of_timestamp"))
+        duration = SpotifyFlexibleNumber.decodeInt(from: flex, forKey: SpotifyFlexKey("duration"))
+        options = try flex.decodeIfPresent(Options.self, forKey: SpotifyFlexKey("options"))
+        prevTracks = (try? flex.decodeIfPresent([Track].self, forKey: SpotifyFlexKey("prevTracks")))
+            ?? (try? flex.decodeIfPresent([Track].self, forKey: SpotifyFlexKey("prev_tracks")))
+        nextTracks = (try? flex.decodeIfPresent([Track].self, forKey: SpotifyFlexKey("nextTracks")))
+            ?? (try? flex.decodeIfPresent([Track].self, forKey: SpotifyFlexKey("next_tracks")))
+        contextUri = flex.decodeFlexString(camel: "contextUri", snake: "context_uri")
+        playOrigin = (try? flex.decodeIfPresent(PlayOrigin.self, forKey: SpotifyFlexKey("playOrigin")))
+            ?? (try? flex.decodeIfPresent(PlayOrigin.self, forKey: SpotifyFlexKey("play_origin")))
+        queueRevision = flex.decodeFlexString(camel: "queueRevision", snake: "queue_revision")
     }
 
-    /// Connect-state realtime position (ms): when paused use the sample; otherwise advance by wall-clock delta.
     func realtimePositionMilliseconds(at now: Date = Date()) -> Int? {
         guard let sampleMs = positionAsOfTimestamp, let timestamp else { return nil }
         let paused = (isPaused == true) || (isPlaying == false)
@@ -389,7 +420,6 @@ struct PlayerState: Decodable {
         if isPaused == true { return false }
         if isPlaying == true { return true }
         if isPlaying == false { return false }
-        // Some Connect payloads only include is_paused.
         if isPaused == false { return true }
         return false
     }
@@ -398,6 +428,13 @@ struct PlayerState: Decodable {
         let shufflingContext: Bool?
         let repeatingContext: Bool?
         let repeatingTrack: Bool?
+
+        init(from decoder: Decoder) throws {
+            let flex = try decoder.container(keyedBy: SpotifyFlexKey.self)
+            shufflingContext = flex.decodeFlexBool(camel: "shufflingContext", snake: "shuffling_context")
+            repeatingContext = flex.decodeFlexBool(camel: "repeatingContext", snake: "repeating_context")
+            repeatingTrack = flex.decodeFlexBool(camel: "repeatingTrack", snake: "repeating_track")
+        }
     }
 
     struct Track: Decodable, Hashable {
@@ -438,6 +475,44 @@ struct PlayerState: Decodable {
                 let urlString = (imageUrl ?? imageLargeUrl ?? imageSmallUrl ?? imageXlargeUrl)?
                     .replacingOccurrences(of: "spotify:image:", with: "https://i.scdn.co/image/")
                 return URL(string: urlString ?? "")
+            }
+
+            init(
+                title: String?,
+                albumTitle: String?,
+                artistName: String?,
+                artistUri: String?,
+                imageUrl: String?,
+                imageSmallUrl: String?,
+                imageLargeUrl: String?,
+                imageXlargeUrl: String?,
+                contextUri: String?,
+                hidden: String?
+            ) {
+                self.title = title
+                self.albumTitle = albumTitle
+                self.artistName = artistName
+                self.artistUri = artistUri
+                self.imageUrl = imageUrl
+                self.imageSmallUrl = imageSmallUrl
+                self.imageLargeUrl = imageLargeUrl
+                self.imageXlargeUrl = imageXlargeUrl
+                self.contextUri = contextUri
+                self.hidden = hidden
+            }
+
+            init(from decoder: Decoder) throws {
+                let flex = try decoder.container(keyedBy: SpotifyFlexKey.self)
+                title = try flex.decodeIfPresent(String.self, forKey: SpotifyFlexKey("title"))
+                albumTitle = flex.decodeFlexString(camel: "albumTitle", snake: "album_title")
+                artistName = flex.decodeFlexString(camel: "artistName", snake: "artist_name")
+                artistUri = flex.decodeFlexString(camel: "artistUri", snake: "artist_uri")
+                imageUrl = flex.decodeFlexString(camel: "imageUrl", snake: "image_url")
+                imageSmallUrl = flex.decodeFlexString(camel: "imageSmallUrl", snake: "image_small_url")
+                imageLargeUrl = flex.decodeFlexString(camel: "imageLargeUrl", snake: "image_large_url")
+                imageXlargeUrl = flex.decodeFlexString(camel: "imageXlargeUrl", snake: "image_xlarge_url")
+                contextUri = flex.decodeFlexString(camel: "contextUri", snake: "context_uri")
+                hidden = try flex.decodeIfPresent(String.self, forKey: SpotifyFlexKey("hidden"))
             }
         }
     }
@@ -493,23 +568,52 @@ struct SpotifyNativeDevice: Decodable, Hashable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        canPlay = try container.decodeIfPresent(Bool.self, forKey: .canPlay) ?? false
-        if let intVolume = try? container.decodeIfPresent(Int.self, forKey: .volume) {
+        let flexible = try decoder.container(keyedBy: FlexibleDeviceKey.self)
+
+        canPlay = try container.decodeIfPresent(Bool.self, forKey: .canPlay)
+            ?? flexible.decodeIfPresent(Bool.self, forKey: FlexibleDeviceKey("can_play"))
+            ?? false
+
+        if let intVolume = try container.decodeIfPresent(Int.self, forKey: .volume)
+            ?? flexible.decodeIfPresent(Int.self, forKey: FlexibleDeviceKey("volume")) {
             volume = intVolume
-        } else if let doubleVolume = try? container.decodeIfPresent(Double.self, forKey: .volume) {
+        } else if let doubleVolume = try container.decodeIfPresent(Double.self, forKey: .volume)
+            ?? flexible.decodeIfPresent(Double.self, forKey: FlexibleDeviceKey("volume")) {
             volume = Int(doubleVolume)
         } else {
             volume = nil
         }
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Unknown Device"
-        deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId) ?? UUID().uuidString
-        deviceType = try container.decodeIfPresent(String.self, forKey: .deviceType) ?? "UNKNOWN"
+
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+            ?? flexible.decodeIfPresent(String.self, forKey: FlexibleDeviceKey("name"))
+            ?? "Unknown Device"
+        deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId)
+            ?? flexible.decodeIfPresent(String.self, forKey: FlexibleDeviceKey("device_id"))
+            ?? UUID().uuidString
+        deviceType = try container.decodeIfPresent(String.self, forKey: .deviceType)
+            ?? flexible.decodeIfPresent(String.self, forKey: FlexibleDeviceKey("device_type"))
+            ?? "UNKNOWN"
         spircVersion = try container.decodeIfPresent(String.self, forKey: .spircVersion)
+            ?? flexible.decodeIfPresent(String.self, forKey: FlexibleDeviceKey("spirc_version"))
         deviceSoftwareVersion = try container.decodeIfPresent(String.self, forKey: .deviceSoftwareVersion)
+            ?? flexible.decodeIfPresent(String.self, forKey: FlexibleDeviceKey("device_software_version"))
         model = try container.decodeIfPresent(String.self, forKey: .model)
-        brand = try container.decodeIfPresent(String.self, forKey: .brand) ?? "unknown"
-        capabilities = try container.decodeIfPresent(Capabilities.self, forKey: .capabilities) ?? Capabilities()
+            ?? flexible.decodeIfPresent(String.self, forKey: FlexibleDeviceKey("model"))
+        brand = try container.decodeIfPresent(String.self, forKey: .brand)
+            ?? flexible.decodeIfPresent(String.self, forKey: FlexibleDeviceKey("brand"))
+            ?? "unknown"
+        capabilities = try container.decodeIfPresent(Capabilities.self, forKey: .capabilities)
+            ?? flexible.decodeIfPresent(Capabilities.self, forKey: FlexibleDeviceKey("capabilities"))
+            ?? Capabilities()
     }
+}
+
+private struct FlexibleDeviceKey: CodingKey {
+    var stringValue: String
+    init(_ string: String) { stringValue = string }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    var intValue: Int? { nil }
+    init?(intValue: Int) { nil }
 }
 
 struct Capabilities: Decodable, Hashable {
@@ -1152,19 +1256,15 @@ struct RemoteTotpSecrets: Decodable {
 struct AirPlayDevice: Identifiable, Hashable, Equatable {
     var id: String { name }
     let name: String
-    let kind: MusicEAPD
+    let isAudioOnly: Bool
     let isSelected: Bool
     let volume: Int?
 
     var iconName: String {
-        switch kind {
-        case .computer: return "desktopcomputer"
-        case .airPortExpress: return "airplayaudio"
-        case .appleTV: return "appletv"
-        case .homePod: return "homepod.2.fill"
-        case .bluetoothDevice: return "headphones"
-        default: return "speaker.fill"
-        }
+        if name.localizedCaseInsensitiveContains("homepod") { return "homepod.2.fill" }
+        if name.localizedCaseInsensitiveContains("apple tv") || name.localizedCaseInsensitiveContains("appletv") { return "appletv" }
+        if isAudioOnly { return "hifispeaker.2.fill" }
+        return "airplayaudio"
     }
 }
 

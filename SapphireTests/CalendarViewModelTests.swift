@@ -1,7 +1,8 @@
 //
 //  CalendarViewModelTests.swift
-//  SapphireTests
+//  Sapphire
 //
+//  Created by Shariq Charolia on 2026-08-21
 
 import AppKit
 import Foundation
@@ -53,7 +54,7 @@ struct CalendarViewModelTests {
 
     @Test func timeZoneChangeUsesNewLocalStartOfDay() {
         let calendarSource = CalendarSource(timeZone: timeZone("America/Los_Angeles"))
-        let instant = Date(timeIntervalSince1970: 1_786_494_600) // 2026-08-12 00:30:00 UTC
+        let instant = Date(timeIntervalSince1970: 1_786_494_600)
         let clock = TestClock(instant)
         let notificationCenter = NotificationCenter()
         let viewModel = makeViewModel(

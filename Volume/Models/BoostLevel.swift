@@ -1,7 +1,11 @@
-// FineTune/Models/BoostLevel.swift
+//
+//  BoostLevel.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 
-/// Per-app volume boost multiplier
 enum BoostLevel: Float, CaseIterable, Codable {
     case x1 = 1.0
     case x2 = 2.0
@@ -17,7 +21,6 @@ enum BoostLevel: Float, CaseIterable, Codable {
         }
     }
 
-    /// Next boost level (cycles: 1x → 2x → 3x → 4x → 1x)
     var next: BoostLevel {
         switch self {
         case .x1: .x2
@@ -27,6 +30,5 @@ enum BoostLevel: Float, CaseIterable, Codable {
         }
     }
 
-    /// Whether this boost level amplifies above unity
     var isBoosted: Bool { self != .x1 }
 }

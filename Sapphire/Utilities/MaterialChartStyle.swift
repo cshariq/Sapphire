@@ -45,37 +45,6 @@ enum MaterialChartPalette {
     }
 }
 
-struct MaterialChartHoverOverlay: View {
-    let proxy: ChartProxy
-    let onHoverDate: (Date?) -> Void
-
-    var body: some View {
-        GeometryReader { geometry in
-            Rectangle()
-                .fill(.clear)
-                .contentShape(Rectangle())
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        guard let plotFrame = proxy.plotFrame else {
-                            onHoverDate(nil)
-                            return
-                        }
-                        let plotAreaFrame = geometry[plotFrame]
-                        guard plotAreaFrame.contains(location) else {
-                            onHoverDate(nil)
-                            return
-                        }
-                        let x = location.x - plotAreaFrame.minX
-                        onHoverDate(proxy.value(atX: x))
-                    case .ended:
-                        onHoverDate(nil)
-                    }
-                }
-        }
-    }
-}
-
 struct MaterialChartCardModifier: ViewModifier {
     var height: CGFloat?
     var minHeight: CGFloat?

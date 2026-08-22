@@ -98,25 +98,45 @@ class FileConversionManager {
         }
     }
 
+    private struct PendingSave {
+        let tempURL: URL
+        let desiredName: String
+        let allowedType: UTType
+    }
+
+    private var pendingSaves: [PendingSave] = []
+    private var isPresentingSavePanel = false
+
     private func promptToSave(fileAt tempURL: URL, desiredName: String, allowedType: UTType) {
+        pendingSaves.append(PendingSave(tempURL: tempURL, desiredName: desiredName, allowedType: allowedType))
+        presentNextSavePanelIfPossible()
+    }
+
+    private func presentNextSavePanelIfPossible() {
+        guard !isPresentingSavePanel, !pendingSaves.isEmpty else { return }
+        isPresentingSavePanel = true
+        let pending = pendingSaves.removeFirst()
+
         let savePanel = NSSavePanel()
-        savePanel.nameFieldStringValue = desiredName
-        savePanel.allowedContentTypes = [allowedType]
+        savePanel.nameFieldStringValue = pending.desiredName
+        savePanel.allowedContentTypes = [pending.allowedType]
 
         savePanel.begin { response in
+            self.isPresentingSavePanel = false
             if response == .OK, let finalURL = savePanel.url {
                 do {
                     if FileManager.default.fileExists(atPath: finalURL.path) {
                         try FileManager.default.removeItem(at: finalURL)
                     }
-                    try FileManager.default.moveItem(at: tempURL, to: finalURL)
+                    try FileManager.default.moveItem(at: pending.tempURL, to: finalURL)
                     NSWorkspace.shared.activateFileViewerSelecting([finalURL])
                 } catch {
                     print("[FileConversionManager] Failed to move converted file: \(error)")
                 }
             } else {
-                try? FileManager.default.removeItem(at: tempURL)
+                try? FileManager.default.removeItem(at: pending.tempURL)
             }
+            self.presentNextSavePanelIfPossible()
         }
     }
 

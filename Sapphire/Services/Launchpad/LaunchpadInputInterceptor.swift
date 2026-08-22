@@ -20,6 +20,7 @@ private func launchpadEventTapCallback(proxy: CGEventTapProxy, type: CGEventType
 
 class LaunchpadInputInterceptor {
     private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
     private var isMonitoring = false
     private var isAwaitingFirstTypingKey = false
 
@@ -39,7 +40,16 @@ class LaunchpadInputInterceptor {
         guard !isMonitoring else { return }
         isMonitoring = true
         isAwaitingFirstTypingKey = true
+        registerTrustAwareness()
 
+        guard AXIsProcessTrusted() else {
+            print("[LaunchpadInputInterceptor] Accessibility not trusted; event tap deferred until permission is granted.")
+            return
+        }
+        installTap()
+    }
+
+    private func installTap() {
         let eventTypes: [CGEventType] = [
             .keyDown, .flagsChanged
         ]
@@ -53,21 +63,40 @@ class LaunchpadInputInterceptor {
             return
         }
 
-        let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+        runLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: eventTap, enable: true)
         print("[LaunchpadInputInterceptor] Smart event filter enabled.")
+    }
+
+    /// Lets `AccessibilityTrustMonitor` tear down and reinstall the tap. If the
+    /// launchpad was closed while permission was revoked, `isMonitoring` is
+    /// already false and the reinstall is a no-op until the next `start()`.
+    private func registerTrustAwareness() {
+        AccessibilityTrustMonitor.shared.register(name: "LaunchpadInputInterceptor") { [weak self] in
+            self?.stop()
+        } reinstall: { [weak self] in
+            guard let self, self.isMonitoring else { return }
+            self.installTap()
+        }
     }
 
     func stop() {
         guard isMonitoring else { return }
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
         eventTap = nil
+        runLoopSource = nil
         isMonitoring = false
         isAwaitingFirstTypingKey = false
         folderFrame = .zero
+        AccessibilityTrustMonitor.shared.unregister(name: "LaunchpadInputInterceptor")
         print("[LaunchpadInputInterceptor] Smart event filter disabled.")
     }
 

@@ -15,6 +15,8 @@
 #import "NDNotificationCenterHackery.h"
 #import "KeyboardBacklightManager.h"
 #import "PrivateAPI.h"
+#import "SapphireMemoryFlush.h"
+#import "RemoteViewCrashGuard.h"
 #include "lowlevel.h"
 #import "MTPrivateTimerController.h"
 #import "ShortcutsActionRunner.h"

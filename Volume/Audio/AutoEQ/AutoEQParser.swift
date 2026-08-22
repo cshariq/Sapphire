@@ -1,17 +1,17 @@
-// FineTune/Audio/AutoEQ/AutoEQParser.swift
+//
+//  AutoEQParser.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 import os
 
-/// Parses EqualizerAPO ParametricEQ.txt files into AutoEQ profiles.
 enum AutoEQParser {
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "AutoEQParser")
 
     // MARK: - ParametricEQ.txt Parsing
 
-    /// Parse an EqualizerAPO ParametricEQ.txt string into an AutoEQProfile.
-    /// Returns nil if zero valid filters are found.
-    /// - Parameters:
-    ///   - id: Explicit ID to use. If nil, generates one (slug for fetched, UUID for imported).
     static func parse(text: String, name: String, source: AutoEQSource, id: String? = nil) -> AutoEQProfile? {
         var preampDB: Float = 0
         var filters: [AutoEQFilter] = []
@@ -29,7 +29,6 @@ enum AutoEQParser {
             }
         }
 
-        // Limit to maxFilters
         if filters.count > AutoEQProfile.maxFilters {
             filters = Array(filters.prefix(AutoEQProfile.maxFilters))
         }
@@ -59,7 +58,6 @@ enum AutoEQParser {
 
     // MARK: - Private Helpers
 
-    /// Parse "Preamp: -6.2 dB" — handles irregular whitespace.
     private static func parsePreamp(_ line: String) -> Float {
         let parts = line.components(separatedBy: ":").dropFirst()
         guard let valuePart = parts.first else { return 0 }
@@ -68,16 +66,11 @@ enum AutoEQParser {
         return max(-30, min(30, value))
     }
 
-    /// Parse a filter line like:
-    /// "Filter 1: ON PK Fc 100 Hz Gain -2.3 dB Q 1.41"
-    /// "Filter 2: ON LSC Fc 105 Hz Gain 7.0 dB Q 0.71"
     private static func parseFilterLine(_ line: String) -> AutoEQFilter? {
         let tokens = line.split(whereSeparator: { $0.isWhitespace }).map(String.init)
 
-        // Must contain "ON" — skip disabled filters
         guard tokens.contains(where: { $0.uppercased() == "ON" }) else { return nil }
 
-        // Find filter type
         let filterType: AutoEQFilter.FilterType?
         if let typeToken = tokens.first(where: { isFilterType($0) }) {
             filterType = parseFilterType(typeToken)
@@ -86,14 +79,12 @@ enum AutoEQParser {
         }
         guard let type = filterType else { return nil }
 
-        // Extract Fc (frequency), Gain, Q
         guard let frequency = extractValue(after: "Fc", in: tokens),
               let gainDB = extractValue(after: "Gain", in: tokens),
               let q = extractValue(after: "Q", in: tokens) else {
             return nil
         }
 
-        // Validate ranges
         guard frequency > 0, q > 0, abs(gainDB) <= 30 else { return nil }
 
         return AutoEQFilter(
@@ -118,14 +109,12 @@ enum AutoEQParser {
         }
     }
 
-    /// Extract the numeric value following a keyword (e.g., "Fc" → 100).
     private static func extractValue(after keyword: String, in tokens: [String]) -> Float? {
         guard let index = tokens.firstIndex(where: { $0.caseInsensitiveCompare(keyword) == .orderedSame }),
               index + 1 < tokens.count else { return nil }
         return Float(tokens[index + 1])
     }
 
-    /// Convert a profile name to a URL-safe slug.
     private static func slugify(_ name: String) -> String {
         name.lowercased()
             .replacingOccurrences(of: " ", with: "-")

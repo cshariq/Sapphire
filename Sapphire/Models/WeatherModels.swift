@@ -83,7 +83,7 @@ struct Nowlink: Codable {
     var url: String?
 }
 
-struct ProcessedWeatherData: Hashable {
+struct ProcessedWeatherData: Hashable, Sendable {
     let locationName: String
     let temperature: Int
     let temperatureMetric: Int
@@ -117,7 +117,7 @@ struct ProcessedWeatherData: Hashable {
     }
 }
 
-struct DailyForecastUIData: Identifiable, Hashable {
+struct DailyForecastUIData: Identifiable, Hashable, Sendable {
     let id = UUID()
     let dayOfWeek: String
     let iconName: String
@@ -135,7 +135,7 @@ struct DailyForecastUIData: Identifiable, Hashable {
     }
 }
 
-struct HourlyForecastUIData: Identifiable, Hashable {
+struct HourlyForecastUIData: Identifiable, Hashable, Sendable {
     let id = UUID()
     let time: String
     let iconName: String

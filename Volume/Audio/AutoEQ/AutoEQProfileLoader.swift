@@ -1,8 +1,12 @@
-// FineTune/Audio/AutoEQ/AutoEQProfileLoader.swift
+//
+//  AutoEQProfileLoader.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 import os
 
-/// Handles file I/O for AutoEQ profiles: managing imported profile files on disk.
 final class AutoEQProfileLoader {
     private let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "AutoEQProfileLoader")
 
@@ -14,7 +18,6 @@ final class AutoEQProfileLoader {
 
     // MARK: - Imported Profiles
 
-    /// Loads imported profiles synchronously from the import directory.
     func loadImportedProfiles() -> [AutoEQProfile] {
         let dir = importDirectory
         guard FileManager.default.fileExists(atPath: dir.path) else { return [] }
@@ -44,7 +47,6 @@ final class AutoEQProfileLoader {
 
     // MARK: - Import / Delete on Disk
 
-    /// Import a ParametricEQ.txt file. Copies to import directory and returns parsed profile.
     func importProfile(from url: URL, name: String) -> AutoEQProfile? {
         do {
             let text = try String(contentsOf: url, encoding: .utf8)
@@ -68,7 +70,6 @@ final class AutoEQProfileLoader {
         }
     }
 
-    /// Delete an imported profile's files from disk.
     func deleteProfileFiles(id: String) {
         let dir = importDirectory
         let file = dir.appendingPathComponent("\(id).txt")

@@ -1,29 +1,25 @@
-// FineTune/Audio/Monitors/BluetoothDeviceMonitor.swift
+//
+//  BluetoothDeviceMonitor.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 import IOBluetooth
 import os
 
-/// Discovers paired-but-disconnected Bluetooth audio devices and initiates connections.
-/// All IOBluetooth interaction is isolated here — no other file imports IOBluetooth.
-///
-/// All IOBluetooth calls are dispatched to a dedicated serial queue (`btQueue`) to
-/// serialize Mach port IPC and avoid the cooperative thread pool used by Task.detached.
 @Observable
 @MainActor
 final class BluetoothDeviceMonitor {
 
     // MARK: - Published State
 
-    /// Whether the Bluetooth hardware is powered on.
     private(set) var isBluetoothOn: Bool = false
 
-    /// Paired-but-disconnected audio BT devices, sorted by name.
     private(set) var pairedDevices: [PairedBluetoothDevice] = []
 
-    /// MAC addresses currently in-flight (spinner shown).
     private(set) var connectingIDs: Set<String> = []
 
-    /// Inline error messages keyed by MAC address.
     private(set) var connectionErrors: [String: String] = [:]
 
     // MARK: - Private
@@ -33,18 +29,12 @@ final class BluetoothDeviceMonitor {
         category: "BluetoothDeviceMonitor"
     )
 
-    /// Dedicated serial queue for all IOBluetooth IPC.
-    /// Serializes calls to avoid concurrent Mach port access and provides a stable
-    /// thread context (unlike Task.detached which uses the cooperative thread pool).
     private static let btQueue = DispatchQueue(label: "com.finetuneapp.bluetooth")
 
-    /// Pending timeout tasks keyed by MAC address.
     private var timeoutTasks: [String: Task<Void, Never>] = [:]
 
-    /// Error auto-clear tasks keyed by MAC address.
     private var errorClearTasks: [String: Task<Void, Never>] = [:]
 
-    /// In-flight refresh task — cancelled on each new refresh to avoid stacking.
     private var refreshTask: Task<Void, Never>?
 
     private let connectTimeoutSeconds: Double = 12
@@ -54,8 +44,6 @@ final class BluetoothDeviceMonitor {
     private static let a2dpSinkUUID = IOBluetoothSDPUUID(uuid16: 0x110B)!
     private static let hfpUUID = IOBluetoothSDPUUID(uuid16: 0x111E)!
 
-    /// Observers for Bluetooth power state change notifications.
-    /// nonisolated(unsafe) so deinit can remove them.
     private nonisolated(unsafe) var powerOnObserver: NSObjectProtocol?
     private nonisolated(unsafe) var powerOffObserver: NSObjectProtocol?
 
@@ -88,8 +76,6 @@ final class BluetoothDeviceMonitor {
 
     // MARK: - Refresh
 
-    /// Rebuilds `pairedDevices` from the current IOBluetooth snapshot.
-    /// Call on popup-appear and after any CoreAudio device list change.
     func refresh() {
         refreshTask?.cancel()
         refreshTask = Task {
@@ -128,7 +114,6 @@ final class BluetoothDeviceMonitor {
 
     // MARK: - Connect
 
-    /// Initiates a Bluetooth connection for the given paired device.
     func connect(device: PairedBluetoothDevice) {
         let mac = device.id
         guard !connectingIDs.contains(mac) else { return }
@@ -152,16 +137,10 @@ final class BluetoothDeviceMonitor {
                 return
             }
 
-            // openConnection() is asynchronous — success detected when the device
-            // appears in CoreAudio and notifyDeviceAppearedInCoreAudio() is called.
             startConnectTimeout(mac: mac, name: device.name)
         }
     }
 
-    /// Called when a new CoreAudio output device appears.
-    /// Always refreshes the paired list so auto-connected devices (not initiated
-    /// via FineTune) are removed. If a FineTune-initiated connection is in flight,
-    /// clears the connecting state for devices that succeeded.
     func notifyDeviceAppearedInCoreAudio() {
         if !connectingIDs.isEmpty {
             Task {
@@ -170,7 +149,6 @@ final class BluetoothDeviceMonitor {
                     return Set(allPaired.filter { !$0.isConnected() }.compactMap { $0.addressString })
                 }
 
-                // Clear connecting state for devices that actually connected
                 for mac in connectingIDs {
                     if !stillDisconnected.contains(mac) {
                         logger.debug("Device \(mac) connected; clearing in-flight state")
@@ -184,16 +162,12 @@ final class BluetoothDeviceMonitor {
                 refresh()
             }
         } else {
-            // Auto-connected device (not via FineTune) — still need to refresh
-            // so the device is removed from the paired list.
             refresh()
         }
     }
 
     // MARK: - IOBluetooth Queue Helper
 
-    /// Runs a closure on the dedicated Bluetooth serial queue and returns the result.
-    /// Bridges DispatchQueue → Swift concurrency via `withCheckedContinuation`.
     private nonisolated static func runOnBTQueue<T: Sendable>(
         _ work: @Sendable @escaping () -> T
     ) async -> T {
@@ -208,14 +182,12 @@ final class BluetoothDeviceMonitor {
 
     // MARK: - Background IOBluetooth Work
 
-    /// Sendable snapshot of a paired device — transfers safely across actor boundaries.
     private struct RawPairedDevice: Sendable {
         let mac: String
         let name: String
         let iconName: String
     }
 
-    /// Runs on btQueue. Returns filtered, sorted paired audio devices.
     private nonisolated static func fetchPairedAudioDevices(
         excludingConnectingIDs connectingIDs: Set<String>
     ) -> [RawPairedDevice] {
@@ -244,7 +216,6 @@ final class BluetoothDeviceMonitor {
         return result
     }
 
-    /// Pure function — safe to call from any thread.
     private nonisolated static func suggestedIconName(for name: String) -> String {
         if name.contains("AirPods Pro") { return "airpodspro" }
         if name.contains("AirPods Max") { return "airpodsmax" }

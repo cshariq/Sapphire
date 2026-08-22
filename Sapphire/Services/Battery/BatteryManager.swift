@@ -56,29 +56,79 @@ class PowerStateController: ObservableObject {
             batteryMonitor.$currentState.map { _ in "Battery State Change" },
             calibrationManager.$state.map { _ in "Calibration State Change" }
         )
-        .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
-        .sink { [weak self] _ in self?.evaluateState() }
+        .debounce(for: .milliseconds(350), scheduler: DispatchQueue.main)
+        .sink { [weak self] _ in
+            self?.evaluateState()
+            self?.reconcileSleepMonitoring()
+        }
         .store(in: &cancellables)
-
-        Timer.publish(every: 45.0, on: .main, in: .common).autoconnect()
-            .sink { [weak self] _ in self?.evaluateState() }
-            .store(in: &cancellables)
 
         let workspaceNC = NSWorkspace.shared.notificationCenter
         workspaceNC.addObserver(self, selector: #selector(systemWillSleep), name: NSWorkspace.willSleepNotification, object: nil)
         workspaceNC.addObserver(self, selector: #selector(systemDidWake), name: NSWorkspace.didWakeNotification, object: nil)
+
+        reconcileSleepMonitoring()
+        evaluateState()
     }
 
     @objc private func systemWillSleep() {
         statusManager.updateState(isSleeping: true)
-        if settings.settings.stopChargingWhenSleeping {
-            batteryManager.enableCharging(false)
-        }
+        applyChargePolicyForSleep()
     }
 
     @objc private func systemDidWake() {
         statusManager.updateState(isSleeping: false)
         evaluateState()
+        reconcileSleepMonitoring()
+    }
+
+    private func reconcileSleepMonitoring() {
+        let current = settings.settings
+        if current.logBatteryDuringSleep {
+            batteryManager.startSleepBatteryLogging(
+                intervalMinutes: max(15, current.sleepLoggingIntervalMinutes),
+                chargeLimit: current.batteryChargeLimit,
+                stopChargingWhileAsleep: current.stopChargingWhenSleeping
+            )
+        } else {
+            batteryManager.stopSleepBatteryLogging()
+        }
+    }
+
+    private func applyChargePolicyForSleep() {
+        let currentSettings = settings.settings
+        guard let batteryState = batteryMonitor.currentState else {
+            if currentSettings.stopChargingWhenSleeping {
+                batteryManager.enableCharging(false)
+            }
+            return
+        }
+
+        Task {
+            let currentCharge = currentSettings.useHardwareBatteryPercentage
+                ? await batteryManager.getHardwareBatteryPercentage()
+                : batteryState.level
+            let atOrAboveLimit = currentCharge >= currentSettings.batteryChargeLimit
+            let shouldInhibit =
+                currentSettings.stopChargingWhenSleeping
+                || atOrAboveLimit
+                || (currentSettings.batteryChargeLimit < 100 && batteryState.isCharging)
+
+            if shouldInhibit {
+                if isAppleSilicon {
+                    let mode = await batteryManager.currentChargeControlMode()
+                    if mode == .firmware {
+                        if currentSettings.batteryChargeLimit < 100 {
+                            batteryManager.setChargeLimit(currentSettings.batteryChargeLimit)
+                        }
+                    } else {
+                        batteryManager.enableCharging(false)
+                    }
+                } else {
+                    batteryManager.setChargeLimit(currentSettings.batteryChargeLimit)
+                }
+            }
+        }
     }
 
     private func evaluateState() {
@@ -172,10 +222,17 @@ class PowerStateController: ObservableObject {
                 settings: currentSettings
             )
 
-            if isAppleSilicon { batteryManager.enableCharging(shouldCharge) }
-            else { batteryManager.setChargeLimit(shouldCharge ? 100 : currentSettings.batteryChargeLimit) }
+            if isAppleSilicon {
+                let mode = await batteryManager.currentChargeControlMode()
+                if mode == .firmware {
+                    batteryManager.setChargeLimit(shouldCharge ? 100 : currentSettings.batteryChargeLimit)
+                } else {
+                    batteryManager.enableCharging(shouldCharge)
+                }
+            } else {
+                batteryManager.setChargeLimit(shouldCharge ? 100 : currentSettings.batteryChargeLimit)
+            }
 
-            if caffeineManager.isActive && currentSettings.preventSleepDuringDischarge { caffeineManager.stopIfAutoStartedByBatteryDischarge() }
             let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: !shouldCharge)
             batteryManager.setMagSafeLED(color: ledColor)
             statusManager.updateState(managementState: currentManagementState, ledColor: ledColor)
@@ -225,7 +282,7 @@ class PowerStateController: ObservableObject {
     private func calculateMagSafeLEDColor(chargeState: BatteryState, inhibited: Bool) -> Int {
         let settings = self.settings.settings
         guard settings.controlMagSafeLEDEnabled else { return -1 }
-        let ledOff = 0, ledGreen = 3, ledAmber = 4
+        let ledOff = 1, ledGreen = 3, ledAmber = 4
 
         if settings.magSafeLEDSetting == .off, (!settings.magSafeGreenAtLimit || (settings.magSafeGreenAtLimit && chargeState.level < settings.batteryChargeLimit)) {
             return ledOff
@@ -246,17 +303,15 @@ class PowerStateController: ObservableObject {
 
 class BatteryManager {
     static let shared = BatteryManager()
-    private var helperConnection: NSXPCConnection?
     private let connectionLock = NSLock()
     private var batteryService: io_connect_t = 0
 
     private var consecutiveFailures = 0
     private var lastFailureTime: Date?
     private let maxConsecutiveFailures = 3
-    private let circuitBreakerResetInterval: TimeInterval = 60
-    private let circuitBreakerCooldownInterval: TimeInterval = 3600
+    private let circuitBreakerCooldownInterval: TimeInterval = 60
     private var isCircuitOpen = false
-    private var circuitBreakerTimer: Timer?
+    private var helperConnectionObserver: NSObjectProtocol?
 
     private lazy var isARM: Bool = {
         var sysinfo = utsname()
@@ -268,160 +323,236 @@ class BatteryManager {
     }()
 
     private init() {
-        setupHelperConnection()
         self.batteryService = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"))
-        startCircuitBreakerTimer()
+        helperConnectionObserver = NotificationCenter.default.addObserver(
+            forName: .sapphireHelperConnectionLost,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.activeSleepMonitoringConfig = nil
+            self?.resetCommandState()
+        }
     }
 
     deinit {
+        if let helperConnectionObserver {
+            NotificationCenter.default.removeObserver(helperConnectionObserver)
+        }
         if self.batteryService != 0 {
             IOObjectRelease(self.batteryService)
-        }
-        circuitBreakerTimer?.invalidate()
-    }
-
-    private func startCircuitBreakerTimer() {
-        circuitBreakerTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            self?.checkCircuitBreaker()
-        }
-        if let timer = circuitBreakerTimer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
-    }
-
-    private func checkCircuitBreaker() {
-        connectionLock.lock()
-        defer { connectionLock.unlock() }
-
-        guard isCircuitOpen, let lastFailure = lastFailureTime else { return }
-
-        let timeSinceFailure = Date().timeIntervalSince(lastFailure)
-
-        if timeSinceFailure >= circuitBreakerCooldownInterval {
-            helperLogger.info("[BatteryManager] Circuit breaker cooldown passed, attempting reconnection...")
-            isCircuitOpen = false
-            consecutiveFailures = 0
-            lastFailureTime = nil
-            if let connection = helperConnection {
-                connection.invalidationHandler = nil
-                connection.interruptionHandler = nil
-                connection.invalidate()
-            }
-            helperConnection = nil
-            setupHelperConnection()
         }
     }
 
     private func recordFailure() {
+        var opened = false
+
         connectionLock.lock()
-        defer { connectionLock.unlock() }
-
         consecutiveFailures += 1
-        lastFailureTime = Date()
-
+        if !isCircuitOpen {
+            lastFailureTime = Date()
+        }
         if consecutiveFailures >= maxConsecutiveFailures && !isCircuitOpen {
             isCircuitOpen = true
+            opened = true
+        }
+        connectionLock.unlock()
+
+        if opened {
             helperLogger.warning("[BatteryManager] Circuit breaker OPEN - helper unreachable, will retry in \(self.circuitBreakerCooldownInterval)s")
-            NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
         }
     }
 
     private func recordSuccess() {
-        connectionLock.lock()
-        defer { connectionLock.unlock() }
+        var restored = false
 
+        connectionLock.lock()
         if consecutiveFailures > 0 || isCircuitOpen {
             consecutiveFailures = 0
             isCircuitOpen = false
             lastFailureTime = nil
+            restored = true
+        }
+        connectionLock.unlock()
+
+        if restored {
             helperLogger.info("[BatteryManager] Circuit breaker CLOSED - helper connection restored")
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .sapphireHelperConnectionRestored, object: nil)
+            }
         }
     }
 
-    private func setupHelperConnection() {
-        connectionLock.lock()
-        defer { connectionLock.unlock() }
-
-        guard self.helperConnection == nil else { return }
-
-        let connection = NSXPCConnection(machServiceName: "com.shariq.sapphireHelper", options: .privileged)
-        let interface = NSXPCInterface(with: HelperProtocol.self)
-        interface.setClasses(
-            NSSet(array: [FanInfo.self, NSNull.self]) as! Set<AnyHashable>,
-            for: #selector(HelperProtocol.getFanInfo(fanIndex:reply:)),
-            argumentIndex: 0,
-            ofReply: true
-        )
-        connection.remoteObjectInterface = interface
-
-        connection.invalidationHandler = { [weak self] in
-            print("[BatteryManager] XPC connection invalidated.")
-            self?.connectionLock.withLock { self?.helperConnection = nil }
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
-            }
-        }
-
-        connection.interruptionHandler = { [weak self] in
-            print("[BatteryManager] XPC connection interrupted.")
-            self?.connectionLock.withLock { self?.helperConnection = nil }
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
-            }
-        }
-
-        connection.resume()
-        self.helperConnection = connection
+    private func handleRemoteError(_ error: Error) {
+        _ = error
+        recordFailure()
     }
 
     func getHelper() -> HelperProtocol? {
+        var shouldReconnect = false
+        var circuitOpen = false
         connectionLock.lock()
-        if self.helperConnection == nil {
-            connectionLock.unlock()
-            setupHelperConnection()
-            connectionLock.lock()
+        if isCircuitOpen,
+           let lastFailure = lastFailureTime,
+           Date().timeIntervalSince(lastFailure) >= circuitBreakerCooldownInterval {
+            isCircuitOpen = false
+            consecutiveFailures = 0
+            lastFailureTime = nil
+            shouldReconnect = true
         }
-
-        if isCircuitOpen {
-            connectionLock.unlock()
-            return nil
-        }
-
-        let connection = self.helperConnection
-        let recordFailure = self.recordFailure
-        let maxConsecutiveFailures = self.maxConsecutiveFailures
+        circuitOpen = isCircuitOpen
         connectionLock.unlock()
 
-        return connection?.remoteObjectProxyWithErrorHandler { error in
+        if shouldReconnect {
+            XPCClient.shared.start(force: true)
+            resetCommandState()
+        }
+        guard !circuitOpen else { return nil }
+
+        guard let helper = XPCClient.shared.proxy(onError: { [weak self] error in
+            self?.handleRemoteError(error)
+        }) else {
             recordFailure()
-            if (self.consecutiveFailures) <= maxConsecutiveFailures {
-                print("[BatteryManager] XPC remote object error: \(error.localizedDescription)")
-            }
-            DispatchQueue.global().async {
-                self.connectionLock.lock()
-                self.helperConnection?.invalidate()
-                self.helperConnection = nil
-                self.connectionLock.unlock()
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .sapphireHelperConnectionLost, object: nil)
-                }
-            }
-        } as? HelperProtocol
+            return nil
+        }
+        return helper
     }
 
-    func reconnectHelper() {
+    func helperDidBecomeReachable() {
+        var restored = false
         connectionLock.lock()
-        if let connection = helperConnection {
-            connection.invalidationHandler = nil
-            connection.interruptionHandler = nil
-            connection.invalidate()
+        if consecutiveFailures > 0 || isCircuitOpen {
+            restored = true
         }
-        helperConnection = nil
         consecutiveFailures = 0
         isCircuitOpen = false
         lastFailureTime = nil
         connectionLock.unlock()
-        setupHelperConnection()
+        activeSleepMonitoringConfig = nil
+        resetCommandState()
+
+        if restored {
+            helperLogger.info("[BatteryManager] Helper connection restored")
+        }
+        NotificationCenter.default.post(name: .sapphireHelperConnectionRestored, object: nil)
+    }
+
+    func reconnectHelper() {
+        XPCClient.shared.stop()
+
+        connectionLock.lock()
+        consecutiveFailures = 0
+        isCircuitOpen = false
+        lastFailureTime = nil
+        connectionLock.unlock()
+        resetCommandState()
+
+        activeSleepMonitoringConfig = nil
+        XPCClient.shared.start()
+    }
+
+    // MARK: - Sleep Battery Monitoring
+
+    private var activeSleepMonitoringConfig: (intervalMinutes: Int, chargeLimit: Int, stopChargingWhileAsleep: Bool)?
+
+    private let commandStateLock = NSLock()
+    private var lastChargeLimitCommand: Int?
+    private var lastChargingCommand: Bool?
+    private var lastDischargeCommand: Bool?
+    private var lastLEDCommand: Int?
+
+    private func claimChargeLimit(_ value: Int) -> Bool {
+        commandStateLock.lock(); defer { commandStateLock.unlock() }
+        guard lastChargeLimitCommand != value else { return false }
+        lastChargeLimitCommand = value
+        return true
+    }
+
+    private func claimCharging(_ value: Bool) -> Bool {
+        commandStateLock.lock(); defer { commandStateLock.unlock() }
+        guard lastChargingCommand != value else { return false }
+        lastChargingCommand = value
+        return true
+    }
+
+    private func claimDischarge(_ value: Bool) -> Bool {
+        commandStateLock.lock(); defer { commandStateLock.unlock() }
+        guard lastDischargeCommand != value else { return false }
+        lastDischargeCommand = value
+        return true
+    }
+
+    private func claimLED(_ value: Int) -> Bool {
+        commandStateLock.lock(); defer { commandStateLock.unlock() }
+        guard lastLEDCommand != value else { return false }
+        lastLEDCommand = value
+        return true
+    }
+
+    private func clearChargeLimitCommand(if value: Int) {
+        commandStateLock.lock(); if lastChargeLimitCommand == value { lastChargeLimitCommand = nil }; commandStateLock.unlock()
+    }
+
+    private func clearChargingCommand(if value: Bool) {
+        commandStateLock.lock(); if lastChargingCommand == value { lastChargingCommand = nil }; commandStateLock.unlock()
+    }
+
+    private func clearDischargeCommand(if value: Bool) {
+        commandStateLock.lock(); if lastDischargeCommand == value { lastDischargeCommand = nil }; commandStateLock.unlock()
+    }
+
+    private func clearLEDCommand(if value: Int) {
+        commandStateLock.lock(); if lastLEDCommand == value { lastLEDCommand = nil }; commandStateLock.unlock()
+    }
+
+    private func resetCommandState() {
+        commandStateLock.lock()
+        lastChargeLimitCommand = nil
+        lastChargingCommand = nil
+        lastDischargeCommand = nil
+        lastLEDCommand = nil
+        commandStateLock.unlock()
+    }
+
+    func startSleepBatteryLogging(intervalMinutes: Int, chargeLimit: Int, stopChargingWhileAsleep: Bool) {
+        let config = (intervalMinutes, chargeLimit, stopChargingWhileAsleep)
+        if let active = activeSleepMonitoringConfig, active == config { return }
+
+        guard let helper = getHelper() else {
+            activeSleepMonitoringConfig = nil
+            return
+        }
+
+        let logPath = sleepLogFileURL().path
+        helper.startSleepBatteryMonitoring(
+            intervalMinutes: intervalMinutes,
+            chargeLimit: chargeLimit,
+            stopChargingWhileAsleep: stopChargingWhileAsleep,
+            logPath: logPath
+        ) { error in
+            if let error {
+                helperLogger.error("[BatteryManager] startSleepBatteryMonitoring failed: \(error.localizedDescription)")
+            }
+        }
+        activeSleepMonitoringConfig = config
+    }
+
+    func stopSleepBatteryLogging() {
+        guard activeSleepMonitoringConfig != nil else { return }
+        activeSleepMonitoringConfig = nil
+        getHelper()?.stopSleepBatteryMonitoring { error in
+            if let error {
+                helperLogger.error("[BatteryManager] stopSleepBatteryMonitoring failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func sleepLogFileURL() -> URL {
+        let fileManager = FileManager.default
+        let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+        return appSupportURL
+            .appendingPathComponent("Sapphire/BatteryLogs")
+            .appendingPathComponent("battery_sleep_log.jsonl")
     }
 
     private func withHelperCallback<T>(
@@ -436,28 +567,34 @@ class BatteryManager {
             let lock = NSLock()
             var resumed = false
 
-            func resumeOnce(_ value: T) {
+            func finish(_ value: T, success: Bool) {
                 lock.lock()
-                defer { lock.unlock() }
-                guard !resumed else { return }
+                guard !resumed else {
+                    lock.unlock()
+                    return
+                }
                 resumed = true
+                lock.unlock()
+
+                if success {
+                    recordSuccess()
+                } else {
+                    recordFailure()
+                }
                 continuation.resume(returning: value)
             }
 
             guard let helper = getHelper() else {
-                recordFailure()
-                resumeOnce(fallback)
+                finish(fallback, success: false)
                 return
             }
 
             work(helper) { value in
-                recordSuccess()
-                resumeOnce(value)
+                finish(value, success: true)
             }
 
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                recordFailure()
-                resumeOnce(fallback)
+                finish(fallback, success: false)
             }
         }
     }
@@ -465,10 +602,16 @@ class BatteryManager {
     // MARK: - Public API to Helper
 
     func setChargeLimit(_ limit: Int) {
+        guard claimChargeLimit(limit) else { return }
+        guard let helper = getHelper() else {
+            clearChargeLimitCommand(if: limit)
+            return
+        }
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
-        getHelper()?.setChargeLimit(limit) { error in
+        helper.setChargeLimit(limit) { [weak self] error in
             if let error = error {
+                self?.clearChargeLimitCommand(if: limit)
                 recordFailure()
                 print("[BatteryManager] Error setting charge limit: \(error.localizedDescription)")
             } else {
@@ -478,10 +621,16 @@ class BatteryManager {
     }
 
     func enableCharging(_ enabled: Bool) {
+        guard claimCharging(enabled) else { return }
+        guard let helper = getHelper() else {
+            clearChargingCommand(if: enabled)
+            return
+        }
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
-        getHelper()?.enableCharging(enabled) { error in
+        helper.enableCharging(enabled) { [weak self] error in
             if let error = error {
+                self?.clearChargingCommand(if: enabled)
                 recordFailure()
                 print("[BatteryManager] Error setting charging enabled (\(enabled)): \(error.localizedDescription)")
             } else {
@@ -491,10 +640,16 @@ class BatteryManager {
     }
 
     func setDischarge(discharging: Bool) {
+        guard claimDischarge(discharging) else { return }
+        guard let helper = getHelper() else {
+            clearDischargeCommand(if: discharging)
+            return
+        }
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
-        getHelper()?.setDischarge(discharging) { error in
+        helper.setDischarge(discharging) { [weak self] error in
             if let error = error {
+                self?.clearDischargeCommand(if: discharging)
                 recordFailure()
                 print("[BatteryManager] Error setting discharge (\(discharging)): \(error.localizedDescription)")
             } else {
@@ -504,10 +659,16 @@ class BatteryManager {
     }
 
     func setMagSafeLED(color: Int) {
+        guard claimLED(color) else { return }
+        guard let helper = getHelper() else {
+            clearLEDCommand(if: color)
+            return
+        }
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
-        getHelper()?.setMagSafeLED(color: color) { error in
+        helper.setMagSafeLED(color: color) { [weak self] error in
             if let error = error {
+                self?.clearLEDCommand(if: color)
                 recordFailure()
                 print("[BatteryManager] Error setting MagSafe LED: \(error.localizedDescription)")
             } else {
@@ -632,5 +793,17 @@ class BatteryManager {
             helper.getVersion(reply: reply)
         }
         return version != helperPingTimeoutSentinel
+    }
+
+    private var cachedChargeControlMode: ChargeControlMode?
+
+    func currentChargeControlMode() async -> ChargeControlMode {
+        if let cached = cachedChargeControlMode { return cached }
+        let raw = await withHelperCallback(fallback: -1) { helper, reply in
+            helper.getChargeControlMode(reply: reply)
+        }
+        let mode = ChargeControlMode(rawValue: raw) ?? .legacy
+        cachedChargeControlMode = mode
+        return mode
     }
 }

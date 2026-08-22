@@ -1,11 +1,14 @@
-// FineTune/Audio/Keys/MediaKeyMonitor.swift
+//
+//  MediaKeyMonitor.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 import AudioToolbox
 import CoreGraphics
 import os
 
-/// Intercepts F10/F11/F12 via a `CGEventTap`, swallows them so the native HUD
-/// does not double-fire, and drives the default output device.
 @MainActor
 final class MediaKeyMonitor {
     // MARK: - Collaborators
@@ -19,7 +22,6 @@ final class MediaKeyMonitor {
     private let mediaKeyStatus: MediaKeyStatus
     private let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "MediaKeyMonitor")
 
-    /// Step size applied per keypress (1/16 matches Apple's default cadence).
     private let volumeStep: Float = 1.0 / 16.0
 
     // MARK: - Tap state
@@ -27,22 +29,17 @@ final class MediaKeyMonitor {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    /// Second `.tapDisabledBy*` inside the watchdog window marks the feature offline.
     private var disableWatchdogTask: Task<Void, Never>?
     private(set) var watchdogOpen: Bool = false
 
-    /// 80 ms floor between DDC-tier repeats — DDC write queues saturate at key-repeat rate.
     var lastDDCRepeatTime: DispatchTime?
 
     private var ghostTapProbeTask: Task<Void, Never>?
 
-    /// CGEventTaps are per-session; wake leaves them enabled-but-inert.
     private var workspaceObservers: [NSObjectProtocol] = []
 
     var onRunLoopSourceRemoved: (() -> Void)?
 
-    /// Optional coordinator notified on every volume/mute key event so the menu bar icon
-    /// can flash the current device's transport symbol. Wired by FineTuneApp after init.
     var iconCoordinator: MenuBarIconCoordinator?
 
     init(
@@ -65,7 +62,6 @@ final class MediaKeyMonitor {
     }
 
     deinit {
-        // C callback holds an unretained pointer to self; runloop source must not outlive us.
         if let tap = tap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
@@ -78,7 +74,6 @@ final class MediaKeyMonitor {
 
     // MARK: - Lifecycle
 
-    /// Idempotent. No-op unless media keys are enabled and Accessibility is trusted.
     func start() {
         guard tap == nil else { return }
         guard settingsManager.appSettings.mediaKeyControlEnabled else {
@@ -90,7 +85,6 @@ final class MediaKeyMonitor {
             return
         }
 
-        // NX_SYSDEFINED = 14 (from <IOLLEvent.h>); CGEventType has no Swift case.
         let mask = CGEventMask(1 << 14)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
@@ -117,10 +111,8 @@ final class MediaKeyMonitor {
         logger.info("Media key tap installed")
     }
 
-    /// Reconciles tap state against settings + Accessibility trust. Idempotent.
     func reconcile() {
         if settingsManager.appSettings.mediaKeyControlEnabled && accessibility.isTrusted {
-            // Post-regrant taps can come up inert; arm a probe to surface that to the user.
             let wasOffline = (tap == nil)
             start()
             if wasOffline && tap != nil {
@@ -134,7 +126,6 @@ final class MediaKeyMonitor {
 
     // MARK: - Workspace lifecycle (sleep/wake, session)
 
-    /// Re-enable on wake/session-activate; disable on sleep/deactivate.
     private func subscribeToWorkspaceLifecycle() {
         let nc = NSWorkspace.shared.notificationCenter
         func add(_ name: Notification.Name, _ handler: @escaping () -> Void) {
@@ -167,7 +158,6 @@ final class MediaKeyMonitor {
 
     // MARK: - Ghost-tap probe
 
-    /// Checks `tapIsEnabled` ~1.5s after install; marks offline if the kernel dropped it.
     private func armGhostTapProbe() {
         cancelGhostTapProbe()
         ghostTapProbeTask = Task { @MainActor [weak self] in
@@ -186,7 +176,6 @@ final class MediaKeyMonitor {
         ghostTapProbeTask = nil
     }
 
-    /// Tears down the tap + runloop source. Must be called before dealloc.
     func stop() {
         disableWatchdogTask?.cancel()
         disableWatchdogTask = nil
@@ -207,7 +196,6 @@ final class MediaKeyMonitor {
 
     // MARK: - Event handling
 
-    /// Applies a decoded `MediaKeyEvent` to the default output device.
     func handle(_ event: MediaKeyEvent) {
         let volumeMonitor = audioEngine.deviceVolumeMonitor
         let deviceID = volumeMonitor.defaultDeviceID
@@ -229,8 +217,6 @@ final class MediaKeyMonitor {
         )
     }
 
-    /// Volume/mute state machine. `.ddc` tier coalesces repeats to an 80 ms floor;
-    /// hardware/software tiers pass them through. Mute repeats are dropped upstream.
     func handleCore(
         event: MediaKeyEvent,
         deviceID: AudioDeviceID,
@@ -250,7 +236,6 @@ final class MediaKeyMonitor {
                 return
             }
             let newVolume = min(1.0, currentVolume + volumeStep)
-            // Volume-up from muted unmutes (system HUD parity).
             if currentMute {
                 setMute(deviceID, false)
             }
@@ -267,7 +252,6 @@ final class MediaKeyMonitor {
             }
             let newVolume = max(0, currentVolume - volumeStep)
             let willBeSilent = newVolume <= 0.001
-            // muted+audible → unmute; unmuted+silent → auto-mute (system HUD parity).
             if currentMute && !willBeSilent {
                 setMute(deviceID, false)
             } else if !currentMute && willBeSilent {
@@ -289,7 +273,6 @@ final class MediaKeyMonitor {
         }
     }
 
-    /// `true` if this repeat falls inside the 80 ms floor and should be dropped.
     private func isDDCRepeatCoalesced() -> Bool {
         let now = DispatchTime.now()
         if let last = lastDDCRepeatTime {
@@ -302,10 +285,7 @@ final class MediaKeyMonitor {
 
     // MARK: - Tap-disabled watchdog
 
-    /// Kernel disabled the tap. One-shot re-enable; second disable inside 5s marks offline.
     func handleTapDisabled() {
-        // Runtime Accessibility revocation — tear down and let the permission card surface.
-        // `isOffline` stays false here; it's reserved for kernel-stall ("Retry") scenarios.
         if !accessibility.isTrusted {
             logger.warning("Tap disabled and Accessibility no longer trusted — stopping tap")
             disableWatchdogTask?.cancel()
@@ -319,7 +299,6 @@ final class MediaKeyMonitor {
         logger.info("Tap disabled by kernel — attempting re-enable")
 
         if watchdogOpen {
-            // Second disable inside the 5s window — feature is offline.
             logger.error("Second tap-disable inside watchdog window; marking media keys offline")
             mediaKeyStatus.isOffline = true
             disableWatchdogTask?.cancel()
@@ -344,12 +323,9 @@ final class MediaKeyMonitor {
 
     // MARK: - Callback bridge
 
-    /// Returns `true` if the caller should swallow the event.
     fileprivate func processSystemDefined(_ cgEvent: CGEvent) -> Bool {
-        // Pass through if disabled mid-race; never silently eat another app's media keys.
         guard settingsManager.appSettings.mediaKeyControlEnabled else { return false }
         guard let nsEvent = NSEvent(cgEvent: cgEvent) else { return false }
-        // Subtype 8 is the media-key channel; aux-button / brightness are pass-through.
         guard nsEvent.subtype.rawValue == 8 else { return false }
         let data1 = nsEvent.data1
         guard let mediaEvent = decoder.decode(data1: data1) else { return false }
@@ -362,8 +338,6 @@ final class MediaKeyMonitor {
 
 // MARK: - CGEventTap C callback
 
-// Tap installs on `CFRunLoopGetMain()` so this runs on main; `assumeIsolated`
-// preserves ordering against the next event (a Task-hop would reorder).
 private let mediaKeyTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
     guard let userInfo = userInfo else {
         return Unmanaged.passUnretained(event)
@@ -377,7 +351,6 @@ private let mediaKeyTapCallback: CGEventTapCallBack = { _, type, event, userInfo
         return nil
     }
 
-    // NX_SYSDEFINED = 14; no Swift case in CGEventType.
     guard type.rawValue == 14 else {
         return Unmanaged.passUnretained(event)
     }

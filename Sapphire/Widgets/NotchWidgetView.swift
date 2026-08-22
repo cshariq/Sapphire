@@ -270,6 +270,8 @@ struct NotchWidgetView: View {
             BlipHubView(navigationStack: navigationStack)
         case .circleToSearch:
             CircleToSearchResultsView(navigationStack: navigationStack)
+        case .updateAvailable:
+            UpdateAvailableWidgetView()
         }
     }
 

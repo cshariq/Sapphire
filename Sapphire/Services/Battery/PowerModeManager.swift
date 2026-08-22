@@ -79,15 +79,13 @@ class PowerModeManager: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async {
             var error: NSDictionary?
-            if let script = NSAppleScript(source: scriptSource) {
-                if script.executeAndReturnError(&error) == nil {
-                    if let err = error {
-                        print("[PowerModeManager] AppleScript error: \(err)")
-                    }
-                } else {
-                    Task { @MainActor in
-                        self.isLowPowerModeActive = enabled
-                    }
+            if AppleScriptRunner.execute(scriptSource, error: &error) == nil {
+                if let err = error {
+                    print("[PowerModeManager] AppleScript error: \(err)")
+                }
+            } else {
+                Task { @MainActor in
+                    self.isLowPowerModeActive = enabled
                 }
             }
         }

@@ -98,6 +98,7 @@ struct ClipboardWidgetView: View {
 
 struct ClipboardPlayerView: View {
     @Binding var navigationStack: [NotchWidgetMode]
+    @EnvironmentObject var settings: SettingsModel
     @ObservedObject private var clipboardManager = ClipboardManager.shared
     @State private var searchText = ""
     @State private var showSearch = false
@@ -160,20 +161,8 @@ struct ClipboardPlayerView: View {
                     LazyVStack(spacing: 8) {
                         ForEach(filteredItems.prefix(40)) { item in
                             NotchSwipeRow(
-                                leading: NotchSwipeAction(
-                                    systemImage: "square.and.arrow.up",
-                                    tint: .blue
-                                ) {
-                                    clipboardManager.shareItem(item)
-                                },
-                                trailing: NotchSwipeAction(
-                                    systemImage: "trash.fill",
-                                    tint: .red
-                                ) {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                        clipboardManager.removeItem(id: item.id)
-                                    }
-                                }
+                                leading: leadingAction(for: item),
+                                trailing: trailingAction(for: item)
                             ) {
                                 clipboardRow(item)
                             }
@@ -338,6 +327,48 @@ struct ClipboardPlayerView: View {
                 Image(systemName: item.isImage ? "photo" : "doc.text")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(item.isImage ? .purple : .blue)
+            }
+        }
+    }
+
+    private func leadingAction(for item: ClipboardItem) -> NotchSwipeAction? {
+        switch settings.settings.swipeActionSettings.clipboardLeading {
+        case .none:
+            return nil
+        case .share:
+            return NotchSwipeAction(systemImage: "square.and.arrow.up", tint: .blue) {
+                clipboardManager.shareItem(item)
+            }
+        case .copy:
+            return NotchSwipeAction(systemImage: "doc.on.doc", tint: .cyan) {
+                clipboardManager.copyItem(item)
+            }
+        case .delete:
+            return NotchSwipeAction(systemImage: "trash.fill", tint: .red) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    clipboardManager.removeItem(id: item.id)
+                }
+            }
+        }
+    }
+
+    private func trailingAction(for item: ClipboardItem) -> NotchSwipeAction? {
+        switch settings.settings.swipeActionSettings.clipboardTrailing {
+        case .none:
+            return nil
+        case .share:
+            return NotchSwipeAction(systemImage: "square.and.arrow.up", tint: .blue) {
+                clipboardManager.shareItem(item)
+            }
+        case .copy:
+            return NotchSwipeAction(systemImage: "doc.on.doc", tint: .cyan) {
+                clipboardManager.copyItem(item)
+            }
+        case .delete:
+            return NotchSwipeAction(systemImage: "trash.fill", tint: .red) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    clipboardManager.removeItem(id: item.id)
+                }
             }
         }
     }

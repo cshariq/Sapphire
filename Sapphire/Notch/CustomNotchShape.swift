@@ -26,6 +26,11 @@ struct CustomNotchShape: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite,
+              rect.width.isFinite, rect.height.isFinite else {
+            return Path()
+        }
+
         let adjustedCornerRadius = cornerRadius
         let adjustedBottomCornerRadius = bottomCornerRadius
 

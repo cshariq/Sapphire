@@ -26,14 +26,22 @@ final class LockScreenState: ObservableObject {
     @Published var isCaffeineActive: Bool = false
     @Published var isFaceIDEnabled: Bool = false
     @Published var isBluetoothUnlockEnabled: Bool = false
+    @Published var faceIDRequiresPassword: Bool = false
 }
 
-final class DynamicFocusWindow: NSPanel {
+final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
     var isFocusable: Bool = false
+    var forceMouseEventPassthrough: Bool = false {
+        didSet {
+            guard forceMouseEventPassthrough != oldValue else { return }
+            scheduleMouseEventPassthroughRefresh()
+        }
+    }
     private var interactiveContentFrame: CGRect = .zero
     private var diagnosticsTimer: Timer?
     private var isHandlingMouseInteraction = false
     private var lastPolledMousePoint: CGPoint?
+    private var passthroughRefreshPending = false
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "NotchDiagnostics")
     private var passthroughRefreshCount = 0
     private var sendEventCount = 0
@@ -53,6 +61,22 @@ final class DynamicFocusWindow: NSPanel {
         defer flag: Bool
     ) {
         super.init(contentRect: contentRect, styleMask: style, backing: bufferingType, defer: flag)
+        if #available(macOS 15.0, *) {
+            delegate = self
+        }
+    }
+
+    private var isProvidingFieldEditor = false
+
+    func windowWillReturnFieldEditor(_ window: NSWindow, to client: Any?) -> Any? {
+        guard !isProvidingFieldEditor else { return nil }
+        isProvidingFieldEditor = true
+        defer { isProvidingFieldEditor = false }
+        guard let editor = window.fieldEditor(true, for: client) as? NSTextView else { return nil }
+        if #available(macOS 15.0, *) {
+            editor.writingToolsBehavior = .none
+        }
+        return editor
     }
 
     @available(*, unavailable)
@@ -65,17 +89,16 @@ final class DynamicFocusWindow: NSPanel {
     }
 
     func updateInteractiveContentFrame(_ frame: CGRect) {
-        let normalizedFrame = frame.integral.insetBy(dx: -1, dy: -1)
         let previousFrame = interactiveContentFrame
 
-        if !normalizedFrame.isNull, !normalizedFrame.isEmpty {
-            interactiveContentFrame = normalizedFrame
-        } else if let contentBounds = contentView?.bounds, !contentBounds.isEmpty {
-            interactiveContentFrame = contentBounds
+        if frame.isNull || frame.isEmpty {
+            interactiveContentFrame = .zero
+        } else {
+            interactiveContentFrame = frame.integral.insetBy(dx: -1, dy: -1)
         }
 
         guard interactiveContentFrame != previousFrame else { return }
-        refreshMouseEventPassthrough(force: true)
+        scheduleMouseEventPassthroughRefresh()
     }
 
     func containsInteractivePoint(_ point: CGPoint) -> Bool {
@@ -111,7 +134,7 @@ final class DynamicFocusWindow: NSPanel {
                 .rightMouseDown, .rightMouseUp, .rightMouseDragged,
                 .otherMouseDown, .otherMouseUp, .otherMouseDragged,
                 .mouseMoved, .mouseEntered, .mouseExited:
-            refreshMouseEventPassthrough(force: true)
+            scheduleMouseEventPassthroughRefresh()
         default:
             break
         }
@@ -123,11 +146,31 @@ final class DynamicFocusWindow: NSPanel {
         if NSEvent.pressedMouseButtons == 0 {
             isHandlingMouseInteraction = false
         }
-        refreshMouseEventPassthrough(force: true, forceEnable: forceEnable)
+        scheduleMouseEventPassthroughRefresh(forceEnable: forceEnable)
+    }
+
+    private func scheduleMouseEventPassthroughRefresh(forceEnable: Bool = false) {
+        guard !passthroughRefreshPending else { return }
+        passthroughRefreshPending = true
+        let pendingForceEnable = forceEnable
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.passthroughRefreshPending = false
+            self.refreshMouseEventPassthrough(force: true, forceEnable: pendingForceEnable)
+        }
     }
 
     private func refreshMouseEventPassthrough(force: Bool = false, forceEnable: Bool = false) {
         guard contentView != nil else { return }
+
+        if forceMouseEventPassthrough {
+            if !ignoresMouseEvents {
+                ignoresMouseEvents = true
+                ignoreStateFlipCount += 1
+            }
+            return
+        }
+
         guard force || isHandlingMouseInteraction || isVisible else {
             return
         }
@@ -139,8 +182,6 @@ final class DynamicFocusWindow: NSPanel {
         lastPolledMousePoint = mousePoint
 
         let effectiveInteractiveFrame = interactiveContentFrame.isEmpty ? (contentView?.bounds ?? .zero) : interactiveContentFrame
-        // Pad the enable region so the window starts receiving events again as
-        // the cursor re-enters, instead of staying stuck in ignoresMouseEvents.
         let enableFrame = effectiveInteractiveFrame.insetBy(dx: -12, dy: -12)
 
         let shouldReceiveMouseEvents: Bool
@@ -318,7 +359,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        RemoteViewCrashGuardInstall()
+
+        NSApp.setActivationPolicy(.accessory)
+    }
+
     func applicationDidFinishLaunching(_ aNotification: Notification) {
+        AccessibilityTrustMonitor.shared.start()
+
         SapphireStandardMenu.installIfNeeded()
         NotificationCenter.default.addObserver(
             self,
@@ -326,7 +375,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             name: .sapphireHelperConnectionLost,
             object: nil
         )
-        UserDefaults.standard.register(defaults: ["NSApplicationCrashOnExceptions": true])
         SapphireAnalytics.bootstrap()
 
         if settingsModel.settings.sportsWidgetEnabled {
@@ -614,15 +662,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         Analytics.logEvent("main_app_started", parameters: nil)
 
+        transitionToAgentApp()
+
         HelperManager.shared.installIfNeeded()
-        XPCClient.shared.start()
 
         createNotchWindow()
         _ = circleToSearchManager
         _ = keyboardShortcutManager
         _ = lidAngleAutomationManager
         setupStatusBarItem()
-        transitionToAgentApp()
         initializeBackgroundServices()
         if settingsModel.settings.menuBarEnabled {
             if statusBarController == nil {
@@ -692,6 +740,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             object: nil
         )
 
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemWillSleep),
+            name: NSWorkspace.willSleepNotification,
+            object: nil
+        )
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(displayDidSleep),
+            name: NSWorkspace.screensDidSleepNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(displayDidWake),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleApplicationDidBecomeActive),
@@ -718,16 +786,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @objc private func systemDidWake(notification: NSNotification) {
         batteryManager.reconnectHelper()
-        musicManager.spotifyPrivateAPI.checkAndReconnectIfNeeded()
+        HelperManager.shared.checkIfRunning(force: true)
+
+        let reconnectDelay: TimeInterval = AuthenticationManager.shared.isFaceIDSessionActive ? 4.0 : 1.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + reconnectDelay) { [weak self] in
+            self?.musicManager.spotifyPrivateAPI.checkAndReconnectIfNeeded()
+        }
         Task {
             await SubscriptionManager.shared.validateSubscriptionStatus()
         }
+        AuthenticationManager.shared.handleSystemDidWake()
+    }
+
+    @objc private func systemWillSleep(notification: NSNotification) {
+        AuthenticationManager.shared.handleDisplayWillSleep()
+    }
+
+    @objc private func displayDidSleep(notification: NSNotification) {
+        AuthenticationManager.shared.handleDisplayWillSleep()
+    }
+
+    @objc private func displayDidWake(notification: NSNotification) {
+        AuthenticationManager.shared.handleDisplayDidWake()
+        onDisplayWake()
     }
 
     @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
         HelperManager.shared.updateStatus()
         Task {
-            await evaluateHelperConnection(showAlertOnFailure: true)
             await SubscriptionManager.shared.validateSubscriptionStatus()
         }
     }
@@ -800,6 +886,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         isScreenLocked = true
         lockScreenState.isUnlocked = false
         lockScreenState.isAuthenticating = false
+        lockScreenState.faceIDRequiresPassword = false
         lockScreenState.isCaffeineActive = caffeineManager.isActive
         lockScreenState.isFaceIDEnabled = settingsModel.settings.faceIDUnlockEnabled &&
                                           settingsModel.settings.hasRegisteredFaceID
@@ -810,13 +897,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         if !isAuthenticating {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 guard self.isScreenLocked else { return }
                 self.startAuthentication()
             }
         }
 
-        weatherActivityViewModel.fetch()
+        if !weatherActivityViewModel.hasValidWeather {
+            weatherActivityViewModel.fetch()
+        }
 
         if settingsModel.settings.lockScreenShowNotch, let notchWindow {
             lockScreenManager.delegateWindow(notchWindow)
@@ -826,92 +915,123 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         var widgetConfigs: [LockScreenManager.LockScreenWidgetConfig] = []
 
         if settingsModel.settings.lockScreenShowInfoWidget {
-            let infoWidgetView = LockScreenInfoWidgetView()
-                .environmentObject(settingsModel)
-                .environmentObject(weatherActivityViewModel)
-                .environmentObject(calendarService)
-                .environmentObject(musicManager)
-                .environmentObject(focusModeManager)
-                .environmentObject(bluetoothManager)
-                .environmentObject(batteryMonitor)
-                .environmentObject(timerManager)
-
             widgetConfigs.append(.init(
                 id: "infoWidget",
-                view: AnyView(infoWidgetView),
                 initialSize: .zero,
                 positioner: lockScreenManager.calculateInfoWidgetFrame(size:screen:)
-            ))
+            ) { manager, initialFrame, screen in
+                manager.displayView(
+                    LockScreenInfoWidgetView()
+                        .environmentObject(self.settingsModel)
+                        .environmentObject(self.weatherActivityViewModel)
+                        .environmentObject(self.calendarService)
+                        .environmentObject(self.musicManager)
+                        .environmentObject(self.focusModeManager)
+                        .environmentObject(self.bluetoothManager)
+                        .environmentObject(self.batteryMonitor)
+                        .environmentObject(self.timerManager),
+                    withId: "infoWidget",
+                    initialFrame: initialFrame,
+                    positioner: manager.calculateInfoWidgetFrame(size:screen:),
+                    windowLevel: .mainMenu + 2,
+                    on: screen
+                )
+            })
         }
 
         if settingsModel.settings.lockScreenShowMainWidget &&
            !settingsModel.settings.lockScreenMainWidgets.isEmpty {
-            let mainWidgetContainer = LockScreenMainWidgetContainerView()
-                .environmentObject(settingsModel)
-                .environmentObject(musicManager)
-                .environmentObject(calendarService)
-                .environmentObject(BatteryStatusManager.shared)
-                .environmentObject(focusModeManager)
-                .environmentObject(timerManager)
-                .environmentObject(batteryMonitor)
-                .environmentObject(bluetoothManager)
             widgetConfigs.append(.init(
                 id: "mainWidgetContainer",
-                view: AnyView(mainWidgetContainer),
                 initialSize: .zero,
                 positioner: lockScreenManager.calculateMainWidgetFrame(size:screen:)
-            ))
+            ) { manager, initialFrame, screen in
+                manager.displayView(
+                    LockScreenMainWidgetContainerView()
+                        .environmentObject(self.settingsModel)
+                        .environmentObject(self.musicManager)
+                        .environmentObject(self.calendarService)
+                        .environmentObject(BatteryStatusManager.shared)
+                        .environmentObject(self.focusModeManager)
+                        .environmentObject(self.timerManager)
+                        .environmentObject(self.batteryMonitor)
+                        .environmentObject(self.bluetoothManager),
+                    withId: "mainWidgetContainer",
+                    initialFrame: initialFrame,
+                    positioner: manager.calculateMainWidgetFrame(size:screen:),
+                    windowLevel: .mainMenu + 2,
+                    on: screen
+                )
+            })
         }
 
         if settingsModel.settings.lockScreenShowMiniWidgets &&
            !settingsModel.settings.lockScreenMiniWidgets.isEmpty {
-            let miniWidgetView = LockScreenMiniWidgetView()
-                .environmentObject(settingsModel)
-                .environmentObject(weatherActivityViewModel)
-                .environmentObject(calendarService)
-                .environmentObject(musicManager)
-                .environmentObject(batteryMonitor)
-                .environmentObject(bluetoothManager)
-                .environmentObject(batteryEstimator)
-                .environmentObject(focusModeManager)
-                .environmentObject(timerManager)
-
             widgetConfigs.append(.init(
                 id: "miniWidgets",
-                view: AnyView(miniWidgetView),
                 initialSize: .zero,
                 positioner: lockScreenManager.calculateMiniWidgetFrame(size:screen:)
-            ))
+            ) { manager, initialFrame, screen in
+                manager.displayView(
+                    LockScreenMiniWidgetView()
+                        .environmentObject(self.settingsModel)
+                        .environmentObject(self.weatherActivityViewModel)
+                        .environmentObject(self.calendarService)
+                        .environmentObject(self.musicManager)
+                        .environmentObject(self.batteryMonitor)
+                        .environmentObject(self.bluetoothManager)
+                        .environmentObject(self.batteryEstimator)
+                        .environmentObject(self.focusModeManager)
+                        .environmentObject(self.timerManager),
+                    withId: "miniWidgets",
+                    initialFrame: initialFrame,
+                    positioner: manager.calculateMiniWidgetFrame(size:screen:),
+                    windowLevel: .mainMenu + 2,
+                    on: screen
+                )
+            })
         }
-
-        let fullScreenMusicPane = LockScreenFullScreenMusicPane()
-            .environmentObject(settingsModel)
-            .environmentObject(musicManager)
 
         widgetConfigs.append(.init(
             id: "fullScreenMusicPane",
-            view: AnyView(fullScreenMusicPane),
             initialSize: .zero,
             positioner: lockScreenManager.calculateFullScreenMusicFrame(size:screen:),
             windowLevel: .mainMenu + 4
-        ))
+        ) { manager, initialFrame, screen in
+            manager.displayView(
+                LockScreenFullScreenMusicPane()
+                    .environmentObject(self.settingsModel)
+                    .environmentObject(self.musicManager),
+                withId: "fullScreenMusicPane",
+                initialFrame: initialFrame,
+                positioner: manager.calculateFullScreenMusicFrame(size:screen:),
+                windowLevel: .mainMenu + 4,
+                on: screen
+            )
+        })
 
         lockScreenManager.setupAndShowWindows(configs: widgetConfigs, on: mainScreen)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func screenIsUnlocked() {
+        lockScreenManager.hideAndDestroyWindows()
+
+        LockScreenMusicPaneController.shared.reset()
+
+        authManager.purgeFaceIDAfterUnlock()
+
         guard isScreenLocked else { return }
         isScreenLocked = false
         isAuthenticating = false
         lockScreenState.isUnlocked = true
         lockScreenState.isAuthenticating = false
+        lockScreenState.faceIDRequiresPassword = false
 
-        authManager.stopAllAuthentication()
+        authManager.cancelPendingPasswordInjection(reason: "screen unlocked")
 
         lockScreenManager.hideAndDestroyWindows()
         liveActivityManager.finishLockScreenActivity()
-        authManager.didCompleteUnlock()
 
         if let notchWindow, let cgsSpace {
             lockScreenManager.removeWindow(notchWindow)
@@ -924,6 +1044,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard isScreenLocked, !isAuthenticating else { return }
         isAuthenticating = true
         lockScreenState.isAuthenticating = true
+        lockScreenState.faceIDRequiresPassword = false
 
         if settingsModel.settings.bluetoothUnlockEnabled {
             authManager.startBluetoothAuthentication()
@@ -931,6 +1052,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if settingsModel.settings.faceIDUnlockEnabled && settingsModel.settings.hasRegisteredFaceID {
             authManager.startFaceIDAuthentication()
         }
+    }
+
+    func markFaceIDRequiresPassword() {
+        lockScreenState.faceIDRequiresPassword = true
     }
 
     // MARK: - Activation Policy
@@ -944,6 +1069,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func applicationWillTerminate(_ aNotification: Notification) {
         settingsModel.flushPendingSave()
+        BatteryManager.shared.stopSleepBatteryLogging()
         cleanupNotchWindow()
 
         if Thread.isMainThread {
@@ -1063,6 +1189,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Notch Window
 
     private var isCreatingNotchWindow = false
+    private var liveActivityStartTask: Task<Void, Never>?
 
     func createNotchWindow() {
         guard !isCreatingNotchWindow else { return }
@@ -1146,6 +1273,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         window.contentView = hosting
         window.orderFront(nil)
+
+        scheduleLiveActivityStart()
+    }
+
+    private func scheduleLiveActivityStart() {
+        guard liveActivityStartTask == nil else { return }
+        liveActivityStartTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            self?.liveActivityManager.start()
+        }
     }
 
     func makeNotchWindowFocusable() {
@@ -1264,6 +1402,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         let root = LyricsDetachedWindowView()
             .environmentObject(musicManager)
+            .environmentObject(settingsModel)
 
         let hosting = FocusableHostingView(rootView: root)
         window.contentView = hosting
@@ -1422,8 +1561,4 @@ class KeyableWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
-    override func becomeKey() {
-        super.becomeKey()
-        NSApp.activate(ignoringOtherApps: true)
-    }
 }

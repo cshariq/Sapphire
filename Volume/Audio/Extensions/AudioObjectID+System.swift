@@ -1,4 +1,9 @@
-// FineTune/Audio/Extensions/AudioObjectID+System.swift
+//
+//  AudioObjectID+System.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 import Foundation
 
@@ -23,11 +28,9 @@ extension AudioObjectID {
 // MARK: - Default Device
 
 extension AudioDeviceID {
-    /// Reads the main audio output device (what user selects in Sound preferences)
-    /// NOTE: Use DeviceVolumeMonitor.defaultDeviceUID when available, as it's cached and listener-updated
     static func readDefaultOutputDevice() throws -> AudioDeviceID {
         try AudioObjectID.system.read(
-            kAudioHardwarePropertyDefaultOutputDevice,  // Main audio output, NOT system alert sounds
+            kAudioHardwarePropertyDefaultOutputDevice,
             defaultValue: AudioDeviceID.unknown
         )
     }
@@ -53,8 +56,6 @@ extension AudioDeviceID {
 // MARK: - System Output Device (for alerts and system sounds)
 
 extension AudioDeviceID {
-    /// Reads the system output device (for alerts, notifications, and system sounds)
-    /// This is separate from the default output device used by apps
     static func readSystemOutputDevice() throws -> AudioDeviceID {
         try AudioObjectID.system.read(
             kAudioHardwarePropertyDefaultSystemOutputDevice,
@@ -62,7 +63,6 @@ extension AudioDeviceID {
         )
     }
 
-    /// Sets the system output device (for alerts, notifications, and system sounds)
     static func setSystemOutputDevice(_ deviceID: AudioDeviceID) throws {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
@@ -84,8 +84,6 @@ extension AudioDeviceID {
 // MARK: - Default Input Device
 
 extension AudioDeviceID {
-    /// Reads the main audio input device (microphone selected in Sound preferences)
-    /// NOTE: Use DeviceVolumeMonitor.defaultInputDeviceUID when available, as it's cached and listener-updated
     static func readDefaultInputDevice() throws -> AudioDeviceID {
         try AudioObjectID.system.read(
             kAudioHardwarePropertyDefaultInputDevice,
@@ -93,7 +91,6 @@ extension AudioDeviceID {
         )
     }
 
-    /// Sets the default input device (microphone)
     static func setDefaultInputDevice(_ deviceID: AudioDeviceID) throws {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,

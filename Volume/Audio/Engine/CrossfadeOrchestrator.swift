@@ -1,8 +1,12 @@
-// FineTune/Audio/Engine/CrossfadeOrchestrator.swift
+//
+//  CrossfadeOrchestrator.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AudioToolbox
 import os
 
-/// Error types for crossfade and tap operations
 enum CrossfadeError: LocalizedError {
     case tapCreationFailed(OSStatus)
     case aggregateCreationFailed(OSStatus)
@@ -26,14 +30,8 @@ enum CrossfadeError: LocalizedError {
     }
 }
 
-/// Configuration for crossfade behavior during device switching.
-/// The crossfade overlaps audio from old and new devices using equal-power curves
-/// to maintain perceived loudness during the transition.
 enum CrossfadeConfig {
-    /// 50ms is short enough to feel instantaneous but long enough to avoid clicks.
-    /// Shorter durations risk audible artifacts; longer durations feel sluggish.
-    /// Can be overridden via UserDefaults for testing/debugging.
-    static let defaultDuration: TimeInterval = 0.050  // 50ms
+    static let defaultDuration: TimeInterval = 0.050
 
     static var duration: TimeInterval {
         let custom = UserDefaults.standard.double(forKey: "FineTuneCrossfadeDuration")

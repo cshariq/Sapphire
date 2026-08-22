@@ -12,26 +12,37 @@ import AppKit
 struct MirrorCameraPreviewView: NSViewRepresentable {
     let session: AVCaptureSession
     var flipHorizontally: Bool = true
+    var sessionEpoch: UInt64 = 0
 
     func makeNSView(context: Context) -> NSView {
         let host = MirrorPreviewHostView()
         host.wantsLayer = true
         host.layer = CALayer()
+        attachPreview(to: host)
+        host.boundSessionEpoch = sessionEpoch
+        return host
+    }
 
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let host = nsView as? MirrorPreviewHostView else { return }
+        if host.boundSessionEpoch != sessionEpoch || host.previewLayer?.session !== session {
+            host.previewLayer?.removeFromSuperlayer()
+            host.previewLayer = nil
+            attachPreview(to: host)
+            host.boundSessionEpoch = sessionEpoch
+        }
+        host.previewLayer?.frame = host.bounds
+        if let preview = host.previewLayer {
+            applyMirroring(to: preview)
+        }
+    }
+
+    private func attachPreview(to host: MirrorPreviewHostView) {
         let preview = AVCaptureVideoPreviewLayer(session: session)
         preview.videoGravity = .resizeAspectFill
         preview.backgroundColor = NSColor.black.cgColor
         host.previewLayer = preview
         host.layer?.addSublayer(preview)
-
-        applyMirroring(to: preview)
-
-        return host
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        guard let host = nsView as? MirrorPreviewHostView, let preview = host.previewLayer else { return }
-        preview.frame = host.bounds
         applyMirroring(to: preview)
     }
 
@@ -47,6 +58,7 @@ struct MirrorCameraPreviewView: NSViewRepresentable {
 
 final class MirrorPreviewHostView: NSView {
     var previewLayer: AVCaptureVideoPreviewLayer?
+    var boundSessionEpoch: UInt64 = 0
 
     override func layout() {
         super.layout()

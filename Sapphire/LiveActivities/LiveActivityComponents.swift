@@ -250,9 +250,15 @@ struct statsLiveActivityView {
                 switch item {
                 case .highLevel(let statType):
                     switch statType {
-                    case .cpu: return "\(Int((payload.cpu?.totalUsage ?? 0).isFinite ? (payload.cpu!.totalUsage * 100) : 0))%"
-                    case .ram: return "\(Int((payload.ram?.usage ?? 0).isFinite ? (payload.ram!.usage * 100) : 0))%"
-                    case .gpu: return "\(Int((payload.gpu?.utilization ?? 0).isFinite ? (payload.gpu!.utilization! * 100) : 0))%"
+                    case .cpu:
+                        let usage = payload.cpu?.totalUsage ?? 0
+                        return "\(Int(usage.isFinite ? usage * 100 : 0))%"
+                    case .ram:
+                        let usage = payload.ram?.usage ?? 0
+                        return "\(Int(usage.isFinite ? usage * 100 : 0))%"
+                    case .gpu:
+                        let utilization = payload.gpu?.utilization ?? 0
+                        return "\(Int(utilization.isFinite ? utilization * 100 : 0))%"
                     case .disk: return "\(Units(bytes: payload.disk?.activity.read ?? 0).getReadableSpeed(base: .byte)) R / \(Units(bytes: payload.disk?.activity.write ?? 0).getReadableSpeed(base: .byte)) W"
                     case .systemPower: return String(format: "%.1f W", payload.systemPower ?? 0)
                     case .batteryPower: return String(format: "%.1f W", payload.batteryPower ?? 0)
@@ -1108,6 +1114,95 @@ struct UpdateAvailableActivityView {
     }
 }
 
+struct UpdateAvailableWidgetView: View {
+    @ObservedObject private var updateChecker = UpdateChecker.shared
+
+    private var availableVersion: String? {
+        if case .available(let version, _) = updateChecker.status {
+            return version
+        }
+        return nil
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "square.and.arrow.down.badge.clock")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(.cyan)
+
+            VStack(spacing: 3) {
+                Text("Update Available")
+                    .font(.title3.bold())
+                    .foregroundColor(.white.opacity(0.95))
+                if let availableVersion {
+                    Text("Version \(availableVersion) is ready to install.")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("How to update")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                stepRow(number: 1, text: "Open the About page in Settings")
+                stepRow(number: 2, text: "Click \"Download Update\"")
+                stepRow(number: 3, text: "Click \"Install and Relaunch\"")
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            Button(action: openAboutSettings) {
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape.fill")
+                    Text("Open About in Settings")
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.black)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Color.cyan)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Text("Updates are installed from the About page in Sapphire's settings.")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.45))
+                .multilineTextAlignment(.center)
+        }
+        .padding(20)
+        .frame(width: 380)
+        .foregroundColor(.white)
+    }
+
+    private func stepRow(number: Int, text: String) -> some View {
+        HStack(spacing: 10) {
+            Text("\(number)")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.black)
+                .frame(width: 20, height: 20)
+                .background(Color.cyan)
+                .clipShape(Circle())
+            Text(text)
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.85))
+        }
+    }
+
+    private func openAboutSettings() {
+        (NSApp.delegate as? AppDelegate)?.openSettingsWindow()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            NotificationCenter.default.post(
+                name: NSNotification.Name("SapphireSelectSection"),
+                object: SettingsSection.about.rawValue
+            )
+        }
+    }
+}
+
 struct FocusModeActivityView {
 
     private static let colorMap: [String: Color] = [
@@ -1233,11 +1328,10 @@ struct WeatherActivityView {
     }
 
     private struct RightView: View {
-        @EnvironmentObject var settings: SettingsModel
         let data: ProcessedWeatherData
 
         var body: some View {
-            let temp = settings.settings.weatherUseCelsius ? data.temperatureMetric : data.temperature
+            let temp = SettingsModel.shared.settings.weatherUseCelsius ? data.temperatureMetric : data.temperature
             Text("\(temp)°")
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .foregroundColor(.white)
@@ -1514,11 +1608,19 @@ struct AudioMessageView: View {
 private struct AnimatedLockIcon: View {
     @EnvironmentObject var lockScreenState: LockScreenState
 
+    private var lockTint: Color {
+        if lockScreenState.isUnlocked { return .white.opacity(0.8) }
+        if lockScreenState.faceIDRequiresPassword { return .orange }
+        return .white.opacity(0.8)
+    }
+
     var body: some View {
         Image(systemName: lockScreenState.isUnlocked ? "lock.open.fill" : "lock.fill")
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.8))
+            .foregroundStyle(lockTint)
             .contentTransition(.symbolEffect(.replace.downUp.byLayer))
+            .animation(.easeInOut(duration: 0.3), value: lockScreenState.faceIDRequiresPassword)
+            .help(lockScreenState.faceIDRequiresPassword ? "Face ID locked — unlock with your password" : "")
     }
 }
 
@@ -1542,7 +1644,7 @@ private struct LockScreenStatusIndicatorView: View {
                             .transition(.opacity)
                     }
 
-                    else if state.isAuthenticating {
+                    else if state.isAuthenticating, !state.faceIDRequiresPassword {
                         if state.isFaceIDEnabled {
                             Image(systemName: "faceid")
                                 .font(.system(size: 16, weight: .bold))
@@ -1561,6 +1663,7 @@ private struct LockScreenStatusIndicatorView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: state.isUnlocked)
+        .animation(.easeInOut(duration: 0.3), value: state.faceIDRequiresPassword)
     }
 }
 

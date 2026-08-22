@@ -1,8 +1,11 @@
-// FineTune/Utilities/DeviceIconCache.swift
+//
+//  DeviceIconCache.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 
-/// LRU cache for device icons to avoid repeated disk I/O on BT device reconnects.
-/// Thread-safe: accessed only from @MainActor contexts.
 @MainActor
 final class DeviceIconCache {
     static let shared = DeviceIconCache()
@@ -15,7 +18,6 @@ final class DeviceIconCache {
         self.maxSize = maxSize
     }
 
-    /// Returns cached icon or loads via the provided closure and caches it.
     func icon(for uid: String, loader: () -> NSImage?) -> NSImage? {
         if let cached = cache[uid] {
             moveToFront(uid)
@@ -26,7 +28,6 @@ final class DeviceIconCache {
         return icon
     }
 
-    /// Clears the cache (useful for testing or memory pressure).
     func clear() {
         cache.removeAll()
         order.removeAll()
@@ -41,7 +42,6 @@ final class DeviceIconCache {
         cache[uid] = icon
         order.insert(uid, at: 0)
 
-        // Evict oldest entries if over capacity
         while order.count > maxSize {
             if let removed = order.popLast() {
                 cache.removeValue(forKey: removed)

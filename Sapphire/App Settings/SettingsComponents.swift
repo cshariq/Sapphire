@@ -654,6 +654,38 @@ struct ToggleRow: View {
     }
 }
 
+struct SwipeActionPickerRow<Action: Hashable & Identifiable>: View {
+    let title: String
+    let description: String
+    @Binding var selection: Action
+    let options: [Action]
+    let label: (Action) -> String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                if !description.isEmpty {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            Picker("", selection: $selection) {
+                ForEach(options) { option in
+                    Text(label(option)).tag(option)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 150)
+        }
+        .padding()
+    }
+}
+
 extension Int {
     func formattedMinutes() -> String {
         let interval = TimeInterval(self * 60)

@@ -9,90 +9,20 @@ import SwiftUI
 import AppKit
 import CoreGraphics
 
-private enum NotchDeviceClass: String {
-    case macBookPro14
-    case macBookPro16
-    case macBookAir13
-    case macBookAir15
-    case unknown
-}
-
-public enum DisplayDetection {
-
-    public enum DeviceClass {
-        case macBookPro14
-        case macBookPro16
-        case macBookAir13
-        case macBookAir15
-        case unknown
-    }
-
-    public static func detectDeviceClass() -> DeviceClass {
-        guard let model = getModelIdentifier() else {
-            return .unknown
-        }
-
-        switch model {
-        case "MacBookPro18,3", "MacBookPro18,4", "Mac14,5", "Mac14,9", "Mac15,3", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,1", "Mac16,6", "Mac16,8":
-            return .macBookPro14
-
-        case "MacBookPro18,1", "MacBookPro18,2", "Mac14,6", "Mac14,10", "Mac15,7", "Mac15,9", "Mac15,11", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,5", "Mac16,7":
-            return .macBookPro16
-
-        case "MacBookAir10,1", "Mac14,2", "Mac15,12", "Mac16,12":
-            return .macBookAir13
-
-        case "Mac14,15", "Mac15,13", "Mac16,13":
-            return .macBookAir15
-
-        default:
-            return .unknown
-        }
-    }
-}
-
 struct NotchConfiguration {
-    // MARK: - Device-based Base Notch Sizes
-    fileprivate static func baseNotchSize() -> (width: CGFloat, height: CGFloat) {
-        switch DisplayDetection.detectDeviceClass() {
-        case .macBookPro14:
-            return (width: 214, height: 36.2)
-        case .macBookPro16:
-            return (width: 195, height: 32)
-        case .macBookAir13:
-            return (width: 190, height: 32.5)
-        case .macBookAir15:
-            return (width: 205, height: 32)
-        case .unknown:
-            return (width: 195, height: 32)
-        }
-    }
+    private static let designReferenceResolution = CGSize(width: 1728, height: 1117)
 
-    private static func deviceBaselineLogicalResolution() -> CGSize {
-        switch DisplayDetection.detectDeviceClass() {
-        case .macBookPro14:
-            return CGSize(width: 1512, height: 982)
-        case .macBookPro16:
-            return CGSize(width: 1728, height: 1117)
-        case .macBookAir13:
-            return CGSize(width: 1470, height: 956)
-        case .macBookAir15:
-            return CGSize(width: 1710, height: 1107)
-        case .unknown:
-            return CGSize(width: 1728, height: 1117)
-        }
-    }
+    private static let fallbackClosedNotchSize = (width: CGFloat(185), height: CGFloat(32))
+
     // MARK: - Screen Size Adjustments
     static func screenWidthAdjustment(for screen: NSScreen?) -> CGFloat {
-        let baseline = deviceBaselineLogicalResolution()
-        let currentWidth = (screen ?? NSScreen.main)?.frame.size.width ?? baseline.width
-        return currentWidth / baseline.width
+        let currentWidth = (screen ?? NSScreen.main)?.frame.size.width ?? designReferenceResolution.width
+        return currentWidth / designReferenceResolution.width
     }
 
     static func screenHeightAdjustment(for screen: NSScreen?) -> CGFloat {
-        let baseline = deviceBaselineLogicalResolution()
-        let currentHeight = (screen ?? NSScreen.main)?.frame.size.height ?? baseline.height
-        return currentHeight / baseline.height
+        let currentHeight = (screen ?? NSScreen.main)?.frame.size.height ?? designReferenceResolution.height
+        return currentHeight / designReferenceResolution.height
     }
 
     static var screenWidthAdjustment: CGFloat {
@@ -103,9 +33,46 @@ struct NotchConfiguration {
         screenHeightAdjustment(for: NSScreen.main)
     }
 
+    // MARK: - Measured Notch Geometry
+    private static var referenceScreen: NSScreen? {
+        CursorPosition.visibleNotchWindow?.screen
+            ?? CursorPosition.targetNotchScreen()
+            ?? NSScreen.main
+    }
+    
+    /// Credits: https://github.com/TheBoredTeam/boring.notch
+    static func measuredNotchSize(for screen: NSScreen?) -> (width: CGFloat, height: CGFloat) {
+        let resolvedScreen = screen ?? referenceScreen
+        guard let screen = resolvedScreen else {
+            return fallbackClosedNotchSize
+        }
+
+        var width = fallbackClosedNotchSize.width
+        var height = fallbackClosedNotchSize.height
+
+        if let leftInset = screen.auxiliaryTopLeftArea?.width,
+           let rightInset = screen.auxiliaryTopRightArea?.width {
+            width = screen.frame.width - leftInset - rightInset + 4
+        }
+
+        if screen.safeAreaInsets.top > 0 {
+            height = screen.safeAreaInsets.top
+        } else {
+            let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
+            if menuBarHeight > 0 {
+                height = menuBarHeight
+            }
+        }
+
+        return (
+            width: max(60, min(width, screen.frame.width * 0.5)),
+            height: max(1, min(height, 120))
+        )
+    }
+
     // MARK: - Basic Size Configuration
-    static var universalWidth: CGFloat { baseNotchSize().width * screenWidthAdjustment }
-    static var universalHeight: CGFloat { baseNotchSize().height * screenHeightAdjustment }
+    static var universalWidth: CGFloat { measuredNotchSize(for: referenceScreen).width }
+    static var universalHeight: CGFloat { measuredNotchSize(for: referenceScreen).height }
     static var initialSize: CGSize { CGSize(width: universalWidth, height: universalHeight) }
     static var initialCornerRadius: CGFloat = 10 * screenHeightAdjustment
 
@@ -324,7 +291,6 @@ struct ResolvedNotchConfiguration {
         let targetScreen = screen ?? CursorPosition.targetNotchScreen() ?? NSScreen.main
         let screenWidthAdj = NotchConfiguration.screenWidthAdjustment(for: targetScreen)
         let screenHeightAdj = NotchConfiguration.screenHeightAdjustment(for: targetScreen)
-        let baseSize = NotchConfiguration.baseNotchSize()
 
         if settings.useCustomNotchConfiguration {
             let custom = settings.customNotchConfiguration
@@ -357,8 +323,9 @@ struct ResolvedNotchConfiguration {
             self.contentHorizontalPadding = custom.contentHorizontalPadding * screenWidthAdj
 
         } else {
-            self.universalWidth = baseSize.width * screenWidthAdj
-            self.universalHeight = baseSize.height * screenHeightAdj
+            let measured = NotchConfiguration.measuredNotchSize(for: targetScreen)
+            self.universalWidth = measured.width
+            self.universalHeight = measured.height
             self.initialCornerRadius = 10 * screenHeightAdj
             self.topBuffer = NotchConfiguration.topBuffer
             self.scaleFactor = NotchConfiguration.scaleFactor

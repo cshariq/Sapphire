@@ -1,4 +1,9 @@
-// FineTune/Audio/Keys/MediaKeyEventDecoder.swift
+//
+//  MediaKeyEventDecoder.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 
 enum MediaKeyEvent: Equatable {
@@ -11,8 +16,6 @@ protocol MediaKeyEventDecoding: Sendable {
     func decode(data1: Int) -> MediaKeyEvent?
 }
 
-/// Decodes `NSSystemDefined.data1` using `<IOKit/hidsystem/ev_keymap.h>`
-/// constants: NX_KEYTYPE_SOUND_UP=0, SOUND_DOWN=1, MUTE=7. Unknown subtypes → nil.
 struct IOKitMediaKeyDecoder: MediaKeyEventDecoding {
     func decode(data1: Int) -> MediaKeyEvent? {
         let keyType = Int32((data1 & 0xFFFF0000) >> 16)

@@ -116,14 +116,8 @@ final class StatusBarController {
     private func updateAlwaysHiddenItem() {
         if SettingsModel.shared.settings.enableAlwaysHiddenSection {
             guard alwaysHiddenItem == nil else { return }
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.alwaysHiddenItem == nil else { return }
-                guard SettingsModel.shared.settings.enableAlwaysHiddenSection else { return }
-                self.alwaysHiddenItem = NSStatusBar.system.statusItem(withLength: Lengths.collapsed)
-                self.alwaysHiddenItem?.autosaveName = AutosaveKeys.alwaysHidden
-                self.updateItems()
-            }
-            return
+            alwaysHiddenItem = NSStatusBar.system.statusItem(withLength: Lengths.collapsed)
+            alwaysHiddenItem?.autosaveName = AutosaveKeys.alwaysHidden
         } else {
             guard let item = alwaysHiddenItem else { return }
             NSStatusBar.system.removeStatusItem(item)

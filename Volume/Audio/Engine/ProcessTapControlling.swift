@@ -1,10 +1,9 @@
-/// Abstraction over process tap controllers for testability.
-///
-/// **Threading:** Intentionally NOT `@MainActor`. Concrete implementations straddle
-/// the main thread (property access from AudioEngine) and the CoreAudio HAL I/O thread
-/// (audio processing callbacks). Thread safety for mutable properties (`volume`, `isMuted`,
-/// `currentDeviceVolume`, `isDeviceMuted`) is achieved via `nonisolated(unsafe)` atomic
-/// field access on the concrete type, not actor isolation.
+//
+//  ProcessTapControlling.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 protocol ProcessTapControlling: AnyObject {
     var app: AudioApp { get }
     var volume: Float { get set }
@@ -33,12 +32,10 @@ protocol ProcessTapControlling: AnyObject {
 }
 
 extension ProcessTapControlling {
-    /// Convenience: defaults sourceDeviceDead to false.
     func switchDevice(to newDeviceUID: String, preferredTapSourceDeviceUID: String?) async throws {
         try await switchDevice(to: newDeviceUID, preferredTapSourceDeviceUID: preferredTapSourceDeviceUID, sourceDeviceDead: false)
     }
 
-    /// Convenience: defaults sourceDeviceDead to false.
     func updateDevices(to newDeviceUIDs: [String], preferredTapSourceDeviceUID: String?) async throws {
         try await updateDevices(to: newDeviceUIDs, preferredTapSourceDeviceUID: preferredTapSourceDeviceUID, sourceDeviceDead: false)
     }
@@ -48,6 +45,5 @@ extension ProcessTapControlling {
     }
 
     func refreshTapSource(_ preferredDeviceUID: String?) async throws {
-        // Default no-op for mocks that don't override
     }
 }

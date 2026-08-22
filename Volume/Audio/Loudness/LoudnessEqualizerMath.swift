@@ -1,3 +1,9 @@
+//
+//  LoudnessEqualizerMath.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 
 enum LoudnessEqualizerMath {

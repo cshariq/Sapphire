@@ -30,6 +30,9 @@ struct RichTextEditor: NSViewRepresentable {
 
         let textView = NSTextView()
         textView.delegate = context.coordinator
+        if #available(macOS 15.0, *) {
+            textView.writingToolsBehavior = .none
+        }
         textView.isRichText = true
         textView.allowsUndo = true
         textView.isEditable = true

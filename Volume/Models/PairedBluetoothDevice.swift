@@ -1,10 +1,12 @@
-// FineTune/Models/PairedBluetoothDevice.swift
+//
+//  PairedBluetoothDevice.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import AppKit
 
-/// A Bluetooth device that is paired with macOS but not currently connected.
-/// These devices are not visible in the CoreAudio HAL.
 struct PairedBluetoothDevice: Identifiable, Hashable {
-    /// MAC address string "XX:XX:XX:XX:XX:XX" — stable identity across sessions
     let id: String
     let name: String
     let icon: NSImage?

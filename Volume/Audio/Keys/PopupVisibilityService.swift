@@ -1,7 +1,11 @@
-// FineTune/Audio/Keys/PopupVisibilityService.swift
+//
+//  PopupVisibilityService.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-21
+
 import Foundation
 
-/// `true` while the menu-bar popup is visible. Read by the HUD to skip overlay display.
 @Observable
 @MainActor
 final class PopupVisibilityService {

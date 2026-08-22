@@ -29,8 +29,6 @@ class WeatherActivityViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
-
-        fetch()
     }
 
     func fetch() {

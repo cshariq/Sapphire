@@ -397,6 +397,34 @@ enum MediaSource: String, Codable, CaseIterable, Identifiable {
         case .appleMusic: "Apple Music"
         }
     }
+
+    var preferredBundleID: String? {
+        switch self {
+        case .system: return nil
+        case .spotify: return "com.spotify.client"
+        case .appleMusic: return "com.apple.Music"
+        }
+    }
+}
+
+extension Settings {
+    func isMediaAppVisible(bundleID: String?) -> Bool {
+        guard let bundleID, !bundleID.isEmpty else { return true }
+        let normalized = bundleID.lowercased()
+
+        if mediaSource != .system, prioritizeMediaSource,
+           let preferred = mediaSource.preferredBundleID?.lowercased() {
+            if preferred == "com.spotify.client" {
+                return normalized.hasPrefix("com.spotify.client")
+            }
+            return normalized == preferred
+        }
+
+        if let explicit = mediaAppVisibility[bundleID] ?? mediaAppVisibility[normalized] {
+            return explicit
+        }
+        return true
+    }
 }
 
 enum NotchDisplayTarget: String, Codable, CaseIterable, Identifiable {
@@ -488,10 +516,12 @@ enum MusicLongPressAction: String, Codable, CaseIterable, Identifiable, Equatabl
 enum MusicLongPressTarget: String, CaseIterable, Identifiable {
     case previous
     case next
+    case playPause
+    case playlists
+    case devices
     case like
     case shuffle
     case repeatMode
-    case playPause
 
     var id: String { rawValue }
 
@@ -499,12 +529,23 @@ enum MusicLongPressTarget: String, CaseIterable, Identifiable {
         switch self {
         case .previous: return "Previous"
         case .next: return "Next"
+        case .playPause: return "Play / Pause"
+        case .playlists: return "Queue"
+        case .devices: return "Devices"
         case .like: return "Like"
         case .shuffle: return "Shuffle"
         case .repeatMode: return "Repeat"
-        case .playPause: return "Play / Pause"
         }
     }
+
+    var isTransportControl: Bool {
+        switch self {
+        case .previous, .next, .playPause: return true
+        default: return false
+        }
+    }
+
+    var isSecondaryButton: Bool { !isTransportControl }
 
     var pickerOptions: [MusicLongPressAction] {
         switch self {
@@ -517,10 +558,22 @@ enum MusicLongPressTarget: String, CaseIterable, Identifiable {
         switch self {
         case .previous: return settings.musicLongPressPrevious
         case .next: return settings.musicLongPressNext
+        case .playPause: return settings.musicLongPressPlayPause
+        case .playlists: return settings.musicLongPressPlaylists
+        case .devices: return settings.musicLongPressDevices
         case .like: return settings.musicLongPressLike
         case .shuffle: return settings.musicLongPressShuffle
         case .repeatMode: return settings.musicLongPressRepeat
-        case .playPause: return settings.musicLongPressPlayPause
+        }
+    }
+
+    static func from(buttonType: MusicPlayerButtonType) -> MusicLongPressTarget? {
+        switch buttonType {
+        case .playlists: return .playlists
+        case .devices: return .devices
+        case .like: return .like
+        case .shuffle: return .shuffle
+        case .repeat: return .repeatMode
         }
     }
 }
@@ -530,18 +583,18 @@ extension Settings {
         switch target {
         case .previous: musicLongPressPrevious = action
         case .next: musicLongPressNext = action
+        case .playPause: musicLongPressPlayPause = action
+        case .playlists: musicLongPressPlaylists = action
+        case .devices: musicLongPressDevices = action
         case .like: musicLongPressLike = action
         case .shuffle: musicLongPressShuffle = action
         case .repeatMode: musicLongPressRepeat = action
-        case .playPause: musicLongPressPlayPause = action
         }
     }
 
     func resolvedSkipHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction {
-        guard musicLongPressActionsEnabled else { return .seek }
-        let configured = target.defaultAction(in: self)
-        if configured == .none || configured == .seek { return .seek }
-        return configured
+        if !musicLongPressActionsEnabled { return .seek }
+        return target.defaultAction(in: self)
     }
 
     func resolvedAccessoryHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction? {
@@ -549,6 +602,55 @@ extension Settings {
         let configured = target.defaultAction(in: self)
         return configured == .none ? nil : configured
     }
+}
+
+// MARK: - Swipe Action Customization
+
+enum NotesSwipeAction: String, Codable, CaseIterable, Identifiable {
+    case toggleDone, copy, delete, none
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .toggleDone: return "Toggle Done"
+        case .copy: return "Copy"
+        case .delete: return "Delete"
+        case .none: return "None"
+        }
+    }
+}
+
+enum ClipboardSwipeAction: String, Codable, CaseIterable, Identifiable {
+    case share, copy, delete, none
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .share: return "Share"
+        case .copy: return "Copy"
+        case .delete: return "Delete"
+        case .none: return "None"
+        }
+    }
+}
+
+enum FileDropSwipeAction: String, Codable, CaseIterable, Identifiable {
+    case share, delete, none
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .share: return "Share"
+        case .delete: return "Delete"
+        case .none: return "None"
+        }
+    }
+}
+
+struct SwipeActionSettings: Codable, Equatable {
+    var notesLeading: NotesSwipeAction = .toggleDone
+    var notesTrailing: NotesSwipeAction = .delete
+    var clipboardLeading: ClipboardSwipeAction = .share
+    var clipboardTrailing: ClipboardSwipeAction = .delete
+    var fileDropLeading: FileDropSwipeAction = .share
+    var fileDropTrailing: FileDropSwipeAction = .delete
 }
 
 // MARK: - Main Settings Struct
@@ -594,6 +696,7 @@ struct Settings: Codable, Equatable {
     var hideFromScreenSharing: Bool = false
     var notchDisplayTarget: NotchDisplayTarget = .macbookDisplay
     var expandOnHover: Bool = false
+    var expandOnHoverDelay: TimeInterval = 0.0
     var capsLockHorizontalLockEnabled: Bool = false
     var capsLockHorizontalLockAppStates: [String: Bool] = [:]
     var launchpadEnabled: Bool = false
@@ -614,6 +717,8 @@ struct Settings: Codable, Equatable {
     var intelligenceNVIDIAModel: NVIDIAModelOption = .auto
     var pinEnabled: Bool = true
     var hideNotchWhenInactive: Bool = false
+    var swipeToHideNotch: Bool = false
+    var preventNotchExpandWhenLocked: Bool = false
     var releaseChannel: ReleaseChannel = .stable
     var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .spacer, .battery, .multiAudio, .caffeine, .pin]
     var circleToSearchEnabled: Bool = true
@@ -724,9 +829,6 @@ struct Settings: Codable, Equatable {
         if !SubscriptionAccess.hasAccess(to: .financeLiveActivity) {
             financeLiveActivityEnabled = false
         }
-        if !SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates) {
-            releaseChannel = .stable
-        }
     }
 
     mutating func normalizeCollectionOrders() {
@@ -776,6 +878,7 @@ struct Settings: Codable, Equatable {
         currentFinanceFavoriteSymbol()
     }
 
+    var swipeActionSettings: SwipeActionSettings = .init()
     var swipeToDismissLiveActivity: Bool = true
     var hideLiveActivityInFullScreen: Bool = false
     var hideActivitiesInFullScreen: [String: Bool] = [:]
@@ -786,6 +889,7 @@ struct Settings: Codable, Equatable {
     var focusDisplayMode: FocusDisplayMode = .full
     var mediaSource: MediaSource = .system
     var prioritizeMediaSource: Bool = true
+    var mediaAppVisibility: [String: Bool] = [:]
     var hideLiveActivityWhenSourceActive: Bool = true
     var enableQuickPeekOnHover: Bool = true
     var showQuickPeekOnTrackChange: Bool = true
@@ -795,12 +899,14 @@ struct Settings: Codable, Equatable {
     var twoFingerTapToPauseMusic: Bool = true
     var musicHoldSkipForSecondaryActions: Bool = true
     var musicLongPressActionsEnabled: Bool = true
-    var musicLongPressPrevious: MusicLongPressAction = .shuffle
-    var musicLongPressNext: MusicLongPressAction = .repeatMode
-    var musicLongPressLike: MusicLongPressAction = .none
-    var musicLongPressShuffle: MusicLongPressAction = .none
-    var musicLongPressRepeat: MusicLongPressAction = .none
+    var musicLongPressPrevious: MusicLongPressAction = .none
+    var musicLongPressNext: MusicLongPressAction = .none
     var musicLongPressPlayPause: MusicLongPressAction = .none
+    var musicLongPressPlaylists: MusicLongPressAction = .openDevices
+    var musicLongPressDevices: MusicLongPressAction = .openQueue
+    var musicLongPressLike: MusicLongPressAction = .shuffle
+    var musicLongPressShuffle: MusicLongPressAction = .repeatMode
+    var musicLongPressRepeat: MusicLongPressAction = .like
     var waveformUseGradient: Bool = true
     var useStaticWaveform: Bool = false
     var waveformBarCount: Int = 3
@@ -879,6 +985,8 @@ struct Settings: Codable, Equatable {
     var useHardwareBatteryPercentage: Bool = false
     var controlMagSafeLEDEnabled: Bool = true
     var stopChargingWhenSleeping: Bool = false
+    var logBatteryDuringSleep: Bool = false
+    var sleepLoggingIntervalMinutes: Int = 30
     var dischargeToLimitEnabled: Bool = false
     var oneTimeDischargeEnabled: Bool = false
     var oneTimeDischargeTarget: Int = 20
@@ -908,6 +1016,9 @@ struct Settings: Codable, Equatable {
     var bluetoothUnlockPassiveMode: Bool = false
     var faceIDUnlockEnabled: Bool = false
     var hasRegisteredFaceID: Bool = false
+    var faceIDSpoofLockDuration: Double = 3.0
+    var faceIDAntiSpoofAcceptThreshold: Double = 0.50
+    var faceIDMismatchTimeout: Double = 30.0
     var bluetoothUnlockWakeOnProximity: Bool = true
     var bluetoothUnlockWakeWithoutUnlocking: Bool = false
     var bluetoothUnlockPauseMusicOnLock: Bool = false
@@ -933,6 +1044,7 @@ struct Settings: Codable, Equatable {
     var neardropOpenOnClick: Bool = true
     var clickToOpenFileShelf: Bool = true
     var hoverToOpenFileShelf: Bool = true
+    var removeFileFromShelfAfterDrag: Bool = false
     var launchpadLayout: [[LaunchpadPageItem]] = []
     var weatherUseCelsius: Bool = false
     var weatherUseMetricSystem: Bool = false
@@ -947,6 +1059,7 @@ struct Settings: Codable, Equatable {
     var clickToShowTimerView: Bool = true
     var sleepInClamshell: Bool = true
     var persistentCaffeinateAfterClamshell: Bool = false
+    var caffeinateTimeoutMinutes: Double = 0
     var caffeinateTurnOffScreenUsingLidAngle: Bool = false
     var caffeinateLidAngleTrigger: Double = 15.0
     var lidAnglePauseMediaEnabled: Bool = false
@@ -1235,6 +1348,9 @@ class SettingsModel: ObservableObject {
     @Published var settings: Settings = Settings() {
         didSet {
             guard !isApplyingLoadedSettings else { return }
+            if settings.volumeHUDSoundEnabled != oldValue.volumeHUDSoundEnabled {
+                SystemSoundFeedback.isVolumeChangeFeedbackEnabled = settings.volumeHUDSoundEnabled
+            }
             var sanitized = settings
             sanitized.normalizeCollectionOrders()
             sanitized.disableUnavailablePremiumFeatures()
@@ -1263,8 +1379,11 @@ class SettingsModel: ObservableObject {
         isApplyingLoadedSettings = true
         settings = loaded
         isApplyingLoadedSettings = false
+
+        settings.volumeHUDSoundEnabled = SystemSoundFeedback.isVolumeChangeFeedbackEnabled
+
         applyIntelligenceRuntimePreferences(from: loaded)
-        persistSettingsUnlocked(loaded)
+        persistSettingsUnlocked(settings)
         SettingsPersistence.removeImportedSettingsSnapshots()
 
         NotificationCenter.default.addObserver(
@@ -1299,16 +1418,25 @@ class SettingsModel: ObservableObject {
             loaded = Settings()
         }
 
-        if defaults.object(forKey: "musicLongPressPrevious") == nil {
+        if defaults.object(forKey: "musicLongPressActionsMigratedV2") == nil {
+            loaded.musicLongPressPrevious = .none
+            loaded.musicLongPressNext = .none
+            loaded.musicLongPressPlayPause = .none
+            if loaded.musicLongPressPlaylists == .none {
+                loaded.musicLongPressPlaylists = .openDevices
+            }
+            if loaded.musicLongPressDevices == .none {
+                loaded.musicLongPressDevices = .openQueue
+            }
+            defaults.set(true, forKey: "musicLongPressActionsMigratedV2")
+        } else if defaults.object(forKey: "musicLongPressPrevious") == nil {
             if loaded.musicHoldSkipForSecondaryActions {
                 loaded.musicLongPressActionsEnabled = true
-                loaded.musicLongPressPrevious = .shuffle
-                loaded.musicLongPressNext = .repeatMode
             } else {
                 loaded.musicLongPressActionsEnabled = false
-                loaded.musicLongPressPrevious = .seek
-                loaded.musicLongPressNext = .seek
             }
+            loaded.musicLongPressPrevious = .none
+            loaded.musicLongPressNext = .none
         }
 
         loaded.disableUnavailablePremiumFeatures()
@@ -1351,7 +1479,8 @@ class SettingsModel: ObservableObject {
 
     private func scheduleSaveSettings() {
         pendingSaveWorkItem?.cancel()
-        let snapshot = settings
+        var snapshot = settings
+        snapshot.normalizeCollectionOrders()
         let work = DispatchWorkItem { [weak self] in
             self?.persistSettingsUnlocked(snapshot)
         }
@@ -1367,7 +1496,9 @@ class SettingsModel: ObservableObject {
 
     private func persistSettingsUnlocked(_ settingsToPersist: Settings? = nil) {
         var settingsToSave = settingsToPersist ?? settings
-        settingsToSave.normalizeCollectionOrders()
+        if Thread.isMainThread {
+            settingsToSave.normalizeCollectionOrders()
+        }
         applyIntelligenceRuntimePreferences(from: settingsToSave)
 
         guard let payload = try? SettingsPersistence.encoder.encode(settingsToSave) else {
@@ -1740,7 +1871,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var searchTokens: [String] {
         switch self {
-        case .general: ["startup", "login", "animation", "notch", "system", "behavior", "analytics", "google", "privacy", "tracking", "telemetry"]
+        case .general: ["startup", "login", "animation", "notch", "system", "behavior", "analytics", "google", "privacy", "tracking", "telemetry", "swipe", "hide", "lock"]
         case .widgets: ["widget", "widgets", "reorder", "layout"]
         case .liveActivities: ["live", "activity", "activities", "dynamic", "focus"]
         case .appearance: ["theme", "appearance", "style", "glass", "color", "material"]
@@ -1754,11 +1885,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .hud: ["hud", "overlay", "volume", "brightness", "media"]
         case .notifications: ["notifications", "alerts", "imessage", "facetime", "airdrop"]
         case .neardrop: ["nearby", "share", "drop", "transfer"]
-        case .fileShelf: ["file", "shelf", "drag", "drop", "storage"]
+        case .fileShelf: ["file", "shelf", "drag", "drop", "storage", "remove"]
         case .notes: ["notes", "note", "memo", "quick note"]
         case .clipboard: ["clipboard", "pasteboard", "history", "copy", "paste"]
         case .mirror: ["mirror", "camera", "camera feed", "selfie", "webcam"]
-        case .caffeine: ["caffeinate", "caffeine", "sleep", "awake", "clamshell", "lid"]
+        case .caffeine: ["caffeinate", "caffeine", "sleep", "awake", "clamshell", "lid", "timeout", "timer"]
         case .music: ["music", "media", "spotify", "playback"]
         case .weather: ["weather", "forecast", "temperature", "location"]
         case .calendar: ["calendar", "reminders", "events", "schedule"]

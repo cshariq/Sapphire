@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreLocation
+import Combine
 
 @MainActor
 class WeatherViewModel: ObservableObject {
@@ -14,6 +15,7 @@ class WeatherViewModel: ObservableObject {
 
     private let weatherService = WeatherService.shared
     private let settingsModel = SettingsModel.shared
+    private var cancellables = Set<AnyCancellable>()
 
     @Published private(set) var weatherData: ProcessedWeatherData?
     @Published var locationName: String = "Loading..."
@@ -41,6 +43,13 @@ class WeatherViewModel: ObservableObject {
         Timer.scheduledTimer(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.fetch() }
         }
+
+        NotificationCenter.default.publisher(for: .weatherLocationAuthorizationGranted)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.fetch()
+            }
+            .store(in: &cancellables)
     }
 
     func fetch() {
@@ -64,7 +73,6 @@ class WeatherViewModel: ObservableObject {
                     self.weatherData = data
                     self.updateUI(with: data)
                 case .failure(let error):
-                    self.weatherData = nil
                     self.handleError(error)
                 }
             }
@@ -93,6 +101,10 @@ class WeatherViewModel: ObservableObject {
     }
 
     private func handleError(_ error: Error) {
+        if let weatherData, weatherData.isValid {
+            return
+        }
+
         let useMetricSystem = settingsModel.settings.weatherUseMetricSystem
         let message: String
         if let weatherError = error as? WeatherServiceError {
