@@ -333,6 +333,21 @@ class SpotifyPrivateAPIManager: ObservableObject {
         clientTokenClient = CustomTLSClient(host: "clienttoken.spotify.com", userAgent: commonUserAgent, cookieManager: cookieManager)
         wwwSpotifyClient = CustomTLSClient(host: "www.spotify.com", userAgent: commonUserAgent, cookieManager: cookieManager)
         wgSpclientClient = CustomTLSClient(host: "spclient.wg.spotify.com", userAgent: commonUserAgent, cookieManager: cookieManager)
+
+        let clients: [CustomTLSClient?] = [
+            openSpotifyClient,
+            spclientClient,
+            apiPartnerClient,
+            clientTokenClient,
+            wwwSpotifyClient,
+            wgSpclientClient
+        ]
+        for client in clients {
+            client?.onUnauthorized = { [weak self] in
+                guard let self else { return false }
+                return await self.refreshTokensIfNeeded(force: true)
+            }
+        }
     }
 
     private func resolveSpclientHost() async -> String {
@@ -1555,9 +1570,10 @@ class SpotifyPrivateAPIManager: ObservableObject {
         try await refreshAccessAndClientTokens(reason: "init")
     }
 
-    private var inFlightTokenRefresh: Task<Void, Never>?
+    private var inFlightTokenRefresh: Task<Bool, Never>?
 
-    func refreshTokensIfNeeded(force: Bool = false) async {
+    @discardableResult
+    func refreshTokensIfNeeded(force: Bool = false) async -> Bool {
         let accessStale = force
             || accessToken == nil
             || accessTokenExpiresAt.map { Date().addingTimeInterval(60) >= $0 } ?? true
@@ -1565,23 +1581,25 @@ class SpotifyPrivateAPIManager: ObservableObject {
             || clientToken == nil
             || clientTokenRefreshAt.map { Date() >= $0 } ?? true
 
-        guard accessStale || clientStale else { return }
+        guard accessStale || clientStale else { return true }
 
         if let existing = inFlightTokenRefresh {
-            await existing.value
-            return
+            return await existing.value
         }
-        let task = Task { [weak self] in
-            guard let self else { return }
+        let task = Task { [weak self] () -> Bool in
+            guard let self else { return false }
             do {
                 try await self.refreshAccessAndClientTokens(reason: "transport")
+                return true
             } catch {
                 print("[SpotifyPrivateAPIManager] Token refresh failed (cookies kept): \(error.localizedDescription)")
+                return false
             }
         }
         inFlightTokenRefresh = task
-        await task.value
+        let success = await task.value
         inFlightTokenRefresh = nil
+        return success
     }
 
     private func refreshAccessAndClientTokens(reason: String) async throws {
@@ -1649,7 +1667,10 @@ class SpotifyPrivateAPIManager: ObservableObject {
                 URLQueryItem(name: "totpServer", value: totp)
             ]
             do {
-                let response = try await openSpotifyClient.get(path: components.url!.relativeString)
+                let response = try await openSpotifyClient.get(
+                    path: components.url!.relativeString,
+                    authenticate: false
+                )
                 guard (200...299).contains(response.statusCode), !response.body.isEmpty else {
                     let snippet = String(data: response.body.prefix(120), encoding: .utf8) ?? "<empty>"
                     lastError = SpotAPIError.apiError("token HTTP \(response.statusCode): \(snippet)")
@@ -1979,7 +2000,9 @@ class SpotifyPrivateAPIManager: ObservableObject {
             throw SpotAPIError.authenticationFailed("Not logged in.")
         }
 
-        await refreshTokensIfNeeded(force: false)
+        guard await refreshTokensIfNeeded(force: false) else {
+            throw SpotAPIError.authenticationFailed("Access token refresh failed; refusing authenticated Pathfinder request.")
+        }
 
         let variablesData = try? JSONSerialization.data(withJSONObject: variables, options: .sortedKeys)
         let variablesString = variablesData?.base64EncodedString() ?? ""
@@ -2046,7 +2069,9 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
         if allowAuthRetry, response.statusCode == 401 || response.statusCode == 403 {
             print("[SpotifyPrivateAPIManager] Pathfinder \(operationName) HTTP \(response.statusCode) — refreshing tokens.")
-            await refreshTokensIfNeeded(force: true)
+            guard await refreshTokensIfNeeded(force: true) else {
+                throw SpotAPIError.authenticationFailed("Access token refresh failed after Pathfinder HTTP \(response.statusCode).")
+            }
             return try await pathfinderQueryInternal(
                 operationName: operationName,
                 variables: variables,
@@ -2107,7 +2132,9 @@ class SpotifyPrivateAPIManager: ObservableObject {
             }.value
         } catch SpotAPIError.authenticationFailed(_) where allowAuthRetry {
             print("[SpotifyPrivateAPIManager] Pathfinder \(operationName) auth error — refreshing tokens and retrying once.")
-            await refreshTokensIfNeeded(force: true)
+            guard await refreshTokensIfNeeded(force: true) else {
+                throw SpotAPIError.authenticationFailed("Access token refresh failed after Pathfinder authentication error.")
+            }
             return try await pathfinderQueryInternal(
                 operationName: operationName,
                 variables: variables,

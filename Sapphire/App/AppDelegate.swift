@@ -254,6 +254,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var betaBlockerWindow: NSWindow?
     private var isMainAppRunning = false
     private var subscriptionObservation: AnyCancellable?
+    private var subscriptionValidationTimer: Timer?
 
     private lazy var lockScreenManager = LockScreenManager.shared
     private lazy var lidAngleAutomationManager = LidAngleAutomationManager.shared
@@ -550,6 +551,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         statusBarController = nil
         appearanceManager = nil
 
+        subscriptionValidationTimer?.invalidate()
+        subscriptionValidationTimer = nil
+
         NotificationCenter.default.removeObserver(
             self,
             name: NSApplication.didChangeScreenParametersNotification,
@@ -687,6 +691,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSubscriptionPaywallRequest(_:)), name: .subscriptionPaywallRequested, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSubscriptionSessionRevoked(_:)), name: .subscriptionSessionRevoked, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleAccountPaneOpened), name: .sapphireOpenAccountPane, object: nil)
         UNUserNotificationCenter.current().delegate = self
         NearbyConnectionManager.shared.mainAppDelegate = self
         UpdateChecker.shared.startPeriodicChecks(interval: 5 * 60 * 60)
@@ -695,6 +700,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
 
         scheduleHelperHealthCheck()
+        scheduleSubscriptionValidationTimer()
+    }
+
+    private func scheduleSubscriptionValidationTimer() {
+        subscriptionValidationTimer?.invalidate()
+        subscriptionValidationTimer = Timer.scheduledTimer(withTimeInterval: 5 * 60 * 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                print("[AppDelegate] Periodic subscription validation (5-hour interval).")
+                await SubscriptionManager.shared.validateSubscriptionStatus()
+            }
+        }
+        // Allow the timer to fire while scrolling, etc.
+        RunLoop.current.add(subscriptionValidationTimer!, forMode: .common)
     }
 
     private func scheduleHelperHealthCheck() {
@@ -813,9 +831,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
         HelperManager.shared.updateStatus()
-        Task {
-            await SubscriptionManager.shared.validateSubscriptionStatus()
-        }
+        // Subscription validation is handled by the 5-hour timer,
+        // wake-from-sleep, and network-reconnect triggers instead.
     }
 
     @objc private func handleHelperConnectionLost() {
@@ -1455,6 +1472,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Screen Parameters
 
     private var screenParametersDebounceTimer: Timer?
+
+    @objc func handleAccountPaneOpened() {
+        print("[AppDelegate] Account pane opened — refreshing subscription status.")
+        Task {
+            await SubscriptionManager.shared.validateSubscriptionStatus()
+        }
+    }
 
     @objc func handleSubscriptionPaywallRequest(_ notification: Notification) {
         openSettingsWindow()

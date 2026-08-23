@@ -208,6 +208,33 @@ struct NotchController: View {
         return isMusic && isShowingActivityView
     }
 
+    /// Whether the current live activity requires user interaction (e.g., nearby share waiting for consent, notifications, OTP, eye break, etc.)
+    private var isInteractiveLiveActivity: Bool {
+        guard isLiveActivityActive else { return false }
+        
+        let activityType = liveActivityManager.currentActivity
+        
+        // Activities that are always interactive (use full views with user action buttons)
+        switch activityType {
+        case .nearbyShare:
+            // Check if it's waiting for user consent
+            if let payload = liveActivityManager.currentNearDropPayload,
+               payload.state == .waitingForConsent {
+                return true
+            }
+        case .eyeBreak, .notification, .otp, .parcel:
+            // These activities always show full views with interactive elements
+            return true
+        case .geminiLive, .intelligenceAgent:
+            // Voice interaction activities - users may want to interact with them
+            return true
+        default:
+            break
+        }
+        
+        return false
+    }
+
     private var currentMode: NotchWidgetMode { navigationStack.last ?? .defaultWidgets }
 
     private var notchIconsIntrinsicWidth: CGFloat {
@@ -1462,7 +1489,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     navigationStack = [.fileShelf]
                     notchState = .clickExpanded
                 }
-        } else if settings.settings.expandOnHover && !isFullViewActivity {
+        } else if settings.settings.expandOnHover && !isFullViewActivity && !isInteractiveLiveActivity {
                 if notchState != .clickExpanded {
                     NSApp.activate(ignoringOtherApps: true)
                     notchWindow?.makeKeyAndOrderFront(nil)
@@ -1487,16 +1514,19 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                             guard !self.dragManager.isDraggingInActivationZone else { return }
                             guard self.notchState != .clickExpanded else { return }
                             guard settings.settings.expandOnHover else { return }
+                            guard !self.isInteractiveLiveActivity else { return }
                             self.notchState = .clickExpanded
                         }
                     } else {
                         cancelHoverExpandTask()
+                        guard !isInteractiveLiveActivity else { return }
                         notchState = .clickExpanded
                     }
                 }
             } else {
                 cancelHoverExpandTask()
                 if notchState == .initial || notchState == .autoExpanded {
+                    guard !isInteractiveLiveActivity else { return }
                     notchState = .hoverExpanded
                     haptic()
                 }

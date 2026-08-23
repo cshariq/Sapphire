@@ -149,6 +149,7 @@ final class CustomTLSClient: @unchecked Sendable {
     internal var accessToken: String?
     internal var clientToken: String?
     internal var clientVersion: String?
+    internal var onUnauthorized: (() async -> Bool)?
 
     init(host: String, port: UInt16 = 443, userAgent: String, cookieManager: CookieManager) {
         self.hostName = host
@@ -228,7 +229,8 @@ final class CustomTLSClient: @unchecked Sendable {
         contentType: String? = nil,
         acceptType: String = "*/*",
         additionalHeaders: [String: String]? = nil,
-        authenticate: Bool = true
+        authenticate: Bool = true,
+        allowAuthRetry: Bool = true
     ) async throws -> HTTPResponse {
         // Fail fast while Spotify is throttling us — every request fired during a
         // rate-limit window deepens the block and extends the cooldown.
@@ -273,6 +275,24 @@ final class CustomTLSClient: @unchecked Sendable {
                 .flatMap { Double($0.value.trimmingCharacters(in: .whitespaces)) }
             await SpotifyRateLimitTracker.shared.record(host: hostName, retryAfter: retryAfter)
         }
+        if allowAuthRetry,
+           authenticate,
+           (http.statusCode == 401 || http.statusCode == 403),
+           let onUnauthorized,
+           await onUnauthorized() {
+            return try await performRequest(
+                method: method,
+                path: path,
+                queryItems: queryItems,
+                body: body,
+                contentType: contentType,
+                acceptType: acceptType,
+                additionalHeaders: additionalHeaders,
+                authenticate: authenticate,
+                allowAuthRetry: false
+            )
+        }
+
         let cookies = await cookieManager.cookies(for: hostName)
         return HTTPResponse(statusCode: http.statusCode, headers: responseHeaders, body: data, cookies: cookies)
     }
