@@ -35,7 +35,7 @@ struct NotchConfiguration {
 
     // MARK: - Measured Notch Geometry
     private static var referenceScreen: NSScreen? {
-        CursorPosition.visibleNotchWindow?.screen
+        CursorPosition.visibleNotchWindows.first?.screen
             ?? CursorPosition.targetNotchScreen()
             ?? NSScreen.main
     }

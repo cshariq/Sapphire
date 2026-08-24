@@ -5,6 +5,7 @@
 //  Created by Shariq Charolia on 2026-08-21
 
 import AppKit
+import SwiftUI
 
 extension Notification.Name {
     static let sapphireRevealHiddenNotch = Notification.Name("sapphireRevealHiddenNotch")
@@ -14,7 +15,7 @@ extension Notification.Name {
 final class HiddenNotchRevealMonitor {
     static let shared = HiddenNotchRevealMonitor()
 
-    private var catcherPanel: NSPanel?
+    private var catcherPanels: [NSPanel] = []
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var hasProcessedCurrentGesture = false
@@ -25,13 +26,35 @@ final class HiddenNotchRevealMonitor {
 
     func start(screen: NSScreen?) {
         stop()
-        let targetScreen = screen ?? NSScreen.main
-        guard let targetScreen else { return }
-
-        installCatcher(on: targetScreen)
+        let targetScreens = targetScreens()
+        let screens = targetScreens.isEmpty ? [screen ?? NSScreen.main].compactMap { $0 } : targetScreens
+        
+        for targetScreen in screens {
+            installCatcher(on: targetScreen)
+        }
         installMonitors()
 
         hasProcessedCurrentGesture = true
+    }
+
+    private func targetScreens() -> [NSScreen] {
+        let settings = SettingsModel.shared.settings
+        switch settings.notchDisplayTarget {
+        case .macbookDisplay:
+            if let target = NSScreen.screens.first(where: { screen in
+                if let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+                    return CGDisplayIsBuiltin(displayID) != 0
+                }
+                return false
+            }) {
+                return [target]
+            }
+            return [NSScreen.main].compactMap { $0 }
+        case .mainDisplay:
+            return [NSScreen.main].compactMap { $0 }
+        case .allDisplays:
+            return NSScreen.screens
+        }
     }
 
     func stop() {
@@ -43,8 +66,10 @@ final class HiddenNotchRevealMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
-        catcherPanel?.orderOut(nil)
-        catcherPanel = nil
+        for panel in catcherPanels {
+            panel.orderOut(nil)
+        }
+        catcherPanels.removeAll()
         hasProcessedCurrentGesture = false
         lastGestureTime = 0
     }
@@ -76,7 +101,7 @@ final class HiddenNotchRevealMonitor {
         panel.contentView = PassThroughScrollCatcherView(frame: CGRect(origin: .zero, size: frame.size))
         panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
-        catcherPanel = panel
+        catcherPanels.append(panel)
     }
 
     private func installMonitors() {
@@ -114,7 +139,7 @@ final class HiddenNotchRevealMonitor {
     }
 
     private func isInRevealZone(_ mouse: CGPoint) -> Bool {
-        if let panel = catcherPanel, panel.frame.insetBy(dx: -20, dy: -8).contains(mouse) {
+        if catcherPanels.contains(where: { $0.frame.insetBy(dx: -20, dy: -8).contains(mouse) }) {
             return true
         }
         guard let screen = CursorPosition.screen(containing: mouse) ?? NSScreen.main else {

@@ -3649,7 +3649,7 @@ struct ProximityUnlockSettingsView: View {
             Text("Security").font(.subheadline).bold().padding([.horizontal, .top])
             ToggleRow(
                 title: "Spoof Detection",
-                description: "Block photos, videos, or screen captures from unlocking Face ID. Disable to allow unlock with a photo.",
+                description: "Block photos, videos, or screen captures from unlocking Face ID.",
                 isOn: $settings.settings.faceIDAntiSpoofEnabled
             )
             Divider().padding(.leading, 20)

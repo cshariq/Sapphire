@@ -48,6 +48,7 @@ struct FaceIDRegistrationView: View {
 
     let profileName: String
     @State private var isPulsating = false
+    @State private var displayedHoldProgress = 0.0
 
     private var isRegistered: Bool { cameraController.appState == .registeredAndIdle }
     private var registrationProgress: Double { cameraController.registrationProgress }
@@ -99,15 +100,20 @@ struct FaceIDRegistrationView: View {
                         .stroke(overlayColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                         .frame(width: 300, height: 300)
                         .rotationEffect(.degrees(-90))
-                        .animation(.spring().speed(0.5), value: registrationProgress)
+                        .animation(.easeOut(duration: 0.22), value: registrationProgress)
 
-                    if cameraController.holdProgress > 0 && cameraController.holdProgress < 1.0 && !isRegistered && !isAskExtended {
+                    if !isRegistered && !isAskExtended {
                         Circle()
-                            .trim(from: 0, to: CGFloat(cameraController.holdProgress))
-                            .stroke(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                            .stroke(Color.white.opacity(0.14), lineWidth: 6)
+                            .frame(width: 276, height: 276)
+                    }
+
+                    if displayedHoldProgress > 0 && displayedHoldProgress < 1.0 && !isRegistered && !isAskExtended {
+                        Circle()
+                            .trim(from: 0, to: CGFloat(displayedHoldProgress))
+                            .stroke(Color.white.opacity(0.95), style: StrokeStyle(lineWidth: 6, lineCap: .round))
                             .frame(width: 276, height: 276)
                             .rotationEffect(.degrees(-90))
-                            .animation(.linear(duration: 0.15), value: cameraController.holdProgress)
 
                         VStack {
                             Spacer()
@@ -218,8 +224,22 @@ struct FaceIDRegistrationView: View {
             }
             .padding()
         }
-        .onAppear { cameraController.startRegistration(forProfile: profileName); isPulsating = true }
+        .onAppear {
+            cameraController.startRegistration(forProfile: profileName)
+            isPulsating = true
+        }
         .onDisappear { cameraController.cancelCurrentOperation() }
+        .onChange(of: cameraController.holdProgress) { progress in
+            withAnimation(.linear(duration: 0.12)) {
+                displayedHoldProgress = min(max(progress, 0), 1)
+            }
+        }
+        .onChange(of: cameraController.appState) { state in
+            if case .registering(.scanning) = state { return }
+            withAnimation(.easeOut(duration: 0.18)) {
+                displayedHoldProgress = 0
+            }
+        }
         .onChange(of: isRegistered) { registered in
             if registered { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { presentationMode.wrappedValue.dismiss() } }
         }

@@ -68,9 +68,9 @@ enum FacePoseBucket: String, CaseIterable {
 
     var hint: String {
         switch self {
-        case .center: return "Look straight at the camera"
-        case .left: return "Turn head left"
-        case .right: return "Turn head right"
+        case .center: return "Center your face"
+        case .left: return "Slowly turn left"
+        case .right: return "Slowly turn right"
         case .up: return "Look slightly up"
         case .down: return "Look slightly down"
         case .tiltLeft: return "Tilt head left"
@@ -82,15 +82,15 @@ enum FacePoseBucket: String, CaseIterable {
 
     func matches(yaw: Double, pitch: Double, roll: Double, faceWidth: CGFloat) -> Bool {
         switch self {
-        case .center: return abs(yaw) < 0.20 && abs(roll) < 0.15 && abs(pitch) < 0.15 && faceWidth >= 0.18 && faceWidth <= 0.30
-        case .left: return yaw < -0.16
-        case .right: return yaw > 0.16
-        case .up: return pitch > 0.10
-        case .down: return pitch < -0.10
-        case .tiltLeft: return roll < -0.16
-        case .tiltRight: return roll > 0.16
-        case .closer: return faceWidth > 0.31
-        case .farther: return faceWidth < 0.20 && faceWidth > 0.05
+        case .center: return abs(yaw) < 0.15 && abs(roll) < 0.25 && abs(pitch) < 0.25 && faceWidth >= 0.10 && faceWidth <= 0.34
+        case .left: return yaw < -0.10
+        case .right: return yaw > 0.10
+        case .up: return pitch > 0.08
+        case .down: return pitch < -0.08
+        case .tiltLeft: return roll < -0.12
+        case .tiltRight: return roll > 0.12
+        case .closer: return faceWidth > 0.30
+        case .farther: return faceWidth < 0.18 && faceWidth > 0.05
         }
     }
 }
@@ -221,21 +221,21 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     private var poseBucketSamples: [FacePoseBucket: [[Float]]] = [:]
 
     private var accumulatedEmbeddings: [[Float]] = []
-    private let framesPerPose = 8
+    private let framesPerPose = 4
 
     private let coreOrder: [FacePoseBucket] = [.center, .left, .right]
     private let extendedOrder: [FacePoseBucket] = [.up, .down, .tiltLeft, .tiltRight, .closer, .farther]
 
     private func targetCount(for bucket: FacePoseBucket) -> Int {
         switch bucket {
-        case .center: return 3
-        case .left, .right: return 2
+        case .center: return 2
+        case .left, .right: return 1
         default: return 1
         }
     }
 
     private var verifiedConsecutiveFrames = 0
-    private let embeddingWindowSize = 2
+    private let embeddingWindowSize = 1
 
     private var sessionStartDate: Date?
     private var lastLogTime: TimeInterval = 0
@@ -476,8 +476,6 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
             return
         }
 
-        DispatchQueue.main.async { self.userInstruction = currentTarget.hint }
-
         let yaw = observation.yaw?.doubleValue ?? 0
         let pitch = getPitch(from: observation)
         let roll = observation.roll?.doubleValue ?? 0
@@ -498,10 +496,12 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         if let pose = actualPose {
             let capturedCount = poseBucketSamples[pose]?.count ?? 0
             if capturedCount < targetCount(for: pose) {
+                // Registration builds the user's profile; liveness/spoof checks are intentionally
+                // reserved for authentication so enrollment is not blocked by false positives.
                 guard AntiSpoofQualityGate.passes(observation: observation, pixelBuffer: pixelBuffer) else { return }
 
                 let debugTag = FaceIDConfig.enableDebugImageCapture ? "enroll_f\(frameCounter)" : nil
-                if SettingsModel.shared.settings.faceIDAntiSpoofEnabled,
+                if false && SettingsModel.shared.settings.faceIDAntiSpoofEnabled,
                    let spoof = FaceIDModelManager.shared.evaluateAntiSpoof(
                     pixelBuffer: pixelBuffer,
                     observation: observation,
@@ -549,6 +549,11 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                 }
             }
         } else {
+            DispatchQueue.main.async {
+                if self.userInstruction != currentTarget.hint {
+                    self.userInstruction = currentTarget.hint
+                }
+            }
             if !accumulatedEmbeddings.isEmpty {
                 accumulatedEmbeddings.removeLast()
                 let capturedCount = poseBucketSamples[currentTarget]?.count ?? 0

@@ -248,7 +248,7 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, MainAppDelegate, NSWindowDelegate {
 
-    public var notchWindow: NSWindow?
+    public var notchWindows: [NSWindow] = []
     private var cgsSpace: CGSSpace?
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
@@ -528,12 +528,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         UpdateChecker.shared.stopPeriodicChecks()
 
-        if let window = notchWindow {
+        for window in notchWindows {
             cgsSpace?.windows.remove(window)
             window.orderOut(nil)
             window.close()
-            notchWindow = nil
         }
+        notchWindows.removeAll()
         cgsSpace = nil
 
         settingsWindow?.orderOut(nil)
@@ -923,8 +923,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             weatherActivityViewModel.fetch()
         }
 
-        if settingsModel.settings.lockScreenShowNotch, let notchWindow {
-            lockScreenManager.delegateWindow(notchWindow)
+        if settingsModel.settings.lockScreenShowNotch {
+            for window in notchWindows {
+                lockScreenManager.delegateWindow(window)
+            }
         }
 
         guard let mainScreen = NSScreen.main else { return }
@@ -1049,10 +1051,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         lockScreenManager.hideAndDestroyWindows()
         liveActivityManager.finishLockScreenActivity()
 
-        if let notchWindow, let cgsSpace {
-            lockScreenManager.removeWindow(notchWindow)
-            cgsSpace.windows.insert(notchWindow)
-            notchWindow.orderFront(nil)
+        if let cgsSpace {
+            for window in notchWindows {
+                lockScreenManager.removeWindow(window)
+                cgsSpace.windows.insert(window)
+                window.orderFront(nil)
+            }
         }
     }
 
@@ -1113,12 +1117,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         screenParametersDebounceTimer?.invalidate()
         screenParametersDebounceTimer = nil
 
-        if let window = notchWindow {
+        for window in notchWindows {
             cgsSpace?.windows.remove(window)
             window.orderOut(nil)
             window.close()
-            notchWindow = nil
         }
+        notchWindows.removeAll()
     }
 
     // MARK: - URL Handling
@@ -1212,21 +1216,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         isCreatingNotchWindow = true
         defer { isCreatingNotchWindow = false }
 
-        guard let targetScreen = CursorPosition.targetNotchScreen() else { return }
+        let targetScreens = targetNotchScreens()
+        guard !targetScreens.isEmpty else { return }
 
-        if let existingWindow = notchWindow, existingWindow.screen == targetScreen, existingWindow.isVisible {
-            existingWindow.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
-            return
+        // Remove existing windows that are no longer needed
+        cleanupNotchWindows(excluding: targetScreens)
+
+        // Create windows for screens that don't have one yet
+        for screen in targetScreens {
+            if notchWindows.contains(where: { $0.screen == screen && $0.isVisible }) {
+                // Update sharing type for existing window
+                if let existingWindow = notchWindows.first(where: { $0.screen == screen }) {
+                    existingWindow.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+                }
+                continue
+            }
+
+            createNotchWindowForScreen(screen)
         }
 
-        if let oldWindow = notchWindow {
-            cgsSpace?.windows.remove(oldWindow)
-            oldWindow.orderOut(nil)
-            oldWindow.close()
-            notchWindow = nil
+        scheduleLiveActivityStart()
+    }
+
+    private func targetNotchScreens() -> [NSScreen] {
+        let settings = settingsModel.settings
+        switch settings.notchDisplayTarget {
+        case .macbookDisplay:
+            if let target = NSScreen.screens.first(where: { screen in
+                if let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+                    return CGDisplayIsBuiltin(displayID) != 0
+                }
+                return false
+            }) {
+                return [target]
+            }
+            return [NSScreen.main].compactMap { $0 }
+        case .mainDisplay:
+            return [NSScreen.main].compactMap { $0 }
+        case .allDisplays:
+            return NSScreen.screens
         }
-        let screenFrame = targetScreen.frame
-        let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings, screen: targetScreen)
+    }
+
+    private func createNotchWindowForScreen(_ screen: NSScreen) {
+        let screenFrame = screen.frame
+        let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings, screen: screen)
         let paddedWidth = ceil(screenFrame.width)
         let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
         let rect = NSRect(
@@ -1242,7 +1276,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             backing: .buffered,
             defer: false
         )
-        notchWindow = window
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -1290,7 +1323,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.contentView = hosting
         window.orderFront(nil)
 
-        scheduleLiveActivityStart()
+        notchWindows.append(window)
+    }
+
+    private func cleanupNotchWindows(excluding targetScreens: [NSScreen]) {
+        let targetScreenIDs = Set(targetScreens.map { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID })
+        
+        notchWindows = notchWindows.filter { window in
+            guard let screen = window.screen,
+                  let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+                // Remove window if we can't determine its screen
+                cgsSpace?.windows.remove(window)
+                window.orderOut(nil)
+                window.close()
+                return false
+            }
+            
+            if !targetScreenIDs.contains(displayID) {
+                // Remove window if its screen is no longer in target screens
+                cgsSpace?.windows.remove(window)
+                window.orderOut(nil)
+                window.close()
+                return false
+            }
+            
+            return true
+        }
     }
 
     private func scheduleLiveActivityStart() {
@@ -1303,7 +1361,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func makeNotchWindowFocusable() {
-        guard let window = notchWindow as? DynamicFocusWindow else { return }
+        guard let window = notchWindows.first as? DynamicFocusWindow else { return }
         if previouslyFrontmostApp == nil {
             let currentFrontmost = NSWorkspace.shared.frontmostApplication
             if currentFrontmost?.bundleIdentifier != Bundle.main.bundleIdentifier {
@@ -1317,7 +1375,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func revertNotchWindowFocus() {
-        guard let window = notchWindow as? DynamicFocusWindow else { return }
+        guard let window = notchWindows.first as? DynamicFocusWindow else { return }
         if window.isKeyWindow { window.resignKey() }
         window.isFocusable = false
         window.syncMouseEventPassthrough()
@@ -1329,27 +1387,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func refreshNotchMousePassthrough() {
-        (notchWindow as? DynamicFocusWindow)?.syncMouseEventPassthrough()
+        for window in notchWindows {
+            (window as? DynamicFocusWindow)?.syncMouseEventPassthrough()
+        }
     }
 
     func updateNotchHostWindowHeight(requiredContentHeight: CGFloat) {
-        guard let window = notchWindow else { return }
-        let targetScreen = window.screen ?? CursorPosition.targetNotchScreen()
-        guard let targetScreen else { return }
+        for window in notchWindows {
+            let targetScreen = window.screen ?? CursorPosition.targetNotchScreen()
+            guard let targetScreen else { return }
 
-        let config = ResolvedNotchConfiguration(from: settingsModel.settings, screen: targetScreen)
-        let baselineHeight = max(
-            config.initialSize.height + config.topBuffer + 24,
-            targetScreen.frame.height * 0.42
-        )
-        let desiredHeight = max(baselineHeight, requiredContentHeight + config.topBuffer + 36)
-        let paddedHeight = min(ceil(desiredHeight), targetScreen.visibleFrame.height)
-        var frame = window.frame
-        let newY = targetScreen.frame.maxY - paddedHeight
-        guard abs(frame.height - paddedHeight) > 2 || abs(frame.origin.y - newY) > 2 else { return }
-        frame.origin.y = newY
-        frame.size.height = paddedHeight
-        window.setFrame(frame, display: true, animate: false)
+            let config = ResolvedNotchConfiguration(from: settingsModel.settings, screen: targetScreen)
+            let baselineHeight = max(
+                config.initialSize.height + config.topBuffer + 24,
+                targetScreen.frame.height * 0.42
+            )
+            let desiredHeight = max(baselineHeight, requiredContentHeight + config.topBuffer + 36)
+            let paddedHeight = min(ceil(desiredHeight), targetScreen.visibleFrame.height)
+            var frame = window.frame
+            let newY = targetScreen.frame.maxY - paddedHeight
+            guard abs(frame.height - paddedHeight) > 2 || abs(frame.origin.y - newY) > 2 else { return }
+            frame.origin.y = newY
+            frame.size.height = paddedHeight
+            window.setFrame(frame, display: true, animate: false)
+        }
     }
 
     // MARK: - Settings Window
@@ -1509,7 +1570,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func updateWindowSharing(hide: Bool) {
         let sharingType: NSWindow.SharingType = hide ? .none : .readOnly
-        notchWindow?.sharingType = sharingType
+        for window in notchWindows {
+            window.sharingType = sharingType
+        }
         onboardingWindow?.sharingType = sharingType
         settingsWindow?.sharingType = sharingType
         lyricsWindow?.sharingType = sharingType

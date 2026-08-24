@@ -14,6 +14,12 @@ enum CursorPosition {
         }
     }
 
+    static var visibleNotchWindows: [NSWindow] {
+        NSApplication.shared.windows.filter { window in
+            window is DynamicFocusWindow && window.isVisible
+        }
+    }
+
     static func swiftUIGlobalPoint(in window: NSWindow?) -> CGPoint? {
         guard let window, let contentView = window.contentView else { return nil }
         let mouseInWindow = window.mouseLocationOutsideOfEventStream

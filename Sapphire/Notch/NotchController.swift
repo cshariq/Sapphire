@@ -2145,9 +2145,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func startHiddenNotchSwipeMonitor() {
-        HiddenNotchRevealMonitor.shared.start(
-            screen: notchWindow?.screen ?? CursorPosition.targetNotchScreen()
-        )
+        HiddenNotchRevealMonitor.shared.start(screen: nil)
     }
 
     private func stopHiddenNotchSwipeMonitor() {

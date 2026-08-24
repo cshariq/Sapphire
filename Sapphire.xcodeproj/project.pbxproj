@@ -1483,7 +1483,7 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.68;
+				MARKETING_VERSION = 2.72;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
@@ -1570,7 +1570,7 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.68;
+				MARKETING_VERSION = 2.72;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
