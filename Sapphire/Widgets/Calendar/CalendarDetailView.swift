@@ -14,17 +14,16 @@ private struct Weekday: Identifiable {
 }
 
 struct CalendarDetailView: View {
+    @EnvironmentObject var settings: SettingsModel
     @StateObject private var viewModel = InteractiveCalendarViewModel()
     @StateObject private var calendarService = CalendarService()
 
     @State private var isMonthlyView: Bool = false
     @Namespace private var calendarAnimation
 
-    private let weekdayHeaders: [Weekday] = [
-        Weekday(symbol: "S"), Weekday(symbol: "M"), Weekday(symbol: "T"),
-        Weekday(symbol: "W"), Weekday(symbol: "T"), Weekday(symbol: "F"),
-        Weekday(symbol: "S")
-    ]
+    private var weekdayHeaders: [Weekday] {
+        settings.settings.calendarStartOfWeek.weekdayHeaders.map { Weekday(symbol: String($0.prefix(1))) }
+    }
 
     private var combinedScheduleItems: [ScheduleItem] {
         let events = calendarService.eventsForSelectedDate.compactMap { event -> ScheduleItem? in
@@ -72,6 +71,7 @@ struct CalendarDetailView: View {
         .frame(width: 580, height: 320)
         .foregroundColor(.white)
         .onAppear {
+            viewModel.updateStartOfWeek(settings.settings.calendarStartOfWeek)
             calendarService.fetchEvents(for: viewModel.selectedDate)
             calendarService.fetchReminders(for: viewModel.selectedDate)
         }
@@ -79,10 +79,13 @@ struct CalendarDetailView: View {
             calendarService.fetchEvents(for: viewModel.selectedDate)
             calendarService.fetchReminders(for: viewModel.selectedDate)
         }
+        .onChange(of: settings.settings.calendarStartOfWeek) {
+            viewModel.updateStartOfWeek($0)
+        }
     }
 
     private var headerView: some View {
-        let calendar = Calendar.current
+        let cal = viewModel.calendarStartOfWeek.configuredCalendar
 
         return HStack(alignment: .center) {
             HStack(spacing: 0) {
@@ -113,7 +116,8 @@ struct CalendarDetailView: View {
                 }
                 Divider().frame(height: 14)
                 Button(action: {
-                    if let newDate = calendar.date(byAdding: .day, value: -1, to: viewModel.selectedDate) {
+                    let amount = isMonthlyView ? -1 : -7
+                    if let newDate = cal.date(byAdding: .day, value: amount, to: viewModel.selectedDate) {
                         withAnimation(.spring()) { viewModel.selectDate(newDate) }
                     }
                 }) {
@@ -125,7 +129,8 @@ struct CalendarDetailView: View {
                 }
                 Divider().frame(height: 14)
                 Button(action: {
-                    if let newDate = calendar.date(byAdding: .day, value: 1, to: viewModel.selectedDate) {
+                    let amount = isMonthlyView ? 1 : 7
+                    if let newDate = cal.date(byAdding: .day, value: amount, to: viewModel.selectedDate) {
                         withAnimation(.spring()) { viewModel.selectDate(newDate) }
                     }
                 }) {

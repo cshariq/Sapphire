@@ -393,10 +393,6 @@ struct IntelligenceAgentActivityView {
         let label = stepTitle.isEmpty ? status : stepTitle
 
         return HStack(spacing: 10) {
-            if total > 0 {
-                BlipStepProgressRing(progress: progress, current: current, total: total, size: 22, lineWidth: 2.5)
-            }
-
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -413,6 +409,10 @@ struct IntelligenceAgentActivityView {
                         .foregroundStyle(.white.opacity(0.55))
                         .lineLimit(1)
                 }
+            }
+
+            if total > 0 {
+                BlipStepProgressRing(progress: progress, current: current, total: total, size: 20, lineWidth: 5)
             }
         }
         .foregroundColor(.white.opacity(0.92))

@@ -41,7 +41,7 @@ struct SettingsView: View {
                     .frame(width: 250)
 
                 if showAccountPane {
-                    AccountPaneWithRefresh()
+                    AccountSettingsView()
                         .id("account-pane")
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 } else {
@@ -116,52 +116,5 @@ private struct WindowFinder: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-    }
-}
-
-// MARK: - Account Pane with Refresh
-
-private struct AccountPaneWithRefresh: View {
-    @State private var isRefreshing = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Refresh button bar
-            HStack {
-                Spacer()
-                Button(action: {
-                    isRefreshing = true
-                    Task {
-                        await SubscriptionManager.shared.validateSubscriptionStatus()
-                        // Brief delay so the spinner is visible
-                        try? await Task.sleep(for: .milliseconds(600))
-                        await MainActor.run { isRefreshing = false }
-                    }
-                }) {
-                    HStack(spacing: 6) {
-                        if isRefreshing {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                                .frame(width: 16, height: 16)
-                        }
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 12, weight: .medium))
-                        Text("Refresh")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.08))
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(isRefreshing)
-                .padding(.trailing, 16)
-                .padding(.top, 56)
-            }
-
-            AccountSettingsView()
-        }
     }
 }

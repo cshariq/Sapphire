@@ -501,7 +501,8 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                 guard AntiSpoofQualityGate.passes(observation: observation, pixelBuffer: pixelBuffer) else { return }
 
                 let debugTag = FaceIDConfig.enableDebugImageCapture ? "enroll_f\(frameCounter)" : nil
-                if let spoof = FaceIDModelManager.shared.evaluateAntiSpoof(
+                if SettingsModel.shared.settings.faceIDAntiSpoofEnabled,
+                   let spoof = FaceIDModelManager.shared.evaluateAntiSpoof(
                     pixelBuffer: pixelBuffer,
                     observation: observation,
                     debugTag: debugTag
@@ -583,12 +584,13 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
         let activeThreshold: Float = FaceIDConfig.livenessBaseThreshold
 
-        var frameIsReal = false
+        var frameIsReal = true
         var spoofResult: AntiSpoofResult?
 
         let debugTag = FaceIDConfig.enableDebugImageCapture ? "auth_f\(frameCounter)" : nil
 
-        if let liveness = FaceIDModelManager.shared.evaluateAntiSpoof(
+        if SettingsModel.shared.settings.faceIDAntiSpoofEnabled,
+           let liveness = FaceIDModelManager.shared.evaluateAntiSpoof(
             pixelBuffer: pixelBuffer,
             observation: observation,
             debugTag: debugTag

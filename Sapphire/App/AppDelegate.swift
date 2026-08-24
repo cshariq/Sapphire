@@ -42,6 +42,7 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
     private var isHandlingMouseInteraction = false
     private var lastPolledMousePoint: CGPoint?
     private var passthroughRefreshPending = false
+    private var pendingForceEnable = false
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "NotchDiagnostics")
     private var passthroughRefreshCount = 0
     private var sendEventCount = 0
@@ -115,6 +116,7 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
 
         if shouldDropPassivePointerEvent(event) {
             droppedMoveEventCount += 1
+            scheduleMouseEventPassthroughRefresh()
             return
         }
 
@@ -150,13 +152,13 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
     }
 
     private func scheduleMouseEventPassthroughRefresh(forceEnable: Bool = false) {
+        pendingForceEnable = forceEnable
         guard !passthroughRefreshPending else { return }
         passthroughRefreshPending = true
-        let pendingForceEnable = forceEnable
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.passthroughRefreshPending = false
-            self.refreshMouseEventPassthrough(force: true, forceEnable: pendingForceEnable)
+            self.refreshMouseEventPassthrough(force: true, forceEnable: self.pendingForceEnable)
         }
     }
 
@@ -711,7 +713,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 await SubscriptionManager.shared.validateSubscriptionStatus()
             }
         }
-        // Allow the timer to fire while scrolling, etc.
         RunLoop.current.add(subscriptionValidationTimer!, forMode: .common)
     }
 
@@ -831,8 +832,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
         HelperManager.shared.updateStatus()
-        // Subscription validation is handled by the 5-hour timer,
-        // wake-from-sleep, and network-reconnect triggers instead.
     }
 
     @objc private func handleHelperConnectionLost() {

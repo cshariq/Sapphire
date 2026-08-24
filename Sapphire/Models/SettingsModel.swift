@@ -935,6 +935,7 @@ struct Settings: Codable, Equatable {
     var musicDevicesButtonEnabled: Bool = true
     var showPopularityInMusicPlayer: Bool = true
     var hideMusicWidgetWhenNotPlaying: Bool = false
+    var persistMusicWidgetWhenPaused: Bool = true
     var preferAirPlayOverSpotify: Bool = true
     var spotifyCanvasLiveVideo: Bool = true
     var showSpotifySourceTab: Bool = true
@@ -997,7 +998,7 @@ struct Settings: Codable, Equatable {
     var magSafeLEDBlinkOnDischarge: Bool = false
     var magSafeLEDSetting: MagSafeLEDSetting = .alwaysOn
     var preventSleepDuringCalibration: Bool = false
-    var preventSleepDuringDischarge: Bool = true
+    var preventSleepDuringDischarge: Bool = false
     var fanControlModes: [String: StoredFanControlMode] = [:]
     var enableBiweeklyCalibration: Bool = false
     var magSafeGreenAtLimit: Bool = true
@@ -1015,6 +1016,7 @@ struct Settings: Codable, Equatable {
     var bluetoothUnlockMinScanRSSI: Int = -80
     var bluetoothUnlockPassiveMode: Bool = false
     var faceIDUnlockEnabled: Bool = false
+    var faceIDAntiSpoofEnabled: Bool = true
     var hasRegisteredFaceID: Bool = false
     var faceIDSpoofLockDuration: Double = 3.0
     var faceIDAntiSpoofAcceptThreshold: Double = 0.50
@@ -1748,6 +1750,25 @@ enum AppIconLoader {
 enum Day: String, Codable, CaseIterable, Identifiable {
     case sunday, monday
     var id: String { self.rawValue.capitalized }
+
+    var firstWeekday: Int {
+        switch self {
+        case .sunday: return 1
+        case .monday: return 2
+        }
+    }
+
+    var configuredCalendar: Calendar {
+        var cal = Calendar.current
+        cal.firstWeekday = self.firstWeekday
+        return cal
+    }
+
+    var weekdayHeaders: [String] {
+        let symbols = configuredCalendar.shortWeekdaySymbols
+        let offset = self.firstWeekday - 1
+        return Array(symbols[offset...] + symbols[..<offset])
+    }
 }
 
 enum DefaultMusicPlayer: String, Codable, CaseIterable, Identifiable {

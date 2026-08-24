@@ -1301,6 +1301,7 @@ struct WidgetsSettingsView: View {
                     )
                     Divider().padding(.leading, 20)
                     ToggleRow(title: "Hide Music Widget", description: "Hide music widget if no media is playing", isOn: $settings.settings.hideMusicWidgetWhenNotPlaying)
+                    ToggleRow(title: "Persist Music Widget", description: "Keep the music widget visible with the last track even when playback is paused or stopped", isOn: $settings.settings.persistMusicWidgetWhenPaused)
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -3646,6 +3647,12 @@ struct ProximityUnlockSettingsView: View {
     private var faceIDSecuritySection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Security").font(.subheadline).bold().padding([.horizontal, .top])
+            ToggleRow(
+                title: "Spoof Detection",
+                description: "Block photos, videos, or screen captures from unlocking Face ID. Disable to allow unlock with a photo.",
+                isOn: $settings.settings.faceIDAntiSpoofEnabled
+            )
+            Divider().padding(.leading, 20)
             CustomSliderRowView(
                 label: "Spoof Lock Duration",
                 value: $settings.settings.faceIDSpoofLockDuration,

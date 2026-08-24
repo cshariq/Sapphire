@@ -46,6 +46,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private let passwordAccount = "SapphireUserPassword"
 
     private var rssiUpdateWorkItem: DispatchWorkItem?
+    private var wasPreviouslyPresent = false
     private var pendingStatus: String?
     private var statusUpdateWorkItem: DispatchWorkItem?
     private let statusUpdateQueue = DispatchQueue(label: "auth.status.update", qos: .utility)
@@ -427,10 +428,11 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     func updatePresence(presence: Bool, reason: String) {
         if isEnabled && isBluetoothAuthenticating {
             if presence {
-                if !isUnlockInProgress { handleUnlock() }
+                if !wasPreviouslyPresent, !isUnlockInProgress { handleUnlock() }
             } else {
                 handleLock()
             }
+            wasPreviouslyPresent = presence
         }
     }
 

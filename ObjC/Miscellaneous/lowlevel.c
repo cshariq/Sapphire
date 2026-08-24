@@ -111,6 +111,20 @@ void releasePreventSleepAssertions(void)
     }
 }
 
+bool acquirePreventSystemSleepOnlyAssertion(void)
+{
+    if (userIdleSystemSleepAssertionID == 0) {
+        IOReturn result = IOPMAssertionCreateWithName(
+            kIOPMAssertPreventUserIdleSystemSleep,
+            kIOPMAssertionLevelOn,
+            CFSTR("Sapphire Battery"),
+            &userIdleSystemSleepAssertionID
+        );
+        return result == kIOReturnSuccess;
+    }
+    return true;
+}
+
 bool preventSleepAssertionsAreActive(void)
 {
     return userIdleSystemSleepAssertionID != 0

@@ -16,6 +16,7 @@ int SACLockScreenImmediate(void);
 
 bool acquirePreventSleepAssertions(void);
 void releasePreventSleepAssertions(void);
+bool acquirePreventSystemSleepOnlyAssertion(void);
 bool preventSleepAssertionsAreActive(void);
 
 bool setClamshellSleepDisabled(bool disabled);

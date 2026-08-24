@@ -2340,11 +2340,13 @@ class MusicManager: ObservableObject {
         lastTrackIdentity = nil
         lastMediaFingerprint = nil
         currentTrackArtworkToken = ""
-        self.title = nil; self.artist = nil; self.album = nil; self.artwork = nil; self.artworkURL = nil
         self.uri = nil; self.trackID = nil; self.popularity = nil; self.playCount = nil; self.playCountValue = nil
         self.isPlaying = false; self.totalDuration = 0; self.currentElapsedTime = 0
         self.lastHandledTrackKey = nil
         self.resetLyricsState()
+        if !settingsModel.settings.persistMusicWidgetWhenPaused {
+            self.title = nil; self.artist = nil; self.album = nil; self.artwork = nil; self.artworkURL = nil
+        }
     }
 
     private func refreshTimers() {

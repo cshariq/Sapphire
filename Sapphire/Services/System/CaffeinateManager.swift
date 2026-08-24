@@ -80,7 +80,6 @@ class CaffeineManager: ObservableObject {
         workspaceCenter.publisher(for: NSWorkspace.willSleepNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.refreshPowerGuardsIfNeeded()
             }
             .store(in: &cancellables)
 
@@ -396,7 +395,11 @@ class CaffeineManager: ObservableObject {
     }
 
     private func acquireIOPMAssertions() -> Bool {
-        acquirePreventSleepAssertions()
+        if autoStartedByBatteryDischarge {
+            acquirePreventSystemSleepOnlyAssertion()
+        } else {
+            acquirePreventSleepAssertions()
+        }
     }
 
     private func releaseIOPMAssertions() {
@@ -417,7 +420,11 @@ class CaffeineManager: ObservableObject {
     private func startCaffeinateProcess() -> Bool {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
-        task.arguments = ["-d", "-i", "-m", "-s"]
+        if autoStartedByBatteryDischarge {
+            task.arguments = ["-i", "-m", "-s"]
+        } else {
+            task.arguments = ["-d", "-i", "-m", "-s"]
+        }
         task.terminationHandler = { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.shouldRemainActive else { return }

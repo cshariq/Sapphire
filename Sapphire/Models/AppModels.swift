@@ -147,7 +147,7 @@ enum CircleSearchBrowserEngine: String, Codable, CaseIterable, Identifiable, Has
         case .google: return "Google Lens"
         case .bing: return "Bing"
         case .yandex: return "Yandex"
-        case .tineye: return "TinEye"
+        case .tineye: return "tineye"
         }
     }
 }

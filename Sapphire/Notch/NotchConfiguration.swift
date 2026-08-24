@@ -39,8 +39,13 @@ struct NotchConfiguration {
             ?? CursorPosition.targetNotchScreen()
             ?? NSScreen.main
     }
-    
+
     /// Credits: https://github.com/TheBoredTeam/boring.notch
+    /// Mirrors boring.notch's `getClosedNotchSize`: the notch width is derived
+    /// from the screen's left/right auxiliary (menu bar) insets, and the height
+    /// is the real notch height (`safeAreaInsets.top`) on displays with a notch,
+    /// or the menu bar height on displays without one. No clamping is applied
+    /// so the drawn pill always matches the hardware notch exactly.
     static func measuredNotchSize(for screen: NSScreen?) -> (width: CGFloat, height: CGFloat) {
         let resolvedScreen = screen ?? referenceScreen
         guard let screen = resolvedScreen else {
@@ -50,11 +55,16 @@ struct NotchConfiguration {
         var width = fallbackClosedNotchSize.width
         var height = fallbackClosedNotchSize.height
 
+        // Exact width of the notch: full screen width minus the left/right
+        // auxiliary areas that flank the camera housing, plus a small bleed so
+        // the pill fully covers the hardware notch.
         if let leftInset = screen.auxiliaryTopLeftArea?.width,
            let rightInset = screen.auxiliaryTopRightArea?.width {
             width = screen.frame.width - leftInset - rightInset + 4
         }
 
+        // Height: use the real notch height on displays with a notch, otherwise
+        // match the menu bar height (boring.notch's default behavior).
         if screen.safeAreaInsets.top > 0 {
             height = screen.safeAreaInsets.top
         } else {
@@ -64,10 +74,7 @@ struct NotchConfiguration {
             }
         }
 
-        return (
-            width: max(60, min(width, screen.frame.width * 0.5)),
-            height: max(1, min(height, 120))
-        )
+        return (width: width, height: height)
     }
 
     // MARK: - Basic Size Configuration

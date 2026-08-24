@@ -220,6 +220,12 @@ private struct HelperInstallationStepView: View {
                 .disabled(!helperReady)
                 .animation(.easeInOut, value: helperManager.status)
                 .animation(.easeInOut, value: helperManager.isRunning)
+
+            Button(action: onContinue) {
+                Text("Skip for now").font(.subheadline).foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
         }
         .onAppear {
             helperManager.updateStatus()

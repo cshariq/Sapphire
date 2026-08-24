@@ -38,6 +38,7 @@ struct CalendarWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
     @ObservedObject var viewModel: InteractiveCalendarViewModel
     @EnvironmentObject var calendarService: CalendarService
+    @EnvironmentObject var settings: SettingsModel
 
     @State private var hasScrolledInitially = false
     @State private var selectionWorkItem: DispatchWorkItem?
@@ -97,6 +98,12 @@ struct CalendarWidgetView: View {
         .onChange(of: viewModel.selectedDate) {
             calendarService.fetchEvents(for: viewModel.selectedDate)
             calendarService.fetchReminders(for: viewModel.selectedDate)
+        }
+        .onAppear {
+            viewModel.updateStartOfWeek(settings.settings.calendarStartOfWeek)
+        }
+        .onChange(of: settings.settings.calendarStartOfWeek) {
+            viewModel.updateStartOfWeek($0)
         }
         .contentShape(Rectangle())
         .onTapGesture {
