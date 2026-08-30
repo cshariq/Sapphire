@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.shariq.sapphireHelper</string>
+	<string>com.idansh.sapphireHelper</string>
 	<key>BundleProgram</key>
-	<string>Contents/MacOS/com.shariq.sapphireHelper</string>
+	<string>Contents/MacOS/com.idansh.sapphireHelper</string>
 	<key>MachServices</key>
 	<dict>
-		<key>com.shariq.sapphireHelper</key>
+		<key>com.idansh.sapphireHelper</key>
 		<true/>
 	</dict>
 	<key>AssociatedBundleIdentifiers</key>
 	<array>
-		<string>com.cshariq.sapphire</string>
+		<string>com.idansh.sapphire</string>
 	</array>
 </dict>
 </plist>

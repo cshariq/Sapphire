@@ -458,7 +458,7 @@ internal class Reader<T> {
         self.interval = interval
         self.callback = callback
         self.readerName = String(describing: T.self)
-        self.queue = DispatchQueue(label: "com.shariq.sapphire.reader.\(readerName)", qos: .utility)
+        self.queue = DispatchQueue(label: "com.idansh.sapphire.reader.\(readerName)", qos: .utility)
     }
 
     public func start() {

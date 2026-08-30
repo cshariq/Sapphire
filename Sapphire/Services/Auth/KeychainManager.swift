@@ -12,7 +12,7 @@ class KeychainManager {
     static let shared = KeychainManager()
     private init() {}
 
-    private let service = "com.shariq.Sapphire.faceid.keychain"
+    private let service = "com.idansh.sapphire.faceid.keychain"
 
     func save(key: Data, for account: String) -> Bool {
         let query: [String: Any] = [

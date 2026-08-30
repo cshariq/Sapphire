@@ -23,7 +23,7 @@
     </dict>
     <key>SMAuthorizedClients</key>
     <array>
-        <string>identifier "com.cshariq.sapphire" and anchor apple generic and certificate leaf[subject.OU] = "KVQFWJ7C7S"</string>
+        <string>identifier "com.idansh.sapphire" and anchor apple generic and certificate leaf[subject.OU] = "SBB79QTFTV"</string>
     </array>
 </dict>
 </plist>

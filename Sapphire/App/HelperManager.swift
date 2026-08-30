@@ -12,7 +12,7 @@ import SwiftUI
 import OSLog
 
 private let helperLogger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "HelperManager")
-private let sapphireHelperPlistName = "com.shariq.sapphireHelper.plist"
+private let sapphireHelperPlistName = "com.idansh.sapphireHelper.plist"
 
 // MARK: - Error codes
 
@@ -176,7 +176,7 @@ struct HelperStatusBanner: View {
 class HelperManager: ObservableObject {
     static let shared = HelperManager()
 
-    let helperToolIdentifier = "com.shariq.sapphireHelper"
+    let helperToolIdentifier = "com.idansh.sapphireHelper"
 
     @Published var status: SMAppService.Status = .notRegistered
     @Published var isRunning: Bool = false

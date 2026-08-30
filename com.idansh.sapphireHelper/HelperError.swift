@@ -7,7 +7,7 @@
 
 import Foundation
 
-public let HelperErrorDomain = "com.shariq.sapphireHelper.ErrorDomain"
+public let HelperErrorDomain = "com.idansh.sapphireHelper.ErrorDomain"
 
 public enum HelperErrorCode: Int {
     case smcOpenFailed = 1

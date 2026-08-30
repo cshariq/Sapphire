@@ -43,7 +43,7 @@ fileprivate enum IOPMPrivate {
 
 class Helper: NSObject, HelperProtocol {
 
-    private let logger = Logger(subsystem: "com.shariq.sapphireHelper", category: "Helper")
+    private let logger = Logger(subsystem: "com.idansh.sapphireHelper", category: "Helper")
     var client: InstallationClient?
     private let smc: SMC?
     private let sensorCacheLock = NSLock()
@@ -610,7 +610,7 @@ class Helper: NSObject, HelperProtocol {
 
         let description: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Sapphire Multi-Output",
-            kAudioAggregateDeviceUIDKey: "com.shariq.sapphire.multi-output-device",
+            kAudioAggregateDeviceUIDKey: "com.idansh.sapphire.multi-output-device",
             kAudioAggregateDeviceSubDeviceListKey: subDeviceList,
             kAudioAggregateDeviceMasterSubDeviceKey: masterDeviceUID as CFString,
             kAudioAggregateDeviceIsStackedKey: 1
@@ -878,9 +878,9 @@ private struct SleepLogEntry: Codable {
 final class SleepBatteryMonitor {
     static let shared = SleepBatteryMonitor()
 
-    private let monitorID = "com.shariq.sapphireHelper.sleepmonitor" as CFString
+    private let monitorID = "com.idansh.sapphireHelper.sleepmonitor" as CFString
     private let wakeEventType = "wake" as CFString
-    private let logger = Logger(subsystem: "com.shariq.sapphireHelper", category: "SleepBatteryMonitor")
+    private let logger = Logger(subsystem: "com.idansh.sapphireHelper", category: "SleepBatteryMonitor")
 
     private weak var enforcementHelper: Helper?
 

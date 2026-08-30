@@ -14,7 +14,7 @@ final class XPCClient {
     private var failureNotificationSent = false
     private var lastForcedReconnect = Date.distantPast
     private let forcedReconnectInterval: TimeInterval = 1
-    private let machServiceName = "com.shariq.sapphireHelper"
+    private let machServiceName = "com.idansh.sapphireHelper"
 
     private init() {}
 

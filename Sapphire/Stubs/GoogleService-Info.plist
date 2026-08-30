@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>BUNDLE_ID</key>
-	<string>com.cshariq.sapphire</string>
+	<string>com.idansh.sapphire</string>
 	<key>CLIENT_ID</key>
 	<string></string>
 	<key>REVERSED_CLIENT_ID</key>
