@@ -199,9 +199,10 @@ struct InteractiveProgressBar: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let displayed = isDragging ? dragValue : value
             ZStack(alignment: .leading) {
                 Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 10)
-                Rectangle().fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing)).frame(width: geometry.size.width * CGFloat(isDragging ? dragValue : value), height: 10)
+                Rectangle().fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing)).frame(width: geometry.size.width * CGFloat(displayed), height: 10)
             }
             .clipShape(Capsule())
             .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
@@ -213,11 +214,23 @@ struct InteractiveProgressBar: View {
                 onDragChanged?(newProgress)
             }.onEnded { gestureValue in
                 let finalProgress = min(max(0, gestureValue.location.x / geometry.size.width), 1)
+                self.dragValue = finalProgress
                 onSeek(finalProgress)
-                value = finalProgress
-                isDragging = false
+                // Keep showing the scrubbed position until the binding catches up;
+                // avoid animating live playback ticks (that caused seek bounce).
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    value = finalProgress
+                    isDragging = false
+                }
             })
-            .animation(isDragging ? .none : .linear(duration: 0.5), value: value)
+            .transaction { transaction in
+                // Live TimelineView ticks must not ease — only drag uses direct width updates.
+                if !isDragging {
+                    transaction.animation = nil
+                }
+            }
         }
     }
 }

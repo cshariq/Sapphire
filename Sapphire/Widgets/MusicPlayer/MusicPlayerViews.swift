@@ -52,10 +52,19 @@ struct PlayerProgressView: View {
                         ? [.white, .white.opacity(0.75)]
                         : [musicManager.leftGradientColor, musicManager.rightGradientColor]),
                     onSeek: { newProgress in
-                        isSeeking = false
+                        seekProgress = newProgress
+                        isSeeking = true
                         let seekTime = newProgress * musicManager.totalDuration
                         if seekTime.isFinite && musicManager.totalDuration > 0 {
-                            Task { await musicManager.seek(to: seekTime) }
+                            Task {
+                                await musicManager.seek(to: seekTime)
+                                await MainActor.run {
+                                    seekProgress = newProgress
+                                    isSeeking = false
+                                }
+                            }
+                        } else {
+                            isSeeking = false
                         }
                     },
                     onDragChanged: { progress in

@@ -263,6 +263,8 @@ class MusicManager: ObservableObject {
     private var playStateHoldPreferPlaying = true
     private var spotifyPlayStateReconcileUntil: Date = .distantPast
     private var spotifyPlayStateReconcileTarget: Bool?
+    private var seekHoldUntil: Date = .distantPast
+    private var seekHoldTargetElapsed: TimeInterval = 0
     private var trackMetadataGeneration: UInt64 = 0
     private var lastConnectTrackURI: String?
     private var spotifyConnectSyncTask: Task<Void, Never>?
@@ -367,8 +369,11 @@ class MusicManager: ObservableObject {
                 }
 
                 if self.spotifyPrivateAPI.isLoggedIn {
-                    self.applyPlayingState(state.isActivelyPlaying, fromConnect: true)
-                    self.applySpotifyPlayerTiming(state)
+                    // Stale Connect (no playback device) must not override local Spotify / Media Remote.
+                    if self.hasUsableSpotifyConnectPlayback {
+                        self.applyPlayingState(state.isActivelyPlaying, fromConnect: true)
+                        self.applySpotifyPlayerTiming(state)
+                    }
                 }
 
                 guard self.shouldSurfaceSpotifyConnectPlayback else { return }
@@ -591,7 +596,14 @@ class MusicManager: ObservableObject {
 
     private func applyConnectArtworkIfNeeded(from track: PlayerState.Track, force: Bool) {
         guard isSpotifySourceSelected else { return }
-        guard let imageURL = track.metadata?.imageURL else { return }
+        guard let imageURL = track.metadata?.imageURL else {
+            if force {
+                artwork = nil
+                artworkURL = nil
+                currentTrackArtworkToken = "connect-missing-\(track.uri)"
+            }
+            return
+        }
         let urlChanged = artworkURL != imageURL
         artworkURL = imageURL
         let needsLoad = force || urlChanged || artwork == nil || currentTrackArtworkToken.isEmpty
@@ -681,30 +693,28 @@ class MusicManager: ObservableObject {
 
     // MARK: - Core Playback Actions (Context-Aware)
 
+    /// Spotify may briefly clear `currentSourceKey` while the widget still shows Spotify
+    /// (e.g. after a failed resume). Keep routing controls to Spotify in that case.
+    private var shouldUseSpotifyPlaybackControls: Bool {
+        if isSpotifySourceSelected { return true }
+        if lastKnownBundleID == "com.spotify.client" { return true }
+        if let key = currentSourceKey, isSpotifySourceKey(key) { return true }
+        return false
+    }
+
     func play() async {
         beginPlayStateHold(preferPlaying: true, duration: 1.2)
         applyPlayingState(true)
 
-        if isSpotifySourceSelected {
+        if shouldUseSpotifyPlaybackControls {
             spotifyPlayStateReconcileTarget = true
             spotifyPlayStateReconcileUntil = Date().addingTimeInterval(3.0)
-            if spotifyPrivateAPI.isLoggedIn {
+            if spotifyPrivateAPI.isLoggedIn, hasUsableSpotifyConnectPlayback {
                 let ok = await spotifyPrivateAPI.connectResume()
                 if ok { return }
-                if spotifyAppleScript.isAppRunning() {
-                    _ = await spotifyAppleScript.play(uri: "")
-                    return
-                }
-                if spotifyOfficialAPI.isAuthenticated && isPremiumUser {
-                    _ = await spotifyOfficialAPI.playTrack(uri: "")
-                    return
-                }
-                return
-            } else if spotifyOfficialAPI.isAuthenticated && isPremiumUser {
-                _ = await spotifyOfficialAPI.playTrack(uri: "")
-                return
-            } else if spotifyAppleScript.isAppRunning() {
-                _ = await spotifyAppleScript.play(uri: "")
+            }
+            if spotifyAppleScript.isAppRunning() {
+                _ = await spotifyAppleScript.play()
                 return
             }
         }
@@ -716,18 +726,14 @@ class MusicManager: ObservableObject {
         beginPlayStateHold(preferPlaying: false, duration: 1.2)
         applyPlayingState(false)
 
-        if isSpotifySourceSelected {
+        if shouldUseSpotifyPlaybackControls {
             spotifyPlayStateReconcileTarget = false
             spotifyPlayStateReconcileUntil = Date().addingTimeInterval(3.0)
-            if spotifyPrivateAPI.isLoggedIn {
+            if spotifyPrivateAPI.isLoggedIn, hasUsableSpotifyConnectPlayback {
                 let ok = await spotifyPrivateAPI.connectPause()
                 if ok { return }
-                if spotifyAppleScript.isAppRunning() {
-                    _ = await spotifyAppleScript.pause()
-                    return
-                }
-                return
-            } else if spotifyAppleScript.isAppRunning() {
+            }
+            if spotifyAppleScript.isAppRunning() {
                 _ = await spotifyAppleScript.pause()
                 return
             }
@@ -738,7 +744,7 @@ class MusicManager: ObservableObject {
 
     func nextTrack() async {
         beginPlayStateHold(preferPlaying: true, duration: 1.2)
-        if isSpotifySourceSelected {
+        if shouldUseSpotifyPlaybackControls {
             if await skipSpotifyViaConnectIfPossible(direction: .next) { return }
         }
         mediaController.nextTrack()
@@ -746,7 +752,7 @@ class MusicManager: ObservableObject {
 
     func previousTrack() async {
         beginPlayStateHold(preferPlaying: true, duration: 1.2)
-        if isSpotifySourceSelected {
+        if shouldUseSpotifyPlaybackControls {
             if await skipSpotifyViaConnectIfPossible(direction: .previous) { return }
         }
         mediaController.previousTrack()
@@ -756,24 +762,30 @@ class MusicManager: ObservableObject {
 
     @discardableResult
     private func skipSpotifyViaConnectIfPossible(direction: SpotifySkipDirection) async -> Bool {
-        guard spotifyPrivateAPI.isLoggedIn, isSpotifySourceSelected else { return false }
+        guard shouldUseSpotifyPlaybackControls else {
+            return false
+        }
 
-        let connectOK: Bool
-        switch direction {
-        case .next:
-            connectOK = await spotifyPrivateAPI.connectSkipNext()
-        case .previous:
-            connectOK = await spotifyPrivateAPI.connectSkipPrevious()
+        var connectOK = false
+        if spotifyPrivateAPI.isLoggedIn, hasUsableSpotifyConnectPlayback {
+            switch direction {
+            case .next:
+                connectOK = await spotifyPrivateAPI.connectSkipNext()
+            case .previous:
+                connectOK = await spotifyPrivateAPI.connectSkipPrevious()
+            }
         }
         if connectOK { return true }
 
         if spotifyAppleScript.isAppRunning() {
+            let asOk: Bool
             switch direction {
             case .next:
-                return await spotifyAppleScript.nextTrack()
+                asOk = await spotifyAppleScript.nextTrack()
             case .previous:
-                return await spotifyAppleScript.previousTrack()
+                asOk = await spotifyAppleScript.previousTrack()
             }
+            return asOk
         }
         return false
     }
@@ -781,8 +793,8 @@ class MusicManager: ObservableObject {
     func seek(to seconds: Double) async {
         let clamped = max(0.0, totalDuration > 0 ? min(seconds, totalDuration) : seconds)
 
-        if isSpotifySourceSelected {
-            if spotifyPrivateAPI.isLoggedIn {
+        if shouldUseSpotifyPlaybackControls {
+            if spotifyPrivateAPI.isLoggedIn, hasUsableSpotifyConnectPlayback {
                 let ok = await spotifyPrivateAPI.connectSeek(to: clamped)
                 if !ok && spotifyAppleScript.isAppRunning() {
                     _ = await spotifyAppleScript.seek(to: clamped)
@@ -828,9 +840,22 @@ class MusicManager: ObservableObject {
 
     private var shouldSurfaceSpotifyConnectPlayback: Bool {
         guard isSpotifySourceSelected else { return false }
+        guard hasUsableSpotifyConnectPlayback else { return false }
         if isSpotifyLiveSourceSelected { return true }
         if spotifyPrivateAPI.isControllingConnectPlayback { return true }
         return shouldPreferSpotifyPrivateNowPlaying
+    }
+
+    /// Connect cluster is only authoritative when it can actually drive a playback device.
+    /// When logged in but device list/active device are empty, desktop Spotify is controlled
+    /// via AppleScript / Media Remote — Connect play-state and timing are stale.
+    private var hasUsableSpotifyConnectPlayback: Bool {
+        guard spotifyPrivateAPI.isLoggedIn else { return false }
+        if spotifyPrivateAPI.isControllingConnectPlayback { return true }
+        guard let active = spotifyPrivateAPI.activePlayerDeviceID,
+              let controller = spotifyPrivateAPI.controllerDeviceID,
+              active != controller else { return false }
+        return true
     }
 
     var isSpotifySourceSelected: Bool {
@@ -841,6 +866,7 @@ class MusicManager: ObservableObject {
     private var shouldPreferSpotifyPrivateNowPlaying: Bool {
         guard spotifyPrivateAPI.isLoggedIn else { return false }
         guard isSpotifySourceSelected else { return false }
+        guard hasUsableSpotifyConnectPlayback else { return false }
         return privateNowPlayingHasIdentity
     }
 
@@ -881,6 +907,7 @@ class MusicManager: ObservableObject {
                 return
             }
             guard let state = self.spotifyPrivateAPI.playerState else { return }
+            guard self.hasUsableSpotifyConnectPlayback else { return }
             self.applyPlayingState(state.isActivelyPlaying, fromConnect: true)
             self.applySpotifyPlayerTiming(state)
         }
@@ -892,7 +919,7 @@ class MusicManager: ObservableObject {
             return
         }
 
-        let preferConnectPlayback = spotifyPrivateAPI.isLoggedIn
+        let preferConnectPlayback = hasUsableSpotifyConnectPlayback
             && spotifyPrivateAPI.playerState != nil
 
         if preferConnectPlayback, let state = spotifyPrivateAPI.playerState {
@@ -911,11 +938,8 @@ class MusicManager: ObservableObject {
             return
         }
 
-        if prefersNativeSpotifyMediaRemote {
+        if prefersNativeSpotifyMediaRemote || !hasUsableSpotifyConnectPlayback {
             if let mediaRemoteHint { applyPlayingState(mediaRemoteHint) }
-            if spotifyPrivateAPI.isLoggedIn {
-                scheduleSpotifyConnectPlaybackSync(force: forceConnectRefresh, playStateOnly: true)
-            }
             return
         }
 
@@ -1446,7 +1470,9 @@ class MusicManager: ObservableObject {
                 currentTrackArtworkToken = "live-missing-\(track.uri)"
             }
         }
-        applySpotifyPlayerTiming(state)
+        if hasUsableSpotifyConnectPlayback {
+            applySpotifyPlayerTiming(state)
+        }
         publishPlaybackTime(force: true, includeProgressUI: true)
     }
 
@@ -1708,6 +1734,7 @@ class MusicManager: ObservableObject {
 
     private func applySpotifyPlayerTiming(_ state: PlayerState) {
         let playing = heldOrReportedPlaying(state.isActivelyPlaying)
+        let posMs = state.positionAsOfTimestamp ?? state.realtimePositionMilliseconds()
         if let timestamp = state.timestamp, let ms = state.positionAsOfTimestamp {
             let elapsedAtSample = TimeInterval(ms) / 1000.0
             let sampleEpoch = TimeInterval(timestamp) / 1000.0
@@ -1871,6 +1898,13 @@ class MusicManager: ObservableObject {
             self.triggerQuickPeek()
             self.lastTrackChangeDate = Date()
 
+            // Media Remote often delivers the new title before artwork. Drop stale cover
+            // so a later artwork-only update can replace it.
+            if payload.artwork == nil {
+                self.artwork = nil
+                self.artworkURL = nil
+            }
+
             if isSpotify, spotifyPrivateAPI.isLoggedIn {
                 Task { await self.ensureLyricsForCurrentTrack() }
             } else {
@@ -1920,7 +1954,7 @@ class MusicManager: ObservableObject {
 
     @discardableResult
     private func applyConnectTimingIfPreferred() -> Bool {
-        guard spotifyPrivateAPI.isLoggedIn,
+        guard hasUsableSpotifyConnectPlayback,
               isSpotifySourceSelected,
               let state = spotifyPrivateAPI.playerState,
               state.timestamp != nil,
@@ -2268,6 +2302,16 @@ class MusicManager: ObservableObject {
         let isPlayingNow = payload.isPlaying ?? isPlaying
         guard let incomingAnchor = payload.playbackTimingAnchor(isPlayingNow: isPlayingNow) else { return }
 
+        if !trackChanged, Date() < seekHoldUntil {
+            let incomingElapsed = incomingAnchor.elapsed(at: Date())
+            let delta = abs(incomingElapsed - seekHoldTargetElapsed)
+            // Ignore stale Media Remote samples until they converge near the scrubbed position.
+            if delta > 1.25 {
+                return
+            }
+            seekHoldUntil = .distantPast
+        }
+
         playbackTimingAnchor = incomingAnchor
 
         publishPlaybackTime(
@@ -2280,6 +2324,8 @@ class MusicManager: ObservableObject {
         let clamped = totalDuration > 0 ? max(0, min(totalDuration, seconds)) : max(0, seconds)
         let reported = Double(latestTrackPayload?.playbackRate ?? 1.0)
         let rate = isPlaying ? (reported > 0 ? reported : 1.0) : 0
+        seekHoldTargetElapsed = clamped
+        seekHoldUntil = Date().addingTimeInterval(1.6)
         playbackTimingAnchor = PlaybackTimingAnchor(
             elapsedAtSample: clamped,
             sampleEpochTime: Date().timeIntervalSince1970,
@@ -2455,6 +2501,8 @@ class MusicManager: ObservableObject {
     private func applyArtwork(_ displayArtwork: NSImage, trackIdentity: String? = nil) {
         if let trackIdentity, let last = lastTrackIdentity, trackIdentity != last { return }
 
+        // Prefer Connect-loaded remote art only while its URL still matches the current track.
+        // Do not block Media Remote covers after a track change cleared artworkURL.
         if isSpotifySourceSelected && artworkURL != nil && self.artwork != nil {
             return
         }
@@ -2574,7 +2622,17 @@ class MusicManager: ObservableObject {
            let trackURI = uri ?? spotifyPrivateAPI.playerState?.track?.uri,
            trackURI.contains("spotify:track:") {
             let id = trackURI.replacingOccurrences(of: "spotify:track:", with: "")
-            guard !id.isEmpty else {
+            let connectTitle = spotifyPrivateAPI.playerState?.track?.metadata?.title?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            let connectURI = spotifyPrivateAPI.playerState?.track?.uri
+            let uiTitle = title.lowercased()
+            let usingStaleConnectURI = (uri == nil || uri == connectURI)
+                && !hasUsableSpotifyConnectPlayback
+                && connectURI != nil
+            let titleMismatch = connectTitle != nil && connectTitle != uiTitle && trackURI == connectURI
+            let uriMatchesUI = !usingStaleConnectURI && !titleMismatch
+            guard !id.isEmpty, uriMatchesUI else {
                 await fetchAndTranslateLyricsIfNeeded()
                 return
             }
