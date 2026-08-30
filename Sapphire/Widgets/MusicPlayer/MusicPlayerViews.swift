@@ -509,13 +509,13 @@ struct MusicPlayerView: View {
                                   ? (holdFeedbackIcon ?? (musicManager.isPlaying ? "pause.fill" : "play.fill"))
                                   : (musicManager.isPlaying ? "pause.fill" : "play.fill"))
                                 .font(.system(size: 28))
-                                .contentTransition(.symbolEffect(.replace))
+                                .contentTransition(.symbolEffect(.replace, options: .speed(1.8)))
                                 .foregroundStyle(holdFeedbackButtonID == "playPause" ? holdFeedbackColor : .primary)
                         }
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
-                        .animation(.easeInOut(duration: 0.15), value: musicManager.isPlaying)
-                        .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
+                        .animation(.easeInOut(duration: 0.08), value: musicManager.isPlaying)
+                        .animation(.easeInOut(duration: 0.08), value: holdFeedbackIcon)
                         .help(MusicLongPressUI.accessoryHelp(primary: "Play / Pause", target: .playPause, settings: settings.settings))
                         Spacer()
                         SeekButton(

@@ -625,11 +625,11 @@ class MusicManager: ObservableObject {
 
         let holding = Date() < playStateHoldUntil
         if holding {
-            if playing == playStateHoldPreferPlaying {
-                playStateHoldUntil = .distantPast
-            } else {
+            if playing != playStateHoldPreferPlaying {
                 return
             }
+            // Keep the hold for its full duration so optimistic play()/pause()
+            // does not immediately unblock stale Media Remote / Connect updates.
         }
         if isPlaying != playing {
             isPlaying = playing

@@ -559,11 +559,12 @@ private struct LyricsDetachedBottomBar: View {
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(holdFeedbackButtonID == "playPause" ? holdFeedbackColor : .white)
                         .frame(width: 44, height: 44)
-                        .contentTransition(.symbolEffect(.replace))
+                        .contentTransition(.symbolEffect(.replace, options: .speed(1.8)))
                 }
                 .buttonStyle(.plain)
                 .scaleEffect(musicManager.isPlaying ? 1.0 : 0.95)
-                .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
+                .animation(.easeInOut(duration: 0.08), value: musicManager.isPlaying)
+                .animation(.easeInOut(duration: 0.08), value: holdFeedbackIcon)
                 .help(MusicLongPressUI.accessoryHelp(primary: "Play / Pause", target: .playPause, settings: settings.settings))
 
                 SeekButton(

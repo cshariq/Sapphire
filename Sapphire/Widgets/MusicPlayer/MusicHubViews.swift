@@ -1484,10 +1484,11 @@ struct ActionButtonsView: View {
                           ? (holdFeedbackIcon ?? (musicManager.isPlaying ? "pause.fill" : "play.fill"))
                           : (musicManager.isPlaying ? "pause.fill" : "play.fill"))
                         .font(.system(size: 20))
-                        .contentTransition(.symbolEffect(.replace))
+                        .contentTransition(.symbolEffect(.replace, options: .speed(1.8)))
                 }
                 .foregroundStyle(holdFeedbackButtonID == "playPause" ? holdFeedbackColor : .primary)
-                .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
+                .animation(.easeInOut(duration: 0.08), value: musicManager.isPlaying)
+                .animation(.easeInOut(duration: 0.08), value: holdFeedbackIcon)
 
                 SeekButton(
                     systemName: "forward.fill",
