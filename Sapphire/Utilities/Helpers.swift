@@ -194,44 +194,145 @@ struct InteractiveProgressBar: View {
     var gradient: Gradient
     var onSeek: (Double) -> Void
     var onDragChanged: ((Double) -> Void)? = nil
+    var duration: TimeInterval? = nil
+    var trackHeight: CGFloat = 10
+    var trackColor: Color = Color.secondary.opacity(0.3)
+    var glassIntensity: Double = 0.65
+
     @State private var isDragging = false
     @State private var dragValue: Double = 0.0
+    @State private var isHovering = false
+    @State private var hoverX: CGFloat = 0
 
     var body: some View {
         GeometryReader { geometry in
+            let width = geometry.size.width
             let displayed = isDragging ? dragValue : value
-            ZStack(alignment: .leading) {
-                Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 10)
-                Rectangle().fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing)).frame(width: geometry.size.width * CGFloat(displayed), height: 10)
+            let clampedDisplayed = ProgressScrubMath.clampProgress(displayed)
+            let hoverProgress = ProgressScrubMath.progress(fromX: hoverX, width: width)
+            let pointerProgress = isDragging ? dragValue : hoverProgress
+            let thumbSize = ProgressScrubMath.thumbDiameter(trackHeight: trackHeight)
+            let showChrome = (isHovering || isDragging) && width > 0
+            let tooltipText = ProgressScrubMath.tooltipTime(
+                progress: pointerProgress,
+                duration: duration ?? 0
+            )
+            let pointerX = isDragging ? width * CGFloat(ProgressScrubMath.clampProgress(dragValue)) : hoverX
+
+            ZStack {
+                ZStack(alignment: .leading) {
+                    Capsule().fill(trackColor)
+
+                    Capsule()
+                        .fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(0, width * CGFloat(clampedDisplayed)))
+
+                    if showChrome, hoverProgress > clampedDisplayed {
+                        let start = width * CGFloat(clampedDisplayed)
+                        let end = width * CGFloat(hoverProgress)
+                        Capsule()
+                            .fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing))
+                            .opacity(0.35)
+                            .frame(width: max(0, end - start))
+                            .offset(x: start)
+                    }
+                }
+                .frame(height: trackHeight)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .transaction { transaction in
+                    // Live TimelineView ticks must not ease — only drag uses direct width updates.
+                    if !isDragging {
+                        transaction.animation = nil
+                    }
+                }
+
+                if showChrome {
+                    ProgressScrubThumb(
+                        diameter: thumbSize,
+                        intensity: glassIntensity,
+                        isHovered: isHovering || isDragging
+                    )
+                    .position(
+                        x: ProgressScrubMath.thumbCenterX(
+                            progress: clampedDisplayed,
+                            width: width,
+                            thumbDiameter: thumbSize
+                        ),
+                        y: geometry.size.height / 2
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+
+                    if let tooltipText {
+                        ProgressScrubTooltip(text: tooltipText, intensity: glassIntensity)
+                            .position(
+                                x: clampedTooltipX(pointerX: pointerX, width: width),
+                                y: geometry.size.height / 2 - thumbSize / 2 - 16
+                            )
+                            .transition(.opacity)
+                    }
+                }
             }
-            .clipShape(Capsule())
-            .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
             .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0).onChanged { gestureValue in
-                if !isDragging { isDragging = true; dragValue = value }
-                let newProgress = min(max(0, gestureValue.location.x / geometry.size.width), 1)
-                self.dragValue = newProgress
-                onDragChanged?(newProgress)
-            }.onEnded { gestureValue in
-                let finalProgress = min(max(0, gestureValue.location.x / geometry.size.width), 1)
-                self.dragValue = finalProgress
-                onSeek(finalProgress)
-                // Keep showing the scrubbed position until the binding catches up;
-                // avoid animating live playback ticks (that caused seek bounce).
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    value = finalProgress
-                    isDragging = false
-                }
-            })
-            .transaction { transaction in
-                // Live TimelineView ticks must not ease — only drag uses direct width updates.
-                if !isDragging {
-                    transaction.animation = nil
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gestureValue in
+                        if !isDragging {
+                            isDragging = true
+                            dragValue = value
+                        }
+                        let newProgress = ProgressScrubMath.progress(
+                            fromX: gestureValue.location.x,
+                            width: width
+                        )
+                        dragValue = newProgress
+                        hoverX = gestureValue.location.x
+                        onDragChanged?(newProgress)
+                    }
+                    .onEnded { gestureValue in
+                        let finalProgress = ProgressScrubMath.progress(
+                            fromX: gestureValue.location.x,
+                            width: width
+                        )
+                        dragValue = finalProgress
+                        onSeek(finalProgress)
+                        // Keep showing the scrubbed position until the binding catches up;
+                        // avoid animating live playback ticks (that caused seek bounce).
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            value = finalProgress
+                            isDragging = false
+                        }
+                    }
+            )
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    isHovering = true
+                    hoverX = location.x
+                    NSCursor.resizeLeftRight.set()
+                case .ended:
+                    if !isDragging {
+                        isHovering = false
+                        NSCursor.arrow.set()
+                    }
                 }
             }
+            .onChange(of: isDragging) { _, dragging in
+                if !dragging && !isHovering {
+                    NSCursor.arrow.set()
+                } else if dragging {
+                    NSCursor.resizeLeftRight.set()
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: showChrome)
         }
+    }
+
+    private func clampedTooltipX(pointerX: CGFloat, width: CGFloat) -> CGFloat {
+        let approxHalf: CGFloat = 28
+        guard width > 0 else { return approxHalf }
+        return min(max(pointerX, approxHalf), max(approxHalf, width - approxHalf))
     }
 }
 

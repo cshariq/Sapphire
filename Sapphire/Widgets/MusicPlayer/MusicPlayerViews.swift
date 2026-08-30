@@ -70,9 +70,11 @@ struct PlayerProgressView: View {
                     onDragChanged: { progress in
                         isSeeking = true
                         seekProgress = progress
-                    }
+                    },
+                    duration: musicManager.totalDuration,
+                    trackHeight: lightStyle ? 6 : 10
                 )
-                .frame(height: lightStyle ? 10 : 30)
+                .frame(height: lightStyle ? 14 : 30)
                 .shadow(color: musicManager.accentColor.opacity(lightStyle ? 0.2 : 0.3), radius: lightStyle ? 2 : 4, y: 1)
 
                 Text("-\(formatTime(max(0, musicManager.totalDuration - liveElapsed)))")

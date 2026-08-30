@@ -504,11 +504,15 @@ private struct LyricsDetachedBottomBar: View {
                         if seekTime.isFinite && musicManager.totalDuration > 0 {
                             Task { await musicManager.seek(to: seekTime) }
                         }
-                    }
+                    },
+                    onDragChanged: { progress in
+                        currentProgress = progress
+                    },
+                    duration: musicManager.totalDuration,
+                    trackHeight: 4,
+                    trackColor: Color.white.opacity(0.2)
                 )
-                .frame(height: 4)
-                .background(Color.white.opacity(0.2))
-                .clipShape(Capsule())
+                .frame(height: 16)
 
                 HStack {
                     Text(formatTime(displayedElapsedTime))
