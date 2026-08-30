@@ -113,9 +113,14 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private var lastBackgroundCheck: Date = .distantPast
     private let minimumBackgroundCheckGap: TimeInterval = 30 * 60
     private let persistedAvailableUpdateKey = "SapphirePersistedAvailableUpdate"
+    private let releaseSourceMigrationKey = "SapphireReleaseSource.IdanSh.SapphireNotch.v1"
 
     private override init() {
         super.init()
+        if !UserDefaults.standard.bool(forKey: releaseSourceMigrationKey) {
+            clearPersistedAvailableUpdate()
+            UserDefaults.standard.set(true, forKey: releaseSourceMigrationKey)
+        }
         restorePersistedAvailableUpdateIfNeeded()
     }
 
@@ -172,9 +177,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         if case .installing = status { return }
 
         applyStatus(.checking)
-        guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases?per_page=30") else {
-            applyStatus(.error("Invalid update URL")); return
-        }
+        let url = ReleaseSource.releasesAPIURL
 
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10
@@ -225,9 +228,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         if case .installing = status { return }
 
         applyStatus(.checking)
-        guard let url = URL(string: "https://api.github.com/repos/cshariq/Sapphire/releases?per_page=30") else {
-            applyStatus(.error("Invalid beta update URL")); return
-        }
+        let url = ReleaseSource.releasesAPIURL
 
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10
@@ -283,7 +284,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         }
         releaseNotesVersion = targetVersion
         releaseNotes = nil
-        releaseNotesURL = URL(string: "https://github.com/cshariq/Sapphire/releases")
+        releaseNotesURL = ReleaseSource.releasesPageURL
     }
 
     private static func normalizedNotes(_ body: String?) -> String? {

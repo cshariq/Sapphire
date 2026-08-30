@@ -8590,7 +8590,7 @@ struct AboutSettingsView: View {
                             }
                             .buttonStyle(PlainButtonStyle())
 
-                            Link(destination: URL(string: "https://github.com/cshariq/Sapphire")!) {
+                            Link(destination: ReleaseSource.repositoryURL) {
                                 Image("github_logo")
                                     .resizable()
                                     .renderingMode(.template)
