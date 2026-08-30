@@ -65,13 +65,15 @@ struct NotchConfiguration {
 
         // Height: use the real notch height on displays with a notch, otherwise
         // match the menu bar height (boring.notch's default behavior).
+        // At scaled resolutions safeAreaInsets.top can round down a point below
+        // the menu bar height (e.g. 33 vs 34 at "looks like 1710x1107"), leaving
+        // a sliver of hardware notch visible; the notch always reaches the
+        // bottom of the menu bar, so take the larger of the two.
+        let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
         if screen.safeAreaInsets.top > 0 {
-            height = screen.safeAreaInsets.top
-        } else {
-            let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
-            if menuBarHeight > 0 {
-                height = menuBarHeight
-            }
+            height = max(screen.safeAreaInsets.top, menuBarHeight)
+        } else if menuBarHeight > 0 {
+            height = menuBarHeight
         }
 
         return (width: width, height: height)
