@@ -166,6 +166,7 @@ struct NotchController: View {
     @State private var hudOverlayBlur: CGFloat = 10.0
 
     @State private var notchInteractionPollingTimer: Timer?
+    @State private var notchInteractionMouseMonitors: [Any] = []
     @State private var lastSampledMouseLocation: CGPoint?
     @State private var lastPublishedInteractiveFrame: CGRect = .null
     @State private var appliedTargetFPS: Int = 0
@@ -623,6 +624,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func handleAnimatedSizeChange(_ _: CGFloat) {
         updateMouseEventHandling(isInteractive: isInteractive)
+        refreshNotchInteractionState()
     }
 
     private func handleSharingVisibilityChange(_ shouldBeHidden: Bool) {
@@ -2210,16 +2212,34 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     private func startNotchInteractionMonitoring() {
         guard notchInteractionPollingTimer == nil else { return }
 
-        let interval = 1.0 / 20.0
-        let timer = Timer(timeInterval: interval, repeats: true) { _ in
+        let mouseEvents: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        if let globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseEvents, handler: { _ in
+            self.refreshNotchInteractionState()
+        }) {
+            notchInteractionMouseMonitors.append(globalMonitor)
+        }
+        if let localMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseEvents, handler: { event in
+            self.refreshNotchInteractionState()
+            return event
+        }) {
+            notchInteractionMouseMonitors.append(localMonitor)
+        }
+
+        let timer = Timer(timeInterval: 2.0, repeats: true) { _ in
             self.refreshNotchInteractionState()
         }
-        timer.tolerance = 0.02
+        timer.tolerance = 0.5
         notchInteractionPollingTimer = timer
         RunLoop.main.add(timer, forMode: .common)
+
+        refreshNotchInteractionState()
     }
 
     private func stopNotchInteractionMonitoring() {
+        for monitor in notchInteractionMouseMonitors {
+            NSEvent.removeMonitor(monitor)
+        }
+        notchInteractionMouseMonitors.removeAll()
         notchInteractionPollingTimer?.invalidate()
         notchInteractionPollingTimer = nil
         lastSampledMouseLocation = nil
