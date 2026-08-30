@@ -539,7 +539,8 @@ class SystemHUDManager: ObservableObject {
                 let isXDRLocked = settings.settings.xdrBrightnessLock && !currentModifiers.contains(.command)
                 let currentBrightness = self.settings.settings.brightness
 
-                if action == .brightnessUp && isXDRLocked && currentBrightness >= 1.0 {
+                if action == .brightnessUp && isXDRLocked && currentBrightness >= 1.0
+                    && !currentModifiers.contains(.shift) {
                     let allDisplays = displayManager.getAllDisplays()
                     if allDisplays.count <= 1 {
                         showHUD(for: .brightness(level: currentBrightness))
@@ -560,40 +561,50 @@ class SystemHUDManager: ObservableObject {
     @MainActor private func changeBrightnessMulti(direction: Float) {
         let allDisplays = displayManager.getAllDisplays()
         let modifiers = NSEvent.modifierFlags
+        // Default: built-in (macOS behavior). Shift + brightness: first external display.
+        // Never use .function for targeting — brightness media keys always include it.
+        let wantsExternal = modifiers.contains(.shift)
+        let isFineTuning = modifiers.contains(.shift) && modifiers.contains(.option)
+        let builtIn = displayManager.getBuiltInDisplay()
+        let externalTarget = allDisplays.first { !$0.isBuiltIn() }
+        let appleFallback = displayManager.getAppleDisplays().first
 
-        let primaryDisplay = displayManager.getCurrentDisplay()
-        var orderedDisplays: [Display] = []
-        if let primary = primaryDisplay {
-            orderedDisplays.append(primary)
-            orderedDisplays.append(contentsOf: allDisplays.filter { $0.identifier != primary.identifier })
-        } else {
-            orderedDisplays = allDisplays
-        }
-
-        var targetDisplay: Display?
-        if modifiers.contains(.shift) {
-            targetDisplay = orderedDisplays.count > 1 ? orderedDisplays[1] : nil
-        } else if modifiers.contains(.function) {
-            targetDisplay = orderedDisplays.count > 2 ? orderedDisplays[2] : nil
-        } else {
-            targetDisplay = orderedDisplays.first
-        }
+        let controllingExternal = wantsExternal && externalTarget != nil
+        let targetDisplay: Display? = controllingExternal
+            ? externalTarget
+            : (builtIn ?? appleFallback)
 
         var changedBuiltInLevel: Float?
-        if let displayToChange = targetDisplay {
-            if displayToChange.isBuiltIn() {
-                changedBuiltInLevel = _changeBuiltInDisplayBrightness(direction: direction)
-            } else {
-                let isFineTuning = modifiers.contains([.shift, .option])
-                displayToChange.stepBrightness(isUp: direction > 0, isSmallIncrement: isFineTuning)
-            }
+        var changedExternalLevel: Float?
+
+        if controllingExternal, let displayToChange = externalTarget {
+            let before = displayToChange.getBrightness()
+            let step: Float = isFineTuning ? 0.01 : 0.0625
+            let nextValue = (before + direction * step).clamped(to: 0...1)
+            _ = displayToChange.setBrightness(nextValue)
+            changedExternalLevel = displayToChange.getBrightness()
+        } else if let displayToChange = targetDisplay, displayToChange.isBuiltIn() || displayToChange is AppleDisplay {
+            changedBuiltInLevel = _changeBuiltInDisplayBrightness(direction: direction)
+        } else if let displayToChange = targetDisplay {
+            let before = displayToChange.getBrightness()
+            let step: Float = isFineTuning ? 0.01 : 0.0625
+            let nextValue = (before + direction * step).clamped(to: 0...1)
+            _ = displayToChange.setBrightness(nextValue)
+            changedExternalLevel = displayToChange.getBrightness()
+        } else {
+            changedBuiltInLevel = _changeBuiltInDisplayBrightness(direction: direction)
         }
 
+        let primaryDisplay = builtIn ?? displayManager.getCurrentDisplay()
         if allDisplays.count > 1 {
             var displayInfos: [DisplayBrightnessInfo] = []
             for display in allDisplays {
-                var currentLevel: Float
+                let currentLevel: Float
                 if display.isBuiltIn(), let newLevel = changedBuiltInLevel {
+                    currentLevel = newLevel
+                } else if !display.isBuiltIn(),
+                          display.identifier == externalTarget?.identifier,
+                          let newLevel = changedExternalLevel {
                     currentLevel = newLevel
                 } else {
                     currentLevel = display.getBrightness()
@@ -608,8 +619,10 @@ class SystemHUDManager: ObservableObject {
             }
             showHUD(for: .multiDisplayBrightness(displays: displayInfos))
         } else if let singleDisplay = allDisplays.first {
-            let levelForHUD = changedBuiltInLevel ?? singleDisplay.getBrightness()
+            let levelForHUD = changedBuiltInLevel ?? changedExternalLevel ?? singleDisplay.getBrightness()
             showHUD(for: .brightness(level: levelForHUD))
+        } else if let level = changedBuiltInLevel ?? changedExternalLevel {
+            showHUD(for: .brightness(level: level))
         }
     }
 
