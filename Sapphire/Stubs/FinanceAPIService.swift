@@ -1,3 +1,4 @@
+#if !SAPPHIRE_FULL_BUILD
 import Foundation
 
 struct FinanceQuote {
@@ -15,6 +16,8 @@ final class FinanceAPIService {
 
     func cachedQuote(symbol: String) -> FinanceQuote? { nil }
 
+    func fetchQuote(symbol: String) async -> FinanceQuote? { nil }
+
     func makePayload(symbol: String, index: Int, quote: FinanceQuote?) -> FinancePayload {
         FinancePayload(
             symbol: symbol,
@@ -28,3 +31,4 @@ final class FinanceAPIService {
         )
     }
 }
+#endif

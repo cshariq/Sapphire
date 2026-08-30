@@ -2,6 +2,20 @@
 import Foundation
 import Combine
 
+enum VerificationCodeDetector {
+    /// Stub: OTP/verification extraction lives in the private Intelligence package.
+    static func find(in text: String) -> String? {
+        let pattern = #"(?<!\d)(\d{4,8})(?!\d)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let codeRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[codeRange])
+    }
+}
+
 struct OTPEvent: Identifiable, Equatable {
     let id: String
     let code: String

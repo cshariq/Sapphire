@@ -1,6 +1,7 @@
 #if !SAPPHIRE_FULL_BUILD
 import Foundation
 import Combine
+import SwiftUI
 
 public enum SubscriptionTier: String, Codable, CaseIterable {
     case free, basic, pro, ultra
@@ -51,7 +52,12 @@ public final class SubscriptionManager: ObservableObject {
     public var activeTier: SubscriptionTier { entitlements.tier }
     public var isSignedIn: Bool { false }
     public var userDisplayName: String { "Guest" }
+    public var userInitials: String { "G" }
+    public var tierLabel: String { SubscriptionFeatureCatalog.tierDisplayName(activeTier) }
     public var hasBetaSoftwareAccess: Bool { false }
+    public var tierGradientColors: [Color] {
+        [.gray.opacity(0.55), .gray.opacity(0.35)]
+    }
 
     public func hasAccess(to feature: AppFeature) -> Bool { SubscriptionAccess.hasAccess(to: feature) }
     public func isFeatureEnabled(_ feature: AppFeature) -> Bool { SubscriptionAccess.hasAccess(to: feature) }
@@ -66,5 +72,19 @@ extension Notification.Name {
     public static let sapphireOpenAccountPane = Notification.Name("sapphireOpenAccountPane")
     public static let subscriptionSessionRevoked = Notification.Name("subscriptionSessionRevoked")
     public static let subscriptionEntitlementsDidChange = Notification.Name("subscriptionEntitlementsDidChange")
+}
+
+public enum SubscriptionRevocationReason: String {
+    case sessionExpired
+    case licenseInvalid
+    case signedOut
+
+    public var alertMessage: String {
+        switch self {
+        case .sessionExpired: return "Your Sapphire session expired. Sign in again to restore subscription features."
+        case .licenseInvalid: return "Your Sapphire license could not be verified."
+        case .signedOut: return "You have been signed out of Sapphire."
+        }
+    }
 }
 #endif
