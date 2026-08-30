@@ -4,6 +4,8 @@
 <dict>
 	<key>BUNDLE_ID</key>
 	<string>com.idansh.sapphire</string>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:000000000000:ios:0000000000000000000000</string>
 	<key>CLIENT_ID</key>
 	<string></string>
 	<key>REVERSED_CLIENT_ID</key>
