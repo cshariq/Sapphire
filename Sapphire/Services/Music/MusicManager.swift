@@ -1898,6 +1898,24 @@ class MusicManager: ObservableObject {
             self.triggerQuickPeek()
             self.lastTrackChangeDate = Date()
 
+            if isSpotify {
+                // Drop stale Connect/private-API artist chrome until the new track is resolved.
+                spotifyPrivateAPI.invalidateArtistEnrichment()
+
+                // Without a usable Connect device, Media Remote identity is authoritative.
+                // Keeping the previous Spotify URI re-hydrates the wrong artist profile.
+                if !hasUsableSpotifyConnectPlayback {
+                    let connectTitle = spotifyPrivateAPI.playerState?.track?.metadata?.title?
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                    let mrTitle = resolvedTitle?.lowercased()
+                    if connectTitle == nil || mrTitle == nil || connectTitle != mrTitle {
+                        self.uri = nil
+                        self.trackID = nil
+                    }
+                }
+            }
+
             // Media Remote often delivers the new title before artwork. Drop stale cover
             // so a later artwork-only update can replace it.
             if payload.artwork == nil {

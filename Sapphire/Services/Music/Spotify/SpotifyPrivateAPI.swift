@@ -158,6 +158,19 @@ class SpotifyPrivateAPIManager: ObservableObject {
     @Published var isConnectStreamingSession: Bool = false
     @Published var isSmartShuffleActive: Bool = false
     private var deviceTransferNoticeClearTask: Task<Void, Never>?
+    /// Bumped when the displayed track changes so late NPV artist fetches can't overwrite UI.
+    private(set) var artistEnrichmentGeneration: UInt64 = 0
+
+    func invalidateArtistEnrichment() {
+        artistEnrichmentGeneration &+= 1
+        nowPlayingArtist = nil
+        artistConcerts = []
+        trackArtistCredits = []
+        relatedTracks = []
+        similarAlbums = []
+        popularReleases = []
+        currentCanvas = nil
+    }
 
     var isControllingConnectPlayback: Bool {
         guard isConnectStreamingSession,
@@ -4976,12 +4989,18 @@ extension SpotifyPrivateAPIManager {
     }
 
     func fetchArtistConcerts(artistURI: String, trackURI: String) async -> [SpotifyArtistConcert] {
+        let generation = artistEnrichmentGeneration
         async let npvTask: (SpotifyArtistProfile?, [SpotifyArtistConcert]) = fetchNpvArtist(artistURI: artistURI, trackURI: trackURI)
         async let geoTask = fetchGeoConcerts(artistURI: artistURI)
 
         let (profile, npvConcerts) = await npvTask
         let geoConcerts = await geoTask
         let concerts = geoConcerts.isEmpty ? npvConcerts : geoConcerts
+
+        guard generation == artistEnrichmentGeneration else {
+            return concerts
+        }
+
         if let profile {
             publishExtendedState(concerts: concerts, nowPlayingArtist: profile)
         } else {

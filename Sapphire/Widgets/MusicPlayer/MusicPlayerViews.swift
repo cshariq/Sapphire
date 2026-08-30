@@ -189,7 +189,22 @@ struct MusicPlayerView: View {
 
     private var spotifyArtist: SpotifyArtistProfile? {
         guard isSpotifyPlaying, settings.settings.spotifyShowArtistProfile else { return nil }
-        return musicManager.spotifyPrivateAPI.nowPlayingArtist
+        guard let profile = musicManager.spotifyPrivateAPI.nowPlayingArtist else { return nil }
+        // Never show a profile that doesn't belong to the currently displayed track artist.
+        guard let trackArtist = musicManager.artist?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !trackArtist.isEmpty else { return profile }
+        let profileName = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let track = trackArtist.lowercased()
+        let name = profileName.lowercased()
+        guard track == name || track.contains(name) || name.contains(track) else {
+            return nil
+        }
+        return profile
+    }
+
+    private var displayedArtistName: String {
+        musicManager.artist ?? spotifyArtist?.name ?? "Artist"
     }
 
     private var nextQueueTrack: PlayerState.Track? {
@@ -353,7 +368,7 @@ struct MusicPlayerView: View {
                                     .clipShape(Circle())
                                     .id(artist.uri)
                                 }
-                                Text(artist.name)
+                                Text(displayedArtistName)
                                     .font(.system(size: 12, weight: .medium, design: .rounded))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
