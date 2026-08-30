@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 struct FinanceQuote {
     let symbol: String
@@ -27,4 +28,13 @@ final class FinanceAPIService {
             closingPrice: nil
         )
     }
+}
+
+extension FinanceAPIService {
+    func fetchQuote(symbol: String) async -> FinanceQuote? { nil }
+}
+
+enum FinanceLiveActivityView {
+    @ViewBuilder static func left(for payload: FinancePayload) -> some View { EmptyView() }
+    @ViewBuilder static func right(for payload: FinancePayload) -> some View { EmptyView() }
 }
