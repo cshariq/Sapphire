@@ -1,6 +1,7 @@
 #if !SAPPHIRE_FULL_BUILD
 import Foundation
 import Combine
+import SwiftUI
 
 public enum SubscriptionTier: String, Codable, CaseIterable {
     case free, basic, pro, ultra
@@ -43,6 +44,10 @@ public enum SubscriptionAccess {
 
 public final class SubscriptionManager: ObservableObject {
     public static let shared = SubscriptionManager()
+
+    public var tierGradientColors: [Color] { [.gray, .gray.opacity(0.6)] }
+    public var userInitials: String { "G" }
+    public var tierLabel: String { "Free" }
 
     @Published public private(set) var entitlements: SubscriptionEntitlements = .free
 
