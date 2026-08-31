@@ -184,14 +184,9 @@ struct NotchController: View {
     private enum NotchCompleteHideReason {
         case manualSwipe
         case inactive
-        case fullScreen
     }
 
     private var isManuallyHidden: Bool { completeHideReason != nil }
-
-    private var isNotchScreenFullScreen: Bool {
-        activeAppMonitor.isFullScreen
-    }
 
     // MARK: - Computed Properties
     private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
@@ -1635,8 +1630,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 revealNotchFromCompleteHide()
             } else if completeHideReason == .manualSwipe {
                 return
-            } else if completeHideReason == .fullScreen, newActivity == .lockScreen {
-                revealNotchFromCompleteHide()
             }
         } else if completeHideReason == .manualSwipe {
             return
@@ -2169,14 +2162,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .inactive:
             guard settings.settings.hideNotchWhenInactive else { return }
             guard !inactiveHideUserOverride else { return }
-        case .fullScreen:
-            guard settings.settings.hideLiveActivityInFullScreen else { return }
         }
         guard completeHideReason == nil else {
             completeHideReason = reason
-            if reason == .fullScreen {
-                stopHiddenNotchSwipeMonitor()
-            }
             return
         }
 
@@ -2206,16 +2194,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         notchWindow?.alphaValue = 0
         notchWindow?.ignoresMouseEvents = true
         syncNotchHostWindowHeight(contentHeight: 0)
-        if reason != .fullScreen {
-            startHiddenNotchSwipeMonitor()
-        }
+        startHiddenNotchSwipeMonitor()
     }
 
     private func revealNotchFromCompleteHide() {
         guard completeHideReason != nil else { return }
-        if completeHideReason == .fullScreen, settings.settings.hideLiveActivityInFullScreen, isNotchScreenFullScreen, liveActivityManager.currentActivity != .lockScreen {
-            return
-        }
         let wasManualSwipeReveal = completeHideReason == .manualSwipe
         completeHideReason = nil
         stopHiddenNotchSwipeMonitor()
@@ -2244,18 +2227,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func evaluateInactiveNotchVisibility() {
         if liveActivityManager.currentActivity == .lockScreen { return }
-        notchLog.info("evaluateInactiveNotchVisibility: hideLiveActivityInFullScreen=\(settings.settings.hideLiveActivityInFullScreen) isNotchScreenFullScreen=\(isNotchScreenFullScreen) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
-        if settings.settings.hideLiveActivityInFullScreen && isNotchScreenFullScreen {
-            if completeHideReason == nil {
-                hideNotchCompletely(reason: .fullScreen)
-            }
-            return
-        }
-        if completeHideReason == .fullScreen {
-            revealNotchFromCompleteHide()
-            return
-        }
-
+        notchLog.info("evaluateInactiveNotchVisibility: hideNotchWhenInactive=\(settings.settings.hideNotchWhenInactive) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
         guard settings.settings.hideNotchWhenInactive else { return }
         if completeHideReason == .manualSwipe { return }
 
