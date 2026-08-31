@@ -952,6 +952,8 @@ private struct PermissionRowView: View {
             Image(systemName: permission.iconName).font(.title2).frame(width: 40, height: 40).background(permission.iconColor.opacity(0.2)).clipShape(Circle()).foregroundColor(permission.iconColor)
             VStack(alignment: .leading, spacing: 2) { Text(permission.title).font(.headline); Text(permission.description).font(.subheadline).foregroundColor(.secondary) }
             Spacer()
+            PermissionFeatureInfoButton(permission: permission)
+                .padding(.trailing, 4)
             let status = manager.status(for: permission.type)
             switch status {
             case .granted: Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green)

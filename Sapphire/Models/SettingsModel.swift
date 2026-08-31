@@ -1035,6 +1035,7 @@ struct Settings: Codable, Equatable {
 
     var hudDuration: Double = 2.5
     var hudShowPercentage: Bool = true
+    var hudShowFunctionName: Bool = false
     var hudVisualStyle: HUDVisualStyle = .adaptive
     var hudCustomColor: CodableColor? = CodableColor(color: .accentColor)
     var enableVolumeHUD: Bool = true
@@ -2051,7 +2052,7 @@ enum DefaultMusicPlayer: String, Codable, CaseIterable, Identifiable {
 }
 
 enum HUDStyle: String, Codable, CaseIterable, Identifiable {
-    case `default`, thin
+    case `default`, thin, dots
     var id: String { self.rawValue.capitalized }
 }
 
@@ -2235,6 +2236,13 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appLock: return [.red, .orange]
         default: return nil
         }
+    }
+}
+
+extension SettingsSection {
+    /// The feature panes whose `requiredPermissions` include the given permission.
+    static func features(requiring permission: PermissionType) -> [SettingsSection] {
+        allCases.filter { $0.requiredPermissions.contains(permission) }
     }
 }
 

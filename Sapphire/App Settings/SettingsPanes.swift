@@ -184,7 +184,73 @@ struct PermissionStatusRowView: View {
             case .denied: Image(systemName: "xmark.circle.fill").font(.title2).foregroundColor(.red)
             case .notRequested: Button("Request") { permissionsManager.requestPermission(permission.type) }.buttonStyle(.bordered).tint(.accentColor)
             }
+            PermissionFeatureInfoButton(permission: permission)
+                .padding(.trailing, 4)
         }.padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+    }
+}
+
+struct PermissionFeatureInfoButton: View {
+    let permission: PermissionItem
+    @State private var isShowingInfo = false
+
+    var body: some View {
+        Button {
+            isShowingInfo.toggle()
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("See which features require this permission")
+        .popover(isPresented: $isShowingInfo, arrowEdge: .trailing) {
+            PermissionFeatureInfoPopover(permission: permission)
+        }
+    }
+}
+
+struct PermissionFeatureInfoPopover: View {
+    let permission: PermissionItem
+
+    private var features: [SettingsSection] { SettingsSection.features(requiring: permission.type) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label {
+                Text(permission.title)
+            } icon: {
+                Image(systemName: permission.iconName)
+                    .foregroundStyle(permission.iconColor)
+            }
+            .font(.headline)
+
+            Divider()
+
+            if features.isEmpty {
+                Text(permission.description)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Required for")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                ForEach(features, id: \.self) { section in
+                    HStack(spacing: 8) {
+                        Image(systemName: section.systemImage)
+                            .font(.system(size: 12))
+                            .foregroundStyle(section.iconBackgroundColor)
+                            .frame(width: 16)
+                        Text(section.label)
+                            .font(.subheadline)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 240)
     }
 }
 
@@ -7043,6 +7109,9 @@ struct HUDSettingsView: View {
                     Divider().padding(.horizontal)
 
                     ToggleRow(title: "Show Percentage", description: "", isOn: $settings.settings.hudShowPercentage)
+                    Divider().padding(.horizontal)
+
+                    ToggleRow(title: "Show Function Name", description: "Display the HUD name (e.g. Volume, Brightness, Spotify) when the thin style is enabled.", isOn: $settings.settings.hudShowFunctionName)
                     Divider().padding(.horizontal)
 
                     HStack {
