@@ -43,12 +43,16 @@ log_file = open("spotify_api_log.jsonl", "w", buffering=1)
 
 
 def is_relevant(flow):
-    host = flow.request.pretty_host
-    url = flow.request.pretty_url
+    request = flow.request
+    host = request.pretty_host
+    url = request.pretty_url
+
     if not any(d in host for d in SPOTIFY_DOMAINS):
         return False
+
     if any(p in url for p in EXCLUDE_PATTERNS):
         return False
+
     return True
 
 
@@ -56,17 +60,20 @@ def request(flow):
     if not is_relevant(flow):
         return
 
+    request = flow.request
+    url = request.pretty_url
+
     entry = {
         "timestamp": time.time(),
-        "method": flow.request.method,
-        "url": flow.request.pretty_url,
-        "host": flow.request.pretty_host,
-        "path": urlparse(flow.request.pretty_url).path,
-        "headers": dict(flow.request.headers),
-        "body": flow.request.get_text(strict=False),
+        "method": request.method,
+        "url": url,
+        "host": request.pretty_host,
+        "path": urlparse(url).path,
+        "headers": dict(request.headers),
+        "body": request.get_text(strict=False),
     }
 
-    print(f"[SpotifyAPI] {flow.request.method} {entry['path']}")
+    print(f"[SpotifyAPI] {request.method} {entry['path']}")
     log_file.write(json.dumps(entry) + "\n")
 
 
@@ -74,12 +81,17 @@ def response(flow):
     if not is_relevant(flow):
         return
 
-    status = flow.response.status_code
-    content_type = flow.response.headers.get("content-type", "")
-    body_len = len(flow.response.get_text(strict=False) or "")
+    response = flow.response
+    status = response.status_code
+    content_type = response.headers.get("content-type", "")
+
+    body = response.get_text(strict=False) or ""
+    body_len = len(body)
 
     if "json" in content_type or status >= 400:
-        body = flow.response.get_text(strict=False)
-        print(f"[SpotifyAPI]   -> {status} ({body_len}B) {body[:200] if body else ''}")
+        print(
+            f"[SpotifyAPI]   -> {status} ({body_len}B) "
+            f"{body[:200] if body else ''}"
+        )
     else:
         print(f"[SpotifyAPI]   -> {status} ({body_len}B)")
