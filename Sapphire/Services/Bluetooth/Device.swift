@@ -98,7 +98,10 @@ protocol BLEDelegate {
 
 // MARK: - BLE Class (with Probing Logic)
 class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
-    var centralMgr : CBCentralManager!
+    // Created lazily so that instantiating this class (and thus AuthenticationManager)
+    // at app launch never triggers the system Bluetooth permission prompt. The manager
+    // is only spun up when the user actually enables and starts a Bluetooth feature.
+    lazy var centralMgr: CBCentralManager = CBCentralManager(delegate: self, queue: nil)
     var devices : [UUID : Device] = [:]
     var delegate: BLEDelegate?
     var monitoredUUID: UUID?
@@ -124,11 +127,6 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var isScanningContinuously = false
     var includeUnnamedDevices = false
     private var peripheralsBeingProbed = Set<UUID>()
-
-    override init() {
-        super.init()
-        centralMgr = CBCentralManager(delegate: self, queue: nil)
-    }
 
     // MARK: - Scanning Control
 

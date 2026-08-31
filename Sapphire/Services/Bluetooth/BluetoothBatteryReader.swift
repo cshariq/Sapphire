@@ -17,6 +17,10 @@ class BluetoothBatteryReader: NSObject, ObservableObject {
     private let batteryLevelCharUUID = CBUUID(string: "2A19")
     private let modelNumberCharUUID = CBUUID(string: "2A24")
 
+    // Built lazily and only once Bluetooth permission has been granted, so that
+    // merely touching the shared instance at launch never triggers the system
+    // Bluetooth permission prompt. Battery info is still read from the system
+    // plist / system_profiler without CoreBluetooth.
     private var centralManager: CBCentralManager!
     private var pendingPeripherals: Set<CBPeripheral> = []
     private var pendingContinuation: CheckedContinuation<Void, Never>?
@@ -26,7 +30,13 @@ class BluetoothBatteryReader: NSObject, ObservableObject {
 
     private override init() {
         super.init()
-        centralManager = CBCentralManager(delegate: nil, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: false])
+    }
+
+    private func ensureCentralManager() -> CBCentralManager {
+        if let centralManager { return centralManager }
+        let manager = CBCentralManager(delegate: nil, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: false])
+        centralManager = manager
+        return manager
     }
 
     func refreshAllBatteries() async {
@@ -115,23 +125,32 @@ class BluetoothBatteryReader: NSObject, ObservableObject {
     }
 
     private func readBatteriesFromCoreBluetooth() async {
-        guard centralManager.state == .poweredOn else {
+        // Never create the CoreBluetooth manager (or scan) unless the user has
+        // explicitly granted Bluetooth access via the About menu. If access is
+        // undetermined or denied, fall back to plist/system_profiler data only.
+        guard CBManager.authorization == .allowedAlways else {
+            logger.debug("Bluetooth access not granted; skipping CoreBluetooth battery reads")
+            return
+        }
+
+        let central = ensureCentralManager()
+        guard central.state == .poweredOn else {
             logger.debug("CoreBluetooth not powered on, skipping")
             return
         }
 
-        let connected = centralManager.retrieveConnectedPeripherals(withServices: [batteryServiceUUID])
+        let connected = central.retrieveConnectedPeripherals(withServices: [batteryServiceUUID])
         guard !connected.isEmpty else {
             logger.debug("No connected peripherals with Battery Service")
             return
         }
 
         logger.debug("Found \(connected.count) connected peripherals with Battery Service")
-        centralManager.delegate = self
+        central.delegate = self
 
         for peripheral in connected {
             pendingPeripherals.insert(peripheral)
-            centralManager.connect(peripheral, options: nil)
+            central.connect(peripheral, options: nil)
         }
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
