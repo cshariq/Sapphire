@@ -94,8 +94,8 @@ private struct FocusSessionActivitySideView: View {
             Text(subLabel)
                 .font(.system(size: 9, weight: .medium))
                 .foregroundColor(subLabelColor)
-                .padding(5)
         }
+        .padding(.horizontal, 5)
     }
 
     private var subLabel: String {
