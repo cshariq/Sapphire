@@ -570,6 +570,8 @@ struct MusicUpNextView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+                Spacer(minLength: 6)
+
                 ZStack {
                     Circle()
                         .stroke(Color.white.opacity(0.18), lineWidth: 2.5)
@@ -581,9 +583,9 @@ struct MusicUpNextView: View {
                 }
                 .frame(width: 16, height: 16)
             }
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: 220, alignment: .leading)
-        .padding(.horizontal, -9)
+        .padding(.horizontal, 0)
         .transition(.opacity.animation(.easeInOut(duration: 0.3)))
     }
 

@@ -7,7 +7,7 @@
 
 import Foundation
 
-let SapphireHelperProtocolVersion: Int = 5
+let SapphireHelperProtocolVersion: Int = 6
 
 public enum ChargeControlMode: Int {
     case unsupported = 0
@@ -78,5 +78,10 @@ public class FanInfo: NSObject, NSSecureCoding, Identifiable {
 
     func writeHostsEntries(_ lines: [String], reply: @escaping (Bool) -> Void)
     func removeHostsEntries(reply: @escaping (Bool) -> Void)
+
+    /// Replaces the running Sapphire app bundle with a freshly downloaded one.
+    /// Runs as root inside the daemon, so no per-update admin prompt is needed.
+    /// `completion(true, nil)` on success; otherwise `(false, errorMessage)`.
+    func installUpdate(newAppPath: String, currentAppPath: String, completion: @escaping (Bool, String?) -> Void)
 
 }

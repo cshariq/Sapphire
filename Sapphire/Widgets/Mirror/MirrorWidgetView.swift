@@ -18,6 +18,7 @@ struct MirrorWidgetView: View {
                 MirrorCameraPreviewView(
                     session: camera.session,
                     flipHorizontally: settings.settings.mirrorFlipHorizontally,
+                    rotationAngle: camera.effectivePreviewRotationAngle,
                     sessionEpoch: camera.sessionEpoch
                 )
                 .transition(.opacity)

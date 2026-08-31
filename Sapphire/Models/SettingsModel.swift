@@ -794,6 +794,7 @@ struct Settings: Codable, Equatable {
     var mirrorWidgetEnabled: Bool = false
     var mirrorOpenOnClick: Bool = true
     var mirrorFlipHorizontally: Bool = true
+    var mirrorRotationMode: MirrorRotationMode = .auto
     var notesOpenOnClick: Bool = true
     var clipboardOpenOnClick: Bool = true
     var clipboardHistoryLimit: Int = 0
@@ -1770,6 +1771,51 @@ enum FocusIntensity: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .minimal, .gentle, .standard: return true
         case .strict: return false
+        }
+    }
+}
+
+enum MirrorRotationMode: String, Codable, CaseIterable, Identifiable {
+    case auto
+    case angle90
+    case angle180
+    case angle270
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .auto: return "Automatic"
+        case .angle90: return "90°"
+        case .angle180: return "180°"
+        case .angle270: return "270°"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .auto: return "rotate.right"
+        case .angle90: return "90.rotation"
+        case .angle180: return "180.rotation"
+        case .angle270: return "270.rotation"
+        }
+    }
+
+    var angle: CGFloat? {
+        switch self {
+        case .auto: return nil
+        case .angle90: return 90
+        case .angle180: return 180
+        case .angle270: return 270
+        }
+    }
+
+    var next: MirrorRotationMode {
+        switch self {
+        case .auto: return .angle90
+        case .angle90: return .angle180
+        case .angle180: return .angle270
+        case .angle270: return .auto
         }
     }
 }

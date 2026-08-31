@@ -12,6 +12,7 @@ import AppKit
 struct MirrorCameraPreviewView: NSViewRepresentable {
     let session: AVCaptureSession
     var flipHorizontally: Bool = true
+    var rotationAngle: CGFloat = 0
     var sessionEpoch: UInt64 = 0
 
     func makeNSView(context: Context) -> NSView {
@@ -34,6 +35,7 @@ struct MirrorCameraPreviewView: NSViewRepresentable {
         host.previewLayer?.frame = host.bounds
         if let preview = host.previewLayer {
             applyMirroring(to: preview)
+            applyRotation(to: preview)
         }
     }
 
@@ -44,6 +46,7 @@ struct MirrorCameraPreviewView: NSViewRepresentable {
         host.previewLayer = preview
         host.layer?.addSublayer(preview)
         applyMirroring(to: preview)
+        applyRotation(to: preview)
     }
 
     private func applyMirroring(to layer: AVCaptureVideoPreviewLayer) {
@@ -53,6 +56,13 @@ struct MirrorCameraPreviewView: NSViewRepresentable {
                 connection.isVideoMirrored = flipHorizontally
             }
         }
+    }
+
+    private func applyRotation(to layer: AVCaptureVideoPreviewLayer) {
+        guard let connection = layer.connection else { return }
+        let angle = rotationAngle.truncatingRemainder(dividingBy: 360)
+        guard connection.isVideoRotationAngleSupported(angle) else { return }
+        connection.videoRotationAngle = angle
     }
 }
 

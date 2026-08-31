@@ -487,6 +487,41 @@ class Helper: NSObject, HelperProtocol {
     func getProtocolVersion(reply: @escaping (Int) -> Void) {
         reply(SapphireHelperProtocolVersion)
     }
+
+    func installUpdate(newAppPath: String, currentAppPath: String, completion: @escaping (Bool, String?) -> Void) {
+        logger.info("[Helper] installUpdate requested (new=\(newAppPath) current=\(currentAppPath))")
+
+        func fail(_ message: String) {
+            logger.error("[Helper] installUpdate failed: \(message)")
+            completion(false, message)
+        }
+
+        let fileManager = FileManager.default
+        guard !newAppPath.isEmpty, (newAppPath as NSString).pathExtension == "app",
+              fileManager.fileExists(atPath: newAppPath),
+              !currentAppPath.isEmpty, currentAppPath != "/",
+              fileManager.fileExists(atPath: currentAppPath) else {
+            fail("Invalid app paths for the update.")
+            return
+        }
+
+        do {
+            try fileManager.removeItem(atPath: currentAppPath)
+        } catch {
+            fail("Could not remove the existing app: \(error.localizedDescription)")
+            return
+        }
+
+        do {
+            try fileManager.moveItem(atPath: newAppPath, toPath: currentAppPath)
+        } catch {
+            fail("Could not move the new app into place: \(error.localizedDescription)")
+            return
+        }
+
+        logger.log("[Helper] installUpdate succeeded; new app is in place at \(currentAppPath)")
+        completion(true, nil)
+    }
     func getChargeControlMode(reply: @escaping (Int) -> Void) {
         reply(chargeControlMode.rawValue)
     }

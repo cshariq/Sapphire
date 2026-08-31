@@ -210,6 +210,17 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
     let captureSession = AVCaptureSession()
     private let videoDataOutput = AVCaptureVideoDataOutput()
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var rotationObservation: NSKeyValueObservation?
+    private var faceIDDevice: AVCaptureDevice?
+    private var currentFaceIDRotationAngle: CGFloat = 0
+
+    /// AVDeviceTransportType values (kIOAudioDeviceTransportType* from IOKit).
+    private enum DeviceTransportType {
+        static let builtIn: Int32 = 1
+        static let airPlay: Int32 = 6
+        static let virtual: Int32 = 7
+    }
 
     private static let sessionQueueKey = DispatchSpecificKey<Bool>()
     private static let sharedSessionQueue: DispatchQueue = {
@@ -306,6 +317,61 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                 conn.isVideoMirrored = true
             }
         }
+
+        faceIDDevice = device
+        setupRotationCoordinatorIfNeeded(for: device)
+    }
+
+    /// External cameras (USB/Thunderbolt, e.g. an Insta360) deliver sensor-native
+    /// buffers that are rotated relative to how they're mounted, which breaks face
+    /// detection. The rotation coordinator reports the camera's orientation so the
+    /// video data output can rotate every frame to upright before Vision sees it.
+    /// Built-in and Continuity cameras are already oriented by the system.
+    private func setupRotationCoordinatorIfNeeded(for device: AVCaptureDevice) {
+        rotationObservation = nil
+        rotationCoordinator = nil
+
+        let transport = device.transportType
+        guard transport != DeviceTransportType.builtIn,
+              transport != DeviceTransportType.airPlay,
+              transport != DeviceTransportType.virtual else {
+            return
+        }
+
+        Task { @MainActor in
+            guard self.faceIDDevice === device else { return }
+            let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+            self.rotationCoordinator = coordinator
+            self.rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.initial, .new]) { [weak self] coordinator, _ in
+                let autoAngle = coordinator.videoRotationAngleForHorizonLevelCapture
+                Task { @MainActor in
+                    self?.applyFaceIDRotation(autoAngle: autoAngle)
+                }
+            }
+        }
+    }
+
+    private func applyFaceIDRotation(autoAngle: CGFloat) {
+        guard let device = faceIDDevice else { return }
+
+        // A manual rotation from Mirror settings also applies when Face ID uses
+        // the same external camera, since the manual angle describes how the
+        // camera is physically mounted.
+        let angle: CGFloat
+        let transport = device.transportType
+        if transport != DeviceTransportType.builtIn,
+           transport != DeviceTransportType.airPlay,
+           transport != DeviceTransportType.virtual,
+           let manual = SettingsModel.shared.settings.mirrorRotationMode.angle {
+            angle = manual
+        } else {
+            angle = autoAngle
+        }
+
+        currentFaceIDRotationAngle = angle
+        guard let conn = videoDataOutput.connection(with: .video),
+              conn.isVideoRotationAngleSupported(angle) else { return }
+        conn.videoRotationAngle = angle
     }
 
     func startCameraSession() {
@@ -389,6 +455,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
             let newLayer = AVCaptureVideoPreviewLayer(session: captureSession)
             newLayer.videoGravity = .resizeAspectFill
             self.applyMirroringLocked(to: newLayer)
+            self.applyRotationLocked(to: newLayer)
             layer = newLayer
         }
         previewLayer = layer
@@ -401,15 +468,30 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         }
     }
 
+    func applyRotation(to previewLayer: AVCaptureVideoPreviewLayer) {
+        sessionQueue.sync {
+            applyRotationLocked(to: previewLayer)
+        }
+    }
+
     private func applyMirroringLocked(to previewLayer: AVCaptureVideoPreviewLayer) {
         guard let connection = previewLayer.connection, connection.isVideoMirroringSupported else { return }
         if connection.automaticallyAdjustsVideoMirroring { connection.automaticallyAdjustsVideoMirroring = false }
         connection.isVideoMirrored = true
     }
 
+    private func applyRotationLocked(to previewLayer: AVCaptureVideoPreviewLayer) {
+        guard let connection = previewLayer.connection,
+              connection.isVideoRotationAngleSupported(currentFaceIDRotationAngle) else { return }
+        connection.videoRotationAngle = currentFaceIDRotationAngle
+    }
+
     func cleanupFaceIDResources() {
         isAuthenticating = false
         isRegistrationMode = false
+        rotationObservation = nil
+        rotationCoordinator = nil
+        faceIDDevice = nil
         stopCameraSession()
         FaceIDDataStore.shared.teardownBuffers()
         FaceIDModelManager.shared.unloadModels()

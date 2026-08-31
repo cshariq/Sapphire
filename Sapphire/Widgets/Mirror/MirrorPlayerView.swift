@@ -23,6 +23,7 @@ struct MirrorPlayerView: View {
                     MirrorCameraPreviewView(
                         session: camera.session,
                         flipHorizontally: settings.settings.mirrorFlipHorizontally,
+                        rotationAngle: camera.effectivePreviewRotationAngle,
                         sessionEpoch: camera.sessionEpoch
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -100,6 +101,10 @@ struct MirrorPlayerView: View {
                 iconButton(systemName: "arrow.left.arrow.right", help: "Flip horizontally") {
                     settings.settings.mirrorFlipHorizontally.toggle()
                     camera.updateMirroring(flipHorizontally: settings.settings.mirrorFlipHorizontally)
+                }
+
+                iconButton(systemName: "rotate.right", help: "Rotate camera") {
+                    settings.settings.mirrorRotationMode = settings.settings.mirrorRotationMode.next
                 }
 
                 stopButton
@@ -247,6 +252,7 @@ struct MirrorFullscreenView: View {
                 MirrorCameraPreviewView(
                     session: camera.session,
                     flipHorizontally: settings.settings.mirrorFlipHorizontally,
+                    rotationAngle: camera.effectivePreviewRotationAngle,
                     sessionEpoch: camera.sessionEpoch
                 )
                 .ignoresSafeArea()
@@ -282,6 +288,18 @@ struct MirrorFullscreenView: View {
                         }
                         .buttonStyle(.plain)
                         .help("Flip horizontally")
+
+                        Button {
+                            settings.settings.mirrorRotationMode = settings.settings.mirrorRotationMode.next
+                        } label: {
+                            Image(systemName: "rotate.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 34, height: 34)
+                                .background(.black.opacity(0.5), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Rotate camera")
 
                         Button {
                             camera.stop()

@@ -1206,6 +1206,27 @@ struct MirrorSettingsView: View {
                         description: "Mirror the camera feed horizontally for a natural selfie view.",
                         isOn: $settings.settings.mirrorFlipHorizontally
                     )
+
+                    Divider().padding(.leading, 20)
+
+                    HStack {
+                        Text("Camera Rotation")
+                        Spacer()
+                        Picker("", selection: $settings.settings.mirrorRotationMode) {
+                            ForEach(MirrorRotationMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 130)
+                    }
+                    .padding()
+
+                    Text("Automatically matches the orientation reported by the camera. If an external camera feed appears rotated, choose a fixed angle to display it upright.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom, 5)
                 }
                 .modifier(SettingsContainerModifier())
             }

@@ -114,6 +114,87 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private let minimumBackgroundCheckGap: TimeInterval = 30 * 60
     private let persistedAvailableUpdateKey = "SapphirePersistedAvailableUpdate"
 
+    // Fallback copy of `install_update.sh`. The updater prefers the version bundled
+    // as a resource, but uses this embedded copy if that resource is missing or
+    // unreadable in the running app — otherwise the install fails with a
+    // "install_update.sh … there is no such file" error. Keep in sync with
+    // `Sapphire/App Settings/install_update.sh`.
+    private let embeddedInstallUpdateScript = """
+#!/bin/bash
+
+# Replaces the running Sapphire app bundle with a freshly downloaded one.
+# Runs as the current user when the install location is writable (no password).
+# Falls back to root only when launched with administrator privileges.
+#
+# Optional 4th argument: SYNC_MODE=1 tells the script the app is still alive and
+# waiting for this script's result, so it can detect failures and fall back. In
+# sync mode the script skips waiting for the app to quit and skips relaunching
+# it — the app relaunches itself once the script has finished.
+
+PID=$1
+NEW_APP_PATH=$2
+OLD_APP_PATH=$3
+SYNC_MODE=$4
+
+LOG_FILE="${HOME}/Library/Logs/SapphireUpdate.log"
+if [ "$(id -u)" -eq 0 ]; then
+    CONSOLE_USER=$(stat -f "%Su" /dev/console)
+    LOG_FILE=$(eval echo "~$CONSOLE_USER/Library/Logs/SapphireUpdate.log")
+fi
+
+echo "---------------------------------" >> "$LOG_FILE"
+echo "Update script started at $(date) (uid=$(id -u))" >> "$LOG_FILE"
+echo "PID to wait for: $PID" >> "$LOG_FILE"
+echo "New app path: $NEW_APP_PATH" >> "$LOG_FILE"
+echo "Old app path: $OLD_APP_PATH" >> "$LOG_FILE"
+echo "Sync mode: $SYNC_MODE" >> "$LOG_FILE"
+
+if [ -z "$OLD_APP_PATH" ] || [ "$OLD_APP_PATH" == "/" ] || [ ! -d "$OLD_APP_PATH" ]; then
+    echo "ERROR: Invalid old application path provided. Aborting update." >> "$LOG_FILE"
+    exit 1
+fi
+
+if [ "$SYNC_MODE" != "1" ]; then
+    echo "Waiting for application (PID: $PID) to quit..." >> "$LOG_FILE"
+    while ps -p "$PID" > /dev/null; do
+        sleep 1
+    done
+    echo "Application has quit." >> "$LOG_FILE"
+fi
+
+echo "Removing old application at $OLD_APP_PATH..." >> "$LOG_FILE"
+rm -rf "$OLD_APP_PATH"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to remove old application." >> "$LOG_FILE"
+    exit 1
+fi
+echo "Old application removed." >> "$LOG_FILE"
+
+echo "Moving new application into place..." >> "$LOG_FILE"
+mv "$NEW_APP_PATH" "$OLD_APP_PATH"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to move new application into place." >> "$LOG_FILE"
+    exit 1
+fi
+echo "New application moved." >> "$LOG_FILE"
+
+if [ "$SYNC_MODE" != "1" ]; then
+    if [ "$(id -u)" -eq 0 ]; then
+        CURRENT_USER=$(stat -f "%Su" /dev/console)
+        su - "$CURRENT_USER" -c "open \"$OLD_APP_PATH\""
+    else
+        open "$OLD_APP_PATH"
+    fi
+else
+    echo "Sync mode: relaunch is handled by the app." >> "$LOG_FILE"
+fi
+
+echo "Update script finished." >> "$LOG_FILE"
+echo "---------------------------------" >> "$LOG_FILE"
+
+exit 0
+"""
+
     private override init() {
         super.init()
         restorePersistedAvailableUpdateIfNeeded()
@@ -404,11 +485,24 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return true
     }
 
-    private func copyInstallerToTemporaryDirectory(scriptPath: String) throws -> String {
+    private func prepareInstallerScript() throws -> String {
         let tempScript = FileManager.default.temporaryDirectory
             .appendingPathComponent("sapphire_install_update_\(ProcessInfo.processInfo.processIdentifier).sh")
         try? FileManager.default.removeItem(at: tempScript)
-        try FileManager.default.copyItem(atPath: scriptPath, toPath: tempScript.path)
+
+        // Prefer the script bundled as a resource; fall back to the embedded copy
+        // so the update still works if that resource is missing or unreadable.
+        let scriptData: Data
+        if let scriptPath = Bundle.main.path(forResource: "install_update", ofType: "sh"),
+           let data = try? Data(contentsOf: URL(fileURLWithPath: scriptPath)) {
+            scriptData = data
+        } else if let embedded = embeddedInstallUpdateScript.data(using: .utf8) {
+            scriptData = embedded
+        } else {
+            throw NSError(domain: "UpdateError", code: 1, userInfo: [NSLocalizedDescriptionKey: "install_update.sh is unavailable."])
+        }
+
+        try scriptData.write(to: tempScript)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tempScript.path)
         return tempScript.path
     }
@@ -469,6 +563,43 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         throw NSError(domain: "UpdateError", code: 8, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
+    /// Apple-recommended path: ask the privileged helper (running as root) to swap the
+    /// bundles over XPC, so replacing an app in /Applications needs no per-update
+    /// password prompt. Returns false when the helper isn't installed, isn't responsive,
+    /// or its running version predates the install RPC (the updater then falls back).
+    nonisolated private static func installViaPrivilegedHelper(
+        newAppPath: String,
+        currentAppPath: String
+    ) async -> Bool {
+        guard let version = await XPCClient.shared.helperProtocolVersion(timeout: 3),
+              version >= 6 else {
+            return false
+        }
+
+        return await withCheckedContinuation { continuation in
+            var resumed = false
+            func resumeOnce(_ value: Bool) {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: value)
+            }
+
+            guard let helper = XPCClient.shared.helper else {
+                resumeOnce(false)
+                return
+            }
+
+            helper.installUpdate(newAppPath: newAppPath, currentAppPath: currentAppPath) { success, _ in
+                resumeOnce(success)
+            }
+
+            // Don't let a dead XPC connection hold the update hostage.
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15) {
+                resumeOnce(false)
+            }
+        }
+    }
+
     enum UpdateInstallStrategy {
         case standard
         case withoutPassword
@@ -491,9 +622,6 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
         Task.detached(priority: .userInitiated) {
             do {
-                guard let scriptPath = Bundle.main.path(forResource: "install_update", ofType: "sh") else {
-                    throw NSError(domain: "UpdateError", code: 1, userInfo: [NSLocalizedDescriptionKey: "install_update.sh not found in app bundle."])
-                }
 
                 let fileManager = FileManager.default
                 let tempUnzipDirectory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -518,7 +646,7 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 let processID = String(ProcessInfo.processInfo.processIdentifier)
                 let userWritable = await MainActor.run { self.isInstallPathUserWritable() }
                 let tempScriptPath = try await MainActor.run {
-                    try self.copyInstallerToTemporaryDirectory(scriptPath: scriptPath)
+                    try self.prepareInstallerScript()
                 }
 
                 var installSucceeded = false
@@ -526,34 +654,41 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
 
                 switch strategy {
                 case .standard:
-                    var adminError: Error?
-                    do {
-                        installSucceeded = try Self.runInstallerWithAdministratorPrivileges(
-                            scriptPath: tempScriptPath,
-                            processID: processID,
-                            newAppPath: fullNewAppPath,
-                            currentAppPath: currentAppPath
-                        )
-                    } catch {
-                        if Self.isInstallCancellation(error) {
-                            installCancelled = true
-                        } else {
-                            adminError = error
+                    // Preferred: have the privileged helper replace the app as root. Only if
+                    // that's unavailable do we fall back to the admin-password prompt (and then
+                    // to a current-user install when the location is user-writable).
+                    if await Self.installViaPrivilegedHelper(newAppPath: fullNewAppPath, currentAppPath: currentAppPath) {
+                        installSucceeded = true
+                    } else {
+                        var adminError: Error?
+                        do {
+                            installSucceeded = try Self.runInstallerWithAdministratorPrivileges(
+                                scriptPath: tempScriptPath,
+                                processID: processID,
+                                newAppPath: fullNewAppPath,
+                                currentAppPath: currentAppPath
+                            )
+                        } catch {
+                            if Self.isInstallCancellation(error) {
+                                installCancelled = true
+                            } else {
+                                adminError = error
+                            }
                         }
-                    }
 
-                    if !installSucceeded, !installCancelled, userWritable {
-                        let exitCode = (try? Self.runInstallerAsCurrentUser(
-                            scriptPath: tempScriptPath,
-                            processID: processID,
-                            newAppPath: fullNewAppPath,
-                            currentAppPath: currentAppPath
-                        )) ?? -1
-                        installSucceeded = exitCode == 0
-                    }
+                        if !installSucceeded, !installCancelled, userWritable {
+                            let exitCode = (try? Self.runInstallerAsCurrentUser(
+                                scriptPath: tempScriptPath,
+                                processID: processID,
+                                newAppPath: fullNewAppPath,
+                                currentAppPath: currentAppPath
+                            )) ?? -1
+                            installSucceeded = exitCode == 0
+                        }
 
-                    if !installSucceeded, !installCancelled, let adminError {
-                        throw adminError
+                        if !installSucceeded, !installCancelled, let adminError {
+                            throw adminError
+                        }
                     }
 
                 case .withoutPassword:

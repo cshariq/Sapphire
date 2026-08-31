@@ -26,6 +26,7 @@ struct CameraView: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         if let previewLayer = nsView.layer as? AVCaptureVideoPreviewLayer {
             cameraController.applyMirroring(to: previewLayer)
+            cameraController.applyRotation(to: previewLayer)
         }
     }
 }
