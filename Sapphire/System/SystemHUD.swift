@@ -974,6 +974,52 @@ struct SystemHUDView: View {
         return "speaker.wave.3.fill"
     }
 
+    private func volumeChangeHandler(device: AudioDevice?, isControllingExternal: Bool) -> (Float) -> Void {
+        { newLevel in
+            SystemControl.setVolume(to: newLevel)
+            if newLevel == 0.0 {
+                SystemControl.setMuted(to: true)
+            } else {
+                SystemControl.setMuted(to: false)
+            }
+            if isControllingExternal {
+                if case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, _, let isControlling, let canControl) = hudManager.currentHUD {
+                    hudManager.updateCurrentHUD(to: .externalDeviceVolume(
+                        deviceName: deviceName,
+                        deviceIcon: deviceIcon,
+                        deviceVolume: deviceVolume,
+                        systemVolume: newLevel,
+                        isControllingExternal: isControlling,
+                        canControlVolume: canControl
+                    ))
+                }
+            } else {
+                hudManager.updateCurrentHUD(to: .volume(level: newLevel, device: device))
+            }
+        }
+    }
+
+    private func brightnessChangeHandler(currentDisplayScaleMax: Float, isXDR: Bool) -> (Float) -> Void {
+        { normalizedNewLevel in
+            let deNormalizedLevel = normalizedNewLevel * currentDisplayScaleMax
+            if deNormalizedLevel > 1.0 {
+                if !hudManager.isXDREnabled {
+                    hudManager.isXDREnabled = true
+                    BrightnessManager.shared.activate()
+                }
+                SettingsModel.shared.settings.brightness = deNormalizedLevel
+            } else {
+                if hudManager.isXDREnabled {
+                    hudManager.isXDREnabled = false
+                    BrightnessManager.shared.deactivate()
+                }
+                SystemControl.setBrightness(to: deNormalizedLevel)
+                SettingsModel.shared.settings.brightness = deNormalizedLevel
+            }
+            hudManager.updateCurrentHUD(to: .brightness(level: deNormalizedLevel))
+        }
+    }
+
     @ViewBuilder
     private func systemVolumeContent(
         level: Float,
@@ -996,32 +1042,13 @@ struct SystemHUDView: View {
                 .foregroundColor(.white.opacity(0.8))
                 .frame(width: 40, alignment: .center)
 
-            DynamicSliderIndicator(
-                level: level,
-                onChanged: { newLevel in
-                    SystemControl.setVolume(to: newLevel)
-                    if newLevel == 0.0 {
-                        SystemControl.setMuted(to: true)
-                    } else {
-                        SystemControl.setMuted(to: false)
-                    }
-                    if isControllingExternal {
-                        if case .externalDeviceVolume(let deviceName, let deviceIcon, let deviceVolume, _, let isControlling, let canControl) = hudManager.currentHUD {
-                            hudManager.updateCurrentHUD(to: .externalDeviceVolume(
-                                deviceName: deviceName,
-                                deviceIcon: deviceIcon,
-                                deviceVolume: deviceVolume,
-                                systemVolume: newLevel,
-                                isControllingExternal: isControlling,
-                                canControlVolume: canControl
-                            ))
-                        }
-                    } else {
-                        hudManager.updateCurrentHUD(to: .volume(level: newLevel, device: device))
-                    }
-                }
-            )
-            .frame(height: 14)
+            if settings.settings.volumeHUDStyle == .dots {
+                DynamicDotsIndicator(level: level, onChanged: volumeChangeHandler(device: device, isControllingExternal: isControllingExternal))
+                    .frame(height: 14)
+            } else {
+                DynamicSliderIndicator(level: level, onChanged: volumeChangeHandler(device: device, isControllingExternal: isControllingExternal))
+                    .frame(height: 14)
+            }
 
             if settings.settings.hudShowPercentage {
                 Text("\(Int(level * 100))%")
@@ -1078,28 +1105,13 @@ struct SystemHUDView: View {
                     .foregroundColor(isXDR ? .orange : .white.opacity(0.8))
                     .frame(width: 40, alignment: .center)
 
-                DynamicSliderIndicator(
-                    level: normalizedDisplayLevel,
-                    isXDR: isXDR,
-                    onChanged: { normalizedNewLevel in
-                        let deNormalizedLevel = normalizedNewLevel * currentDisplayScaleMax
-                        if deNormalizedLevel > 1.0 {
-                            if !hudManager.isXDREnabled {
-                                hudManager.isXDREnabled = true
-                                BrightnessManager.shared.activate()
-                            }
-                            SettingsModel.shared.settings.brightness = deNormalizedLevel
-                        } else {
-                            if hudManager.isXDREnabled {
-                                hudManager.isXDREnabled = false
-                                BrightnessManager.shared.deactivate()
-                            }
-                            SystemControl.setBrightness(to: deNormalizedLevel)
-                            SettingsModel.shared.settings.brightness = deNormalizedLevel
-                        }
-                        hudManager.updateCurrentHUD(to: .brightness(level: deNormalizedLevel))
-                    }
-                ).frame(height: 14)
+                if settings.settings.brightnessHUDStyle == .dots {
+                    DynamicDotsIndicator(level: normalizedDisplayLevel, isXDR: isXDR, onChanged: brightnessChangeHandler(currentDisplayScaleMax: currentDisplayScaleMax, isXDR: isXDR))
+                        .frame(height: 14)
+                } else {
+                    DynamicSliderIndicator(level: normalizedDisplayLevel, isXDR: isXDR, onChanged: brightnessChangeHandler(currentDisplayScaleMax: currentDisplayScaleMax, isXDR: isXDR))
+                        .frame(height: 14)
+                }
 
                 if settings.settings.hudShowPercentage {
                     Text(percentageText)
@@ -1160,11 +1172,13 @@ struct SystemHUDView: View {
                       .font(.system(size: 12, weight: .semibold))
                       .lineLimit(1)
 
-                  DynamicSliderIndicator(
-                      level: appVolume,
-                      onChanged: { _ in }
-                  )
-                  .frame(height: 14)
+                  if settings.settings.volumeHUDStyle == .dots {
+                      DynamicDotsIndicator(level: appVolume, onChanged: { _ in })
+                          .frame(height: 14)
+                  } else {
+                      DynamicSliderIndicator(level: appVolume, onChanged: { _ in })
+                          .frame(height: 14)
+                  }
               }
 
               if settings.settings.hudShowPercentage {
@@ -1364,6 +1378,79 @@ struct DynamicSliderIndicator: View {
     }
 }
 
+struct DynamicDotsIndicator: View {
+    @State private var level: Float
+    let externalLevel: Float
+    var onChanged: ((Float) -> Void)?
+    @EnvironmentObject var settings: SettingsModel
+
+    let forceGreen: Bool
+    let isXDR: Bool
+
+    private let dotCount: Int = 12
+    private let dotSpacing: CGFloat = 3
+
+    init(level: Float, forceGreen: Bool = false, isXDR: Bool = false, onChanged: ((Float) -> Void)? = nil) {
+        self.externalLevel = level
+        self._level = State(initialValue: level)
+        self.onChanged = onChanged
+        self.forceGreen = forceGreen
+        self.isXDR = isXDR
+    }
+
+    private var indicatorColor: Color {
+        if forceGreen { return .green }
+        if isXDR { return .blue }
+        switch settings.settings.hudVisualStyle {
+        case .white: return .white.opacity(0.7)
+        case .color: return settings.settings.hudCustomColor?.color ?? .accentColor
+        case .adaptive:
+            if level >= 0.9 { return .red }
+            if level > 0.6 { return .yellow }
+            return .white
+        }
+    }
+
+    private var filledDots: Int {
+        min(dotCount, Int((Float(dotCount) * level).rounded(.up)))
+    }
+
+    private func dotColor(for index: Int) -> Color {
+        index < filledDots ? indicatorColor : Color.gray.opacity(0.3)
+    }
+
+    private func dotGlowRadius(for index: Int) -> CGFloat {
+        guard index < filledDots else { return 0 }
+        if settings.settings.hudVisualStyle == .adaptive {
+            return CGFloat(level * 6)
+        }
+        return 0
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let dotSize = (geometry.size.width - dotSpacing * CGFloat(dotCount - 1)) / CGFloat(dotCount)
+            HStack(spacing: dotSpacing) {
+                ForEach(0..<dotCount, id: \.self) { index in
+                    Circle()
+                        .fill(dotColor(for: index))
+                        .frame(width: dotSize, height: dotSize)
+                        .shadow(color: dotColor(for: index).opacity(0.9), radius: dotGlowRadius(for: index))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Capsule())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                let newLevel = Float(value.location.x / geometry.size.width).clamped(to: 0...1)
+                self.level = newLevel
+                onChanged?(newLevel)
+            })
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: level)
+        }
+        .onChange(of: externalLevel) { _, newLevel in self.level = newLevel }
+    }
+}
+
 fileprivate struct BoldPillSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
@@ -1407,6 +1494,25 @@ struct SystemHUDSlimActivityView {
 
      @ViewBuilder
      static func left(type: HUDType, settings: SettingsModel) -> some View {
+         HStack(spacing: 6) {
+             leadingIcon(type: type, settings: settings)
+             if showNameFor(type: type, settings: settings) {
+                 Text(title(for: type))
+                     .font(.system(size: 11, weight: .semibold))
+                     .foregroundColor(.white.opacity(0.6))
+                     .lineLimit(1)
+                     .truncationMode(.tail)
+                     .transition(.opacity.combined(with: .offset(x: 5)))
+             }
+         }
+     }
+
+     private static func showNameFor(type: HUDType, settings: SettingsModel) -> Bool {
+         settings.settings.hudShowFunctionName && thinStyleActive(for: type, settings: settings)
+     }
+
+     @ViewBuilder
+     private static func leadingIcon(type: HUDType, settings: SettingsModel) -> some View {
          switch type {
          case .volume(let level, let device):
              if settings.settings.volumeHUDShowDeviceIcon, let dev = device {
@@ -1500,6 +1606,30 @@ struct SystemHUDSlimActivityView {
          }
      }
 
+     static func style(for type: HUDType, settings: SettingsModel) -> HUDStyle {
+         switch type {
+         case .volume, .externalDeviceVolume, .appVolume:
+             return settings.settings.volumeHUDStyle
+         case .brightness, .keyboardBrightness, .multiDisplayBrightness:
+             return settings.settings.brightnessHUDStyle
+         }
+     }
+
+     static func thinStyleActive(for type: HUDType, settings: SettingsModel) -> Bool {
+         style(for: type, settings: settings) != .default
+     }
+
+     static func title(for type: HUDType) -> String {
+         switch type {
+         case .volume: return "Volume"
+         case .brightness, .multiDisplayBrightness: return "Brightness"
+         case .keyboardBrightness: return "Keyboard Brightness"
+         case .externalDeviceVolume(let deviceName, _, _, _, let isControllingExternal, _):
+             return isControllingExternal ? deviceName : "Volume"
+         case .appVolume(let appName, _, _): return appName
+         }
+     }
+
      static func right(type: HUDType, settings: SettingsModel, availableWidth: CGFloat? = nil) -> some View {
          let level: Float
          let isExternalControl: Bool
@@ -1555,15 +1685,26 @@ struct SystemHUDSlimActivityView {
          }
 
          return HStack(spacing: rightSpacing) {
-             DynamicSliderIndicator(
-                 level: displayLevel,
-                 forceGreen: isExternalControl,
-                 isXDR: isXDR,
-                 showInternalXDRText: false,
-                 onChanged: nil
-             )
-             .frame(width: sliderWidth, height: 6)
-             .fixedSize()
+             if style(for: type, settings: settings) == .dots {
+                 DynamicDotsIndicator(
+                     level: displayLevel,
+                     forceGreen: isExternalControl,
+                     isXDR: isXDR,
+                     onChanged: nil
+                 )
+                 .frame(width: sliderWidth, height: 14)
+                 .fixedSize()
+             } else {
+                 DynamicSliderIndicator(
+                     level: displayLevel,
+                     forceGreen: isExternalControl,
+                     isXDR: isXDR,
+                     showInternalXDRText: false,
+                     onChanged: nil
+                 )
+                 .frame(width: sliderWidth, height: 6)
+                 .fixedSize()
+             }
 
              if showPercentage {
                  Text(percentageText)

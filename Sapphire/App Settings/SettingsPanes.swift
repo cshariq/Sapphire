@@ -7046,6 +7046,10 @@ struct HUDSettingsView: View {
         )
     }
 
+    private var pillStyleEnabled: Bool {
+        settings.settings.volumeHUDStyle == .pill || settings.settings.brightnessHUDStyle == .pill
+    }
+
     private var xdrBrightnessLevelBinding: Binding<Double> {
         Binding(
             get: { Double(settings.settings.xdrBrightnessLevel * 100) },
@@ -7129,6 +7133,37 @@ struct HUDSettingsView: View {
                         ColorPicker("Custom HUD Color", selection: hudCustomColorBinding)
                             .padding()
                             .transition(.opacity)
+                    }
+
+                    if pillStyleEnabled {
+                        Divider().padding(.horizontal)
+                        HStack {
+                            Text("Pill Position")
+                            Spacer()
+                            Picker("", selection: $settings.settings.hudPillPosition) {
+                                ForEach(PillHUDPosition.allCases) { position in
+                                    Text(position.id).tag(position)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 120)
+                        }.padding()
+
+                        HStack {
+                            Text("Pill Style")
+                            Spacer()
+                            Picker("", selection: $settings.settings.hudPillStyle) {
+                                ForEach(PillHUDStyle.allCases) { style in
+                                    Text(style.id).tag(style)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 120)
+                        }.padding()
+
+                        CustomSliderRowView(label: "Pill Length", value: $settings.settings.hudPillLength, range: 160...460, specifier: "%.0f pt")
+                        Divider().padding(.horizontal)
+                        CustomSliderRowView(label: "Pill Thickness", value: $settings.settings.hudPillThickness, range: 44...92, specifier: "%.0f pt")
                     }
                 }
                 .modifier(SettingsContainerModifier())
@@ -10462,7 +10497,7 @@ struct FocusSessionSettingsView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
                 if FocusSessionManager.shared.isSessionActive {
-                    Label("Intensity can't be changed while a session is running — it applies on the next one.", systemImage: "lock.fill")
+                    Label("Intensity can't be changed while a session is running", systemImage: "lock.fill")
                         .font(.caption2)
                         .foregroundColor(.orange)
                         .padding(.horizontal, 16)
@@ -10622,7 +10657,7 @@ struct FocusSessionSettingsView: View {
     private var environmentSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionLabel("Environment")
-            Text("focusedOS-style adjustments applied to the whole Mac while a session runs.")
+            Text("Apply environment adjustments to the whole Mac while a session runs.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 16)

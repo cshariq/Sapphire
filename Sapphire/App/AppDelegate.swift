@@ -241,6 +241,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     lazy var musicManager: MusicManager = .shared
     lazy var systemHUDManager: SystemHUDManager = .shared
+    lazy var pillHUDController: PillHUDController = .shared
     lazy var notificationManager: NotificationManager = NotificationManager()
     lazy var desktopManager: DesktopManager = DesktopManager()
     lazy var focusModeManager: FocusModeManager = .shared
@@ -1385,6 +1386,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         liveActivityStartTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled else { return }
+            _ = self?.pillHUDController
             self?.liveActivityManager.start()
         }
     }

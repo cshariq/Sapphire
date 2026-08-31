@@ -39,13 +39,16 @@ final class FocusBlocker {
         blocker.makeShieldContent = { [weak self] (appName: String, bundleID: String) in
             guard let self else { return AnyView(EmptyView()) }
             let resolvedAppName = AppShieldManager.displayName(for: bundleID)
-            return AnyView(FocusShieldView(
+            return AnyView(AppShieldView(
                 appName: resolvedAppName,
-                intensity: self.intensity,
-                onUnblockNow: { [weak self] in self?.temporarilyUnblock(bundleID: bundleID) },
-                onSnooze: { [weak self] minutes in self?.snooze(bundleID: bundleID, minutes: minutes) },
-                onRequestUnblock: { [weak self] in self?.requestUnblock(bundleID: bundleID) },
-                remainingUnblockTime: { [weak self] in self?.remainingUnblockTime(bundleID: bundleID) }
+                mode: .focus(
+                    intensity: self.intensity,
+                    onUnblockNow: { [weak self] in self?.temporarilyUnblock(bundleID: bundleID) },
+                    onSnooze: { [weak self] minutes in self?.snooze(bundleID: bundleID, minutes: minutes) },
+                    onRequestUnblock: { [weak self] in self?.requestUnblock(bundleID: bundleID) },
+                    remainingUnblockTime: { [weak self] in self?.remainingUnblockTime(bundleID: bundleID) },
+                    onHide: { [weak self] in self?.hideBlockedApp(bundleID: bundleID) }
+                )
             ))
         }
         blocker.forceClosesOnActivation = intensity.forceClosesBlockedApps
@@ -119,6 +122,12 @@ final class FocusBlocker {
         blocker.unshield(bundleID: bundleID)
     }
 
+    func hideBlockedApp(bundleID: String) {
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
+              !app.isTerminated else { return }
+        app.hide()
+    }
+
     func hasPendingUnblockRequest(bundleID: String) -> Bool {
         unblockRequests[bundleID] != nil
     }
@@ -174,149 +183,5 @@ final class FocusBlocker {
             object: nil,
             userInfo: ["appName": appName, "bundleID": bundleID]
         )
-    }
-}
-
-// MARK: - Shield content view
-
-struct FocusShieldView: View {
-    let appName: String
-    let intensity: FocusIntensity
-    let onUnblockNow: () -> Void
-    let onSnooze: (Int) -> Void
-    let onRequestUnblock: () -> Void
-    let remainingUnblockTime: () -> TimeInterval?
-
-    @State private var requested = false
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-            Rectangle()
-                .fill(Color.black.opacity(0.35))
-
-            VStack(spacing: 14) {
-                Image(systemName: iconName)
-                    .font(.system(size: 46, weight: .semibold))
-                    .foregroundStyle(.white)
-
-                Text("\(appName) is blocked")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white)
-
-                Text(message)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-
-                actionButton
-            }
-            .padding(24)
-            .frame(maxWidth: 420)
-        }
-        .ignoresSafeArea()
-    }
-
-    private var iconName: String {
-        switch intensity {
-        case .minimal: return "hand.raised.fill"
-        case .gentle: return "hand.raised.fill"
-        case .standard: return "lock.shield.fill"
-        case .strict: return "shield.lefthalf.filled"
-        }
-    }
-
-    private var message: String {
-        switch intensity {
-        case .minimal:
-            return "Focus session in progress — stay on task! You can use this app for a moment if you really need it."
-        case .gentle:
-            return "Focus session in progress — this app is blocked until the session ends. "
-        case .standard:
-            return "Focus session in progress — this app is restricted. It was closed and will reopen once the session ends."
-        case .strict:
-            return "Focus session in progress — this app is restricted. Unblocking takes 10 minutes and the session can't be stopped early."
-        }
-    }
-
-    @ViewBuilder
-    private var actionButton: some View {
-        switch intensity {
-        case .minimal, .gentle, .standard:
-            VStack(spacing: 10) {
-                if intensity == .minimal {
-                    Button(action: { onUnblockNow() }) {
-                        Label("Use Anyway", systemImage: "arrow.uturn.forward")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.22), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-                snoozeRow
-            }
-        case .strict:
-            if requested || remainingUnblockTime() != nil {
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    if let remaining = remainingUnblockTime() {
-                        VStack(spacing: 4) {
-                            Image(systemName: "hourglass")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Unblocked in \(Self.formatCountdown(remaining))")
-                                .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                        }
-                        .foregroundColor(.white.opacity(0.9))
-                    }
-                }
-            } else {
-                Button(action: {
-                    requested = true
-                    onRequestUnblock()
-                }) {
-                    Label("Request Unblock", systemImage: "clock.badge.questionmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .background(Color.orange.opacity(0.65), in: Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var snoozeRow: some View {
-        VStack(spacing: 5) {
-            Text("Need it briefly? Snooze blocking for")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.white.opacity(0.75))
-            HStack(spacing: 8) {
-                snoozeButton(minutes: 5)
-                snoozeButton(minutes: 15)
-                snoozeButton(minutes: 60)
-            }
-        }
-    }
-
-    private func snoozeButton(minutes: Int) -> some View {
-        Button(action: { onSnooze(minutes) }) {
-            Text("\(minutes)m")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.white.opacity(0.18), in: Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private static func formatCountdown(_ time: TimeInterval) -> String {
-        let total = Int(time.rounded())
-        let minutes = total / 60
-        let seconds = total % 60
-        return String(format: "%d:%02d", minutes, seconds)
     }
 }

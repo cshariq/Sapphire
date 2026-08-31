@@ -544,6 +544,14 @@ class LiveActivityManager: ObservableObject {
                 hudStyle = settingsModel.settings.brightnessHUDStyle
             }
 
+            if hudStyle == .pill {
+                if currentActivity == .systemHUD {
+                    setActivity(type: .none, content: .none)
+                    evaluateAndDisplayActivity()
+                }
+                return
+            }
+
             if hudStyle == .thin {
                 let data = StandardActivityData.hud(type: hudType)
                 let content = LiveActivityContent.standard(

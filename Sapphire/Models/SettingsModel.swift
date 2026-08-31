@@ -1049,6 +1049,10 @@ struct Settings: Codable, Equatable {
     var excludeBuiltInSpeakersFromHUDIcon: Bool = true
     var enableBrightnessHUD: Bool = true
     var brightnessHUDStyle: HUDStyle = .default
+    var hudPillPosition: PillHUDPosition = .right
+    var hudPillStyle: PillHUDStyle = .contained
+    var hudPillLength: Double = 340
+    var hudPillThickness: Double = 64
     var volumesliderstep: Int = 6
     var volumesliderstepByDevice: [String: Int] = [:]
     var brightnessliderstep: Int = 6
@@ -1744,9 +1748,9 @@ enum FocusIntensity: String, Codable, CaseIterable, Identifiable {
     var blurb: String {
         switch self {
         case .minimal:
-            return "App is blurred while blocked. Notifications stay visible, and you can unblock an app instantly with a button — it stays open."
+            return "App is blurred while blocked. Notifications stay visible, and you can unblock an app instantly with a button, the app stays open."
         case .gentle:
-            return "App is blurred while blocked. Notifications stay visible and the app stays open, but there is no unblock button — though you can end the session anytime."
+            return "App is blurred while blocked. Notifications stay visible and the app stays open, but there is no unblock button, although you can end the session anytime."
         case .standard:
             return "Blocked apps are force-closed the moment they open and notifications are hidden. No unblocking, but you can end the session anytime."
         case .strict:
@@ -2052,7 +2056,17 @@ enum DefaultMusicPlayer: String, Codable, CaseIterable, Identifiable {
 }
 
 enum HUDStyle: String, Codable, CaseIterable, Identifiable {
-    case `default`, thin, dots
+    case `default`, thin, dots, pill
+    var id: String { self.rawValue.capitalized }
+}
+
+enum PillHUDPosition: String, Codable, CaseIterable, Identifiable {
+    case left, right, bottom
+    var id: String { self.rawValue.capitalized }
+}
+
+enum PillHUDStyle: String, Codable, CaseIterable, Identifiable {
+    case contained, bare
     var id: String { self.rawValue.capitalized }
 }
 
@@ -2240,7 +2254,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 }
 
 extension SettingsSection {
-    /// The feature panes whose `requiredPermissions` include the given permission.
     static func features(requiring permission: PermissionType) -> [SettingsSection] {
         allCases.filter { $0.requiredPermissions.contains(permission) }
     }
