@@ -292,7 +292,7 @@ struct PopularityIndicator: View {
     }
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "flame.fill")
+            Image(systemName: "chart.line.uptrend.xyaxis")
                 .font(.system(size: 7, weight: .black))
             Text(formatNumber(estimatedPlays))
                 .font(.system(size: 11, weight: .heavy, design: .rounded))

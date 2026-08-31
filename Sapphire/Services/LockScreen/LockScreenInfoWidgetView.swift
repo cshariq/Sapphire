@@ -13,12 +13,60 @@ struct TransparentEffect: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if settings.settings.lockScreenLiquidGlassLook {
+        if settings.settings.lockScreenLiquidGlassLook && settings.settings.lockScreenShowInfoWidgetBackgrounds {
             content
-                .opacity(0.6)
-                .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 2)
+                .frame(height: LockScreenConfiguration.infoWidgetPillHeight)
+                .padding(.horizontal, 12)
+                .background(
+                    ZStack {
+                        Capsule(style: .continuous)
+                            .fill(.ultraThinMaterial)
+
+                        Capsule(style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.15),
+                                        Color.white.opacity(0.05),
+                                        Color.white.opacity(0.10)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+
+                        Capsule(style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.28),
+                                        Color.white.opacity(0.08),
+                                        Color.white.opacity(0.18)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 0.8
+                            )
+
+                        Capsule(style: .continuous)
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.white.opacity(0.10),
+                                        Color.clear
+                                    ],
+                                    center: .topLeading,
+                                    startRadius: 0,
+                                    endRadius: 60
+                                )
+                            )
+                    }
+                )
+                .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
         } else {
             content
+                .frame(height: LockScreenConfiguration.infoWidgetPillHeight)
         }
     }
 }
@@ -66,9 +114,7 @@ struct LockScreenInfoWidgetView: View {
                     MusicInfoView()
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            if musicWidget.isPlaying {
-                                LockScreenMusicPaneController.shared.open()
-                            }
+                            LockScreenMusicPaneController.shared.open()
                         }
                 case .focus:
                     FocusInfoView()
@@ -95,7 +141,7 @@ struct LockScreenInfoWidgetView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: animationValue)
         .padding(.horizontal, LockScreenConfiguration.infoWidgetContainerHorizontalPadding)
-        .fixedSize()
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder
@@ -192,7 +238,9 @@ struct LockScreenInfoWidgetView: View {
 
     @ViewBuilder
     private func MusicInfoView() -> some View {
-        if musicWidget.isPlaying, let title = musicWidget.title {
+        let shouldShow = musicWidget.isPlaying || (settings.settings.lockScreenShowMusicWhenPaused && musicWidget.title != nil)
+
+        if shouldShow, let title = musicWidget.title {
             HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
                 if let cover = musicWidget.artwork ?? musicWidget.appIcon {
                     Image(nsImage: cover)
@@ -204,16 +252,23 @@ struct LockScreenInfoWidgetView: View {
                 VStack(alignment: .leading) {
                     Text(title)
                         .fontWeight(.semibold)
+                        .foregroundColor(musicWidget.isPlaying ? .white : .white.opacity(0.6))
                         .lineLimit(1)
-                    if let artist = musicWidget.artist {
-                        Text(artist)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
+                    HStack(spacing: 4) {
+                        if !musicWidget.isPlaying {
+                            Image(systemName: "pause.fill")
+                                .font(.system(size: 8, weight: .bold))
+                        }
+                        if let artist = musicWidget.artist {
+                            Text(artist)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                 }
             }
-            .foregroundColor(.white)
+            .modifier(TransparentEffect())
             .transition(fadeTransition)
         } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
@@ -303,6 +358,11 @@ struct LockScreenInfoWidgetView: View {
     @ViewBuilder
     private func BatteryInfoView() -> some View {
         if let state = batteryMonitor.currentState {
+            let statusText: String = {
+                if state.isCharging { return "Charging" }
+                if state.isPluggedIn { return "Plugged In" }
+                return "On Battery"
+            }()
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
 
                 if settings.settings.lockScreenBatteryInfo.contains(.statusIcon) {
@@ -351,6 +411,12 @@ struct LockScreenInfoWidgetView: View {
                 if settings.settings.lockScreenBatteryInfo.contains(.percentage) {
                     Text("\(state.level)%")
                         .font(.system(size: LockScreenConfiguration.infoWidgetBoldFontSize, weight: .bold, design: .rounded))
+                }
+
+                if settings.settings.lockScreenBatteryInfo.contains(.statusText) {
+                    Text(statusText)
+                        .font(.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.8))
                 }
 
                 if settings.settings.lockScreenBatteryInfo.contains(.estimatedTime) {

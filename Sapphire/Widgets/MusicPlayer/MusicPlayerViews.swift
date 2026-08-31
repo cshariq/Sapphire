@@ -18,12 +18,6 @@ struct PlayerProgressView: View {
 
     var lightStyle: Bool = false
 
-    private func formatTime(_ seconds: Double) -> String {
-        let cleanSeconds = seconds.isNaN || seconds.isInfinite ? 0 : seconds
-        let (minutes, seconds) = (Int(cleanSeconds) / 60, Int(cleanSeconds) % 60)
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-
     private var timeColor: Color {
         lightStyle ? Color.white.opacity(0.68) : Color.secondary
     }
@@ -38,7 +32,7 @@ struct PlayerProgressView: View {
                 : musicManager.progress(at: context.date)
 
             HStack(alignment: .center, spacing: 8) {
-                Text(formatTime(liveElapsed))
+                Text(liveElapsed.asMinuteSecondClock)
                     .font(.system(size: lightStyle ? 11 : 10, weight: .medium, design: .monospaced))
                     .foregroundColor(timeColor)
                     .contentTransition(.numericText())
@@ -66,7 +60,7 @@ struct PlayerProgressView: View {
                 .frame(height: lightStyle ? 10 : 30)
                 .shadow(color: musicManager.accentColor.opacity(lightStyle ? 0.2 : 0.3), radius: lightStyle ? 2 : 4, y: 1)
 
-                Text("-\(formatTime(max(0, musicManager.totalDuration - liveElapsed)))")
+                Text("-\((max(0, musicManager.totalDuration - liveElapsed)).asMinuteSecondClock)")
                     .font(.system(size: lightStyle ? 11 : 10, weight: .medium, design: .monospaced))
                     .foregroundColor(timeColor)
                     .contentTransition(.numericText())
@@ -971,41 +965,40 @@ struct MusicWidgetView: View {
 
     var body: some View {
         if let title = musicManager.title, !title.isEmpty {
-            HStack(alignment: .center, spacing: 16) {
-                albumArt
-
-                VStack(alignment: .leading, spacing: 8) {
-                    MusicInfoView(
-                        title: musicManager.title,
-                        album: musicManager.album,
-                        artist: musicManager.artist
-                    )
-                    .id("info-\(musicManager.title ?? "")-\(musicManager.album ?? "")-\(musicManager.artist ?? "")-\(musicManager.uri ?? "")")
-                    .animation(.easeInOut(duration: 0.2), value: musicManager.title)
-                    .animation(.easeInOut(duration: 0.2), value: musicManager.artist)
-                    .animation(.easeInOut(duration: 0.2), value: musicManager.album)
-
-                    MusicControlsView(
-                        isPlaying: musicManager.isPlaying,
-                        onPrevious: { Task { await musicManager.previousTrack() } },
-                        onPlayPause: { Task { await (musicManager.isPlaying ? musicManager.pause() : musicManager.play()) } },
-                        onNext: { Task { await musicManager.nextTrack() } }
-                    )
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(height: 100)
-            .frame(maxWidth: 300)
-            .fixedSize()
-            .contentShape(Rectangle())
-            .onTapGesture {
+            Button {
                 if let onExpand {
                     onExpand()
                 } else {
                     navigationStack.wrappedValue.append(.musicPlayer)
                 }
-            }
+            } label: {
+                HStack(alignment: .center, spacing: 16) {
+                    albumArt
 
+                    VStack(alignment: .leading, spacing: 8) {
+                        MusicInfoView(
+                            title: musicManager.title,
+                            album: musicManager.album,
+                            artist: musicManager.artist
+                        )
+                        .animation(.easeInOut(duration: 0.2), value: musicManager.title)
+                        .animation(.easeInOut(duration: 0.2), value: musicManager.artist)
+                        .animation(.easeInOut(duration: 0.2), value: musicManager.album)
+
+                        MusicControlsView(
+                            isPlaying: musicManager.isPlaying,
+                            onPrevious: { Task { await musicManager.previousTrack() } },
+                            onPlayPause: { Task { await (musicManager.isPlaying ? musicManager.pause() : musicManager.play()) } },
+                            onNext: { Task { await musicManager.nextTrack() } }
+                        )
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: 100)
+                .frame(maxWidth: 300)
+                .fixedSize()
+            }
+            .buttonStyle(.plain)
         } else {
             OpenPlayerView(
                 player: settings.settings.defaultMusicPlayer,

@@ -413,30 +413,32 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
         return tempScript.path
     }
 
-    private func launchInstallerScript(
+    nonisolated private static func runInstallerAsCurrentUser(
         scriptPath: String,
         processID: String,
         newAppPath: String,
         currentAppPath: String
-    ) throws {
+    ) throws -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = [scriptPath, processID, newAppPath, currentAppPath]
+        process.arguments = [scriptPath, processID, newAppPath, currentAppPath, "1"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
     }
 
-    private func launchInstallerWithAdministratorPrivileges(
+    nonisolated private static func runInstallerWithAdministratorPrivileges(
         scriptPath: String,
         processID: String,
         newAppPath: String,
         currentAppPath: String
-    ) throws {
+    ) throws -> Bool {
         func shQuote(_ value: String) -> String {
             "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
         }
-        let command = "nohup /bin/sh \(shQuote(scriptPath)) \(processID) \(shQuote(newAppPath)) \(shQuote(currentAppPath)) >/dev/null 2>&1 &"
+        let command = "/bin/sh \(shQuote(scriptPath)) \(processID) \(shQuote(newAppPath)) \(shQuote(currentAppPath)) 1"
         let escaped = command
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -450,20 +452,37 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
             )
         }
         if appleScript.executeAndReturnError(&error) == nil {
-            let code = error?[NSAppleScript.errorNumber] as? Int ?? 0
-            if code == -128 {
-                throw NSError(
-                    domain: "UpdateError",
-                    code: 7,
-                    userInfo: [NSLocalizedDescriptionKey: "Update cancelled. Administrator access is required to replace Sapphire in this location."]
-                )
-            }
-            let message = error?[NSAppleScript.errorMessage] as? String ?? "Administrator authentication failed."
-            throw NSError(domain: "UpdateError", code: 8, userInfo: [NSLocalizedDescriptionKey: message])
+            return true
         }
+        let code = error?[NSAppleScript.errorNumber] as? Int ?? 0
+        if code == -128 {
+            throw NSError(
+                domain: "UpdateError",
+                code: 7,
+                userInfo: [NSLocalizedDescriptionKey: "Update cancelled. Administrator access is required to replace Sapphire in this location."]
+            )
+        }
+        if code == 1 {
+            return false
+        }
+        let message = error?[NSAppleScript.errorMessage] as? String ?? "Administrator authentication failed."
+        throw NSError(domain: "UpdateError", code: 8, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    enum UpdateInstallStrategy {
+        case standard
+        case withoutPassword
     }
 
     func installAndRelaunch() {
+        installAndRelaunch(strategy: .standard)
+    }
+
+    func installAndRelaunchWithoutPassword() {
+        installAndRelaunch(strategy: .withoutPassword)
+    }
+
+    private func installAndRelaunch(strategy: UpdateInstallStrategy) {
         guard let downloadedZipPath = downloadedAssetPath else {
             applyStatus(.error("Downloaded file path not found.")); return
         }
@@ -502,26 +521,71 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                     try self.copyInstallerToTemporaryDirectory(scriptPath: scriptPath)
                 }
 
-                if userWritable {
-                    try await self.launchInstallerScript(
-                        scriptPath: tempScriptPath,
-                        processID: processID,
-                        newAppPath: fullNewAppPath,
-                        currentAppPath: currentAppPath
-                    )
-                } else {
-                    try await MainActor.run {
-                        try self.launchInstallerWithAdministratorPrivileges(
+                var installSucceeded = false
+                var installCancelled = false
+
+                switch strategy {
+                case .standard:
+                    var adminError: Error?
+                    do {
+                        installSucceeded = try Self.runInstallerWithAdministratorPrivileges(
                             scriptPath: tempScriptPath,
                             processID: processID,
                             newAppPath: fullNewAppPath,
                             currentAppPath: currentAppPath
                         )
+                    } catch {
+                        if Self.isInstallCancellation(error) {
+                            installCancelled = true
+                        } else {
+                            adminError = error
+                        }
                     }
+
+                    if !installSucceeded, !installCancelled, userWritable {
+                        let exitCode = (try? Self.runInstallerAsCurrentUser(
+                            scriptPath: tempScriptPath,
+                            processID: processID,
+                            newAppPath: fullNewAppPath,
+                            currentAppPath: currentAppPath
+                        )) ?? -1
+                        installSucceeded = exitCode == 0
+                    }
+
+                    if !installSucceeded, !installCancelled, let adminError {
+                        throw adminError
+                    }
+
+                case .withoutPassword:
+                    guard userWritable else {
+                        throw NSError(
+                            domain: "UpdateError",
+                            code: 9,
+                            userInfo: [NSLocalizedDescriptionKey: "Sapphire isn't in a user-writable location, so the no-password update method can't replace it. Use the standard install method instead."]
+                        )
+                    }
+                    let exitCode = try Self.runInstallerAsCurrentUser(
+                        scriptPath: tempScriptPath,
+                        processID: processID,
+                        newAppPath: fullNewAppPath,
+                        currentAppPath: currentAppPath
+                    )
+                    installSucceeded = exitCode == 0
                 }
 
-                await MainActor.run {
-                    NSApp.terminate(nil)
+                if installSucceeded {
+                    Self.scheduleRelaunch(of: currentAppPath)
+                    await MainActor.run {
+                        NSApp.terminate(nil)
+                    }
+                } else if installCancelled {
+                    await MainActor.run {
+                        self.applyStatus(.downloaded(path: downloadedZipPath))
+                    }
+                } else {
+                    await MainActor.run {
+                        self.applyStatus(.error("The installer script failed to replace Sapphire. The update was not installed."))
+                    }
                 }
 
             } catch {
@@ -530,6 +594,20 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
                 }
             }
         }
+    }
+
+    nonisolated private static func isInstallCancellation(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == "UpdateError" && nsError.code == 7
+    }
+
+    nonisolated private static func scheduleRelaunch(of appPath: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "sleep 3; open \"$1\"", "sapphire-relaunch", appPath]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

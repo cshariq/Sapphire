@@ -36,9 +36,22 @@ final class CursorLockManager {
 
     private init() {
         registerTrustAwareness()
-        installTaps()
 
         MainActor.assumeIsolated {
+            SettingsModel.shared.$settings
+                .map(\.capsLockHorizontalLockEnabled)
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] enabled in
+                    guard let self else { return }
+                    if enabled {
+                        self.installTaps()
+                    } else {
+                        self.teardownTaps()
+                    }
+                }
+                .store(in: &cancellables)
+
             ActiveAppMonitor.shared.$activeAppBundleID
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] bundleID in
@@ -59,8 +72,20 @@ final class CursorLockManager {
     }
 
     private func installTaps() {
+        guard SettingsModel.shared.settings.capsLockHorizontalLockEnabled else { return }
+
         let initialCapsOn = NSEvent.modifierFlags.contains(.capsLock)
         updateLockState(capsOn: initialCapsOn)
+
+        installCapsTap()
+
+        if lockEnabled {
+            installMouseTap()
+        }
+    }
+
+    private func installCapsTap() {
+        guard capsEventTap == nil else { return }
 
         let capsFlagsMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         if let capsTap = CGEvent.tapCreate(tap: .cgSessionEventTap,
@@ -68,6 +93,10 @@ final class CursorLockManager {
                                           options: .defaultTap,
                                           eventsOfInterest: capsFlagsMask,
                                           callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+            guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
+                return Unmanaged.passUnretained(event)
+            }
+
             guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
             let manager = Unmanaged<CursorLockManager>.fromOpaque(refcon).takeUnretainedValue()
             let capsOn = event.flags.contains(.maskAlphaShift)
@@ -82,6 +111,10 @@ final class CursorLockManager {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), capsSource, .commonModes)
             CGEvent.tapEnable(tap: capsTap, enable: true)
         }
+    }
+
+    private func installMouseTap() {
+        guard mouseEventTap == nil else { return }
 
         let eventMask = CGEventMask(
             (1 << CGEventType.mouseMoved.rawValue) |
@@ -96,6 +129,10 @@ final class CursorLockManager {
                                          options: .defaultTap,
                                          eventsOfInterest: eventMask,
                                          callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+            guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
+                return Unmanaged.passUnretained(event)
+            }
+
             guard let refc = refcon else { return Unmanaged.passUnretained(event) }
             let manager = Unmanaged<CursorLockManager>.fromOpaque(refc).takeUnretainedValue()
 
@@ -140,16 +177,21 @@ final class CursorLockManager {
         }
     }
 
-    private func teardownTaps() {
+    private func teardownMouseTap() {
         if let source = mouseRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
+        mouseRunLoopSource = nil
+
         if let tap = mouseEventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             CFMachPortInvalidate(tap)
         }
         mouseEventTap = nil
-        mouseRunLoopSource = nil
+    }
+
+    private func teardownTaps() {
+        teardownMouseTap()
 
         if let source = capsRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
@@ -160,6 +202,9 @@ final class CursorLockManager {
         }
         capsEventTap = nil
         capsRunLoopSource = nil
+
+        lockEnabled = false
+        reentry = false
     }
 
     private func isActiveAppAllowed() -> Bool {
@@ -200,12 +245,14 @@ final class CursorLockManager {
                 }
 
                 warpCursorWithoutSuppression(to: CGPoint(x: lastX, y: lockedY))
+                installMouseTap()
                 logger.debug("CapsLock horizontal lock enabled at Y: \(self.lockedY, privacy: .public)")
             } else {
                 if let source = CGEventSource(stateID: .hidSystemState) {
                     source.localEventsSuppressionInterval = 0.25
                 }
                 reentry = false
+                teardownMouseTap()
                 logger.debug("CapsLock horizontal lock disabled")
             }
         }

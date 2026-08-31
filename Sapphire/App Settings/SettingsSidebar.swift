@@ -220,7 +220,7 @@ fileprivate struct SidebarRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: section.systemImage).font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(section.iconBackgroundColor.opacity(0.8).gradient).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            Image(systemName: section.systemImage).font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(LinearGradient(colors: section.iconGradientColors ?? [section.iconBackgroundColor], startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.8)).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             Text(section.label).font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
             Spacer()
             if isPremiumLocked {

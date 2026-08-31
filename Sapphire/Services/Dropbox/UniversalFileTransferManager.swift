@@ -49,11 +49,12 @@ class UniversalFileTransferManager {
 
     private let temporaryExtensions = ["crdownload", "download", "part"]
     private let completionDelay: TimeInterval = 5.0
+    private var lastPublishedTasks: [FileTransferTask] = []
 
     private init() {}
 
     func startMonitoring() {
-        guard directoryMonitors.isEmpty,
+        guard directoryMonitors.isEmpty, progressUpdateTimer == nil,
               let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first,
               let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         else {
@@ -76,6 +77,9 @@ class UniversalFileTransferManager {
 
         progressUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateTasks()
+        }
+        if let progressUpdateTimer {
+            RunLoop.main.add(progressUpdateTimer, forMode: .common)
         }
 
         scanForFileChanges()
@@ -108,7 +112,7 @@ class UniversalFileTransferManager {
                    let modDate = attributes[.modificationDate] as? Date,
                    Date().timeIntervalSince(modDate) < 5.0 {
 
-                    let isTempDownload = temporaryExtensions.contains(url.pathExtension)
+                    let isTempDownload = temporaryExtensions.contains(url.pathExtension.lowercased())
 
                     if !isTempDownload {
                         var newTask = FileTransferTask(
@@ -197,6 +201,9 @@ class UniversalFileTransferManager {
 
     private func publishTasks() {
         let tasksToPublish = Array(activeTasks.values.filter { $0.status == .inProgress })
+            .sorted { $0.lastChangeDate < $1.lastChangeDate }
+        guard tasksToPublish != lastPublishedTasks else { return }
+        lastPublishedTasks = tasksToPublish
         tasksPublisher.send(tasksToPublish)
     }
 }

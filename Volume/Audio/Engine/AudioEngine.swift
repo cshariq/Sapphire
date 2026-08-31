@@ -44,7 +44,7 @@ final class AudioEngine {
     private var staleCleanupTask: Task<Void, Never>?
     private var healthMonitorTask: Task<Void, Never>?
     private var tapRecoveryCooldownUntil: [pid_t: Date] = [:]
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "AudioEngine")
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "AudioEngine")
 
     // MARK: - Priority State Machine
 

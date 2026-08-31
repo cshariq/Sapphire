@@ -34,7 +34,7 @@ enum CrossfadeConfig {
     static let defaultDuration: TimeInterval = 0.050
 
     static var duration: TimeInterval {
-        let custom = UserDefaults.standard.double(forKey: "FineTuneCrossfadeDuration")
+        let custom = UserDefaults.standard.double(forKey: "SapphireCrossfadeDuration")
         return custom > 0 ? custom : defaultDuration
     }
 

@@ -89,7 +89,7 @@ class FileConversionManager {
 
                 await MainActor.run {
                     self.progressPublisher.send((taskID, 1.0))
-                    self.promptToSave(fileAt: tempURL, desiredName: finalBaseName, allowedType: format.targetUTType)
+                    self.publishConvertedFile(fileAt: tempURL, desiredName: finalBaseName)
                 }
             } catch {
                 print("[FileConversionManager] Conversion failed: \(error)")
@@ -98,45 +98,26 @@ class FileConversionManager {
         }
     }
 
-    private struct PendingSave {
-        let tempURL: URL
-        let desiredName: String
-        let allowedType: UTType
-    }
+    @MainActor
+    private func publishConvertedFile(fileAt tempURL: URL, desiredName: String) {
+        guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            try? FileManager.default.removeItem(at: tempURL)
+            return
+        }
 
-    private var pendingSaves: [PendingSave] = []
-    private var isPresentingSavePanel = false
+        let ext = tempURL.pathExtension
+        let fileName = ext.isEmpty ? desiredName : "\(desiredName).\(ext)"
+        let finalURL = documentsURL.appendingPathComponent(fileName)
 
-    private func promptToSave(fileAt tempURL: URL, desiredName: String, allowedType: UTType) {
-        pendingSaves.append(PendingSave(tempURL: tempURL, desiredName: desiredName, allowedType: allowedType))
-        presentNextSavePanelIfPossible()
-    }
-
-    private func presentNextSavePanelIfPossible() {
-        guard !isPresentingSavePanel, !pendingSaves.isEmpty else { return }
-        isPresentingSavePanel = true
-        let pending = pendingSaves.removeFirst()
-
-        let savePanel = NSSavePanel()
-        savePanel.nameFieldStringValue = pending.desiredName
-        savePanel.allowedContentTypes = [pending.allowedType]
-
-        savePanel.begin { response in
-            self.isPresentingSavePanel = false
-            if response == .OK, let finalURL = savePanel.url {
-                do {
-                    if FileManager.default.fileExists(atPath: finalURL.path) {
-                        try FileManager.default.removeItem(at: finalURL)
-                    }
-                    try FileManager.default.moveItem(at: pending.tempURL, to: finalURL)
-                    NSWorkspace.shared.activateFileViewerSelecting([finalURL])
-                } catch {
-                    print("[FileConversionManager] Failed to move converted file: \(error)")
-                }
-            } else {
-                try? FileManager.default.removeItem(at: pending.tempURL)
+        do {
+            if FileManager.default.fileExists(atPath: finalURL.path) {
+                try FileManager.default.removeItem(at: finalURL)
             }
-            self.presentNextSavePanelIfPossible()
+            try FileManager.default.moveItem(at: tempURL, to: finalURL)
+            NSWorkspace.shared.activateFileViewerSelecting([finalURL])
+        } catch {
+            print("[FileConversionManager] Failed to save converted file: \(error)")
+            try? FileManager.default.removeItem(at: tempURL)
         }
     }
 

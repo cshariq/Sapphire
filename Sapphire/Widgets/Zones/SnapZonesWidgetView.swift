@@ -41,7 +41,7 @@ struct SnapZonesWidgetView: View {
     @State private var activeHover: HoverState?
     @State private var layoutFrames: [UUID: CGRect] = [:]
     @State private var pollingTimer: Timer?
-    @State private var mouseUpMonitor: Any?
+    @State private var mouseUpToken: UUID?
     @State private var previewUpdateTask: Task<Void, Never>?
     @Environment(\.isFileDropTargeted) private var isFileDropTargeted: Binding<Bool>
 
@@ -147,7 +147,7 @@ struct SnapZonesWidgetView: View {
     private func startMonitoring() {
         stopMonitoring()
 
-        mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [self] _ in
+        mouseUpToken = GlobalInputMonitor.shared.onLeftMouseUp { [self] in
             if let hover = self.activeHover,
                let layout = self.viewConfiguration.layouts.first(where: { $0.id == hover.layoutID }),
                let zone = layout.zones.first(where: { $0.id == hover.zoneID }) {
@@ -166,9 +166,9 @@ struct SnapZonesWidgetView: View {
         pollingTimer?.invalidate()
         pollingTimer = nil
 
-        if let monitor = mouseUpMonitor {
-            NSEvent.removeMonitor(monitor)
-            mouseUpMonitor = nil
+        if let token = mouseUpToken {
+            GlobalInputMonitor.shared.remove(token)
+            mouseUpToken = nil
         }
 
         previewUpdateTask?.cancel()

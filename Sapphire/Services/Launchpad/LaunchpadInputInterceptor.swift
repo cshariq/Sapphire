@@ -42,7 +42,7 @@ class LaunchpadInputInterceptor {
         isAwaitingFirstTypingKey = true
         registerTrustAwareness()
 
-        guard AXIsProcessTrusted() else {
+        guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
             print("[LaunchpadInputInterceptor] Accessibility not trusted; event tap deferred until permission is granted.")
             return
         }

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 // MARK: - Lock Screen Navigation
 enum LockScreenMusicView: Hashable {
@@ -98,6 +99,7 @@ struct LockScreenMainWidgetContainerView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: navigationManager.currentView)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: maxMainWidgetHeight)
+        .fixedSize(horizontal: true, vertical: false)
         .background(
             VStack(spacing: 0) {
                 ForEach(settings.settings.lockScreenMainWidgets, id: \.self) { widgetType in
@@ -123,15 +125,18 @@ struct LockScreenMainWidgetContainerView: View {
         .environmentObject(batteryMonitor)
         .environmentObject(bluetoothManager)
         .environmentObject(batteryStatusManager)
+        .id("main-widget-\(navigationManager.currentView)")
     }
 
     @ViewBuilder
     private func widgetView(for widgetType: LockScreenMainWidgetType) -> some View {
         let fadeTransition = AnyTransition.opacity.animation(.easeInOut(duration: 0.2))
 
+        let showMusic = musicManager.isPlaying || (settings.settings.lockScreenShowMusicWhenPaused && musicManager.title != nil && !(musicManager.title?.isEmpty ?? true))
+
         switch widgetType {
         case .music:
-            if musicManager.isPlaying {
+            if showMusic {
                 musicNavigationHostView
                     .transition(fadeTransition)
             }
@@ -170,6 +175,8 @@ struct LockScreenMainWidgetContainerView: View {
                     ZStack(alignment: .topLeading) {
                         QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
                         LockScreenBackButton()
+                            .padding(.top, 52)
+                            .zIndex(10)
                     }
                 }
             case .playlistDetail(let playlist):
@@ -177,6 +184,8 @@ struct LockScreenMainWidgetContainerView: View {
                     ZStack(alignment: .topLeading) {
                         PlaylistView(playlist: playlist, isLockScreenMode: true)
                         LockScreenBackButton()
+                            .padding(.top, 52)
+                            .zIndex(10)
                     }
                 }
             case .devices:
@@ -184,6 +193,8 @@ struct LockScreenMainWidgetContainerView: View {
                     ZStack(alignment: .topLeading) {
                         QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
                         LockScreenBackButton()
+                            .padding(.top, 52)
+                            .zIndex(10)
                     }
                 }
             case .lyrics:
@@ -191,6 +202,8 @@ struct LockScreenMainWidgetContainerView: View {
                     ZStack(alignment: .topLeading) {
                         LyricsView()
                         LockScreenBackButton()
+                            .padding(.top, 52)
+                            .zIndex(10)
                     }
                 }
             case .loginPrompt:
@@ -198,6 +211,8 @@ struct LockScreenMainWidgetContainerView: View {
                     ZStack(alignment: .topLeading) {
                         LoginPromptView(navigationStack: $dummyStack)
                         LockScreenBackButton()
+                            .padding(.top, 52)
+                            .zIndex(10)
                     }
                 }
             }
@@ -208,7 +223,7 @@ struct LockScreenMainWidgetContainerView: View {
     private func measurementPreview(for widgetType: LockScreenMainWidgetType) -> some View {
         switch widgetType {
         case .music:
-            if musicManager.isPlaying {
+            if musicManager.isPlaying || (settings.settings.lockScreenShowMusicWhenPaused && musicManager.title != nil && !(musicManager.title?.isEmpty ?? true)) {
                 switch navigationManager.currentView {
                 case .player:
                     LockScreenView().measureSize()

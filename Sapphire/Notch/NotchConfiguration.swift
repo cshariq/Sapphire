@@ -10,6 +10,9 @@ import AppKit
 import CoreGraphics
 
 struct NotchConfiguration {
+    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
     private static let designReferenceResolution = CGSize(width: 1728, height: 1117)
 
     private static let fallbackClosedNotchSize = (width: CGFloat(185), height: CGFloat(32))
@@ -23,6 +26,12 @@ struct NotchConfiguration {
     static func screenHeightAdjustment(for screen: NSScreen?) -> CGFloat {
         let currentHeight = (screen ?? NSScreen.main)?.frame.size.height ?? designReferenceResolution.height
         return currentHeight / designReferenceResolution.height
+    }
+
+    static func cornerRadiusAdjustment(for screen: NSScreen?) -> CGFloat {
+        let widthScale = screenWidthAdjustment(for: screen)
+        let heightScale = screenHeightAdjustment(for: screen)
+        return min(max(min(widthScale, heightScale), 0.85), 1.10)
     }
 
     static var screenWidthAdjustment: CGFloat {
@@ -39,39 +48,33 @@ struct NotchConfiguration {
             ?? CursorPosition.targetNotchScreen()
             ?? NSScreen.main
     }
-
-    /// Credits: https://github.com/TheBoredTeam/boring.notch
-    /// Mirrors boring.notch's `getClosedNotchSize`: the notch width is derived
-    /// from the screen's left/right auxiliary (menu bar) insets, and the height
-    /// is the real notch height (`safeAreaInsets.top`) on displays with a notch,
-    /// or the menu bar height on displays without one. No clamping is applied
-    /// so the drawn pill always matches the hardware notch exactly.
     static func measuredNotchSize(for screen: NSScreen?) -> (width: CGFloat, height: CGFloat) {
-        let resolvedScreen = screen ?? referenceScreen
-        guard let screen = resolvedScreen else {
+        guard let screen = screen ?? referenceScreen else {
             return fallbackClosedNotchSize
         }
 
         var width = fallbackClosedNotchSize.width
         var height = fallbackClosedNotchSize.height
 
-        // Exact width of the notch: full screen width minus the left/right
-        // auxiliary areas that flank the camera housing, plus a small bleed so
-        // the pill fully covers the hardware notch.
-        if let leftInset = screen.auxiliaryTopLeftArea?.width,
-           let rightInset = screen.auxiliaryTopRightArea?.width {
-            width = screen.frame.width - leftInset - rightInset + 4
+        if screen.safeAreaInsets.top > 0,
+           let leftArea = screen.auxiliaryTopLeftArea,
+           let rightArea = screen.auxiliaryTopRightArea {
+            let notchMinX = leftArea.maxX
+            let notchMaxX = rightArea.minX
+            let measuredWidth = notchMaxX - notchMinX
+            if measuredWidth.isFinite, measuredWidth > 0 {
+                width = measuredWidth + 4
+            }
+        } else {
+            let menuBarWidth = displayID(for: screen).flatMap { WindowInfo.getMenuBarWindow(for: $0)?.frame.width } ?? screen.frame.width
+            width = menuBarWidth
         }
 
-        // Height: use the real notch height on displays with a notch, otherwise
-        // match the menu bar height (boring.notch's default behavior).
-        if screen.safeAreaInsets.top > 0 {
+        let menuBarHeight = getMenuBarHeight(for: screen)
+        if menuBarHeight > 0 {
+            height = max(0, menuBarHeight - 0.2)
+        } else if screen.safeAreaInsets.top > 0 {
             height = screen.safeAreaInsets.top
-        } else {
-            let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
-            if menuBarHeight > 0 {
-                height = menuBarHeight
-            }
         }
 
         return (width: width, height: height)
@@ -132,7 +135,7 @@ struct NotchConfiguration {
     // MARK: - Content Padding and Layout
     static var contentTopPadding: CGFloat = 10 * screenHeightAdjustment
     static var contentBottomPadding: CGFloat = 10 * screenHeightAdjustment
-    static var contentHorizontalPadding: CGFloat = 35 * screenWidthAdjustment
+    static var contentHorizontalPadding: CGFloat = 35
     static var contentVisibilityThresholdHeight: CGFloat { universalHeight + 1 }
     static var primaryWidgetSwitchDelay: TimeInterval = 0.2
     static var dragActivationCollapseDelay: TimeInterval = 0.05
@@ -150,9 +153,9 @@ struct NotchConfiguration {
     static var batteryFrameHeight: CGFloat = 10
 
     // MARK: - Notch Activity View Configuration
-    static var activityContentHorizontalPadding: CGFloat = 15 * screenWidthAdjustment
-    static var activityDefaultHorizontalPadding: CGFloat = 13 * screenWidthAdjustment
-    static var activityWithContentHorizontalPadding: CGFloat = 15 * screenWidthAdjustment
+    static var activityContentHorizontalPadding: CGFloat = 15
+    static var activityDefaultHorizontalPadding: CGFloat = 13
+    static var activityWithContentHorizontalPadding: CGFloat = 15
     static var activityContentBottomPadding: CGFloat = 10 * screenHeightAdjustment
 
     // MARK: - Lyric View Configuration
@@ -284,9 +287,9 @@ struct ResolvedNotchConfiguration {
     let contentHorizontalPadding: CGFloat
 
     // MARK: - Other static values
-    let activityContentHorizontalPadding = NotchConfiguration.activityContentHorizontalPadding
-    let activityDefaultHorizontalPadding = NotchConfiguration.activityDefaultHorizontalPadding
-    let activityWithContentHorizontalPadding = NotchConfiguration.activityWithContentHorizontalPadding
+    let activityContentHorizontalPadding: CGFloat
+    let activityDefaultHorizontalPadding: CGFloat
+    let activityWithContentHorizontalPadding: CGFloat
     let activityContentBottomPadding = NotchConfiguration.activityContentBottomPadding
     let contentUpdateDelay = NotchConfiguration.contentUpdateDelay
     let activityAnimationOutDelay = NotchConfiguration.activityAnimationOutDelay
@@ -299,49 +302,25 @@ struct ResolvedNotchConfiguration {
         let screenWidthAdj = NotchConfiguration.screenWidthAdjustment(for: targetScreen)
         let screenHeightAdj = NotchConfiguration.screenHeightAdjustment(for: targetScreen)
 
-        if settings.useCustomNotchConfiguration {
-            let custom = settings.customNotchConfiguration
+        self.activityContentHorizontalPadding = 15 * screenHeightAdj
+        self.activityDefaultHorizontalPadding = 13 * screenHeightAdj
+        self.activityWithContentHorizontalPadding = 15 * screenHeightAdj
 
-            self.universalWidth = custom.universalWidth * screenWidthAdj
-            self.universalHeight = custom.universalHeight * screenHeightAdj
-            self.initialCornerRadius = custom.initialCornerRadius * screenHeightAdj
-            self.topBuffer = custom.topBuffer
+        var baseWidth: CGFloat
+        var baseHeight: CGFloat
 
-            self.scaleFactor = custom.scaleFactor
-            self.hoverExpandedCornerRadius = custom.hoverExpandedCornerRadius * screenWidthAdj
-
-            self.autoExpandedCornerRadius = custom.autoExpandedCornerRadius * screenWidthAdj
-            self.autoExpandedTallHeight = custom.autoExpandedTallHeight * screenHeightAdj
-            self.autoExpandedContentVerticalPadding = custom.autoExpandedContentVerticalPadding * screenWidthAdj
-
-            self.clickExpandedCornerRadius = custom.clickExpandedCornerRadius * screenWidthAdj
-            self.liveActivityBottomCornerRadius = custom.liveActivityBottomCornerRadius * screenWidthAdj
-
-            self.collapseAnimationDelay = custom.collapseAnimationDelay
-            self.dragActivationCollapseDelay = custom.dragActivationCollapseDelay
-
-            self.widgetBlurRadiusMax = custom.widgetBlurRadiusMax
-            self.activityBlurRadiusMax = custom.activityBlurRadiusMax
-            self.expandedShadowRadius = custom.expandedShadowRadius
-            self.expandedShadowOffsetY = custom.expandedShadowOffsetY
-
-            self.contentTopPadding = custom.contentTopPadding * screenHeightAdj
-            self.contentBottomPadding = custom.contentBottomPadding * screenHeightAdj
-            self.contentHorizontalPadding = custom.contentHorizontalPadding * screenWidthAdj
-
-        } else {
-            let measured = NotchConfiguration.measuredNotchSize(for: targetScreen)
-            self.universalWidth = measured.width
-            self.universalHeight = measured.height
-            self.initialCornerRadius = 10 * screenHeightAdj
+        let measured = NotchConfiguration.measuredNotchSize(for: targetScreen)
+        baseWidth = measured.width
+        baseHeight = measured.height
+            self.initialCornerRadius = 10 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)
             self.topBuffer = NotchConfiguration.topBuffer
             self.scaleFactor = NotchConfiguration.scaleFactor
-            self.hoverExpandedCornerRadius = 18 * screenWidthAdj
-            self.autoExpandedCornerRadius = 13 * screenWidthAdj
+            self.hoverExpandedCornerRadius = 18 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)
+            self.autoExpandedCornerRadius = 13 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)
             self.autoExpandedTallHeight = 80 * screenHeightAdj
             self.autoExpandedContentVerticalPadding = NotchConfiguration.autoExpandedContentVerticalPadding
             self.clickExpandedCornerRadius = NotchConfiguration.clickExpandedCornerRadius
-            self.liveActivityBottomCornerRadius = NotchConfiguration.liveActivityBottomCornerRadius
+            self.liveActivityBottomCornerRadius = 18 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)
             self.collapseAnimationDelay = NotchConfiguration.collapseAnimationDelay
             self.dragActivationCollapseDelay = NotchConfiguration.dragActivationCollapseDelay
             self.widgetBlurRadiusMax = NotchConfiguration.widgetBlurRadiusMax
@@ -350,8 +329,10 @@ struct ResolvedNotchConfiguration {
             self.expandedShadowOffsetY = NotchConfiguration.expandedShadowOffset.y
             self.contentTopPadding = 10 * screenHeightAdj
             self.contentBottomPadding = 10 * screenHeightAdj
-            self.contentHorizontalPadding = 35 * screenWidthAdj
-        }
+            self.contentHorizontalPadding = 35 * screenHeightAdj
+
+        self.universalWidth = settings.notchWidth > 0 ? settings.notchWidth * screenWidthAdj : baseWidth
+        self.universalHeight = settings.notchHeight > 0 ? settings.notchHeight * screenHeightAdj : baseHeight
 
         let profile = settings.animationProfile
         let customAnim = settings.customAnimationConfiguration

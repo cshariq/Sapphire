@@ -7,7 +7,7 @@
 
 import Foundation
 
-let SapphireHelperProtocolVersion: Int = 4
+let SapphireHelperProtocolVersion: Int = 5
 
 public enum ChargeControlMode: Int {
     case unsupported = 0
@@ -75,5 +75,8 @@ public class FanInfo: NSObject, NSSecureCoding, Identifiable {
 
     func startSleepBatteryMonitoring(intervalMinutes: Int, chargeLimit: Int, stopChargingWhileAsleep: Bool, logPath: String, reply: @escaping (Error?) -> Void)
     func stopSleepBatteryMonitoring(reply: @escaping (Error?) -> Void)
+
+    func writeHostsEntries(_ lines: [String], reply: @escaping (Bool) -> Void)
+    func removeHostsEntries(reply: @escaping (Bool) -> Void)
 
 }

@@ -8,7 +8,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.shariq.sapphire</string>
+			<string>com.cshariq.sapphire</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>sapphire</string>
@@ -22,18 +22,8 @@
 	</dict>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Sapphire uses the microphone for Gemini Live voice conversations.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Blip uses your location for local weather, nearby places, and location-aware tasks.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Needed for gemini live activity</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Sapphire uses the camera for the Mirror widget so you can see yourself in the notch.</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>Blip can learn from your calendar patterns to better understand your schedule and preferences.</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Blip needs access to analyze Notes and Spotify activity to learn your preferences.</string>
 	<key>NSSystemExtensionPointIdentifier</key>
 	<string>com.apple.developer.driverkit.transport.audio</string>
 	<key>SapphireSubscriptionAPIKey</key>
@@ -48,7 +38,7 @@
 			<key>UTTypeDescription</key>
 			<string>Sapphire Settings Backup</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.shariq.sapphire.settings-backup</string>
+			<string>com.cshariq.sapphire.settings-backup</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -65,7 +55,7 @@
 			<key>UTTypeDescription</key>
 			<string>Sapphire Launchpad Item</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.shariq.sapphire.launchpaditem</string>
+			<string>com.cshariq.sapphire.launchpaditem</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

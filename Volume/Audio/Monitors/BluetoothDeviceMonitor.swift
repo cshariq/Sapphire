@@ -25,11 +25,11 @@ final class BluetoothDeviceMonitor {
     // MARK: - Private
 
     private let logger = Logger(
-        subsystem: "com.finetuneapp.FineTune",
+        subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire",
         category: "BluetoothDeviceMonitor"
     )
 
-    private static let btQueue = DispatchQueue(label: "com.finetuneapp.bluetooth")
+    private static let btQueue = DispatchQueue(label: "com.cshariq.sapphire.bluetooth")
 
     private var timeoutTasks: [String: Task<Void, Never>] = [:]
 

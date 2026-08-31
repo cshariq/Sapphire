@@ -57,6 +57,8 @@ extension FocusStatus {
 
 @MainActor
 class FocusModeManager: NSObject, ObservableObject {
+    static let shared = FocusModeManager()
+
     @Published private(set) var currentStatus: FocusStatus = .notActive
 
     private var cancellables = Set<AnyCancellable>()

@@ -725,7 +725,7 @@ class MultiAudioManager: ObservableObject {
     }
 }
 
-// MARK: - FineTune Process Tap Controller
+// MARK: - Sapphire Process Tap Controller
 class AppTapController {
     let bundleID: String, processObjectIDs: [AudioObjectID], targetDeviceUID: String
     var tapID: AudioObjectID = 0, aggregateDeviceID: AudioObjectID = 0, procID: AudioDeviceIOProcID?

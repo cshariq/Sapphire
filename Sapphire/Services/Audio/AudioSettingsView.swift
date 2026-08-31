@@ -49,6 +49,9 @@ struct AudioSettingsView: View {
                 }
                 .modifier(SettingsContainerModifier())
 
+                MicrophoneAmplifierSettingsView()
+                    .modifier(SettingsContainerModifier())
+
                 if !audioManager.availableOutputDevices.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Output Devices")
@@ -129,6 +132,73 @@ struct AudioSettingsView: View {
     private func resetAllDeviceSettings() {
         Task { @MainActor in
             MultiAudioManager.shared.clearAllDeviceSettings()
+        }
+    }
+}
+
+// MARK: - Microphone amplifier
+
+private struct MicrophoneAmplifierSettingsView: View {
+    @ObservedObject private var mic = MicrophoneUsageManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Microphone Amplifier")
+                .font(.headline)
+                .padding([.top, .horizontal])
+
+            AudioCompactToggleRow(
+                title: "Enable amplifier",
+                description: "Amplifies the live microphone monitor and shows clipping risk. It does not replace macOS input routing.",
+                isOn: $mic.amplifierEnabled
+            )
+
+            Divider().padding(.leading, 20)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Gain")
+                    Spacer()
+                    Text("×\(mic.amplifierGain, specifier: "%.1f")")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $mic.amplifierGain, in: 1...4, step: 0.1)
+                    .tint(.orange)
+                    .disabled(!mic.amplifierEnabled)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            Divider().padding(.leading, 20)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(mic.isClipping ? "Clipping detected" : "Live input level", systemImage: mic.isClipping ? "exclamationmark.triangle.fill" : "mic.fill")
+                        .foregroundStyle(mic.isClipping ? .red : .primary)
+                    Spacer()
+                    Text("\(Int(mic.audioLevel * 100))%")
+                        .font(.caption.monospacedDigit())
+                }
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.18))
+                        Capsule()
+                            .fill(mic.isClipping ? Color.red : (mic.audioLevel > 0.85 ? Color.orange : Color.green))
+                            .frame(width: proxy.size.width * CGFloat(mic.audioLevel))
+                        Rectangle()
+                            .fill(Color.red.opacity(0.8))
+                            .frame(width: 2)
+                            .offset(x: max(0, proxy.size.width - 2))
+                    }
+                }
+                .frame(height: 8)
+                Text(mic.isMicInUse ? (mic.isClipping ? "Lower the gain or microphone input level." : "Peak: \(Int(mic.peakLevel * 100))%") : "Start using the microphone to see its level.")
+                    .font(.caption)
+                    .foregroundStyle(mic.isClipping ? .red : .secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
     }
 }

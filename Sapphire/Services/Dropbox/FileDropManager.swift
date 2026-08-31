@@ -68,12 +68,32 @@ class FileDropManager: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var taskDismissalTimers: [String: Timer] = [:]
+    private var nearbyDownloadObserver: NSObjectProtocol?
 
     private init() {
         FileConversionManager.shared.progressPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] (taskID, progress) in
                 self?.updateConversionProgress(taskID: taskID, progress: progress)
+            }
+            .store(in: &cancellables)
+
+        DownloadMonitor.shared.tasksPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] downloads in
+                self?.updateBrowserDownloads(downloads.map {
+                    FileTransferTask(
+                        fileURL: $0.fileURL,
+                        fileName: $0.fileName,
+                        destinationURL: $0.fileURL,
+                        currentSize: $0.currentBytes,
+                        totalSize: $0.totalBytes > 0 ? $0.totalBytes : nil,
+                        speed: $0.downloadSpeed ?? 0,
+                        lastChangeDate: $0.startTime,
+                        isComplete: $0.isComplete,
+                        sourceType: .browserDownload
+                    )
+                })
             }
             .store(in: &cancellables)
 
@@ -97,16 +117,35 @@ class FileDropManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isEnabled in
                 if isEnabled {
-                    UniversalFileTransferManager.shared.startMonitoring()
+                    DownloadMonitor.shared.startMonitoring()
                 } else {
-                    UniversalFileTransferManager.shared.stopMonitoring()
+                    DownloadMonitor.shared.stopMonitoring()
                 }
             }
             .store(in: &cancellables)
 
-        if SettingsModel.shared.settings.fileProgressLiveActivityEnabled {
-            UniversalFileTransferManager.shared.startMonitoring()
+        nearbyDownloadObserver = NotificationCenter.default.addObserver(
+            forName: .sapphireNearbyFileDownloaded,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let url = notification.userInfo?["url"] as? URL else { return }
+            Task { @MainActor in self?.addDownloadedFileToShelf(url) }
         }
+
+        if SettingsModel.shared.settings.fileProgressLiveActivityEnabled {
+            DownloadMonitor.shared.startMonitoring()
+        }
+    }
+
+    deinit {
+        if let nearbyDownloadObserver {
+            NotificationCenter.default.removeObserver(nearbyDownloadObserver)
+        }
+    }
+
+    private func addDownloadedFileToShelf(_ url: URL) {
+        FileShelfManager.shared.addFiles(from: [url])
     }
 
     private func scheduleTaskDismissal(for taskID: String, after delay: TimeInterval) {

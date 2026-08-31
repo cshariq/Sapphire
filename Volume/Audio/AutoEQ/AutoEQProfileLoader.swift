@@ -8,11 +8,11 @@ import Foundation
 import os
 
 final class AutoEQProfileLoader {
-    private let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "AutoEQProfileLoader")
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "AutoEQProfileLoader")
 
     private var importDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("FineTune")
+            .appendingPathComponent("Sapphire")
             .appendingPathComponent("AutoEQ")
     }
 

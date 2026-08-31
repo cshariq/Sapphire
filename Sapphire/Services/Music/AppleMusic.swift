@@ -3,208 +3,349 @@
 //  Sapphire
 //
 //  Created by Shariq Charolia on 2026-08-21
+//
 
 import Foundation
 import AppKit
-import ScriptingBridge
+import MusicKit
 
-// MARK: - Consolidated from AppleMusicClient.swift
-
-// MARK: MusicEKnd
-@objc public enum MusicEKnd : AEKeyword {
-    case trackListing = 0x6b54726b, albumListing = 0x6b416c62, cdInsert = 0x6b434469
-}
-@objc public enum MusicEnum : AEKeyword {
-    case standard = 0x6c777374, detailed = 0x6c776474
-}
-@objc public enum MusicEPlS : AEKeyword {
-    case stopped = 0x6b505353, playing = 0x6b505350, paused = 0x6b505370, fastForwarding = 0x6b505346, rewinding = 0x6b505352
-}
-@objc public enum MusicERpt : AEKeyword {
-    case off = 0x6b52704f, one = 0x6b527031, all = 0x6b416c6c
-}
-@objc public enum MusicEShM : AEKeyword {
-    case songs = 0x6b536853, albums = 0x6b536841, groupings = 0x6b536847
-}
-
-@objc public protocol SBObjectProtocol: NSObjectProtocol {
-    func get() -> Any!
-}
-@objc public protocol SBApplicationProtocol: SBObjectProtocol {
-    func activate()
-    var isRunning: Bool { get }
-}
-
-@objc public protocol MusicItem: SBObjectProtocol {
-    @objc optional var name: String { get }
-    @objc optional var persistentID: String { get }
-    @objc optional func reveal()
-}
-extension SBObject: MusicItem {}
-
-@objc public protocol MusicTrack: MusicItem {
-    @objc optional var artist: String { get }
-    @objc optional var album: String { get }
-    @objc optional var duration: Double { get }
-    @objc optional var loved: Bool { get }
-    @objc optional func setLoved(_ loved: Bool)
-}
-extension SBObject: MusicTrack {}
-
-@objc public protocol MusicPlaylist: MusicItem {
-    @objc optional func tracks() -> SBElementArray
-    @objc optional func play()
-}
-extension SBObject: MusicPlaylist {}
-
-@objc public protocol MusicUserPlaylist: MusicPlaylist {}
-extension SBObject: MusicUserPlaylist {}
-
-@objc public protocol MusicApplication: SBApplicationProtocol {
-    @objc optional func userPlaylists() -> SBElementArray
-    @objc optional func tracks() -> SBElementArray
-    @objc optional var currentTrack: MusicTrack { get }
-    @objc optional var playerState: MusicEPlS { get }
-    @objc optional var shuffleEnabled: Bool { get }
-    @objc optional var songRepeat: MusicERpt { get }
-    @objc optional func setShuffleEnabled(_ shuffleEnabled: Bool)
-    @objc optional func setSongRepeat(_ songRepeat: MusicERpt)
-    @objc optional func play(_: SBObject!)
-    @objc optional func playpause()
-    @objc optional func nextTrack()
-    @objc optional func previousTrack()
-}
-extension SBApplication: MusicApplication {}
-
-// MARK: - Consolidated from AppleMusicManager.swift
+// MARK: - Apple Music via MusicKit + MediaRemote
 
 @MainActor
 class AppleMusicManager {
     static let shared = AppleMusicManager()
-    private let musicApp: MusicApplication?
 
-    private init() {
-        self.musicApp = SBApplication(bundleIdentifier: "com.apple.Music")
+    let musicKit = MusicKitAppleMusicManager.shared
+    let privateAPI = AppleMusicPrivateAPIManager.shared
+
+    private var cachedPlaylists: [SpotifyPlaylist] = []
+    private var cachedPlaylistTracks: [String: [SpotifyTrack]] = [:]
+    private var cachedUpNext: [QueueTrack] = []
+    private var cachedIsLiked = false
+
+    private init() {}
+
+    func attach(mediaController: NativeMediaController) {
+        musicKit.transport = mediaController
     }
 
+    // MARK: - Authorization (delegated to MusicKit)
+
+    var isMusicKitConfigured: Bool { musicKit.isConfigured }
+    var isMusicKitAuthorized: Bool { musicKit.isAuthorized }
+    var developerTokenPresent: Bool { musicKit.developerTokenPresent }
+
+    func requestAuthorization() async {
+        await musicKit.requestAuthorization()
+    }
+
+    func refreshMusicKitState() async {
+        await musicKit.requestAuthorization()
+        guard musicKit.isAuthorized else { return }
+        await refreshPlaylists()
+    }
+
+    // MARK: - App state
+
     func isAppRunning() -> Bool {
-        return NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.apple.Music" }
+        musicKit.isAppRunning()
     }
 
     func isPlaying() -> Bool {
-        return musicApp?.playerState == .playing
+        musicKit.transport?.activeClients.values.first?.payload.isPlaying ?? false
     }
 
     func getShuffleState() -> Bool {
-        return musicApp?.shuffleEnabled ?? false
+        musicKit.currentShuffleState()
     }
 
     func getRepeatState() -> RepeatMode {
-        guard let repeatMode = musicApp?.songRepeat else { return .off }
-        switch repeatMode {
-        case .all: return .context
-        case .one: return .track
-        case .off: return .off
-        default: return .off
-        }
+        musicKit.currentRepeatState()
     }
 
     func isTrackLiked() -> Bool {
-        return musicApp?.currentTrack?.loved ?? false
+        musicKit.currentTrackIsLiked()
     }
 
+    // MARK: - Mode / rating actions
+
     func setShuffle(enabled: Bool) {
-        musicApp?.setShuffleEnabled?(enabled)
+        musicKit.setShuffle(enabled: enabled)
     }
 
     func setRepeat(mode: RepeatMode) {
-        let sbMode: MusicERpt
-        switch mode {
-        case .off: sbMode = .off
-        case .context: sbMode = .all
-        case .track: sbMode = .one
-        }
-        musicApp?.setSongRepeat?(sbMode)
+        musicKit.setRepeat(mode: mode)
     }
 
     func setLiked(isLiked: Bool) {
-        musicApp?.currentTrack?.setLoved?(isLiked)
+        cachedIsLiked = isLiked
     }
 
+    // MARK: - Library
+
     func fetchPlaylists() -> [SpotifyPlaylist] {
-        guard let userPlaylists = musicApp?.userPlaylists?().get() as? [MusicUserPlaylist] else { return [] }
-        return userPlaylists.compactMap { playlist in
-            guard let id = playlist.persistentID, let name = playlist.name else { return nil }
-            return SpotifyPlaylist(
-                id: id, name: name, uri: id, images: [],
-                owner: SpotifyUserSimple(id: "apple_music", displayName: "Me", images: nil),
-                collaborators: nil
-            )
-        }
+        cachedPlaylists
+    }
+
+    func refreshPlaylists() async {
+        cachedPlaylists = await musicKit.fetchLibraryPlaylists()
     }
 
     func fetchPlaylistTracks(playlistID: String) -> [SpotifyTrack] {
-        guard let playlist = musicApp?.userPlaylists?().object(withID: playlistID) as? MusicUserPlaylist,
-              let tracks = playlist.tracks?().get() as? [MusicTrack] else { return [] }
-
-        return tracks.compactMap { track in
-            guard let id = track.persistentID,
-                  let name = track.name,
-                  let artist = track.artist,
-                  let album = track.album,
-                  let duration = track.duration else { return nil }
-
-            return SpotifyTrack(
-                id: id, name: name, uri: id,
-                album: SpotifyAlbum(name: album, images: []),
-                artists: [SpotifyArtist(name: artist)],
-                durationMs: Int(duration * 1000),
-                popularity: nil
-            )
-        }
+        cachedPlaylistTracks[playlistID] ?? []
     }
 
-    func revealCurrentTrack() {
-        musicApp?.currentTrack?.reveal?()
-        musicApp?.activate()
+    func refreshPlaylistTracks(playlistID: String) async {
+        cachedPlaylistTracks[playlistID] = await musicKit.fetchPlaylistTracks(playlistID: playlistID)
+    }
+
+    var librarySongs: [SpotifyTrack] = []
+
+    func refreshLibrarySongs() async {
+        librarySongs = await musicKit.fetchLibrarySongs()
+    }
+
+    func suggestedTracks(artistName: String) async -> [AppleMusicSong] {
+        await privateAPI.fetchArtistCatalogTracks(artistName: artistName)
+    }
+
+    // MARK: - Search depth (music videos / stations / suggestions)
+
+    func search(_ term: String) async -> AppleMusicSearchResults {
+        await privateAPI.search(term)
+    }
+
+    func searchMusicVideos(_ term: String) async -> [AppleMusicMusicVideo] {
+        await privateAPI.searchMusicVideos(term)
+    }
+
+    func searchStations(_ term: String) async -> [AppleMusicStation] {
+        await privateAPI.searchStations(term)
+    }
+
+    func searchSuggestions(_ term: String) async -> [String] {
+        await privateAPI.searchSuggestions(term)
+    }
+
+    // MARK: - Catalog reads
+
+    func catalogSongs(ids: [String]) async -> [AppleMusicSong] {
+        await privateAPI.fetchCatalogSongs(ids: ids)
+    }
+
+    func albumCharts(limit: Int = 12) async -> [AppleMusicAlbum] {
+        await privateAPI.fetchAlbumCharts(limit: limit)
+    }
+
+    // MARK: - Library reads
+
+    func recentlyAdded(limit: Int = 20) async -> [AppleMusicSong] {
+        await privateAPI.fetchRecentlyAdded(limit: limit)
+    }
+
+    func libraryAlbums(limit: Int = 100) async -> [AppleMusicAlbum] {
+        await privateAPI.fetchLibraryAlbums(limit: limit)
+    }
+
+    func libraryArtists(limit: Int = 100) async -> [AppleMusicArtist] {
+        await privateAPI.fetchLibraryArtists(limit: limit)
+    }
+
+    func isInLibrary(songID: String) async -> Bool {
+        await privateAPI.isInLibrary(songID: songID)
+    }
+
+    // MARK: - Library mutations
+
+    @discardableResult
+    func addToLibrary(songIDs: [String] = [], albumIDs: [String] = [], playlistIDs: [String] = []) async -> Bool {
+        let ok = await privateAPI.addToLibrary(songIDs: songIDs, albumIDs: albumIDs, playlistIDs: playlistIDs)
+        if ok { await refreshPlaylists() }
+        return ok
     }
 
     @discardableResult
-    func playPlaylist(persistentID: String) -> Bool {
-        guard let playlist = musicApp?.userPlaylists?().object(withID: persistentID) as? MusicUserPlaylist else {
-            return false
-        }
-        if let play = playlist.play {
-            play()
-            return true
-        }
-        musicApp?.play?(playlist as! SBObject)
-        return true
+    func removeFromLibrary(songIDs: [String] = [], albumIDs: [String] = [], playlistIDs: [String] = []) async -> Bool {
+        let ok = await privateAPI.removeFromLibrary(songIDs: songIDs, albumIDs: albumIDs, playlistIDs: playlistIDs)
+        if ok { await refreshPlaylists() }
+        return ok
     }
+
+    func createPlaylist(name: String, description: String? = nil, songIDs: [String] = []) async -> String? {
+        let id = await privateAPI.createPlaylist(name: name, description: description, songIDs: songIDs)
+        if id != nil { await refreshPlaylists() }
+        return id
+    }
+
+    @discardableResult
+    func addTracksToPlaylist(songIDs: [String], playlistID: String) async -> Bool {
+        await privateAPI.addTracksToPlaylist(songIDs: songIDs, playlistID: playlistID)
+    }
+
+    @discardableResult
+    func deletePlaylist(playlistID: String) async -> Bool {
+        let ok = await privateAPI.deletePlaylist(playlistID: playlistID)
+        if ok { await refreshPlaylists() }
+        return ok
+    }
+
+    // MARK: - Ratings
+
+    func fetchRatings(songIDs: [String] = [], albumIDs: [String] = [], playlistIDs: [String] = []) async -> [AppleMusicRating] {
+        await privateAPI.fetchRatings(songIDs: songIDs, albumIDs: albumIDs, playlistIDs: playlistIDs)
+    }
+
+    @discardableResult
+    func setRating(value: Int, songID: String) async -> Bool {
+        await privateAPI.setRating(value: value, songID: songID)
+    }
+
+    @discardableResult
+    func deleteRating(songID: String) async -> Bool {
+        await privateAPI.deleteRating(songID: songID)
+    }
+
+    // MARK: - Replay
+
+    func latestReplay() async -> AppleMusicReplaySummary {
+        await privateAPI.fetchLatestReplay()
+    }
+
+    // MARK: - Personalization & charts (feature parity)
+
+    func recentlyPlayed(limit: Int = 25) async -> [AppleMusicSong] {
+        await privateAPI.fetchRecentlyPlayed(limit: limit)
+    }
+
+    func charts(limit: Int = 25) async -> [AppleMusicSong] {
+        await privateAPI.fetchCharts(limit: limit)
+    }
+
+    func forYouPlaylists(limit: Int = 10) async -> [AppleMusicPlaylist] {
+        await privateAPI.fetchForYouPlaylists(limit: limit)
+    }
+
+    func heavyRotationAlbums(limit: Int = 15) async -> [AppleMusicAlbum] {
+        await privateAPI.fetchHeavyRotation(limit: limit)
+    }
+
+    func artistTopTracks(artistID: String, limit: Int = 25) async -> [AppleMusicSong] {
+        await privateAPI.fetchArtistTopTracks(artistID: artistID, limit: limit)
+    }
+
+    func artistAlbums(artistID: String, limit: Int = 25) async -> [AppleMusicAlbum] {
+        await privateAPI.fetchArtistAlbums(artistID: artistID, limit: limit)
+    }
+
+    func albumTracks(albumID: String, limit: Int = 100) async -> [AppleMusicSong] {
+        await privateAPI.fetchAlbumTracks(albumID: albumID, limit: limit)
+    }
+
+    // MARK: - Playback (specific item)
 
     @discardableResult
     func playTrack(persistentID: String) -> Bool {
-        if let track = musicApp?.tracks?().object(withID: persistentID) as? MusicTrack {
-            musicApp?.play?(track as! SBObject)
-            return true
+        Task {
+            await ensureAuthorized()
+            _ = await musicKit.play(songIDs: [persistentID])
         }
-        return false
+        return true
+    }
+
+    func ensureAuthorized() async {
+        await musicKit.ensureAuthorized()
+    }
+
+    func playAlbum(albumID: String) async -> Bool {
+        await ensureAuthorized()
+        let tracks = await privateAPI.fetchAlbumTracks(albumID: albumID)
+        guard !tracks.isEmpty else { return false }
+        setUpNext(for: tracks)
+        return await musicKit.play(songIDs: tracks.map(\.id))
+    }
+
+    func playArtistTopTracks(artistID: String) async -> Bool {
+        await ensureAuthorized()
+        let tracks = await privateAPI.fetchArtistTopTracks(artistID: artistID)
+        guard !tracks.isEmpty else { return false }
+        setUpNext(for: tracks)
+        return await musicKit.play(songIDs: tracks.map(\.id))
+    }
+
+    func playCatalogPlaylist(playlistID: String) async -> Bool {
+        await ensureAuthorized()
+        let tracks = await privateAPI.fetchCatalogPlaylistTracks(playlistID: playlistID)
+        guard !tracks.isEmpty else { return false }
+        setUpNext(for: tracks)
+        return await musicKit.play(songIDs: tracks.map(\.id))
+    }
+
+    private func setUpNext(for songs: [AppleMusicSong]) {
+        setCachedUpNext(
+            songs.map { QueueTrack(id: $0.id, title: $0.title, artist: $0.artistName) }
+        )
     }
 
     @discardableResult
     func playTrack(persistentID: String, inPlaylistPersistentID playlistID: String) -> Bool {
-        guard let playlist = musicApp?.userPlaylists?().object(withID: playlistID) as? MusicUserPlaylist,
-              let tracks = playlist.tracks?().get() as? [MusicTrack],
-              let track = tracks.first(where: { $0.persistentID == persistentID }) else {
+        guard let tracks = cachedPlaylistTracks[playlistID], !tracks.isEmpty else {
             return playTrack(persistentID: persistentID)
         }
-        musicApp?.play?(track as! SBObject)
+        let id = persistentID
+        Task {
+            await ensureAuthorized()
+            let ordered = tracks.contains { $0.id == id }
+                ? reorder(tracks, startingAt: id)
+                : tracks
+            setUpNext(for: ordered, startingAt: id)
+            _ = await musicKit.play(songIDs: ordered.map(\.id))
+        }
         return true
     }
 
-    func currentPlaylistName() -> String? {
-        return musicApp?.currentTrack?.album
+    private func reorder(_ tracks: [SpotifyTrack], startingAt id: String) -> [SpotifyTrack] {
+        guard let index = tracks.firstIndex(where: { $0.id == id }), index > 0 else { return tracks }
+        return Array(tracks[index...]) + Array(tracks[..<index])
     }
+
+    @discardableResult
+    func playPlaylist(persistentID: String) -> Bool {
+        Task {
+            await ensureAuthorized()
+            await refreshPlaylistTracks(playlistID: persistentID)
+            if let tracks = cachedPlaylistTracks[persistentID], !tracks.isEmpty {
+                setUpNext(for: tracks)
+                _ = await musicKit.play(songIDs: tracks.map(\.id))
+            }
+        }
+        return true
+    }
+
+    func play(contextUri: String) async -> PlaybackResult {
+        await ensureAuthorized()
+        if let session = parseAppleMusicSongURL(contextUri) {
+            return await musicKit.play(songIDs: [session]) ? .success : .failure(reason: "Could not play in Apple Music.")
+        }
+        let ok = await musicKit.playBySearch(term: contextUri)
+        return ok ? .success : .failure(reason: "Could not play in Apple Music.")
+    }
+
+    func parseAppleMusicSongURL(_ urlString: String) -> String? {
+        guard let url = URL(string: urlString),
+              let host = url.host else { return nil }
+        guard host == "music.apple.com" || host == "itunes.apple.com" else { return nil }
+        let parts = url.pathComponents.filter { $0 != "/" && $0 != "song" }
+        if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+           let songID = items.first(where: { $0.name == "i" })?.value {
+            return songID
+        }
+        if let last = parts.last(where: { Int($0) != nil }) {
+            return last
+        }
+        return nil
+    }
+
+    // MARK: - Up Next
 
     struct QueueTrack: Identifiable, Equatable {
         let id: String
@@ -213,60 +354,85 @@ class AppleMusicManager {
     }
 
     func fetchUpNextTracks() async -> [QueueTrack] {
-        guard isAppRunning() else { return [] }
-        let script = """
-        tell application "Music"
-            if not running then return ""
-            set queueNames to {"Queue", "Music Queue", "Up Next"}
-            repeat with queueName in queueNames
-                try
-                    if not (exists playlist queueName) then error "missing"
-                    set rows to {}
-                    repeat with t in (tracks of playlist queueName)
-                        try
-                            set trackID to persistent ID of t as string
-                            set trackTitle to name of t as string
-                            set trackArtist to artist of t as string
-                            set end of rows to trackID & "|" & trackTitle & "|" & trackArtist
-                        end try
-                    end repeat
-                    set AppleScript's text item delimiters to linefeed
-                    set joined to rows as string
-                    set AppleScript's text item delimiters to ""
-                    return joined
-                end try
-            end repeat
-            return ""
-        end tell
-        """
-        let raw: String = await Task.detached(priority: .utility) {
-            Self.runOsascript(script) ?? ""
-        }.value
-        guard !raw.isEmpty else { return [] }
-        return raw.split(separator: "\n").compactMap { line -> QueueTrack? in
-            let parts = line.split(separator: "|", maxSplits: 2).map(String.init)
-            guard parts.count == 3 else { return nil }
-            return QueueTrack(id: parts[0], title: parts[1], artist: parts[2])
+        let live = musicKit.liveUpNext()
+        if !live.isEmpty {
+            let currentID = musicKit.currentLiveUpNextEntryID()
+            let upcoming = live.filter { $0.id != currentID }
+            let list = upcoming.isEmpty ? live : upcoming
+            return list.map { QueueTrack(id: $0.songID ?? $0.id, title: $0.title, artist: $0.artist) }
         }
+        return cachedUpNext
     }
 
-    private nonisolated static func runOsascript(_ script: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
+    func setCachedUpNext(_ tracks: [QueueTrack]) {
+        cachedUpNext = tracks
+    }
+
+    func setUpNext(for tracks: [SpotifyTrack], startingAt id: String? = nil) {
+        var ordered = tracks
+        if let id,
+           let index = ordered.firstIndex(where: { $0.id == id }),
+           index > 0 {
+            ordered = Array(ordered[index...]) + Array(ordered[..<index])
+        }
+        setCachedUpNext(
+            ordered.map {
+                QueueTrack(id: $0.id, title: $0.name, artist: $0.artists.map(\.name).joined(separator: ", "))
+            }
+        )
+    }
+
+    func setUpNextFromSearch(_ songs: [AppleMusicSong]) {
+        guard !songs.isEmpty else { return }
+        setCachedUpNext(
+            songs.map { QueueTrack(id: $0.id, title: $0.title, artist: $0.artistName) }
+        )
+    }
+
+    func currentPlaylistName() -> String? {
+        nil
+    }
+
+    // MARK: - Reveal
+
+    func revealCurrentTrack() {
+        musicKit.activateMusicApp()
+    }
+}
+
+// MARK: - MusicKit song playback by catalog IDs
+
+extension MusicKitAppleMusicManager {
+    @discardableResult
+    func play(songIDs: [String]) async -> Bool {
+        await ensureAuthorized()
+        guard isConfiguredAndAuthorized, !songIDs.isEmpty else {
+            activateMusicApp()
+            return false
+        }
+
+        var songs = await AppleMusicPrivateAPIManager.shared.fetchCatalogSongsForPlayback(ids: songIDs)
+        if songs.isEmpty {
+            for id in songIDs {
+                if let song = await fetchCatalogSong(id: id) {
+                    songs.append(song)
+                }
+                if songs.count >= 100 { break }
+            }
+        }
+
+        guard !songs.isEmpty else {
+            activateMusicApp()
+            return false
+        }
+        return await play(songs: Array(songs.prefix(100)))
+    }
+
+    func fetchCatalogSong(id: String) async -> Song? {
         do {
-            try process.run()
-            let timeoutItem = DispatchWorkItem { process.terminate() }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 5.0, execute: timeoutItem)
-            process.waitUntilExit()
-            timeoutItem.cancel()
-            guard process.terminationStatus == 0 else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return output?.isEmpty == false ? output : nil
+            let request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(id))
+            let response = try await request.response()
+            return response.items.first
         } catch {
             return nil
         }

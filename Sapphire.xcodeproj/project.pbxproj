@@ -1255,7 +1255,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.SapphireTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.SapphireTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -1278,7 +1278,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.SapphireTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.SapphireTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
@@ -1440,6 +1440,8 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = "/Users/shariq/Github/Sapphire/Sapphire/Stubs/*";
+				"EXCLUDED_SOURCE_FILE_NAMES[arch=*]" = "/Users/shariq/Github/Sapphire/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
@@ -1447,19 +1449,21 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Sapphire;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Sapphire needs access to apple events for HUD and music implmentation";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Blip needs access to analyze Notes and Spotify activity to learn your preferences.";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Used to show upcming songs and playlists within apple music";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Sapphire needs bluetooth to show new connections and battery low notifications";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sapphire needs calendar permission to show upcoming events";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Sapphire needs the camera is needed for Face ID functionality";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Blip can learn from your calendar patterns to better understand your schedule and preferences.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Sapphire uses the camera for the Mirror widget so you can see yourself in the notch.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Sapphire needs access to your contacts to find the correct phone number or email when sending a reply from a notification.";
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Needed to provide live focus updates";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2025 Shariq Charolia. All rights reserved.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Sapphire needs this to provide nearby share functionality";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Needed to provide live weather updates";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Sapphire needs this to weather";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Needed to provide live weather updates";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Blip uses your location for local weather, nearby places, and location-aware tasks.";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sapphire needs this to enable Gemini Live";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sapphire uses the microphone for Gemini Live voice conversations.";
 				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Sapphire needs this to provide nearby share functionality";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Sapphire needs this to show upcoming reminders";
@@ -1483,7 +1487,7 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.72;
+				MARKETING_VERSION = 2.8;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
@@ -1527,6 +1531,8 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = "/Users/shariq/Github/Sapphire/Sapphire/Stubs/*";
+				"EXCLUDED_SOURCE_FILE_NAMES[arch=*]" = "/Users/shariq/Github/Sapphire/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
@@ -1534,19 +1540,21 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Sapphire;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Sapphire needs access to apple events for HUD and music implmentation";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Blip needs access to analyze Notes and Spotify activity to learn your preferences.";
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Used to show upcming songs and playlists within apple music";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Sapphire needs bluetooth to show new connections and battery low notifications";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sapphire needs calendar permission to show upcoming events";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Sapphire needs the camera is needed for Face ID functionality";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Blip can learn from your calendar patterns to better understand your schedule and preferences.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Sapphire uses the camera for the Mirror widget so you can see yourself in the notch.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Sapphire needs access to your contacts to find the correct phone number or email when sending a reply from a notification.";
 				INFOPLIST_KEY_NSFocusStatusUsageDescription = "Needed to provide live focus updates";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2025 Shariq Charolia. All rights reserved.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Sapphire needs this to provide nearby share functionality";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Needed to provide live weather updates";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Sapphire needs this to weather";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Needed to provide live weather updates";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Blip uses your location for local weather, nearby places, and location-aware tasks.";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sapphire needs this to enable Gemini Live";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Sapphire uses the microphone for Gemini Live voice conversations.";
 				INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Sapphire needs this to provide nearby share functionality";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Sapphire needs this to show upcoming reminders";
@@ -1570,7 +1578,7 @@
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.72;
+				MARKETING_VERSION = 2.8;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";

@@ -253,13 +253,14 @@ public func process(path: String, arguments: [String], timeout: Int = 0) -> Stri
     return output.trimmingCharacters(in: .newlines)
 }
 
-func getMenuBarHeight() -> CGFloat {
-    let mouseLocation = NSEvent.mouseLocation
-    let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
-    if let screen = screen {
-        return screen.frame.height - screen.visibleFrame.height - (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1
-    }
-    return 0.0
+func getMenuBarHeight(for screen: NSScreen? = nil) -> CGFloat {
+    let resolvedScreen = screen ?? {
+        let mouseLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
+    }()
+    guard let resolvedScreen else { return 0.0 }
+    return resolvedScreen.frame.height - resolvedScreen.visibleFrame.height
+        - (resolvedScreen.visibleFrame.origin.y - resolvedScreen.frame.origin.y) - 1
 }
 
 func createAlert(level: NSAlert.Style = .warning, title: String, message: String, button1: String, button2: String = "") -> NSAlert {

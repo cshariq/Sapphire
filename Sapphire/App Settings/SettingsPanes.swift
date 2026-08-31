@@ -27,47 +27,48 @@ struct SettingsDetailView: View {
         VStack {
             if let selectedSection, isSelectedSectionLocked {
                 LockedSettingsSectionView(section: selectedSection)
-            } else {
-                settingsPane(for: selectedSection)
-                    .id(selectedSection)
+            } else {                    settingsPane(for: selectedSection)
+
             }
         }
         .animation(.easeOut(duration: 0.15), value: selectedSection)
         .animation(.easeOut(duration: 0.15), value: subscriptionManager.activeTier)
     }
 
-    private func settingsPane(for selectedSection: SettingsSection?) -> AnyView {
+    @ViewBuilder
+    private func settingsPane(for selectedSection: SettingsSection?) -> some View {
         switch selectedSection {
-        case .general: return AnyView(GeneralSettingsView())
-        case .widgets: return AnyView(WidgetsSettingsView())
-        case .liveActivities: return AnyView(LiveActivitiesSettingsView())
-        case .appearance: return AnyView(AppearanceSettingsView())
-        case .lockScreen: return AnyView(LockScreenSettingsView())
-        case .bluetoothUnlock: return AnyView(ProximityUnlockSettingsView())
-        case .shortcuts: return AnyView(ShortcutsSettingsView())
-        case .snapZones: return AnyView(SnapZonesSettingsView())
-        case .audio: return AnyView(AudioSettingsView())
-        case .battery: return AnyView(BatterySettingsView())
-        case .bluetooth: return AnyView(BluetoothSettingsView())
-        case .hud: return AnyView(HUDSettingsView())
-        case .notifications: return AnyView(NotificationsSettingsView())
-        case .neardrop: return AnyView(NeardropSettingsView())
-        case .fileShelf: return AnyView(FileShelfSettingsView())
-        case .notes: return AnyView(NotesSettingsView())
-        case .clipboard: return AnyView(ClipboardSettingsView())
-        case .mirror: return AnyView(MirrorSettingsView())
-        case .caffeine: return AnyView(CaffeineSettingsView())
-        case .music: return AnyView(MusicSettingsView())
-        case .weather: return AnyView(WeatherSettingsView())
-        case .calendar: return AnyView(CalendarSettingsView())
-        case .eyeBreak: return AnyView(EyeBreakSettingsView())
-        case .intelligence: return AnyView(IntelligenceSettingsView())
-        case .sports: return AnyView(SportsSettingsView())
-        case .finance: return AnyView(FinanceSettingsView())
-        case .about: return AnyView(AboutSettingsView())
+        case .general: GeneralSettingsView()
+        case .widgets: WidgetsSettingsView()
+        case .liveActivities: LiveActivitiesSettingsView()
+        case .appearance: AppearanceSettingsView()
+        case .lockScreen: LockScreenSettingsView()
+        case .bluetoothUnlock: ProximityUnlockSettingsView()
+        case .shortcuts: ShortcutsSettingsView()
+        case .snapZones: SnapZonesSettingsView()
+        case .audio: AudioSettingsView()
+        case .battery: BatterySettingsView()
+        case .bluetooth: BluetoothSettingsView()
+        case .hud: HUDSettingsView()
+        case .notifications: NotificationsSettingsView()
+        case .neardrop: NeardropSettingsView()
+        case .fileShelf: FileShelfSettingsView()
+        case .notes: NotesSettingsView()
+        case .clipboard: ClipboardSettingsView()
+        case .mirror: MirrorSettingsView()
+        case .caffeine: CaffeineSettingsView()
+        case .music: MusicSettingsView()
+        case .weather: WeatherSettingsView()
+        case .calendar: CalendarSettingsView()
+        case .eyeBreak: EyeBreakSettingsView()
+        case .focusSession: FocusSessionSettingsView()
+        case .appLock: AppLockSettingsView()
+        case .intelligence: IntelligenceSettingsView()
+        case .sports: SportsSettingsView()
+        case .finance: FinanceSettingsView()
+        case .about: AboutSettingsView()
         case nil:
-            return AnyView(
-                VStack {
+            VStack {
                     Image(systemName: "sidebar.left")
                         .font(.system(size: 50))
                         .foregroundStyle(.tertiary)
@@ -76,7 +77,6 @@ struct SettingsDetailView: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            )
         }
     }
 }
@@ -199,63 +199,83 @@ struct NotchAppearanceEditorView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            ToggleRow(title: "Liquid Glass Look", description: "Apply a shiny, glass-like effect to the notch background.", isOn: $appearance.liquidGlassLook)
+            HStack {
+                Text("Style")
+                Spacer()
+                Picker("", selection: $appearance.mode) {
+                    ForEach(NotchAppearanceMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 310)
+            }
+            .padding()
 
-            if appearance.liquidGlassLook {
+            if appearance.mode == .liquidGlass || appearance.mode == .custom {
                 Divider().padding(.leading, 20)
-                let intensityBinding = Binding<Double>(
-                    get: { appearance.liquidGlassIntensity * 100 },
-                    set: { appearance.liquidGlassIntensity = $0 / 100 }
-                )
                 CustomSliderRowView(
                     label: "Liquid Glass Intensity",
-                    value: intensityBinding,
+                    value: Binding(
+                        get: { appearance.liquidGlassIntensity * 100 },
+                        set: { appearance.liquidGlassIntensity = min(max($0 / 100, 0), 1) }
+                    ),
                     range: 0...100,
                     specifier: "%.0f%%"
                 )
+            }
 
+            if appearance.mode == .default {
                 Divider().padding(.leading, 20)
                 ToggleRow(
-                    title: "Frosted Overlay",
-                    description: "Layer frosted liquid glass on top of the clear glass, matching the lock screen frosted treatment.",
-                    isOn: $appearance.enableTransparencyBlur
+                    title: "Fade Bottom Edge",
+                    description: "Fade the lower edge of the notch from black to transparent.",
+                    isOn: $appearance.bottomFadeEnabled
                 )
             }
 
-            Divider().padding(.leading, 20)
+            if appearance.mode == .custom {
+                Divider().padding(.leading, 20)
+                ToggleRow(
+                    title: "Liquid Glass",
+                    description: "Use the liquid glass material for the custom notch background.",
+                    isOn: $appearance.liquidGlassLook
+                )
 
-            HStack {
-                Text("Background Style")
-                Spacer()
-                Picker("", selection: $appearance.backgroundStyle) {
-                    ForEach(NotchBackgroundStyle.allCases) { style in
-                        Text(style.displayName).tag(style)
-                    }
-                }.labelsHidden().frame(width: 150)
-            }.padding()
+                Divider().padding(.leading, 20)
+                HStack {
+                    Text("Background Style")
+                    Spacer()
+                    Picker("", selection: $appearance.backgroundStyle) {
+                        ForEach(NotchBackgroundStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }.labelsHidden().frame(width: 150)
+                }.padding()
 
-            if appearance.backgroundStyle == .solid {
-                solidColorPicker
-            } else {
-                gradientColorEditor
+                if appearance.backgroundStyle == .solid {
+                    solidColorPicker
+                } else {
+                    gradientColorEditor
+                }
+
+                Divider().padding(.leading, 20)
+                let opacityBinding = Binding<Double>(
+                    get: { appearance.opacity * 100 },
+                    set: { appearance.opacity = min(max($0 / 100, 0), 1) }
+                )
+                CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%", commitsContinuously: true)
             }
 
-            Divider().padding(.leading, 20)
-
-            let opacityBinding = Binding<Double>(
-                get: { appearance.opacity * 100 },
-                set: { appearance.opacity = $0 / 100 }
-            )
-                    CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%", commitsContinuously: true)
-
-            if !appearance.liquidGlassLook {
+            if appearance.mode == .blur || (appearance.mode == .custom && !appearance.liquidGlassLook) {
                 Divider().padding(.leading, 20)
                 ToggleRow(title: "Enable Transparency Blur", description: "Apply a frosted glass effect to the notch background.", isOn: $appearance.enableTransparencyBlur)
             }
         }
         .modifier(SettingsContainerModifier())
         .animation(.default, value: appearance.backgroundStyle)
-        .animation(.default, value: appearance.liquidGlassLook)
+        .animation(.default, value: appearance.mode)
         .animation(.default, value: appearance.enableTransparencyBlur)
     }
 
@@ -616,11 +636,13 @@ struct GeneralSettingsView: View {
         if enabled {
             appFetcher.fetchApps()
         } else {
-            MemoryTrimSupport.releaseSettingsPaneCaches()
+            SystemAppFetcher.shared.releaseCachedApps()
+            AppIconLoader.releaseCache()
         }
     }
-    .onDisappear {
-        MemoryTrimSupport.releaseSettingsPaneCaches()
+    .onDisappear {                SystemAppFetcher.shared.releaseCachedApps()
+                AppIconLoader.releaseCache()
+
     }
     .sheet(isPresented: $showingCustomConfig) {
             CustomNotchConfigView(config: $settings.settings.customNotchConfiguration)
@@ -695,8 +717,6 @@ struct CustomNotchConfigView: View {
     @Binding var config: CustomizableNotchConfiguration
     @Environment(\.dismiss) var dismiss
 
-    @State private var universalWidth: Double
-    @State private var universalHeight: Double
     @State private var initialCornerRadius: Double
     @State private var topBuffer: Double
     @State private var scaleFactor: Double
@@ -726,8 +746,6 @@ struct CustomNotchConfigView: View {
         self._config = config
         let wrapped = config.wrappedValue
 
-        _universalWidth = State(initialValue: Double(wrapped.universalWidth))
-        _universalHeight = State(initialValue: Double(wrapped.universalHeight))
         _initialCornerRadius = State(initialValue: Double(wrapped.initialCornerRadius))
         _topBuffer = State(initialValue: Double(wrapped.topBuffer))
         _scaleFactor = State(initialValue: Double(wrapped.scaleFactor))
@@ -774,8 +792,6 @@ struct CustomNotchConfigView: View {
             ScrollView {
                 VStack(spacing: 25) {
                     Section(header: Text("Sizing & Position").font(.headline)) {
-                        CustomSliderRowView(label: "Universal Width", value: $universalWidth, range: 100...400, specifier: "%.1f")
-                        CustomSliderRowView(label: "Universal Height", value: $universalHeight, range: 20...60, specifier: "%.1f")
                         CustomSliderRowView(label: "Auto-Expanded Height", value: $autoExpandedTallHeight, range: 50...150, specifier: "%.1f")
                         CustomSliderRowView(label: "Top Buffer", value: $topBuffer, range: 0...20, specifier: "%.1f")
                     }
@@ -843,8 +859,6 @@ struct CustomNotchConfigView: View {
     }
 
     private func syncState(from sourceConfig: CustomizableNotchConfiguration) {
-        universalWidth = Double(sourceConfig.universalWidth)
-        universalHeight = Double(sourceConfig.universalHeight)
         initialCornerRadius = Double(sourceConfig.initialCornerRadius)
         topBuffer = Double(sourceConfig.topBuffer)
         scaleFactor = Double(sourceConfig.scaleFactor)
@@ -872,8 +886,6 @@ struct CustomNotchConfigView: View {
     }
 
     private func syncConfig() {
-        config.universalWidth = CGFloat(universalWidth)
-        config.universalHeight = CGFloat(universalHeight)
         config.initialCornerRadius = CGFloat(initialCornerRadius)
         config.topBuffer = CGFloat(topBuffer)
         config.scaleFactor = CGFloat(scaleFactor)
@@ -2285,6 +2297,13 @@ struct LockScreenSettingsView: View {
                     .font(.largeTitle.bold())
                     .padding(.bottom)
 
+                ToggleRow(
+                    title: "Show Music When Paused",
+                    description: "Keep showing the current track in lock screen widgets even when playback is paused.",
+                    isOn: $settings.settings.lockScreenShowMusicWhenPaused
+                )
+                .modifier(SettingsContainerModifier())
+
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Top Info Widget").font(.headline).padding([.top, .horizontal])
 
@@ -2466,6 +2485,53 @@ struct LockScreenSettingsView: View {
                 .animation(.default, value: settings.settings.lockScreenFrostedOverLiquidGlass)
 
                 VStack(alignment: .leading, spacing: 0) {
+                    Text("Wallpaper").font(.headline).padding([.top, .horizontal])
+
+                    ToggleRow(
+                        title: "Custom Lock Screen Wallpaper",
+                        description: "Change the system wallpaper to your chosen image while your Mac is locked and restore it automatically when you unlock.",
+                        isOn: $settings.settings.lockScreenCustomWallpaperEnabled
+                    )
+
+                    if settings.settings.lockScreenCustomWallpaperEnabled {
+                        Divider().padding(.leading, 20)
+
+                        HStack(spacing: 10) {
+                            Image(systemName: "photo.fill")
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let path = settings.settings.lockScreenCustomWallpaperPath,
+                                   !path.isEmpty,
+                                   FileManager.default.fileExists(atPath: path) {
+                                    Text((path as NSString).lastPathComponent)
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                    Text(path)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                } else {
+                                    Text("No wallpaper selected")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Button("Choose…") { chooseLockScreenWallpaper() }
+                            if settings.settings.lockScreenCustomWallpaperPath != nil {
+                                Button("Remove") {
+                                    settings.settings.lockScreenCustomWallpaperPath = nil
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+                .animation(.default, value: settings.settings.lockScreenCustomWallpaperEnabled)
+
+                VStack(alignment: .leading, spacing: 0) {
                     Text("Notch Bar").font(.headline).padding([.top, .horizontal])
 
                     ToggleRow(
@@ -2486,7 +2552,23 @@ struct LockScreenSettingsView: View {
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .modifier(SettingsContainerModifier())
             .onChange(of: settings.settings.lockScreenShowNotch) {notchsettingsHaveChanged = true}
+        }
+    }
+
+    private func chooseLockScreenWallpaper() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.title = "Choose Lock Screen Wallpaper"
+        panel.message = "Select an image to show as your lock screen wallpaper."
+        panel.prompt = "Choose"
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.begin { [weak settings] response in
+            guard response == .OK, let url = panel.url else { return }
+            settings?.settings.lockScreenCustomWallpaperPath = url.path
         }
     }
 }
@@ -2604,7 +2686,10 @@ struct SnapZonesSettingsView: View {
             .animation(.easeInOut(duration: 0.2), value: settings.settings.snapZoneViewMode)
         }
         .onAppear(perform: appFetcher.fetchApps)
-        .onDisappear { MemoryTrimSupport.releaseSettingsPaneCaches() }
+        .onDisappear {
+            appFetcher.releaseCachedApps()
+            AppIconLoader.releaseCache()
+        }
         .sheet(item: $layoutToEdit) { layout in
             LayoutEditorView(layout: Binding(
                 get: { layout },
@@ -3390,7 +3475,8 @@ struct NotificationsSettingsView: View {
                 appFetcher.fetchApps()
             }
             .onDisappear {
-                MemoryTrimSupport.releaseSettingsPaneCaches()
+                SystemAppFetcher.shared.releaseCachedApps()
+            AppIconLoader.releaseCache()
             }
         }
     }
@@ -4935,12 +5021,17 @@ struct ComponentPowerBreakdownView: View {
     @ObservedObject var viewModel: BatteryStatsViewModel
     @ObservedObject private var statsManager = StatsManager.shared
 
-    private var systemLoad: Double { statsManager.currentStats?.systemPower ?? abs(viewModel.powerConsumption) }
-    private var batteryPower: Double { statsManager.currentStats?.batteryPower ?? viewModel.powerConsumption }
+    private static func finite(_ v: Double) -> Double {
+        guard v.isFinite else { return 0 }
+        return max(0, v)
+    }
+
+    private var systemLoad: Double { Self.finite(statsManager.currentStats?.systemPower ?? viewModel.powerConsumption) }
+    private var batteryPower: Double { Self.finite(statsManager.currentStats?.batteryPower ?? viewModel.powerConsumption) }
     private var chargingPower: Double { (viewModel.isCharging && batteryPower < 0) ? abs(batteryPower) : 0 }
-    private var adapterPower: Double { statsManager.currentStats?.sensors?.sensors.first { ["PDTR"].contains($0.key) }?.value ?? 0 }
-    private var cpuPower: Double { statsManager.currentStats?.sensors?.sensors.first { ["PCPC", "PCTR", "PC0C"].contains($0.key) }?.value ?? 0 }
-    private var gpuPower: Double { statsManager.currentStats?.sensors?.sensors.first { ["PGTR", "PG0C", "PCGC"].contains($0.key) }?.value ?? 0 }
+    private var adapterPower: Double { Self.finite(statsManager.currentStats?.sensors?.sensors.first { ["PDTR"].contains($0.key) }?.value ?? 0) }
+    private var cpuPower: Double { Self.finite(statsManager.currentStats?.sensors?.sensors.first { ["PCPC", "PCTR", "PC0C"].contains($0.key) }?.value ?? 0) }
+    private var gpuPower: Double { Self.finite(statsManager.currentStats?.sensors?.sensors.first { ["PGTR", "PG0C", "PCGC"].contains($0.key) }?.value ?? 0) }
     private var displayPower: Double { max(0, systemLoad - (cpuPower + gpuPower)) * 0.4 }
     private var otherPower: Double { max(0, systemLoad - (cpuPower + gpuPower + displayPower)) }
     private var isCharging: Bool { viewModel.isCharging }
@@ -5220,11 +5311,6 @@ struct ModernBatteryStatsView: View {
             tearDownBatteryStats()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sapphireSettingsWillClose)) { _ in
-            historyRefreshTimer?.cancel()
-            historyRefreshTimer = nil
-            tearDownBatteryStats()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .sapphireTrimSettingsMemory)) { _ in
             historyRefreshTimer?.cancel()
             historyRefreshTimer = nil
             tearDownBatteryStats()
@@ -7318,15 +7404,17 @@ struct MusicSettingsView: View {
 
                             Divider().padding(.leading, 20)
 
-                            ToggleRow(title: "Skip Ads", description: "When Spotify desktop on this Mac plays an ad, relaunch it in the background on the same desktop it was on (no focus steal), then resume via Spotify Connect. Cooldown prevents rapid loops.", isOn: $settings.settings.skipSpotifyAd)
+                            ToggleRow(title: "Skip Ads", description: "When Spotify desktop on this Mac plays an ad, relaunch it in the background, then resume via Spotify Connect.", isOn: $settings.settings.skipSpotifyAd)
                             ToggleRow(title: "Show Spotify Tab", description: "When another app is playing, show a Spotify source tab so you can switch medias. Hidden while Spotify itself is the main media source.", isOn: $settings.settings.showSpotifySourceTab)
                                 .disabled(!isPrivateAuth)
                             ToggleRow(title: "Live Canvas Video", description: "Show looping Spotify Canvas video behind the artwork when available. Turn off to always use the album thumbnail.", isOn: $settings.settings.spotifyCanvasLiveVideo)
                                 .disabled(!isPrivateAuth)
                             ToggleRow(title: "Artist Profile", description: "Show the artist avatar, verified check, and monthly listeners instead of plain artist text.", isOn: $settings.settings.spotifyShowArtistProfile)
                                 .disabled(!isPrivateAuth)
-                            ToggleRow(title: "Next Song", description: "Show the upcoming track from the queue under the now-playing title.", isOn: $settings.settings.spotifyShowNextSong)
+                            ToggleRow(title: "Next Song", description: "Show the upcoming track from the queue under the now-playing title during the last 10 seconds of the song.", isOn: $settings.settings.spotifyShowNextSong)
                                 .disabled(!isPrivateAuth)
+                            ToggleRow(title: "Next Song Album Art", description: "Show album art beside the upcoming track in the live activity.", isOn: $settings.settings.spotifyShowNextSongAlbumArt)
+                                .disabled(!isPrivateAuth || !settings.settings.spotifyShowNextSong)
                             ToggleRow(title: "Suggested Songs", description: "Show related song chips you can play from the music player.", isOn: $settings.settings.spotifyShowSuggestedSongs)
                                 .disabled(!isPrivateAuth)
                             ToggleRow(title: "Concert Tickets", description: "Show a compact tickets button when nearby concerts are available for the artist.", isOn: $settings.settings.spotifyShowConcertTickets)
@@ -7394,6 +7482,22 @@ VStack(alignment: .leading, spacing: 8) {
                             Text("Translate to"); Spacer()
                             Picker("", selection: $settings.settings.lyricTranslationLanguage) { Text("English").tag("en"); Text("Spanish").tag("es"); Text("French").tag("fr") }.labelsHidden().frame(width: 150)
                         }.padding().disabled(!settings.settings.enableLyricTranslation).opacity(settings.settings.enableLyricTranslation ? 1.0 : 0.5)
+                        Divider().padding(.leading, 20)
+                        HStack {
+                            Text("Lyric Delay"); Spacer()
+                            let offset = settings.settings.lyricOffset
+                            let label = offset == 0 ? "On time" : String(format: "%+.1fs", offset)
+                            if #available(macOS 13.0, *) {
+                                Text(label).font(.caption).foregroundColor(.secondary)
+                                Stepper("", value: $settings.settings.lyricOffset, in: -5.0...5.0, step: 0.1)
+                                    .labelsHidden()
+                            } else {
+                                Slider(value: $settings.settings.lyricOffset, in: -5.0...5.0, step: 0.1) {
+                                    Text("Lyric Delay")
+                                }
+                                Text(label).font(.caption).foregroundColor(.secondary).frame(width: 80, alignment: .trailing)
+                            }
+                        }.padding()
                     }
                 }
                 .modifier(SettingsContainerModifier())
@@ -7421,7 +7525,10 @@ VStack(alignment: .leading, spacing: 8) {
                 appFetcher.fetchApps()
                 syncMusicAuthState()
             }
-            .onDisappear { MemoryTrimSupport.releaseSettingsPaneCaches() }
+            .onDisappear {
+            appFetcher.releaseCachedApps()
+            AppIconLoader.releaseCache()
+        }
             .onReceive(MusicManager.shared.$isPrivateAPIAuthenticated) { isPrivateAuth = $0 }
             .onReceive(MusicManager.shared.$isOfficialAPIAuthenticated) { isOfficialAuth = $0 }
             .onReceive(MusicManager.shared.spotifyOfficialAPI.$userProfile) { profile in
@@ -7793,7 +7900,7 @@ struct EyeBreakSettingsView: View {
                         .background(Color.blue.opacity(0.1))
                         .cornerRadius(6)
                 } else {
-                    Text("\(formatTimeInterval(eyeBreakManager.timeUntilNextBreak)) until next break")
+                    Text("\(eyeBreakManager.timeUntilNextBreak.asMinuteSecondClock) until next break")
                         .foregroundColor(.secondary)
                 }
             }.padding(15)
@@ -8026,11 +8133,6 @@ struct EyeBreakSettingsView: View {
         return .red
     }
 
-    private func formatTimeInterval(_ interval: TimeInterval) -> String {
-        let minutes = Int(interval) / 60
-        let seconds = Int(interval) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
 }
 
 struct EyeBreakGraphView: View {
@@ -8104,7 +8206,7 @@ struct EyeBreakGraphView: View {
             MetricCardView(
                 title: "Current Streak",
                 value: "\(EyeBreakManager.shared.currentStreak)",
-                icon: "flame",
+                icon: "bolt",
                 color: .orange,
                 trend: "days in a row"
             )
@@ -8945,6 +9047,15 @@ struct ModernUpdateStatusView: View {
                         .shadow(color: .green.opacity(0.4), radius: 8, y: 4)
                     }
                     .buttonStyle(.plain)
+
+                    Button(action: { updateChecker.installAndRelaunchWithoutPassword() }) {
+                        Text("Use legacy update method (no password, may not work)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
+
                     if canShowReleaseNotes {
                         releaseNotesButton
                     }
@@ -9217,6 +9328,7 @@ struct AppearanceSettingsView: View {
             VStack(alignment: .leading, spacing: 40) {
                 Text("Appearance")
                     .font(.largeTitle.bold())
+                NotchSizeSettingsView()
                 NotchAppearanceEditorView(appearance: $settings.settings.notchWidgetAppearance, title: "Expanded Notch Appearance")
                 NotchAppearanceEditorView(appearance: $settings.settings.notchLiveActivityAppearance, title: "Collapsed Notch Appearance")
                 MenuBarHidingSettingsView()
@@ -9226,6 +9338,90 @@ struct AppearanceSettingsView: View {
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+struct NotchSizeSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+
+    private var widthBinding: Binding<Double> {
+        Binding<Double>(
+            get: { settings.settings.notchWidth > 0 ? settings.settings.notchWidth : NotchConfiguration.universalWidth },
+            set: { settings.settings.notchWidth = $0 }
+        )
+    }
+
+    private var heightBinding: Binding<Double> {
+        Binding<Double>(
+            get: { settings.settings.notchHeight > 0 ? settings.settings.notchHeight : NotchConfiguration.universalHeight },
+            set: { settings.settings.notchHeight = $0 }
+        )
+    }
+
+    var body: some View {
+        HStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Notch Size").font(.headline)
+                Text("Notch width & height").font(.caption).foregroundColor(.secondary)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+
+            Spacer()
+
+            sizeControl(label: "Width", value: widthBinding, range: 80...400, step: 1)
+            sizeControl(label: "Height", value: heightBinding, range: 10...80, step: 1)
+
+            Button {
+                settings.settings.notchWidth = 0
+                settings.settings.notchHeight = 0
+            } label: {
+                Label("Reset", systemImage: "arrow.counterclockwise")
+                    .font(.callout)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.accentColor)
+            .disabled(settings.settings.notchWidth == 0 && settings.settings.notchHeight == 0)
+            .help("Restore automatic width & height")
+        }
+        .padding()
+        .modifier(SettingsContainerModifier())
+    }
+
+    private func sizeControl(label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: true, vertical: false)
+                .lineLimit(1)
+            TextField(label, value: value, format: .number.precision(.fractionLength(0)))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 62)
+                .multilineTextAlignment(.trailing)
+            VStack(spacing: 0) {
+                Button {
+                    value.wrappedValue = min(range.upperBound, value.wrappedValue + step)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 16, height: 9)
+                }
+                .buttonStyle(.plain)
+                .help("Increase \(label)")
+
+                Button {
+                    value.wrappedValue = max(range.lowerBound, value.wrappedValue - step)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 16, height: 9)
+                }
+                .buttonStyle(.plain)
+                .help("Decrease \(label)")
+            }
+            Text("pt")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
 }
@@ -9272,13 +9468,20 @@ struct MenuBarHidingSettingsView: View {
                         .padding(.top, 8)
 
                     Text("Show Hidden Items").font(.headline).padding([.top, .horizontal])
-                    ToggleRow(title: "Show on Hover", description: "Show hidden items when hovering over the menu bar", isOn: $settings.settings.showOnHover)
-                    if settings.settings.showOnHover { CustomSliderRowView(label: "Hover Delay", value: $settings.settings.showOnHoverDelay, range: 0.0...1.0, specifier: "%.1fs") }
-                    Divider().padding(.leading, 20)
                     ToggleRow(title: "Show on Click", description: "Show hidden items when clicking empty menu bar space", isOn: $settings.settings.showOnClick)
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Show on Scroll", description: "Show hidden items when scrolling in the menu bar", isOn: $settings.settings.showOnScroll)
-                }.modifier(SettingsContainerModifier()).animation(.default, value: settings.settings.showOnHover)
+                    ToggleRow(title: "Show on Hover", description: "Show hidden items after hovering over the menu bar", isOn: $settings.settings.showOnHover)
+                    if settings.settings.showOnHover {
+                        CustomSliderRowView(
+                            label: "Hover Delay",
+                            value: $settings.settings.showOnHoverDelay,
+                            range: 0.1...1.0,
+                            specifier: "%.2fs"
+                        )
+                        .padding(.horizontal, 60)
+                        .padding(.bottom, 8)
+                    }
+                }.modifier(SettingsContainerModifier())
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Auto-Rehide").font(.headline).padding([.top, .horizontal])
@@ -9938,5 +10141,900 @@ struct IntelligenceStepRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Focus Session Settings
+
+struct FocusSessionSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+    @StateObject private var shortcutRecorder = GlobalShortcutRecorder.shared
+    @StateObject private var ambient = FocusAmbientSoundManager.shared
+    @StateObject private var shortcutsCatalog = ShortcutsCatalog.shared
+    @State private var newBlockedApp: String = ""
+    @State private var newBlockedSite: String = ""
+    @State private var showingAddSchedule = false
+
+    private var appCandidates: [(name: String, bundleID: String)] {
+        Self.installedApps
+    }
+
+    private static let installedApps: [(name: String, bundleID: String)] = {
+        let dirs = [
+            "/Applications",
+            "/System/Applications",
+            "/System/Applications/Utilities",
+            NSHomeDirectory() + "/Applications",
+        ]
+        var seen = Set<String>()
+        var result: [(name: String, bundleID: String)] = []
+        let fm = FileManager.default
+        for dir in dirs {
+            guard let items = try? fm.contentsOfDirectory(atPath: dir) else { continue }
+            for item in items where item.hasSuffix(".app") {
+                let path = dir + "/" + item
+                guard let bundle = Bundle(path: path),
+                      let bundleID = bundle.bundleIdentifier, !bundleID.isEmpty,
+                      !seen.contains(bundleID) else { continue }
+                seen.insert(bundleID)
+                let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+                    ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+                    ?? (item as NSString).deletingPathExtension
+                result.append((name, bundleID))
+            }
+        }
+        return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }()
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Focus Sessions")
+                    .font(.largeTitle.bold())
+                    .padding(.bottom)
+
+                streakSection
+                durationSection
+                schedulingSection
+                liveActivityToggleSection
+                blockingSection
+                environmentSection
+                automationSection
+                historySection
+            }
+            .padding(25)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private var streakSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Streaks")
+            Text("Miss a day without breaking your streak by reporting immunity days at least 3 days in advance (unlimited). If a streak still breaks, spend a streak pass to revive it — everyone gets a few free every month by plan.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 6)
+
+            FocusStreakPanelView(expanded: true)
+                .environmentObject(FocusSessionManager.shared)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private var schedulingSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Scheduling")
+            Text("Auto-start a focus session at a set time of day — daily, on specific days of the week, weekly, monthly, or once.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 6)
+
+            if settings.settings.scheduledFocusSessions.isEmpty {
+                Text("No scheduled sessions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            } else {
+                ForEach($settings.settings.scheduledFocusSessions) { $schedule in
+                    FocusScheduleRowView(schedule: $schedule)
+                    Divider().opacity(0.3).padding(.horizontal, 16)
+                }
+            }
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            Button {
+                showingAddSchedule = true
+            } label: {
+                Label("Add Schedule", systemImage: "plus.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.green)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .modifier(SettingsContainerModifier())
+        .sheet(isPresented: $showingAddSchedule) {
+            AddFocusScheduleView().environmentObject(settings)
+        }
+    }
+
+    private var liveActivityToggleSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Widget & Activity")
+            ToggleRow(
+                title: "Show in Notch",
+                description: "Display the focus session as a live activity in the notch while it's running.",
+                isOn: $settings.settings.focusSessionLiveActivityEnabled
+            )
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(
+                title: "Show Time Instead of Ring",
+                description: "Show the remaining time on the right side instead of the completing progress ring.",
+                isOn: $settings.settings.focusSessionLiveActivityShowTime
+            )
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(
+                title: "Break & Session Notifications",
+                description: "Get a notification when a focus block ends and a break starts, when a break ends, and when the session finishes.",
+                isOn: $settings.settings.focusNotificationsEnabled
+            )
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(
+                title: "Click to Show Detail View",
+                description: "Clicking the focus session activity opens the full detail view.",
+                isOn: $settings.settings.clickToShowFocusSessionView
+            )
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private var durationSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Session Timing")
+            HStack {
+                Text("Focus Duration:")
+                    .font(.system(size: 13))
+                Spacer()
+                Text("\(Int(settings.settings.focusSessionDuration / 60)) min")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.green)
+                Slider(value: Binding(
+                    get: { settings.settings.focusSessionDuration / 60 },
+                    set: { settings.settings.focusSessionDuration = $0 * 60 }
+                ), in: 1...120, step: 5)
+                .frame(width: 160)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+
+            ToggleRow(title: "Enable Breaks", description: "Automatically start a break after each focus block.", isOn: $settings.settings.focusBreakEnabled)
+            if settings.settings.focusBreakEnabled {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                HStack {
+                    Text("Break Duration:")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Text("\(Int(settings.settings.focusBreakDuration / 60)) min")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.orange)
+                    Slider(value: Binding(
+                        get: { settings.settings.focusBreakDuration / 60 },
+                        set: { settings.settings.focusBreakDuration = $0 * 60 }
+                    ), in: 0...30, step: 1)
+                    .frame(width: 160)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private var blockingSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("App & Website Blocking")
+            ToggleRow(title: "Enable Blocking", description: "Block distracting apps and websites during focus sessions.", isOn: $settings.settings.focusBlockingEnabled)
+            if settings.settings.focusBlockingEnabled {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                Picker("Blocking mode", selection: $settings.settings.focusBlockingMode) {
+                    ForEach(FocusBlockingMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                Text(settings.settings.focusBlockingMode.blurb)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                HStack(spacing: 8) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
+                    Text("Blocking Intensity")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .padding(.top, 10).padding(.horizontal, 16).padding(.bottom, 6)
+                Text("How aggressively blocked apps (and websites) are handled during a session.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                if FocusSessionManager.shared.isSessionActive {
+                    Label("Intensity can't be changed while a session is running — it applies on the next one.", systemImage: "lock.fill")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 6)
+                }
+
+                ForEach(FocusIntensity.allCases) { level in
+                    Button {
+                        guard !FocusSessionManager.shared.isSessionActive else { return }
+                        settings.settings.focusIntensity = level
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: level.systemImage)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(settings.settings.focusIntensity == level ? .green : .secondary)
+                                .frame(width: 22)
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(level.displayName)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(.primary)
+                                    if settings.settings.focusIntensity == level {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.green)
+                                    }
+                                }
+                                Text(level.blurb)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(settings.settings.focusIntensity == level ? Color.green.opacity(0.12) : Color.white.opacity(0.05))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+                    .opacity(FocusSessionManager.shared.isSessionActive ? 0.45 : 1.0)
+                }
+                .padding(.bottom, 6)
+
+                Divider().opacity(0.3).padding(.horizontal, 16)
+
+                if settings.settings.focusBlockingMode == .allowlist {
+                    Divider().opacity(0.3).padding(.horizontal, 16)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Allowed Apps")
+                            .font(.caption.bold()).padding(.horizontal, 16).padding(.top, 10)
+                        Picker("Add app", selection: $newBlockedApp) {
+                            Text("Select an app…").tag("")
+                            ForEach(appCandidates, id: \.bundleID) { candidate in
+                                Text(candidate.name).tag(candidate.bundleID)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        HStack {
+                            Spacer()
+                            Button("Add") {
+                                guard !newBlockedApp.isEmpty else { return }
+                                settings.settings.focusAllowedApps.insert(newBlockedApp)
+                                newBlockedApp = ""
+                            }
+                            .disabled(newBlockedApp.isEmpty)
+                            .padding(.trailing, 16)
+                        }
+                        if !settings.settings.focusAllowedApps.isEmpty {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], alignment: .leading, spacing: 4) {
+                                ForEach(Array(settings.settings.focusAllowedApps), id: \.self) { bundleID in
+                                    let name = appCandidates.first(where: { $0.bundleID == bundleID })?.name ?? bundleID
+                                    chipView(name) { settings.settings.focusAllowedApps.remove(bundleID) }
+                                }
+                            }
+                            .padding(.horizontal, 16).padding(.bottom, 8)
+                        }
+                    }
+                } else {
+                    Divider().opacity(0.3).padding(.horizontal, 16)
+                    ToggleRow(title: "Block During Breaks", description: "Keep blocking active while on break.", isOn: $settings.settings.focusBlockingDuringBreaks)
+
+                    Divider().opacity(0.3).padding(.horizontal, 16)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Blocked Apps")
+                            .font(.caption.bold()).padding(.horizontal, 16).padding(.top, 10)
+                    Picker("Add app", selection: $newBlockedApp) {
+                        Text("Select an app…").tag("")
+                        ForEach(appCandidates, id: \.bundleID) { candidate in
+                            Text(candidate.name).tag(candidate.bundleID)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    HStack {
+                        Spacer()
+                        Button("Add") {
+                            guard !newBlockedApp.isEmpty else { return }
+                            settings.settings.focusBlockedApps.insert(newBlockedApp)
+                            newBlockedApp = ""
+                        }
+                        .disabled(newBlockedApp.isEmpty)
+                        .padding(.trailing, 16)
+                    }
+                    if !settings.settings.focusBlockedApps.isEmpty {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], alignment: .leading, spacing: 4) {
+                            ForEach(Array(settings.settings.focusBlockedApps), id: \.self) { bundleID in
+                                let name = appCandidates.first(where: { $0.bundleID == bundleID })?.name ?? bundleID
+                                chipView(name) { settings.settings.focusBlockedApps.remove(bundleID) }
+                            }
+                        }
+                        .padding(.horizontal, 16).padding(.bottom, 8)
+                    }
+
+                    Divider().opacity(0.3).padding(.horizontal, 16)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Blocked Websites")
+                            .font(.caption.bold()).padding(.horizontal, 16).padding(.top, 10)
+                        HStack {
+                            TextField("e.g. twitter.com", text: $newBlockedSite)
+                                .textFieldStyle(.roundedBorder)
+                                .padding(.leading, 16)
+                            Button("Add") {
+                                let trimmed = newBlockedSite
+                                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                                    .replacingOccurrences(of: "https://", with: "")
+                                    .replacingOccurrences(of: "http://", with: "")
+                                    .replacingOccurrences(of: "www.", with: "")
+                                guard !trimmed.isEmpty else { return }
+                                settings.settings.focusBlockedWebsites.insert(trimmed)
+                                newBlockedSite = ""
+                            }
+                            .disabled(newBlockedSite.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .padding(.trailing, 16)
+                        }
+                        if !settings.settings.focusBlockedWebsites.isEmpty {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120))], alignment: .leading, spacing: 4) {
+                                ForEach(Array(settings.settings.focusBlockedWebsites), id: \.self) { site in
+                                    chipView(" \(site)") { settings.settings.focusBlockedWebsites.remove(site) }
+                                }
+                            }
+                            .padding(.horizontal, 16).padding(.bottom, 8)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                    }
+                }
+            }
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private var environmentSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Environment")
+            Text("focusedOS-style adjustments applied to the whole Mac while a session runs.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+
+            ToggleRow(title: "Dim Inactive Apps", description: "Darken windows you're not using so the active app stands out and visual clutter recedes.", isOn: $settings.settings.focusDimInactiveApps)
+            if settings.settings.focusDimInactiveApps {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                HStack {
+                    Text("Dim Intensity:")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Slider(value: $settings.settings.focusDimInactiveOpacity, in: 0.2...1.0)
+                        .frame(width: 160)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                ToggleRow(title: "Pause in Mission Control", description: "Temporarily remove the dim layer while Mission Control is open so you can actually see the apps in the Exposé grid.", isOn: $settings.settings.focusDisableDimInMissionControl)
+            }
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(title: "Hide Wallpaper", description: "Cover the desktop wallpaper and icons with black for the duration of the session.", isOn: $settings.settings.focusHideWallpaper)
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(title: "Limit Visible Apps", description: "Keep only a few apps on screen; switching to another tucks the oldest one away (restored when the session ends).", isOn: $settings.settings.focusAppLimitEnabled)
+            if settings.settings.focusAppLimitEnabled {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                HStack {
+                    Text("Max visible apps:")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Stepper(value: $settings.settings.focusAppLimit, in: 1...6) {
+                        Text("\(settings.settings.focusAppLimit)")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(title: "Ambient Sounds", description: "Play generated white/pink/brown noise or rain to mask noisy surroundings. Starts automatically with each session.", isOn: $settings.settings.focusAmbientSoundEnabled)
+            if settings.settings.focusAmbientSoundEnabled {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                Picker("Sound", selection: $settings.settings.focusAmbientSoundType) {
+                    ForEach(FocusAmbientSoundType.allCases) { type in
+                        Label(type.displayName, systemImage: type.systemImage).tag(type)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                HStack(spacing: 12) {
+                    Button(action: { ambient.toggle() }) {
+                        Label(ambient.isPlaying ? "Stop" : "Preview", systemImage: ambient.isPlaying ? "stop.fill" : "play.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    Text("Volume")
+                        .font(.system(size: 13))
+                    Slider(value: Binding(
+                        get: { ambient.volume },
+                        set: {
+                            ambient.volume = $0
+                            settings.settings.focusAmbientSoundVolume = $0
+                        }
+                    ), in: 0...1)
+                    .frame(width: 110)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+        }
+        .modifier(SettingsContainerModifier())
+        .onChange(of: settings.settings.focusAmbientSoundType) { _, newType in
+            if ambient.isPlaying { ambient.setType(newType) }
+        }
+        .onChange(of: settings.settings.focusAmbientSoundEnabled) { _, enabled in
+            if !enabled, ambient.isPlaying { ambient.stop() }
+        }
+    }
+
+    private var automationSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Automation")
+
+            Text("Press this shortcut from anywhere to start or pause a focus session.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+            Button(action: {
+                if shortcutRecorder.isRecording {
+                    shortcutRecorder.stopRecording()
+                } else {
+                    shortcutRecorder.startRecording { key, flags in
+                        settings.settings.focusStartShortcut = KeyboardShortcut(key: key, modifiers: flags)
+                    }
+                }
+            }) {
+                HStack {
+                    if shortcutRecorder.isRecording {
+                        HStack(spacing: 6) {
+                            ProgressView().scaleEffect(0.7)
+                            Text("Recording... (Esc to cancel)")
+                                .foregroundColor(.accentColor)
+                        }
+                    } else {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                        Text("\(KeyboardShortcutHelper.description(for: settings.settings.focusStartShortcut.modifiers)) \(settings.settings.focusStartShortcut.key)")
+                            .font(.system(size: 14, weight: .medium, design: .monospaced))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16).padding(.bottom, 12)
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+
+            HStack(spacing: 8) {
+                Image(systemName: "link.icloud")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 20, height: 20)
+                    .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
+                Text("System Clock & Shortcuts")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.top, 10).padding(.horizontal, 16).padding(.bottom, 6)
+            Text("Sapphire automatically uses Apple's standard Clock shortcut names (\"Start Timer\", \"Start Stopwatch\", etc.). If iCloud sync is enabled and those Clock shortcuts are present on this Mac, they run automatically during sessions.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16).padding(.top, 2).padding(.bottom, 8)
+            ToggleRow(title: "Sync with System Clock", description: "Mirror focus sessions to the system Clock app via Shortcuts.", isOn: $settings.settings.focusShortcutsEnabled)
+            if settings.settings.focusShortcutsEnabled {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                Picker("Sync mode", selection: $settings.settings.focusShortcutSyncMode) {
+                    ForEach(FocusShortcutSyncMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+            }
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            Text("Run a Shortcut when a session starts / ends — e.g. turn on Do Not Disturb.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
+            Picker("On session start", selection: $settings.settings.focusStartShortcutName) {
+                Text("None").tag("")
+                ForEach(shortcutsCatalog.installedNames, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 4)
+            Picker("On session end", selection: $settings.settings.focusEndShortcutName) {
+                Text("None").tag("")
+                ForEach(shortcutsCatalog.installedNames, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 4)
+            .padding(.bottom, 8)
+        }
+        .modifier(SettingsContainerModifier())
+        .onAppear {
+            FocusSessionManager.refreshInstalledShortcuts()
+        }
+    }
+
+    private var historySection: some View {
+        let fm = FocusSessionManager.shared
+        return VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Stats & History")
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                statCard(title: "Today", value: FocusSessionManager.format(fm.completedToday), icon: "sun.max.fill", color: .green)
+                statCard(title: "Streak", value: "\(fm.currentStreak)d", icon: "flame.fill", color: .orange)
+                statCard(title: "Sessions", value: "\(fm.totalSessionCountAllTime)", icon: "checkmark.seal.fill", color: .blue)
+                statCard(title: "All Time", value: FocusSessionManager.format(fm.totalFocusTimeAllTime), icon: "clock.fill", color: .purple)
+                statCard(title: "Average", value: FocusSessionManager.format(fm.averageSessionDuration), icon: "gauge.medium", color: .cyan)
+                if let best = fm.bestDay {
+                    statCard(title: "Best Day", value: FocusSessionManager.format(best.seconds), icon: "trophy.fill", color: .yellow)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            let week = fm.weeklyData
+            let maxWeek = max(week.map(\.seconds).max() ?? 1, 1)
+            if week.contains(where: { $0.seconds > 0 }) {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                Text("Last 7 Days")
+                    .font(.caption.bold())
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(week.indices, id: \.self) { i in
+                        VStack(spacing: 3) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(week[i].seconds > 0 ? Color.green.opacity(0.7) : Color.secondary.opacity(0.15))
+                                .frame(height: max(4, CGFloat(week[i].seconds / maxWeek) * 70))
+                            Text(week[i].label)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                .padding(.bottom, 12)
+            }
+
+            if !fm.history.isEmpty {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                Text("Recent Sessions")
+                    .font(.caption.bold())
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                VStack(spacing: 0) {
+                    ForEach(fm.history.prefix(10)) { session in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.finishedAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                if session.completedBlocks > 1 {
+                                    Text("\(session.completedBlocks) blocks")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary.opacity(0.6))
+                                }
+                            }
+                            Spacer()
+                            Text(FocusSessionManager.format(session.actualDuration))
+                                .font(.caption.monospaced().bold())
+                                .foregroundColor(.green)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 6)
+                        Divider().opacity(0.15).padding(.leading, 16)
+                    }
+                }
+                .padding(.bottom, 8)
+            } else {
+                Text("No completed sessions yet. Start one and stay focused! ")
+                    .font(.caption).foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+            }
+
+            if !fm.history.isEmpty {
+                Divider().opacity(0.3).padding(.horizontal, 16)
+                HStack {
+                    Spacer()
+                    Button("Clear History", role: .destructive) {
+                        fm.clearAllHistory()
+                    }
+                    .font(.caption)
+                    .padding(.trailing, 16).padding(.vertical, 10)
+                }
+            }
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private func statCard(title: String, value: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 14, weight: .semibold))
+            .padding(.top, 12).padding(.horizontal, 16).padding(.bottom, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func chipView(_ text: String, onRemove: @escaping () -> Void) -> some View {
+        HStack(spacing: 3) {
+            Text(text).font(.caption).lineLimit(1)
+            Button(action: onRemove) { Image(systemName: "xmark.circle.fill").font(.caption) }.buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Color.white.opacity(0.08), in: Capsule())
+    }
+}
+
+// MARK: - Scheduled Focus Sessions
+
+private struct FocusScheduleRowView: View {
+    @EnvironmentObject private var settings: SettingsModel
+    @Binding var schedule: ScheduledFocusSession
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.fill")
+                .font(.system(size: 12))
+                .foregroundColor(schedule.isActive ? .green : .secondary)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(schedule.startTime, style: .time)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(schedule.isActive ? .primary : .secondary)
+                    Text(schedule.repeatDescription)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $schedule.isActive)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+
+            Button {
+                settings.settings.scheduledFocusSessions.removeAll { $0.id == schedule.id }
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 11))
+                    .foregroundColor(.red.opacity(0.7))
+            }
+            .buttonStyle(.plain)
+            .help("Delete schedule")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private var subtitle: String {
+        var text = "\(Int(schedule.duration / 60)) min session"
+        if schedule.isActive,
+           let next = FocusScheduleManager.shared.nextFireDate(for: schedule) {
+            let day = Calendar.current.isDateInToday(next)
+                ? "today" : (Calendar.current.isDateInTomorrow(next) ? "tomorrow" : next.formatted(date: .abbreviated, time: .omitted))
+            text += " · next \(day) at \(next.formatted(date: .omitted, time: .shortened))"
+        }
+        return text
+    }
+}
+
+private struct AddFocusScheduleView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var settings: SettingsModel
+    private struct WeekdayToken: Identifiable {
+        let number: Int
+        let label: String
+        var id: Int { number }
+    }
+
+    private static let weekdayChoices: [WeekdayToken] = [
+        WeekdayToken(number: 2, label: "Mon"),
+        WeekdayToken(number: 3, label: "Tue"),
+        WeekdayToken(number: 4, label: "Wed"),
+        WeekdayToken(number: 5, label: "Thu"),
+        WeekdayToken(number: 6, label: "Fri"),
+        WeekdayToken(number: 7, label: "Sat"),
+        WeekdayToken(number: 1, label: "Sun"),
+    ]
+
+    @State private var startTime = Date().addingTimeInterval(60 * 60)
+    @State private var repeatInterval: FocusScheduleRepeat = .daily
+    @State private var repeatWeekdays: [Int] = []
+    @State private var durationMinutes: Double = 90
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("New Focus Schedule")
+                .font(.title.bold())
+
+            VStack(spacing: 16) {
+                DatePicker("Start Time:", selection: $startTime, displayedComponents: .hourAndMinute)
+
+                Picker("Repeat:", selection: $repeatInterval) {
+                    ForEach(FocusScheduleRepeat.allCases) { interval in
+                        Text(interval.displayName).tag(interval)
+                    }
+                }
+
+                if repeatInterval == .custom {
+                    Divider().opacity(0.2)
+                    weekdayPicker
+                }
+
+                HStack {
+                    Text("Duration:")
+                    Spacer()
+                    Text("\(Int(durationMinutes)) min")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.green)
+                    Slider(value: $durationMinutes, in: 5...180, step: 5)
+                        .frame(width: 150)
+                }
+
+                Text("Scheduled sessions respect your blocking, environment, and ambient-sound settings — they behave exactly like sessions you start manually.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding()
+            .modifier(SettingsContainerModifier())
+
+            HStack {
+                Button("Cancel", role: .cancel) { dismiss() }
+                Spacer()
+                Button("Add Schedule") {
+                    var schedule = ScheduledFocusSession()
+                    schedule.startTime = startTime
+                    schedule.repeatInterval = repeatInterval
+                    schedule.duration = durationMinutes * 60
+                    if repeatInterval == .custom {
+                        schedule.repeatWeekdays = repeatWeekdays
+                    }
+                    settings.settings.scheduledFocusSessions.append(schedule)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(30)
+        .frame(width: 420)
+        .onAppear {
+            durationMinutes = settings.settings.focusSessionDuration / 60
+        }
+    }
+
+    private var weekdayPicker: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Repeat on")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button(repeatWeekdays.isEmpty ? "Every day" : "Clear all") {
+                    repeatWeekdays = []
+                }
+                .font(.caption)
+                .buttonStyle(.plain)
+                .foregroundColor(.green)
+            }
+
+            HStack(spacing: 6) {
+                ForEach(Self.weekdayChoices) { token in
+                    weekdayPill(token)
+                }
+            }
+        }
+    }
+
+    private func weekdayPill(_ token: WeekdayToken) -> some View {
+        let isOn = repeatWeekdays.contains(token.number)
+        return Button {
+            if isOn {
+                repeatWeekdays.removeAll { $0 == token.number }
+            } else {
+                repeatWeekdays.append(token.number)
+            }
+        } label: {
+            Text(token.label)
+                .font(.system(size: 11, weight: isOn ? .bold : .medium))
+                .foregroundColor(isOn ? .white : .secondary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .background(
+                    isOn ? Color.green : Color.white.opacity(0.08),
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.plain)
+        .help(token.label)
     }
 }

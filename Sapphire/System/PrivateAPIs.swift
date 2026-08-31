@@ -129,6 +129,42 @@ internal func CGSGetScreenRectForWindow(
     _ outRect: inout CGRect
 ) -> CGError
 
+// MARK: - CGSWindow Group Functions (child window attachment)
+
+@_silgen_name("CGSAddWindowToWindowOrderingGroup")
+internal func CGSAddWindowToWindowOrderingGroup(
+    _ cid: CGSConnectionID,
+    _ child: CGWindowID,
+    _ parent: CGWindowID
+) -> CGError
+
+@_silgen_name("CGSRemoveFromOrderingGroup")
+internal func CGSRemoveFromOrderingGroup(
+    _ cid: CGSConnectionID,
+    _ window: CGWindowID
+) -> CGError
+
+@_silgen_name("CGSAddWindowToWindowMovementGroup")
+internal func CGSAddWindowToWindowMovementGroup(
+    _ cid: CGSConnectionID,
+    _ child: CGWindowID,
+    _ parent: CGWindowID
+) -> CGError
+
+@_silgen_name("CGSRemoveWindowFromWindowMovementGroup")
+internal func CGSRemoveWindowFromWindowMovementGroup(
+    _ cid: CGSConnectionID,
+    _ window: CGWindowID
+) -> CGError
+
+@_silgen_name("CGSOrderWindow")
+internal func CGSOrderWindow(
+    _ cid: CGSConnectionID,
+    _ wid: CGWindowID,
+    _ place: Int32,
+    _ relativeToWid: CGWindowID
+) -> CGError
+
 // MARK: - CGSConnection Functions
 @_silgen_name("_CGSDefaultConnection") internal func _CGSDefaultConnection() -> CGSConnectionID
 @_silgen_name("CGSGetConnectionProperty") internal func CGSGetConnectionProperty(_ cid: CGSConnectionID, _ key: CFString) -> Unmanaged<CFTypeRef>

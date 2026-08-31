@@ -9,7 +9,7 @@ import Foundation
 import os
 
 private let logger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "com.finetuneapp.FineTune",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire",
     category: "AudioDeviceID+Inspector"
 )
 

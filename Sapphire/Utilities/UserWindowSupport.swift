@@ -12,7 +12,6 @@ extension Notification.Name {
     static let sapphireHelperConnectionLost = Notification.Name("sapphireHelperConnectionLost")
     static let sapphireHelperConnectionRestored = Notification.Name("sapphireHelperConnectionRestored")
     static let sapphireSettingsWillClose = Notification.Name("sapphireSettingsWillClose")
-    static let sapphireTrimSettingsMemory = Notification.Name("sapphireTrimSettingsMemory")
     static let sapphireUpdateAvailable = Notification.Name("sapphireUpdateAvailable")
 }
 

@@ -26,9 +26,9 @@ final class DDCController {
     private var probeWorkItem: DispatchWorkItem?
     private var displayChangeObserver: NSObjectProtocol?
 
-    private let ddcQueue = DispatchQueue(label: "com.finetune.ddc", qos: .utility)
+    private let ddcQueue = DispatchQueue(label: "com.cshariq.sapphire.ddc", qos: .utility)
     private let settingsManager: SettingsManager
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "DDCController")
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "DDCController")
 
     var onProbeCompleted: (() -> Void)?
 

@@ -32,7 +32,7 @@ private func crashSignalHandler(_ sig: Int32) {
     raise(sig)
 }
 
-private let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "CrashGuard")
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "CrashGuard")
 
 // MARK: - Public API
 

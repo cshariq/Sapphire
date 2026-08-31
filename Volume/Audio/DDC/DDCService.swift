@@ -22,7 +22,7 @@ enum IOAVServiceLoader {
     private static var writeFn: WriteI2CFn?
     private static var didLoad = false
 
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "DDCService")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "DDCService")
 
     static func ensureLoaded() -> Bool {
         guard !didLoad else { return createFn != nil }
@@ -264,7 +264,7 @@ final class DDCService: @unchecked Sendable {
 // MARK: - IOAVService Discovery
 
 extension DDCService {
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "DDCService")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "DDCService")
 
     static func discoverServices() -> [(entry: io_service_t, service: DDCService)] {
         guard IOAVServiceLoader.ensureLoaded() else {

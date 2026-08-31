@@ -13,6 +13,8 @@ import UniformTypeIdentifiers
 import AppKit
 import os.log
 
+private let notchLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "NotchController")
+
 fileprivate struct BatteryInfoView: View {
     let level: Int
     let isCharging: Bool
@@ -167,6 +169,7 @@ struct NotchController: View {
 
     @State private var notchInteractionPollingTimer: Timer?
     @State private var lastSampledMouseLocation: CGPoint?
+    @State private var lastInteractionRefreshTime: TimeInterval = 0
     @State private var lastPublishedInteractiveFrame: CGRect = .null
     @State private var appliedTargetFPS: Int = 0
     @State private var lastActivityShapeSignature: String = ""
@@ -188,7 +191,9 @@ struct NotchController: View {
 
     private var isNotchScreenFullScreen: Bool {
         let screen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
-        return activeAppMonitor.isScreenFullScreen(screen)
+        let result = activeAppMonitor.isScreenFullScreen(screen)
+        notchLog.debug("isNotchScreenFullScreen: screen d\(screen?.displayID ?? 0) fullScreenDisplays=\(activeAppMonitor.fullScreenDisplayIDs.map(String.init).sorted()) -> \(result)")
+        return result
     }
 
     // MARK: - Computed Properties
@@ -241,12 +246,74 @@ struct NotchController: View {
         }
     }
 
+    private var isExpandedLiveActivity: Bool {
+        (notchState == .autoExpanded || notchState == .hoverExpanded) && isLiveActivityActive
+    }
+
+    private var liveActivityFadeStartLocation: Double {
+        guard let config, animatedHeight > 0 else { return 1 }
+        let initialHeight = config.initialSize.height
+        guard animatedHeight > initialHeight else { return 1 }
+        return min(max(Double(initialHeight / animatedHeight), 0), 1)
+    }
+
+    private var resolvedAppearanceSettings: NotchAppearanceSettings {
+        var appearance = activeAppearanceSettings
+        switch appearance.mode {
+        case .default:
+            appearance.solidColor = CodableColor(color: .black)
+            appearance.opacity = 1
+            appearance.enableTransparencyBlur = false
+            appearance.liquidGlassLook = true
+            if appearance.bottomFadeEnabled {
+                if isExpandedLiveActivity {
+                    if liveActivityManager.isFullViewActivity || liveActivityManager.activityHasBottomContent {
+                        appearance.backgroundStyle = .gradient
+                        appearance.gradientAngle = 90
+                        appearance.gradientColors = [
+                            CodableColor(color: .black, location: liveActivityFadeStartLocation),
+                            CodableColor(color: Color.black.opacity(0), location: 1.0)
+                        ]
+                    } else {
+                        appearance.backgroundStyle = .solid
+                    }
+                } else {
+                    appearance.backgroundStyle = .gradient
+                    appearance.gradientAngle = 90
+                    appearance.gradientColors = [
+                        CodableColor(color: .black, location: 0.7),
+                        CodableColor(color: Color.black.opacity(0), location: 1.0)
+                    ]
+                }
+            } else {
+                appearance.backgroundStyle = .solid
+            }
+        case .liquidGlass:
+            appearance.backgroundStyle = .solid
+            appearance.solidColor = CodableColor(color: .black)
+            appearance.opacity = 0.0
+            appearance.enableTransparencyBlur = false
+            appearance.liquidGlassLook = true
+            appearance.bottomFadeEnabled = false
+        case .blur:
+            appearance.backgroundStyle = .solid
+            appearance.solidColor = CodableColor(color: .black)
+            appearance.opacity = 0.55
+            appearance.enableTransparencyBlur = true
+            appearance.liquidGlassLook = false
+            appearance.bottomFadeEnabled = false
+        case .custom:
+            appearance.bottomFadeEnabled = false
+        }
+        return appearance
+    }
+
     private var isInteractive: Bool {
         !isManuallyHidden && (notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || activeAppMonitor.isWindowDragging)
     }
 
     private var shouldHideWindowForSharing: Bool {
-        settings.settings.hideFromScreenSharing || (notchState == .initial)
+        settings.settings.hideFromScreenSharing
     }
 
     private var shouldBlockNotchExpansionWhileLocked: Bool {
@@ -321,6 +388,8 @@ struct NotchController: View {
                 return settings.settings.clipboardWidgetEnabled
             case .mirror:
                 return settings.settings.mirrorWidgetEnabled
+            case .focusSession:
+                return settings.settings.focusSessionWidgetEnabled
             }
         }
     }
@@ -338,6 +407,7 @@ struct NotchController: View {
             case .notes: return .notesPlayer
             case .clipboard: return .clipboardPlayer
             case .mirror: return .mirrorPlayer
+            case .focusSession: return .focusSessionDetailView
             }
         }
     }
@@ -464,6 +534,12 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
             notchBackground
                 .mask(activeShape)
+
+            if shouldShowBottomEdgeFade(config: config) {
+                bottomEdgeFade(config: config)
+                    .mask(activeShape)
+                    .allowsHitTesting(false)
+            }
 
             ZStack(alignment: .top) {
                 let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
@@ -684,9 +760,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     // MARK: - Subviews
     @ViewBuilder
     private var notchBackground: some View {
-        let appearance = activeAppearanceSettings
+        let appearance = resolvedAppearanceSettings
 
-        if #available(macOS 26.0, *), appearance.liquidGlassLook {
+        if #available(macOS 26.0, *), appearance.usesLiquidGlass {
             let intensity = appearance.liquidGlassIntensity
             let material = LiquidGlassMaterial.forIntensity(intensity)
 
@@ -723,8 +799,38 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
     }
 
+    private func shouldShowBottomEdgeFade(config: ResolvedNotchConfiguration) -> Bool {
+        guard resolvedAppearanceSettings.mode != .default else { return false }
+        guard resolvedAppearanceSettings.bottomFadeEnabled else { return false }
+        guard notchState == .clickExpanded || notchState == .autoExpanded || notchState == .hoverExpanded else { return false }
+        guard isLiveActivityActive else { return notchState == .clickExpanded }
+        return liveActivityManager.isFullViewActivity || liveActivityManager.activityHasBottomContent
+    }
+
+    private func bottomEdgeFade(config: ResolvedNotchConfiguration) -> some View {
+        let initialHeight = config.initialSize.height
+        let fadeHeight = max(animatedHeight - initialHeight, 0)
+        let fadeStart = animatedHeight > 0 ? min(max(initialHeight / animatedHeight, 0), 1) : 0
+        let configuredStops = resolvedAppearanceSettings.gradientColors
+            .sorted { $0.location < $1.location }
+            .map { Gradient.Stop(color: $0.color, location: fadeStart + $0.location * (1 - fadeStart)) }
+        let stops = (configuredStops.isEmpty
+            ? [Gradient.Stop(color: .black.opacity(0.8), location: fadeStart)]
+            : configuredStops)
+            + [Gradient.Stop(color: .clear, location: 1)]
+
+        return LinearGradient(
+            gradient: Gradient(stops: stops),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .opacity(fadeHeight > 0 ? 1 : 0)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .compositingGroup()
+    }
+
     private var notchFillMaterial: AnyShapeStyle {
-        let appearance = activeAppearanceSettings
+        let appearance = resolvedAppearanceSettings
         let style = appearance.backgroundStyle
         switch style {
         case .solid:
@@ -837,7 +943,15 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     @ViewBuilder
     private func buildStandardActivityView(from data: StandardActivityData) -> some View {
         if let config = config {
-            VStack(spacing: 0) {
+            // Bottom content is centered by the outer VStack (and the activity
+            // view is fixedSize + centered in the notch), so padding on the
+            // bottom row alone never moves it. Left-align just the up-next row
+            // so it hugs the leading edge; lyrics/peek stay centered.
+            let bottomIsUpNext: Bool = {
+                if case .music(let bottom) = data, case .upNext = bottom { return true }
+                return false
+            }()
+            VStack(alignment: bottomIsUpNext ? .leading : .center, spacing: 0) {
                 let left = buildLeftView(for: data)
                 let right = buildRightView(for: data)
 
@@ -1170,6 +1284,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     .id("lyric-\(id.uuidString)")
                     .onTapGesture { showLyrics = true }
                 return AnyView(view)
+            case .upNext(let title, let artist, let artworkURL):
+                return AnyView(MusicUpNextView(title: title, artist: artist, artworkURL: artworkURL))
             }
         default:
             return nil
@@ -1213,6 +1329,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .hud(let type): SystemHUDSlimActivityView.left(type: type, settings: settings)
         case .lockScreen: LockScreenLiveActivityView.left()
         case .updateAvailable: UpdateAvailableActivityView.left()
+        case .focusSession: FocusSessionActivityView.left()
         case .unlocked: LockScreenLiveActivityView.left()
         case .stats(let payload): statsLiveActivityView.left(for: payload, selectedStats: settings.settings.selectedStats, selectedSensorKeys: settings.settings.selectedSensorKeys)
         }
@@ -1256,6 +1373,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: SettingsModel.shared)
         case .lockScreen: LockScreenLiveActivityView.right()
         case .updateAvailable(let version): UpdateAvailableActivityView.right(version: version)
+        case .focusSession: FocusSessionActivityView.right()
         case .unlocked: LockScreenLiveActivityView.right()
         case .stats(let payload): statsLiveActivityView.right(for: payload, selectedStats: settings.settings.selectedStats, selectedSensorKeys: settings.settings.selectedSensorKeys)
         }
@@ -1586,6 +1704,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             self.liveActivityHorizontalPadding = liveActivityManager.activityHasBottomContent ?
             config.activityWithContentHorizontalPadding :
             config.activityDefaultHorizontalPadding
+            if isContentUpdate {
+                refreshAnimatedSizeForCurrentState()
+            }
         }
 
         if isContentUpdate { return }
@@ -1714,6 +1835,26 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
         updateFPS()
         updateMouseEventHandling(isInteractive: isInteractive)
+    }
+
+    private func refreshAnimatedSizeForCurrentState() {
+        guard let config = config else { return }
+        switch notchState {
+        case .initial:
+            animatedWidth = config.initialSize.width
+            animatedHeight = config.initialSize.height
+        case .autoExpanded:
+            animatedWidth = max(measuredAutoContentSize.width, config.initialSize.width)
+            animatedHeight = max(measuredAutoContentSize.height, config.initialSize.height)
+        case .hoverExpanded:
+            let scale = activeScaleFactor
+            let rawWidth = isLiveActivityActive ? measuredAutoContentSize.width * scale : config.hoverExpandedSize.width
+            let rawHeight = isLiveActivityActive ? measuredAutoContentSize.height * scale : config.hoverExpandedSize.height
+            animatedWidth = max(rawWidth, config.initialSize.width)
+            animatedHeight = max(rawHeight, config.initialSize.height)
+        case .clickExpanded:
+            break
+        }
     }
 
     private func handlePreviewItemChange(newItem: ShelfItem?) {
@@ -2107,6 +2248,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func evaluateInactiveNotchVisibility() {
+        notchLog.info("evaluateInactiveNotchVisibility: hideLiveActivityInFullScreen=\(settings.settings.hideLiveActivityInFullScreen) isNotchScreenFullScreen=\(isNotchScreenFullScreen) fullScreenDisplays=\(activeAppMonitor.fullScreenDisplayIDs.map(String.init).sorted()) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
         if settings.settings.hideLiveActivityInFullScreen && isNotchScreenFullScreen {
             if completeHideReason == nil {
                 hideNotchCompletely(reason: .fullScreen)
@@ -2210,11 +2352,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     private func startNotchInteractionMonitoring() {
         guard notchInteractionPollingTimer == nil else { return }
 
-        let interval = 1.0 / 20.0
+        let interval = 1.0 / 8.0
         let timer = Timer(timeInterval: interval, repeats: true) { _ in
             self.refreshNotchInteractionState()
         }
-        timer.tolerance = 0.02
+        timer.tolerance = 0.05
         notchInteractionPollingTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
@@ -2224,10 +2366,15 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         notchInteractionPollingTimer = nil
         lastSampledMouseLocation = nil
         lastPublishedInteractiveFrame = .null
+        lastInteractionRefreshTime = 0
     }
 
     private func refreshNotchInteractionState() {
         guard let config = config, let window = notchWindow else { return }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastInteractionRefreshTime >= 0.1 else { return }
+        lastInteractionRefreshTime = now
         if isManuallyHidden {
             window.ignoresMouseEvents = true
             if let dynamicWindow = window as? DynamicFocusWindow {
@@ -2241,11 +2388,15 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         let interactiveBounds = interactiveFrame(for: window, config: config)
         let isNear = isMouseNearNotchFrame(interactiveBounds, mouseLocation: mouseLocation)
         let isExpanded = notchState != .initial
-        let hoverMargin = (isHovered && isExpanded) ? Self.hoverCollapseMargin : Self.hoverDetectionMargin
-        let detectionBounds = interactiveBounds.insetBy(
-            dx: -hoverMargin,
-            dy: -hoverMargin
-        )
+        let detectionBounds: CGRect
+        if !isExpanded {
+            detectionBounds = interactiveBounds
+        } else {
+            detectionBounds = interactiveBounds.insetBy(
+                dx: -Self.hoverDetectionMargin,
+                dy: -Self.hoverDetectionMargin
+            )
+        }
         let isPointerInside = detectionBounds.contains(mouseLocation)
 
         if !isInteractive, !isNear, lastSampledMouseLocation == mouseLocation {
@@ -2307,12 +2458,18 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
 
         let topInset = config.topBuffer
-        return CGRect(
+        let frame = CGRect(
             x: contentBounds.midX - (notchWidth / 2),
             y: contentBounds.maxY - notchHeight - topInset,
             width: notchWidth,
             height: notchHeight
-        ).integral.insetBy(dx: -1, dy: -1)
+        ).integral
+
+        if notchState == .initial {
+            return frame.insetBy(dx: 4, dy: 4)
+        } else {
+            return frame.insetBy(dx: -1, dy: -1)
+        }
     }
 
     private func toRestorableMenu(mode: NotchWidgetMode) -> RestorableNotchMenu? {
@@ -2335,7 +2492,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .musicArtistDetail, .musicAlbumDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
-                .agentS, .blipHub, .circleToSearch, .updateAvailable:
+                .agentS, .blipHub, .circleToSearch, .updateAvailable, .focusSessionDetailView:
             return nil
         }
     }
@@ -2526,8 +2683,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard let window = notchWindow, let config = config, !isPinned else { return }
         let mouseLocation = window.mouseLocationOutsideOfEventStream
         let interactiveBounds = interactiveFrame(for: window, config: config)
-            .insetBy(dx: -Self.hoverCollapseMargin, dy: -Self.hoverCollapseMargin)
-        guard !interactiveBounds.contains(mouseLocation) else { return }
+        let hoverBounds = notchState == .initial
+            ? interactiveBounds
+            : interactiveBounds.insetBy(dx: -Self.hoverCollapseMargin, dy: -Self.hoverCollapseMargin)
+        guard !hoverBounds.contains(mouseLocation) else { return }
         guard !dragManager.isDraggingInActivationZone && !activeAppMonitor.isWindowDragging else { return }
         scheduleCollapse(after: 0)
     }
@@ -2637,6 +2796,8 @@ extension LiveActivityManager {
             switch data {
             case .music(let bottomContentType):
                 return bottomContentType != .none
+            case .focusSession:
+                return true
             default:
                 return false
             }
@@ -2653,6 +2814,8 @@ extension LiveActivityManager {
             return "peek"
         case .lyrics:
             return "lyrics"
+        case .upNext:
+            return "upNext"
         }
     }
 }

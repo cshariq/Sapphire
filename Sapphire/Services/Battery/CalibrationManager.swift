@@ -38,7 +38,12 @@ class CalibrationManager: ObservableObject {
     @Published private(set) var progress: Double = 0.0
 
     let calibrationEventPublisher = PassthroughSubject<State, Never>()
-    var isActive: Bool { state != .idle && state != .done && state != .error("") }
+    var isActive: Bool {
+        switch state {
+        case .idle, .done, .error: return false
+        default: return true
+        }
+    }
 
     private let batteryManager = BatteryManager.shared
     private let batteryMonitor = BatteryMonitor.shared
@@ -89,8 +94,12 @@ class CalibrationManager: ObservableObject {
         case .chargingToFull:
             progress = 0.0
             batteryManager.beginCalibrationCycle { [weak self] error in
-                if let error = error {
-                    self?.transition(to: .error("Failed to start calibration: \(error.localizedDescription)"))
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let error = error {
+                        print("[CalibrationManager] Failed to start calibration: \(error.localizedDescription)")
+                        self.transition(to: .error("Failed to start calibration: \(error.localizedDescription)"))
+                    }
                 }
             }
 
@@ -158,14 +167,30 @@ class CalibrationManager: ObservableObject {
             caffeineManager.stop()
         }
 
-        batteryManager.setChargeLimit(originalChargeLimit)
         batteryManager.setDischarge(discharging: false)
-        batteryManager.enableCharging(true)
+        restoreChargePolicy()
 
-        if state != .done && state != .idle {
-            state = .idle
+        switch state {
+        case .done, .error: break
+        default: state = .idle
         }
         progress = 0.0
+    }
+
+    private func restoreChargePolicy() {
+        let limit = originalChargeLimit
+        Task { @MainActor in
+            if batteryManager.isAppleSilicon {
+                let mode = await batteryManager.currentChargeControlMode()
+                if mode == .firmware {
+                    batteryManager.setChargeLimit(limit)
+                } else {
+                    batteryManager.enableCharging(true)
+                }
+            } else {
+                batteryManager.setChargeLimit(limit)
+            }
+        }
     }
 }
 

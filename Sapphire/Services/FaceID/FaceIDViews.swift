@@ -9,35 +9,24 @@ import AVFoundation
 
 // MARK: - Camera Live View
 struct CameraView: NSViewRepresentable {
-    var session: AVCaptureSession
+    var cameraController: CameraController
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         view.wantsLayer = true
 
-        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.videoGravity = .resizeAspectFill
+        let previewLayer = cameraController.makePreviewLayer()
         view.layer = previewLayer
 
         previewLayer.frame = view.bounds
         previewLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-
-        applyMirroring(to: previewLayer)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         if let previewLayer = nsView.layer as? AVCaptureVideoPreviewLayer {
-            applyMirroring(to: previewLayer)
+            cameraController.applyMirroring(to: previewLayer)
         }
-    }
-
-    private func applyMirroring(to previewLayer: AVCaptureVideoPreviewLayer) {
-        guard let connection = previewLayer.connection, connection.isVideoMirroringSupported else { return }
-        if connection.automaticallyAdjustsVideoMirroring {
-            connection.automaticallyAdjustsVideoMirroring = false
-        }
-        connection.isVideoMirrored = true
     }
 }
 
@@ -88,7 +77,7 @@ struct FaceIDRegistrationView: View {
                 Spacer()
 
                 ZStack {
-                    CameraView(session: cameraController.captureSession)
+                    CameraView(cameraController: cameraController)
                         .frame(width: 300, height: 300)
                         .clipShape(Circle())
                         .blur(radius: isAskExtended ? 15 : 0)

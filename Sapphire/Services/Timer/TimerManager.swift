@@ -62,6 +62,9 @@ class TimerManager: ObservableObject {
     private var pipe: Pipe?
     private var primaryTimerID: String?
     private var displayedTimerID: String?
+    private var syncGeneration = 0
+    private var plistSyncWorkItem: DispatchWorkItem?
+    private var logSyncPending = false
 
     init() {
         Publishers.CombineLatest($activeTimers, $activeStopwatches)
@@ -89,39 +92,54 @@ class TimerManager: ObservableObject {
         print("[TimerManager] Timer control is temporarily disabled for stability.")
     }
 
-    private func readPlistUsingDefaults() -> [String: Any]? {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["export", "com.apple.mobiletimerd", "-"]
-        process.standardOutput = pipe
-        do {
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            if process.terminationStatus != 0 { return nil }
-            return try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
-        } catch {
-            print("[TimerManager Plist Read]: CRITICAL FAILURE running `defaults export` command. Error: \(error)")
-            return nil
-        }
+    private struct PlistTimerEvent {
+        let id: String
+        let stateInt: Int
+        let timeValue: TimeInterval
     }
 
     private func syncStateWithPlist() {
-        guard let plist = readPlistUsingDefaults(),
-              let timersDict = plist["MTTimers"] as? [String: Any],
-              let timersArray = timersDict["MTTimers"] as? [[String: Any]]
-        else {
-            print("[TimerManager Plist Sync]: Failed to read or parse plist structure.")
-            return
+        plistSyncWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.performPlistSync()
         }
+        plistSyncWorkItem = work
+        DispatchQueue.global(qos: .utility).async(execute: work)
+    }
+
+    private func performPlistSync() {
+        syncGeneration += 1
+        let generation = syncGeneration
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let result = ProcessRunner.runSync(
+                executablePath: "/usr/bin/defaults",
+                arguments: ["export", "com.apple.mobiletimerd", "-"],
+                timeout: 10
+            ), result.succeeded,
+               let plist = (try? PropertyListSerialization.propertyList(
+                   from: result.stdoutData, options: [], format: nil)) as? [String: Any],
+               let parsed = Self.parseTimerEvents(from: plist)
+            else {
+                print("[TimerManager Plist Sync]: Failed to read or parse plist structure.")
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.syncGeneration == generation else { return }
+                self.applyPlistTimerEvents(validIDs: parsed.validIDs, entries: parsed.entries)
+            }
+        }
+    }
+
+    private static func parseTimerEvents(from plist: [String: Any]) -> (validIDs: Set<String>, entries: [PlistTimerEvent])? {
+        guard let timersDict = plist["MTTimers"] as? [String: Any],
+              let timersArray = timersDict["MTTimers"] as? [[String: Any]] else { return nil }
         var validPlistTimerIDs = Set<String>()
+        var entries: [PlistTimerEvent] = []
         for timerDict in timersArray {
             guard let timerData = timerDict["$MTTimer"] as? [String: Any],
                   let timerID = timerData["MTTimerID"] as? String,
                   let timerStateInt = timerData["MTTimerState"] as? Int,
-                  timerStateInt != 1
-            else { continue }
+                  timerStateInt != 1 else { continue }
             validPlistTimerIDs.insert(timerID)
             let plistState: ActiveTimerType = (timerStateInt == 3) ? .system : .none
             var timeValueFromPlist: TimeInterval
@@ -133,19 +151,27 @@ class TimerManager: ObservableObject {
             } else {
                 timeValueFromPlist = timerData["MTTimerDuration"] as? TimeInterval ?? 0
             }
-            if let index = activeTimers.firstIndex(where: { $0.id == timerID }) {
+            entries.append(PlistTimerEvent(id: timerID, stateInt: timerStateInt, timeValue: timeValueFromPlist))
+        }
+        return (validIDs: validPlistTimerIDs, entries: entries)
+    }
+
+    private func applyPlistTimerEvents(validIDs: Set<String>, entries: [PlistTimerEvent]) {
+        for event in entries {
+            let plistState: ActiveTimerType = (event.stateInt == 3) ? .system : .none
+            if let index = activeTimers.firstIndex(where: { $0.id == event.id }) {
                 var timer = activeTimers[index]
                 timer.state = plistState
                 if plistState == .none {
-                    timer.remainingTimeOnLastUpdate = timeValueFromPlist
+                    timer.remainingTimeOnLastUpdate = event.timeValue
                     timer.dateOfLastUpdate = Date()
                 }
                 activeTimers[index] = timer
             } else {
-                activeTimers.append(SystemTimerInfo(id: timerID, state: plistState, remainingTimeOnLastUpdate: timeValueFromPlist, dateOfLastUpdate: Date()))
+                activeTimers.append(SystemTimerInfo(id: event.id, state: plistState, remainingTimeOnLastUpdate: event.timeValue, dateOfLastUpdate: Date()))
             }
         }
-        activeTimers.removeAll { !validPlistTimerIDs.contains($0.id) }
+        activeTimers.removeAll { !validIDs.contains($0.id) }
         selectTimerToDisplay()
     }
 
@@ -184,11 +210,11 @@ class TimerManager: ObservableObject {
 
     private func handleLogMessage(_ message: String) {
         if message.contains("notifying observers for timer update") || message.contains("notifying observers for next timer change") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.syncStateWithPlist() }
+            schedulePlistSync(after: 0.1)
             return
         }
         if message.contains("addTimer:") || message.contains("Pausing a timer:") || message.contains("Stopping a timer:") || message.contains("updateTimer:") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.syncStateWithPlist() }
+            schedulePlistSync(after: 0.2)
             return
         }
         if let timerID = extractID(from: message, after: "notified next timer changed: ") {
@@ -232,6 +258,16 @@ class TimerManager: ObservableObject {
                 stopwatch.laps.insert(lapTime, at: 0)
                 activeStopwatches[index] = stopwatch
             }
+        }
+    }
+
+    private func schedulePlistSync(after delay: TimeInterval) {
+        guard !logSyncPending else { return }
+        logSyncPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.logSyncPending = false
+            self.syncStateWithPlist()
         }
     }
 

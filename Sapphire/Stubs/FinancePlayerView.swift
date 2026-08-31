@@ -1,3 +1,9 @@
+//
+//  FinancePlayerView.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-30
+
 import SwiftUI
 
 struct FinancePlayerView: View {

@@ -43,17 +43,15 @@ class ActiveAppMonitor: ObservableObject {
     }
     @Published private(set) var isWindowDragging: Bool = false
 
+    @Published private(set) var appVisibilityRevision: UInt64 = 0
+    @Published private(set) var screenParametersRevision: UInt64 = 0
+    @Published private(set) var lastLaunchedBundleID: String?
+    @Published private(set) var lastTerminatedBundleID: String?
+
     private let settingsModel: SettingsModel
     private var cancellables = Set<AnyCancellable>()
 
-    private let kAXMainWindowAttribute = "AXMainWindow" as CFString
-    private let kAXFullScreenAttribute = "AXFullScreen" as CFString
-    private let kAXWindowsAttribute = "AXWindows" as CFString
-    private let kAXWindowNumberAttribute = "AXWindowNumber" as CFString
-    private let kAXPositionAttribute = "AXPosition" as CFString
-    private let kAXSizeAttribute = "AXSize" as CFString
 
-    // Throttling for AX event-driven full-screen refresh
     private var lastFullScreenRefreshTime: TimeInterval = 0
     private let fullScreenRefreshThrottle: TimeInterval = 0.3
 
@@ -99,6 +97,31 @@ class ActiveAppMonitor: ObservableObject {
             .sink { [weak self] _ in self?.updateLyricPermission() }
             .store(in: &cancellables)
 
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.publisher(for: NSWorkspace.didHideApplicationNotification)
+            .sink { [weak self] _ in self?.appVisibilityRevision &+= 1 }
+            .store(in: &cancellables)
+        workspace.publisher(for: NSWorkspace.didUnhideApplicationNotification)
+            .sink { [weak self] _ in self?.appVisibilityRevision &+= 1 }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .sink { [weak self] _ in self?.screenParametersRevision &+= 1 }
+            .store(in: &cancellables)
+
+        workspace.publisher(for: NSWorkspace.didLaunchApplicationNotification)
+            .sink { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                self?.lastLaunchedBundleID = app?.bundleIdentifier
+            }
+            .store(in: &cancellables)
+        workspace.publisher(for: NSWorkspace.didTerminateApplicationNotification)
+            .sink { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                self?.lastTerminatedBundleID = app?.bundleIdentifier
+            }
+            .store(in: &cancellables)
+
         updateActiveAppState()
     }
 
@@ -131,29 +154,35 @@ class ActiveAppMonitor: ObservableObject {
 
     // MARK: - Full Screen Detection
 
-    /// Refresh full-screen state for the given app. Called on app/space changes
-    /// and also from AX event callbacks when windows resize or focus changes.
     private func refreshFullScreenState(for app: NSRunningApplication) {
+        // Use CGWindowListCopyWindowInfo instead of the Accessibility API: it needs
+        // no Accessibility permission and always reflects the real on-screen geometry
+        // of the frontmost app's windows. A window counts as full screen when its
+        // frame covers an entire display's full bounds (including the strip under the
+        // menu bar and behind the Dock); a merely maximized window only fills the
+        // display's visible area, so it won't match.
         let pid = app.processIdentifier
-        let appElement = AXUIElementCreateApplication(pid)
 
-        var displayIDs = Set<CGDirectDisplayID>()
-
-        // Try iterating all windows first
-        var windowsRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-           let windows = windowsRef as? [AXUIElement] {
-            for window in windows {
-                if let displayID = fullScreenDisplayID(for: window) {
-                    displayIDs.insert(displayID)
-                }
-            }
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return
         }
 
-        // Fallback: check main window (old approach — simple and reliable)
-        if displayIDs.isEmpty, let window = mainWindow(of: appElement),
-           let displayID = fullScreenDisplayID(for: window) {
-            displayIDs.insert(displayID)
+        var displayIDs = Set<CGDirectDisplayID>()
+        for info in windows {
+            guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int,
+                  pid_t(ownerPID) == pid,
+                  let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict) else {
+                continue
+            }
+            for screen in NSScreen.screens {
+                if isFrame(bounds, coveringDisplay: screen.displayID) {
+                    displayIDs.insert(screen.displayID)
+                }
+            }
         }
 
         if fullScreenDisplayIDs != displayIDs {
@@ -161,69 +190,14 @@ class ActiveAppMonitor: ObservableObject {
         }
     }
 
-    private func mainWindow(of appElement: AXUIElement) -> AXUIElement? {
-        var window: AnyObject?
-        AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute, &window)
-        return window as! AXUIElement?
-    }
-
-    private func windowNumber(of window: AXUIElement) -> CGWindowID? {
-        var value: AnyObject?
-        guard AXUIElementCopyAttributeValue(window, kAXWindowNumberAttribute as CFString, &value) == .success,
-              let number = value as? NSNumber else {
-            return nil
-        }
-        return CGWindowID(number.uint32Value)
-    }
-
-    private func windowFrame(of window: AXUIElement) -> CGRect? {
-        var positionRef: CFTypeRef?
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef) == .success,
-              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let positionValue = positionRef,
-              let sizeValue = sizeRef else {
-            return nil
-        }
-        var origin = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin),
-              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else {
-            return nil
-        }
-        return CGRect(origin: origin, size: size)
-    }
-
-    /// Returns the display ID for a window if it's full-screen, nil otherwise.
-    /// Uses AXFullScreen attribute (old reliable approach) and maps to a display.
-    private func fullScreenDisplayID(for window: AXUIElement) -> CGDirectDisplayID? {
-        var isFullScreenValue: AnyObject?
-        guard AXUIElementCopyAttributeValue(window, kAXFullScreenAttribute as CFString, &isFullScreenValue) == .success,
-              let isFullScreenNumber = isFullScreenValue as? NSNumber,
-              isFullScreenNumber.boolValue == true else {
-            return nil
-        }
-
-        // Get window frame to determine which display it's on
-        guard let frame = windowFrame(of: window) else { return nil }
-
-        // First try: find screen whose frame contains the window's origin
-        if let screen = NSScreen.screens.first(where: { $0.frame.contains(frame.origin) }) {
-            return screen.displayID
-        }
-
-        // Fallback: find screen that the window covers most
-        var bestScreen: NSScreen?
-        var bestArea: CGFloat = 0
-        for screen in NSScreen.screens {
-            let intersection = frame.intersection(screen.frame)
-            let area = intersection.width * intersection.height
-            if area > bestArea {
-                bestArea = area
-                bestScreen = screen
-            }
-        }
-        return bestScreen?.displayID
+    private func isFrame(_ frame: CGRect, coveringDisplay displayID: CGDirectDisplayID, tolerance: CGFloat = 2) -> Bool {
+        // CGWindowList bounds and CGDisplayBounds share the same top-left/Down
+        // coordinate space, so compare them directly.
+        let displayBounds = CGDisplayBounds(displayID)
+        return abs(frame.minX - displayBounds.minX) <= tolerance
+            && abs(frame.minY - displayBounds.minY) <= tolerance
+            && abs(frame.maxX - displayBounds.maxX) <= tolerance
+            && abs(frame.maxY - displayBounds.maxY) <= tolerance
     }
 
     private func updateLyricPermission() {
@@ -246,16 +220,13 @@ class ActiveAppMonitor: ObservableObject {
 
     // MARK: - AX Event Handling
 
-    /// Unified callback for all AX observer notifications.
     nonisolated func handleAXEvent(_ notification: CFString) {
         Task { @MainActor in
             let now = CACurrentMediaTime()
 
             if notification as String == kAXWindowMovedNotification as String {
-                // Window drag detection (existing behavior)
                 handleWindowMove(now: now)
             } else {
-                // Window resize / focus change → refresh full-screen state
                 handleFullScreenEvent(now: now)
             }
         }
@@ -288,11 +259,9 @@ class ActiveAppMonitor: ObservableObject {
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         let appElement = AXUIElementCreateApplication(pid)
 
-        // Always register for full-screen relevant notifications
         AXObserverAddNotification(observer, appElement, kAXWindowResizedNotification as CFString, selfPtr)
         AXObserverAddNotification(observer, appElement, kAXFocusedUIElementChangedNotification as CFString, selfPtr)
 
-        // Register for window-move notification if drag detection is enabled
         if settingsModel.settings.snapOnWindowDragEnabled {
             AXObserverAddNotification(observer, appElement, kAXWindowMovedNotification as CFString, selfPtr)
         }

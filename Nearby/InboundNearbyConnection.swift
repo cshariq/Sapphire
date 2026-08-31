@@ -36,6 +36,7 @@ class InboundNearbyConnection: NearbyConnection {
     }
 
     override func handleConnectionClosure() {
+        if currentState == .disconnected { return }
         if (currentState == .waitingForUserConsent || currentState == .receivingFiles) && lastError == nil {
             lastError = NearbyError.canceled(reason: .userCanceled)
         }
@@ -92,6 +93,8 @@ class InboundNearbyConnection: NearbyConnection {
             if userAction == .copy {
                 if let fileContents = try? String(contentsOf: fileInfo.destinationURL, encoding: .utf8) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(fileContents, forType: .string) }
                 try? FileManager.default.removeItem(at: fileInfo.destinationURL)
+            } else if userAction == .save {
+                NotificationCenter.default.post(name: .sapphireNearbyFileDownloaded, object: nil, userInfo: ["url": fileInfo.destinationURL])
             }
             transferredFiles.removeValue(forKey: id)
             if transferredFiles.isEmpty { currentState = .disconnecting; try sendDisconnectionAndDisconnect() }

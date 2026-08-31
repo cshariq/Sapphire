@@ -144,7 +144,7 @@ final class AirPlayManager: NSObject, ObservableObject {
     // MARK: - Switching (Control Center UI scripting)
 
     func switchTo(_ device: AirPlayDevice) async -> AirPlaySwitchResult {
-        guard AXIsProcessTrusted() else {
+        guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
             return .requiresAccessibility
         }
 
@@ -318,25 +318,13 @@ final class AirPlayManager: NSObject, ObservableObject {
     // MARK: - osascript
 
     private nonisolated static func runOsascript(_ script: String, arguments: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-e", script] + arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            let timeoutItem = DispatchWorkItem { process.terminate() }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 8.0, execute: timeoutItem)
-            process.waitUntilExit()
-            timeoutItem.cancel()
-            guard process.terminationStatus == 0 else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return output?.isEmpty == false ? output : nil
-        } catch {
-            return nil
-        }
+        guard let result = ProcessRunner.runSync(
+            executablePath: "/usr/bin/osascript",
+            arguments: ["-e", script] + arguments,
+            timeout: 8
+        ), result.succeeded else { return nil }
+        let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.isEmpty ? nil : output
     }
 }
 

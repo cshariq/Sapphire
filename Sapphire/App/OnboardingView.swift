@@ -87,6 +87,7 @@ struct OnboardingView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -558,9 +559,6 @@ private struct SubscriptionOverviewStepView: View {
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     var onNext: () -> Void
 
-    @State private var showUpgradeSheet = false
-    @State private var selectedCheckoutTier: SubscriptionTier = .basic
-
     private var currentTier: SubscriptionTier {
         subscriptionManager.activeTier
     }
@@ -651,25 +649,20 @@ private struct SubscriptionOverviewStepView: View {
             OnboardingButton(title: "Skip", action: onNext)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .sheet(isPresented: $showUpgradeSheet, onDismiss: {
-            Task { await subscriptionManager.bootstrap() }
-        }) {
-            NativePaymentSheetView(tier: selectedCheckoutTier, deviceCount: 1, isAddingOnly: false) {
-                showUpgradeSheet = false
-            }
-            .frame(
-                width: min(820, (NSScreen.main?.visibleFrame.width ?? 820) * 0.80),
-                height: min(750, (NSScreen.main?.visibleFrame.height ?? 750) * 0.75)
-            )
-        }
         .onAppear {
             Task { await subscriptionManager.bootstrap() }
         }
     }
 
     private func beginCheckout(for tier: SubscriptionTier) {
-        selectedCheckoutTier = tier
-        showUpgradeSheet = true
+        let plan = tier == .free ? "basic" : tier.rawValue
+        guard var components = URLComponents(string: "https://sapphire-app.tech/checkout.html") else { return }
+        components.queryItems = [
+            URLQueryItem(name: "plan", value: plan),
+            URLQueryItem(name: "qty", value: "1")
+        ]
+        guard let url = components.url else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func onboardingTierRank(_ tier: SubscriptionTier) -> Int {

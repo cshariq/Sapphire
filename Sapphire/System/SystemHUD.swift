@@ -11,9 +11,19 @@ import Combine
 
 fileprivate func eventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
+            DispatchQueue.main.async {
+                SystemHUDManager.shared.teardownEventTap()
+            }
+            return Unmanaged.passRetained(event)
+        }
         DispatchQueue.main.async {
             SystemHUDManager.shared.handleEventTapDisabled()
         }
+        return Unmanaged.passRetained(event)
+    }
+
+    guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
         return Unmanaged.passRetained(event)
     }
 
@@ -221,9 +231,7 @@ class SystemHUDManager: ObservableObject {
 
     private func startVerificationTimer() {
         verificationTimer?.invalidate()
-        verificationTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.ensureEventTapIsEnabled()
-        }
+        verificationTimer = nil
     }
 
     fileprivate func handleEventTapDisabled() {
@@ -248,7 +256,7 @@ class SystemHUDManager: ObservableObject {
         setupEventTap()
     }
 
-    private func teardownEventTap() {
+    fileprivate func teardownEventTap() {
         if let source = eventTapRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
             eventTapRunLoopSource = nil
@@ -261,7 +269,7 @@ class SystemHUDManager: ObservableObject {
     }
 
     private func ensureEventTapIsEnabled(forceRebuild: Bool = false) {
-        guard AXIsProcessTrusted() else {
+        guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
             teardownEventTap()
             return
         }

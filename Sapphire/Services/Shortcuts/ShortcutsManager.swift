@@ -17,20 +17,17 @@ class ShortcutsManager {
 
     func runShortcut(id: String) {
         Task.detached(priority: .userInitiated) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")
-            process.arguments = ["run", id]
-
-            do {
-                try process.run()
-                process.waitUntilExit()
-                if process.terminationStatus == 0 {
-                    print("[ShortcutsManager] Successfully ran shortcut with ID '\(id)'.")
-                } else {
-                    print("[ShortcutsManager] Error running shortcut with ID '\(id)'. Process terminated with status \(process.terminationStatus).")
-                }
-            } catch {
-                print("[ShortcutsManager] Failed to run process for shortcut ID '\(id)': \(error)")
+            guard let result = ProcessRunner.runSync(
+                executablePath: "/usr/bin/shortcuts",
+                arguments: ["run", id]
+            ) as ProcessRunner.Result? else {
+                print("[ShortcutsManager] Failed to launch process for shortcut ID '\(id)'.")
+                return
+            }
+            if result.succeeded {
+                print("[ShortcutsManager] Successfully ran shortcut with ID '\(id)'.")
+            } else {
+                print("[ShortcutsManager] Error running shortcut with ID '\(id)'. Process terminated with status \(result.exitCode).")
             }
         }
     }
@@ -155,7 +152,7 @@ class ShortcutsManager {
             "loading": "hourglass", "pending": "hourglass", "waiting": "hourglass",
             "progress": "chart.bar.fill",
             "idea": "lightbulb.fill", "tip": "lightbulb.fill", "hint": "lightbulb.fill",
-            "fire": "flame.fill", "trend": "chart.line.uptrend.xyaxis", "popular": "flame.fill",
+            "fire": "bolt.fill", "trend": "chart.line.uptrend.xyaxis", "popular": "chart.line.uptrend.xyaxis",
             "growth": "arrow.up.right", "decline": "arrow.down.right",
             "blocked": "hand.raised.fill", "spam": "exclamationmark.bubble.fill",
             "puzzle": "puzzlepiece.extension.fill",

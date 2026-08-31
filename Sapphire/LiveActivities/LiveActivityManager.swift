@@ -40,6 +40,7 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
     case microphone = 86
     case nearbyShare = 90
     case eyeBreak = 95
+    case focusSession = 96
     case systemHUD = 100
     case unlocked = 105
     case lockScreen = 110
@@ -120,7 +121,8 @@ class LiveActivityManager: ObservableObject {
 
     private var notchDisplayIsFullScreen: Bool {
         let screen = NSWindow.visibleNotchWindow?.screen ?? CursorPosition.targetNotchScreen()
-        return activeAppMonitor.isScreenFullScreen(screen)
+        let result = activeAppMonitor.isScreenFullScreen(screen)
+        return result
     }
 
     // MARK: - Private Properties
@@ -172,6 +174,7 @@ class LiveActivityManager: ObservableObject {
     private var lastShownBatteryManagementState: ManagementState?
     private var lastLyricContentID: AnyHashable?
     private var lyricContentUpdateTask: Task<Void, Never>?
+    private var lastMusicLiveActivityTick: CFAbsoluteTime = 0
     public var intelligenceVM: IntelligenceNotchViewModel?
 
     // MARK: - Dependencies
@@ -268,6 +271,17 @@ class LiveActivityManager: ObservableObject {
             }
             .store(in: &cancellables)
 
+        musicWidget.playbackTimePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.currentActivity == .music else { return }
+                let now = CFAbsoluteTimeGetCurrent()
+                guard now - self.lastMusicLiveActivityTick >= 0.4 else { return }
+                self.lastMusicLiveActivityTick = now
+                self.evaluateAndDisplayActivity()
+            }
+            .store(in: &cancellables)
+
         geminiLiveManager.$isMicMuted
             .receive(on: DispatchQueue.main)
             .sink {
@@ -299,6 +313,7 @@ class LiveActivityManager: ObservableObject {
             .sink { [weak self] in self?.finishGeminiLive() }
             .store(in: &cancellables)
         FileDropManager.shared.$tasks
+            .removeDuplicates()
             .throttle(
                 for: .milliseconds(100),
                 scheduler: RunLoop.main,
@@ -443,6 +458,7 @@ class LiveActivityManager: ObservableObject {
             NotificationCenter.default.publisher(for: NSNotification.Name("IOBluetoothHostControllerPoweredOffNotification")).mapToVoid(),
             eyeBreakManager.$isBreakTime.removeDuplicates().mapToVoid(),
             timerManager.$isRunning.removeDuplicates().mapToVoid(),
+            FocusSessionManager.shared.$phase.removeDuplicates().mapToVoid(),
             WeatherViewModel.shared.$weatherData
                 .removeDuplicates()
                 .mapToVoid(),
@@ -658,6 +674,7 @@ class LiveActivityManager: ObservableObject {
             if notchDisplayIsFullScreen {
                 if let liveActivitySettingsType = activityType.toLiveActivityType(),
                    settingsModel.settings.hideActivitiesInFullScreen[liveActivitySettingsType.rawValue] == true {
+                    logger.info("full-screen: blocking activity \(activityType.rawValue) (hidden-in-fullscreen set)")
                     continue
                 }
             }
@@ -686,9 +703,8 @@ class LiveActivityManager: ObservableObject {
         }
 
         if winningCandidate == nil,
-           !(isFullScreen && fullScreenSettingsType[LiveActivityType.weather.rawValue] == true),
-           snoozedActivities[.persistentWeather] == nil,
-           let candidate = checkForPersistentWeather() {
+           snoozedActivities[.focusSession] == nil,
+           let candidate = checkForFocusSession() {
             winningCandidate = candidate
         }
 
@@ -711,6 +727,7 @@ class LiveActivityManager: ObservableObject {
             if notchDisplayIsFullScreen {
                 if let liveActivitySettingsType = activityType.toLiveActivityType(),
                    settingsModel.settings.hideActivitiesInFullScreen[liveActivitySettingsType.rawValue] == true {
+                    logger.info("full-screen: blocking activity \(activityType.rawValue) (hidden-in-fullscreen set)")
                     continue
                 }
             }
@@ -1106,6 +1123,13 @@ class LiveActivityManager: ObservableObject {
                     artist: musicWidget.artist ?? ""
                 )
             bottomContentIdentifier = "peek"
+        } else if isPlaying, isUpNextWindow, let upNext = musicLiveActivityUpNext {
+            bottomContentType = .upNext(
+                title: upNext.title,
+                artist: upNext.artist,
+                artworkURL: upNext.artworkURL
+            )
+            bottomContentIdentifier = "upNext-\(upNext.title)"
         } else if isPlaying {
             let lyricsAllowed = activeAppMonitor.isLyricsAllowedForActiveApp && settingsModel.settings.showLyricsInLiveActivity
             if lyricsAllowed, let currentLyric = musicWidget.currentLyric {
@@ -1126,6 +1150,35 @@ class LiveActivityManager: ObservableObject {
             .standard(data: .music(bottom: bottomContentType), id: id),
             duration
         )
+    }
+
+    private var isUpNextWindow: Bool {
+        guard settingsModel.settings.spotifyShowNextSong else { return false }
+        guard musicWidget.totalDuration > 0 else { return false }
+        let remaining = musicWidget.totalDuration - musicWidget.elapsedTime()
+        return remaining >= 0 && remaining <= 10.0
+    }
+
+    private var musicLiveActivityUpNext: (title: String, artist: String?, artworkURL: URL?)? {
+        guard settingsModel.settings.spotifyShowNextSong else { return nil }
+
+        if musicWidget.isSpotifyLiveSourceSelected || musicWidget.isSpotifySourceActive {
+            guard let next = musicWidget.nativeQueue.first else { return nil }
+            let title = (next.metadata?.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return nil }
+            return (
+                title,
+                next.metadata?.artistName,
+                settingsModel.settings.spotifyShowNextSongAlbumArt ? next.metadata?.imageURL : nil
+            )
+        }
+
+        if musicWidget.lastKnownBundleID == "com.apple.Music",
+           let next = musicWidget.appleMusicNextTrack {
+            return (next.title, next.artist, nil)
+        }
+
+        return nil
     }
 
     private func checkForCalendar() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
@@ -1293,6 +1346,14 @@ class LiveActivityManager: ObservableObject {
         return (.timer, .standard(data: .timer, id: "active_timer"), nil)
     }
 
+    private func checkForFocusSession() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
+        guard settingsModel.settings.focusSessionLiveActivityEnabled,
+              FocusSessionManager.shared.isSessionActive else {
+            return nil
+        }
+        return (.focusSession, .standard(data: .focusSession, id: "focus_session_active"), nil)
+    }
+
     private func checkForFileShelf() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
         let files = FileShelfManager.shared.files
         guard settingsModel.settings.fileShelfLiveActivityEnabled, !files.isEmpty else {
@@ -1412,12 +1473,31 @@ class LiveActivityManager: ObservableObject {
     }
 
     private func checkForFileProgress() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
-        guard settingsModel.settings.fileProgressLiveActivityEnabled, let task = FileDropManager.shared.tasks.first(
-where: {
-    if case .universalTransfer = $0 { return true }; if case .airDrop = $0 {
-        return true
-    }; return false
-}) else { return nil }
+        guard settingsModel.settings.fileProgressLiveActivityEnabled else { return nil }
+        let task = FileDropManager.shared.tasks
+            .compactMap { item -> FileTask? in
+                switch item {
+                case .universalTransfer(let task) where !task.isComplete:
+                    return .universalTransfer(task)
+                case .airDrop(let task) where !task.isComplete:
+                    return .airDrop(task)
+                default:
+                    return nil
+                }
+            }
+            .sorted { lhs, rhs in
+                let lhsDate: Date = {
+                    if case .universalTransfer(let task) = lhs { return task.lastChangeDate }
+                    return Date()
+                }()
+                let rhsDate: Date = {
+                    if case .universalTransfer(let task) = rhs { return task.lastChangeDate }
+                    return Date()
+                }()
+                return lhsDate > rhsDate
+            }
+            .first
+        guard let task else { return nil }
         return (
             .fileProgress,
             .standard(data: .fileProgress(task: task), id: task.id),
@@ -1723,7 +1803,12 @@ where: {
         guard var payload = self.currentNearDropPayload,
               payload.id == id else {
             return
-        }; payload.progress = progress; self.currentNearDropPayload = payload
+        }
+        let clampedProgress = min(max(progress, 0), 1)
+        guard payload.progress != clampedProgress else { return }
+        payload.progress = clampedProgress
+        self.currentNearDropPayload = payload
+        evaluateAndDisplayActivity()
     }
     func finishNearDropTransfer(id: String, error: Error?) {
         guard var payload = self.currentNearDropPayload, payload.id == id, (payload.state == .waitingForConsent || payload.state == .inProgress) else {

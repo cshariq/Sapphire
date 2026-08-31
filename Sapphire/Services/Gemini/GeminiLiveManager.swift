@@ -576,7 +576,7 @@ final class GeminiLiveManager: NSObject, ObservableObject, AVCaptureAudioDataOut
 
         config.width = width
         config.height = height
-        config.showsCursor = true
+        config.showsCursor = false
         config.capturesAudio = false
 
         do {

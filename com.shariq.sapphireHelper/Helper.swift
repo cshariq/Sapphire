@@ -161,10 +161,20 @@ class Helper: NSObject, HelperProtocol {
         case .firmware:
             pendingFirmwareUpper = clamped
             reply(applyFirmwareChargeLimit(upper: clamped))
-        default:
-            let data = Data([UInt8(clamped)])
-            let result = smc?.writeData("BCLM", data: data)
-            reply(result == kIOReturnSuccess ? nil : makeError(code: .smcWriteFailed, description: "Failed to write BCLM."))
+        case .legacy:
+            if let limitKey = keyChargeLimit {
+                let data = Data([UInt8(clamped)])
+                let result = smc?.writeData(limitKey, data: data)
+                reply(result == kIOReturnSuccess ? nil : makeError(code: .smcWriteFailed, description: "Failed to write \(limitKey)."))
+            } else if clamped >= 100 {
+                enableCharging(true) { error in
+                    reply(error)
+                }
+            } else {
+                reply(makeError(code: .smcWriteFailed, description: "No charge limit key found for this Mac."))
+            }
+        case .unsupported:
+            reply(makeError(code: .smcWriteFailed, description: "No charge control key found for this Mac."))
         }
     }
 
@@ -402,9 +412,17 @@ class Helper: NSObject, HelperProtocol {
         setChargeLimit(100) { error in
             if let error = error {
                 self.logger.error("Calibration failed at step 3 (set limit to 100%): \(error.localizedDescription)")
-                lastError = error
+                self.enableCharging(true) { fallbackError in
+                    if let fallbackError = fallbackError {
+                        lastError = fallbackError
+                    } else {
+                        lastError = nil
+                    }
+                    group.leave()
+                }
+            } else {
+                group.leave()
             }
-            group.leave()
         }
         group.wait()
 
@@ -850,6 +868,47 @@ class Helper: NSObject, HelperProtocol {
             SleepBatteryMonitor.shared.stop()
             reply(nil)
         }
+    }
+
+    // MARK: - Focus Website Blocking (/etc/hosts)
+
+    private static let hostsMarkerStart = "# >>> Sapphire Focus Block >>>"
+    private static let hostsMarkerEnd = "# <<< Sapphire Focus Block <<<"
+
+    func writeHostsEntries(_ lines: [String], reply: @escaping (Bool) -> Void) {
+        reply(rewriteHosts(replacingWith: lines))
+    }
+
+    func removeHostsEntries(reply: @escaping (Bool) -> Void) {
+        reply(rewriteHosts(replacingWith: []))
+    }
+
+    private func rewriteHosts(replacingWith entries: [String]) -> Bool {
+        let path = "/etc/hosts"
+        let current = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        var lines = current.components(separatedBy: "\n")
+        if let start = lines.firstIndex(of: Self.hostsMarkerStart),
+           let end = lines[start...].firstIndex(of: Self.hostsMarkerEnd) {
+            lines.removeSubrange(start...end)
+        }
+        if entries.count > 2 {
+            lines.append(contentsOf: entries)
+        }
+        while let last = lines.last, last.isEmpty {
+            lines.removeLast()
+        }
+        let newContent = lines.joined(separator: "\n") + "\n"
+        guard newContent != current else { return true }
+
+        do {
+            try newContent.write(toFile: path, atomically: true, encoding: .utf8)
+        } catch {
+            return false
+        }
+
+        _ = runPrivilegedCommand("/usr/bin/dscacheutil", args: ["-flushcache"])
+        _ = runPrivilegedCommand("/usr/bin/killall", args: ["-HUP", "mDNSResponder"])
+        return true
     }
 }
 

@@ -15,18 +15,15 @@ class KeychainManager {
     private let service = "com.shariq.Sapphire.faceid.keychain"
 
     func save(key: Data, for account: String) -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: account,
-            kSecAttrService as String: service,
-            kSecValueData as String: key,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-            kSecAttrSynchronizable as String: false
-        ]
-
         delete(for: account)
 
-        let status = SecItemAdd(query as CFDictionary, nil)
+        let status = KeychainStore.addItem(
+            service: service,
+            account: account,
+            data: key,
+            accessible: kSecAttrAccessibleAfterFirstUnlock,
+            synchronizable: false
+        )
 
         if status != errSecSuccess {
             print("[KeychainManager] failed to save key: \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
@@ -37,37 +34,28 @@ class KeychainManager {
     }
 
     func load(for account: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: account,
-            kSecAttrService as String: service,
-            kSecReturnData as String: kCFBooleanTrue!,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-            kSecAttrSynchronizable as String: false
-        ]
+        let (data, status) = KeychainStore.copyData(
+            service: service,
+            account: account,
+            accessible: kSecAttrAccessibleAfterFirstUnlock,
+            synchronizable: false
+        )
 
-        var dataTypeRef: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
-
-        if status == errSecSuccess {
-            return dataTypeRef as? Data
-        } else {
+        if data == nil {
             print("[KeychainManager] failed to load key for \(account): \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
             return nil
         }
+
+        return data
     }
 
     func delete(for account: String) -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: account,
-            kSecAttrService as String: service,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
-            kSecAttrSynchronizable as String: false
-        ]
-
-        let status = SecItemDelete(query as CFDictionary)
+        let status = KeychainStore.deleteItem(
+            service: service,
+            account: account,
+            accessible: kSecAttrAccessibleAfterFirstUnlock,
+            synchronizable: false
+        )
         let success = (status == errSecSuccess || status == errSecItemNotFound)
 
         if success {

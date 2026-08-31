@@ -82,7 +82,6 @@ struct FileDragLandingView: View {
 
     private func startMonitoring() {
         stopMonitoring()
-
         pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { _ in
             self.updateActiveState()
         }

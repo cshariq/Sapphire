@@ -177,53 +177,26 @@ class SpotifyAppleScriptManager {
     }
 
     private func runOsascriptReturningString(_ script: String) async -> String? {
-        await Task.detached(priority: .utility) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            process.arguments = ["-e", script]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = Pipe()
-            do {
-                try process.run()
-                let timeoutItem = DispatchWorkItem { process.terminate() }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 2.0, execute: timeoutItem)
-                process.waitUntilExit()
-                timeoutItem.cancel()
-                guard process.terminationStatus == 0 else { return nil }
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            } catch {
-                return nil
-            }
-        }.value
-    }
-
-    private func runOsascriptReturningBool(_ script: String) async -> Bool {
-        await runOsascriptReturningString(script)?.lowercased() == "true"
+        guard let result = await ProcessRunner.run(
+            executablePath: "/usr/bin/osascript",
+            arguments: ["-e", script],
+            timeout: 2
+        ), result.succeeded else { return nil }
+        return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func runAppleScriptInBackground(_ script: String) async -> Bool {
-        await Task.detached(priority: .utility) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            process.arguments = ["-e", script]
-            do {
-                try process.run()
-                let timeoutItem = DispatchWorkItem { process.terminate() }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 2.0, execute: timeoutItem)
-                process.waitUntilExit()
-                timeoutItem.cancel()
-                return process.terminationStatus == 0
-            } catch {
-                return false
-            }
-        }.value
+        guard let result = await ProcessRunner.run(
+            executablePath: "/usr/bin/osascript",
+            arguments: ["-e", script],
+            timeout: 2
+        ) else { return false }
+        return result.succeeded
     }
 
     private func runAppleScriptWithResult<T>(_ script: String) async -> T? {
         if T.self == Bool.self {
-            let value = await runOsascriptReturningBool(script)
+            let value = await ProcessRunner.runAppleScriptBool(script, timeout: 2)
             return value as? T
         }
         if T.self == String.self {

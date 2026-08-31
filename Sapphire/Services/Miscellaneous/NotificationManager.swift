@@ -295,6 +295,9 @@ class NotificationManager: ObservableObject {
         return nil
     }
     private func subprocess(path: String, args: [String]) throws -> String {
-        let process = Process(); process.executableURL = URL(fileURLWithPath: path); process.arguments = args; let pipe = Pipe(); process.standardOutput = pipe; try process.run(); let data = pipe.fileHandleForReading.readDataToEndOfFile(); return String(data: data, encoding: .utf8) ?? ""
+        guard let result = ProcessRunner.runSync(executablePath: path, arguments: args, timeout: 10) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+        return result.stdout
     }
 }

@@ -26,6 +26,7 @@ class NearbyConnection{
     public let id:String
     internal var lastError:Error?
     private var connectionClosed:Bool=false
+    private var closureHandled:Bool=false
 
     internal var publicKey:ECPublicKey?
     internal var privateKey:ECPrivateKey?
@@ -65,6 +66,9 @@ class NearbyConnection{
     func connectionReady(){}
 
     internal func handleConnectionClosure(){
+        guard !closureHandled else { return }
+        closureHandled = true
+        connectionClosed = true
         print("Connection closed")
     }
 
@@ -399,10 +403,13 @@ class NearbyConnection{
     }
 
     internal func disconnect(){
-        connection.send(content: nil, isComplete: true, completion: .contentProcessed({ error in
-            self.handleConnectionClosure()
-        }))
+        guard !connectionClosed else { return }
         connectionClosed=true
+        connection.stateUpdateHandler = nil
+        connection.send(content: nil, isComplete: true, completion: .contentProcessed({ [weak self] _ in
+            self?.handleConnectionClosure()
+        }))
+        connection.cancel()
     }
 
     internal func sendDisconnectionAndDisconnect() throws{

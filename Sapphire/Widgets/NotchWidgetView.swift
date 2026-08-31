@@ -63,8 +63,6 @@ struct NotchWidgetView: View {
     @EnvironmentObject private var calendarService: CalendarService
     @EnvironmentObject var intelligenceVM: IntelligenceNotchViewModel
 
-    @Environment(\.notchCornerRadius) private var cornerRadius
-
     @StateObject private var dragState = DragStateManager.shared
 
     private var currentMode: NotchWidgetMode {
@@ -82,7 +80,7 @@ struct NotchWidgetView: View {
     }
 
     private var menuWidgetOrder: [WidgetType] {
-        settings.settings.widgetOrder.filter { $0 != .agent }
+        settings.settings.widgetOrder
     }
 
     private var enabledAndOrderedWidgets: [WidgetType] {
@@ -110,6 +108,8 @@ struct NotchWidgetView: View {
                 return settings.settings.mirrorWidgetEnabled
             case .agent:
                 return false
+            case .focusSession:
+                return settings.settings.focusSessionWidgetEnabled
             }
         }
 
@@ -175,7 +175,7 @@ struct NotchWidgetView: View {
                 self.blurRadius = 0
             }
         }
-        .notchHorizontalPadding(cornerRadius: cornerRadius)
+        .notchHorizontalPadding()
     }
 
     @ViewBuilder
@@ -272,6 +272,8 @@ struct NotchWidgetView: View {
             CircleToSearchResultsView(navigationStack: navigationStack)
         case .updateAvailable:
             UpdateAvailableWidgetView()
+        case .focusSessionDetailView:
+            FocusSessionDetailView(navigationStack: navigationStack)
         }
     }
 
@@ -355,6 +357,8 @@ struct NotchWidgetView: View {
                 }
         case .mirror:
             MirrorWidgetView()
+        case .focusSession:
+            FocusWidgetView()
         case .agent:
             EmptyView()
         }

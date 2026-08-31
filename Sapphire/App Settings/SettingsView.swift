@@ -61,6 +61,7 @@ struct SettingsView: View {
         .environmentObject(settings)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .preferredColorScheme(.dark)
         .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenAccountPane)) { _ in
             withAnimation(.easeInOut(duration: 0.15)) {
                 showAccountPane = true
@@ -69,10 +70,12 @@ struct SettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .sapphireSettingsWillClose)) { _ in
             settings.flushPendingSave()
-            MemoryTrimSupport.releaseSettingsPaneCaches()
+            SystemAppFetcher.shared.releaseCachedApps()
+            AppIconLoader.releaseCache()
         }
         .onDisappear {
-            MemoryTrimSupport.releaseSettingsPaneCaches()
+            SystemAppFetcher.shared.releaseCachedApps()
+            AppIconLoader.releaseCache()
         }
     }
 }

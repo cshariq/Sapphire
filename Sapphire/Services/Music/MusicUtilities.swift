@@ -370,30 +370,18 @@ class BrowserAppleScriptManager {
 
     private func runAppleScriptInBackground(_ script: String) async -> String {
         print("[BrowserAppleScriptManager] LOG: Executing AppleScript via osascript...")
-        return await Task.detached(priority: .utility) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            process.arguments = ["-e", script]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = Pipe()
-            do {
-                try process.run()
-                let timeoutItem = DispatchWorkItem { process.terminate() }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 5.0, execute: timeoutItem)
-                process.waitUntilExit()
-                timeoutItem.cancel()
-                if process.terminationStatus != 0 { return "ERROR" }
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let resultString = String(data: data, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? "No result string"
-                print("[BrowserAppleScriptManager] LOG: AppleScript execution SUCCEEDED. Result: \(resultString)")
-                return resultString
-            } catch {
-                print("[BrowserAppleScriptManager] ERROR: AppleScript execution failed: \(error.localizedDescription)")
-                return "ERROR"
-            }
-        }.value
+        guard let result = await ProcessRunner.run(
+            executablePath: "/usr/bin/osascript",
+            arguments: ["-e", script],
+            timeout: 5
+        ) else {
+            print("[BrowserAppleScriptManager] ERROR: AppleScript execution failed to launch.")
+            return "ERROR"
+        }
+        if result.exitCode != 0 { return "ERROR" }
+        let resultString = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        print("[BrowserAppleScriptManager] LOG: AppleScript execution SUCCEEDED. Result: \(resultString)")
+        return resultString
     }
 }
 
@@ -873,6 +861,10 @@ final class FileImageCache {
         return await task.value
     }
 
+    func remove(forKey key: String) {
+        memoryCache.removeObject(forKey: NSString(string: key))
+    }
+
     func trimMemoryCache() {
         memoryCache.removeAllObjects()
     }
@@ -903,6 +895,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     private let placeholder: () -> Placeholder
 
     @State private var image: NSImage?
+    @State private var loadedURL: URL?
 
     init(
         url: URL?,
@@ -915,14 +908,22 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     }
 
     var body: some View {
-        if let nsImage = image {
-            content(Image(nsImage: nsImage))
-        } else {
-            placeholder()
-                .task(id: url) {
-                    guard let url else { return }
-                    image = await FileImageCache.shared.image(for: url)
-                }
+        Group {
+            if let nsImage = image, url == loadedURL {
+                content(Image(nsImage: nsImage))
+            } else {
+                placeholder()
+            }
+        }
+        .task(id: url) {
+            guard let url else {
+                image = nil
+                loadedURL = nil
+                return
+            }
+            let nsImage = await FileImageCache.shared.image(for: url)
+            image = nsImage
+            loadedURL = url
         }
     }
 }

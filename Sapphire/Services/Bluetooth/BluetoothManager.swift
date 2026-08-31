@@ -238,7 +238,7 @@ class BluetoothManager: NSObject, ObservableObject {
             return batteryDevice.batteryLevel
         }
 
-        let sysProfileBatteries = BluetoothBatteryReader.getSystemProfileBatteries()
+        let sysProfileBatteries = await BluetoothBatteryReader.getSystemProfileBatteries()
         if let match = sysProfileBatteries.first(where: { $0.name == name }), match.level > 0, match.level <= 100 {
             print("[BluetoothManager] System profile battery for [\(name)]: \(match.level)%")
             return match.level

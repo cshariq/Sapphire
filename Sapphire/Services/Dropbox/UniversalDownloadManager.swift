@@ -24,8 +24,9 @@ class UniversalDownloadManager {
     private init() {}
 
     func startMonitoring() {
-        guard directoryMonitor == nil,
-              let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first else { return }
+        guard directoryMonitor == nil, progressUpdateTimer == nil,
+              let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first,
+              FileManager.default.fileExists(atPath: downloadsURL.path) else { return }
 
         directoryMonitor = DirectoryMonitor(url: downloadsURL)
         directoryMonitor?.fileDidChangePublisher
@@ -39,6 +40,9 @@ class UniversalDownloadManager {
 
         progressUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateAllProgress()
+        }
+        if let progressUpdateTimer {
+            RunLoop.main.add(progressUpdateTimer, forMode: .common)
         }
 
         scanForDownloads()
@@ -60,7 +64,10 @@ class UniversalDownloadManager {
             var foundTempFiles = Set<URL>()
 
             for url in fileURLs {
-                if temporaryExtensions.contains(url.pathExtension) {
+                let extensionName = url.pathExtension.lowercased()
+                let isSafariBundle = extensionName == "download" &&
+                    (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+                if extensionName == "crdownload" || extensionName == "part" || isSafariBundle {
                     foundTempFiles.insert(url)
                     if activeTasks[url] == nil {
                         let finalName = url.deletingPathExtension().lastPathComponent
@@ -117,16 +124,29 @@ class UniversalDownloadManager {
         if task.fileURL.pathExtension == "download" {
             let plistURL = task.fileURL.appendingPathComponent("Info.plist")
             if let data = try? Data(contentsOf: plistURL),
-               let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
-               let downloadEntry = plist["DownloadEntry"] as? [String: Any],
-               let bytesSoFar = downloadEntry["DownloadEntryProgressBytesSoFar"] as? Double,
-               let bytesTotal = downloadEntry["DownloadEntryProgressTotalToLoad"] as? Double,
-               bytesTotal > 0 {
-                return min(1.0, bytesSoFar / bytesTotal)
+               let propertyList = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+               let plist = propertyList as? [String: Any] {
+                let downloadEntry = (plist["DownloadEntry"] as? [String: Any]) ?? plist
+                if let bytesSoFar = numericValue(downloadEntry["DownloadEntryProgressBytesSoFar"]),
+                   let bytesTotal = numericValue(downloadEntry["DownloadEntryProgressTotalToLoad"] ?? downloadEntry["DownloadEntryTotalBytes"]),
+                   bytesTotal > 0 {
+                    return min(1.0, bytesSoFar / bytesTotal)
+                }
             }
         }
 
         return task.progress
+    }
+
+    private func numericValue(_ value: Any?) -> Double? {
+        switch value {
+        case let number as NSNumber: return number.doubleValue
+        case let value as Double: return value
+        case let value as Int64: return Double(value)
+        case let value as Int: return Double(value)
+        case let value as String: return Double(value)
+        default: return nil
+        }
     }
 
     private func publishTasks() {

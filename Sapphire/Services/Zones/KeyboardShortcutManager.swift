@@ -10,15 +10,31 @@ import Combine
 import Carbon.HIToolbox
 
 private func executionTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    guard let refcon = refcon else { return Unmanaged.passRetained(event) }
-
-    let manager = Unmanaged<KeyboardShortcutManager>.fromOpaque(refcon).takeUnretainedValue()
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        Task { @MainActor in
-            manager.ensureEventTapEnabled(forceRebuild: true)
+        guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
+            if let refcon = refcon {
+                let manager = Unmanaged<KeyboardShortcutManager>.fromOpaque(refcon).takeUnretainedValue()
+                Task { @MainActor in
+                    manager.stopMonitoring()
+                }
+            }
+            return Unmanaged.passRetained(event)
+        }
+        if let refcon = refcon {
+            let manager = Unmanaged<KeyboardShortcutManager>.fromOpaque(refcon).takeUnretainedValue()
+            Task { @MainActor in
+                manager.ensureEventTapEnabled(forceRebuild: true)
+            }
         }
         return Unmanaged.passRetained(event)
     }
+
+    guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
+        return Unmanaged.passRetained(event)
+    }
+
+    guard let refcon = refcon else { return Unmanaged.passRetained(event) }
+    let manager = Unmanaged<KeyboardShortcutManager>.fromOpaque(refcon).takeUnretainedValue()
     return manager.handle(event: event, type: type)
 }
 
@@ -101,7 +117,9 @@ class KeyboardShortcutManager {
             CGEvent.tapEnable(tap: eventTap, enable: true)
         }
 
-        installFallbackMonitors()
+        if eventTap == nil {
+            installFallbackMonitors()
+        }
     }
 
     private func installFallbackMonitors() {
@@ -113,7 +131,6 @@ class KeyboardShortcutManager {
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-            print("[KeyboardShortcutManager] [LOCAL MONITOR] keyDown keyCode=\(event.keyCode) chars=\(event.charactersIgnoringModifiers ?? "nil") flags=0x\(String(event.modifierFlags.rawValue, radix: 16))")
             return self.handleNSEvent(event, swallow: true) ? nil : event
         }
     }

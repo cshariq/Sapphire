@@ -8,7 +8,7 @@ import AudioToolbox
 import os
 
 struct TapResources {
-    private static let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "TapResources")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "TapResources")
 
     var tapID: AudioObjectID = .unknown
     var aggregateDeviceID: AudioObjectID = .unknown

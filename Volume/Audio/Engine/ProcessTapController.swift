@@ -134,7 +134,7 @@ final class ProcessTapController: ProcessTapControlling {
         self.targetDeviceUIDs = targetDeviceUIDs
         self.deviceMonitor = deviceMonitor
         self.preferredTapSourceDeviceUID = preferredTapSourceDeviceUID
-        self.logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "ProcessTapController(\(app.name))")
+        self.logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "ProcessTapController(\(app.name))")
     }
 
     convenience init(
@@ -336,7 +336,7 @@ final class ProcessTapController: ProcessTapControlling {
         let description = buildAggregateDescription(
             outputUIDs: targetDeviceUIDs,
             tapUUID: tapDesc.uuid,
-            name: "FineTune-\(app.id)"
+            name: "Sapphire-\(app.id)"
         )
 
         var err: OSStatus
@@ -648,7 +648,7 @@ final class ProcessTapController: ProcessTapControlling {
         let description = buildAggregateDescription(
             outputUIDs: outputUIDs,
             tapUUID: tapDesc.uuid,
-            name: "FineTune-\(app.id)-secondary"
+            name: "Sapphire-\(app.id)-secondary"
         )
 
         var err: OSStatus
@@ -831,7 +831,7 @@ final class ProcessTapController: ProcessTapControlling {
         let description = buildAggregateDescription(
             outputUIDs: outputUIDs,
             tapUUID: newTapDesc.uuid,
-            name: "FineTune-\(app.id)"
+            name: "Sapphire-\(app.id)"
         )
 
         var err: OSStatus

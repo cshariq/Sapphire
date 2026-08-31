@@ -16,6 +16,12 @@ import Darwin
 @_silgen_name("CGSessionCopyCurrentDictionary")
 private func CGSessionCopyCurrentDictionary() -> CFDictionary?
 
+enum FaceIDAuthResult: Equatable {
+    case success
+    case failed
+    case cancelled
+}
+
 @MainActor
 class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     static let shared = AuthenticationManager()
@@ -41,6 +47,10 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private var isBluetoothAuthenticating = false
     private var isFaceIDAuthenticating = false
     private var isUnlockInProgress = false
+
+    private var pendingAppLockFaceIDCompletion: ((FaceIDAuthResult) -> Void)?
+
+    private var isFaceIDSessionForAppLock = false
 
     private var unlockAttemptID = UUID()
     private let passwordAccount = "SapphireUserPassword"
@@ -89,9 +99,12 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     // MARK: - Face ID Authentication
 
     func startFaceIDAuthentication() {
+        let isForAppLock = pendingAppLockFaceIDCompletion != nil
         guard !isUnlockInProgress, !isFaceIDAuthenticating,
-              settings.settings.faceIDUnlockEnabled,
+              (isForAppLock || settings.settings.faceIDUnlockEnabled),
               settings.settings.hasRegisteredFaceID else { return }
+
+        isFaceIDSessionForAppLock = isForAppLock
 
         if let reg = faceRegistrationController {
             reg.cancelCurrentOperation()
@@ -109,6 +122,30 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         cameraController?.startAuthentication()
     }
 
+    func startFaceIDAuthenticationForAppLock(completion: @escaping (FaceIDAuthResult) -> Void) {
+        guard settings.settings.hasRegisteredFaceID else {
+            completion(.failed)
+            return
+        }
+        if isFaceIDAuthenticating { tearDownFaceID() }
+        pendingAppLockFaceIDCompletion = completion
+        startFaceIDAuthentication()
+        if !isFaceIDAuthenticating {
+            pendingAppLockFaceIDCompletion = nil
+            completion(.failed)
+        }
+    }
+
+    func handleFaceIDAuthenticated() {
+        if let completion = pendingAppLockFaceIDCompletion {
+            pendingAppLockFaceIDCompletion = nil
+            tearDownFaceID()
+            completion(.success)
+        } else if !isFaceIDSessionForAppLock {
+            handleUnlock()
+        }
+    }
+
     private func handleFaceIDSecurityEvent(_ event: FaceIDSecurityEvent) {
         guard isFaceIDAuthenticating else { return }
         tearDownFaceID()
@@ -121,11 +158,23 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         }
     }
 
-    private func tearDownFaceID() {
+    private func tearDownFaceID(result: FaceIDAuthResult = .failed) {
         guard isFaceIDAuthenticating else { return }
         isFaceIDAuthenticating = false
         cameraController?.cancelCurrentOperation()
         cameraController = nil
+        if let completion = pendingAppLockFaceIDCompletion {
+            pendingAppLockFaceIDCompletion = nil
+            completion(result)
+        }
+    }
+
+    func cancelFaceIDAuthentication() {
+        if isFaceIDAuthenticating { tearDownFaceID(result: .cancelled) }
+    }
+
+    func timeoutFaceIDAuthentication() {
+        if isFaceIDAuthenticating { tearDownFaceID(result: .failed) }
     }
 
     var isFaceIDSessionActive: Bool { isFaceIDAuthenticating || cameraController != nil }
@@ -456,15 +505,23 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     var isScreenLocked: Bool { (NSApp.delegate as? AppDelegate)?.isScreenLocked ?? false }
 
+    var isBluetoothMonitoringActive: Bool {
+        isBluetoothAuthenticating
+    }
+
     private static func isScreenActuallyLocked() -> Bool {
         guard let sessionDict = CGSessionCopyCurrentDictionary() as? [String: Any] else { return true }
         return (sessionDict["CGSSessionScreenIsLocked"] as? Bool) ?? true
     }
 
     private func hasAccessibilityPermission(promptIfNeeded: Bool) -> Bool {
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let options = [promptKey: promptIfNeeded] as CFDictionary
-        return AXIsProcessTrustedWithOptions(options)
+        let trusted = AccessibilityTrustMonitor.shared.isTrusted
+        if !trusted && promptIfNeeded {
+            let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+            let options = [promptKey: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+        }
+        return trusted
     }
 
     private func handleLock() {

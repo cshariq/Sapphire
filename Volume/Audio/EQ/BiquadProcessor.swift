@@ -37,7 +37,7 @@ class BiquadProcessor: @unchecked Sendable, BiquadProcessable {
 
     init(sampleRate: Double, maxSections: Int, category: String, initiallyEnabled: Bool = false) {
         self.sampleRate = sampleRate
-        self.logger = Logger(subsystem: "com.finetuneapp.FineTune", category: category)
+        self.logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: category)
         self._isEnabled = initiallyEnabled
         self.delayBufferSize = (2 * maxSections) + 2
 

@@ -31,8 +31,8 @@ struct CustomNotchShape: Shape {
             return Path()
         }
 
-        let adjustedCornerRadius = cornerRadius
-        let adjustedBottomCornerRadius = bottomCornerRadius
+        let adjustedCornerRadius = min(max(0, cornerRadius), rect.height * 0.5, rect.width * 0.5)
+        let adjustedBottomCornerRadius = min(max(0, bottomCornerRadius), rect.height * 0.5, rect.width * 0.5)
 
         let topRadiusBase: CGFloat = isMusicActivity ? 8 :
             (adjustedCornerRadius > 15 ? adjustedCornerRadius - 5 : 8)
@@ -110,10 +110,10 @@ struct CustomNotchShape: Shape {
         return path
     }
 
-    static func calculateHorizontalPadding(for cornerRadius: CGFloat) -> CGFloat {
-        let adjustedCornerRadius = cornerRadius
-        let topRadiusBase = adjustedCornerRadius > 15 ? adjustedCornerRadius - 5 : 5
-        return max(topRadiusBase, 10 * screenWidthAdjustment)
+    static let horizontalContentPadding: CGFloat = 10
+
+    static func calculateHorizontalPadding() -> CGFloat {
+        horizontalContentPadding
     }
 
     static func adjustValue(_ value: CGFloat, isWidth: Bool = true) -> CGFloat {
@@ -122,17 +122,13 @@ struct CustomNotchShape: Shape {
 }
 
 struct NotchHorizontalPadding: ViewModifier {
-    let cornerRadius: CGFloat
-
     func body(content: Content) -> some View {
-        let horizontalPadding = CustomNotchShape.calculateHorizontalPadding(for: cornerRadius)
-        return content
-            .padding(.horizontal, horizontalPadding)
+        content.padding(.horizontal, CustomNotchShape.calculateHorizontalPadding())
     }
 }
 
 extension View {
-    func notchHorizontalPadding(cornerRadius: CGFloat) -> some View {
-        self.modifier(NotchHorizontalPadding(cornerRadius: cornerRadius))
+    func notchHorizontalPadding() -> some View {
+        self.modifier(NotchHorizontalPadding())
     }
 }

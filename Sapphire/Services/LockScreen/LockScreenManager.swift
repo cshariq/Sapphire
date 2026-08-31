@@ -24,6 +24,7 @@ struct LockScreenConfiguration {
     static let infoWidgetInternalHSpacing: CGFloat = 12
     static let infoWidgetSmallIconHSpacing: CGFloat = 4
     static let infoWidgetGenericHSpacing: CGFloat = 10
+    static let infoWidgetPillHeight: CGFloat = 40
 
     static let infoWidgetMediumFontSize: CGFloat = 16
     static let infoWidgetLargeFontSize: CGFloat = 22
@@ -129,6 +130,8 @@ public class LockScreenManager {
     private let connection: Int32
     private let space: Int32
     private var windows: [String: NSWindowController] = [:]
+
+    private var delegatedWindowIds: Set<String> = []
 
     private var lastMeasuredSizes: [String: CGSize] = [:]
 
@@ -261,19 +264,40 @@ public class LockScreenManager {
                                             initialFrame: NSRect,
                                             positioner: @escaping (CGSize, NSScreen) -> NSRect,
                                             windowLevel: NSWindow.Level,
+                                            windowIgnoresMouseEvents: Bool = false,
                                             on screen: NSScreen) {
         assert(Thread.isMainThread, "LockScreenManager window creation must run on the main thread")
 
-        if let existing = windows[id] {
-            if let window = existing.window {
-                removeWindow(window)
-                window.orderOut(nil)
-                window.contentViewController = nil
+        let gen = generation
+
+        if let existingController = windows[id], let window = existingController.window {
+            let sizeObservingView = SizeObservingView(content: view) { [weak self] newSize in
+                guard let self = self, gen == self.generation, let win = existingController.window else { return }
+                self.handleWidgetSizeChange(newSize, id: id, window: win, screen: screen, positioner: positioner)
             }
-            existing.close()
-            windows.removeValue(forKey: id)
-            lastMeasuredSizes.removeValue(forKey: id)
-            windowShownAt.removeValue(forKey: id)
+
+            let hostingController = NSHostingController(rootView: sizeObservingView)
+            hostingController.view.wantsLayer = true
+            hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
+
+            window.contentViewController = hostingController
+            window.setFrame(initialFrame, display: false)
+            window.alphaValue = 0
+            window.level = windowLevel
+            window.ignoresMouseEvents = windowIgnoresMouseEvents
+
+            windowShownAt[id] = CACurrentMediaTime()
+
+            RemoteViewCrashGuardRunBlock {
+                window.orderFrontRegardless()
+            }
+            let isFullscreenMusic = id == FULLSCREEN_MUSIC_ID
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = isFullscreenMusic ? 0.28 : 0.32
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                window.animator().alphaValue = 1
+            }
+            return
         }
 
         let window = UnfocusableWindow(
@@ -289,13 +313,14 @@ public class LockScreenManager {
         window.isExcludedFromWindowsMenu = true
         window.animationBehavior = .none
         window.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, .stationary, .ignoresCycle]
+        window.ignoresMouseEvents = windowIgnoresMouseEvents
 
         let controller = NSWindowController(window: window)
         windows[id] = controller
         delegateWindow(window)
+        delegatedWindowIds.insert(id)
         windowShownAt[id] = CACurrentMediaTime()
 
-        let gen = generation
         let sizeObservingView = SizeObservingView(content: view) { [weak self] newSize in
             guard let self = self, gen == self.generation, let window = controller.window else { return }
             self.handleWidgetSizeChange(newSize, id: id, window: window, screen: screen, positioner: positioner)
@@ -402,7 +427,15 @@ public class LockScreenManager {
         }
     }
 
-    public func hideAndDestroyWindows(animated: Bool = true) {
+    public func hideWindow(withId id: String) {
+        guard let controller = windows[id], let window = controller.window else { return }
+        lastMeasuredSizes.removeValue(forKey: id)
+        windowShownAt.removeValue(forKey: id)
+        window.orderOut(nil)
+        window.contentViewController = nil
+    }
+
+    public func hideAndDestroyWindows(animated: Bool = true, fullyDestroy: Bool = false) {
         generation &+= 1
         pendingReposition?.cancel()
         pendingReposition = nil
@@ -410,25 +443,26 @@ public class LockScreenManager {
         let visibleWindows = windows.values
             .compactMap { $0.window }
             .filter { $0.isVisible && $0.alphaValue > 0.02 }
-        let windowNumbers = visibleWindows.compactMap { $0.windowNumber }
-        let controllersToDestroy = Array(windows.values)
-        let keysToDestroy = Array(windows.keys)
 
         let teardown: () -> Void = { [weak self] in
             guard let self else { return }
-            if !windowNumbers.isEmpty {
-                _ = self.SLSRemoveWindowsFromSpaces(self.connection, windowNumbers as CFArray, [self.space] as CFArray)
-                print("[LockScreenManager] Explicitly removed \(windowNumbers.count) windows from the lock screen space.")
-            }
-            for controller in controllersToDestroy {
+            for controller in self.windows.values {
                 controller.window?.orderOut(nil)
                 controller.window?.contentViewController = nil
-                controller.close()
             }
-            for key in keysToDestroy {
-                self.windows.removeValue(forKey: key)
-                self.lastMeasuredSizes.removeValue(forKey: key)
-                self.windowShownAt.removeValue(forKey: key)
+            if fullyDestroy {
+                let windowNumbers = self.windows.values.compactMap { $0.window?.windowNumber }
+                if !windowNumbers.isEmpty {
+                    _ = self.SLSRemoveWindowsFromSpaces(self.connection, windowNumbers as CFArray, [self.space] as CFArray)
+                    print("[LockScreenManager] Explicitly removed \(windowNumbers.count) windows from the lock screen space.")
+                }
+                for controller in self.windows.values {
+                    controller.close()
+                }
+                self.windows.removeAll()
+                self.delegatedWindowIds.removeAll()
+                self.lastMeasuredSizes.removeAll()
+                self.windowShownAt.removeAll()
             }
         }
 

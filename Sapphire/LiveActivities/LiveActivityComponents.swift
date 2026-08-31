@@ -308,6 +308,8 @@ struct FileProgressLiveActivityView {
             fileName = transferTask.fileName
             if transferTask.sourceType == .finder {
                 statusText = transferTask.speed > 0 ? formatSpeed(transferTask.speed) : "Copying..."
+            } else if let progress {
+                statusText = "\(Int(progress * 100))% • " + (transferTask.speed > 0 ? formatSpeed(transferTask.speed) : "Downloading...")
             } else {
                 statusText = transferTask.speed > 0 ? formatSpeed(transferTask.speed) : "Downloading..."
             }
@@ -518,6 +520,87 @@ struct QuickPeekView: View {
         }
         .frame(maxWidth: 200)
         .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+    }
+}
+
+struct MusicUpNextView: View {
+    let title: String
+    let artist: String?
+    let artworkURL: URL?
+
+    @EnvironmentObject private var musicWidget: MusicManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("UP NEXT")
+                .font(.system(size: 7.5, weight: .heavy, design: .rounded))
+                .kerning(1.3)
+                .foregroundColor(.gray.opacity(0.9))
+
+            HStack(spacing: 7) {
+                Group {
+                    if let artworkURL {
+                        CachedAsyncImage(url: artworkURL) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            placeholderArtwork
+                        }
+                    } else {
+                        placeholderArtwork
+                    }
+                }
+                .frame(width: 20, height: 20)
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title.isEmpty ? "Unknown track" : title)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.95))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let artist, !artist.isEmpty {
+                        Text(artist)
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.6))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.18), lineWidth: 2.5)
+                    Circle()
+                        .trim(from: 0, to: ringProgress)
+                        .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: 0.4), value: ringProgress)
+                }
+                .frame(width: 16, height: 16)
+            }
+        }
+        .frame(maxWidth: 220, alignment: .leading)
+        .padding(.horizontal, -9)
+        .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+    }
+
+    private var ringProgress: Double {
+        guard musicWidget.totalDuration > 0 else { return 0.2 }
+        let remaining = musicWidget.totalDuration - musicWidget.elapsedTime()
+        guard remaining.isFinite && remaining >= 0 else { return 0 }
+        let p = (10.0 - remaining) / 10.0
+        return max(0.03, min(1.0, p))
+    }
+
+    private var placeholderArtwork: some View {
+        RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .fill(Color.white.opacity(0.12))
+            .overlay(Image(systemName: "music.note")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundColor(.white.opacity(0.5)))
     }
 }
 

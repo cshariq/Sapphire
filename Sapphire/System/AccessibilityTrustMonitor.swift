@@ -26,12 +26,17 @@ final class AccessibilityTrustMonitor {
 
     private let registryLock = NSLock()
     nonisolated(unsafe) private var registrations: [String: Registration] = [:]
-    private var pollTimer: Timer?
     private var accessibilityObserver: NSObjectProtocol?
+    private var activationObserver: NSObjectProtocol?
     private var isStarted = false
-    private(set) var isTrusted: Bool = AXIsProcessTrusted()
+    nonisolated(unsafe) private static var _isTrustedAtomic: Bool = false
+    var isTrusted: Bool { Self._isTrustedAtomic }
+    private var debounceTask: Task<Void, Never>?
 
-    private init() {}
+    private init() {
+        let initial = AXIsProcessTrusted()
+        Self._isTrustedAtomic = initial
+    }
 
     func start() {
         guard !isStarted else { return }
@@ -42,23 +47,18 @@ final class AccessibilityTrustMonitor {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshTrust() }
+            MainActor.assumeIsolated { self?.scheduleDebouncedRefresh() }
+        }
+
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleDebouncedRefresh() }
         }
 
         refreshTrust()
-
-        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshTrust() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        pollTimer = timer
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(refreshTrustOnActivation),
-            name: NSApplication.didBecomeActiveNotification,
-            object: nil
-        )
     }
 
     nonisolated func register(name: String, teardown: @escaping () -> Void, reinstall: @escaping () -> Void) {
@@ -73,14 +73,32 @@ final class AccessibilityTrustMonitor {
         registryLock.unlock()
     }
 
-    @objc private func refreshTrustOnActivation() {
-        refreshTrust()
+    nonisolated static func isCurrentlyTrusted() -> Bool {
+        _isTrustedAtomic
+    }
+
+    private func scheduleDebouncedRefresh() {
+        let current = AXIsProcessTrusted()
+        if current != Self._isTrustedAtomic {
+            if !current {
+                debounceTask?.cancel()
+                refreshTrust()
+                return
+            }
+        }
+        debounceTask?.cancel()
+        debounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            self?.refreshTrust()
+            self?.debounceTask = nil
+        }
     }
 
     private func refreshTrust() {
         let trusted = AXIsProcessTrusted()
-        guard trusted != isTrusted else { return }
-        isTrusted = trusted
+        guard trusted != Self._isTrustedAtomic else { return }
+        Self._isTrustedAtomic = trusted
 
         registryLock.lock()
         let snapshot = Array(registrations.values)

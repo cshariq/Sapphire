@@ -39,7 +39,7 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
 
     var inputPriorityOrder: (() -> [String])?
 
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "AudioDeviceMonitor")
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "AudioDeviceMonitor")
 
     private var deviceListListenerBlock: AudioObjectPropertyListenerBlock?
     private var deviceListAddress = AudioObjectPropertyAddress(
@@ -121,7 +121,7 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
                     continue
                 }
 
-                if deviceID.isAggregateDevice() && name.hasPrefix("FineTune-") { continue }
+                if deviceID.isAggregateDevice() && name.hasPrefix("Sapphire-") { continue }
 
                 if deviceID.isHidden() { continue }
 

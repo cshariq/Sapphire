@@ -151,11 +151,12 @@ struct AntiSpoofResult {
     let logit: Float
 
     var scoreLine: String {
+        let score = smoothScore.isFinite ? min(max(smoothScore, 0), 1) : 1
         if isReal {
-            let pct = Int((smoothScore * 100).rounded())
+            let pct = Int((score * 100).rounded())
             return "REAL: \(pct)%"
         } else {
-            let pct = Int(((1.0 - smoothScore) * 100).rounded())
+            let pct = Int(((1.0 - score) * 100).rounded())
             return "SPOOF: \(pct)%"
         }
     }
@@ -209,7 +210,16 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
     let captureSession = AVCaptureSession()
     private let videoDataOutput = AVCaptureVideoDataOutput()
-    private let sessionQueue = DispatchQueue(label: "com.sapphire.sessionQueue", qos: .userInteractive)
+
+    private static let sessionQueueKey = DispatchSpecificKey<Bool>()
+    private static let sharedSessionQueue: DispatchQueue = {
+        let queue = DispatchQueue(label: "com.sapphire.faceID.sessionQueue", qos: .userInteractive)
+        queue.setSpecific(key: CameraController.sessionQueueKey, value: true)
+        return queue
+    }()
+    private let sessionQueue = CameraController.sharedSessionQueue
+    private var isOnSessionQueue: Bool { DispatchQueue.getSpecific(key: CameraController.sessionQueueKey) == true }
+
     private let visionQueue = DispatchQueue(label: "com.sapphire.visionQueue", qos: .userInitiated)
 
     private var isAuthenticating = false
@@ -258,37 +268,84 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         setupCaptureSession()
     }
 
+    private var hasCameraInput = false
+
     private func setupCaptureSession() {
         sessionQueue.async { [weak self] in
             guard let self = self else { return }
-            self.captureSession.beginConfiguration()
-            self.captureSession.sessionPreset = .hd1280x720
+            self.configureSessionIfNeeded()
+        }
+    }
 
-            guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) ?? AVCaptureDevice.default(for: .video),
-                  let input = try? AVCaptureDeviceInput(device: device) else { return }
+    private func configureSessionIfNeeded() {
+        guard !hasCameraInput else { return }
 
-            if self.captureSession.canAddInput(input) { self.captureSession.addInput(input) }
+        captureSession.beginConfiguration()
+        defer { captureSession.commitConfiguration() }
+        captureSession.sessionPreset = .hd1280x720
 
-            self.videoDataOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-            self.videoDataOutput.alwaysDiscardsLateVideoFrames = true
-            self.videoDataOutput.setSampleBufferDelegate(self, queue: self.visionQueue)
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) ?? AVCaptureDevice.default(for: .video),
+              let input = try? AVCaptureDeviceInput(device: device) else {
+            return
+        }
 
-            if self.captureSession.canAddOutput(self.videoDataOutput) { self.captureSession.addOutput(self.videoDataOutput) }
+        if captureSession.canAddInput(input) {
+            captureSession.addInput(input)
+            hasCameraInput = true
+        }
 
-            if let conn = self.videoDataOutput.connection(with: .video) {
-                if conn.isVideoMirroringSupported {
-                    if conn.automaticallyAdjustsVideoMirroring { conn.automaticallyAdjustsVideoMirroring = false }
-                    conn.isVideoMirrored = true
-                }
+        videoDataOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        videoDataOutput.alwaysDiscardsLateVideoFrames = true
+        videoDataOutput.setSampleBufferDelegate(self, queue: visionQueue)
+
+        if captureSession.canAddOutput(videoDataOutput) { captureSession.addOutput(videoDataOutput) }
+
+        if let conn = videoDataOutput.connection(with: .video) {
+            if conn.isVideoMirroringSupported {
+                if conn.automaticallyAdjustsVideoMirroring { conn.automaticallyAdjustsVideoMirroring = false }
+                conn.isVideoMirrored = true
             }
-
-            self.captureSession.commitConfiguration()
         }
     }
 
     func startCameraSession() {
         sessionQueue.async {
-            if !self.captureSession.isRunning { self.captureSession.startRunning() }
+            self.ensureCameraAccessThenStart()
+        }
+    }
+
+    private func ensureCameraAccessThenStart() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            configureAndStartIfPossible()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                guard let self = self else { return }
+                self.sessionQueue.async {
+                    if granted {
+                        self.configureAndStartIfPossible()
+                    } else {
+                        self.notifyCameraUnavailable()
+                    }
+                }
+            }
+        case .denied, .restricted:
+            notifyCameraUnavailable()
+        @unknown default:
+            break
+        }
+    }
+
+    private func configureAndStartIfPossible() {
+        configureSessionIfNeeded()
+        guard hasCameraInput, !captureSession.isRunning else { return }
+        captureSession.startRunning()
+    }
+
+    private func notifyCameraUnavailable() {
+        DispatchQueue.main.async {
+            self.appState = .idle
+            self.userInstruction = "Camera access is required for Face ID. Enable it in System Settings → Privacy & Security → Camera."
         }
     }
 
@@ -296,6 +353,58 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         sessionQueue.async {
             if self.captureSession.isRunning { self.captureSession.stopRunning() }
         }
+    }
+
+    func stopCameraSessionSynchronously() {
+        if isOnSessionQueue {
+            if captureSession.isRunning { captureSession.stopRunning() }
+        } else {
+            sessionQueue.sync {
+                if self.captureSession.isRunning { self.captureSession.stopRunning() }
+            }
+        }
+    }
+
+    deinit {
+        if captureSession.isRunning {
+            if isOnSessionQueue {
+                captureSession.stopRunning()
+            } else {
+                sessionQueue.sync {
+                    if self.captureSession.isRunning { self.captureSession.stopRunning() }
+                }
+            }
+        }
+    }
+
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+
+    func makePreviewLayer() -> AVCaptureVideoPreviewLayer {
+        if let existing = previewLayer, existing.session === captureSession {
+            return existing
+        }
+
+        var layer: AVCaptureVideoPreviewLayer?
+        sessionQueue.sync {
+            let newLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+            newLayer.videoGravity = .resizeAspectFill
+            self.applyMirroringLocked(to: newLayer)
+            layer = newLayer
+        }
+        previewLayer = layer
+        return layer ?? AVCaptureVideoPreviewLayer()
+    }
+
+    func applyMirroring(to previewLayer: AVCaptureVideoPreviewLayer) {
+        sessionQueue.sync {
+            applyMirroringLocked(to: previewLayer)
+        }
+    }
+
+    private func applyMirroringLocked(to previewLayer: AVCaptureVideoPreviewLayer) {
+        guard let connection = previewLayer.connection, connection.isVideoMirroringSupported else { return }
+        if connection.automaticallyAdjustsVideoMirroring { connection.automaticallyAdjustsVideoMirroring = false }
+        connection.isVideoMirrored = true
     }
 
     func cleanupFaceIDResources() {
@@ -355,7 +464,9 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     func cancelCurrentOperation() {
         isAuthenticating = false
         isRegistrationMode = false
-        cleanupFaceIDResources()
+        stopCameraSessionSynchronously()
+        FaceIDDataStore.shared.teardownBuffers()
+        FaceIDModelManager.shared.unloadModels()
         DispatchQueue.main.async {
             self.holdProgress = 0.0
             self.appState = .idle
@@ -496,8 +607,6 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         if let pose = actualPose {
             let capturedCount = poseBucketSamples[pose]?.count ?? 0
             if capturedCount < targetCount(for: pose) {
-                // Registration builds the user's profile; liveness/spoof checks are intentionally
-                // reserved for authentication so enrollment is not blocked by false positives.
                 guard AntiSpoofQualityGate.passes(observation: observation, pixelBuffer: pixelBuffer) else { return }
 
                 let debugTag = FaceIDConfig.enableDebugImageCapture ? "enroll_f\(frameCounter)" : nil
@@ -688,7 +797,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                 self.appState = .recognized
                 self.faceIsRecognized = true
                 self.userInstruction = "Authenticated!"
-                AuthenticationManager.shared.handleUnlock()
+                AuthenticationManager.shared.handleFaceIDAuthenticated()
             }
         }
     }
@@ -1442,6 +1551,7 @@ final class FaceIDModelManager {
                                    output.featureValue(for: output.featureNames.first ?? "")?.multiArrayValue else { return nil }
 
             let logit = logitArray[0].floatValue
+            guard logit.isFinite else { return nil }
             let rawScore = 1.0 / (1.0 + exp(-logit))
 
             return AntiSpoofResult(

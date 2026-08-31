@@ -20,7 +20,7 @@ final class MediaKeyMonitor {
     private let hudController: HUDWindowController
     private let popupVisibility: PopupVisibilityService
     private let mediaKeyStatus: MediaKeyStatus
-    private let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "MediaKeyMonitor")
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "MediaKeyMonitor")
 
     private let volumeStep: Float = 1.0 / 16.0
 
@@ -292,7 +292,6 @@ final class MediaKeyMonitor {
             disableWatchdogTask = nil
             watchdogOpen = false
             stop()
-            accessibility.refresh()
             return
         }
 
@@ -339,17 +338,34 @@ final class MediaKeyMonitor {
 // MARK: - CGEventTap C callback
 
 private let mediaKeyTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
-    guard let userInfo = userInfo else {
-        return Unmanaged.passUnretained(event)
-    }
-    let monitor = Unmanaged<MediaKeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
-
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
+            if let userInfo = userInfo {
+                let monitor = Unmanaged<MediaKeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+                MainActor.assumeIsolated {
+                    monitor.stop()
+                }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        guard let userInfo = userInfo else {
+            return Unmanaged.passUnretained(event)
+        }
+        let monitor = Unmanaged<MediaKeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
         MainActor.assumeIsolated {
             monitor.handleTapDisabled()
         }
         return nil
     }
+
+    guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
+        return Unmanaged.passUnretained(event)
+    }
+
+    guard let userInfo = userInfo else {
+        return Unmanaged.passUnretained(event)
+    }
+    let monitor = Unmanaged<MediaKeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
 
     guard type.rawValue == 14 else {
         return Unmanaged.passUnretained(event)

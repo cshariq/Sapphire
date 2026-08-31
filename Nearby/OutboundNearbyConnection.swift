@@ -53,6 +53,7 @@ class OutboundNearbyConnection:NearbyConnection{
     }
 
     public func cancel(){
+        guard !cancelled else { return }
         cancelled=true
         if encryptionDone{
             var cancel=Sharing_Nearby_Frame()

@@ -24,7 +24,7 @@ protocol URLHandlerEngine {
 @MainActor
 final class URLHandler {
     private let audioEngine: any URLHandlerEngine
-    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "URLHandler")
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "URLHandler")
 
     init(audioEngine: any URLHandlerEngine) {
         self.audioEngine = audioEngine
@@ -33,7 +33,7 @@ final class URLHandler {
     func handleURL(_ url: URL) {
         logger.info("Received URL: \(url.absoluteString)")
 
-        guard url.scheme == "finetune" else {
+        guard url.scheme == "sapphire" else {
             logger.warning("Unknown URL scheme: \(url.scheme ?? "nil")")
             return
         }

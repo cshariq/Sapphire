@@ -322,6 +322,8 @@ class BatteryManager {
         return machine.starts(with: "arm64")
     }()
 
+    var isAppleSilicon: Bool { isARM }
+
     private init() {
         self.batteryService = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"))
         helperConnectionObserver = NotificationCenter.default.addObserver(
@@ -686,7 +688,18 @@ class BatteryManager {
         print("[BatteryManager] Sending command to helper to begin calibration hardware setup.")
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
-        getHelper()?.startCalibration { [weak self] error in
+        guard let helper = getHelper() else {
+            let error = NSError(
+                domain: "SapphireBattery",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "The privileged helper is not reachable. Install or reset it (Settings → Battery → Helper) before calibrating."]
+            )
+            print("[BatteryManager] beginCalibrationCycle failed: helper unreachable.")
+            recordFailure()
+            reply(error)
+            return
+        }
+        helper.startCalibration { error in
             if error != nil {
                 recordFailure()
             } else {

@@ -108,6 +108,12 @@ struct KeyCodeTranslator {
         if let specialKeyCode = stringToKeyCodeMap[keyString.uppercased()] {
             return specialKeyCode
         }
+        let needle = keyString.uppercased()
+        for keyCode in UInt16(0)...UInt16(127) {
+            guard let candidate = string(for: keyCode)?.uppercased(),
+                  candidate == needle else { continue }
+            return keyCode
+        }
         return nil
     }
 }

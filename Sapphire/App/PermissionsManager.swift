@@ -130,7 +130,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     }
 
     private func checkAccessibilityStatus() {
-        let isTrusted = AXIsProcessTrusted()
+        let isTrusted = AccessibilityTrustMonitor.shared.isTrusted
         accessibilityStatus = isTrusted ? PermissionStatus.granted : PermissionStatus.notRequested
     }
 

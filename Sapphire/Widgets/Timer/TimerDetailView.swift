@@ -27,7 +27,7 @@ struct TimerDetailView: View {
                         ForEach(timerManager.activeTimers) { timer in
                             HStack {
                                 Image(systemName: "timer")
-                                Text(formatTime(timer.remainingTime))
+                                Text(timer.remainingTime.asStopwatchClock)
                                     .contentTransition(.numericText(countsDown: true))
                                 Spacer()
                                 Text(timer.state == .system ? "Running" : "Paused")
@@ -51,7 +51,7 @@ struct TimerDetailView: View {
                             VStack(alignment: .leading) {
                                 HStack {
                                     Image(systemName: "stopwatch")
-                                    Text(formatTime(stopwatch.elapsedTime))
+                                    Text(stopwatch.elapsedTime.asStopwatchClock)
                                         .contentTransition(.numericText())
                                     Spacer()
                                     Text(stopwatch.state == .stopwatch ? "Running" : "Paused")
@@ -68,7 +68,7 @@ struct TimerDetailView: View {
                                                 Text("Lap \(index + 1)")
                                                     .foregroundColor(.secondary)
                                                 Spacer()
-                                                Text(formatTime(stopwatch.laps[index]))
+                                                Text(stopwatch.laps[index].asStopwatchClock)
                                             }
                                             .font(.system(.callout, design: .monospaced))
                                         }
@@ -87,18 +87,5 @@ struct TimerDetailView: View {
         .animation(.default, value: timerManager.activeTimers)
         .animation(.default, value: timerManager.activeStopwatches)
         .animation(.default, value: timerManager.displayTime)
-    }
-
-    private func formatTime(_ time: TimeInterval) -> String {
-        let totalSeconds = Int(time)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let seconds = totalSeconds % 60
-
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            return String(format: "%02d:%02d", minutes, seconds)
-        }
     }
 }

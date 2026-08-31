@@ -7,7 +7,7 @@
 import AudioToolbox
 import os
 
-private let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "OrphanedTapCleanup")
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "OrphanedTapCleanup")
 
 enum OrphanedTapCleanup {
     static func destroyOrphanedDevices() {
@@ -26,7 +26,7 @@ enum OrphanedTapCleanup {
             guard transportType == .aggregate else { continue }
 
             guard let name = try? device.readDeviceName(),
-                  name.hasPrefix("FineTune-") else { continue }
+                  name.hasPrefix("Sapphire-") else { continue }
 
             let err = AudioHardwareDestroyAggregateDevice(device)
             if err == noErr {
@@ -38,7 +38,7 @@ enum OrphanedTapCleanup {
         }
 
         if destroyedCount == 0 {
-            logger.info("[CLEANUP] No orphaned FineTune devices found")
+            logger.info("[CLEANUP] No orphaned Sapphire devices found")
         } else {
             logger.info("[CLEANUP] Destroyed \(destroyedCount) orphaned device(s)")
         }

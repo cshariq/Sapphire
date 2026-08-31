@@ -87,6 +87,7 @@ struct WidgetRowView: View {
             case .notes: return settings.settings.notesWidgetEnabled
             case .clipboard: return settings.settings.clipboardWidgetEnabled
             case .mirror: return settings.settings.mirrorWidgetEnabled
+            case .focusSession: return settings.settings.focusSessionWidgetEnabled
             case .agent: return false
             }
         }
@@ -129,6 +130,7 @@ struct WidgetRowView: View {
         case .notes: return $settings.settings.notesWidgetEnabled
         case .clipboard: return $settings.settings.clipboardWidgetEnabled
         case .mirror: return $settings.settings.mirrorWidgetEnabled
+        case .focusSession: return $settings.settings.focusSessionWidgetEnabled
         case .agent: return .constant(false)
         }
     }

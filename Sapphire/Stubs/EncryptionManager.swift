@@ -1,3 +1,9 @@
+//
+//  EncryptionManager.swift
+//  Sapphire
+//
+//  Created by Shariq Charolia on 2026-08-30
+
 #if !SAPPHIRE_FULL_BUILD
 import Foundation
 import CryptoKit
@@ -8,7 +14,7 @@ final class EncryptionManager {
     private let key: SymmetricKey
 
     private init() {
-        let tag = "com.shariq.sapphire.stub-encryption-key"
+        let tag = "com.cshariq.sapphire.stub-encryption-key"
         if let stored = UserDefaults.standard.data(forKey: tag) {
             key = SymmetricKey(data: stored)
         } else {

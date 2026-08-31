@@ -8,7 +8,7 @@ import Foundation
 import os
 
 enum AutoEQParser {
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "FineTune", category: "AutoEQParser")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "AutoEQParser")
 
     // MARK: - ParametricEQ.txt Parsing
 

@@ -36,3 +36,4 @@ collect_sapphire_files.py
 Sapphire/Services/FaceID/Models/PassiveLiveness.enc
 Sapphire.xcodeproj/project.xcworkspace/xcuserdata/Shariq.xcuserdatad/UserInterfaceState.xcuserstate
 Sapphire.xcodeproj/xcuserdata/Shariq.xcuserdatad/xcschemes/xcschememanagement.plist
+/Sapphire/Services/AppLock

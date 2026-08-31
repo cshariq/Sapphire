@@ -24,7 +24,7 @@ final class AccessibilityPermissionService: AccessibilityTrustProviding {
     private var trustObserver: NSObjectProtocol?
     private var debounceTask: Task<Void, Never>?
 
-    private let logger = Logger(subsystem: "com.finetuneapp.FineTune", category: "AccessibilityPermissionService")
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.cshariq.sapphire", category: "AccessibilityPermissionService")
 
     var refreshDidFinish: (() -> Void)?
 
@@ -33,17 +33,17 @@ final class AccessibilityPermissionService: AccessibilityTrustProviding {
     }
 
     var isTrusted: Bool {
-        AXIsProcessTrusted()
+        AccessibilityTrustMonitor.shared.isTrusted
     }
 
     func refresh() {
-        let current = AXIsProcessTrusted()
+        let current = AccessibilityTrustMonitor.shared.isTrusted
         guard current != isTrustedCached else {
             refreshDidFinish?()
             return
         }
         isTrustedCached = current
-        logger.info("Accessibility trust refreshed synchronously: \(current ? "granted" : "revoked")")
+        logger.info("Accessibility trust refreshed: \(current ? "granted" : "revoked")")
         onTrustChanged?(current)
         refreshDidFinish?()
     }

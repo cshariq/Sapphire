@@ -38,23 +38,12 @@ class FileShelfManager: ObservableObject {
     }
 
     func addFiles(from urls: [URL]) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            var newItems: [ShelfItem] = []
-            for url in urls {
-                do {
-                    let newItem = try ShelfItem(from: url, storageDir: self.storageURL)
-                    newItems.append(newItem)
-                } catch {
-                    print("[FileShelfManager] Error creating shelf item for \(url.lastPathComponent): \(error)")
-                }
-            }
-
-            DispatchQueue.main.async {
-                if !newItems.isEmpty {
-                    self.files.insert(contentsOf: newItems, at: 0)
-                    self.saveFiles()
-                }
-            }
+        let newItems = urls.map { url in
+            ShelfItem(id: UUID(), storedAt: url, dateAdded: Date())
+        }
+        if !newItems.isEmpty {
+            files.insert(contentsOf: newItems, at: 0)
+            saveFiles()
         }
     }
 
@@ -76,16 +65,54 @@ class FileShelfManager: ObservableObject {
     }
 
     func removeFile(_ item: ShelfItem) {
+        files.removeAll { $0.id == item.id }
+        saveFiles()
+    }
+
+    func renameFile(_ item: ShelfItem, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != item.storedAt.lastPathComponent else { return }
+
+        let directory = item.storedAt.deletingLastPathComponent()
+        let destination = directory.appendingPathComponent(trimmed)
+
         do {
-            let itemDirectory = item.storedAt.deletingLastPathComponent()
-            if FileManager.default.fileExists(atPath: itemDirectory.path) {
-                try FileManager.default.removeItem(at: itemDirectory)
+            try FileManager.default.moveItem(at: item.storedAt, to: destination)
+            if let index = files.firstIndex(where: { $0.id == item.id }) {
+                files[index].storedAt = destination
             }
-            files.removeAll { $0.id == item.id }
             saveFiles()
         } catch {
-            print("[FileShelfManager] Error removing file: \(error)")
+            print("[FileShelfManager] Error renaming file: \(error)")
         }
+    }
+
+    func duplicateFile(_ item: ShelfItem) {
+        let baseName = item.storedAt.deletingPathExtension().lastPathComponent
+        let fileExtension = item.storedAt.pathExtension
+        let copyName: String
+        if fileExtension.isEmpty {
+            copyName = "\(baseName) Copy"
+        } else {
+            copyName = "\(baseName) Copy.\(fileExtension)"
+        }
+
+        let destination = item.storedAt
+            .deletingLastPathComponent()
+            .appendingPathComponent(copyName)
+
+        do {
+            try FileManager.default.copyItem(at: item.storedAt, to: destination)
+            let newItem = ShelfItem(id: UUID(), storedAt: destination, dateAdded: Date())
+            files.insert(newItem, at: 0)
+            saveFiles()
+        } catch {
+            print("[FileShelfManager] Error duplicating file: \(error)")
+        }
+    }
+
+    func shelfURL(for id: UUID) -> URL? {
+        files.first { $0.id == id }?.storedAt
     }
 
     private func saveFiles() {
@@ -127,22 +154,11 @@ class FileShelfManager: ObservableObject {
 
 struct ShelfItem: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
-    let storedAt: URL
+    var storedAt: URL
     let dateAdded: Date
 
     var fileName: String { storedAt.lastPathComponent }
     var icon: NSImage { NSWorkspace.shared.icon(forFile: storedAt.path) }
-
-    init(from sourceURL: URL, storageDir: URL) throws {
-        self.id = UUID()
-        self.dateAdded = Date()
-        let itemDirectory = storageDir.appendingPathComponent(self.id.uuidString)
-        self.storedAt = itemDirectory.appendingPathComponent(sourceURL.lastPathComponent)
-
-        let fm = FileManager.default
-        try fm.createDirectory(at: itemDirectory, withIntermediateDirectories: true)
-        try fm.copyItem(at: sourceURL, to: self.storedAt)
-    }
 
     init(id: UUID, storedAt: URL, dateAdded: Date) {
         self.id = id

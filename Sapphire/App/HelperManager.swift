@@ -54,9 +54,9 @@ enum HelperIssue: Equatable {
             return """
             Error code: SAP-H3
 
-            macOS reports the helper as “Not Found” (SMAppService status 3). The Login Items database no longer has a record for this copy of Sapphire, so the helper cannot start until its registration is rebuilt.
+            macOS can't find the helper.
 
-            Do this:
+            Do fix this:
             1. Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again.
             2. If the helper still does not start, Sapphire will relaunch itself — or click “Relaunch Sapphire”.
             3. When Sapphire opens, click Install if asked.
@@ -72,23 +72,17 @@ enum HelperIssue: Equatable {
 
             Do this:
             1. Click “Open Login Items” below.
-            2. Under Allow in the Background, turn on:
-               • Sapphire
-               • Sapphire Helper
+            2. Under Allow in the Background, turn on Sapphire.
             3. Authenticate if macOS asks for your password.
             4. Return to Sapphire and click Install / Activate.
-
-            Both items must be on. Enabling only the helper is not enough. If the helper is labeled “unidentified developer,” enable it anyway, then install a freshly notarized Sapphire build so the label clears.
             """
         case .spawnFailed:
             return """
             Error code: SAP-H1
 
-            Login Items permission is already granted (status 1), but macOS still will not spawn the helper. This usually means Sapphire’s own helper registration is stuck (launchd error 78 / EX_CONFIG).
+            Login Items permission is already granted (status 1), but macOS still will not start the helper. This usually means Sapphire’s own helper registration is stuck.
 
-            Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again, then relaunch if macOS still will not spawn it.
-
-            Other apps’ login items are not changed.
+            Click “Reset Helper” below. Sapphire will unregister the helper and register it again, then relaunch if the helper is still having issues.
             """
         }
     }

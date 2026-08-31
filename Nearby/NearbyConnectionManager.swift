@@ -12,6 +12,10 @@ import Combine
 import CryptoKit
 import SwiftECC
 
+extension Notification.Name {
+    public static let sapphireNearbyFileDownloaded = Notification.Name("SapphireNearbyFileDownloaded")
+}
+
 public enum NearDropUserAction {
     case save
     case open
@@ -213,6 +217,9 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     public var mainAppDelegate: (any MainAppDelegate)?
     private var discoveryRefCount = 0
     private var browser: NWBrowser?
+    private var isTCPListenerStarted = false
+    private var isStoppingTCPListener = false
+    private var listenerGeneration = 0
 
     private var qrCodePublicKey:ECPublicKey?
     private var qrCodePrivateKey:ECPrivateKey?
@@ -238,15 +245,50 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
         super.init()
     }
 
-    public func becomeVisible() { startTCPListener() }
+    public func becomeVisible() {
+        guard !isTCPListenerStarted, !isStoppingTCPListener else {
+            print("[NCM] Ignoring duplicate becomeVisible() (started: \(isTCPListenerStarted), stopping: \(isStoppingTCPListener)).")
+            return
+        }
+        print("[NCM] Starting NearbyShare listener.")
+        startTCPListener()
+    }
+
+    public func becomeInvisible() {
+        guard isTCPListenerStarted || mdnsService != nil else {
+            print("[NCM] NearbyShare listener already stopped.")
+            return
+        }
+        print("[NCM] Stopping NearbyShare listener.")
+        isStoppingTCPListener = true
+        listenerGeneration += 1
+        mdnsService?.stop()
+        mdnsService = nil
+        tcpListener.stateUpdateHandler = nil
+        tcpListener.newConnectionHandler = nil
+        tcpListener.cancel()
+        isTCPListenerStarted = false
+        isStoppingTCPListener = false
+    }
 
     private func startTCPListener() {
-        tcpListener.stateUpdateHandler = { [weak self] state in if case .ready = state { self?.initMDNS() } }
+        isTCPListenerStarted = true
+        listenerGeneration += 1
+        let generation = listenerGeneration
+        tcpListener.stateUpdateHandler = { [weak self] state in
+            guard let self, self.listenerGeneration == generation, self.isTCPListenerStarted else { return }
+            print("[NCM] Listener state changed: \(state)")
+            if case .ready = state { self.initMDNS() }
+        }
         tcpListener.newConnectionHandler = { [weak self] connection in
+            guard let self, self.listenerGeneration == generation, self.isTCPListenerStarted else {
+                connection.cancel()
+                return
+            }
             let id = UUID().uuidString
             print("[NCM] New inbound connection with ID: \(id)")
             let conn = InboundNearbyConnection(connection: connection, id: id)
-            self?.activeConnections[id] = conn
+            self.activeConnections[id] = conn
             conn.delegate = self
             conn.start()
         }
@@ -272,6 +314,7 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     }
 
     private func initMDNS() {
+        guard isTCPListenerStarted else { return }
         mdnsService?.stop()
         let broadcastName = getBroadcastName()
         let endpointInfo = EndpointInfo(name: broadcastName, deviceType: .computer)
@@ -347,7 +390,11 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     }
 
     public func stopDeviceDiscovery() {
-        discoveryRefCount -= 1; assert(discoveryRefCount >= 0)
+        guard discoveryRefCount > 0 else {
+            print("[NCM] Ignoring stopDeviceDiscovery() with zero ref count.")
+            return
+        }
+        discoveryRefCount -= 1
         print("[NCM] Stopping device discovery (ref count: \(discoveryRefCount))")
         if discoveryRefCount == 0 { browser?.cancel(); browser = nil }
     }
@@ -472,6 +519,10 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     }
 
     public func startOutgoingTransfer(deviceID: String, delegate: ShareExtensionDelegate, urls: [URL]) {
+        guard isTCPListenerStarted else {
+            print("[NCM] Refusing outgoing transfer while NearbyShare listener is stopped.")
+            return
+        }
         guard let info = foundServices[deviceID] else { print("[NCM] Error: Attempted to start transfer to unknown device ID \(deviceID)"); return }
         print("[NCM] Starting outgoing transfer to \(info.device?.name ?? "Unknown") (\(deviceID))")
         let tcp = NWProtocolTCP.Options(); tcp.noDelay = true
