@@ -10,6 +10,7 @@ import AppKit
 
 struct MultiAudioView: View {
     @Binding var navigationStack: [NotchWidgetMode]
+    @ObservedObject private var permissionsManager = PermissionsManager.shared
 
     private var panelSize: CGSize {
         let screen = CursorPosition.targetNotchScreen() ?? NSScreen.main
@@ -24,21 +25,88 @@ struct MultiAudioView: View {
     }
 
     var body: some View {
-        SystemAudioPanel(navigationStack: $navigationStack)
-            .padding(.top, 8)
-            .frame(width: panelSize.width, height: panelSize.height)
+        if permissionsManager.screenRecordingStatus != .granted {
+            MultiAudioPermissionRequiredView(navigationStack: $navigationStack)
+                .frame(width: panelSize.width, height: panelSize.height)
+        } else {
+            SystemAudioPanel(navigationStack: $navigationStack)
+                .padding(.top, 8)
+                .frame(width: panelSize.width, height: panelSize.height)
+        }
+    }
+}
+
+// MARK: - Screen Recording gate
+struct MultiAudioPermissionRequiredView: View {
+    @Binding var navigationStack: [NotchWidgetMode]
+    @ObservedObject private var permissionsManager = PermissionsManager.shared
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: permissionSymbolName)
+                .font(.system(size: 40))
+                .foregroundColor(.orange)
+
+            Text("Screen Recording Required")
+                .font(.title2).bold()
+
+            Text("Multi-audio won't work without Screen Recording permission. Sapphire needs it to adjust app volumes, eqs and more.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button {
+                if permissionsManager.screenRecordingStatus == .denied {
+                    let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
+                    NSWorkspace.shared.open(url)
+                } else {
+                    permissionsManager.requestPermission(.screenRecording)
+                }
+            } label: {
+                Label(grantedTitle, systemImage: "record.circle")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+
+            Text("After enabling it, reopen this menu.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+
+            Text("Use the back control in the notch to return.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(30)
+        .frame(width: 400)
+    }
+
+    private var grantedTitle: String {
+        permissionsManager.screenRecordingStatus == .denied
+            ? "Open System Settings"
+            : "Enable Screen Recording"
+    }
+
+    private var permissionSymbolName: String {
+        permissionsManager.screenRecordingStatus == .denied
+            ? "lock.fill"
+            : "record.circle"
     }
 }
 
 struct SystemAudioPanel: View {
     @Binding var navigationStack: [NotchWidgetMode]
     var unified: Bool = false
+    @ObservedObject private var permissionsManager = PermissionsManager.shared
 
     enum Tab { case devices, apps }
     @State private var selectedTab: Tab = .apps
 
     var body: some View {
-        if unified {
+        if permissionsManager.screenRecordingStatus != .granted {
+            MultiAudioPermissionRequiredView(navigationStack: $navigationStack)
+        } else if unified {
             VStack(alignment: .leading, spacing: 18) {
                 Text("APPS")
                     .font(.system(size: 11, weight: .black))
