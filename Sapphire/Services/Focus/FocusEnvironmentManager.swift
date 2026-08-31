@@ -98,29 +98,6 @@ final class FocusEnvironmentManager {
             }
             .store(in: &activeAppCancellables)
 
-        monitor.$appVisibilityRevision
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refresh() }
-            .store(in: &activeAppCancellables)
-
-        monitor.$screenParametersRevision
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refresh() }
-            .store(in: &activeAppCancellables)
-
-        monitor.$lastLaunchedBundleID
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refresh() }
-            .store(in: &activeAppCancellables)
-        monitor.$lastTerminatedBundleID
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refresh() }
-            .store(in: &activeAppCancellables)
-
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             self?.refresh()
         }

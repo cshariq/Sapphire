@@ -30,9 +30,6 @@ final class MirrorCameraManager: ObservableObject {
     @Published private(set) var automaticPreviewRotationAngle: CGFloat = 0
     @Published private(set) var automaticCaptureRotationAngle: CGFloat = 0
 
-    /// Effective rotation (degrees, 0/90/180/270) to display the feed upright:
-    /// manual override from settings when set, otherwise the orientation the
-    /// camera reports via its rotation coordinator.
     var effectivePreviewRotationAngle: CGFloat {
         if let angle = SettingsModel.shared.settings.mirrorRotationMode.angle {
             return angle
@@ -40,8 +37,6 @@ final class MirrorCameraManager: ObservableObject {
         return automaticPreviewRotationAngle
     }
 
-    /// Whether this device is an external camera (USB/Thunderbolt/etc.) rather
-    /// than a built-in or Continuity camera, which macOS already orients.
     private func isExternalCamera(_ device: AVCaptureDevice) -> Bool {
         let transport = device.transportType
         return transport != DeviceTransportType.builtIn
@@ -78,7 +73,6 @@ final class MirrorCameraManager: ObservableObject {
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservations: [NSKeyValueObservation] = []
 
-    /// AVDeviceTransportType values (kIOAudioDeviceTransportType* from IOKit).
     private enum DeviceTransportType {
         static let builtIn: Int32 = 1
         static let airPlay: Int32 = 6
@@ -198,9 +192,6 @@ final class MirrorCameraManager: ObservableObject {
 
     // MARK: - Rotation
 
-    /// Watches the camera's reported orientation so previews can be shown
-    /// upright automatically. Only external cameras need this — built-in and
-    /// Continuity cameras are already oriented by the system.
     private func setupRotationCoordinator(for device: AVCaptureDevice) {
         teardownRotationCoordinator()
         guard isExternalCamera(device) else {
@@ -209,9 +200,6 @@ final class MirrorCameraManager: ObservableObject {
             return
         }
 
-        // macOS reports 0° for most external cameras (their physical orientation
-        // is unknown), but if the camera does report orientation this keeps the
-        // feed upright automatically. A manual rotation setting overrides this.
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         rotationCoordinator = coordinator
 

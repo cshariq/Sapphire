@@ -1904,10 +1904,6 @@ class MusicManager: ObservableObject {
         if let newArtwork = payload.artwork {
             self.applyArtwork(newArtwork, trackIdentity: trackIdentity)
         } else if switchingAwayFromSpotify {
-            // The previous Spotify track left a stale album cover in `artwork`.
-            // A system source like Chrome provides no artwork, so clear it and
-            // let the UI fall back to the new source's app icon instead of
-            // continuing to show the old Spotify cover.
             self.artwork = nil
             self.artworkURL = nil
         }

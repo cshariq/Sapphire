@@ -190,10 +190,7 @@ struct NotchController: View {
     private var isManuallyHidden: Bool { completeHideReason != nil }
 
     private var isNotchScreenFullScreen: Bool {
-        let screen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
-        let result = activeAppMonitor.isScreenFullScreen(screen)
-        notchLog.debug("isNotchScreenFullScreen: screen d\(screen?.displayID ?? 0) fullScreenDisplays=\(activeAppMonitor.fullScreenDisplayIDs.map(String.init).sorted()) -> \(result)")
-        return result
+        activeAppMonitor.isFullScreen
     }
 
     // MARK: - Computed Properties
@@ -649,7 +646,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             .onChange(of: shouldHideWindowForSharing, perform: handleSharingVisibilityChange)
             .onChange(of: isInteractive, perform: handleMenuBarMonitoringChange)
             .onChange(of: settings.settings, perform: handleSettingsChange)
-            .onChange(of: activeAppMonitor.fullScreenDisplayIDs) { _ in
+            .onChange(of: activeAppMonitor.isFullScreen) { _ in
                 evaluateInactiveNotchVisibility()
             }
     }
@@ -943,10 +940,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     @ViewBuilder
     private func buildStandardActivityView(from data: StandardActivityData) -> some View {
         if let config = config {
-            // Bottom content is centered by the outer VStack (and the activity
-            // view is fixedSize + centered in the notch), so padding on the
-            // bottom row alone never moves it. Left-align just the up-next row
-            // so it hugs the leading edge; lyrics/peek stay centered.
             let bottomIsUpNext: Bool = {
                 if case .music(let bottom) = data, case .upNext = bottom { return true }
                 return false
@@ -1642,6 +1635,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 revealNotchFromCompleteHide()
             } else if completeHideReason == .manualSwipe {
                 return
+            } else if completeHideReason == .fullScreen, newActivity == .lockScreen {
+                revealNotchFromCompleteHide()
             }
         } else if completeHideReason == .manualSwipe {
             return
@@ -2218,7 +2213,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func revealNotchFromCompleteHide() {
         guard completeHideReason != nil else { return }
-        if completeHideReason == .fullScreen, settings.settings.hideLiveActivityInFullScreen, isNotchScreenFullScreen {
+        if completeHideReason == .fullScreen, settings.settings.hideLiveActivityInFullScreen, isNotchScreenFullScreen, liveActivityManager.currentActivity != .lockScreen {
             return
         }
         let wasManualSwipeReveal = completeHideReason == .manualSwipe
@@ -2248,7 +2243,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func evaluateInactiveNotchVisibility() {
-        notchLog.info("evaluateInactiveNotchVisibility: hideLiveActivityInFullScreen=\(settings.settings.hideLiveActivityInFullScreen) isNotchScreenFullScreen=\(isNotchScreenFullScreen) fullScreenDisplays=\(activeAppMonitor.fullScreenDisplayIDs.map(String.init).sorted()) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
+        if liveActivityManager.currentActivity == .lockScreen { return }
+        notchLog.info("evaluateInactiveNotchVisibility: hideLiveActivityInFullScreen=\(settings.settings.hideLiveActivityInFullScreen) isNotchScreenFullScreen=\(isNotchScreenFullScreen) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
         if settings.settings.hideLiveActivityInFullScreen && isNotchScreenFullScreen {
             if completeHideReason == nil {
                 hideNotchCompletely(reason: .fullScreen)
@@ -2352,11 +2348,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     private func startNotchInteractionMonitoring() {
         guard notchInteractionPollingTimer == nil else { return }
 
-        let interval = 1.0 / 8.0
+        let interval = 1.0 / 30.0
         let timer = Timer(timeInterval: interval, repeats: true) { _ in
             self.refreshNotchInteractionState()
         }
-        timer.tolerance = 0.05
+        timer.tolerance = 0.01
         notchInteractionPollingTimer = timer
         RunLoop.main.add(timer, forMode: .common)
     }
@@ -2373,7 +2369,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard let config = config, let window = notchWindow else { return }
 
         let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastInteractionRefreshTime >= 0.1 else { return }
+        guard now - lastInteractionRefreshTime >= 0.02 else { return }
         lastInteractionRefreshTime = now
         if isManuallyHidden {
             window.ignoresMouseEvents = true
@@ -2387,16 +2383,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         let mouseLocation = window.mouseLocationOutsideOfEventStream
         let interactiveBounds = interactiveFrame(for: window, config: config)
         let isNear = isMouseNearNotchFrame(interactiveBounds, mouseLocation: mouseLocation)
-        let isExpanded = notchState != .initial
-        let detectionBounds: CGRect
-        if !isExpanded {
-            detectionBounds = interactiveBounds
-        } else {
-            detectionBounds = interactiveBounds.insetBy(
-                dx: -Self.hoverDetectionMargin,
-                dy: -Self.hoverDetectionMargin
-            )
-        }
+        let detectionBounds = interactiveBounds.insetBy(
+            dx: -Self.hoverDetectionMargin,
+            dy: -Self.hoverDetectionMargin
+        )
         let isPointerInside = detectionBounds.contains(mouseLocation)
 
         if !isInteractive, !isNear, lastSampledMouseLocation == mouseLocation {
@@ -2465,11 +2455,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             height: notchHeight
         ).integral
 
-        if notchState == .initial {
-            return frame.insetBy(dx: 4, dy: 4)
-        } else {
-            return frame.insetBy(dx: -1, dy: -1)
-        }
+        return frame.insetBy(dx: -1, dy: -1)
     }
 
     private func toRestorableMenu(mode: NotchWidgetMode) -> RestorableNotchMenu? {

@@ -150,7 +150,7 @@ class GammaTechnique: BrightnessTechnique {
 
     private func updateGammaEnforcer() {
         guard isEnabled else { return }
-        if ActiveAppMonitor.shared.fullScreenDisplayIDs.isEmpty {
+        if !ActiveAppMonitor.shared.isFullScreen {
             stopGammaEnforcer()
         } else {
             startGammaEnforcer()
@@ -160,7 +160,7 @@ class GammaTechnique: BrightnessTechnique {
 
     private func registerFullScreenObserver() {
         guard fullScreenStateCancellable == nil else { return }
-        fullScreenStateCancellable = ActiveAppMonitor.shared.$fullScreenDisplayIDs
+        fullScreenStateCancellable = ActiveAppMonitor.shared.$isFullScreen
             .removeDuplicates()
             .sink { [weak self] _ in
                 self?.updateGammaEnforcer()
@@ -177,8 +177,7 @@ class GammaTechnique: BrightnessTechnique {
         let factor = SettingsModel.shared.settings.brightness
 
         for (displayId, gammaTable) in gammaTables {
-            guard let screen = NSScreen.screens.first(where: { $0.displayId == displayId }),
-                  ActiveAppMonitor.shared.isScreenFullScreen(screen) else {
+            guard ActiveAppMonitor.shared.isFullScreen else {
                 continue
             }
             guard let currentTable = GammaTable.createFromCurrentGammaTable(displayId: displayId) else { continue }

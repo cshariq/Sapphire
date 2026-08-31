@@ -21,7 +21,7 @@ private func axObserverCallback(
 ) {
     guard let refcon = refcon else { return }
     let monitor = Unmanaged<ActiveAppMonitor>.fromOpaque(refcon).takeUnretainedValue()
-    monitor.handleAXEvent(notification)
+    monitor.handleWindowMoved()
 }
 
 @MainActor
@@ -32,31 +32,15 @@ class ActiveAppMonitor: ObservableObject {
     @Published private(set) var isLyricsAllowedForActiveApp: Bool = true
     @Published private(set) var activeAppBundleID: String?
     @Published private(set) var isFullScreen: Bool = false
-    @Published private(set) var activeSpaceRevision: UInt64 = 0
-    @Published private(set) var fullScreenDisplayIDs: Set<CGDirectDisplayID> = [] {
-        didSet {
-            let anyDisplayFullScreen = !fullScreenDisplayIDs.isEmpty
-            if isFullScreen != anyDisplayFullScreen {
-                isFullScreen = anyDisplayFullScreen
-            }
-        }
-    }
     @Published private(set) var isWindowDragging: Bool = false
-
-    @Published private(set) var appVisibilityRevision: UInt64 = 0
-    @Published private(set) var screenParametersRevision: UInt64 = 0
-    @Published private(set) var lastLaunchedBundleID: String?
-    @Published private(set) var lastTerminatedBundleID: String?
 
     private let settingsModel: SettingsModel
     private var cancellables = Set<AnyCancellable>()
 
-
-    private var lastFullScreenRefreshTime: TimeInterval = 0
-    private let fullScreenRefreshThrottle: TimeInterval = 0.3
+    private let kAXMainWindowAttribute = "AXMainWindow" as CFString
+    private let kAXFullScreenAttribute = "AXFullScreen" as CFString
 
     private var axObserver: AXObserver?
-    private var observedPID: pid_t?
     private var mouseUpMonitor: Any?
     private var lastMoveTime: TimeInterval = 0
 
@@ -75,13 +59,6 @@ class ActiveAppMonitor: ObservableObject {
         let spaceChangePublisher = NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification).map { _ in () }
         let appChangePublisher = NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didActivateApplicationNotification).map { _ in () }
 
-        spaceChangePublisher
-            .sink { [weak self] _ in
-                guard let self else { return }
-                self.activeSpaceRevision &+= 1
-            }
-            .store(in: &cancellables)
-
         Publishers.Merge(spaceChangePublisher, appChangePublisher)
             .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateActiveAppState() }
@@ -97,38 +74,12 @@ class ActiveAppMonitor: ObservableObject {
             .sink { [weak self] _ in self?.updateLyricPermission() }
             .store(in: &cancellables)
 
-        let workspace = NSWorkspace.shared.notificationCenter
-        workspace.publisher(for: NSWorkspace.didHideApplicationNotification)
-            .sink { [weak self] _ in self?.appVisibilityRevision &+= 1 }
-            .store(in: &cancellables)
-        workspace.publisher(for: NSWorkspace.didUnhideApplicationNotification)
-            .sink { [weak self] _ in self?.appVisibilityRevision &+= 1 }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-            .sink { [weak self] _ in self?.screenParametersRevision &+= 1 }
-            .store(in: &cancellables)
-
-        workspace.publisher(for: NSWorkspace.didLaunchApplicationNotification)
-            .sink { [weak self] note in
-                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                self?.lastLaunchedBundleID = app?.bundleIdentifier
-            }
-            .store(in: &cancellables)
-        workspace.publisher(for: NSWorkspace.didTerminateApplicationNotification)
-            .sink { [weak self] note in
-                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                self?.lastTerminatedBundleID = app?.bundleIdentifier
-            }
-            .store(in: &cancellables)
-
         updateActiveAppState()
     }
 
     private func updateActiveAppState() {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication, let bundleID = frontmostApp.bundleIdentifier else {
             if isFullScreen != false { isFullScreen = false }
-            if !fullScreenDisplayIDs.isEmpty { fullScreenDisplayIDs = [] }
             if activeAppBundleID != nil { activeAppBundleID = nil }
             teardownAXObserver()
             return
@@ -144,60 +95,26 @@ class ActiveAppMonitor: ObservableObject {
             setupAXObserver(for: frontmostApp.processIdentifier)
         }
 
-        refreshFullScreenState(for: frontmostApp)
-    }
+        let appElement = AXUIElementCreateApplication(frontmostApp.processIdentifier)
+        var window: AnyObject?
 
-    func isScreenFullScreen(_ screen: NSScreen?) -> Bool {
-        guard let screen else { return false }
-        return fullScreenDisplayIDs.contains(screen.displayID)
-    }
+        AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute, &window)
 
-    // MARK: - Full Screen Detection
+        var isCurrentlyFullScreen = false
+        if let window = window {
+            let windowElement = window as! AXUIElement
+            var isFullScreenValue: AnyObject?
 
-    private func refreshFullScreenState(for app: NSRunningApplication) {
-        // Use CGWindowListCopyWindowInfo instead of the Accessibility API: it needs
-        // no Accessibility permission and always reflects the real on-screen geometry
-        // of the frontmost app's windows. A window counts as full screen when its
-        // frame covers an entire display's full bounds (including the strip under the
-        // menu bar and behind the Dock); a merely maximized window only fills the
-        // display's visible area, so it won't match.
-        let pid = app.processIdentifier
+            let result = AXUIElementCopyAttributeValue(windowElement, kAXFullScreenAttribute, &isFullScreenValue)
 
-        guard let windows = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
-            return
-        }
-
-        var displayIDs = Set<CGDirectDisplayID>()
-        for info in windows {
-            guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int,
-                  pid_t(ownerPID) == pid,
-                  let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsDict) else {
-                continue
-            }
-            for screen in NSScreen.screens {
-                if isFrame(bounds, coveringDisplay: screen.displayID) {
-                    displayIDs.insert(screen.displayID)
-                }
+            if result == .success, let isFullScreenNumber = isFullScreenValue as? NSNumber {
+                isCurrentlyFullScreen = isFullScreenNumber.boolValue
             }
         }
 
-        if fullScreenDisplayIDs != displayIDs {
-            fullScreenDisplayIDs = displayIDs
+        if self.isFullScreen != isCurrentlyFullScreen {
+            self.isFullScreen = isCurrentlyFullScreen
         }
-    }
-
-    private func isFrame(_ frame: CGRect, coveringDisplay displayID: CGDirectDisplayID, tolerance: CGFloat = 2) -> Bool {
-        // CGWindowList bounds and CGDisplayBounds share the same top-left/Down
-        // coordinate space, so compare them directly.
-        let displayBounds = CGDisplayBounds(displayID)
-        return abs(frame.minX - displayBounds.minX) <= tolerance
-            && abs(frame.minY - displayBounds.minY) <= tolerance
-            && abs(frame.maxX - displayBounds.maxX) <= tolerance
-            && abs(frame.maxY - displayBounds.maxY) <= tolerance
     }
 
     private func updateLyricPermission() {
@@ -218,35 +135,12 @@ class ActiveAppMonitor: ObservableObject {
         }
     }
 
-    // MARK: - AX Event Handling
-
-    nonisolated func handleAXEvent(_ notification: CFString) {
-        Task { @MainActor in
-            let now = CACurrentMediaTime()
-
-            if notification as String == kAXWindowMovedNotification as String {
-                handleWindowMove(now: now)
-            } else {
-                handleFullScreenEvent(now: now)
-            }
-        }
-    }
-
-    private func handleFullScreenEvent(now: TimeInterval) {
-        guard now - lastFullScreenRefreshTime >= fullScreenRefreshThrottle else { return }
-        lastFullScreenRefreshTime = now
-
-        guard let pid = observedPID,
-              let app = NSRunningApplication(processIdentifier: pid),
-              app.isFinishedLaunching && !app.isTerminated else { return }
-
-        refreshFullScreenState(for: app)
-    }
-
-    // MARK: - AX Observer Setup
+    // MARK: - Window Drag Detection
 
     private func setupAXObserver(for pid: pid_t) {
         teardownAXObserver()
+
+        guard settingsModel.settings.snapOnWindowDragEnabled else { return }
 
         var observer: AXObserver?
         let result = AXObserverCreate(pid, axObserverCallback, &observer)
@@ -257,18 +151,11 @@ class ActiveAppMonitor: ObservableObject {
         }
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        let appElement = AXUIElementCreateApplication(pid)
 
-        AXObserverAddNotification(observer, appElement, kAXWindowResizedNotification as CFString, selfPtr)
-        AXObserverAddNotification(observer, appElement, kAXFocusedUIElementChangedNotification as CFString, selfPtr)
-
-        if settingsModel.settings.snapOnWindowDragEnabled {
-            AXObserverAddNotification(observer, appElement, kAXWindowMovedNotification as CFString, selfPtr)
-        }
+        AXObserverAddNotification(observer, AXUIElementCreateApplication(pid), kAXWindowMovedNotification as CFString, selfPtr)
 
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
         self.axObserver = observer
-        self.observedPID = pid
     }
 
     private func teardownAXObserver() {
@@ -276,7 +163,6 @@ class ActiveAppMonitor: ObservableObject {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
             axObserver = nil
         }
-        observedPID = nil
 
         if let monitor = mouseUpMonitor {
             NSEvent.removeMonitor(monitor)
@@ -288,17 +174,18 @@ class ActiveAppMonitor: ObservableObject {
         }
     }
 
-    // MARK: - Window Drag Detection
+    nonisolated func handleWindowMoved() {
+        Task { @MainActor in
+            let now = CACurrentMediaTime()
+            if now - lastMoveTime < 0.016 { return }
+            lastMoveTime = now
 
-    private func handleWindowMove(now: TimeInterval) {
-        if now - lastMoveTime < 0.016 { return }
-        lastMoveTime = now
+            guard NSEvent.pressedMouseButtons == 1 else { return }
 
-        guard NSEvent.pressedMouseButtons == 1 else { return }
-
-        if !self.isWindowDragging {
-            self.isWindowDragging = true
-            self.startMouseUpMonitoring()
+            if !self.isWindowDragging {
+                self.isWindowDragging = true
+                self.startMouseUpMonitoring()
+            }
         }
     }
 

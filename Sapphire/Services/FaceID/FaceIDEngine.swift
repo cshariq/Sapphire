@@ -215,7 +215,6 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     private var faceIDDevice: AVCaptureDevice?
     private var currentFaceIDRotationAngle: CGFloat = 0
 
-    /// AVDeviceTransportType values (kIOAudioDeviceTransportType* from IOKit).
     private enum DeviceTransportType {
         static let builtIn: Int32 = 1
         static let airPlay: Int32 = 6
@@ -322,11 +321,6 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         setupRotationCoordinatorIfNeeded(for: device)
     }
 
-    /// External cameras (USB/Thunderbolt, e.g. an Insta360) deliver sensor-native
-    /// buffers that are rotated relative to how they're mounted, which breaks face
-    /// detection. The rotation coordinator reports the camera's orientation so the
-    /// video data output can rotate every frame to upright before Vision sees it.
-    /// Built-in and Continuity cameras are already oriented by the system.
     private func setupRotationCoordinatorIfNeeded(for device: AVCaptureDevice) {
         rotationObservation = nil
         rotationCoordinator = nil
@@ -354,9 +348,6 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     private func applyFaceIDRotation(autoAngle: CGFloat) {
         guard let device = faceIDDevice else { return }
 
-        // A manual rotation from Mirror settings also applies when Face ID uses
-        // the same external camera, since the manual angle describes how the
-        // camera is physically mounted.
         let angle: CGFloat
         let transport = device.transportType
         if transport != DeviceTransportType.builtIn,

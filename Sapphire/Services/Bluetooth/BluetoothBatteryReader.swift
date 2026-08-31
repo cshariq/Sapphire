@@ -17,10 +17,6 @@ class BluetoothBatteryReader: NSObject, ObservableObject {
     private let batteryLevelCharUUID = CBUUID(string: "2A19")
     private let modelNumberCharUUID = CBUUID(string: "2A24")
 
-    // Built lazily and only once Bluetooth permission has been granted, so that
-    // merely touching the shared instance at launch never triggers the system
-    // Bluetooth permission prompt. Battery info is still read from the system
-    // plist / system_profiler without CoreBluetooth.
     private var centralManager: CBCentralManager!
     private var pendingPeripherals: Set<CBPeripheral> = []
     private var pendingContinuation: CheckedContinuation<Void, Never>?
@@ -125,9 +121,6 @@ class BluetoothBatteryReader: NSObject, ObservableObject {
     }
 
     private func readBatteriesFromCoreBluetooth() async {
-        // Never create the CoreBluetooth manager (or scan) unless the user has
-        // explicitly granted Bluetooth access via the About menu. If access is
-        // undetermined or denied, fall back to plist/system_profiler data only.
         guard CBManager.authorization == .allowedAlways else {
             logger.debug("Bluetooth access not granted; skipping CoreBluetooth battery reads")
             return

@@ -38,8 +38,9 @@ final class FocusBlocker {
         }
         blocker.makeShieldContent = { [weak self] (appName: String, bundleID: String) in
             guard let self else { return AnyView(EmptyView()) }
+            let resolvedAppName = AppShieldManager.displayName(for: bundleID)
             return AnyView(FocusShieldView(
-                appName: appName,
+                appName: resolvedAppName,
                 intensity: self.intensity,
                 onUnblockNow: { [weak self] in self?.temporarilyUnblock(bundleID: bundleID) },
                 onSnooze: { [weak self] minutes in self?.snooze(bundleID: bundleID, minutes: minutes) },
@@ -50,7 +51,8 @@ final class FocusBlocker {
         blocker.forceClosesOnActivation = intensity.forceClosesBlockedApps
         blocker.onAppActivated = { [weak self] (appName: String, bundleID: String, _: NSRunningApplication) in
             guard let self, self.isBlocking, self.isBlocked(bundleID: bundleID) else { return }
-            self.announceRestrictedApp(appName: appName, bundleID: bundleID)
+            let resolvedAppName = AppShieldManager.displayName(for: bundleID)
+            self.announceRestrictedApp(appName: resolvedAppName, bundleID: bundleID)
         }
     }
 

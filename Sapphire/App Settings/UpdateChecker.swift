@@ -114,11 +114,6 @@ class UpdateChecker: NSObject, ObservableObject, URLSessionDownloadDelegate {
     private let minimumBackgroundCheckGap: TimeInterval = 30 * 60
     private let persistedAvailableUpdateKey = "SapphirePersistedAvailableUpdate"
 
-    // Fallback copy of `install_update.sh`. The updater prefers the version bundled
-    // as a resource, but uses this embedded copy if that resource is missing or
-    // unreadable in the running app — otherwise the install fails with a
-    // "install_update.sh … there is no such file" error. Keep in sync with
-    // `Sapphire/App Settings/install_update.sh`.
     private let embeddedInstallUpdateScript = """
 #!/bin/bash
 
@@ -490,8 +485,6 @@ exit 0
             .appendingPathComponent("sapphire_install_update_\(ProcessInfo.processInfo.processIdentifier).sh")
         try? FileManager.default.removeItem(at: tempScript)
 
-        // Prefer the script bundled as a resource; fall back to the embedded copy
-        // so the update still works if that resource is missing or unreadable.
         let scriptData: Data
         if let scriptPath = Bundle.main.path(forResource: "install_update", ofType: "sh"),
            let data = try? Data(contentsOf: URL(fileURLWithPath: scriptPath)) {
@@ -563,10 +556,6 @@ exit 0
         throw NSError(domain: "UpdateError", code: 8, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    /// Apple-recommended path: ask the privileged helper (running as root) to swap the
-    /// bundles over XPC, so replacing an app in /Applications needs no per-update
-    /// password prompt. Returns false when the helper isn't installed, isn't responsive,
-    /// or its running version predates the install RPC (the updater then falls back).
     nonisolated private static func installViaPrivilegedHelper(
         newAppPath: String,
         currentAppPath: String
@@ -593,7 +582,6 @@ exit 0
                 resumeOnce(success)
             }
 
-            // Don't let a dead XPC connection hold the update hostage.
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15) {
                 resumeOnce(false)
             }
@@ -654,9 +642,6 @@ exit 0
 
                 switch strategy {
                 case .standard:
-                    // Preferred: have the privileged helper replace the app as root. Only if
-                    // that's unavailable do we fall back to the admin-password prompt (and then
-                    // to a current-user install when the location is user-writable).
                     if await Self.installViaPrivilegedHelper(newAppPath: fullNewAppPath, currentAppPath: currentAppPath) {
                         installSucceeded = true
                     } else {

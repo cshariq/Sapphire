@@ -120,9 +120,7 @@ class LiveActivityManager: ObservableObject {
     }
 
     private var notchDisplayIsFullScreen: Bool {
-        let screen = NSWindow.visibleNotchWindow?.screen ?? CursorPosition.targetNotchScreen()
-        let result = activeAppMonitor.isScreenFullScreen(screen)
-        return result
+        activeAppMonitor.isFullScreen
     }
 
     // MARK: - Private Properties
@@ -475,8 +473,7 @@ class LiveActivityManager: ObservableObject {
             activeAppMonitor.$isLyricsAllowedForActiveApp
                 .removeDuplicates()
                 .mapToVoid(),
-            activeAppMonitor.$fullScreenDisplayIDs.removeDuplicates().mapToVoid(),
-            activeAppMonitor.$activeSpaceRevision.removeDuplicates().mapToVoid(),
+            activeAppMonitor.$isFullScreen.removeDuplicates().mapToVoid(),
             activeAppMonitor.$activeAppBundleID.removeDuplicates().mapToVoid(),
             focusModeManager.$currentStatus.removeDuplicates().mapToVoid(),
             UpdateChecker.shared.$status.mapToVoid(),
@@ -608,11 +605,15 @@ class LiveActivityManager: ObservableObject {
     private var lastEvalTime: CFAbsoluteTime = 0
     private let minEvalInterval: CFAbsoluteTime = 0.2
     private var dismissGraceTimer: Timer?
+    private var pendingEvaluationTask: Task<Void, Never>?
 
     private func evaluateAndDisplayActivity(allowImmediateDismiss: Bool = false) {
         let evalTime = CFAbsoluteTimeGetCurrent()
         let minInterval: CFAbsoluteTime = NotchRuntimeState.shared.shouldReduceBackgroundWork ? 2.0 : minEvalInterval
-        guard evalTime - lastEvalTime >= minInterval else { return }
+        guard evalTime - lastEvalTime >= minInterval else {
+            schedulePendingEvaluation(after: max(minInterval - (evalTime - lastEvalTime), 0.05))
+            return
+        }
         lastEvalTime = evalTime
         let now = Date()
         if now.timeIntervalSince(lastSnoozeCleanup) > snoozeCleanupInterval {
@@ -741,6 +742,16 @@ class LiveActivityManager: ObservableObject {
         handleActivityDismissal(for: type)
         if type == .focusModeChange {
             lastKnownFocusStatus = focusModeManager.currentStatus
+        }
+    }
+
+    private func schedulePendingEvaluation(after delay: TimeInterval) {
+        pendingEvaluationTask?.cancel()
+        pendingEvaluationTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            self.lastEvalTime = 0
+            self.evaluateAndDisplayActivity()
         }
     }
 
@@ -1763,6 +1774,7 @@ class LiveActivityManager: ObservableObject {
     func startLockScreenActivity() {
         guard !isScreenLocked else { return }
         self.isScreenLocked = true
+        lastEvalTime = 0
         evaluateAndDisplayActivity()
     }
 
