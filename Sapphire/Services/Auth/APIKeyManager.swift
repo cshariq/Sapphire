@@ -26,6 +26,8 @@ final class APIKeyManager {
     private let nvidiaKeychainKey = "nvidia_api_key"
     private let spotifyClientIdKeychainKey = "spotify_client_id"
     private let spotifyClientSecretKeychainKey = "spotify_client_secret"
+    private let shopifyStoreDomainKeychainKey = "shopify_store_domain"
+    private let shopifyAdminTokenKeychainKey = "shopify_admin_token"
 
     private init() {
         migrateLegacyUserDefaultsKeysIfNeeded()
@@ -142,6 +144,17 @@ final class APIKeyManager {
     var nvidiaAPIKey: String {
         get { loadKey(keychainKey: nvidiaKeychainKey) }
         set { saveKey(newValue, keychainKey: nvidiaKeychainKey) }
+    }
+
+    // MARK: - Shopify
+    var shopifyStoreDomain: String {
+        get { loadKey(keychainKey: shopifyStoreDomainKeychainKey) }
+        set { saveKey(newValue, keychainKey: shopifyStoreDomainKeychainKey) }
+    }
+
+    var shopifyAdminToken: String {
+        get { loadKey(keychainKey: shopifyAdminTokenKeychainKey) }
+        set { saveKey(newValue, keychainKey: shopifyAdminTokenKeychainKey) }
     }
 
     // MARK: - Spotify

@@ -120,7 +120,11 @@ class LiveActivityManager: ObservableObject {
     }
 
     private var notchDisplayIsFullScreen: Bool {
-        activeAppMonitor.isFullScreen
+        if activeAppMonitor.isFullScreen {
+            let displayID = activeAppMonitor.fullScreenDisplayID.map(String.init) ?? "nil"
+            logger.info("notchDisplayIsFullScreen: app fullscreen on displayID=\(displayID); per-notch suppression is active")
+        }
+        return false
     }
 
     // MARK: - Private Properties
@@ -539,9 +543,9 @@ class LiveActivityManager: ObservableObject {
             let hudStyle: HUDStyle
             switch hudType {
             case .volume, .externalDeviceVolume, .appVolume:
-                hudStyle = settingsModel.settings.volumeHUDStyle
+                hudStyle = settingsModel.settings.effectiveVolumeHUDStyle
             case .brightness, .keyboardBrightness, .multiDisplayBrightness:
-                hudStyle = settingsModel.settings.brightnessHUDStyle
+                hudStyle = settingsModel.settings.effectiveBrightnessHUDStyle
             }
 
             if hudStyle == .pill {

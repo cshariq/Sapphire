@@ -17,6 +17,11 @@ public struct StatThreshold: Codable, Equatable {
     var value: Int = 80
 }
 
+public struct NotchSizeOverride: Codable, Equatable {
+    var width: CGFloat = 0
+    var height: CGFloat = 0
+}
+
 public enum StatType: String, Codable, CaseIterable, Identifiable {
     case cpu, ram, gpu, disk, systemPower, batteryPower
 
@@ -706,6 +711,9 @@ struct Settings: Codable, Equatable {
     var notchWidth: CGFloat = 0
     var notchHeight: CGFloat = 0
 
+    var perDisplayNotchSize: [String: NotchSizeOverride] = [:]
+    var perDisplayHideNotchWhenInactive: [String: Bool] = [:]
+
     var useCustomNotchConfiguration: Bool = false
     var customNotchConfiguration: CustomizableNotchConfiguration = .init()
     var lockScreenShowInfoWidget: Bool = true
@@ -764,6 +772,33 @@ struct Settings: Codable, Equatable {
     var circleToSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "C", modifiers: [.control, .shift])
     var circleToSearchBrowserEngine: CircleSearchBrowserEngine = .google
 
+    // MARK: - Per-display resolution helpers
+
+    func resolvedNotchWidth(forDisplayID displayID: String?) -> CGFloat {
+        if let displayID,
+           let override = perDisplayNotchSize[displayID],
+           override.width > 0 {
+            return override.width
+        }
+        return notchWidth
+    }
+
+    func resolvedNotchHeight(forDisplayID displayID: String?) -> CGFloat {
+        if let displayID,
+           let override = perDisplayNotchSize[displayID],
+           override.height > 0 {
+            return override.height
+        }
+        return notchHeight
+    }
+
+    func resolvedHideNotchWhenInactive(forDisplayID displayID: String?) -> Bool {
+        if let displayID, let perDisplay = perDisplayHideNotchWhenInactive[displayID] {
+            return perDisplay
+        }
+        return hideNotchWhenInactive
+    }
+
     // MARK: - Legacy migration shims (read-only computed, not persisted)
     var geminiEnabled: Bool { intelligenceEnabled }
     var geminiApiKey: String {
@@ -787,6 +822,7 @@ struct Settings: Codable, Equatable {
     var weatherWidgetEnabled: Bool = true
     var sportsWidgetEnabled: Bool = false
     var financeWidgetEnabled: Bool = false
+    var shopifyWidgetEnabled: Bool = false
     var calendarWidgetEnabled: Bool = true
     var shortcutsWidgetEnabled: Bool = false
     var notesWidgetEnabled: Bool = false
@@ -1040,6 +1076,7 @@ struct Settings: Codable, Equatable {
     var hudCustomColor: CodableColor? = CodableColor(color: .accentColor)
     var enableVolumeHUD: Bool = true
     var volumeHUDStyle: HUDStyle = .default
+    var volumeHUDShowDots: Bool = false
     var volumeHUDSoundEnabled: Bool = true
     var showSpotifyVolumeHUD: Bool = true
     var showAppVolumeHUD: Bool = true
@@ -1049,6 +1086,7 @@ struct Settings: Codable, Equatable {
     var excludeBuiltInSpeakersFromHUDIcon: Bool = true
     var enableBrightnessHUD: Bool = true
     var brightnessHUDStyle: HUDStyle = .default
+    var brightnessHUDShowDots: Bool = false
     var hudPillPosition: PillHUDPosition = .right
     var hudPillStyle: PillHUDStyle = .contained
     var hudPillLength: Double = 340
@@ -1056,6 +1094,9 @@ struct Settings: Codable, Equatable {
     var volumesliderstep: Int = 6
     var volumesliderstepByDevice: [String: Int] = [:]
     var brightnessliderstep: Int = 6
+
+    var effectiveVolumeHUDStyle: HUDStyle { volumeHUDShowDots ? .dots : volumeHUDStyle }
+    var effectiveBrightnessHUDStyle: HUDStyle { brightnessHUDShowDots ? .dots : brightnessHUDStyle }
     var snapZoneViewMode: SnapZoneViewMode = .multi
     var snapDragEnabled: Bool = true
     var snapOnWindowDragEnabled: Bool = true
@@ -1690,7 +1731,7 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case weather, calendar, shortcuts, music, sports, finance, notes, clipboard, mirror, focusSession, agent
+    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, focusSession, agent
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
@@ -1700,6 +1741,7 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
         case .music: return "Music"
         case .sports: return "Sports"
         case .finance: return "Finance"
+        case .shopify: return "Shopify Orders"
         case .notes: return "Notes"
         case .clipboard: return "Clipboard"
         case .mirror: return "Mirror"
@@ -2046,11 +2088,52 @@ enum Day: String, Codable, CaseIterable, Identifiable {
 }
 
 enum DefaultMusicPlayer: String, Codable, CaseIterable, Identifiable {
-    case appleMusic, spotify
+    case appleMusic, spotify, tidal, youtubeMusic
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .appleMusic: "Apple Music"; case .spotify: "Spotify"
+        case .appleMusic: "Apple Music"
+        case .spotify: "Spotify"
+        case .tidal: "Tidal"
+        case .youtubeMusic: "YouTube Music"
+        }
+    }
+
+    var bundleIdentifier: String? {
+        switch self {
+        case .appleMusic: "com.apple.Music"
+        case .spotify: "com.spotify.client"
+        case .tidal: "com.tidal.desktop"
+        case .youtubeMusic: nil
+        }
+    }
+
+    var webURL: URL? {
+        switch self {
+        case .appleMusic: nil
+        case .spotify: nil
+        case .tidal: URL(string: "https://tidal.com")
+        case .youtubeMusic: URL(string: "https://music.youtube.com")
+        }
+    }
+
+    var isAppInstalled: Bool {
+        guard let bundleIdentifier else { return false }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil
+    }
+
+    func open() {
+        if let bundleIdentifier,
+           NSWorkspace.shared.launchApplication(
+               withBundleIdentifier: bundleIdentifier,
+               options: [],
+               additionalEventParamDescriptor: nil,
+               launchIdentifier: nil
+           ) {
+            return
+        }
+        if let webURL {
+            NSWorkspace.shared.open(webURL)
         }
     }
 }

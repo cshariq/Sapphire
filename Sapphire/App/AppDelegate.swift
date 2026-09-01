@@ -1257,11 +1257,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         cleanupNotchWindows(excluding: targetDisplayIDs)
 
+        var seenDisplayIDs: Set<CGDirectDisplayID> = []
+        notchWindows = notchWindows.filter { window in
+            guard let windowDisplayID = (window as? DynamicFocusWindow)?.displayID, windowDisplayID != 0 else {
+                return true
+            }
+            if seenDisplayIDs.contains(windowDisplayID) {
+                cgsSpace?.windows.remove(window)
+                window.orderOut(nil)
+                window.close()
+                return false
+            }
+            seenDisplayIDs.insert(windowDisplayID)
+            return true
+        }
+
         for screen in targetScreens {
             guard let screenDisplayID = displayID(for: screen) else { continue }
             let existing = notchWindows.first { ($0 as? DynamicFocusWindow)?.displayID == screenDisplayID }
             if let existing {
                 existing.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+                syncNotchWindowFrame(existing, to: screen)
                 continue
             }
 
@@ -1290,6 +1306,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         case .allDisplays:
             return NSScreen.screens
         }
+    }
+
+    private func syncNotchWindowFrame(_ window: NSWindow, to screen: NSScreen) {
+        let screenFrame = screen.frame
+        let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings, screen: screen)
+        let paddedWidth = ceil(screenFrame.width)
+        let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
+        let targetRect = NSRect(
+            x: screenFrame.minX,
+            y: screenFrame.maxY - paddedHeight,
+            width: paddedWidth,
+            height: paddedHeight
+        )
+
+        let current = window.frame
+        guard abs(current.origin.x - targetRect.origin.x) > 0.5
+            || abs(current.origin.y - targetRect.origin.y) > 0.5
+            || abs(current.width - targetRect.width) > 0.5
+            || abs(current.height - targetRect.height) > 0.5 else {
+            return
+        }
+
+        window.setFrame(targetRect, display: true, animate: false)
+        window.contentView?.frame = NSRect(origin: .zero, size: targetRect.size)
     }
 
     private func createNotchWindowForScreen(_ screen: NSScreen) {

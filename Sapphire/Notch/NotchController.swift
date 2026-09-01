@@ -112,6 +112,7 @@ struct NotchController: View {
     @EnvironmentObject var settings: SettingsModel
     @EnvironmentObject var batteryEstimator: BatteryEstimator
     @EnvironmentObject var timerManager: TimerManager
+    @EnvironmentObject var desktopManager: DesktopManager
 
     // MARK: - State Objects
     @StateObject private var fileShelfState = FileShelfState()
@@ -190,6 +191,15 @@ struct NotchController: View {
 
     // MARK: - Computed Properties
     private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
+
+    private var effectiveActivity: ActivityType {
+        let activity = liveActivityManager.currentActivity
+        guard activity != .none else { return .none }
+        if shouldHideActivityForFullScreen || shouldHideActivityForInactiveDisplay {
+            return .none
+        }
+        return activity
+    }
     private var isFullViewActivity: Bool { liveActivityManager.isFullViewActivity }
     private var isGeminiActive: Bool { liveActivityManager.currentActivity == .geminiLive || liveActivityManager.currentActivity == .intelligenceAgent }
 
@@ -304,6 +314,41 @@ struct NotchController: View {
         !isManuallyHidden && (notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || activeAppMonitor.isWindowDragging)
     }
 
+    private var resolvedDesktopNumber: Int {
+        desktopManager.desktopNumber(for: notchWindow?.screen) ?? 1
+    }
+
+    private var cursorIsOnMyScreen: Bool {
+        guard let notchScreen = notchWindow?.screen else {
+            return CursorPosition.targetNotchScreen() == nil
+        }
+        let mouseLocation = NSEvent.mouseLocation
+        return notchScreen.frame.contains(mouseLocation)
+    }
+
+    private var myScreenIsFullScreen: Bool {
+        guard activeAppMonitor.isFullScreen,
+              let fsDisplayID = activeAppMonitor.fullScreenDisplayID,
+              let notchScreen = notchWindow?.screen,
+              let myDisplayID = notchScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            return false
+        }
+        return fsDisplayID == myDisplayID
+    }
+
+    private var shouldHideActivityForFullScreen: Bool {
+        guard settings.settings.hideLiveActivityInFullScreen, myScreenIsFullScreen else {
+            return false
+        }
+        notchLog.info("shouldHideActivityForFullScreen: hiding on this display (fullscreen on my screen)")
+        return true
+    }
+
+    private var shouldHideActivityForInactiveDisplay: Bool {
+        guard liveActivityManager.currentActivity == .systemHUD else { return false }
+        return !cursorIsOnMyScreen
+    }
+
     private var shouldHideWindowForSharing: Bool {
         settings.settings.hideFromScreenSharing
     }
@@ -370,6 +415,8 @@ struct NotchController: View {
                 return settings.settings.sportsWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .sportsWidget)
             case .finance:
                 return settings.settings.financeWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .financeWidget)
+            case .shopify:
+                return settings.settings.shopifyWidgetEnabled
             case .shortcuts:
                 return settings.settings.shortcutsWidgetEnabled
             case .agent:
@@ -394,6 +441,7 @@ struct NotchController: View {
             case .calendar: return .calendarPlayer
             case .sports: return .sportsPlayer
             case .finance: return .financePlayer
+            case .shopify: return .shopifyOrders
             case .shortcuts: return nil
             case .agent: return .agentS
             case .notes: return .notesPlayer
@@ -438,6 +486,7 @@ struct NotchController: View {
 
     private var showRightHUDOverlay: Bool {
         guard notchState == .clickExpanded else { return false }
+        guard cursorIsOnMyScreen else { return false }
         guard let hud = systemHUD.currentHUD else { return false }
         switch hud.caseIdentifier {
         case .volume, .externalDeviceVolume, .appVolume:
@@ -535,7 +584,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
             ZStack(alignment: .top) {
                 let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
-                if showActivityView && isLiveActivityActive && canRenderAutoContent {
+                if showActivityView && effectiveActivity != .none && canRenderAutoContent {
                     let activityTransition = liveActivityManager.activityHasBottomContent
                         ? config.bottomContentTransitionAnimation
                         : config.activityToActivityAnimation
@@ -644,18 +693,36 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             .onChange(of: activeAppMonitor.isFullScreen) { _ in
                 evaluateInactiveNotchVisibility()
             }
+            .onChange(of: activeAppMonitor.fullScreenDisplayID) { _ in
+                evaluateInactiveNotchVisibility()
+            }
     }
 
     private func handleDragActivationZoneChange(_ isDragging: Bool) {
+        if isDragging {
+            let mouseLocation = NSEvent.mouseLocation
+            let notchScreen = notchWindow?.screen
+            let notchScreenFrame = notchScreen?.frame ?? .zero
+            let myDisplayID = notchScreen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            notchLog.info("handleDragActivationZoneChange: isDragging=true mouse=\(mouseLocation.x),\(mouseLocation.y) myDisplayID=\(myDisplayID.map(String.init) ?? "nil") notchScreenFrame=\(notchScreenFrame.minX),\(notchScreenFrame.minY)-\(notchScreenFrame.maxX),\(notchScreenFrame.maxY) cursorIsOnMyScreen=\(cursorIsOnMyScreen)")
+            guard cursorIsOnMyScreen else { return }
+        }
         Task {
             await handleDragActivationChange(isDragging: isDragging)
         }
     }
 
     private func handleActiveWindowDragChange(_ isDragging: Bool) {
-        if settings.settings.snapOnWindowDragEnabled {
-            handleWindowDragChange(isDragging: isDragging)
+        guard settings.settings.snapOnWindowDragEnabled else { return }
+        if isDragging {
+            let mouseLocation = NSEvent.mouseLocation
+            let notchScreen = notchWindow?.screen
+            let notchScreenFrame = notchScreen?.frame ?? .zero
+            let myDisplayID = notchScreen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            notchLog.info("handleActiveWindowDragChange: isDragging=true mouse=\(mouseLocation.x),\(mouseLocation.y) myDisplayID=\(myDisplayID.map(String.init) ?? "nil") notchScreenFrame=\(notchScreenFrame.minX),\(notchScreenFrame.minY)-\(notchScreenFrame.maxX),\(notchScreenFrame.maxY) cursorIsOnMyScreen=\(cursorIsOnMyScreen)")
+            guard cursorIsOnMyScreen else { return }
         }
+        handleWindowDragChange(isDragging: isDragging)
     }
 
     private func handleMeasuredClickSizeChange(_ newSize: CGSize) {
@@ -725,7 +792,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         if !newSettings.swipeToHideNotch, completeHideReason == .manualSwipe {
             revealNotchFromCompleteHide()
         }
-        if !newSettings.hideNotchWhenInactive {
+        let displayID = notchWindow?.screen?.displayIdentifier
+        if !newSettings.resolvedHideNotchWhenInactive(forDisplayID: displayID) {
             inactiveHideUserOverride = false
             if completeHideReason == .inactive {
                 revealNotchFromCompleteHide()
@@ -1295,7 +1363,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             case .default: DefaultBatteryActivityView.left(for: state, systemState: systemState)
             case .compact: CompactBatteryActivityView.left(for: state, systemState: systemState)
             }
-        case .desktop(let number): DesktopActivityView.left(for: number)
+        case .desktop: DesktopActivityView.left(for: resolvedDesktopNumber)
         case .focus(let mode): FocusModeActivityView.left(for: mode)
         case .fileShelf: FileShelfActivityView.left()
         case .fileProgress(let task): FileProgressLiveActivityView.left(for: task)
@@ -1338,7 +1406,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             case .default: DefaultBatteryActivityView.right(for: state, timeRemaining: timeRemaining, systemState: systemState)
             case .compact: CompactBatteryActivityView.right(for: state)
             }
-        case .desktop(let number): DesktopActivityView.right(for: number)
+        case .desktop: DesktopActivityView.right(for: resolvedDesktopNumber)
         case .focus(let mode): FocusModeActivityView.right(for: mode, displayMode: settings.settings.focusDisplayMode)
         case .fileShelf(let count): FileShelfActivityView.right(count: count)
         case .fileProgress(let task): FileProgressLiveActivityView.right(for: task)
@@ -1624,6 +1692,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func handleActivityChange(_ newActivity: ActivityType) {
+        let newActivity = shouldHideActivityForFullScreen || shouldHideActivityForInactiveDisplay ? .none : newActivity
         if newActivity != .none {
             inactiveHideUserOverride = false
             if completeHideReason == .inactive {
@@ -1994,6 +2063,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func handleFileDropTargetChange(isTargeted: Bool) {
         if isTargeted {
+            guard cursorIsOnMyScreen else { return }
             SnapPreviewManager.shared.hidePreview()
             if navigationStack.last != .fileShelfLanding {
                 (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
@@ -2225,10 +2295,15 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         updateMouseEventHandling(isInteractive: isInteractive)
     }
 
+    private var shouldHideWhenInactive: Bool {
+        let displayID = notchWindow?.screen?.displayIdentifier
+        return settings.settings.resolvedHideNotchWhenInactive(forDisplayID: displayID)
+    }
+
     private func evaluateInactiveNotchVisibility() {
         if liveActivityManager.currentActivity == .lockScreen { return }
-        notchLog.info("evaluateInactiveNotchVisibility: hideNotchWhenInactive=\(settings.settings.hideNotchWhenInactive) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
-        guard settings.settings.hideNotchWhenInactive else { return }
+        notchLog.info("evaluateInactiveNotchVisibility: shouldHideWhenInactive=\(shouldHideWhenInactive) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
+        guard shouldHideWhenInactive else { return }
         if completeHideReason == .manualSwipe { return }
 
         let hasActivity = liveActivityManager.currentActivity != .none
@@ -2444,6 +2519,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .timerDetailView: return .timerDetailView
         case .sportsPlayer: return .sportsPlayer
         case .financePlayer: return .financePlayer
+        case .shopifyOrders: return nil
         case .notesPlayer: return .notesPlayer
         case .clipboardPlayer: return .clipboardPlayer
         case .mirrorPlayer: return nil

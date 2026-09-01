@@ -43,9 +43,9 @@ final class PillHUDController: ObservableObject {
         guard let hud = hudManager.currentHUD else { return false }
         switch hud {
         case .volume, .externalDeviceVolume, .appVolume:
-            return settings.settings.volumeHUDStyle == .pill
+            return settings.settings.effectiveVolumeHUDStyle == .pill
         case .brightness, .keyboardBrightness, .multiDisplayBrightness:
-            return settings.settings.brightnessHUDStyle == .pill
+            return settings.settings.effectiveBrightnessHUDStyle == .pill
         }
     }
 

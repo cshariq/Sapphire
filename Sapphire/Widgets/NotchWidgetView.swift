@@ -96,6 +96,8 @@ struct NotchWidgetView: View {
                 return settings.settings.sportsWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .sportsWidget)
             case .finance:
                 return settings.settings.financeWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .financeWidget)
+            case .shopify:
+                return settings.settings.shopifyWidgetEnabled
             case .calendar:
                 return settings.settings.calendarWidgetEnabled
             case .shortcuts:
@@ -204,6 +206,8 @@ struct NotchWidgetView: View {
             SportsPlayerView(navigationStack: navigationStack)
         case .financePlayer:
             FinancePlayerView(navigationStack: navigationStack)
+        case .shopifyOrders:
+            ShopifyOrdersView()
         case .notesPlayer:
             NotesPlayerView(navigationStack: navigationStack)
         case .clipboardPlayer:
@@ -320,6 +324,8 @@ struct NotchWidgetView: View {
                         }
                     }
                 }
+        case .shopify:
+            ShopifyOrdersWidgetView()
         case .calendar:
             CalendarWidgetView(viewModel: calendarViewModel)
                 .onTapGesture {

@@ -84,6 +84,7 @@ struct WidgetRowView: View {
             case .music: return settings.settings.musicWidgetEnabled
             case .sports: return settings.settings.sportsWidgetEnabled
             case .finance: return settings.settings.financeWidgetEnabled
+            case .shopify: return settings.settings.shopifyWidgetEnabled
             case .notes: return settings.settings.notesWidgetEnabled
             case .clipboard: return settings.settings.clipboardWidgetEnabled
             case .mirror: return settings.settings.mirrorWidgetEnabled
@@ -127,6 +128,7 @@ struct WidgetRowView: View {
         case .music: return $settings.settings.musicWidgetEnabled
         case .sports: return $settings.settings.sportsWidgetEnabled
         case .finance: return $settings.settings.financeWidgetEnabled
+        case .shopify: return $settings.settings.shopifyWidgetEnabled
         case .notes: return $settings.settings.notesWidgetEnabled
         case .clipboard: return $settings.settings.clipboardWidgetEnabled
         case .mirror: return $settings.settings.mirrorWidgetEnabled

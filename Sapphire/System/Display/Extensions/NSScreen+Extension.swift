@@ -38,6 +38,28 @@ public extension NSScreen {
     }
   }
 
+  var cgsDisplayIdentifier: String? {
+    let unmanaged = CGDisplayCreateUUIDFromDisplayID(self.displayID)
+    guard unmanaged != nil else { return nil }
+    guard let uuid = unmanaged?.takeRetainedValue() else { return nil }
+    return CFUUIDCreateString(kCFAllocatorDefault, uuid) as String
+  }
+
+  var displayIdentifier: String {
+    if let vendor = vendorNumber, let model = modelNumber {
+      if let serial = serialNumber, serial != 0 {
+        return "v\(vendor)-m\(model)-s\(serial)"
+      }
+      return "v\(vendor)-m\(model)"
+    }
+    return "id-\(displayID)"
+  }
+
+  var displayLabel: String {
+    let name = displayName ?? (CGDisplayIsBuiltin(displayID) != 0 ? "Built-in Display" : "Display")
+    return name
+  }
+
   var displayName: String? {
     var servicePortIterator = io_iterator_t()
 

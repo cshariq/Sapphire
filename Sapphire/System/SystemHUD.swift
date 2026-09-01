@@ -1042,7 +1042,7 @@ struct SystemHUDView: View {
                 .foregroundColor(.white.opacity(0.8))
                 .frame(width: 40, alignment: .center)
 
-            if settings.settings.volumeHUDStyle == .dots {
+            if settings.settings.effectiveVolumeHUDStyle == .dots {
                 DynamicDotsIndicator(level: level, onChanged: volumeChangeHandler(device: device, isControllingExternal: isControllingExternal))
                     .frame(height: 14)
             } else {
@@ -1105,7 +1105,7 @@ struct SystemHUDView: View {
                     .foregroundColor(isXDR ? .orange : .white.opacity(0.8))
                     .frame(width: 40, alignment: .center)
 
-                if settings.settings.brightnessHUDStyle == .dots {
+                if settings.settings.effectiveBrightnessHUDStyle == .dots {
                     DynamicDotsIndicator(level: normalizedDisplayLevel, isXDR: isXDR, onChanged: brightnessChangeHandler(currentDisplayScaleMax: currentDisplayScaleMax, isXDR: isXDR))
                         .frame(height: 14)
                 } else {
@@ -1172,7 +1172,7 @@ struct SystemHUDView: View {
                       .font(.system(size: 12, weight: .semibold))
                       .lineLimit(1)
 
-                  if settings.settings.volumeHUDStyle == .dots {
+                  if settings.settings.effectiveVolumeHUDStyle == .dots {
                       DynamicDotsIndicator(level: appVolume, onChanged: { _ in })
                           .frame(height: 14)
                   } else {
@@ -1609,9 +1609,9 @@ struct SystemHUDSlimActivityView {
      static func style(for type: HUDType, settings: SettingsModel) -> HUDStyle {
          switch type {
          case .volume, .externalDeviceVolume, .appVolume:
-             return settings.settings.volumeHUDStyle
+             return settings.settings.effectiveVolumeHUDStyle
          case .brightness, .keyboardBrightness, .multiDisplayBrightness:
-             return settings.settings.brightnessHUDStyle
+             return settings.settings.effectiveBrightnessHUDStyle
          }
      }
 

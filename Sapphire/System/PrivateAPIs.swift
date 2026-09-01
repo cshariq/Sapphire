@@ -494,4 +494,33 @@ struct CGSHelper {
 
         return nil
     }
+
+    static func getActiveDesktopNumbersByDisplay() -> [String: Int] {
+        let activeSpaceID = CGSGetActiveSpace(connection)
+        var result: [String: Int] = [:]
+
+        guard let displaySpaces = CGSCopyManagedDisplaySpaces(connection) as? [[String: Any]] else {
+            return result
+        }
+
+        for displayEntry in displaySpaces {
+            guard let displayIdentifier = displayEntry["Display Identifier"] as? String,
+                  let spaces = displayEntry["Spaces"] as? [[String: Any]] else {
+                continue
+            }
+
+            var activeIndex: Int?
+            if let idx = spaces.firstIndex(where: { ($0["id64"] as? CGSSpaceID) == activeSpaceID }) {
+                activeIndex = idx
+            } else if let idx = spaces.firstIndex(where: { ($0["is-current"] as? Bool) == true }) {
+                activeIndex = idx
+            }
+
+            if let index = activeIndex {
+                result[displayIdentifier] = index + 1
+            }
+        }
+
+        return result
+    }
 }

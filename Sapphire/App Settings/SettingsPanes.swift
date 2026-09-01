@@ -1410,6 +1410,17 @@ struct WidgetsSettingsView: View {
                 }
                 .modifier(SettingsContainerModifier())
 
+                if settings.settings.shopifyWidgetEnabled {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Shopify Orders").font(.headline).padding([.horizontal, .top])
+                        Text("Connect a Shopify custom app with read_orders access. The Admin API token is stored in the macOS Keychain.").font(.caption).foregroundColor(.secondary).padding(.horizontal)
+                        TextField("Store domain (example.myshopify.com)", text: Binding(get: { APIKeyManager.shared.shopifyStoreDomain }, set: { APIKeyManager.shared.shopifyStoreDomain = $0 })).textFieldStyle(.roundedBorder).padding(.horizontal)
+                        SecureField("Admin API access token", text: Binding(get: { APIKeyManager.shared.shopifyAdminToken }, set: { APIKeyManager.shared.shopifyAdminToken = $0 })).textFieldStyle(.roundedBorder).padding(.horizontal)
+                        Text("Create it in Shopify Admin → Settings → Apps and sales channels → Develop apps, with read_orders permission.").font(.caption2).foregroundColor(.secondary).padding(.horizontal).padding(.bottom)
+                    }
+                    .modifier(SettingsContainerModifier())
+                }
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Widget Visibility & Order").font(.headline).padding([.horizontal, .top])
                     Text("Enable, disable, and reorder the widgets that appear in the notch. Space is limited by your display width.")
@@ -7047,7 +7058,7 @@ struct HUDSettingsView: View {
     }
 
     private var pillStyleEnabled: Bool {
-        settings.settings.volumeHUDStyle == .pill || settings.settings.brightnessHUDStyle == .pill
+        settings.settings.effectiveVolumeHUDStyle == .pill || settings.settings.effectiveBrightnessHUDStyle == .pill
     }
 
     private var xdrBrightnessLevelBinding: Binding<Double> {
@@ -7064,7 +7075,83 @@ struct HUDSettingsView: View {
                     .font(.largeTitle.bold())
                     .padding(.bottom)
 
-                VStack(spacing: 0) {
+                // MARK: HUD Appearance
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("HUD Appearance")
+                        .font(.headline)
+                        .padding([.horizontal, .top])
+
+                    Divider().padding(.top, 10).padding(.leading, 20)
+
+                    HStack {
+                        Text("Style")
+                        Spacer()
+                        Picker("", selection: $settings.settings.hudVisualStyle) {
+                            ForEach(HUDVisualStyle.allCases) { style in
+                                Text(style.id).tag(style)
+                            }
+                        }
+                        .labelsHidden().frame(width: 150)
+                    }.padding()
+
+                    if settings.settings.hudVisualStyle == .color {
+                        ColorPicker("Custom HUD Color", selection: hudCustomColorBinding)
+                            .padding()
+                            .transition(.opacity)
+                    }
+
+                    Divider().padding(.leading, 20)
+
+                    CustomSliderRowView(label: "HUD Duration", value: $settings.settings.hudDuration, range: 1...10, specifier: "%.1f s")
+                    Divider().padding(.leading, 20)
+                    ToggleRow(title: "Show Percentage", description: "", isOn: $settings.settings.hudShowPercentage)
+                    Divider().padding(.leading, 20)
+                    ToggleRow(title: "Show Function Name", description: "Display the HUD name (e.g. Volume, Brightness, Spotify) when the thin style is enabled.", isOn: $settings.settings.hudShowFunctionName)
+
+                    if pillStyleEnabled {
+                        Divider().padding(.leading, 20)
+                        HStack {
+                            Text("Pill Position")
+                            Spacer()
+                            Picker("", selection: $settings.settings.hudPillPosition) {
+                                ForEach(PillHUDPosition.allCases) { position in
+                                    Text(position.id).tag(position)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 120)
+                        }
+                        .padding()
+                        HStack {
+                            Text("Pill Style")
+                            Spacer()
+                            Picker("", selection: $settings.settings.hudPillStyle) {
+                                ForEach(PillHUDStyle.allCases) { style in
+                                    Text(style.id).tag(style)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 120)
+                        }
+                        .padding()
+                        Divider().padding(.leading, 20)
+                        CustomSliderRowView(label: "Pill Length", value: $settings.settings.hudPillLength, range: 160...460, specifier: "%.0f pt")
+                        Divider().padding(.leading, 20)
+                        CustomSliderRowView(label: "Pill Thickness", value: $settings.settings.hudPillThickness, range: 44...92, specifier: "%.0f pt")
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+                .animation(.default, value: pillStyleEnabled)
+                .animation(.default, value: settings.settings.hudVisualStyle)
+
+                // MARK: Spotify, App & Device Icons (essential)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Show Spotify, App & Device Icons")
+                        .font(.headline)
+                        .padding([.horizontal, .top])
+
+                    Divider().padding(.top, 10).padding(.leading, 20)
+
                     ToggleRow(
                         title: "Show Spotify Device in HUD",
                         description: "Display a special HUD with the active device name when changing volume while Spotify is active.",
@@ -7106,70 +7193,8 @@ struct HUDSettingsView: View {
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: settings.settings.volumeHUDShowDeviceIcon)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Appearance").font(.headline).padding([.horizontal, .top])
-
-                    CustomSliderRowView(label: "HUD Duration", value: $settings.settings.hudDuration, range: 1...10, specifier: "%.1f s")
-                    Divider().padding(.horizontal)
-
-                    ToggleRow(title: "Show Percentage", description: "", isOn: $settings.settings.hudShowPercentage)
-                    Divider().padding(.horizontal)
-
-                    ToggleRow(title: "Show Function Name", description: "Display the HUD name (e.g. Volume, Brightness, Spotify) when the thin style is enabled.", isOn: $settings.settings.hudShowFunctionName)
-                    Divider().padding(.horizontal)
-
-                    HStack {
-                        Text("HUD Style")
-                        Spacer()
-                        Picker("", selection: $settings.settings.hudVisualStyle) {
-                            ForEach(HUDVisualStyle.allCases) { style in
-                                Text(style.id).tag(style)
-                            }
-                        }
-                        .labelsHidden().frame(width: 150)
-                    }.padding()
-
-                    if settings.settings.hudVisualStyle == .color {
-                        ColorPicker("Custom HUD Color", selection: hudCustomColorBinding)
-                            .padding()
-                            .transition(.opacity)
-                    }
-
-                    if pillStyleEnabled {
-                        Divider().padding(.horizontal)
-                        HStack {
-                            Text("Pill Position")
-                            Spacer()
-                            Picker("", selection: $settings.settings.hudPillPosition) {
-                                ForEach(PillHUDPosition.allCases) { position in
-                                    Text(position.id).tag(position)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 120)
-                        }.padding()
-
-                        HStack {
-                            Text("Pill Style")
-                            Spacer()
-                            Picker("", selection: $settings.settings.hudPillStyle) {
-                                ForEach(PillHUDStyle.allCases) { style in
-                                    Text(style.id).tag(style)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 120)
-                        }.padding()
-
-                        CustomSliderRowView(label: "Pill Length", value: $settings.settings.hudPillLength, range: 160...460, specifier: "%.0f pt")
-                        Divider().padding(.horizontal)
-                        CustomSliderRowView(label: "Pill Thickness", value: $settings.settings.hudPillThickness, range: 44...92, specifier: "%.0f pt")
-                    }
-                }
-                .modifier(SettingsContainerModifier())
-                .animation(.default, value: settings.settings.hudVisualStyle)
-
-                VStack(alignment: .leading, spacing: 10) {
+                // MARK: Volume HUD
+                VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Text("Volume HUD")
                             .font(.headline)
@@ -7177,24 +7202,36 @@ struct HUDSettingsView: View {
                         Toggle("", isOn: $settings.settings.enableVolumeHUD)
                             .labelsHidden().toggleStyle(.switch)
                     }
+                    .padding()
 
-                    Divider()
+                    Divider().padding(.leading, 20)
 
                     HStack {
                         Text("View Style")
                         Spacer()
                         Picker("", selection: $settings.settings.volumeHUDStyle) {
-                            ForEach(HUDStyle.allCases) { style in
+                            ForEach(HUDStyle.allCases.filter { $0 != .dots }) { style in
                                 Text(style.id).tag(style)
                             }
                         }
                         .labelsHidden()
                         .frame(width: 120)
                     }
+                    .padding()
+                    .disabled(!settings.settings.enableVolumeHUD || settings.settings.volumeHUDShowDots)
+                    .opacity(settings.settings.enableVolumeHUD && !settings.settings.volumeHUDShowDots ? 1.0 : 0.5)
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Show Dots",
+                        description: "Display volume as a row of dots instead of a bar.",
+                        isOn: $settings.settings.volumeHUDShowDots
+                    )
                     .disabled(!settings.settings.enableVolumeHUD)
                     .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
 
-                    Divider()
+                    Divider().padding(.leading, 20)
 
                     HStack {
                         Text("Sound on Change")
@@ -7202,10 +7239,11 @@ struct HUDSettingsView: View {
                         Toggle("", isOn: $settings.settings.volumeHUDSoundEnabled)
                             .labelsHidden().toggleStyle(.switch)
                     }
+                    .padding()
                     .disabled(!settings.settings.enableVolumeHUD)
                     .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
 
-                    Divider()
+                    Divider().padding(.leading, 20)
 
                     ToggleRow(
                         title: "Per-App Volume Uses System Volume Ceiling",
@@ -7215,16 +7253,19 @@ struct HUDSettingsView: View {
                     .disabled(!settings.settings.enableVolumeHUD)
                     .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
 
-                    Divider()
+                    Divider().padding(.leading, 20)
 
                     CustomSliderRowView(label: "Slider step", value: Binding(get: { Double(settings.settings.volumesliderstep) }, set: { settings.settings.volumesliderstep = Int($0) }), range: 1...20, specifier: "%.0f")
                         .disabled(!settings.settings.enableVolumeHUD)
                         .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
 
+                    Divider().padding(.leading, 20)
+
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Per-device slider steps")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+                            .padding(.horizontal)
 
                         ForEach(MultiAudioManager.shared.availableOutputDevices, id: \.uid) { device in
                             HStack {
@@ -7254,17 +7295,17 @@ struct HUDSettingsView: View {
                                 .help("Reset to global slider step")
                             }
                             .padding(.vertical, 2)
+                            .padding(.horizontal)
                         }
                     }
+                    .padding(.bottom, 10)
                     .disabled(!settings.settings.enableVolumeHUD)
                     .opacity(settings.settings.enableVolumeHUD ? 1.0 : 0.5)
-
                 }
-                .padding()
                 .modifier(SettingsContainerModifier())
-                .animation(.easeInOut, value: settings.settings.enableVolumeHUD)
 
-                VStack(alignment: .leading, spacing: 10) {
+                // MARK: Brightness HUD
+                VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Text("Brightness HUD")
                             .font(.headline)
@@ -7272,34 +7313,45 @@ struct HUDSettingsView: View {
                         Toggle("", isOn: $settings.settings.enableBrightnessHUD)
                             .labelsHidden().toggleStyle(.switch)
                     }
+                    .padding()
 
-                    Divider()
+                    Divider().padding(.leading, 20)
 
                     HStack {
                         Text("View Style")
                         Spacer()
                         Picker("", selection: $settings.settings.brightnessHUDStyle) {
-                            ForEach(HUDStyle.allCases) { style in
+                            ForEach(HUDStyle.allCases.filter { $0 != .dots }) { style in
                                 Text(style.id).tag(style)
                             }
                         }
                         .labelsHidden()
                         .frame(width: 120)
                     }
+                    .padding()
+                    .disabled(!settings.settings.enableBrightnessHUD || settings.settings.brightnessHUDShowDots)
+                    .opacity(settings.settings.enableBrightnessHUD && !settings.settings.brightnessHUDShowDots ? 1.0 : 0.5)
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Show Dots",
+                        description: "Display brightness as a row of dots instead of a bar.",
+                        isOn: $settings.settings.brightnessHUDShowDots
+                    )
                     .disabled(!settings.settings.enableBrightnessHUD)
                     .opacity(settings.settings.enableBrightnessHUD ? 1.0 : 0.5)
 
-                    Divider()
+                    Divider().padding(.leading, 20)
 
                     CustomSliderRowView(label: "Slider step", value: Binding(get: { Double(settings.settings.brightnessliderstep) }, set: { settings.settings.brightnessliderstep = Int($0) }), range: 1...10, specifier: "%.0f")
+                        .padding(.bottom, 10)
                         .disabled(!settings.settings.enableBrightnessHUD)
                         .opacity(settings.settings.enableBrightnessHUD ? 1.0 : 0.5)
-
                 }
-                .padding()
                 .modifier(SettingsContainerModifier())
-                .animation(.easeInOut, value: settings.settings.enableBrightnessHUD)
 
+                // MARK: XDR Brightness (essential)
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("XDR Brightness")
@@ -7471,10 +7523,11 @@ struct MusicSettingsView: View {
                         Text("Default Music App")
                         Spacer()
                         Picker("", selection: $settings.settings.defaultMusicPlayer) {
-                            Text("Apple Music").tag(DefaultMusicPlayer.appleMusic)
-                            Text("Spotify")
-                                .tag(DefaultMusicPlayer.spotify)
-                                .disabled(!appFetcher.foundBundleIDs.contains("com.spotify.client"))
+                            ForEach(DefaultMusicPlayer.allCases) { player in
+                                Text(player.displayName)
+                                    .tag(player)
+                                    .disabled(!player.isAppInstalled && player.webURL == nil)
+                            }
                         }
                         .labelsHidden()
                         .frame(width: 150)
@@ -9453,7 +9506,7 @@ struct AppearanceSettingsView: View {
             VStack(alignment: .leading, spacing: 40) {
                 Text("Appearance")
                     .font(.largeTitle.bold())
-                NotchSizeSettingsView()
+                PerDisplayNotchSettingsView()
                 NotchAppearanceEditorView(appearance: $settings.settings.notchWidgetAppearance, title: "Expanded Notch Appearance")
                 NotchAppearanceEditorView(appearance: $settings.settings.notchLiveActivityAppearance, title: "Collapsed Notch Appearance")
                 MenuBarHidingSettingsView()
@@ -9467,53 +9520,121 @@ struct AppearanceSettingsView: View {
     }
 }
 
-struct NotchSizeSettingsView: View {
+struct PerDisplayNotchSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
 
-    private var widthBinding: Binding<Double> {
-        Binding<Double>(
-            get: { settings.settings.notchWidth > 0 ? settings.settings.notchWidth : NotchConfiguration.universalWidth },
-            set: { settings.settings.notchWidth = $0 }
-        )
-    }
-
-    private var heightBinding: Binding<Double> {
-        Binding<Double>(
-            get: { settings.settings.notchHeight > 0 ? settings.settings.notchHeight : NotchConfiguration.universalHeight },
-            set: { settings.settings.notchHeight = $0 }
-        )
+    private var connectedScreens: [NSScreen] {
+        NSScreen.screens
     }
 
     var body: some View {
-        HStack(spacing: 18) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Notch Size").font(.headline)
-                Text("Notch width & height").font(.caption).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Per-Display Overrides").font(.title2.bold())
+                Text("Customize notch size and inactive-hiding for each display individually. Changes here override the global settings for the selected display.").font(.caption).foregroundColor(.secondary)
             }
-            .fixedSize(horizontal: true, vertical: false)
 
-            Spacer()
-
-            sizeControl(label: "Width", value: widthBinding, range: 80...400, step: 1)
-            sizeControl(label: "Height", value: heightBinding, range: 10...80, step: 1)
-
-            Button {
-                settings.settings.notchWidth = 0
-                settings.settings.notchHeight = 0
-            } label: {
-                Label("Reset", systemImage: "arrow.counterclockwise")
-                    .font(.callout)
+            if connectedScreens.isEmpty {
+                Text("No displays detected.")
+                    .foregroundColor(.secondary)
+                    .padding()
+                    .modifier(SettingsContainerModifier())
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(connectedScreens, id: \.displayIdentifier) { screen in
+                        perDisplayRow(for: screen)
+                        if screen.displayIdentifier != connectedScreens.last?.displayIdentifier {
+                            Divider().padding(.leading, 20)
+                        }
+                    }
+                }
+                .modifier(SettingsContainerModifier())
             }
-            .buttonStyle(.plain)
-            .foregroundColor(.accentColor)
-            .disabled(settings.settings.notchWidth == 0 && settings.settings.notchHeight == 0)
-            .help("Restore automatic width & height")
         }
-        .padding()
-        .modifier(SettingsContainerModifier())
     }
 
-    private func sizeControl(label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) -> some View {
+    @ViewBuilder
+    private func perDisplayRow(for screen: NSScreen) -> some View {
+        let displayID = screen.displayIdentifier
+        let isBuiltIn = CGDisplayIsBuiltin(screen.displayID) != 0
+        let hasOverride = settings.settings.perDisplayNotchSize[displayID] != nil
+        let resolvedConfig = ResolvedNotchConfiguration(from: settings.settings, screen: screen)
+        let actualWidth = resolvedConfig.universalWidth
+        let actualHeight = resolvedConfig.universalHeight
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: isBuiltIn ? "laptopcomputer" : "display")
+                    .foregroundColor(.secondary)
+                Text(screen.displayLabel)
+                    .font(.headline)
+                if isBuiltIn { Text("Built-in").font(.caption).foregroundColor(.secondary) }
+                Spacer()
+            }
+
+            HStack(spacing: 18) {
+                sizeControl(
+                    label: "Width",
+                    value: perDisplayWidthBinding(displayID: displayID, defaultValue: actualWidth),
+                    range: 80...400,
+                    hasOverride: hasOverride
+                )
+                sizeControl(
+                    label: "Height",
+                    value: perDisplayHeightBinding(displayID: displayID, defaultValue: actualHeight),
+                    range: 10...80,
+                    hasOverride: hasOverride
+                )
+                Button {
+                    settings.settings.perDisplayNotchSize.removeValue(forKey: displayID)
+                } label: {
+                    Label("Reset", systemImage: "arrow.counterclockwise")
+                        .font(.callout)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.accentColor)
+                .disabled(!hasOverride)
+                .help("Clear per-display size override; revert to automatic size")
+            }
+
+            Toggle("Hide notch when inactive (this display)", isOn: perDisplayInactiveBinding(for: displayID))
+                .font(.callout)
+        }
+        .padding()
+    }
+
+    private func perDisplayWidthBinding(displayID: String, defaultValue: CGFloat) -> Binding<Double> {
+        Binding<Double>(
+            get: {
+                if let override = settings.settings.perDisplayNotchSize[displayID], override.width > 0 {
+                    return Double(override.width)
+                }
+                return Double(defaultValue)
+            },
+            set: { newValue in
+                var override = settings.settings.perDisplayNotchSize[displayID] ?? NotchSizeOverride()
+                override.width = CGFloat(newValue)
+                settings.settings.perDisplayNotchSize[displayID] = override
+            }
+        )
+    }
+
+    private func perDisplayHeightBinding(displayID: String, defaultValue: CGFloat) -> Binding<Double> {
+        Binding<Double>(
+            get: {
+                if let override = settings.settings.perDisplayNotchSize[displayID], override.height > 0 {
+                    return Double(override.height)
+                }
+                return Double(defaultValue)
+            },
+            set: { newValue in
+                var override = settings.settings.perDisplayNotchSize[displayID] ?? NotchSizeOverride()
+                override.height = CGFloat(newValue)
+                settings.settings.perDisplayNotchSize[displayID] = override
+            }
+        )
+    }
+
+    private func sizeControl(label: String, value: Binding<Double>, range: ClosedRange<Double>, hasOverride: Bool) -> some View {
         HStack(spacing: 6) {
             Text(label)
                 .foregroundColor(.secondary)
@@ -9525,7 +9646,7 @@ struct NotchSizeSettingsView: View {
                 .multilineTextAlignment(.trailing)
             VStack(spacing: 0) {
                 Button {
-                    value.wrappedValue = min(range.upperBound, value.wrappedValue + step)
+                    value.wrappedValue = min(range.upperBound, value.wrappedValue + 1)
                 } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 9, weight: .bold))
@@ -9535,7 +9656,7 @@ struct NotchSizeSettingsView: View {
                 .help("Increase \(label)")
 
                 Button {
-                    value.wrappedValue = max(range.lowerBound, value.wrappedValue - step)
+                    value.wrappedValue = max(range.lowerBound, value.wrappedValue - 1)
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
@@ -9547,7 +9668,25 @@ struct NotchSizeSettingsView: View {
             Text("pt")
                 .font(.caption)
                 .foregroundColor(.secondary)
+            if !hasOverride {
+                Text("auto")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .help("Automatic size; editing creates a per-display override")
+            }
         }
+    }
+
+    private func perDisplayInactiveBinding(for displayID: String) -> Binding<Bool> {
+        Binding<Bool>(
+            get: {
+                settings.settings.perDisplayHideNotchWhenInactive[displayID]
+                    ?? settings.settings.hideNotchWhenInactive
+            },
+            set: { newValue in
+                settings.settings.perDisplayHideNotchWhenInactive[displayID] = newValue
+            }
+        )
     }
 }
 

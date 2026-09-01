@@ -1018,15 +1018,7 @@ struct MusicWidgetView: View {
     }
 
     private func openDefaultPlayer() {
-        let player = settings.settings.defaultMusicPlayer
-        let bundleId = player == .appleMusic ? "com.apple.Music" : "com.spotify.client"
-
-        NSWorkspace.shared.launchApplication(
-            withBundleIdentifier: bundleId,
-            options: [],
-            additionalEventParamDescriptor: nil,
-            launchIdentifier: nil
-        )
+        settings.settings.defaultMusicPlayer.open()
     }
 }
 

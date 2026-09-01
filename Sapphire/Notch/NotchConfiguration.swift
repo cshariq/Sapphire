@@ -10,12 +10,10 @@ import AppKit
 import CoreGraphics
 
 struct NotchConfiguration {
-    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
-        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-    }
     private static let designReferenceResolution = CGSize(width: 1728, height: 1117)
 
     private static let fallbackClosedNotchSize = (width: CGFloat(185), height: CGFloat(32))
+    private static let externalMonitorNotchWidth: CGFloat = 150
 
     // MARK: - Screen Size Adjustments
     static func screenWidthAdjustment(for screen: NSScreen?) -> CGFloat {
@@ -65,9 +63,10 @@ struct NotchConfiguration {
             if measuredWidth.isFinite, measuredWidth > 0 {
                 width = measuredWidth + 4
             }
+        } else if CGDisplayIsBuiltin(screen.displayID) != 0 {
+            width = fallbackClosedNotchSize.width * screenWidthAdjustment(for: screen)
         } else {
-            let menuBarWidth = displayID(for: screen).flatMap { WindowInfo.getMenuBarWindow(for: $0)?.frame.width } ?? screen.frame.width
-            width = menuBarWidth
+            width = externalMonitorNotchWidth
         }
 
         let menuBarHeight = getMenuBarHeight(for: screen)
@@ -331,8 +330,11 @@ struct ResolvedNotchConfiguration {
             self.contentBottomPadding = 10 * screenHeightAdj
             self.contentHorizontalPadding = 35 * screenHeightAdj
 
-        self.universalWidth = settings.notchWidth > 0 ? settings.notchWidth * screenWidthAdj : baseWidth
-        self.universalHeight = settings.notchHeight > 0 ? settings.notchHeight * screenHeightAdj : baseHeight
+        let displayID = targetScreen?.displayIdentifier
+        let resolvedWidth = settings.resolvedNotchWidth(forDisplayID: displayID)
+        let resolvedHeight = settings.resolvedNotchHeight(forDisplayID: displayID)
+        self.universalWidth = resolvedWidth > 0 ? resolvedWidth * screenWidthAdj : baseWidth
+        self.universalHeight = resolvedHeight > 0 ? resolvedHeight * screenHeightAdj : baseHeight
 
         let profile = settings.animationProfile
         let customAnim = settings.customAnimationConfiguration

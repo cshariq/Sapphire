@@ -368,6 +368,12 @@ private struct MusicChoiceStepView: View {
                 MusicServiceButton(title: "Spotify", icon: "spotify_logo", isSelected: selection == .spotify) {
                     selection = .spotify
                 }
+                MusicServiceButton(title: "Tidal", icon: "sf:waveform", isSelected: selection == .tidal) {
+                    selection = .tidal
+                }
+                MusicServiceButton(title: "YouTube Music", icon: "sf:play.rectangle.fill", isSelected: selection == .youtubeMusic) {
+                    selection = .youtubeMusic
+                }
             }
             .padding(50)
 
@@ -925,7 +931,15 @@ private struct MusicServiceButton: View {
     let title: String, icon: String, isSelected: Bool
     let action: () -> Void
     @State private var isPressed = false
-    @ViewBuilder private var iconView: some View { if icon == "music.note" { Image(systemName: icon).resizable().renderingMode(.template).foregroundColor(.white) } else { Image(icon).resizable().renderingMode(.original) } }
+    @ViewBuilder private var iconView: some View {
+        if icon.hasPrefix("sf:") {
+            Image(systemName: String(icon.dropFirst(3))).resizable().renderingMode(.template).foregroundColor(.white)
+        } else if icon == "music.note" {
+            Image(systemName: icon).resizable().renderingMode(.template).foregroundColor(.white)
+        } else {
+            Image(icon).resizable().renderingMode(.original)
+        }
+    }
     var body: some View {
         HStack {
             iconView.aspectRatio(contentMode: .fit).frame(width: 28, height: 28)

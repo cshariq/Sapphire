@@ -8,6 +8,9 @@
 import AppKit
 import Combine
 import ApplicationServices
+import os.log
+
+private let activeAppLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "ActiveAppMonitor")
 
 extension Notification.Name {
     static let activeAppDidChange = Notification.Name("com.sapphire.activeAppDidChange")
@@ -32,6 +35,7 @@ class ActiveAppMonitor: ObservableObject {
     @Published private(set) var isLyricsAllowedForActiveApp: Bool = true
     @Published private(set) var activeAppBundleID: String?
     @Published private(set) var isFullScreen: Bool = false
+    @Published private(set) var fullScreenDisplayID: CGDirectDisplayID? = nil
     @Published private(set) var isWindowDragging: Bool = false
 
     private let settingsModel: SettingsModel
@@ -101,6 +105,7 @@ class ActiveAppMonitor: ObservableObject {
         AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute, &window)
 
         var isCurrentlyFullScreen = false
+        var currentlyFullScreenDisplayID: CGDirectDisplayID? = nil
         if let window = window {
             let windowElement = window as! AXUIElement
             var isFullScreenValue: AnyObject?
@@ -110,10 +115,16 @@ class ActiveAppMonitor: ObservableObject {
             if result == .success, let isFullScreenNumber = isFullScreenValue as? NSNumber {
                 isCurrentlyFullScreen = isFullScreenNumber.boolValue
             }
+
+            if isCurrentlyFullScreen {
+                currentlyFullScreenDisplayID = displayID(forFullScreenWindow: windowElement)
+            }
         }
 
-        if self.isFullScreen != isCurrentlyFullScreen {
+        if self.isFullScreen != isCurrentlyFullScreen || self.fullScreenDisplayID != currentlyFullScreenDisplayID {
+            activeAppLog.info("full-screen state changed: isFullScreen=\(isCurrentlyFullScreen) displayID=\(currentlyFullScreenDisplayID.map(String.init) ?? "nil") app=\(bundleID)")
             self.isFullScreen = isCurrentlyFullScreen
+            self.fullScreenDisplayID = currentlyFullScreenDisplayID
         }
     }
 
@@ -156,6 +167,29 @@ class ActiveAppMonitor: ObservableObject {
 
         CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
         self.axObserver = observer
+    }
+
+    private func displayID(forFullScreenWindow windowElement: AXUIElement) -> CGDirectDisplayID? {
+        var positionRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(windowElement, kAXPositionAttribute as CFString, &positionRef) == .success,
+              AXUIElementCopyAttributeValue(windowElement, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let positionValue = positionRef, let sizeValue = sizeRef else {
+            return nil
+        }
+
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else {
+            return nil
+        }
+
+        let center = NSPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) else {
+            return nil
+        }
+        return screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     }
 
     private func teardownAXObserver() {
