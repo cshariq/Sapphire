@@ -22,12 +22,6 @@ struct ProgressScrubMathTests {
         #expect(ProgressScrubMath.progress(fromX: 50, width: 0) == 0)
     }
 
-    @Test func thumbCenterXInsetsAtEnds() {
-        #expect(ProgressScrubMath.thumbCenterX(progress: 0, width: 100, thumbDiameter: 10) == 5)
-        #expect(ProgressScrubMath.thumbCenterX(progress: 1, width: 100, thumbDiameter: 10) == 95)
-        #expect(ProgressScrubMath.thumbCenterX(progress: 0.5, width: 100, thumbDiameter: 10) == 50)
-    }
-
     @Test func formatTimeUsesMinutesAndZeroPaddedSeconds() {
         #expect(ProgressScrubMath.formatTime(0) == "0:00")
         #expect(ProgressScrubMath.formatTime(65) == "1:05")

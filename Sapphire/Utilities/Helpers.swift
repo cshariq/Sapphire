@@ -217,7 +217,9 @@ struct InteractiveProgressBar: View {
                 progress: pointerProgress,
                 duration: duration ?? 0
             )
-            let pointerX = isDragging ? width * CGFloat(ProgressScrubMath.clampProgress(dragValue)) : hoverX
+            let fillEdgeX = width * CGFloat(clampedDisplayed)
+            let thumbColor = ProgressScrubMath.color(at: clampedDisplayed, in: gradient)
+            let tooltipX = isDragging ? fillEdgeX : hoverX
 
             ZStack {
                 ZStack(alignment: .leading) {
@@ -225,10 +227,10 @@ struct InteractiveProgressBar: View {
 
                     Capsule()
                         .fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing))
-                        .frame(width: max(0, width * CGFloat(clampedDisplayed)))
+                        .frame(width: max(0, fillEdgeX))
 
                     if showChrome, hoverProgress > clampedDisplayed {
-                        let start = width * CGFloat(clampedDisplayed)
+                        let start = fillEdgeX
                         let end = width * CGFloat(hoverProgress)
                         Capsule()
                             .fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing))
@@ -240,38 +242,38 @@ struct InteractiveProgressBar: View {
                 .frame(height: trackHeight)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .transaction { transaction in
-                    // Live TimelineView ticks must not ease — only drag uses direct width updates.
                     if !isDragging {
                         transaction.animation = nil
                     }
                 }
 
                 if showChrome {
-                    ProgressScrubThumb(
-                        diameter: thumbSize,
-                        intensity: glassIntensity,
-                        isHovered: isHovering || isDragging
-                    )
-                    .position(
-                        x: ProgressScrubMath.thumbCenterX(
-                            progress: clampedDisplayed,
-                            width: width,
-                            thumbDiameter: thumbSize
-                        ),
-                        y: geometry.size.height / 2
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    ProgressScrubThumb(diameter: thumbSize, color: thumbColor)
+                        .position(x: fillEdgeX, y: geometry.size.height / 2)
+                        .transition(.opacity)
 
                     if let tooltipText {
                         ProgressScrubTooltip(text: tooltipText, intensity: glassIntensity)
                             .position(
-                                x: clampedTooltipX(pointerX: pointerX, width: width),
+                                x: tooltipX,
                                 y: geometry.size.height / 2 - thumbSize / 2 - 16
                             )
                             .transition(.opacity)
                     }
                 }
             }
+            .compositingGroup()
+            .background {
+                ScrubHoverTracker { hovering, x in
+                    if hovering {
+                        isHovering = true
+                        hoverX = max(0, min(x, width))
+                    } else if !isDragging {
+                        isHovering = false
+                    }
+                }
+            }
+            .background(CursorRectView(cursor: .pointingHand))
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -295,8 +297,6 @@ struct InteractiveProgressBar: View {
                         )
                         dragValue = finalProgress
                         onSeek(finalProgress)
-                        // Keep showing the scrubbed position until the binding catches up;
-                        // avoid animating live playback ticks (that caused seek bounce).
                         var transaction = Transaction()
                         transaction.disablesAnimations = true
                         withTransaction(transaction) {
@@ -305,34 +305,40 @@ struct InteractiveProgressBar: View {
                         }
                     }
             )
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(let location):
-                    isHovering = true
-                    hoverX = location.x
-                    NSCursor.resizeLeftRight.set()
-                case .ended:
-                    if !isDragging {
-                        isHovering = false
-                        NSCursor.arrow.set()
-                    }
-                }
-            }
-            .onChange(of: isDragging) { _, dragging in
-                if !dragging && !isHovering {
-                    NSCursor.arrow.set()
-                } else if dragging {
-                    NSCursor.resizeLeftRight.set()
-                }
-            }
-            .animation(.easeOut(duration: 0.15), value: showChrome)
         }
     }
+}
 
-    private func clampedTooltipX(pointerX: CGFloat, width: CGFloat) -> CGFloat {
-        let approxHalf: CGFloat = 28
-        guard width > 0 else { return approxHalf }
-        return min(max(pointerX, approxHalf), max(approxHalf, width - approxHalf))
+/// AppKit cursor rects — `NSCursor.set()` from SwiftUI hover is reset by the system.
+private struct CursorRectView: NSViewRepresentable {
+    var cursor: NSCursor
+
+    func makeNSView(context: Context) -> CursorHostingView {
+        CursorHostingView(cursor: cursor)
+    }
+
+    func updateNSView(_ nsView: CursorHostingView, context: Context) {
+        guard nsView.cursor != cursor else { return }
+        nsView.cursor = cursor
+        nsView.window?.invalidateCursorRects(for: nsView)
+    }
+
+    final class CursorHostingView: NSView {
+        var cursor: NSCursor
+
+        init(cursor: NSCursor) {
+            self.cursor = cursor
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: cursor)
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

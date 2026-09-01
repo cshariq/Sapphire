@@ -5,6 +5,7 @@
 
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 enum ProgressScrubMath {
     static func clampProgress(_ value: Double) -> Double {
@@ -15,14 +16,6 @@ enum ProgressScrubMath {
     static func progress(fromX x: CGFloat, width: CGFloat) -> Double {
         guard width > 0, x.isFinite, width.isFinite else { return 0 }
         return clampProgress(Double(x / width))
-    }
-
-    static func thumbCenterX(progress: Double, width: CGFloat, thumbDiameter: CGFloat) -> CGFloat {
-        guard width > 0, thumbDiameter.isFinite, width.isFinite else { return 0 }
-        let radius = thumbDiameter / 2
-        let usable = max(0, width - thumbDiameter)
-        let p = CGFloat(clampProgress(progress))
-        return radius + usable * p
     }
 
     static func formatTime(_ seconds: Double) -> String {
@@ -39,5 +32,37 @@ enum ProgressScrubMath {
     static func thumbDiameter(trackHeight: CGFloat, multiplier: CGFloat = 1.6, minimum: CGFloat = 10) -> CGFloat {
         guard trackHeight.isFinite, trackHeight > 0 else { return minimum }
         return max(minimum, trackHeight * multiplier)
+    }
+
+    static func color(at progress: Double, in gradient: Gradient) -> Color {
+        let stops = gradient.stops
+        guard let first = stops.first else { return .white }
+        guard stops.count > 1 else { return first.color }
+
+        let p = clampProgress(progress)
+        let scaled = p * Double(stops.count - 1)
+        let lowerIndex = min(Int(floor(scaled)), stops.count - 2)
+        let upperIndex = lowerIndex + 1
+        let fraction = scaled - Double(lowerIndex)
+        return blend(stops[lowerIndex].color, stops[upperIndex].color, fraction)
+    }
+
+    private static func blend(_ start: Color, _ end: Color, _ amount: Double) -> Color {
+        let t = clampProgress(amount)
+        #if canImport(AppKit)
+        let startNS = NSColor(start)
+        let endNS = NSColor(end)
+        guard let startRGB = startNS.usingColorSpace(.deviceRGB),
+              let endRGB = endNS.usingColorSpace(.deviceRGB) else {
+            return t < 0.5 ? start : end
+        }
+        let r = startRGB.redComponent + (endRGB.redComponent - startRGB.redComponent) * t
+        let g = startRGB.greenComponent + (endRGB.greenComponent - startRGB.greenComponent) * t
+        let b = startRGB.blueComponent + (endRGB.blueComponent - startRGB.blueComponent) * t
+        let a = startRGB.alphaComponent + (endRGB.alphaComponent - startRGB.alphaComponent) * t
+        return Color(red: r, green: g, blue: b, opacity: a)
+        #else
+        return t < 0.5 ? start : end
+        #endif
     }
 }

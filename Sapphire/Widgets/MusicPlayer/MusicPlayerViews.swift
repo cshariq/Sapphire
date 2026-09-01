@@ -15,72 +15,161 @@ struct PlayerProgressView: View {
     @EnvironmentObject var musicManager: MusicManager
     @State private var isSeeking = false
     @State private var seekProgress: Double = 0.0
+    @State private var liveProgress: Double = 0
+    @State private var liveElapsed: TimeInterval = 0
 
     var lightStyle: Bool = false
-
-    private func formatTime(_ seconds: Double) -> String {
-        let cleanSeconds = seconds.isNaN || seconds.isInfinite ? 0 : seconds
-        let (minutes, seconds) = (Int(cleanSeconds) / 60, Int(cleanSeconds) % 60)
-        return String(format: "%d:%02d", minutes, seconds)
-    }
 
     private var timeColor: Color {
         lightStyle ? Color.white.opacity(0.68) : Color.secondary
     }
 
+    private var displayedProgress: Double {
+        isSeeking ? seekProgress : liveProgress
+    }
+
+    private var displayedElapsed: TimeInterval {
+        isSeeking ? seekProgress * musicManager.totalDuration : liveElapsed
+    }
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: musicManager.isPlaying && !isSeeking ? 0.2 : 60)) { context in
-            let liveElapsed = isSeeking
-                ? seekProgress * musicManager.totalDuration
-                : musicManager.elapsedTime(at: context.date)
-            let liveProgress = isSeeking
-                ? seekProgress
-                : musicManager.progress(at: context.date)
+        HStack(alignment: .center, spacing: 8) {
+            PlayerProgressElapsedLabel(
+                elapsed: displayedElapsed,
+                lightStyle: lightStyle,
+                timeColor: timeColor,
+                isPlaying: musicManager.isPlaying,
+                isSeeking: isSeeking,
+                musicManager: musicManager
+            )
 
-            HStack(alignment: .center, spacing: 8) {
-                Text(formatTime(liveElapsed))
-                    .font(.system(size: lightStyle ? 11 : 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(timeColor)
-                    .contentTransition(.numericText())
-
-                InteractiveProgressBar(
-                    value: Binding(
-                        get: { liveProgress },
-                        set: { seekProgress = $0 }
-                    ),
-                    gradient: Gradient(colors: lightStyle
-                        ? [.white, .white.opacity(0.75)]
-                        : [musicManager.leftGradientColor, musicManager.rightGradientColor]),
-                    onSeek: { newProgress in
-                        seekProgress = newProgress
-                        isSeeking = true
-                        let seekTime = newProgress * musicManager.totalDuration
-                        if seekTime.isFinite && musicManager.totalDuration > 0 {
-                            Task {
-                                await musicManager.seek(to: seekTime)
-                                await MainActor.run {
-                                    seekProgress = newProgress
-                                    isSeeking = false
-                                }
+            InteractiveProgressBar(
+                value: Binding(
+                    get: { displayedProgress },
+                    set: { seekProgress = $0 }
+                ),
+                gradient: Gradient(colors: lightStyle
+                    ? [.white, .white.opacity(0.75)]
+                    : [musicManager.leftGradientColor, musicManager.rightGradientColor]),
+                onSeek: { newProgress in
+                    seekProgress = newProgress
+                    isSeeking = true
+                    let seekTime = newProgress * musicManager.totalDuration
+                    if seekTime.isFinite && musicManager.totalDuration > 0 {
+                        Task {
+                            await musicManager.seek(to: seekTime)
+                            await MainActor.run {
+                                seekProgress = newProgress
+                                liveProgress = newProgress
+                                liveElapsed = seekTime
+                                isSeeking = false
                             }
-                        } else {
-                            isSeeking = false
                         }
-                    },
-                    onDragChanged: { progress in
-                        isSeeking = true
-                        seekProgress = progress
-                    },
-                    duration: musicManager.totalDuration,
-                    trackHeight: lightStyle ? 6 : 10
-                )
-                .frame(height: lightStyle ? 14 : 30)
-                .shadow(color: musicManager.accentColor.opacity(lightStyle ? 0.2 : 0.3), radius: lightStyle ? 2 : 4, y: 1)
+                    } else {
+                        isSeeking = false
+                    }
+                },
+                onDragChanged: { progress in
+                    isSeeking = true
+                    seekProgress = progress
+                },
+                duration: musicManager.totalDuration,
+                trackHeight: lightStyle ? 6 : 10
+            )
+            .frame(height: lightStyle ? 14 : 30)
+            .shadow(color: musicManager.accentColor.opacity(lightStyle ? 0.2 : 0.3), radius: lightStyle ? 2 : 4, y: 1)
 
-                Text("-\(formatTime(max(0, musicManager.totalDuration - liveElapsed)))")
-                    .font(.system(size: lightStyle ? 11 : 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(timeColor)
-                    .contentTransition(.numericText())
+            PlayerProgressRemainingLabel(
+                elapsed: displayedElapsed,
+                totalDuration: musicManager.totalDuration,
+                lightStyle: lightStyle,
+                timeColor: timeColor,
+                isPlaying: musicManager.isPlaying,
+                isSeeking: isSeeking,
+                musicManager: musicManager
+            )
+        }
+        .onAppear {
+            liveProgress = musicManager.playbackProgress
+            liveElapsed = musicManager.currentElapsedTime
+        }
+        .onReceive(musicManager.playbackTimePublisher) { payload in
+            guard !isSeeking else { return }
+            liveElapsed = payload.elapsed
+            liveProgress = payload.progress
+        }
+    }
+}
+
+/// Timeline-driven label isolated from the scrubber so hover state is not reset every tick.
+private struct PlayerProgressTimeLabel: View {
+    let text: String
+    let lightStyle: Bool
+    let timeColor: Color
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: lightStyle ? 11 : 10, weight: .medium, design: .monospaced))
+            .foregroundColor(timeColor)
+            .contentTransition(.numericText())
+    }
+}
+
+private struct PlayerProgressElapsedLabel: View {
+    let elapsed: TimeInterval
+    let lightStyle: Bool
+    let timeColor: Color
+    let isPlaying: Bool
+    let isSeeking: Bool
+    let musicManager: MusicManager
+
+    var body: some View {
+        Group {
+            if isPlaying && !isSeeking {
+                TimelineView(.periodic(from: .now, by: 0.2)) { context in
+                    PlayerProgressTimeLabel(
+                        text: ProgressScrubMath.formatTime(musicManager.elapsedTime(at: context.date)),
+                        lightStyle: lightStyle,
+                        timeColor: timeColor
+                    )
+                }
+            } else {
+                PlayerProgressTimeLabel(
+                    text: ProgressScrubMath.formatTime(elapsed),
+                    lightStyle: lightStyle,
+                    timeColor: timeColor
+                )
+            }
+        }
+    }
+}
+
+private struct PlayerProgressRemainingLabel: View {
+    let elapsed: TimeInterval
+    let totalDuration: TimeInterval
+    let lightStyle: Bool
+    let timeColor: Color
+    let isPlaying: Bool
+    let isSeeking: Bool
+    let musicManager: MusicManager
+
+    var body: some View {
+        Group {
+            if isPlaying && !isSeeking {
+                TimelineView(.periodic(from: .now, by: 0.2)) { context in
+                    let liveElapsed = musicManager.elapsedTime(at: context.date)
+                    PlayerProgressTimeLabel(
+                        text: "-\(ProgressScrubMath.formatTime(max(0, totalDuration - liveElapsed)))",
+                        lightStyle: lightStyle,
+                        timeColor: timeColor
+                    )
+                }
+            } else {
+                PlayerProgressTimeLabel(
+                    text: "-\(ProgressScrubMath.formatTime(max(0, totalDuration - elapsed)))",
+                    lightStyle: lightStyle,
+                    timeColor: timeColor
+                )
             }
         }
     }
