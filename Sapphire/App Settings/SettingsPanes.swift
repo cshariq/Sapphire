@@ -521,13 +521,6 @@ struct GeneralSettingsView: View {
                     Divider().padding(.leading, 20)
 
                     ToggleRow(
-                        title: "Hide Notch When Inactive",
-                        description: "Hide the notch completely when no live activity is showing (including when live activities are hidden in full screen). Swipe down near the notch area to bring it back.",
-                        isOn: $settings.settings.hideNotchWhenInactive
-                    )
-                    Divider().padding(.leading, 20)
-
-                    ToggleRow(
                         title: "Swipe to Hide Notch",
                         description: "When the notch is collapsed, swipe up over it to hide it completely. Swipe down near the notch area to bring it back.",
                         isOn: $settings.settings.swipeToHideNotch
