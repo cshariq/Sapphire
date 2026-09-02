@@ -43,10 +43,10 @@ class LaunchpadGestureManager: ObservableObject {
     func startMonitoring(for window: NSWindow) {
         guard eventMonitor == nil else { return }
         print("[GestureManager] Starting event monitoring.")
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .leftMouseDragged, .scrollWheel, .flagsChanged]) { [weak self] event in
-            guard let self = self else { return event }
-            return self.handle(event: event, in: window) ? nil : event
-        }
+//        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .leftMouseDragged, .scrollWheel, .flagsChanged]) { [weak self] event in
+//            guard let self = self else { return event }
+//            return self.handle(event: event, in: window) ? nil : event
+//        }
     }
 
     func stopMonitoring() {

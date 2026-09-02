@@ -683,7 +683,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                 guard AntiSpoofQualityGate.passes(observation: observation, pixelBuffer: pixelBuffer) else { return }
 
                 let debugTag = FaceIDConfig.enableDebugImageCapture ? "enroll_f\(frameCounter)" : nil
-                if SettingsModel.shared.settings.faceIDAntiSpoofEnabled,
+                if false && SettingsModel.shared.settings.faceIDAntiSpoofEnabled,
                    let spoof = FaceIDModelManager.shared.evaluateAntiSpoof(
                     pixelBuffer: pixelBuffer,
                     observation: observation,
