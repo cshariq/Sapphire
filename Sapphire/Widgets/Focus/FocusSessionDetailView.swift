@@ -56,6 +56,18 @@ struct FocusSessionDetailView: View {
 
             timerRing
 
+            if focusManager.isSessionActive, let endDate = focusManager.currentBlockEndDate {
+                Text("ENDS \(endDate.formatted(date: .omitted, time: .shortened))")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundColor(accent.opacity(0.8))
+            } else {
+                Text("ETA \(Date().addingTimeInterval(customMinutes * 60).formatted(date: .omitted, time: .shortened))")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundColor(.white.opacity(0.35))
+            }
+
             Spacer(minLength: 0)
 
             primaryActionArea
@@ -126,8 +138,17 @@ struct FocusSessionDetailView: View {
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .multilineTextAlignment(.center)
                             .focused($durationFieldFocused)
-                            .frame(width: 48)
+                            .lineLimit(1)
+                            .frame(width: 52)
                             .onSubmit { durationFieldFocused = false }
+                            .onChange(of: durationFieldFocused) { _, isFocused in
+                                if let appDelegate = NSApp.delegate as? AppDelegate {
+                                    if isFocused { appDelegate.makeNotchWindowFocusable() } else { appDelegate.revertNotchWindowFocus() }
+                                }
+                            }
+                            .onDisappear {
+                                if durationFieldFocused { durationFieldFocused = false }
+                            }
                         Text("min")
                             .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.4))
@@ -408,7 +429,7 @@ struct FocusSessionDetailView: View {
     private var environmentQuickToggles: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Environment Guard")
+                Text("Environment Control")
                 Spacer()
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 10, weight: .semibold))

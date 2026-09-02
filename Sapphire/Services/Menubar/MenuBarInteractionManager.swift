@@ -14,8 +14,8 @@ final class MenuBarInteractionManager {
 
     // MARK: - Monitors
     private var clickToken: UUID?
-    private var hoverTimer: Timer?
-    private var hoverEnteredAt: Date?
+    private var hoverProbe: MenuBarHoverProbe?
+    private var hoverRevealTimer: Timer?
 
     // MARK: - State
     public var isMonitoring = false
@@ -50,9 +50,9 @@ final class MenuBarInteractionManager {
             stopClickMonitoring()
         }
 
-        if settings.showOnHover && hoverTimer == nil {
+        if settings.showOnHover && hoverProbe == nil {
             startHoverMonitoring()
-        } else if !settings.showOnHover && hoverTimer != nil {
+        } else if !settings.showOnHover && hoverProbe != nil {
             stopHoverMonitoring()
         }
     }
@@ -89,41 +89,53 @@ final class MenuBarInteractionManager {
     // MARK: - Hover Monitoring
 
     private func startHoverMonitoring() {
-        guard hoverTimer == nil else { return }
-        hoverEnteredAt = nil
-        let timer = Timer(timeInterval: 0.08, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkHover()
-            }
+        guard hoverProbe == nil else { return }
+        let probe = MenuBarHoverProbe()
+        hoverProbe = probe
+        probe.start { [weak self] isInside in
+            self?.handleMenuBarHoverChange(isInside)
         }
-        RunLoop.main.add(timer, forMode: .common)
-        hoverTimer = timer
     }
 
     private func stopHoverMonitoring() {
-        hoverTimer?.invalidate()
-        hoverTimer = nil
-        hoverEnteredAt = nil
+        hoverProbe?.stop()
+        hoverProbe = nil
+        cancelHoverReveal()
     }
 
-    private func checkHover() {
+    private func handleMenuBarHoverChange(_ isInside: Bool) {
+        guard isMonitoring else { return }
+        if isInside {
+            scheduleHoverReveal()
+        } else {
+            cancelHoverReveal()
+        }
+    }
+
+    private func scheduleHoverReveal() {
+        cancelHoverReveal()
         guard Date() >= (disabledUntil ?? .distantPast) else { return }
 
-        let location = NSEvent.mouseLocation
-        guard isLocationInMenuBar(location) else {
-            hoverEnteredAt = nil
-            return
+        let delay = max(0, SettingsModel.shared.settings.showOnHoverDelay)
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.fireHoverReveal() }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        hoverRevealTimer = timer
+    }
 
-        let now = Date()
-        if hoverEnteredAt == nil {
-            hoverEnteredAt = now
-            return
-        }
+    private func cancelHoverReveal() {
+        hoverRevealTimer?.invalidate()
+        hoverRevealTimer = nil
+    }
 
-        guard now.timeIntervalSince(hoverEnteredAt!) >= SettingsModel.shared.settings.showOnHoverDelay else { return }
+    private func fireHoverReveal() {
+        hoverRevealTimer = nil
 
-        hoverEnteredAt = .distantFuture
+        guard isMonitoring, hoverProbe?.isHovering == true else { return }
+        guard Date() >= (disabledUntil ?? .distantPast) else { return }
+        guard isLocationInMenuBar(NSEvent.mouseLocation) else { return }
+
         showHiddenItems()
     }
 

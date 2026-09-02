@@ -100,6 +100,8 @@ struct NotchWidgetView: View {
                 return settings.settings.shopifyWidgetEnabled
             case .calendar:
                 return settings.settings.calendarWidgetEnabled
+            case .battery:
+                return settings.settings.batteryWidgetEnabled
             case .shortcuts:
                 return settings.settings.shortcutsWidgetEnabled
             case .notes:
@@ -278,6 +280,8 @@ struct NotchWidgetView: View {
             UpdateAvailableWidgetView()
         case .focusSessionDetailView:
             FocusSessionDetailView(navigationStack: navigationStack)
+        case .batteryDetailView:
+            BatteryDetailView()
         }
     }
 
@@ -365,6 +369,8 @@ struct NotchWidgetView: View {
             MirrorWidgetView()
         case .focusSession:
             FocusWidgetView()
+        case .battery:
+            BatteryWidgetView()
         case .agent:
             EmptyView()
         }

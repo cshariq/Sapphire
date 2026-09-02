@@ -300,8 +300,30 @@ struct PillHUDView: View {
         }
     }
 
+    private var isXDRBrightnessHUD: Bool {
+        guard settings.settings.enableXDRBrightness else { return false }
+        switch hudManager.currentHUD {
+        case .brightness(let level):
+            return level > 1.0
+        case .multiDisplayBrightness(let displays):
+            return displays.contains { $0.level > 1.0 }
+        default:
+            return false
+        }
+    }
+
+    private var hudRange: Float {
+        isXDRBrightnessHUD ? max(1.0, settings.settings.xdrBrightnessLevel) : 1.0
+    }
+
     private var clampedLevel: Float {
-        min(max((hudManager.currentHUD?.primaryLevel ?? 0), 0), 1)
+        let level = hudManager.currentHUD?.primaryLevel ?? 0
+        return min(max(level / hudRange, 0), 1)
+    }
+
+    private var displayedPercentage: Int {
+        let level = hudManager.currentHUD?.primaryLevel ?? 0
+        return Int(min(max(level, 0), hudRange) * 100)
     }
 
     private var withinIcon: some View {
@@ -310,7 +332,7 @@ struct PillHUDView: View {
     }
 
     private var withinPercent: some View {
-        Text("\(Int(clampedLevel * 100))%")
+        Text("\(displayedPercentage)%")
             .font(.system(size: 11, weight: .bold, design: .monospaced))
             .foregroundColor(.white)
             .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
@@ -329,7 +351,7 @@ struct PillHUDView: View {
     }
 
     private var percentageText: some View {
-        Text("\(Int(clampedLevel * 100))%")
+        Text("\(displayedPercentage)%")
             .font(.system(size: 11, weight: .semibold, design: .monospaced))
             .foregroundColor(Color.white.opacity(0.7))
     }
@@ -351,20 +373,14 @@ struct PillHUDView: View {
         }
     }
 
-    private var isXDR: Bool {
-        switch hudManager.currentHUD {
-        case .brightness(let level): return level > 1.0
-        case .multiDisplayBrightness(let displays):
-            return (displays.first(where: { $0.isPrimary })?.level ?? displays.first?.level ?? 0) > 1.0
-        default: return false
-        }
-    }
+    private var isXDR: Bool { isXDRBrightnessHUD }
 
     private var fillColor: Color {
         switch settings.settings.hudVisualStyle {
         case .white: return Color.white.opacity(0.85)
         case .color: return settings.settings.hudCustomColor?.color ?? .accentColor
         case .adaptive:
+            if isXDRBrightnessHUD { return .orange }
             if clampedLevel >= 0.9 { return .red }
             if clampedLevel > 0.6 { return .yellow }
             return .white

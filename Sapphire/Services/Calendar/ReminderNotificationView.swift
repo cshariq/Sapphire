@@ -43,7 +43,7 @@ struct ReminderNotificationView: View {
         }
         .padding(12)
         .padding(.horizontal, 20)
-        .padding(.top, 25)
+        .padding(.top, NotchConfiguration.universalHeight)
         .scaleEffect(isShowing ? 1 : 0.95)
         .opacity(isShowing ? 1 : 0)
         .onAppear {

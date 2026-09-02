@@ -726,6 +726,9 @@ struct Settings: Codable, Equatable {
     var lockScreenShowNotch: Bool = true
     var lockScreenCustomWallpaperEnabled: Bool = false
     var lockScreenCustomWallpaperPath: String? = nil
+    var lockScreenKeepWallpaperAfterUnlock: Bool = false
+    var desktopWallpaperEnabled: Bool = false
+    var desktopWallpaperPath: String? = nil
     var lockScreenLiveActivityEnabled: Bool = true
     var lockScreenLiquidGlassLook: Bool = true
     var lockScreenLiquidGlassIntensity: Double = 0.75
@@ -767,7 +770,7 @@ struct Settings: Codable, Equatable {
     var swipeToHideNotch: Bool = false
     var preventNotchExpandWhenLocked: Bool = false
     var releaseChannel: ReleaseChannel = .stable
-    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .spacer, .battery, .multiAudio, .caffeine, .pin]
+    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .focusSession, .spacer, .battery, .multiAudio, .caffeine, .pin]
     var circleToSearchEnabled: Bool = true
     var circleToSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "C", modifiers: [.control, .shift])
     var circleToSearchBrowserEngine: CircleSearchBrowserEngine = .google
@@ -817,7 +820,7 @@ struct Settings: Codable, Equatable {
     var rememberLastMenu: Bool = false
     var lastNotchNavigationStack: [RestorableNotchMenu]? = nil
     var showDividersBetweenWidgets: Bool = false
-    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .shortcuts, .notes, .clipboard, .mirror, .focusSession]
+    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .focusSession, .battery, .shortcuts, .notes, .clipboard, .mirror]
     var musicWidgetEnabled: Bool = true
     var weatherWidgetEnabled: Bool = true
     var sportsWidgetEnabled: Bool = false
@@ -838,6 +841,7 @@ struct Settings: Codable, Equatable {
     var clipboardHistoryUnlimited: Bool = true
     var clipboardIgnoreConcealedItems: Bool = true
     var timerWidgetEnabled: Bool = true
+    var batteryWidgetEnabled: Bool = true
     var focusSessionWidgetEnabled: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
     var liveActivityOrder: [LiveActivityType] = LiveActivityType.allCases
@@ -1293,8 +1297,16 @@ struct SettingsBackupDocument: FileDocument {
             return payload
         }
 
-        let settings = try decoder.decode(Settings.self, from: data)
-        return SettingsBackupPayload(settings: settings)
+        if let settings = SettingsPersistence.decodeFromPayload(data) {
+            return SettingsBackupPayload(settings: settings)
+        }
+
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(
+                codingPath: [],
+                debugDescription: "The file could not be read as a Sapphire settings backup."
+            )
+        )
     }
 }
 
@@ -1421,6 +1433,65 @@ private enum SettingsPersistence {
     }
 
     static func decodeFromDictionary(_ dictionary: [String: Any]) -> Settings? {
+        decodeDictionaryTolerantly(dictionary)
+    }
+
+    static func decodeFromPayload(_ data: Data) -> Settings? {
+        if var settings = try? decoder.decode(Settings.self, from: data) {
+            settings.normalizeCollectionOrders()
+            return settings
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let settingsDictionary: [String: Any]
+        if let wrapped = object["settings"] as? [String: Any] {
+            settingsDictionary = wrapped
+        } else {
+            settingsDictionary = object
+        }
+        return decodeFromDictionary(settingsDictionary)
+    }
+
+    // MARK: - Tolerant decoding
+
+    private static func decodeDictionaryTolerantly(_ dictionary: [String: Any]) -> Settings? {
+        if let settings = decodeFromJSONDictionary(dictionary) {
+            return settings
+        }
+        guard let defaults = encodeToDictionary(Settings()) else { return nil }
+
+        var merged = deepMergedDictionary(defaults: defaults, incoming: dictionary)
+        if let settings = decodeFromJSONDictionary(merged) {
+            return settings
+        }
+
+        var droppedKeys: [String] = []
+        while decodeFromJSONDictionary(merged) == nil {
+            var repaired = false
+            for key in dictionary.keys {
+                var candidate = merged
+                if let defaultValue = defaults[key] {
+                    candidate[key] = defaultValue
+                } else {
+                    candidate.removeValue(forKey: key)
+                }
+                if decodeFromJSONDictionary(candidate) != nil {
+                    merged = candidate
+                    droppedKeys.append(key)
+                    repaired = true
+                    break
+                }
+            }
+            if !repaired { return nil }
+        }
+        if !droppedKeys.isEmpty {
+            print("[SettingsModel] Settings import: reverted incompatible keys to defaults: \(droppedKeys.sorted())")
+        }
+        return decodeFromJSONDictionary(merged)
+    }
+
+    private static func decodeFromJSONDictionary(_ dictionary: [String: Any]) -> Settings? {
         guard JSONSerialization.isValidJSONObject(dictionary),
               let data = try? JSONSerialization.data(withJSONObject: dictionary),
               var settings = try? decoder.decode(Settings.self, from: data) else {
@@ -1430,19 +1501,17 @@ private enum SettingsPersistence {
         return settings
     }
 
-    static func decodeFromPayload(_ data: Data) -> Settings? {
-        if var settings = try? decoder.decode(Settings.self, from: data) {
-            settings.normalizeCollectionOrders()
-            return settings
+    private static func deepMergedDictionary(defaults: [String: Any], incoming: [String: Any]) -> [String: Any] {
+        var result = defaults
+        for (key, incomingValue) in incoming {
+            if let incomingDict = incomingValue as? [String: Any],
+               let defaultDict = result[key] as? [String: Any] {
+                result[key] = deepMergedDictionary(defaults: defaultDict, incoming: incomingDict)
+            } else {
+                result[key] = incomingValue
+            }
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var dictionary = encodeToDictionary(Settings()) else {
-            return nil
-        }
-        for (key, value) in object {
-            dictionary[key] = value
-        }
-        return decodeFromDictionary(dictionary)
+        return result
     }
 
     static func isJSONCompatible(_ value: Any) -> Bool {
@@ -1731,7 +1800,7 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, focusSession, agent
+    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, battery, focusSession, agent
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
@@ -1745,6 +1814,7 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
         case .notes: return "Notes"
         case .clipboard: return "Clipboard"
         case .mirror: return "Mirror"
+        case .battery: return "Battery"
         case .focusSession: return "Focus"
         case .agent: return "Agent"
         }
@@ -1997,18 +2067,19 @@ enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
 }
 
 enum NotchButtonType: String, Codable, Identifiable, Equatable {
-    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, caffeine, spacer, multiAudio, battery, pin
+    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, focusSession, caffeine, spacer, multiAudio, battery, pin
     var id: String { self.rawValue }
 
     static let allCases: [NotchButtonType] = [
         .settings, .fileShelf, .notes, .clipboard, .intelligence,
-        .caffeine, .spacer, .multiAudio, .battery, .pin,
+        .focusSession, .caffeine, .spacer, .multiAudio, .battery, .pin,
     ]
 
     var displayName: String {
         switch self {
         case .settings: "Settings"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"
         case .intelligence: "Claude"; case .intelligenceLive: "Gemini";
+        case .focusSession: "Focus";
         case .caffeine: "Caffeinate"; case .spacer: "Spacer";
         case .multiAudio: "Multi-Audio (Beta)"; case .battery: "Battery"; case .pin: "Pin"
         }
@@ -2018,6 +2089,7 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
         switch self {
         case .settings: "gearshape"; case .fileShelf: "tray.full"; case .notes: "note.text"; case .clipboard: "list.clipboard"
         case .intelligence: "sparkle"; case .intelligenceLive: "waveform";
+        case .focusSession: "moon.fill";
         case .caffeine: "cup.and.saucer"; case .spacer: "space";
         case .multiAudio: "hifispeaker.and.homepod.mini.fill"; case .battery: "battery.100"; case .pin: "pin"
         }
@@ -2192,7 +2264,7 @@ extension UTType {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, fileShelf, notes, clipboard, mirror, caffeine, music, weather, calendar, eyeBreak, focusSession, appLock, intelligence, sports, finance, about
+    case general, apps, storage, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, fileShelf, notes, clipboard, mirror, caffeine, music, weather, calendar, eyeBreak, focusSession, appLock, intelligence, sports, finance, about
 
     var id: String { self.rawValue }
 
@@ -2230,6 +2302,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var shortDescription: String {
         switch self {
         case .general: "Core app behavior, launch options, animations, and notch controls."
+        case .apps: "Review installed applications, inspect bundle details, and safely move unwanted apps to Trash."
+        case .storage: "Find large folders and reclaim space with transparent, user-approved cleanup."
         case .widgets: "Choose which widgets appear in the notch and how they are ordered."
         case .liveActivities: "Control which live activities can surface and auto-expand in the notch."
         case .appearance: "Tune the notch look, materials, colors, and layout styling."
@@ -2264,6 +2338,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var searchTokens: [String] {
         switch self {
         case .general: ["startup", "login", "animation", "notch", "system", "behavior", "analytics", "google", "privacy", "tracking", "telemetry", "swipe", "hide", "lock"]
+        case .apps: ["apps", "applications", "uninstall", "cleaner", "appcleaner", "bundle", "extensions", "startup"]
+        case .storage: ["storage", "disk", "space", "large files", "cache", "cleanup", "daisy disk", "scanner"]
         case .widgets: ["widget", "widgets", "reorder", "layout"]
         case .liveActivities: ["live", "activity", "activities", "dynamic", "focus"]
         case .appearance: ["theme", "appearance", "style", "glass", "color", "material"]
@@ -2311,19 +2387,19 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .general: "General"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"; case .mirror: "Mirror"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather";        case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .focusSession: "Focus Sessions"; case .appLock: "App Lock"; case .intelligence: "Claude"; case .sports: "Sports"; case .finance: "Finance"; case .about: "About"
+        case .general: "General"; case .apps: "Apps"; case .storage: "Storage"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"; case .mirror: "Mirror"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather";        case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .focusSession: "Focus Sessions"; case .appLock: "App Lock"; case .intelligence: "Claude"; case .sports: "Sports"; case .finance: "Finance"; case .about: "About"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .general: "gear"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .audio: "speaker.circle.fill"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .notes: "note.text"; case .clipboard: "list.clipboard"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill";        case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .focusSession: "moon.fill"; case .appLock: "lock.shield.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .about: "info.circle"
+        case .general: "gear"; case .apps: "square.stack.3d.up.fill"; case .storage: "internaldrive.fill"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .audio: "speaker.circle.fill"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .notes: "note.text"; case .clipboard: "list.clipboard"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill";        case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .focusSession: "moon.fill"; case .appLock: "lock.shield.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .about: "info.circle"
         }
     }
 
     var iconBackgroundColor: Color {
         switch self {
-        case .general: .black; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .notes: .yellow; case .clipboard: .mint; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue;        case .calendar: .red; case .eyeBreak: .teal; case .focusSession: .purple; case .appLock: .red; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .about: .blue
+        case .general: .black; case .apps: .purple; case .storage: .orange; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .notes: .yellow; case .clipboard: .mint; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue;        case .calendar: .red; case .eyeBreak: .teal; case .focusSession: .purple; case .appLock: .red; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .about: .blue
         }
     }
 

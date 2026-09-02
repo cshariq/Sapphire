@@ -53,6 +53,7 @@ enum NotchWidgetMode: Hashable {
     case musicLoginPrompt
     case timerDetailView
     case focusSessionDetailView
+    case batteryDetailView
     case agentS
     case claudeHub
     case circleToSearch
@@ -126,12 +127,14 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(20)
         case .focusSessionDetailView:
             hasher.combine(32)
+        case .batteryDetailView:
+            hasher.combine(34)
         case .multiAudioAppEQ:
             hasher.combine(21)
         case .agentS:
             hasher.combine(22)
         case .claudeHub:
-            hasher.combine(34)
+            hasher.combine(35)
         case .circleToSearch:
             hasher.combine(28)
         case .updateAvailable:

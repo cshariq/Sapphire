@@ -280,7 +280,7 @@ class LiveActivityManager: ObservableObject {
                 let now = CFAbsoluteTimeGetCurrent()
                 guard now - self.lastMusicLiveActivityTick >= 0.4 else { return }
                 self.lastMusicLiveActivityTick = now
-                self.evaluateAndDisplayActivity()
+                self.refreshMusicActivityContent()
             }
             .store(in: &cancellables)
 
@@ -597,6 +597,10 @@ class LiveActivityManager: ObservableObject {
 
     // MARK: - Special Update Handlers
     private func handleLyricUpdate() {
+        refreshMusicActivityContent()
+    }
+
+    private func refreshMusicActivityContent() {
         guard self.currentActivity == .music else { return }
         guard let (_, newContent, _) = checkForMusic() else { return }
         guard newContent != self.activityContent else { return }
