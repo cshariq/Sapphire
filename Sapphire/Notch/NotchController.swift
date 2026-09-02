@@ -1232,7 +1232,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             if isLiveRunning {
                 geminiLiveManager.stopSession()
             } else {
-                openBlipHub()
+                openClaudeHub()
             }
         }) {
             HStack(spacing: 4) {
@@ -1264,7 +1264,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     )
 
                 if isGeminiHovered {
-                    Text(isLiveRunning ? "Stop" : "Blip")
+                    Text(isLiveRunning ? "Stop" : "Claude")
                         .font(.system(size: NotchConfiguration.geminiButtonTextFontSize, weight: .semibold))
                         .fixedSize()
                         .foregroundColor(.white)
@@ -1287,7 +1287,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
-                openBlipHub()
+                openClaudeHub()
                 navigationStack.append(.agentS)
             }
         )
@@ -2343,9 +2343,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         notchState = .clickExpanded
     }
 
-    private func openBlipHub() {
+    private func openClaudeHub() {
         measuredClickContentSize = .zero
-        navigationStack = [.blipHub]
+        navigationStack = [.claudeHub]
         notchState = .clickExpanded
         (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
     }
@@ -2526,7 +2526,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .musicArtistDetail, .musicAlbumDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
-                .agentS, .blipHub, .circleToSearch, .updateAvailable, .focusSessionDetailView:
+                .agentS, .claudeHub, .circleToSearch, .updateAvailable, .focusSessionDetailView:
             return nil
         }
     }

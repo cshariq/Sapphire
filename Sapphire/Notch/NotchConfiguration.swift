@@ -217,7 +217,7 @@ struct NotchConfiguration {
     // MARK: - Menu Type Detection
     static func isLargeVerticalMenu(_ mode: NotchWidgetMode) -> Bool {
         switch mode {
-        case .musicPlayer, .sportsPlayer, .financePlayer, .notesPlayer, .clipboardPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS, .blipHub, .circleToSearch, .multiAudio, .multiAudioDeviceAdjust, .multiAudioEQ, .multiAudioAppEQ:
+        case .musicPlayer, .sportsPlayer, .financePlayer, .notesPlayer, .clipboardPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS, .claudeHub, .circleToSearch, .multiAudio, .multiAudioDeviceAdjust, .multiAudioEQ, .multiAudioAppEQ:
             return true
         default:
             return false

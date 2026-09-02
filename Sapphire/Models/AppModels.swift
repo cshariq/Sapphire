@@ -54,7 +54,7 @@ enum NotchWidgetMode: Hashable {
     case timerDetailView
     case focusSessionDetailView
     case agentS
-    case blipHub
+    case claudeHub
     case circleToSearch
     case updateAvailable
     func hash(into hasher: inout Hasher) {
@@ -130,8 +130,8 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(21)
         case .agentS:
             hasher.combine(22)
-        case .blipHub:
-            hasher.combine(23)
+        case .claudeHub:
+            hasher.combine(34)
         case .circleToSearch:
             hasher.combine(28)
         case .updateAvailable:
