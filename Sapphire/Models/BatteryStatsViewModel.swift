@@ -15,6 +15,7 @@ class BatteryStatsViewModel: ObservableObject {
     @Published var isCharging: Bool = false
     @Published var timeRemaining: String = "--"
     @Published var temperature: Double = 0
+    @Published var systemPower: Double = 0
     @Published var powerConsumption: Double = 0
     @Published var amperage: Int = 0
     @Published var voltage: Double = 0
@@ -87,6 +88,11 @@ class BatteryStatsViewModel: ObservableObject {
             .sink { [weak self] state in
                 self?.batteryLevel = state.level
                 self?.isCharging = state.isCharging
+            }.store(in: &cancellables)
+
+        statsManager.$currentStats.compactMap { $0?.systemPower }.receive(on: DispatchQueue.main)
+            .sink { [weak self] power in
+                self?.systemPower = power ?? 0
             }.store(in: &cancellables)
 
         statsManager.$currentStats.compactMap { $0?.battery }.receive(on: DispatchQueue.main)

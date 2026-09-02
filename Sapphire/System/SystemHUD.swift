@@ -961,7 +961,7 @@ struct SystemHUDView: View {
              .padding(.vertical, 12)
              .frame(width: 280)
              .shadow(color: .black.opacity(0.3), radius: 15, y: 5)
-             .padding(.top, 30)
+             .padding(.top, NotchConfiguration.universalHeight)
              .transition(.opacity.combined(with: .move(edge: .bottom)))
              .animation(.easeOut(duration: 0.12), value: type.caseIdentifier)
          }

@@ -1553,7 +1553,7 @@ class MusicManager: ObservableObject {
                     self.applyPlaybackRefresh(track.payload)
                 } else if self.hasMediaChanged(track.payload) {
                     self.applyTrackPayload(track.payload, sourceKey: key)
-                } else if track.payload.artwork != nil && self.artwork == nil {
+                } else if let payloadArtwork = track.payload.artwork, payloadArtwork !== self.artwork {
                     self.applyTrackPayload(track.payload, sourceKey: key)
                 } else {
                     self.applyPlaybackRefresh(track.payload)
@@ -1576,7 +1576,7 @@ class MusicManager: ObservableObject {
                     self.applyTrackPayload(track.payload, sourceKey: newKey)
                 } else {
                     self.applyPlaybackRefresh(track.payload)
-                    if track.payload.artwork != nil && self.artwork == nil {
+                    if let payloadArtwork = track.payload.artwork, payloadArtwork !== self.artwork {
                         self.applyTrackPayload(track.payload, sourceKey: newKey)
                     }
                 }
@@ -2051,12 +2051,12 @@ class MusicManager: ObservableObject {
 
     private func enrichAppleMusicTrackStats(generation: UInt64) async {
         guard lastKnownBundleID == "com.apple.Music" else { return }
-        appleMusicPrivateAPI.bootstrapIfNeeded(policy: .onDemand)
-        _ = await appleMusicPrivateAPI.refreshAuthIfNeeded()
-        guard appleMusicPrivateAPI.isLoggedIn else { return }
+        guard appleMusic.isMusicKitAuthorized else { return }
         guard generation == trackMetadataGeneration else { return }
-        guard let songID = await appleMusicPrivateAPI.currentTrackSongID() else { return }
-        let (playCount, popularity) = await appleMusicPrivateAPI.fetchTrackStats(songID: songID)
+        let songID = trackID
+        guard let songID, !songID.isEmpty else { return }
+        let playCount: Int? = nil
+        let popularity: Int? = nil
         guard generation == trackMetadataGeneration else { return }
         if let playCount { applePlayCount = playCount }
         if let popularity { applePopularity = popularity }

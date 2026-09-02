@@ -726,6 +726,9 @@ struct Settings: Codable, Equatable {
     var lockScreenShowNotch: Bool = true
     var lockScreenCustomWallpaperEnabled: Bool = false
     var lockScreenCustomWallpaperPath: String? = nil
+    var lockScreenKeepWallpaperAfterUnlock: Bool = false
+    var desktopWallpaperEnabled: Bool = false
+    var desktopWallpaperPath: String? = nil
     var lockScreenLiveActivityEnabled: Bool = true
     var lockScreenLiquidGlassLook: Bool = true
     var lockScreenLiquidGlassIntensity: Double = 0.75
@@ -767,7 +770,7 @@ struct Settings: Codable, Equatable {
     var swipeToHideNotch: Bool = false
     var preventNotchExpandWhenLocked: Bool = false
     var releaseChannel: ReleaseChannel = .stable
-    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .spacer, .battery, .multiAudio, .caffeine, .pin]
+    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .focusSession, .spacer, .battery, .multiAudio, .caffeine, .pin]
     var circleToSearchEnabled: Bool = true
     var circleToSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "C", modifiers: [.control, .shift])
     var circleToSearchBrowserEngine: CircleSearchBrowserEngine = .google
@@ -817,7 +820,7 @@ struct Settings: Codable, Equatable {
     var rememberLastMenu: Bool = false
     var lastNotchNavigationStack: [RestorableNotchMenu]? = nil
     var showDividersBetweenWidgets: Bool = false
-    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .shortcuts, .notes, .clipboard, .mirror, .focusSession]
+    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .focusSession, .battery, .shortcuts, .notes, .clipboard, .mirror]
     var musicWidgetEnabled: Bool = true
     var weatherWidgetEnabled: Bool = true
     var sportsWidgetEnabled: Bool = false
@@ -838,6 +841,7 @@ struct Settings: Codable, Equatable {
     var clipboardHistoryUnlimited: Bool = true
     var clipboardIgnoreConcealedItems: Bool = true
     var timerWidgetEnabled: Bool = true
+    var batteryWidgetEnabled: Bool = true
     var focusSessionWidgetEnabled: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
     var liveActivityOrder: [LiveActivityType] = LiveActivityType.allCases
@@ -1293,8 +1297,16 @@ struct SettingsBackupDocument: FileDocument {
             return payload
         }
 
-        let settings = try decoder.decode(Settings.self, from: data)
-        return SettingsBackupPayload(settings: settings)
+        if let settings = SettingsPersistence.decodeFromPayload(data) {
+            return SettingsBackupPayload(settings: settings)
+        }
+
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(
+                codingPath: [],
+                debugDescription: "The file could not be read as a Sapphire settings backup."
+            )
+        )
     }
 }
 
@@ -1421,6 +1433,65 @@ private enum SettingsPersistence {
     }
 
     static func decodeFromDictionary(_ dictionary: [String: Any]) -> Settings? {
+        decodeDictionaryTolerantly(dictionary)
+    }
+
+    static func decodeFromPayload(_ data: Data) -> Settings? {
+        if var settings = try? decoder.decode(Settings.self, from: data) {
+            settings.normalizeCollectionOrders()
+            return settings
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        let settingsDictionary: [String: Any]
+        if let wrapped = object["settings"] as? [String: Any] {
+            settingsDictionary = wrapped
+        } else {
+            settingsDictionary = object
+        }
+        return decodeFromDictionary(settingsDictionary)
+    }
+
+    // MARK: - Tolerant decoding
+
+    private static func decodeDictionaryTolerantly(_ dictionary: [String: Any]) -> Settings? {
+        if let settings = decodeFromJSONDictionary(dictionary) {
+            return settings
+        }
+        guard let defaults = encodeToDictionary(Settings()) else { return nil }
+
+        var merged = deepMergedDictionary(defaults: defaults, incoming: dictionary)
+        if let settings = decodeFromJSONDictionary(merged) {
+            return settings
+        }
+
+        var droppedKeys: [String] = []
+        while decodeFromJSONDictionary(merged) == nil {
+            var repaired = false
+            for key in dictionary.keys {
+                var candidate = merged
+                if let defaultValue = defaults[key] {
+                    candidate[key] = defaultValue
+                } else {
+                    candidate.removeValue(forKey: key)
+                }
+                if decodeFromJSONDictionary(candidate) != nil {
+                    merged = candidate
+                    droppedKeys.append(key)
+                    repaired = true
+                    break
+                }
+            }
+            if !repaired { return nil }
+        }
+        if !droppedKeys.isEmpty {
+            print("[SettingsModel] Settings import: reverted incompatible keys to defaults: \(droppedKeys.sorted())")
+        }
+        return decodeFromJSONDictionary(merged)
+    }
+
+    private static func decodeFromJSONDictionary(_ dictionary: [String: Any]) -> Settings? {
         guard JSONSerialization.isValidJSONObject(dictionary),
               let data = try? JSONSerialization.data(withJSONObject: dictionary),
               var settings = try? decoder.decode(Settings.self, from: data) else {
@@ -1430,19 +1501,17 @@ private enum SettingsPersistence {
         return settings
     }
 
-    static func decodeFromPayload(_ data: Data) -> Settings? {
-        if var settings = try? decoder.decode(Settings.self, from: data) {
-            settings.normalizeCollectionOrders()
-            return settings
+    private static func deepMergedDictionary(defaults: [String: Any], incoming: [String: Any]) -> [String: Any] {
+        var result = defaults
+        for (key, incomingValue) in incoming {
+            if let incomingDict = incomingValue as? [String: Any],
+               let defaultDict = result[key] as? [String: Any] {
+                result[key] = deepMergedDictionary(defaults: defaultDict, incoming: incomingDict)
+            } else {
+                result[key] = incomingValue
+            }
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var dictionary = encodeToDictionary(Settings()) else {
-            return nil
-        }
-        for (key, value) in object {
-            dictionary[key] = value
-        }
-        return decodeFromDictionary(dictionary)
+        return result
     }
 
     static func isJSONCompatible(_ value: Any) -> Bool {
@@ -1731,7 +1800,7 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, focusSession, agent
+    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, battery, focusSession, agent
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
@@ -1745,6 +1814,7 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
         case .notes: return "Notes"
         case .clipboard: return "Clipboard"
         case .mirror: return "Mirror"
+        case .battery: return "Battery"
         case .focusSession: return "Focus"
         case .agent: return "Agent"
         }
@@ -1997,18 +2067,19 @@ enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
 }
 
 enum NotchButtonType: String, Codable, Identifiable, Equatable {
-    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, caffeine, spacer, multiAudio, battery, pin
+    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, focusSession, caffeine, spacer, multiAudio, battery, pin
     var id: String { self.rawValue }
 
     static let allCases: [NotchButtonType] = [
         .settings, .fileShelf, .notes, .clipboard, .intelligence,
-        .caffeine, .spacer, .multiAudio, .battery, .pin,
+        .focusSession, .caffeine, .spacer, .multiAudio, .battery, .pin,
     ]
 
     var displayName: String {
         switch self {
         case .settings: "Settings"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"
         case .intelligence: "Blip"; case .intelligenceLive: "Gemini";
+        case .focusSession: "Focus";
         case .caffeine: "Caffeinate"; case .spacer: "Spacer";
         case .multiAudio: "Multi-Audio (Beta)"; case .battery: "Battery"; case .pin: "Pin"
         }
@@ -2018,6 +2089,7 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
         switch self {
         case .settings: "gearshape"; case .fileShelf: "tray.full"; case .notes: "note.text"; case .clipboard: "list.clipboard"
         case .intelligence: "sparkle"; case .intelligenceLive: "waveform";
+        case .focusSession: "moon.fill";
         case .caffeine: "cup.and.saucer"; case .spacer: "space";
         case .multiAudio: "hifispeaker.and.homepod.mini.fill"; case .battery: "battery.100"; case .pin: "pin"
         }

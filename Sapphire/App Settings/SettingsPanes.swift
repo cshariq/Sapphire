@@ -1376,6 +1376,7 @@ struct WidgetsSettingsView: View {
         if settings.settings.notesWidgetEnabled { count += 1 }
         if settings.settings.clipboardWidgetEnabled { count += 1 }
         if settings.settings.mirrorWidgetEnabled { count += 1 }
+        if settings.settings.batteryWidgetEnabled { count += 1 }
         return count
     }
 
@@ -2388,6 +2389,121 @@ struct LockScreenSettingsView: View {
                     .font(.largeTitle.bold())
                     .padding(.bottom)
 
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Wallpaper").font(.headline).padding([.top, .horizontal])
+
+                    ToggleRow(
+                        title: "Custom Lock Screen Wallpaper",
+                        description: "Change the system wallpaper to your chosen image or video while your Mac is locked and restore it automatically when you unlock.",
+                        isOn: $settings.settings.lockScreenCustomWallpaperEnabled
+                    )
+
+                    if settings.settings.lockScreenCustomWallpaperEnabled {
+                        Divider().padding(.leading, 20)
+
+                        HStack(spacing: 10) {
+                            Image(systemName: lockScreenWallpaperIsVideo ? "film" : "photo.fill")
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let path = settings.settings.lockScreenCustomWallpaperPath,
+                                   !path.isEmpty,
+                                   FileManager.default.fileExists(atPath: path) {
+                                    Text((path as NSString).lastPathComponent)
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                    Text(path)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                } else {
+                                    Text("No wallpaper selected")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Button("Choose…") { chooseLockScreenWallpaper() }
+                            if settings.settings.lockScreenCustomWallpaperPath != nil {
+                                Button("Remove") {
+                                    settings.settings.lockScreenCustomWallpaperPath = nil
+                                }
+                            }
+                        }
+                        .padding()
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Keep Wallpaper After Unlock",
+                            description: "Don't revert the wallpaper when you unlock — keep the lock screen wallpaper (live video included) as your desktop wallpaper.",
+                            isOn: $settings.settings.lockScreenKeepWallpaperAfterUnlock
+                        )
+
+                        if lockScreenWallpaperIsVideo {
+                            Text("The video plays live on your lock screen.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .padding([.horizontal])
+                                .padding(.bottom, 8)
+                        }
+                    }
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Custom Desktop Wallpaper",
+                        description: "Use a separate wallpaper (live video included) on your desktop after unlocking, instead of the lock screen wallpaper.",
+                        isOn: $settings.settings.desktopWallpaperEnabled
+                    )
+
+                    if settings.settings.desktopWallpaperEnabled {
+                        Divider().padding(.leading, 20)
+
+                        HStack(spacing: 10) {
+                            Image(systemName: desktopWallpaperIsVideo ? "film" : "photo.fill")
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                if let path = settings.settings.desktopWallpaperPath,
+                                   !path.isEmpty,
+                                   FileManager.default.fileExists(atPath: path) {
+                                    Text((path as NSString).lastPathComponent)
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                    Text(path)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                } else {
+                                    Text("No wallpaper selected")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            Button("Choose…") { chooseDesktopWallpaper() }
+                            if settings.settings.desktopWallpaperPath != nil {
+                                Button("Remove") {
+                                    settings.settings.desktopWallpaperPath = nil
+                                }
+                            }
+                        }
+                        .padding()
+
+                        if desktopWallpaperIsVideo {
+                            Text("The video plays live on your desktop behind your icons.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .padding([.horizontal])
+                                .padding(.bottom, 8)
+                        }
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+                .animation(.default, value: settings.settings.lockScreenCustomWallpaperEnabled)
+                .animation(.default, value: settings.settings.desktopWallpaperEnabled)
+
                 ToggleRow(
                     title: "Show Music When Paused",
                     description: "Keep showing the current track in lock screen widgets even when playback is paused.",
@@ -2576,53 +2692,6 @@ struct LockScreenSettingsView: View {
                 .animation(.default, value: settings.settings.lockScreenFrostedOverLiquidGlass)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Wallpaper").font(.headline).padding([.top, .horizontal])
-
-                    ToggleRow(
-                        title: "Custom Lock Screen Wallpaper",
-                        description: "Change the system wallpaper to your chosen image while your Mac is locked and restore it automatically when you unlock.",
-                        isOn: $settings.settings.lockScreenCustomWallpaperEnabled
-                    )
-
-                    if settings.settings.lockScreenCustomWallpaperEnabled {
-                        Divider().padding(.leading, 20)
-
-                        HStack(spacing: 10) {
-                            Image(systemName: "photo.fill")
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let path = settings.settings.lockScreenCustomWallpaperPath,
-                                   !path.isEmpty,
-                                   FileManager.default.fileExists(atPath: path) {
-                                    Text((path as NSString).lastPathComponent)
-                                        .font(.caption.weight(.medium))
-                                        .lineLimit(1)
-                                    Text(path)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                } else {
-                                    Text("No wallpaper selected")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            Button("Choose…") { chooseLockScreenWallpaper() }
-                            if settings.settings.lockScreenCustomWallpaperPath != nil {
-                                Button("Remove") {
-                                    settings.settings.lockScreenCustomWallpaperPath = nil
-                                }
-                            }
-                        }
-                        .padding()
-                    }
-                }
-                .modifier(SettingsContainerModifier())
-                .animation(.default, value: settings.settings.lockScreenCustomWallpaperEnabled)
-
-                VStack(alignment: .leading, spacing: 0) {
                     Text("Notch Bar").font(.headline).padding([.top, .horizontal])
 
                     ToggleRow(
@@ -2643,23 +2712,72 @@ struct LockScreenSettingsView: View {
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .modifier(SettingsContainerModifier())
             .onChange(of: settings.settings.lockScreenShowNotch) {notchsettingsHaveChanged = true}
         }
     }
 
+    private var lockScreenWallpaperIsVideo: Bool {
+        guard let path = settings.settings.lockScreenCustomWallpaperPath else { return false }
+        let url = URL(fileURLWithPath: path)
+        if let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
+            var isVideo = contentType.conforms(to: .movie) || contentType.conforms(to: .audiovisualContent)
+            if #available(macOS 15, *) {
+                isVideo = isVideo || contentType.conforms(to: .heics)
+            }
+            return isVideo
+        }
+        let videoExtensions: Set<String> = ["mov", "mp4", "m4v", "mpeg", "mpg", "webm", "avi", "heics"]
+        return videoExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    private var desktopWallpaperIsVideo: Bool {
+        guard let path = settings.settings.desktopWallpaperPath else { return false }
+        let url = URL(fileURLWithPath: path)
+        if let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
+            var isVideo = contentType.conforms(to: .movie) || contentType.conforms(to: .audiovisualContent)
+            if #available(macOS 15, *) {
+                isVideo = isVideo || contentType.conforms(to: .heics)
+            }
+            return isVideo
+        }
+        let videoExtensions: Set<String> = ["mov", "mp4", "m4v", "mpeg", "mpg", "webm", "avi", "heics"]
+        return videoExtensions.contains(url.pathExtension.lowercased())
+    }
+
     private func chooseLockScreenWallpaper() {
+        chooseWallpaper(
+            title: "Choose Lock Screen Wallpaper",
+            message: "Select an image or video to show as your lock screen wallpaper."
+        ) { [weak settings] url in
+            settings?.settings.lockScreenCustomWallpaperPath = url.path
+        }
+    }
+
+    private func chooseDesktopWallpaper() {
+        chooseWallpaper(
+            title: "Choose Desktop Wallpaper",
+            message: "Select an image or video to use as your desktop wallpaper."
+        ) { [weak settings] url in
+            settings?.settings.desktopWallpaperPath = url.path
+        }
+    }
+
+    private func chooseWallpaper(title: String, message: String, completion: @escaping (URL) -> Void) {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
-        panel.title = "Choose Lock Screen Wallpaper"
-        panel.message = "Select an image to show as your lock screen wallpaper."
+        panel.title = title
+        panel.message = message
         panel.prompt = "Choose"
-        panel.allowedContentTypes = [.image]
+        if #available(macOS 15, *) {
+            panel.allowedContentTypes = [.image, .movie, .heics]
+        } else {
+            panel.allowedContentTypes = [.image, .movie]
+        }
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.begin { [weak settings] response in
+        panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            settings?.settings.lockScreenCustomWallpaperPath = url.path
+            completion(url)
         }
     }
 }
@@ -9219,8 +9337,8 @@ struct ModernUpdateStatusView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Button(action: { updateChecker.installAndRelaunchWithoutPassword() }) {
-                        Text("Use legacy update method (no password, may not work)")
+                    Button(action: { updateChecker.installAndRelaunchCurrentMethod() }) {
+                        Text("Use current update method (may prompt for password)")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .underline()
@@ -9438,6 +9556,7 @@ fileprivate struct NotchButtonRowView: View {
                     settings.settings.intelligenceEnabled = newValue
                 }
             )
+        case .focusSession: return $settings.settings.focusSessionWidgetEnabled
         case .caffeine: return $settings.settings.caffeinateEnabled
         case .battery: return $settings.settings.batteryEstimatorEnabled
         case .multiAudio: return $settings.settings.showMultiAudioIcon
@@ -9451,6 +9570,8 @@ fileprivate struct NotchButtonRowView: View {
             return true
         case .intelligenceLive, .intelligence:
             return !permissionsManager.areIntelligencePermissionsGranted
+        case .focusSession:
+            return false
         default:
             return false
         }
@@ -10560,14 +10681,18 @@ struct FocusSessionSettingsView: View {
                 Text("Focus Duration:")
                     .font(.system(size: 13))
                 Spacer()
-                Text("\(Int(settings.settings.focusSessionDuration / 60)) min")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.green)
-                Slider(value: Binding(
+                TextField("Minutes", value: Binding(
                     get: { settings.settings.focusSessionDuration / 60 },
-                    set: { settings.settings.focusSessionDuration = $0 * 60 }
-                ), in: 1...120, step: 5)
-                .frame(width: 160)
+                    set: { settings.settings.focusSessionDuration = max(1, $0) * 60 }
+                ), format: .number.precision(.fractionLength(0)))
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1)
+                    .frame(width: 62)
+                    .multilineTextAlignment(.trailing)
+                    .help("No limit — enter any number of minutes")
+                Text("min")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
 
@@ -10580,14 +10705,18 @@ struct FocusSessionSettingsView: View {
                     Text("Break Duration:")
                         .font(.system(size: 13))
                     Spacer()
-                    Text("\(Int(settings.settings.focusBreakDuration / 60)) min")
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.orange)
-                    Slider(value: Binding(
+                    TextField("Minutes", value: Binding(
                         get: { settings.settings.focusBreakDuration / 60 },
-                        set: { settings.settings.focusBreakDuration = $0 * 60 }
-                    ), in: 0...30, step: 1)
-                    .frame(width: 160)
+                        set: { settings.settings.focusBreakDuration = max(0, $0) * 60 }
+                    ), format: .number.precision(.fractionLength(0)))
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1)
+                        .frame(width: 62)
+                        .multilineTextAlignment(.trailing)
+                        .help("No limit — enter any number of minutes (0 disables the break)")
+                    Text("min")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
             }
@@ -11210,11 +11339,18 @@ private struct AddFocusScheduleView: View {
                 HStack {
                     Text("Duration:")
                     Spacer()
-                    Text("\(Int(durationMinutes)) min")
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.green)
-                    Slider(value: $durationMinutes, in: 5...180, step: 5)
-                        .frame(width: 150)
+                    TextField("Minutes", value: Binding(
+                        get: { durationMinutes },
+                        set: { durationMinutes = max(1, $0) }
+                    ), format: .number.precision(.fractionLength(0)))
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1)
+                        .frame(width: 62)
+                        .multilineTextAlignment(.trailing)
+                        .help("No limit — enter any number of minutes")
+                    Text("min")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
                 }
 
                 Text("Scheduled sessions respect your blocking, environment, and ambient-sound settings — they behave exactly like sessions you start manually.")

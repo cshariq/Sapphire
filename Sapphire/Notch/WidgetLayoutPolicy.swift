@@ -23,6 +23,7 @@ enum WidgetLayoutPolicy {
         case .notes: return 176
         case .clipboard: return 176
         case .mirror: return 140
+        case .battery: return 210
         case .agent: return 0
         case .focusSession: return 190
         }

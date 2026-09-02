@@ -123,6 +123,13 @@ final class FocusSessionManager: ObservableObject {
         Self.format(remainingSeconds)
     }
 
+    var currentBlockEndDate: Date? {
+        guard isSessionActive else { return nil }
+        if isPaused { return Date().addingTimeInterval(remainingSeconds) }
+        guard let startedAt else { return nil }
+        return startedAt.addingTimeInterval(accumulatedElapsed)
+    }
+
     static func format(_ time: TimeInterval) -> String {
         let total = Int(time)
         let hours = total / 3600

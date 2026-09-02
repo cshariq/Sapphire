@@ -31,7 +31,7 @@ struct FocusRestrictedAppActivityView: View {
     var body: some View {
         VStack(spacing: 0) {
             Color.clear
-                .frame(height: NotchConfiguration.initialSize.height)
+                .frame(height: NotchConfiguration.universalHeight)
 
             VStack(spacing: 12) {
                 HStack(alignment: .center, spacing: 12) {
