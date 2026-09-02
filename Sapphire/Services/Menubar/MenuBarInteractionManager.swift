@@ -19,25 +19,35 @@ final class MenuBarInteractionManager {
 
     // MARK: - State
     public var isMonitoring = false
+    private var isSuspended = false
     private var disabledUntil: Date?
     private var cancellables = Set<AnyCancellable>()
 
-    private init() {
-        SettingsModel.shared.$settings.receive(on: DispatchQueue.main).sink { [weak self] settings in
-            guard let self = self, self.isMonitoring else { return }
-            self.updateMonitors(for: settings)
-        }.store(in: &cancellables)
-    }
+    private init() {}
 
     func startMonitoring() {
         guard !isMonitoring else { return }
         isMonitoring = true
+        isSuspended = false
+        if cancellables.isEmpty {
+            SettingsModel.shared.$settings.receive(on: DispatchQueue.main).sink { [weak self] settings in
+                guard let self = self, self.isMonitoring else { return }
+                self.updateMonitors(for: settings)
+            }.store(in: &cancellables)
+        }
         updateMonitors(for: SettingsModel.shared.settings)
+    }
+
+    func setSuspended(_ suspended: Bool) {
+        guard isSuspended != suspended else { return }
+        isSuspended = suspended
+        if suspended { cancelHoverReveal() }
     }
 
     func stopMonitoring() {
         guard isMonitoring else { return }
         isMonitoring = false
+        isSuspended = false
         stopClickMonitoring()
         stopHoverMonitoring()
         cancellables.removeAll()
@@ -67,7 +77,8 @@ final class MenuBarInteractionManager {
         guard clickToken == nil else { return }
 
         clickToken = GlobalInputMonitor.shared.onLeftMouseDown { [weak self] in
-            guard let self = self, Date() >= (self.disabledUntil ?? .distantPast) else { return }
+            guard let self = self, !self.isSuspended else { return }
+            guard Date() >= (self.disabledUntil ?? .distantPast) else { return }
 
             let location = NSEvent.mouseLocation
 
@@ -104,7 +115,7 @@ final class MenuBarInteractionManager {
     }
 
     private func handleMenuBarHoverChange(_ isInside: Bool) {
-        guard isMonitoring else { return }
+        guard isMonitoring, !isSuspended else { return }
         if isInside {
             scheduleHoverReveal()
         } else {
@@ -132,7 +143,7 @@ final class MenuBarInteractionManager {
     private func fireHoverReveal() {
         hoverRevealTimer = nil
 
-        guard isMonitoring, hoverProbe?.isHovering == true else { return }
+        guard isMonitoring, !isSuspended, hoverProbe?.isHovering == true else { return }
         guard Date() >= (disabledUntil ?? .distantPast) else { return }
         guard isLocationInMenuBar(NSEvent.mouseLocation) else { return }
 
