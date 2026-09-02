@@ -55,6 +55,8 @@ class BluetoothManager: NSObject, ObservableObject {
             await batteryReader.refreshAllBatteries()
         }
 
+        startPollingServices()
+
         self.connectionNotification = IOBluetoothDevice.register(
             forConnectNotifications: self,
             selector: #selector(deviceConnected(_:device:))
@@ -79,6 +81,7 @@ class BluetoothManager: NSObject, ObservableObject {
         connectionNotification?.unregister()
         disconnectionNotifications.values.forEach { $0.unregister() }
         NotificationCenter.default.removeObserver(self)
+        periodicPollingTimer?.invalidate()
     }
 
     @objc private func handleAirPodsUpdate(_ notification: Notification) {

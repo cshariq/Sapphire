@@ -8,7 +8,7 @@ import Cocoa
 
 public extension NSScreen {
   var displayID: CGDirectDisplayID {
-    (self.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)!
+    (self.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
   }
 
   var vendorNumber: UInt32? {
@@ -73,7 +73,9 @@ public extension NSScreen {
     }
 
     while case let object = IOIteratorNext(servicePortIterator), object != 0 {
-      let dict = (IODisplayCreateInfoDictionary(object, UInt32(kIODisplayOnlyPreferredName)).takeRetainedValue() as NSDictionary as? [String: AnyObject])!
+      guard let dict = IODisplayCreateInfoDictionary(object, UInt32(kIODisplayOnlyPreferredName)).takeRetainedValue() as NSDictionary as? [String: AnyObject] else {
+        continue
+      }
 
       if dict[kDisplayVendorID] as? UInt32 == self.vendorNumber, dict[kDisplayProductID] as? UInt32 == self.modelNumber, dict[kDisplaySerialNumber] as? UInt32 == self.serialNumber {
         if let productName = dict["DisplayProductName"] as? [String: String], let firstKey = Array(productName.keys).first {

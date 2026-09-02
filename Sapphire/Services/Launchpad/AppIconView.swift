@@ -203,6 +203,7 @@ class LaunchpadViewModel: ObservableObject {
         pages[folderPath.page][folderPath.item] = .folder(folder)
 
         self.draggingItem = .app(item)
+        self.dragOriginPath = folderPath
         reflowAndCompactLayout()
     }
 

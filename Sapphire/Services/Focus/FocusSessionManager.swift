@@ -502,7 +502,7 @@ final class FocusSessionManager: ObservableObject {
     private static let streakBrokenThresholdDays = 3
 
     private func dayKey(_ components: DateComponents) -> String {
-        "\(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)"
+        String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
     private func dayKey(for date: Date) -> String {
         dayKey(Calendar.current.dateComponents([.year, .month, .day], from: date))

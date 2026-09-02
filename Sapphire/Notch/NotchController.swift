@@ -2647,7 +2647,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func syncNotchHostWindowHeight(contentHeight: CGFloat) {
-        (NSApp.delegate as? AppDelegate)?.updateNotchHostWindowHeight(requiredContentHeight: contentHeight)
+        (NSApp.delegate as? AppDelegate)?.updateNotchHostWindowHeight(requiredContentHeight: contentHeight, for: notchWindow)
     }
 
     private func handleClickExpandedHoverOut(config: ResolvedNotchConfiguration) {

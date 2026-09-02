@@ -264,9 +264,13 @@ class FileDropManager: ObservableObject {
         }) else { return }
 
         if case .fileConversion(var task) = tasks[index] {
-            task.progress = progress
-            if progress >= 1.0 {
-                task.status = .done
+            if progress < 0 {
+                task.status = .failed
+            } else {
+                task.progress = progress
+                if progress >= 1.0 {
+                    task.status = .done
+                }
             }
             tasks[index] = .fileConversion(task)
         }

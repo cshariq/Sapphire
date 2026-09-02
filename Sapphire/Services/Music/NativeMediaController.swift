@@ -210,7 +210,7 @@ final class NativeMediaController: NSObject {
     func toggleShuffle() { runAdapterCommand(["send", "6"]) }
     func toggleRepeat() { runAdapterCommand(["send", "7"]) }
     func beginForwardSeek() { runAdapterCommand(["send", "8"]) }
-    func endForwardSeek() { runAdapterCommand(["send", "8"]) }
+    func endForwardSeek() { runAdapterCommand(["send", "9"]) }
     func beginBackwardSeek() { runAdapterCommand(["send", "10"]) }
     func endBackwardSeek() { runAdapterCommand(["send", "11"]) }
     func skipBack15Seconds() { runAdapterCommand(["send", "12"]) }

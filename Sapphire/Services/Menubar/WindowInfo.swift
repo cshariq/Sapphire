@@ -79,7 +79,7 @@ struct WindowInfo {
             var role: AnyObject?
             guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success,
                   (role as? String) == kAXMenuBarItemRole as String else {
-                break
+                continue
             }
 
             var frameValue: CFTypeRef?

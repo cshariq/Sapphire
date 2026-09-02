@@ -185,7 +185,13 @@ class ActiveAppMonitor: ObservableObject {
             return nil
         }
 
-        let center = NSPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+        // Accessibility reports position/size in a top-left-origin, y-down space, while
+        // NSScreen.frame is bottom-left-origin, y-up — flip the y-axis before hit-testing.
+        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 0
+        let center = NSPoint(
+            x: origin.x + size.width / 2,
+            y: primaryScreenHeight - (origin.y + size.height / 2)
+        )
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) else {
             return nil
         }

@@ -20,6 +20,11 @@ class CryptoManager {
             return SymmetricKey(data: keyData)
         }
 
+        if let fallbackKeyData = KeychainManager.shared.load(for: keyAccount + ".fallback") {
+            print(" Successfully loaded existing encryption key from fallback keychain entry")
+            return SymmetricKey(data: fallbackKeyData)
+        }
+
         print("️ No existing encryption key found in keychain, creating new key")
 
         let newKey = SymmetricKey(size: .bits256)

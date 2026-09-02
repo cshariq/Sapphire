@@ -61,9 +61,6 @@ struct MirrorPlayerView: View {
                 camera.start()
             }
         }
-        .onDisappear {
-            MirrorCameraManager.shared.teardown()
-        }
     }
 
     private var topBar: some View {
