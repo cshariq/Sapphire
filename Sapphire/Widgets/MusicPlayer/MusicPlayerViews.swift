@@ -994,9 +994,8 @@ struct MusicWidgetView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(height: 100)
-                .frame(maxWidth: 300)
-                .fixedSize()
+                // Fixed width so track metadata length never moves the controls or resizes the notch.
+                .frame(width: 300, height: 100)
             }
             .buttonStyle(.plain)
         } else {
@@ -1052,27 +1051,30 @@ private struct MusicInfoView: View {
     let album: String?
     let artist: String?
 
+    // Each line keeps its slot (a blank line stands in for missing text) so the
+    // stack height, and the controls under it, never move between tracks.
+    private var titleLine: String { title.flatMap { $0.isEmpty ? nil : $0 } ?? " " }
+    private var albumLine: String {
+        guard let album, !album.isEmpty, album != title else { return " " }
+        return album
+    }
+    private var artistLine: String { artist.flatMap { $0.isEmpty ? nil : $0 } ?? " " }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let title = title, !title.isEmpty {
-                Text(title)
-                    .font(.system(size: 17, weight: .semibold))
-            }
-
-            if let album = album, !album.isEmpty, album != title {
-                Text(album)
-                    .font(.system(size: 14, weight: .medium))
-            }
-            if let artist = artist, !artist.isEmpty {
-                Text(artist)
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(.white.opacity(0.7))
-            }
+            Text(titleLine)
+                .font(.system(size: 17, weight: .semibold))
+            Text(albumLine)
+                .font(.system(size: 14, weight: .medium))
+                .accessibilityHidden(albumLine == " ")
+            Text(artistLine)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(.white.opacity(0.7))
+                .accessibilityHidden(artistLine == " ")
         }
         .foregroundStyle(.white)
         .lineLimit(1)
         .padding(.top, 8)
-        .minimumScaleFactor(0.8)
     }
 }
 
