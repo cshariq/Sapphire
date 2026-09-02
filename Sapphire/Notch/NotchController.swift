@@ -168,9 +168,8 @@ struct NotchController: View {
     @State private var hudOverlayOpacity: Double = 0.0
     @State private var hudOverlayBlur: CGFloat = 10.0
 
-    @State private var notchInteractionPollingTimer: Timer?
+    @State private var hoverMonitor: NotchHoverMonitor?
     @State private var lastSampledMouseLocation: CGPoint?
-    @State private var lastInteractionRefreshTime: TimeInterval = 0
     @State private var lastPublishedInteractiveFrame: CGRect = .null
     @State private var appliedTargetFPS: Int = 0
     @State private var lastActivityShapeSignature: String = ""
@@ -2431,37 +2430,48 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     // MARK: - Helper Methods
     private func startNotchInteractionMonitoring() {
-        guard notchInteractionPollingTimer == nil else { return }
+        guard let window = notchWindow else { return }
 
-        let interval = 1.0 / 30.0
-        let timer = Timer(timeInterval: interval, repeats: true) { _ in
-            self.refreshNotchInteractionState()
+        let monitor = hoverMonitor ?? NotchHoverMonitor()
+        hoverMonitor = monitor
+        monitor.start(window: window) {
+            refreshNotchInteractionState()
         }
-        timer.tolerance = 0.01
-        notchInteractionPollingTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
+        refreshNotchInteractionState()
     }
 
     private func stopNotchInteractionMonitoring() {
-        notchInteractionPollingTimer?.invalidate()
-        notchInteractionPollingTimer = nil
+        hoverMonitor?.stop()
+        hoverMonitor = nil
         lastSampledMouseLocation = nil
         lastPublishedInteractiveFrame = .null
-        lastInteractionRefreshTime = 0
+    }
+
+    private func syncHoverTrackingGeometry() {
+        guard let monitor = hoverMonitor, let window = notchWindow, let config = config else { return }
+
+        guard !isManuallyHidden else {
+            monitor.update(hoverRect: .null, pointerIsInside: false)
+            return
+        }
+
+        let detectionBounds = interactiveFrame(for: window, config: config).insetBy(
+            dx: -Self.hoverDetectionMargin,
+            dy: -Self.hoverDetectionMargin
+        )
+        monitor.update(hoverRect: detectionBounds, pointerIsInside: isHovered)
     }
 
     private func refreshNotchInteractionState() {
         guard let config = config, let window = notchWindow else { return }
 
-        let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastInteractionRefreshTime >= 0.02 else { return }
-        lastInteractionRefreshTime = now
         if isManuallyHidden {
             window.ignoresMouseEvents = true
             if let dynamicWindow = window as? DynamicFocusWindow {
                 dynamicWindow.forceMouseEventPassthrough = true
             }
             if isHovered { isHovered = false }
+            syncHoverTrackingGeometry()
             return
         }
 
@@ -2661,8 +2671,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 dynamicWindow.forceMouseEventPassthrough = true
                 dynamicWindow.updateInteractiveContentFrame(.zero)
             }
+            syncHoverTrackingGeometry()
             return
         }
+
+        defer { syncHoverTrackingGeometry() }
 
         if let dynamicWindow = window as? DynamicFocusWindow {
             dynamicWindow.forceMouseEventPassthrough = false

@@ -234,8 +234,8 @@ class MusicManager: ObservableObject {
     @Published private(set) var isMusicLiveActivityActive: Bool = false
     private(set) var systemVolume: Float = 0.0
 
-    @Published private(set) var currentElapsedTime: TimeInterval = 0
-    @Published private(set) var playbackProgress: Double = 0.0
+    private(set) var currentElapsedTime: TimeInterval = 0
+    private(set) var playbackProgress: Double = 0.0
 
     // MARK: - Private Properties
     private let mediaController = NativeMediaController()
@@ -2413,7 +2413,7 @@ class MusicManager: ObservableObject {
 
         if shouldTick {
             if liveActivityTimer == nil {
-                let interval = needsProgressUI ? 0.1 : 0.5
+                let interval = needsProgressUI ? 0.2 : 0.5
                 let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
                     Task { @MainActor [weak self] in
                         guard let self, self.isPlaying else { return }
@@ -2976,7 +2976,9 @@ class MusicManager: ObservableObject {
     func updateAirPlayDevices() async {
         airPlay.startDiscovery()
         airPlay.refresh()
-        self.airplayDevices = airPlay.devices
+        let devices = airPlay.devices
+        guard devices != airplayDevices else { return }
+        self.airplayDevices = devices
     }
 
     @discardableResult

@@ -39,6 +39,8 @@ struct SettingsDetailView: View {
     private func settingsPane(for selectedSection: SettingsSection?) -> some View {
         switch selectedSection {
         case .general: GeneralSettingsView()
+        case .apps: AppsSettingsView()
+        case .storage: StorageSettingsView()
         case .widgets: WidgetsSettingsView()
         case .liveActivities: LiveActivitiesSettingsView()
         case .appearance: AppearanceSettingsView()
@@ -411,6 +413,68 @@ struct NotchAppearanceEditorView: View {
         }
         .padding(.vertical)
         .transition(.opacity)
+    }
+}
+
+struct AppsSettingsView: View {
+    @StateObject private var model = InstalledAppsViewModel()
+    @State private var query = ""
+    @State private var showSystemApps = false
+
+    private var visibleApps: [InstalledApp] {
+        model.apps.filter { app in
+            (showSystemApps || !app.isSystem) && (query.isEmpty || app.name.localizedCaseInsensitiveContains(query) || app.bundleIdentifier.localizedCaseInsensitiveContains(query))
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Apps").font(.largeTitle.bold())
+                Text("Inspired by AppCleaner and Pearcleaner: inspect applications before removing them. Sapphire only moves items to Trash after explicit confirmation.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                    TextField("Search installed apps", text: $query).textFieldStyle(.plain)
+                    Toggle("System apps", isOn: $showSystemApps).toggleStyle(.checkbox)
+                }.padding().background(.quaternary).clipShape(RoundedRectangle(cornerRadius: 12))
+                if model.isLoading { ProgressView("Scanning Applications…") }
+                VStack(spacing: 0) {
+                    ForEach(visibleApps) { app in
+                        HStack(spacing: 12) {
+                            Image(nsImage: app.icon).resizable().frame(width: 36, height: 36)
+                            VStack(alignment: .leading) {
+                                Text(app.name).font(.headline)
+                                Text("\(app.bundleIdentifier) · \(app.formattedSize)").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Move to Trash", role: .destructive) { model.requestRemoval(app) }.disabled(app.isSystem)
+                        }.padding()
+                        if app.id != visibleApps.last?.id { Divider().padding(.leading, 60) }
+                    }
+                }.modifier(SettingsContainerModifier())
+            }.padding(25)
+        }.onAppear { model.scan() }
+        .alert("Move app to Trash?", isPresented: $model.confirmingRemoval) {
+            Button("Move to Trash", role: .destructive) { model.removeConfirmed() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text(model.removalMessage) }
+    }
+}
+
+struct StorageSettingsView: View {
+    @StateObject private var model = StorageViewModel()
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Storage").font(.largeTitle.bold())
+                Text("A safe, read-only disk overview inspired by DaisyDisk and GrandPerspective. Select a folder to inspect it; cleanup never runs automatically.").font(.subheadline).foregroundStyle(.secondary)
+                HStack { Image(systemName: "internaldrive.fill").font(.largeTitle).foregroundStyle(.orange); VStack(alignment: .leading) { Text(model.volumeName).font(.headline); Text("\(model.used.formatted(.byteCount(style: .file))) used of \(model.total.formatted(.byteCount(style: .file)))") .font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Refresh") { model.refresh() } }
+                    .padding().modifier(SettingsContainerModifier())
+                VStack(alignment: .leading, spacing: 0) { Text("Largest folders").font(.headline).padding(); ForEach(model.entries) { entry in HStack { Image(systemName: "folder.fill").foregroundStyle(.yellow); Text(entry.name); Spacer(); Text(entry.size.formatted(.byteCount(style: .file))).foregroundStyle(.secondary) }.padding(); Divider().padding(.leading, 20) } }.modifier(SettingsContainerModifier())
+                Text("For safety, protected locations and system files are not deleted by this feature.").font(.caption).foregroundStyle(.secondary)
+            }.padding(25)
+        }.onAppear { model.refresh() }
     }
 }
 

@@ -407,7 +407,10 @@ final class NativeMediaController: NSObject {
 
         var artworkImage = lastDecodedArtworkImage
         var artworkChanged = false
-        if let base64 = currentMergedMetadata["artworkData"] as? String, !base64.isEmpty {
+        let eventCarriesArtwork = metadata["artworkData"] != nil
+        let hasNoArtworkRecord = lastDecodedArtworkImage == nil && lastDecodedArtworkHash == nil
+        if eventCarriesArtwork || hasNoArtworkRecord,
+           let base64 = currentMergedMetadata["artworkData"] as? String, !base64.isEmpty {
             let currentHash = base64.hashValue
             if currentHash == lastDecodedArtworkHash, let cached = lastDecodedArtworkImage {
                 artworkImage = cached
