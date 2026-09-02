@@ -168,19 +168,20 @@ struct NotchController: View {
     @State private var hudOverlayOpacity: Double = 0.0
     @State private var hudOverlayBlur: CGFloat = 10.0
 
-    @State private var notchInteractionPollingTimer: Timer?
+    @State private var hoverMonitor: NotchHoverMonitor?
     @State private var lastSampledMouseLocation: CGPoint?
-    @State private var lastInteractionRefreshTime: TimeInterval = 0
     @State private var lastPublishedInteractiveFrame: CGRect = .null
     @State private var appliedTargetFPS: Int = 0
     @State private var lastActivityShapeSignature: String = ""
     @State private var isCalendarHovered: Bool = false
     @State private var fileDropFlowObserver: NSObjectProtocol?
     @State private var completeHideReason: NotchCompleteHideReason? = nil
+    @State private var lastInactiveVisibilityEvaluation: (hideWhenInactive: Bool, hideReason: NotchCompleteHideReason?)?
     @State private var inactiveHideUserOverride: Bool = false
     @State private var suppressHoverAfterReveal = false
     @State private var revealSettlingUntil: Date = .distantPast
     @State private var hoverExpandTask: Task<Void, Never>?
+    @State private var appearCursorLocation: CGPoint?
 
     private enum NotchCompleteHideReason {
         case manualSwipe
@@ -326,6 +327,23 @@ struct NotchController: View {
         return notchScreen.frame.contains(mouseLocation)
     }
 
+    private var notchTargetsSingleMonitor: Bool {
+        settings.settings.notchDisplayTarget != .allDisplays
+    }
+
+    private var cursorIsOnActivityDisplay: Bool {
+        guard let notchScreen = notchWindow?.screen else {
+            return CursorPosition.targetNotchScreen() == nil
+        }
+        let mouseLocation: CGPoint
+        if notchTargetsSingleMonitor, let appearCursorLocation {
+            mouseLocation = appearCursorLocation
+        } else {
+            mouseLocation = NSEvent.mouseLocation
+        }
+        return notchScreen.frame.contains(mouseLocation)
+    }
+
     private var myScreenIsFullScreen: Bool {
         guard activeAppMonitor.isFullScreen,
               let fsDisplayID = activeAppMonitor.fullScreenDisplayID,
@@ -346,7 +364,7 @@ struct NotchController: View {
 
     private var shouldHideActivityForInactiveDisplay: Bool {
         guard liveActivityManager.currentActivity == .systemHUD else { return false }
-        return !cursorIsOnMyScreen
+        return !cursorIsOnActivityDisplay
     }
 
     private var shouldHideWindowForSharing: Bool {
@@ -429,6 +447,8 @@ struct NotchController: View {
                 return settings.settings.mirrorWidgetEnabled
             case .focusSession:
                 return settings.settings.focusSessionWidgetEnabled
+            case .battery:
+                return settings.settings.batteryWidgetEnabled
             }
         }
     }
@@ -448,6 +468,7 @@ struct NotchController: View {
             case .clipboard: return .clipboardPlayer
             case .mirror: return .mirrorPlayer
             case .focusSession: return .focusSessionDetailView
+            case .battery: return .batteryDetailView
             }
         }
     }
@@ -1430,6 +1451,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .lockScreen: LockScreenLiveActivityView.right()
         case .updateAvailable(let version): UpdateAvailableActivityView.right(version: version)
         case .focusSession: FocusSessionActivityView.right()
+        case .battery: EmptyView()
         case .unlocked: LockScreenLiveActivityView.right()
         case .stats(let payload): statsLiveActivityView.right(for: payload, selectedStats: settings.settings.selectedStats, selectedSensorKeys: settings.settings.selectedSensorKeys)
         }
@@ -1467,6 +1489,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             }
         case .intelligenceLive:
             EmptyView()
+        case .focusSession:
+            EmptyView()
         case .caffeine:
             if settings.settings.caffeinateEnabled {
                 SubtleIconButton(systemName: caffeineManager.isActive ? "cup.and.heat.waves.fill" : "cup.and.heat.waves", action: { caffeineManager.toggle() }, horizontalPadding: 6)
@@ -1480,6 +1504,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     timeRemaining: batteryEstimator.estimatedTimeRemaining
                 )
                 .padding(.horizontal, NotchConfiguration.batteryHorizontalPadding)
+            } else {
+                EmptyView()
             }
         case .multiAudio:
             if settings.settings.showMultiAudioIcon {
@@ -1502,6 +1528,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     // MARK: - Setup and Teardown
     private func setupMonitors() {
+        appearCursorLocation = NSEvent.mouseLocation
         dragManager.startMonitoring()
         liveActivityManager.showLyricsBinding = $showLyrics
         updateFPS()
@@ -1692,6 +1719,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func handleActivityChange(_ newActivity: ActivityType) {
+        if newActivity != .none {
+            appearCursorLocation = NSEvent.mouseLocation
+        }
         let newActivity = shouldHideActivityForFullScreen || shouldHideActivityForInactiveDisplay ? .none : newActivity
         if newActivity != .none {
             inactiveHideUserOverride = false
@@ -2272,6 +2302,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         let wasManualSwipeReveal = completeHideReason == .manualSwipe
         completeHideReason = nil
         stopHiddenNotchSwipeMonitor()
+        appearCursorLocation = NSEvent.mouseLocation
         if let dynamicWindow = notchWindow as? DynamicFocusWindow {
             dynamicWindow.forceMouseEventPassthrough = false
         }
@@ -2302,8 +2333,14 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     private func evaluateInactiveNotchVisibility() {
         if liveActivityManager.currentActivity == .lockScreen { return }
-        notchLog.info("evaluateInactiveNotchVisibility: shouldHideWhenInactive=\(shouldHideWhenInactive) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
-        guard shouldHideWhenInactive else { return }
+        let hideWhenInactive = shouldHideWhenInactive
+        let evaluation = (hideWhenInactive, completeHideReason)
+        if lastInactiveVisibilityEvaluation?.hideWhenInactive != evaluation.0
+            || lastInactiveVisibilityEvaluation?.hideReason != evaluation.1 {
+            notchLog.info("evaluateInactiveNotchVisibility: shouldHideWhenInactive=\(hideWhenInactive) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
+            lastInactiveVisibilityEvaluation = evaluation
+        }
+        guard hideWhenInactive else { return }
         if completeHideReason == .manualSwipe { return }
 
         let hasActivity = liveActivityManager.currentActivity != .none
@@ -2393,37 +2430,48 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     // MARK: - Helper Methods
     private func startNotchInteractionMonitoring() {
-        guard notchInteractionPollingTimer == nil else { return }
+        guard let window = notchWindow else { return }
 
-        let interval = 1.0 / 30.0
-        let timer = Timer(timeInterval: interval, repeats: true) { _ in
-            self.refreshNotchInteractionState()
+        let monitor = hoverMonitor ?? NotchHoverMonitor()
+        hoverMonitor = monitor
+        monitor.start(window: window) {
+            refreshNotchInteractionState()
         }
-        timer.tolerance = 0.01
-        notchInteractionPollingTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
+        refreshNotchInteractionState()
     }
 
     private func stopNotchInteractionMonitoring() {
-        notchInteractionPollingTimer?.invalidate()
-        notchInteractionPollingTimer = nil
+        hoverMonitor?.stop()
+        hoverMonitor = nil
         lastSampledMouseLocation = nil
         lastPublishedInteractiveFrame = .null
-        lastInteractionRefreshTime = 0
+    }
+
+    private func syncHoverTrackingGeometry() {
+        guard let monitor = hoverMonitor, let window = notchWindow, let config = config else { return }
+
+        guard !isManuallyHidden else {
+            monitor.update(hoverRect: .null, pointerIsInside: false)
+            return
+        }
+
+        let detectionBounds = interactiveFrame(for: window, config: config).insetBy(
+            dx: -Self.hoverDetectionMargin,
+            dy: -Self.hoverDetectionMargin
+        )
+        monitor.update(hoverRect: detectionBounds, pointerIsInside: isHovered)
     }
 
     private func refreshNotchInteractionState() {
         guard let config = config, let window = notchWindow else { return }
 
-        let now = ProcessInfo.processInfo.systemUptime
-        guard now - lastInteractionRefreshTime >= 0.02 else { return }
-        lastInteractionRefreshTime = now
         if isManuallyHidden {
             window.ignoresMouseEvents = true
             if let dynamicWindow = window as? DynamicFocusWindow {
                 dynamicWindow.forceMouseEventPassthrough = true
             }
             if isHovered { isHovered = false }
+            syncHoverTrackingGeometry()
             return
         }
 
@@ -2526,7 +2574,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .musicArtistDetail, .musicAlbumDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
                 .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
-                .agentS, .blipHub, .circleToSearch, .updateAvailable, .focusSessionDetailView:
+                .agentS, .blipHub, .circleToSearch, .updateAvailable, .focusSessionDetailView, .batteryDetailView:
             return nil
         }
     }
@@ -2623,8 +2671,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 dynamicWindow.forceMouseEventPassthrough = true
                 dynamicWindow.updateInteractiveContentFrame(.zero)
             }
+            syncHoverTrackingGeometry()
             return
         }
+
+        defer { syncHoverTrackingGeometry() }
 
         if let dynamicWindow = window as? DynamicFocusWindow {
             dynamicWindow.forceMouseEventPassthrough = false

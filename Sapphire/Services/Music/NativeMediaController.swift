@@ -406,14 +406,25 @@ final class NativeMediaController: NSObject {
         }
 
         var artworkImage = lastDecodedArtworkImage
-        if let base64 = currentMergedMetadata["artworkData"] as? String, !base64.isEmpty {
+        var artworkChanged = false
+        let eventCarriesArtwork = metadata["artworkData"] != nil
+        let hasNoArtworkRecord = lastDecodedArtworkImage == nil && lastDecodedArtworkHash == nil
+        if eventCarriesArtwork || hasNoArtworkRecord,
+           let base64 = currentMergedMetadata["artworkData"] as? String, !base64.isEmpty {
             let currentHash = base64.hashValue
             if currentHash == lastDecodedArtworkHash, let cached = lastDecodedArtworkImage {
                 artworkImage = cached
-            } else if let data = Data(base64Encoded: base64), let decoded = NSImage(data: data) {
+            } else if let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters),
+                      let decoded = NSImage(data: data) {
                 lastDecodedArtworkHash = currentHash
                 lastDecodedArtworkImage = decoded
                 artworkImage = decoded
+                artworkChanged = true
+            } else if lastDecodedArtworkHash != currentHash {
+                lastDecodedArtworkHash = currentHash
+                lastDecodedArtworkImage = nil
+                artworkImage = nil
+                artworkChanged = true
             }
         }
 
@@ -427,9 +438,8 @@ final class NativeMediaController: NSObject {
             || existingClient?.payload.playbackRate != track.payload.playbackRate
         let positionChanged = playbackPositionChanged(from: existingClient?.payload, to: track.payload)
         let artworkArrived = track.payload.artwork != nil && existingClient?.payload.artwork == nil
-        let artworkUpdated = trackChanged && metadata["artworkData"] != nil
 
-        let shouldNotify = trackChanged || playStateChanged || positionChanged || artworkUpdated || artworkArrived
+        let shouldNotify = trackChanged || playStateChanged || positionChanged || artworkChanged || artworkArrived
 
         activeClients = [targetKey: track]
 

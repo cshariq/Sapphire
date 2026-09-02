@@ -208,9 +208,11 @@ final class AirPlayManager: NSObject, ObservableObject {
             byName[name] = AirPlayDevice(name: name, isAudioOnly: true, isSelected: isSelected, volume: volume)
         }
 
-        devices = byName.values.sorted {
+        let rebuilt = byName.values.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+        guard rebuilt != devices else { return }
+        devices = rebuilt
     }
 
     private static func displayName(for rawName: String, isRAOP: Bool) -> String {

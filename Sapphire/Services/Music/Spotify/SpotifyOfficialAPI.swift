@@ -31,10 +31,17 @@ class SpotifyOfficialAPIManager: ObservableObject {
     private var refreshTask: Task<Bool, Never>?
 
     private init() {
-        updateCredentials(clientId: settingsModel.settings.spotifyClientId, clientSecret: settingsModel.settings.spotifyClientSecret)
-        settingsModel.$settings.receive(on: DispatchQueue.main).sink { [weak self] newSettings in
-            self?.updateCredentials(clientId: newSettings.spotifyClientId, clientSecret: newSettings.spotifyClientSecret)
+        updateCredentials()
+        settingsModel.$settings.receive(on: DispatchQueue.main).sink { [weak self] _ in
+            self?.updateCredentials()
         }.store(in: &cancellables)
+        NotificationCenter.default.addObserver(
+            forName: .apiKeyManagerSpotifyCredentialsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateCredentials()
+        }
 
         self.accessToken = UserDefaults.standard.string(forKey: "spotifyAccessToken")
         self.refreshToken = UserDefaults.standard.string(forKey: "spotifyRefreshToken")
@@ -46,7 +53,9 @@ class SpotifyOfficialAPIManager: ObservableObject {
         }
     }
 
-    private func updateCredentials(clientId: String, clientSecret: String) {
+    private func updateCredentials() {
+        let clientId = APIKeyManager.shared.spotifyClientId
+        let clientSecret = APIKeyManager.shared.spotifyClientSecret
         self.clientId = clientId
         self.clientSecret = clientSecret
         let nowHasKeys = !clientId.isEmpty && !clientSecret.isEmpty
@@ -58,6 +67,11 @@ class SpotifyOfficialAPIManager: ObservableObject {
     // MARK: - Authentication
 
     func login() {
+        updateCredentials()
+        guard !clientId.isEmpty, !clientSecret.isEmpty else {
+            print("[SpotifyOfficialAPIManager] Log in failed: Client ID or Client Secret is missing.")
+            return
+        }
         let scope = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private user-read-private user-library-modify user-library-read"
         var components = URLComponents(string: "https://accounts.spotify.com/authorize")!
         components.queryItems = [

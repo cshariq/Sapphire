@@ -1457,6 +1457,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         previouslyFrontmostApp = nil
     }
 
+    func attachAuxiliaryNotchWindow(_ window: NSWindow) {
+        if cgsSpace == nil { cgsSpace = CGSSpace() }
+        cgsSpace?.windows.insert(window)
+    }
+
+    func detachAuxiliaryNotchWindow(_ window: NSWindow) {
+        cgsSpace?.windows.remove(window)
+    }
+
     func refreshNotchMousePassthrough() {
         for window in notchWindows {
             (window as? DynamicFocusWindow)?.syncMouseEventPassthrough()

@@ -77,7 +77,7 @@ private struct LyricTextView: View {
     var onCustomTap: (() -> Void)? = nil
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.25 : 1.0)) { context in
+        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.25 : 60)) { context in
             let line = musicManager.lyricLine(at: context.date)
             let lyricText = line?.translatedText ?? line?.text
             let trimmed = lyricText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
