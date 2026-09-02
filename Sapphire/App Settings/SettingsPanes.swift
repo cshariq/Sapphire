@@ -1430,18 +1430,7 @@ struct WidgetsSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
 
     private var enabledWidgetCount: Int {
-        var count = 0
-        if settings.settings.musicWidgetEnabled { count += 1 }
-        if settings.settings.weatherWidgetEnabled { count += 1 }
-        if settings.settings.calendarWidgetEnabled { count += 1 }
-        if settings.settings.shortcutsWidgetEnabled { count += 1 }
-        if settings.settings.sportsWidgetEnabled { count += 1 }
-        if settings.settings.financeWidgetEnabled { count += 1 }
-        if settings.settings.notesWidgetEnabled { count += 1 }
-        if settings.settings.clipboardWidgetEnabled { count += 1 }
-        if settings.settings.mirrorWidgetEnabled { count += 1 }
-        if settings.settings.batteryWidgetEnabled { count += 1 }
-        return count
+        settings.settings.enabledWidgetTypes.count
     }
 
     var body: some View {
@@ -8056,12 +8045,47 @@ struct WeatherSettingsView: View {
 struct CalendarSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
 
+    // Same guards as the Widgets pane: keep at least one widget on, and do not
+    // switch a widget on when the notch has no room for it.
+    private var isLastEnabledWidget: Bool {
+        settings.settings.calendarWidgetEnabled && settings.settings.enabledWidgetTypes.count <= 1
+    }
+
+    private var isAtCapacity: Bool {
+        !settings.settings.calendarWidgetEnabled && !WidgetLayoutPolicy.canFit(
+            .calendar,
+            in: settings.settings.enabledWidgetTypes,
+            availableWidth: WidgetLayoutPolicy.availableBarWidth(),
+            showDividers: settings.settings.showDividersBetweenWidgets
+        )
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Calendar & Reminders")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ToggleRow(
+                        title: "Enable Calendar Widget",
+                        description: isAtCapacity
+                            ? "Not enough notch space on this display."
+                            : "Show the calendar widget in the notch widget strip.",
+                        isOn: $settings.settings.calendarWidgetEnabled
+                    )
+                    .disabled(isLastEnabledWidget || isAtCapacity)
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Enable Calendar Live Activity",
+                        description: "Show upcoming events as a live activity in the notch.",
+                        isOn: $settings.settings.calendarLiveActivityEnabled
+                    )
+                }
+                .modifier(SettingsContainerModifier())
 
                 VStack(spacing: 0) {
                     HStack {

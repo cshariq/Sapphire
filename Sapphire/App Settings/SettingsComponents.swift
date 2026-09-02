@@ -75,24 +75,7 @@ struct WidgetRowView: View {
     }
 
     private var enabledWidgetTypes: [WidgetType] {
-        settings.settings.widgetOrder.filter { widget in
-            guard widget != .agent else { return false }
-            switch widget {
-            case .weather: return settings.settings.weatherWidgetEnabled
-            case .calendar: return settings.settings.calendarWidgetEnabled
-            case .shortcuts: return settings.settings.shortcutsWidgetEnabled
-            case .music: return settings.settings.musicWidgetEnabled
-            case .sports: return settings.settings.sportsWidgetEnabled
-            case .finance: return settings.settings.financeWidgetEnabled
-            case .shopify: return settings.settings.shopifyWidgetEnabled
-            case .notes: return settings.settings.notesWidgetEnabled
-            case .clipboard: return settings.settings.clipboardWidgetEnabled
-            case .mirror: return settings.settings.mirrorWidgetEnabled
-            case .battery: return settings.settings.batteryWidgetEnabled
-            case .focusSession: return settings.settings.focusSessionWidgetEnabled
-            case .agent: return false
-            }
-        }
+        settings.settings.enabledWidgetTypes
     }
 
     private var isAtCapacity: Bool {
@@ -655,6 +638,7 @@ struct ToggleRow: View {
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .accessibilityLabel(title)
         }
         .padding()
     }
