@@ -71,8 +71,10 @@ class SnappingManager {
               let windowList = windowListRef as? [AXUIElement],
               !windowList.isEmpty else {
             var mainWindowRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef) == .success {
-                return (mainWindowRef as? AXUIElement)
+            if AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef) == .success,
+               let mainWindow = mainWindowRef,
+               CFGetTypeID(mainWindow) == AXUIElementGetTypeID() {
+                return (mainWindow as! AXUIElement)
             }
             return nil
         }
