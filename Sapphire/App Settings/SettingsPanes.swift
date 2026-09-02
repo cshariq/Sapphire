@@ -9342,6 +9342,7 @@ struct ModernUpdateStatusView: View {
                     if canShowReleaseNotes {
                         releaseNotesButton
                     }
+                    checkForUpdatesButton
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 .onAppear {
@@ -9420,9 +9421,12 @@ struct ModernUpdateStatusView: View {
                     Text("Installing... App will relaunch.").foregroundStyle(.secondary)
                 }
             case .error(let message):
-                HStack(spacing: 8) {
-                    Image(systemName: "xmark.octagon.fill").foregroundColor(.red)
-                    Text(message).foregroundStyle(.secondary).lineLimit(1)
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "xmark.octagon.fill").foregroundColor(.red)
+                        Text(message).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    checkForUpdatesButton
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
@@ -9437,6 +9441,14 @@ struct ModernUpdateStatusView: View {
                 notes: updateChecker.releaseNotes,
                 url: updateChecker.releaseNotesURL
             )
+        }
+    }
+
+    // Only offered when idle or after an error. Re-checking while an update is
+    // available or downloaded would drop that state and force a new download.
+    private var checkForUpdatesButton: some View {
+        Button("Check for Updates") {
+            updateChecker.checkForUpdatesMatchingCurrentChannel()
         }
     }
 
