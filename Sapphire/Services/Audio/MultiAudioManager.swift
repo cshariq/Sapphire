@@ -56,6 +56,7 @@ class MultiAudioManager: ObservableObject {
     private var processListListenerBlock: AudioObjectPropertyListenerBlock?
     private var processRunningListenerBlocks: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
     private var monitoredProcessObjectIDs: Set<AudioObjectID> = []
+    private var reconcileTask: Task<Void, Never>?
     private var latestActiveBundleIDs: Set<String> = []
     private var lastAudioActivityByBundleID: [String: Date] = [:]
     private let recentAudioPriorityWindow: TimeInterval = 180
@@ -321,7 +322,7 @@ class MultiAudioManager: ObservableObject {
 
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             Task { @MainActor [weak self] in
-                self?.reconcileRunningApps()
+                self?.scheduleReconcile()
             }
         }
 
@@ -330,14 +331,14 @@ class MultiAudioManager: ObservableObject {
         reconcileRunningApps()
     }
 
-    private func getResponsibleAppBundleID(for pid: pid_t, runningApps: [pid_t: NSRunningApplication]) -> String? {
+    private func getResponsibleAppBundleID(for pid: pid_t, runningApps: [pid_t: RunningApps.AppInfo]) -> String? {
         if let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -1), "responsibility_get_pid_responsible_for_pid") {
             let responsiblePID = unsafeBitCast(sym, to: (@convention(c) (pid_t) -> pid_t).self)(pid)
-            if responsiblePID > 0 && responsiblePID != pid, let app = runningApps[responsiblePID] { return app.bundleIdentifier }
+            if responsiblePID > 0 && responsiblePID != pid, let app = runningApps[responsiblePID] { return app.bundleID }
         }
         var currentPID = pid
         while currentPID > 1 {
-            if let app = runningApps[currentPID], app.bundleURL?.pathExtension == "app" { return app.bundleIdentifier }
+            if let app = runningApps[currentPID], app.isAppBundle { return app.bundleID }
             var info = kinfo_proc(); var size = MemoryLayout<kinfo_proc>.size; var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, currentPID]
             guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { break }
             let parentPID = info.kp_eproc.e_ppid
@@ -365,6 +366,16 @@ class MultiAudioManager: ObservableObject {
             }
         }
         return false
+    }
+
+    private func scheduleReconcile() {
+        reconcileTask?.cancel()
+        reconcileTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, let self else { return }
+            self.reconcileTask = nil
+            self.reconcileRunningApps()
+        }
     }
 
     private func reconcileRunningApps() {
@@ -402,7 +413,7 @@ class MultiAudioManager: ObservableObject {
         AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &listAddr, 0, nil, &size, &objectIDs)
         updateProcessRunningListeners(for: objectIDs)
 
-        let runningAppsByPID = Dictionary(NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { _, last in last })
+        let runningAppsByPID = RunningApps.shared.infoByPID()
         var newBundleGroups: [String: [AudioObjectID]] = [:]
 
         for objID in objectIDs {
@@ -416,7 +427,7 @@ class MultiAudioManager: ObservableObject {
             var runAddr = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunning, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
             if AudioObjectGetPropertyData(objID, &runAddr, 0, nil, &runSize, &isRunning) == noErr, isRunning == 0 { continue }
 
-            let bundleID = runningAppsByPID[pid]?.bundleIdentifier ?? getResponsibleAppBundleID(for: pid, runningApps: runningAppsByPID)
+            let bundleID = runningAppsByPID[pid]?.bundleID ?? getResponsibleAppBundleID(for: pid, runningApps: runningAppsByPID)
             if let bID = bundleID, !bID.hasPrefix("com.apple.audio") && bID != Bundle.main.bundleIdentifier {
                 newBundleGroups[bID, default: []].append(objID)
             }
@@ -602,7 +613,7 @@ class MultiAudioManager: ObservableObject {
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &defaultOutputAddr, nil) { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.defaultOutputDeviceID = self?.getDefaultDevice(for: kAudioHardwarePropertyDefaultOutputDevice)
-                self?.reconcileRunningApps()
+                self?.scheduleReconcile()
             }
         }
     }
@@ -648,7 +659,7 @@ class MultiAudioManager: ObservableObject {
         for objectID in added {
             var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunning, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
             let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-                Task { @MainActor [weak self] in self?.reconcileRunningApps() }
+                Task { @MainActor [weak self] in self?.scheduleReconcile() }
             }
             if AudioObjectAddPropertyListenerBlock(objectID, &address, .main, block) == noErr { processRunningListenerBlocks[objectID] = block }
         }
