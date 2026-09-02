@@ -9,6 +9,11 @@ import AppKit
 import SwiftUI
 import Carbon.HIToolbox
 
+extension Notification.Name {
+    static let sapphireShortcutRecordingDidStart = Notification.Name("com.sapphire.shortcutRecordingDidStart")
+    static let sapphireShortcutRecordingDidEnd = Notification.Name("com.sapphire.shortcutRecordingDidEnd")
+}
+
 private class ShortcutRecorderWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -19,17 +24,20 @@ class GlobalShortcutRecorder: ObservableObject {
     static let shared = GlobalShortcutRecorder()
 
     @Published private(set) var isRecording = false
+    @Published private(set) var recordingIdentifier: String?
 
     private var recorderWindow: NSWindow?
     private var onCapture: ((String, NSEvent.ModifierFlags) -> Void)?
 
     private init() {}
 
-    func startRecording(onCapture: @escaping (String, NSEvent.ModifierFlags) -> Void) {
+    func startRecording(identifier: String? = nil, onCapture: @escaping (String, NSEvent.ModifierFlags) -> Void) {
         guard !isRecording else { return }
 
         self.onCapture = onCapture
+        self.recordingIdentifier = identifier
         self.isRecording = true
+        NotificationCenter.default.post(name: .sapphireShortcutRecordingDidStart, object: nil)
 
         guard let mainScreen = NSScreen.main else { stopRecording(); return }
 
@@ -59,10 +67,13 @@ class GlobalShortcutRecorder: ObservableObject {
     }
 
     func stopRecording() {
+        guard isRecording else { return }
         recorderWindow?.orderOut(nil)
         recorderWindow = nil
         self.onCapture = nil
         self.isRecording = false
+        self.recordingIdentifier = nil
+        NotificationCenter.default.post(name: .sapphireShortcutRecordingDidEnd, object: nil)
     }
 }
 
