@@ -46,11 +46,11 @@ enum AppShieldManager {
 // Mode for the shield view; only the focus case is required here
 enum AppShieldMode {
     case focus(intensity: FocusIntensity,
-               onUnblockNow: @escaping () -> Void,
-               onSnooze: @escaping (Int) -> Void,
-               onRequestUnblock: @escaping () -> Void,
-               remainingUnblockTime: @escaping () -> TimeInterval?,
-               onHide: @escaping () -> Void)
+               onUnblockNow: () -> Void,
+               onSnooze: (Int) -> Void,
+               onRequestUnblock: () -> Void,
+               remainingUnblockTime: () -> TimeInterval?,
+               onHide: () -> Void)
 }
 
 // Minimal view shown when an app is blocked. EmptyView is sufficient for stubs.

@@ -17,7 +17,7 @@ public enum AppFeature: String, Codable, CaseIterable {
         case unlimitedLyricsFetch, translation, geminiLive, advancedFileConversion,
             priorityAutomation, betaSoftwareUpdates, circleToSearch, liveSports,
             financeWidget, sportsWidget, financeLiveActivity, prioritizedFeedback,
-            focusProductiveAccess
+            focusProductiveAccess, appLock
 }
 
 public struct SubscriptionEntitlements: Codable, Equatable {
