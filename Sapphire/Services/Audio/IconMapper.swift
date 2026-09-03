@@ -73,7 +73,6 @@ struct IconMapper {
 
         (["magic keyboard"], "keyboard.fill", true),
         (["magic mouse"], "magicmouse.fill", true),
-        (["inphic bt mouse"], "computermouse", true),
         (["magic trackpad"], "magictrackpad.fill", true),
         (["apple pencil"], "applepencil", true),
         (["airtag"], "airtag.fill", true),
@@ -125,6 +124,7 @@ struct IconMapper {
         (["nintendo", "joy-con", "switch pro controller"], "gamecontroller.fill", true),
 
         (["logitech mouse", "razer mouse", "mx master"], "computermouse.fill", true),
+        (["inphic bt mouse"], "computermouse", true),
         (["logitech", "razer", "keychron", "nuphy", "mechanical keyboard"], "keyboard.fill", true),
 
         (["sennheiser", "momentum", "pxc", "hd 280", "hd 450", "hd 600", "hd 800"], "headphones.over.ear", true),
