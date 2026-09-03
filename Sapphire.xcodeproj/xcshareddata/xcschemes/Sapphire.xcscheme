@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "DA452EAE2EAA57C90070E5C9"
-               BuildableName = "com.aliabdulla.sapphire"
+               BuildableName = "com.shariq.sapphireHelper"
                BlueprintName = "com.aliabdulla.sapphire"
                ReferencedContainer = "container:Sapphire.xcodeproj">
             </BuildableReference>
