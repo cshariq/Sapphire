@@ -73,6 +73,7 @@ struct IconMapper {
 
         (["magic keyboard"], "keyboard.fill", true),
         (["magic mouse"], "magicmouse.fill", true),
+        (["inphic bt mouse"], "computermouse", true),
         (["magic trackpad"], "magictrackpad.fill", true),
         (["apple pencil"], "applepencil", true),
         (["airtag"], "airtag.fill", true),
@@ -80,6 +81,7 @@ struct IconMapper {
         (["airpods max"], "airpods.max", true),
         (["airpods pro"], "airpods.pro", true),
         (["airpods 4"], "airpods.gen4", true),
+        (["airpods 4 anc"], "airpods.gen4", true),
         (["airpods 3"], "airpods gen3", true),
         (["airpods 2", "airpods"], "airpods", true),
         (["earpods"], "earpods", false),
