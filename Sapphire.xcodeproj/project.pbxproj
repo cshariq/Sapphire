@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		DA1D1AB72EAA76DA00E7F1B4 /* com.aliabdulla.sapphire in Embed Helper Executable */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.aliabdulla.sapphire */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in Embed Helper Executable */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262ADF2EA4841B0027CA69 /* OSD.framework */; };
 		DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AE52EA485150027CA69 /* CoreDisplay.framework */; };
 		DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */; };
@@ -156,7 +156,7 @@
 			dstPath = "";
 			dstSubfolder = Executables;
 			files = (
-				DA1D1AB72EAA76DA00E7F1B4 /* com.aliabdulla.sapphire in Embed Helper Executable */,
+				DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in Embed Helper Executable */,
 			);
 			name = "Embed Helper Executable";
 		};
@@ -202,7 +202,7 @@
 		DA262AF02EA5D1940027CA69 /* MultitouchSessionFilterSupport.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MultitouchSessionFilterSupport.framework; path = ../../../../System/Library/PrivateFrameworks/MultitouchSessionFilterSupport.framework; sourceTree = "<group>"; };
 		DA262AF32EA5D1A20027CA69 /* PrivateFrameworks */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PrivateFrameworks; path = ../../../../System/Library/PrivateFrameworks; sourceTree = "<group>"; };
 		DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MultitouchSupport.framework; path = ../../../../System/Library/PrivateFrameworks/MultitouchSupport.framework; sourceTree = "<group>"; };
-		DA452EAF2EAA57C90070E5C9 /* com.aliabdulla.sapphire */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = com.shariq.sapphireHelper; sourceTree = BUILT_PRODUCTS_DIR; };
+		DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = com.shariq.sapphireHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA46CF762DCBCA0000F00EC5 /* Sapphire.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sapphire.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA5256782E162B9F00D8F42E /* NearDropDisplayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearDropDisplayState.swift; sourceTree = "<group>"; };
@@ -532,7 +532,7 @@
 				DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */,
 				DA7C49802E15CCA50049937A /* libNearbyShare.dylib */,
 				DAA7D9D42E8633B20032748B /* abt */,
-				DA452EAF2EAA57C90070E5C9 /* com.aliabdulla.sapphire */,
+				DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -774,7 +774,7 @@
 			);
 			name = com.aliabdulla.sapphire;
 			productName = SapphireHelper;
-			productReference = DA452EAF2EAA57C90070E5C9 /* com.aliabdulla.sapphire */;
+			productReference = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */;
 			productType = "com.apple.product-type.tool";
 		};
 		DA46CF752DCBCA0000F00EC5 /* Sapphire */ = {

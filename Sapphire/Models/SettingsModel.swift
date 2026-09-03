@@ -446,6 +446,30 @@ enum MediaSource: String, Codable, CaseIterable, Identifiable {
 }
 
 extension Settings {
+    /// Widgets that are switched on, in the user's order. Shared by the Widgets
+    /// pane rows and per-widget settings pages so they apply the same guards.
+    var enabledWidgetTypes: [WidgetType] {
+        widgetOrder.filter { widget in
+            switch widget {
+            case .weather: return weatherWidgetEnabled
+            case .calendar: return calendarWidgetEnabled
+            case .shortcuts: return shortcutsWidgetEnabled
+            case .music: return musicWidgetEnabled
+            case .sports: return sportsWidgetEnabled
+            case .finance: return financeWidgetEnabled
+            case .shopify: return shopifyWidgetEnabled
+            case .notes: return notesWidgetEnabled
+            case .clipboard: return clipboardWidgetEnabled
+            case .mirror: return mirrorWidgetEnabled
+            case .battery: return batteryWidgetEnabled
+            case .focusSession: return focusSessionWidgetEnabled
+            case .agent: return false
+            }
+        }
+    }
+}
+
+extension Settings {
     func isMediaAppVisible(bundleID: String?) -> Bool {
         guard let bundleID, !bundleID.isEmpty else { return true }
         let normalized = bundleID.lowercased()
@@ -1108,6 +1132,7 @@ struct Settings: Codable, Equatable {
     var defaultSnapLayout: SnapLayout = LayoutTemplate.columns
     var appSpecificLayoutConfigurations: [String: AppSnapLayoutConfiguration] = [:]
     var customSnapLayouts: [SnapLayout] = []
+    var snapZoneShortcuts: [SnapZoneShortcut] = []
     var snapZoneLayoutOptions: [UUID] = [LayoutTemplate.fancy.id, LayoutTemplate.quarters.id, LayoutTemplate.splitscreen.id, LayoutTemplate.focus.id, LayoutTemplate.fullscreen.id]
     var planes: [Plane] = []
     var batteryChargeLimit: Int = 100

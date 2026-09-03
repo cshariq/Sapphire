@@ -1048,8 +1048,7 @@ class MusicManager: ObservableObject {
 
         guard let bundle = bundleID(fromSourceKey: key), !bundle.isEmpty else { return false }
 
-        let isAppRunning = NSWorkspace.shared.runningApplications.contains { app in
-            guard let appBundle = app.bundleIdentifier else { return false }
+        let isAppRunning = RunningApps.shared.containsBundleID { appBundle in
             let normalizedApp = normalizeBundleID(appBundle) ?? appBundle
             return normalizedApp == bundle || appBundle == bundle
         }

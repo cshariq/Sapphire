@@ -1166,13 +1166,17 @@ struct CoreAnimationWaveformView: NSViewRepresentable, Equatable {
         context.coordinator.update(isPlaying: isPlaying)
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 22, height: proposal.height ?? 22)
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
     class Coordinator {
         var parent: CoreAnimationWaveformView
-        var maskLayers: [CAShapeLayer] = []
+        var maskLayers: [CALayer] = []
         private var hasSetup = false
 
         private var lastIsPlaying: Bool? = nil
@@ -1182,6 +1186,13 @@ struct CoreAnimationWaveformView: NSViewRepresentable, Equatable {
 
         init(_ parent: CoreAnimationWaveformView) {
             self.parent = parent
+        }
+
+        static func withoutImplicitAnimations(_ body: () -> Void) {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            body()
+            CATransaction.commit()
         }
 
         func setupLayers(in parentLayer: CALayer, with context: Context) {
@@ -1205,8 +1216,15 @@ struct CoreAnimationWaveformView: NSViewRepresentable, Equatable {
                 gradientLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
                 gradientLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
 
-                let maskLayer = CAShapeLayer()
-                maskLayer.frame = barContainerLayer.bounds
+                let maskLayer = CALayer()
+                maskLayer.backgroundColor = NSColor.black.cgColor
+                maskLayer.cornerRadius = parent.barThickness / 2
+                maskLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+                maskLayer.position = CGPoint(
+                    x: barContainerLayer.bounds.midX,
+                    y: barContainerLayer.bounds.midY
+                )
+                maskLayer.bounds = CGRect(x: 0, y: 0, width: parent.barThickness, height: parent.barThickness)
 
                 gradientLayer.mask = maskLayer
                 barContainerLayer.addSublayer(gradientLayer)
@@ -1245,45 +1263,33 @@ struct CoreAnimationWaveformView: NSViewRepresentable, Equatable {
                     if playStateChanged || scaleChanged || maskLayer.animation(forKey: animationKey) == nil {
                         maskLayer.removeAnimation(forKey: animationKey)
 
-                        let animation = CABasicAnimation(keyPath: "path")
                         let highValues = [0.5, 0.8, 0.65, 0.7, 0.9, 0.6]
                         let speeds = [1.8, 1.2, 1.4, 1.6, 1.0, 1.7]
 
                         let maxHeight = 22.0
                         let targetHeight = minHeight + (maxHeight - minHeight) * (highValues[index] * parent.volumeScale)
 
-                        let fromY = (maskLayer.bounds.height - minHeight) / 2.0
-                        let toY = (maskLayer.bounds.height - targetHeight) / 2.0
+                        Self.withoutImplicitAnimations {
+                            maskLayer.cornerRadius = parent.barThickness / 2
+                            maskLayer.bounds = CGRect(x: 0, y: 0, width: parent.barThickness, height: minHeight)
+                        }
 
-                        let fromPath = CGPath(roundedRect: CGRect(x: 0, y: fromY, width: parent.barThickness, height: minHeight),
-                                             cornerWidth: parent.barThickness / 2,
-                                             cornerHeight: parent.barThickness / 2,
-                                             transform: nil)
-
-                        let toPath = CGPath(roundedRect: CGRect(x: 0, y: toY, width: parent.barThickness, height: targetHeight),
-                                           cornerWidth: parent.barThickness / 2,
-                                           cornerHeight: parent.barThickness / 2,
-                                           transform: nil)
-
-                        maskLayer.path = fromPath
-
-                        animation.fromValue = fromPath
-                        animation.toValue = toPath
+                        let animation = CABasicAnimation(keyPath: "bounds.size.height")
+                        animation.fromValue = minHeight
+                        animation.toValue = targetHeight
                         animation.duration = 1.5 / speeds[index]
                         animation.autoreverses = true
                         animation.repeatCount = .infinity
                         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                        animation.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
 
                         maskLayer.add(animation, forKey: animationKey)
                     }
                 } else if playStateChanged || maskLayer.animation(forKey: animationKey) != nil {
                     maskLayer.removeAllAnimations()
-                    let finalY = (maskLayer.bounds.height - minHeight) / 2.0
-                    let finalPath = CGPath(roundedRect: CGRect(x: 0, y: finalY, width: parent.barThickness, height: minHeight),
-                                         cornerWidth: parent.barThickness / 2,
-                                         cornerHeight: parent.barThickness / 2,
-                                         transform: nil)
-                    maskLayer.path = finalPath
+                    Self.withoutImplicitAnimations {
+                        maskLayer.bounds = CGRect(x: 0, y: 0, width: parent.barThickness, height: minHeight)
+                    }
                 }
             }
         }
