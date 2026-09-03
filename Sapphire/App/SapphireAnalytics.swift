@@ -20,7 +20,15 @@ enum SapphireAnalytics {
         defer { lock.unlock() }
 
         if !isConfigured {
-            FirebaseApp.configure()
+            guard let options = FirebaseOptions.defaultOptions(), !(options.apiKey?.isEmpty ?? true) else {
+                // The public repo ships a placeholder GoogleService-Info.plist (empty API key) since
+                // the real one is a credential and is gitignored. FirebaseApp.configure() throws an
+                // uncaught NSException on an invalid/placeholder config and takes the whole app down,
+                // so skip Firebase entirely rather than crash every launch when no real config is present.
+                print("[SapphireAnalytics] No valid Firebase configuration found — skipping Firebase initialization.")
+                return
+            }
+            FirebaseApp.configure(options: options)
             isConfigured = true
         }
         applyCollectionPreference()
