@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2700"
+   LastUpgradeVersion = "2650"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -17,7 +17,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "DA452EAE2EAA57C90070E5C9"
                BuildableName = "com.shariq.sapphireHelper"
-               BlueprintName = "com.aliabdulla.sapphire"
+               BlueprintName = "com.shariq.sapphireHelper"
                ReferencedContainer = "container:Sapphire.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>

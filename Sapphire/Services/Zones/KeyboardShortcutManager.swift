@@ -9,13 +9,6 @@ import AppKit
 import Combine
 import Carbon.HIToolbox
 
-/// Tags applied to synthetic (programmatically posted) CGEvents via
-/// `eventSourceUserData`, so event-tap consumers like KeyboardShortcutManager
-/// can distinguish Sapphire's own injected events from real user input.
-enum SapphireSyntheticEventMarker {
-    static let plainTextPaste: Int64 = 0x53504852_5054_5041 // "SPHRPTPA"
-}
-
 private func executionTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
@@ -212,9 +205,6 @@ class KeyboardShortcutManager {
 
     nonisolated func handle(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
         guard type == .keyDown else { return Unmanaged.passRetained(event) }
-        guard event.getIntegerValueField(.eventSourceUserData) != SapphireSyntheticEventMarker.plainTextPaste else {
-            return Unmanaged.passRetained(event)
-        }
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
 
@@ -240,9 +230,6 @@ class KeyboardShortcutManager {
     @discardableResult
     private func handleNSEvent(_ event: NSEvent, swallow: Bool) -> Bool {
         guard event.type == .keyDown, !event.isARepeat else { return false }
-        guard event.cgEvent?.getIntegerValueField(.eventSourceUserData) != SapphireSyntheticEventMarker.plainTextPaste else {
-            return false
-        }
 
         let keyCode = UInt16(event.keyCode)
         guard let keyString = KeyCodeTranslator.shared.string(for: keyCode, from: event) else {

@@ -272,8 +272,8 @@ struct NotchWidgetView: View {
                 .onDrop(of: [.fileURL], isTargeted: isFileDropTargeted) { _ in return false }
         case .agentS:
             IntelligenceNotchView(navigationStack: navigationStack)
-        case .claudeHub:
-            ClaudeHubView(navigationStack: navigationStack)
+        case .blipHub:
+            BlipHubView(navigationStack: navigationStack)
         case .circleToSearch:
             CircleToSearchResultsView(navigationStack: navigationStack)
         case .updateAvailable:
