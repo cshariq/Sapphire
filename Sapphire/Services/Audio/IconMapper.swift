@@ -80,6 +80,7 @@ struct IconMapper {
         (["airpods max"], "airpods.max", true),
         (["airpods pro"], "airpods.pro", true),
         (["airpods 4"], "airpods.gen4", true),
+        (["airpods 4 anc"], "airpods.gen4", true),
         (["airpods 3"], "airpods gen3", true),
         (["airpods 2", "airpods"], "airpods", true),
         (["earpods"], "earpods", false),
@@ -123,6 +124,7 @@ struct IconMapper {
         (["nintendo", "joy-con", "switch pro controller"], "gamecontroller.fill", true),
 
         (["logitech mouse", "razer mouse", "mx master"], "computermouse.fill", true),
+        (["inphic bt mouse"], "computermouse", true),
         (["logitech", "razer", "keychron", "nuphy", "mechanical keyboard"], "keyboard.fill", true),
 
         (["sennheiser", "momentum", "pxc", "hd 280", "hd 450", "hd 600", "hd 800"], "headphones.over.ear", true),
