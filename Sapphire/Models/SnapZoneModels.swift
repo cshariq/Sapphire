@@ -37,17 +37,49 @@ struct SnapLayout: Codable, Equatable, Identifiable, Hashable {
     let id: UUID
     var name: String
     var zones: [SnapZone]
+    /// BETA: favorited layouts are shown first in layout pickers.
+    var isFavorite: Bool = false
 
-    init(name: String, zones: [SnapZone]) {
+    init(name: String, zones: [SnapZone], isFavorite: Bool = false) {
         self.id = UUID()
         self.name = name
         self.zones = zones
+        self.isFavorite = isFavorite
     }
 
-    init(id: UUID, name: String, zones: [SnapZone]) {
+    init(id: UUID, name: String, zones: [SnapZone], isFavorite: Bool = false) {
         self.id = id
         self.name = name
         self.zones = zones
+        self.isFavorite = isFavorite
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, zones, isFavorite
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        zones = try container.decode([SnapZone].self, forKey: .zones)
+        // Predates favoriting — default to unfavorited rather than failing to
+        // decode the whole Settings struct (this array lives inside it).
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+    }
+}
+
+struct SnapZoneShortcut: Codable, Equatable, Identifiable, Hashable {
+    var id: UUID
+    var shortcut: KeyboardShortcut
+    var layoutID: UUID
+    var zoneID: UUID
+
+    init(id: UUID = UUID(), shortcut: KeyboardShortcut, layoutID: UUID, zoneID: UUID) {
+        self.id = id
+        self.shortcut = shortcut
+        self.layoutID = layoutID
+        self.zoneID = zoneID
     }
 }
 

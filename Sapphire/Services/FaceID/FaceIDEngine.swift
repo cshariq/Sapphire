@@ -1628,7 +1628,7 @@ final class FaceIDModelManager {
             let rawScore = 1.0 / (1.0 + exp(-logit))
 
             return AntiSpoofResult(
-                isReal: false,
+                isReal: rawScore >= FaceIDConfig.livenessBaseThreshold,
                 rawScore: rawScore,
                 smoothScore: rawScore,
                 logit: logit

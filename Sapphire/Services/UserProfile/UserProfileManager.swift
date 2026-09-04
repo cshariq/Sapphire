@@ -148,58 +148,48 @@ class UserProfileManager: ObservableObject {
                 CNContactPostalAddressesKey,
             ] as [CNKeyDescriptor]
 
-            let request = CNContactFetchRequest(keysToFetch: keysToFetch)
-            var meContact: CNContact?
+            let contact = try contactStore.unifiedMeContactWithKeys(toFetch: keysToFetch)
 
-            try contactStore.enumerateContacts(with: request) { contact, stop in
-                if meContact == nil ||
-                   (!contact.givenName.isEmpty && !contact.familyName.isEmpty) {
-                    meContact = contact
+            if profile.firstName.isEmpty {
+                profile.firstName = contact.givenName
+            }
+            if profile.lastName.isEmpty {
+                profile.lastName = contact.familyName
+            }
+            if profile.nickname.isEmpty {
+                profile.nickname = contact.nickname
+            }
+
+            if profile.birthday == nil, let birthday = contact.birthday {
+                var components = DateComponents()
+                components.year = birthday.year
+                components.month = birthday.month
+                components.day = birthday.day
+                if let date = Calendar.current.date(from: components) {
+                    profile.birthday = date
                 }
             }
 
-            if let contact = meContact {
-                if profile.firstName.isEmpty {
-                    profile.firstName = contact.givenName
-                }
-                if profile.lastName.isEmpty {
-                    profile.lastName = contact.familyName
-                }
-                if profile.nickname.isEmpty {
-                    profile.nickname = contact.nickname
-                }
-
-                if profile.birthday == nil, let birthday = contact.birthday {
-                    var components = DateComponents()
-                    components.year = birthday.year
-                    components.month = birthday.month
-                    components.day = birthday.day
-                    if let date = Calendar.current.date(from: components) {
-                        profile.birthday = date
-                    }
-                }
-
-                if profile.phoneNumber.isEmpty, let phone = contact.phoneNumbers.first {
-                    profile.phoneNumber = phone.value.stringValue
-                }
-
-                if profile.email.isEmpty, let email = contact.emailAddresses.first {
-                    profile.email = email.value as String
-                }
-
-                if profile.address.isEmpty, let address = contact.postalAddresses.first {
-                    let addr = address.value
-                    var addressString = ""
-                    if !addr.street.isEmpty { addressString += addr.street + ", " }
-                    if !addr.city.isEmpty { addressString += addr.city + ", " }
-                    if !addr.state.isEmpty { addressString += addr.state + " " }
-                    if !addr.postalCode.isEmpty { addressString += addr.postalCode }
-                    profile.address = addressString.trimmingCharacters(in: .whitespaces)
-                }
-
-                profile.discoverySource.insert(.contacts)
-                print(" Discovered user info from Contacts")
+            if profile.phoneNumber.isEmpty, let phone = contact.phoneNumbers.first {
+                profile.phoneNumber = phone.value.stringValue
             }
+
+            if profile.email.isEmpty, let email = contact.emailAddresses.first {
+                profile.email = email.value as String
+            }
+
+            if profile.address.isEmpty, let address = contact.postalAddresses.first {
+                let addr = address.value
+                var addressString = ""
+                if !addr.street.isEmpty { addressString += addr.street + ", " }
+                if !addr.city.isEmpty { addressString += addr.city + ", " }
+                if !addr.state.isEmpty { addressString += addr.state + " " }
+                if !addr.postalCode.isEmpty { addressString += addr.postalCode }
+                profile.address = addressString.trimmingCharacters(in: .whitespaces)
+            }
+
+            profile.discoverySource.insert(.contacts)
+            print(" Discovered user info from Contacts")
         } catch {
             print(" Failed to fetch contacts: \(error)")
         }

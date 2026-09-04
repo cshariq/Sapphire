@@ -24,8 +24,8 @@ class MenuBarSpacingManager {
     init() {
         loadCurrentSettings()
 
-        $spacing.dropFirst().sink { _ in self.hasUnsavedChanges = true }.store(in: &cancellables)
-        $selectionPadding.dropFirst().sink { _ in self.hasUnsavedChanges = true }.store(in: &cancellables)
+        $spacing.dropFirst().sink { [weak self] _ in self?.hasUnsavedChanges = true }.store(in: &cancellables)
+        $selectionPadding.dropFirst().sink { [weak self] _ in self?.hasUnsavedChanges = true }.store(in: &cancellables)
     }
 
     func applyChanges() {

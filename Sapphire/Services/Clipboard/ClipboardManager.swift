@@ -13,6 +13,35 @@ struct ClipboardItem: Identifiable, Equatable, Codable {
     let isImage: Bool
     let textContent: String?
     let imagePNGData: Data?
+    /// BETA: pinned items are excluded from history trimming and bulk-clear.
+    var isPinned: Bool = false
+
+    init(id: String, preview: String, copiedAt: Date, isImage: Bool, textContent: String?, imagePNGData: Data?, isPinned: Bool = false) {
+        self.id = id
+        self.preview = preview
+        self.copiedAt = copiedAt
+        self.isImage = isImage
+        self.textContent = textContent
+        self.imagePNGData = imagePNGData
+        self.isPinned = isPinned
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, preview, copiedAt, isImage, textContent, imagePNGData, isPinned
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        preview = try container.decode(String.self, forKey: .preview)
+        copiedAt = try container.decode(Date.self, forKey: .copiedAt)
+        isImage = try container.decode(Bool.self, forKey: .isImage)
+        textContent = try container.decodeIfPresent(String.self, forKey: .textContent)
+        imagePNGData = try container.decodeIfPresent(Data.self, forKey: .imagePNGData)
+        // Older persisted history predates pinning — default to unpinned rather
+        // than failing to decode the whole history.
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+    }
 
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
         lhs.id == rhs.id
@@ -122,7 +151,22 @@ final class ClipboardManager: ObservableObject {
         schedulePersist()
     }
 
+    /// BETA: toggles whether an item is exempt from history trimming and clearing.
+    func togglePin(id: String) {
+        guard let index = recentItems.firstIndex(where: { $0.id == id }) else { return }
+        recentItems[index].isPinned.toggle()
+        schedulePersist()
+    }
+
+    /// Clears unpinned history. Pinned items are kept — use `clearAllIncludingPinned()`
+    /// to remove everything.
     func clearHistory() {
+        recentItems.removeAll { !$0.isPinned }
+        persistHistoryImmediately()
+    }
+
+    /// BETA companion to `clearHistory()` — clears pinned items too.
+    func clearAllIncludingPinned() {
         recentItems.removeAll()
         persistHistoryImmediately()
     }
@@ -236,10 +280,26 @@ final class ClipboardManager: ObservableObject {
 
     private func insert(_ item: ClipboardItem) {
         recentItems.insert(item, at: 0)
-        if let maxItems, recentItems.count > maxItems {
-            recentItems = Array(recentItems.prefix(maxItems))
-        }
+        trimToMaxItemsIfNeeded()
         schedulePersist()
+    }
+
+    /// Trims the oldest *unpinned* items until the unpinned count is back within
+    /// `maxItems`. Pinned items never count against the limit.
+    private func trimToMaxItemsIfNeeded() {
+        guard let maxItems else { return }
+        let unpinnedCount = recentItems.reduce(0) { $0 + ($1.isPinned ? 0 : 1) }
+        guard unpinnedCount > maxItems else { return }
+
+        var toDrop = unpinnedCount - maxItems
+        var index = recentItems.count - 1
+        while toDrop > 0, index >= 0 {
+            if !recentItems[index].isPinned {
+                recentItems.remove(at: index)
+                toDrop -= 1
+            }
+            index -= 1
+        }
     }
 
     // MARK: - Secure Persistence
@@ -279,11 +339,8 @@ final class ClipboardManager: ObservableObject {
         do {
             let encrypted = try Data(contentsOf: secureFileURL)
             guard let decrypted = CryptoManager.shared.decrypt(data: encrypted) else { return }
-            var items = try JSONDecoder().decode([ClipboardItem].self, from: decrypted)
-            if let maxItems, items.count > maxItems {
-                items = Array(items.prefix(maxItems))
-            }
-            recentItems = items
+            recentItems = try JSONDecoder().decode([ClipboardItem].self, from: decrypted)
+            trimToMaxItemsIfNeeded()
         } catch {
             print("[ClipboardManager] Failed to load history: \(error)")
         }

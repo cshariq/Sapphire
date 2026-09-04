@@ -319,15 +319,23 @@ final class OpenMeteoService {
         return "--:--"
     }
 
+    /// Bounds-checked lookup into an optional per-timestamp field array. Open-Meteo field
+    /// arrays are expected to line up with the `time` array, but each field is independently
+    /// optional and not guaranteed to be the same length, so index directly only after checking.
+    private static func value<T>(at index: Int, in array: [T?]?) -> T? {
+        guard let array, array.indices.contains(index) else { return nil }
+        return array[index]
+    }
+
     private func buildDailyForecasts(
         from daily: OpenMeteoResponse.DailyWeather?
     ) -> [DailyForecastUIData] {
         guard let daily, let times = daily.time else { return [] }
         var results: [DailyForecastUIData] = []
         for i in 1..<min(times.count, 7) {
-            let maxC = daily.temperature2mMax?[i].flatMap { $0 } ?? 0
-            let minC = daily.temperature2mMin?[i].flatMap { $0 } ?? 0
-            let wmo  = daily.weathercode?[i].flatMap { $0 } ?? 0
+            let maxC = Self.value(at: i, in: daily.temperature2mMax) ?? 0
+            let minC = Self.value(at: i, in: daily.temperature2mMin) ?? 0
+            let wmo  = Self.value(at: i, in: daily.weathercode) ?? 0
             let dow  = dowAbbreviation(from: times[i])
             results.append(DailyForecastUIData(
                 dayOfWeek:      dow,
@@ -352,8 +360,8 @@ final class OpenMeteoService {
         for i in 0..<times.count {
             let timeStr = times[i].count >= 16 ? String(times[i].prefix(16)) : times[i]
             guard let date = Self.localISOFormatter.date(from: timeStr), date >= startOfCurrentHour else { continue }
-            let tempC = hourly.temperature2m?[i].flatMap { $0 } ?? 0
-            let wmo   = hourly.weathercode?[i].flatMap { $0 } ?? 0
+            let tempC = Self.value(at: i, in: hourly.temperature2m) ?? 0
+            let wmo   = Self.value(at: i, in: hourly.weathercode) ?? 0
             results.append(HourlyForecastUIData(
                 time:             Self.hourlyFormatter.string(from: date).uppercased(),
                 iconName:         WeatherIconMapper.map(from: wmcCodeToTWCIcon(wmo, isDay: isDay)),

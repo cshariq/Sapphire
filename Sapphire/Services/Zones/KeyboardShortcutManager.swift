@@ -205,9 +205,6 @@ class KeyboardShortcutManager {
 
     nonisolated func handle(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
         guard type == .keyDown else { return Unmanaged.passRetained(event) }
-        guard event.getIntegerValueField(.eventSourceUserData) != SapphireSyntheticEventMarker.plainTextPaste else {
-            return Unmanaged.passRetained(event)
-        }
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
 
@@ -233,9 +230,6 @@ class KeyboardShortcutManager {
     @discardableResult
     private func handleNSEvent(_ event: NSEvent, swallow: Bool) -> Bool {
         guard event.type == .keyDown, !event.isARepeat else { return false }
-        guard event.cgEvent?.getIntegerValueField(.eventSourceUserData) != SapphireSyntheticEventMarker.plainTextPaste else {
-            return false
-        }
 
         let keyCode = UInt16(event.keyCode)
         guard let keyString = KeyCodeTranslator.shared.string(for: keyCode, from: event) else {

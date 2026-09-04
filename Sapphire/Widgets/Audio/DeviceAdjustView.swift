@@ -63,6 +63,11 @@ struct DeviceAdjustView: View {
         .onChange(of: settings) { _, newSettings in
             if device.isOutput { audioManager.updateSettings(for: device.id, settings: newSettings) }
         }
+        .onChange(of: audioManager.deviceSettings[device.id]) { _, newValue in
+            if let newValue, newValue != settings {
+                settings = newValue
+            }
+        }
     }
 
     private func refreshInputStats() {

@@ -168,7 +168,8 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     @MainActor private func processDiscoveredPeripheral(_ peripheral: CBPeripheral, rssi RSSI: NSNumber, advertisementData: [String: Any]) {
-        let rssiInt = RSSI.intValue > 0 ? 0 : RSSI.intValue
+        guard RSSI.intValue <= 0 else { return }
+        let rssiInt = RSSI.intValue
         let uuid = peripheral.identifier
 
         guard rssiInt >= thresholdRSSI else { return }
@@ -336,9 +337,9 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     @MainActor func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
-        guard peripheral.identifier == monitoredUUID, error == nil else { return }
+        guard peripheral.identifier == monitoredUUID, error == nil, RSSI.intValue <= 0 else { return }
         lastReadAt = Date().timeIntervalSince1970
-        let rssi = RSSI.intValue > 0 ? 0 : RSSI.intValue
+        let rssi = RSSI.intValue
 
         if let device = self.devices[peripheral.identifier] {
             device.rssi = rssi

@@ -1008,7 +1008,7 @@ struct MusicWidgetView: View {
     }
 
     private var albumArt: some View {
-        Image(nsImage: musicManager.artwork ?? musicManager.appIcon ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art")!)
+        Image(nsImage: musicManager.artwork ?? musicManager.appIcon ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art") ?? NSImage())
             .resizable().aspectRatio(contentMode: .fill)
             .frame(width: 100, height: 100).cornerRadius(30)
             .shadow(color: musicManager.accentColor.opacity(0.7), radius: 8, y: 5)

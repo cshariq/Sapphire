@@ -232,7 +232,7 @@ private enum ChromiumDownloadDatabase {
             let bindValues = [
                 fullPath, basePath, fullName, baseName,
                 fullPath, basePath, fullName, baseName,
-                likeBase, likeBase, likeFull, likeFull
+                likeFull, likeBase, likeFull, likeBase
             ]
             var index = 1
             for value in bindValues {

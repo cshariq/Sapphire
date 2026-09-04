@@ -30,8 +30,12 @@ struct GeminiLiveConfiguration {
 // MARK: - WebSocket URL
 
 extension GeminiAPI {
-    static func liveWebSocketURL(apiKey: String) -> URL {
-        URL(string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=\(apiKey)")!
+    static func liveWebSocketURL(apiKey: String) -> URL? {
+        let allowed = CharacterSet.urlQueryAllowed
+        guard let encodedKey = apiKey.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            return nil
+        }
+        return URL(string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=\(encodedKey)")
     }
 }
 
@@ -53,6 +57,7 @@ enum GeminiLiveError: LocalizedError {
     case disconnected
     case invalidMessage
     case setupTimeout
+    case invalidURL
 
     var errorDescription: String? {
         switch self {
@@ -61,6 +66,7 @@ enum GeminiLiveError: LocalizedError {
         case .disconnected: return "Disconnected from Gemini Live"
         case .invalidMessage: return "Invalid message from server"
         case .setupTimeout: return "Gemini Live setup timed out"
+        case .invalidURL: return "Could not build a valid Gemini Live URL from the configured API key"
         }
     }
 }
@@ -112,7 +118,11 @@ final class GeminiLiveSession: NSObject, ObservableObject, URLSessionWebSocketDe
             voiceName: voiceName
         )
 
-        let url = GeminiAPI.liveWebSocketURL(apiKey: apiKey)
+        guard let url = GeminiAPI.liveWebSocketURL(apiKey: apiKey) else {
+            isConnecting = false
+            connectionErrorPublisher.send(GeminiLiveError.invalidURL)
+            return
+        }
         webSocketTask = urlSession.webSocketTask(with: url)
         webSocketTask?.resume()
         receiveMessages()

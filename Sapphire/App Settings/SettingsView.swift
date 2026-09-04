@@ -30,7 +30,7 @@ extension EnvironmentValues {
 }
 
 struct SettingsView: View {
-    private let settings = SettingsModel.shared
+    @ObservedObject private var settings = SettingsModel.shared
     @State private var selectedSection: SettingsSection? = .general
     @State private var showAccountPane = false
 
@@ -62,6 +62,7 @@ struct SettingsView: View {
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .preferredColorScheme(.dark)
+        .tint(settings.settings.resolvedAccentColor) // BETA: custom accent color
         .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenAccountPane)) { _ in
             withAnimation(.easeInOut(duration: 0.15)) {
                 showAccountPane = true

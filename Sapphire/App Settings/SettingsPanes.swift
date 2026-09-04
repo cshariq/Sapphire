@@ -3091,8 +3091,10 @@ struct SnapZonesSettingsView: View {
     @ViewBuilder
     private var customLayoutsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 Text("My Custom Layouts").font(.headline)
+                BetaBadge(style: .pill)
+                    .help("Favoriting layouts is a new, still-stabilizing feature")
                 Spacer()
                 Button("New Layout") { layoutToEdit = SnapLayout(name: "New Custom Layout", zones: []) }.buttonStyle(.borderless).tint(.accentColor)
             }.padding()
@@ -3100,8 +3102,14 @@ struct SnapZonesSettingsView: View {
             if settings.settings.customSnapLayouts.isEmpty {
                 Text("No custom layouts created yet.").foregroundColor(.secondary).frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
             } else {
-                ForEach(settings.settings.customSnapLayouts) { layout in
-                    CustomLayoutRow(layout: layout, onEdit: { layoutToEdit = layout }, onDelete: { deleteLayout(layout) })
+                let sortedLayouts = settings.settings.customSnapLayouts.sorted { $0.isFavorite && !$1.isFavorite }
+                ForEach(sortedLayouts) { layout in
+                    CustomLayoutRow(
+                        layout: layout,
+                        onEdit: { layoutToEdit = layout },
+                        onDelete: { deleteLayout(layout) },
+                        onToggleFavorite: { toggleLayoutFavorite(layout) }
+                    )
                     Divider().padding(.leading, 20)
                 }
             }
@@ -3141,6 +3149,14 @@ struct SnapZonesSettingsView: View {
 
     private func saveLayout(_ savedLayout: SnapLayout) { modifySettings { settings in if let index = settings.customSnapLayouts.firstIndex(where: { $0.id == savedLayout.id }) { settings.customSnapLayouts[index] = savedLayout } else { settings.customSnapLayouts.append(savedLayout) } } }
     private func savePlane(_ savedPlane: Plane) { modifySettings { settings in if let index = settings.planes.firstIndex(where: { $0.id == savedPlane.id }) { settings.planes[index] = savedPlane } else { settings.planes.append(savedPlane) } } }
+
+    /// BETA
+    private func toggleLayoutFavorite(_ layout: SnapLayout) {
+        modifySettings { settings in
+            guard let index = settings.customSnapLayouts.firstIndex(where: { $0.id == layout.id }) else { return }
+            settings.customSnapLayouts[index].isFavorite.toggle()
+        }
+    }
 
     private func deleteLayout(_ layoutToDelete: SnapLayout) {
         modifySettings { settings in
@@ -3387,6 +3403,8 @@ fileprivate struct CustomLayoutRow: View {
     let layout: SnapLayout
     let onEdit: () -> Void
     let onDelete: () -> Void
+    /// BETA
+    var onToggleFavorite: (() -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -3395,7 +3413,20 @@ fileprivate struct CustomLayoutRow: View {
                 .frame(width: 30)
                 .foregroundColor(.accentColor)
             Text(layout.name).font(.headline)
+            if layout.isFavorite {
+                BetaBadge(style: .dot)
+                    .help("Favorite (Beta)")
+            }
             Spacer()
+            if let onToggleFavorite {
+                Button(action: onToggleFavorite) {
+                    Image(systemName: layout.isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(layout.isFavorite ? Color.yellow : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(layout.isFavorite ? "Unfavorite" : "Favorite (Beta) — shows this layout first in pickers")
+            }
+
             Button(action: onEdit) {
                 Image(systemName: "pencil")
             }
@@ -9720,6 +9751,7 @@ struct AppearanceSettingsView: View {
             VStack(alignment: .leading, spacing: 40) {
                 Text("Appearance")
                     .font(.largeTitle.bold())
+                AccentColorSettingsView()
                 PerDisplayNotchSettingsView()
                 NotchAppearanceEditorView(appearance: $settings.settings.notchWidgetAppearance, title: "Expanded Notch Appearance")
                 NotchAppearanceEditorView(appearance: $settings.settings.notchLiveActivityAppearance, title: "Collapsed Notch Appearance")
@@ -9730,6 +9762,52 @@ struct AppearanceSettingsView: View {
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+/// BETA: lets the user override the app's default purple/indigo accent with a
+/// custom color, applied to Settings controls and widget content.
+struct AccentColorSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+
+    private var colorBinding: Binding<Color> {
+        Binding(
+            get: { settings.settings.resolvedAccentColor },
+            set: { settings.settings.customAccentColor = CodableColor(color: $0) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("Accent Color").font(.title2.bold())
+                    BetaBadge(style: .pill)
+                }
+                Text("Choose a custom accent color for Settings and notch controls, in place of the default purple.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                ColorPicker("Accent Color", selection: colorBinding, supportsOpacity: false)
+                    .labelsHidden()
+                Text(settings.settings.customAccentColor == nil ? "Default" : "Custom")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if settings.settings.customAccentColor != nil {
+                    Button("Reset to Default") {
+                        settings.settings.customAccentColor = nil
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                }
+            }
+            .padding(16)
+            .modifier(SettingsContainerModifier())
         }
     }
 }

@@ -14,18 +14,21 @@ struct QuickNote: Identifiable, Codable, Equatable {
     var rtfData: Data? = nil
     var updatedAt: Date = Date()
     var isDone: Bool = false
+    /// BETA: favorited notes are sorted to the top of the list.
+    var isFavorite: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case id, title, body, rtfData, updatedAt, isDone
+        case id, title, body, rtfData, updatedAt, isDone, isFavorite
     }
 
-    init(id: UUID = UUID(), title: String, body: String, rtfData: Data? = nil, updatedAt: Date = Date(), isDone: Bool = false) {
+    init(id: UUID = UUID(), title: String, body: String, rtfData: Data? = nil, updatedAt: Date = Date(), isDone: Bool = false, isFavorite: Bool = false) {
         self.id = id
         self.title = title
         self.body = body
         self.rtfData = rtfData
         self.updatedAt = updatedAt
         self.isDone = isDone
+        self.isFavorite = isFavorite
     }
 
     init(from decoder: Decoder) throws {
@@ -36,6 +39,7 @@ struct QuickNote: Identifiable, Codable, Equatable {
         rtfData = try c.decodeIfPresent(Data.self, forKey: .rtfData)
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
         isDone = try c.decodeIfPresent(Bool.self, forKey: .isDone) ?? false
+        isFavorite = try c.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 
     func attributedBody() -> NSAttributedString {
@@ -106,16 +110,29 @@ final class NotesManager: ObservableObject {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
         notes[index].isDone = done
         notes[index].updatedAt = Date()
-        notes.sort { lhs, rhs in
-            if lhs.isDone != rhs.isDone { return !lhs.isDone && rhs.isDone }
-            return lhs.updatedAt > rhs.updatedAt
-        }
+        resortNotes()
         save()
     }
 
     func toggleNoteDone(id: UUID) {
         guard let note = notes.first(where: { $0.id == id }) else { return }
         setNoteDone(id: id, done: !note.isDone)
+    }
+
+    /// BETA
+    func toggleFavorite(id: UUID) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].isFavorite.toggle()
+        resortNotes()
+        save()
+    }
+
+    private func resortNotes() {
+        notes.sort { lhs, rhs in
+            if lhs.isFavorite != rhs.isFavorite { return lhs.isFavorite && !rhs.isFavorite }
+            if lhs.isDone != rhs.isDone { return !lhs.isDone && rhs.isDone }
+            return lhs.updatedAt > rhs.updatedAt
+        }
     }
 
     private func load() {

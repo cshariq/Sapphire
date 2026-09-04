@@ -94,6 +94,9 @@ class FileConversionManager {
             } catch {
                 print("[FileConversionManager] Conversion failed: \(error)")
                 try? FileManager.default.removeItem(at: tempURL)
+                await MainActor.run {
+                    self.progressPublisher.send((taskID, -1))
+                }
             }
         }
     }

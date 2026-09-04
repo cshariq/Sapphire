@@ -48,6 +48,46 @@ Sapphire is a sleek notch app that displays current activities neatly around the
     <h3 style="margin-top: 0;">Advanced Audio Features (Beta)</h3>
     <p>Adjust individual app volumes, device volumes, app EQs and device EQs right from the notch</p>
   </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Custom Accent Color (Beta)</h3>
+    <p>Swap the app's default purple accent for any color you like, from Settings → Appearance. Applies to Settings controls and notch widget content.</p>
+  </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Clipboard Pinning (Beta)</h3>
+    <p>Pin clipboard items you don't want to lose — pinned items are excluded from history trimming and from "Clear History", and float to the top of the list.</p>
+  </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Text Snippets (Beta)</h3>
+    <p>Save reusable text — signatures, addresses, canned replies — right in the Clipboard widget, and copy any of them with one click.</p>
+  </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Notes Favoriting (Beta)</h3>
+    <p>Star important notes in the Notes widget to keep them pinned at the top of the list.</p>
+  </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Snap Zone Favorite Layouts (Beta)</h3>
+    <p>Star your most-used custom window layouts in Settings → Snap Zones so they're always easy to find.</p>
+  </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">File Shelf Pinning (Beta)</h3>
+    <p>Pin files on the File Shelf to keep them from being auto-cleared after 24 hours.</p>
+  </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Focus Session Templates (Beta)</h3>
+    <p>Save your current duration, intensity, and blocklist as a named template, then start it again with one click.</p>
+  </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Weather Saved Locations (Beta)</h3>
+    <p>Save extra locations and switch between them from the Weather widget, instead of only ever seeing your current location.</p>
+  </div>
   
   <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
     <h3 style="margin-top: 0;">Eye Break</h3>

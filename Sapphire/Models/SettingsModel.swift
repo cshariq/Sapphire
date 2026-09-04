@@ -641,6 +641,14 @@ enum MusicLongPressTarget: String, CaseIterable, Identifiable {
 }
 
 extension Settings {
+    /// BETA: resolved accent color for UI, falling back to the app's default
+    /// purple when the user hasn't chosen a custom one.
+    var resolvedAccentColor: Color {
+        customAccentColor?.color ?? .purple
+    }
+}
+
+extension Settings {
     mutating func setLongPressAction(_ action: MusicLongPressAction, for target: MusicLongPressTarget) {
         switch target {
         case .previous: musicLongPressPrevious = action
@@ -763,6 +771,18 @@ struct Settings: Codable, Equatable {
     var lockScreenBatteryInfo: [BatteryInfoType] = [.batteryIcon, .percentage, .statusText]
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
     var notchLiveActivityAppearance: NotchAppearanceSettings = .init()
+    /// BETA: overrides the app's default purple/indigo accent with a user-chosen
+    /// color, applied to interactive controls in Settings and widget content.
+    /// nil means "use the default app color".
+    var customAccentColor: CodableColor?
+    /// BETA: user-defined reusable text snippets, quick-copyable from the Clipboard widget.
+    var textSnippets: [TextSnippet] = []
+    /// BETA: saved Focus Session presets (duration/intensity/blocklist) for quick-start.
+    var focusSessionTemplates: [FocusSessionTemplate] = []
+    /// BETA: locations the user has saved for quick weather switching.
+    var savedWeatherLocations: [SavedWeatherLocation] = []
+    /// BETA: which saved location's weather to show. nil means "use current device location" (unchanged default behavior).
+    var selectedWeatherLocationID: UUID?
     var launchAtLogin: Bool = true
     var appLanguage: String = "en"
     var hapticFeedbackEnabled: Bool = true
@@ -1132,6 +1152,7 @@ struct Settings: Codable, Equatable {
     var defaultSnapLayout: SnapLayout = LayoutTemplate.columns
     var appSpecificLayoutConfigurations: [String: AppSnapLayoutConfiguration] = [:]
     var customSnapLayouts: [SnapLayout] = []
+    var snapZoneShortcuts: [SnapZoneShortcut] = []
     var snapZoneLayoutOptions: [UUID] = [LayoutTemplate.fancy.id, LayoutTemplate.quarters.id, LayoutTemplate.splitscreen.id, LayoutTemplate.focus.id, LayoutTemplate.fullscreen.id]
     var planes: [Plane] = []
     var batteryChargeLimit: Int = 100

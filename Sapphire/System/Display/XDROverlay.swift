@@ -73,13 +73,14 @@ class Overlay: MTKView, MTKViewDelegate {
         guard let commandQueue = commandQueue,
               let renderPassDescriptor = view.currentRenderPassDescriptor,
               let commandBuffer = commandQueue.makeCommandBuffer(),
-              let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+              let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor),
+              let drawable = view.currentDrawable else {
             return
         }
 
         renderEncoder.endEncoding()
 
-        commandBuffer.present(view.currentDrawable!)
+        commandBuffer.present(drawable)
         commandBuffer.commit()
     }
 

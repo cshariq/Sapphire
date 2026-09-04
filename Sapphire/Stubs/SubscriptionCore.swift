@@ -14,9 +14,10 @@ public enum SubscriptionTier: String, Codable, CaseIterable {
 }
 
 public enum AppFeature: String, Codable, CaseIterable {
-    case unlimitedLyricsFetch, translation, geminiLive, advancedFileConversion,
-         priorityAutomation, betaSoftwareUpdates, circleToSearch, liveSports,
-         financeWidget, sportsWidget, financeLiveActivity, prioritizedFeedback
+        case unlimitedLyricsFetch, translation, geminiLive, advancedFileConversion,
+            priorityAutomation, betaSoftwareUpdates, circleToSearch, liveSports,
+            financeWidget, sportsWidget, financeLiveActivity, prioritizedFeedback,
+            focusProductiveAccess, appLock
 }
 
 public struct SubscriptionEntitlements: Codable, Equatable {

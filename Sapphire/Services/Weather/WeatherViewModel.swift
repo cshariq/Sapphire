@@ -38,6 +38,47 @@ class WeatherViewModel: ObservableObject {
 
     var hasValidWeather: Bool { weatherData?.isValid == true }
 
+    // MARK: - Saved Locations (BETA)
+
+    private var selectedSavedLocation: SavedWeatherLocation? {
+        guard let id = settingsModel.settings.selectedWeatherLocationID else { return nil }
+        return settingsModel.settings.savedWeatherLocations.first { $0.id == id }
+    }
+
+    /// Switches which location's weather is shown. Pass nil to go back to the
+    /// device's current location (the pre-existing default behavior).
+    func selectLocation(id: UUID?) {
+        guard settingsModel.settings.selectedWeatherLocationID != id else { return }
+        settingsModel.settings.selectedWeatherLocationID = id
+        weatherData = nil
+        fetch()
+    }
+
+    /// Geocodes `query` and saves it as a quick-switch location. Throws if the
+    /// address couldn't be resolved.
+    func addSavedLocation(query: String) async throws {
+        let placemarks = try await CLGeocoder().geocodeAddressString(query)
+        guard let placemark = placemarks.first, let coordinate = placemark.location?.coordinate else {
+            throw WeatherServiceError.locationUnavailable
+        }
+        let name = [placemark.locality, placemark.administrativeArea, placemark.country]
+            .compactMap { $0 }
+            .joined(separator: ", ")
+        let location = SavedWeatherLocation(
+            name: name.isEmpty ? query : name,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
+        settingsModel.settings.savedWeatherLocations.append(location)
+    }
+
+    func removeSavedLocation(id: UUID) {
+        settingsModel.settings.savedWeatherLocations.removeAll { $0.id == id }
+        if settingsModel.settings.selectedWeatherLocationID == id {
+            selectLocation(id: nil)
+        }
+    }
+
     private init() {
         fetch()
         Timer.scheduledTimer(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
@@ -58,6 +99,28 @@ class WeatherViewModel: ObservableObject {
         if weatherData == nil {
             locationName = "Loading..."
             conditionDescription = "Locating…"
+        }
+
+        // BETA: a saved (non-current) location is selected — fetch for its
+        // fixed coordinates instead of the device's live location.
+        if let location = selectedSavedLocation {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let data = try await OpenMeteoService.shared.fetchWeather(for: location.clLocation, locationName: location.name)
+                    self.isFetching = false
+                    guard data.isValid else {
+                        self.handleError(WeatherServiceError.unavailableData)
+                        return
+                    }
+                    self.weatherData = data
+                    self.updateUI(with: data)
+                } catch {
+                    self.isFetching = false
+                    self.handleError(error)
+                }
+            }
+            return
         }
 
         weatherService.fetchWeather { [weak self] result in

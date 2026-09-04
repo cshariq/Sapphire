@@ -23,4 +23,12 @@ struct AppLockOverlayView: View {
         Color.clear
     }
 }
+
+struct AppLockSettingsView: View {
+    var body: some View {
+        Text("App Lock is not included in this build.")
+            .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
 #endif

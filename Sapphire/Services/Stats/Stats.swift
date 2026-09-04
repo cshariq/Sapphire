@@ -830,8 +830,18 @@ internal class DiskActivityReader: Reader<Disks> {
             }
         }
 
-        let partitionLevel = d.BSDName.filter { "0"..."9" ~= $0 }.count
-        if let parent = getDeviceIOParent(DADiskCopyIOMedia(disk), level: Int(partitionLevel)) {
+        // Count digit *groups* (e.g. "disk10s2" -> 2), not raw digit characters,
+        // so multi-digit disk numbers (disk10+) don't inflate the walked parent level.
+        var partitionLevel = 0
+        var inDigitRun = false
+        for ch in d.BSDName {
+            if ch.isNumber {
+                if !inDigitRun { partitionLevel += 1; inDigitRun = true }
+            } else {
+                inDigitRun = false
+            }
+        }
+        if let parent = getDeviceIOParent(DADiskCopyIOMedia(disk), level: partitionLevel) {
             d.parent = parent
         }
 
@@ -841,6 +851,7 @@ internal class DiskActivityReader: Reader<Disks> {
     private func getDeviceIOParent(_ obj: io_registry_entry_t, level: Int) -> io_registry_entry_t? {
         var parent: io_registry_entry_t = 0
         guard IORegistryEntryGetParentEntry(obj, kIOServicePlane, &parent) == KERN_SUCCESS else { return nil }
+        guard level >= 1 else { return parent }
 
         for _ in 1...level where IORegistryEntryGetParentEntry(parent, kIOServicePlane, &parent) != KERN_SUCCESS {
             IOObjectRelease(parent)

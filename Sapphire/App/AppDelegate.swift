@@ -1472,8 +1472,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    func updateNotchHostWindowHeight(requiredContentHeight: CGFloat) {
-        for window in notchWindows {
+    func updateNotchHostWindowHeight(requiredContentHeight: CGFloat, for targetWindow: NSWindow? = nil) {
+        let windowsToUpdate = targetWindow.map { [$0] } ?? notchWindows
+        for window in windowsToUpdate {
             let targetScreen = window.screen ?? CursorPosition.targetNotchScreen()
             guard let targetScreen else { continue }
 
