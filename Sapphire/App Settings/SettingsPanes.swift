@@ -9720,6 +9720,7 @@ struct AppearanceSettingsView: View {
             VStack(alignment: .leading, spacing: 40) {
                 Text("Appearance")
                     .font(.largeTitle.bold())
+                AccentColorSettingsView()
                 PerDisplayNotchSettingsView()
                 NotchAppearanceEditorView(appearance: $settings.settings.notchWidgetAppearance, title: "Expanded Notch Appearance")
                 NotchAppearanceEditorView(appearance: $settings.settings.notchLiveActivityAppearance, title: "Collapsed Notch Appearance")
@@ -9730,6 +9731,52 @@ struct AppearanceSettingsView: View {
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+}
+
+/// BETA: lets the user override the app's default purple/indigo accent with a
+/// custom color, applied to Settings controls and widget content.
+struct AccentColorSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+
+    private var colorBinding: Binding<Color> {
+        Binding(
+            get: { settings.settings.resolvedAccentColor },
+            set: { settings.settings.customAccentColor = CodableColor(color: $0) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("Accent Color").font(.title2.bold())
+                    BetaBadge(style: .pill)
+                }
+                Text("Choose a custom accent color for Settings and notch controls, in place of the default purple.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                ColorPicker("Accent Color", selection: colorBinding, supportsOpacity: false)
+                    .labelsHidden()
+                Text(settings.settings.customAccentColor == nil ? "Default" : "Custom")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if settings.settings.customAccentColor != nil {
+                    Button("Reset to Default") {
+                        settings.settings.customAccentColor = nil
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                }
+            }
+            .padding(16)
+            .modifier(SettingsContainerModifier())
         }
     }
 }

@@ -134,6 +134,7 @@ struct NotchWidgetView: View {
                 .opacity(isFadedIn ? 1.0 : 0.0)
                 .offset(y: isPositioned ? 0 : -50)
         }
+        .tint(settings.settings.resolvedAccentColor) // BETA: custom accent color
         .onAppear {
             self.displayedMode = self.currentMode
             let animation: Animation

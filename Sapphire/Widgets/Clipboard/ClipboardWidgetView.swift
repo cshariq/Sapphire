@@ -105,7 +105,8 @@ struct ClipboardPlayerView: View {
     @State private var filterImagesOnly = false
 
     private var filteredItems: [ClipboardItem] {
-        var items = clipboardManager.recentItems
+        // Pinned items float to the top (stable sort preserves recency order within each group).
+        var items = clipboardManager.recentItems.sorted { $0.isPinned && !$1.isPinned }
         if filterImagesOnly {
             items = items.filter(\.isImage)
         }
@@ -188,8 +189,12 @@ struct ClipboardPlayerView: View {
     private var topBar: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Clipboard")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                HStack(spacing: 6) {
+                    Text("Clipboard")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    BetaBadge(style: .pill)
+                        .help("Pinning is a new, still-stabilizing feature")
+                }
                 Text("\(clipboardManager.recentItems.count) items")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -246,6 +251,12 @@ struct ClipboardPlayerView: View {
 
             Spacer(minLength: 0)
 
+            PinButton(
+                isPinned: item.isPinned,
+                onTap: { clipboardManager.togglePin(id: item.id) }
+            )
+            .help(item.isPinned ? "Unpin" : "Pin (Beta) — keeps this item from being trimmed or cleared")
+
             CopyAgainButton(
                 isImage: item.isImage,
                 onTap: { clipboardManager.copyItem(item) }
@@ -263,16 +274,34 @@ struct ClipboardPlayerView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(MaterialChartPalette.outline, lineWidth: 1)
+                .stroke(item.isPinned ? Color.orange.opacity(0.45) : MaterialChartPalette.outline, lineWidth: item.isPinned ? 1.5 : 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
             clipboardManager.copyItem(item)
         }
         .contextMenu {
+            Button(item.isPinned ? "Unpin" : "Pin (Beta)") { clipboardManager.togglePin(id: item.id) }
             Button("Copy") { clipboardManager.copyItem(item) }
             Button("Share…") { clipboardManager.shareItem(item) }
             Button("Delete", role: .destructive) { clipboardManager.removeItem(id: item.id) }
+        }
+    }
+
+    /// BETA
+    private struct PinButton: View {
+        let isPinned: Bool
+        let onTap: () -> Void
+
+        var body: some View {
+            Button(action: onTap) {
+                NotchCapsuleIconLabel(
+                    systemName: isPinned ? "pin.fill" : "pin",
+                    isActive: isPinned,
+                    activeTint: .orange
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
 

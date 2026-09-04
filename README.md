@@ -48,6 +48,16 @@ Sapphire is a sleek notch app that displays current activities neatly around the
     <h3 style="margin-top: 0;">Advanced Audio Features (Beta)</h3>
     <p>Adjust individual app volumes, device volumes, app EQs and device EQs right from the notch</p>
   </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Custom Accent Color (Beta)</h3>
+    <p>Swap the app's default purple accent for any color you like, from Settings → Appearance. Applies to Settings controls and notch widget content.</p>
+  </div>
+
+  <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
+    <h3 style="margin-top: 0;">Clipboard Pinning (Beta)</h3>
+    <p>Pin clipboard items you don't want to lose — pinned items are excluded from history trimming and from "Clear History", and float to the top of the list.</p>
+  </div>
   
   <div style="border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 300px; background-color: #1c1c1e;">
     <h3 style="margin-top: 0;">Eye Break</h3>

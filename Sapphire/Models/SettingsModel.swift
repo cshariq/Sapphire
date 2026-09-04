@@ -641,6 +641,14 @@ enum MusicLongPressTarget: String, CaseIterable, Identifiable {
 }
 
 extension Settings {
+    /// BETA: resolved accent color for UI, falling back to the app's default
+    /// purple when the user hasn't chosen a custom one.
+    var resolvedAccentColor: Color {
+        customAccentColor?.color ?? .purple
+    }
+}
+
+extension Settings {
     mutating func setLongPressAction(_ action: MusicLongPressAction, for target: MusicLongPressTarget) {
         switch target {
         case .previous: musicLongPressPrevious = action
@@ -763,6 +771,10 @@ struct Settings: Codable, Equatable {
     var lockScreenBatteryInfo: [BatteryInfoType] = [.batteryIcon, .percentage, .statusText]
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
     var notchLiveActivityAppearance: NotchAppearanceSettings = .init()
+    /// BETA: overrides the app's default purple/indigo accent with a user-chosen
+    /// color, applied to interactive controls in Settings and widget content.
+    /// nil means "use the default app color".
+    var customAccentColor: CodableColor?
     var launchAtLogin: Bool = true
     var appLanguage: String = "en"
     var hapticFeedbackEnabled: Bool = true
