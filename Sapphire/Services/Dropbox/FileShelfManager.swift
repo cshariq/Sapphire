@@ -69,6 +69,13 @@ class FileShelfManager: ObservableObject {
         saveFiles()
     }
 
+    /// BETA
+    func togglePin(_ item: ShelfItem) {
+        guard let index = files.firstIndex(where: { $0.id == item.id }) else { return }
+        files[index].isPinned.toggle()
+        saveFiles()
+    }
+
     func renameFile(_ item: ShelfItem, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != item.storedAt.lastPathComponent else { return }
@@ -136,7 +143,7 @@ class FileShelfManager: ObservableObject {
 
     private func cleanupExpiredFiles() {
         let oneDayAgo = Date().addingTimeInterval(-24 * 60 * 60)
-        let expiredFiles = files.filter { $0.dateAdded < oneDayAgo }
+        let expiredFiles = files.filter { !$0.isPinned && $0.dateAdded < oneDayAgo }
         if !expiredFiles.isEmpty {
             for file in expiredFiles {
                 removeFile(file)
@@ -145,7 +152,7 @@ class FileShelfManager: ObservableObject {
     }
 
     func trimCache() {
-        let expired = files.filter { $0.dateAdded < Date().addingTimeInterval(-3600) }
+        let expired = files.filter { !$0.isPinned && $0.dateAdded < Date().addingTimeInterval(-3600) }
         for file in expired { removeFile(file) }
     }
 }
@@ -156,14 +163,29 @@ struct ShelfItem: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     var storedAt: URL
     let dateAdded: Date
+    /// BETA: pinned items are exempt from the shelf's automatic expiry cleanup.
+    var isPinned: Bool = false
 
     var fileName: String { storedAt.lastPathComponent }
     var icon: NSImage { NSWorkspace.shared.icon(forFile: storedAt.path) }
 
-    init(id: UUID, storedAt: URL, dateAdded: Date) {
+    init(id: UUID, storedAt: URL, dateAdded: Date, isPinned: Bool = false) {
         self.id = id
         self.storedAt = storedAt
         self.dateAdded = dateAdded
+        self.isPinned = isPinned
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, storedAt, dateAdded, isPinned
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        storedAt = try container.decode(URL.self, forKey: .storedAt)
+        dateAdded = try container.decode(Date.self, forKey: .dateAdded)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     }
 }
 
@@ -278,6 +300,10 @@ private struct FileShelfItemView: View {
                 isHovering = hovering
             }
         }
+        .contextMenu {
+            Button(item.isPinned ? "Unpin" : "Pin (Beta)") { manager.togglePin(item) }
+            Button("Remove", role: .destructive) { manager.removeFile(item) }
+        }
     }
 
     @ViewBuilder
@@ -289,6 +315,17 @@ private struct FileShelfItemView: View {
                 Image(systemName: IconGenerator.symbolName(for: item))
                     .font(.system(size: 24, weight: .bold))
                     .foregroundColor(.white)
+            }
+
+            if item.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white, .orange)
+                    .symbolRenderingMode(.palette)
+                    .padding(3)
+                    .background(Circle().fill(.black.opacity(0.55)))
+                    .offset(x: -3, y: 3)
+                    .help("Pinned (Beta) — exempt from automatic shelf cleanup")
             }
 
             if isHovering {

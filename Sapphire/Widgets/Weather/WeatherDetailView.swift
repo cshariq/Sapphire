@@ -42,6 +42,9 @@ struct RelativeTimeView: View {
 
 struct WeatherPlayerView: View {
     @ObservedObject private var viewModel = WeatherViewModel.shared
+    @EnvironmentObject private var settings: SettingsModel
+    /// BETA
+    @State private var newLocationQuery = ""
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -96,9 +99,7 @@ struct WeatherPlayerView: View {
                 .padding(10)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(viewModel.locationName)
-                    .font(.title2.weight(.semibold))
-                    .lineLimit(1)
+                locationSwitcher
 
                 Text(viewModel.temperature)
                     .font(.system(size: 72, weight: .heavy, design: .rounded))
@@ -136,6 +137,79 @@ struct WeatherPlayerView: View {
             Spacer()
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Saved Locations (BETA)
+
+    private var locationSwitcher: some View {
+        HStack(spacing: 4) {
+            Menu {
+                Button {
+                    viewModel.selectLocation(id: nil)
+                } label: {
+                    if settings.settings.selectedWeatherLocationID == nil {
+                        Label("Current Location", systemImage: "checkmark")
+                    } else {
+                        Text("Current Location")
+                    }
+                }
+
+                ForEach(settings.settings.savedWeatherLocations) { location in
+                    Button {
+                        viewModel.selectLocation(id: location.id)
+                    } label: {
+                        if settings.settings.selectedWeatherLocationID == location.id {
+                            Label(location.name, systemImage: "checkmark")
+                        } else {
+                            Text(location.name)
+                        }
+                    }
+                }
+
+                if !settings.settings.savedWeatherLocations.isEmpty {
+                    Menu("Remove Location") {
+                        ForEach(settings.settings.savedWeatherLocations) { location in
+                            Button(location.name, role: .destructive) {
+                                viewModel.removeSavedLocation(id: location.id)
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                TextField("Add a city…", text: $newLocationQuery)
+                    .onSubmit(submitNewLocation)
+                Button("Search", action: submitNewLocation)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(viewModel.locationName)
+                        .font(.title2.weight(.semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .opacity(0.6)
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            BetaBadge(style: .dot)
+                .help("Saved locations is a new, still-stabilizing feature")
+        }
+    }
+
+    private func submitNewLocation() {
+        let query = newLocationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        newLocationQuery = ""
+        Task {
+            do {
+                try await viewModel.addSavedLocation(query: query)
+            } catch {
+                print("[Weather] Failed to add location \"\(query)\": \(error)")
+            }
+        }
     }
 
     private var hourlyForecastSection: some View {

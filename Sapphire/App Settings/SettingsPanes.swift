@@ -3091,8 +3091,10 @@ struct SnapZonesSettingsView: View {
     @ViewBuilder
     private var customLayoutsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 Text("My Custom Layouts").font(.headline)
+                BetaBadge(style: .pill)
+                    .help("Favoriting layouts is a new, still-stabilizing feature")
                 Spacer()
                 Button("New Layout") { layoutToEdit = SnapLayout(name: "New Custom Layout", zones: []) }.buttonStyle(.borderless).tint(.accentColor)
             }.padding()
@@ -3100,8 +3102,14 @@ struct SnapZonesSettingsView: View {
             if settings.settings.customSnapLayouts.isEmpty {
                 Text("No custom layouts created yet.").foregroundColor(.secondary).frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
             } else {
-                ForEach(settings.settings.customSnapLayouts) { layout in
-                    CustomLayoutRow(layout: layout, onEdit: { layoutToEdit = layout }, onDelete: { deleteLayout(layout) })
+                let sortedLayouts = settings.settings.customSnapLayouts.sorted { $0.isFavorite && !$1.isFavorite }
+                ForEach(sortedLayouts) { layout in
+                    CustomLayoutRow(
+                        layout: layout,
+                        onEdit: { layoutToEdit = layout },
+                        onDelete: { deleteLayout(layout) },
+                        onToggleFavorite: { toggleLayoutFavorite(layout) }
+                    )
                     Divider().padding(.leading, 20)
                 }
             }
@@ -3141,6 +3149,14 @@ struct SnapZonesSettingsView: View {
 
     private func saveLayout(_ savedLayout: SnapLayout) { modifySettings { settings in if let index = settings.customSnapLayouts.firstIndex(where: { $0.id == savedLayout.id }) { settings.customSnapLayouts[index] = savedLayout } else { settings.customSnapLayouts.append(savedLayout) } } }
     private func savePlane(_ savedPlane: Plane) { modifySettings { settings in if let index = settings.planes.firstIndex(where: { $0.id == savedPlane.id }) { settings.planes[index] = savedPlane } else { settings.planes.append(savedPlane) } } }
+
+    /// BETA
+    private func toggleLayoutFavorite(_ layout: SnapLayout) {
+        modifySettings { settings in
+            guard let index = settings.customSnapLayouts.firstIndex(where: { $0.id == layout.id }) else { return }
+            settings.customSnapLayouts[index].isFavorite.toggle()
+        }
+    }
 
     private func deleteLayout(_ layoutToDelete: SnapLayout) {
         modifySettings { settings in
@@ -3387,6 +3403,8 @@ fileprivate struct CustomLayoutRow: View {
     let layout: SnapLayout
     let onEdit: () -> Void
     let onDelete: () -> Void
+    /// BETA
+    var onToggleFavorite: (() -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -3395,7 +3413,20 @@ fileprivate struct CustomLayoutRow: View {
                 .frame(width: 30)
                 .foregroundColor(.accentColor)
             Text(layout.name).font(.headline)
+            if layout.isFavorite {
+                BetaBadge(style: .dot)
+                    .help("Favorite (Beta)")
+            }
             Spacer()
+            if let onToggleFavorite {
+                Button(action: onToggleFavorite) {
+                    Image(systemName: layout.isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(layout.isFavorite ? Color.yellow : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(layout.isFavorite ? "Unfavorite" : "Favorite (Beta) — shows this layout first in pickers")
+            }
+
             Button(action: onEdit) {
                 Image(systemName: "pencil")
             }

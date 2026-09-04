@@ -199,8 +199,12 @@ struct NotesPlayerView: View {
     private var topBar: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Notes")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                HStack(spacing: 6) {
+                    Text("Notes")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    BetaBadge(style: .pill)
+                        .help("Favoriting is a new, still-stabilizing feature")
+                }
                 Text("\(notesManager.notes.count) saved")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -255,6 +259,11 @@ struct NotesPlayerView: View {
                             .foregroundStyle(note.isDone ? .secondary : .primary)
                             .strikethrough(note.isDone, color: .secondary)
                             .lineLimit(1)
+                        if note.isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.yellow)
+                        }
                         if note.isDone {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 11, weight: .semibold))
@@ -289,6 +298,9 @@ struct NotesPlayerView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button(note.isFavorite ? "Unfavorite" : "Favorite (Beta)") {
+                notesManager.toggleFavorite(id: note.id)
+            }
             Button(note.isDone ? "Mark Undone" : "Mark Done") {
                 notesManager.toggleNoteDone(id: note.id)
             }

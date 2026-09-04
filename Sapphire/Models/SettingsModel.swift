@@ -775,6 +775,14 @@ struct Settings: Codable, Equatable {
     /// color, applied to interactive controls in Settings and widget content.
     /// nil means "use the default app color".
     var customAccentColor: CodableColor?
+    /// BETA: user-defined reusable text snippets, quick-copyable from the Clipboard widget.
+    var textSnippets: [TextSnippet] = []
+    /// BETA: saved Focus Session presets (duration/intensity/blocklist) for quick-start.
+    var focusSessionTemplates: [FocusSessionTemplate] = []
+    /// BETA: locations the user has saved for quick weather switching.
+    var savedWeatherLocations: [SavedWeatherLocation] = []
+    /// BETA: which saved location's weather to show. nil means "use current device location" (unchanged default behavior).
+    var selectedWeatherLocationID: UUID?
     var launchAtLogin: Bool = true
     var appLanguage: String = "en"
     var hapticFeedbackEnabled: Bool = true

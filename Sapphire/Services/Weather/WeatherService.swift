@@ -9,6 +9,19 @@ import Foundation
 import CoreLocation
 import SwiftUI
 
+/// BETA: a user-saved location for quick weather switching, in addition to
+/// the device's live current location.
+struct SavedWeatherLocation: Identifiable, Codable, Equatable, Hashable {
+    var id: UUID = UUID()
+    var name: String
+    var latitude: Double
+    var longitude: Double
+
+    var clLocation: CLLocation {
+        CLLocation(latitude: latitude, longitude: longitude)
+    }
+}
+
 @MainActor
 final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
     static let shared = WeatherService()

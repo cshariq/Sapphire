@@ -16,6 +16,9 @@ struct FocusSessionDetailView: View {
 
     @State private var customMinutes: Double = 25
     @FocusState private var durationFieldFocused: Bool
+    /// BETA
+    @State private var isSavingTemplate = false
+    @State private var newTemplateName = ""
 
     private var isCustomDuration: Bool { !presets.contains(customMinutes) }
 
@@ -180,6 +183,8 @@ struct FocusSessionDetailView: View {
                     .background(accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
+
+                templatesStrip
             } else {
                 HStack(spacing: 10) {
                     Button {
@@ -244,6 +249,77 @@ struct FocusSessionDetailView: View {
             }
         }
         .frame(maxWidth: 320)
+    }
+
+    // MARK: - Session Templates (BETA)
+
+    @ViewBuilder
+    private var templatesStrip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("TEMPLATES").font(.system(size: 9, weight: .bold)).tracking(1.2).foregroundColor(.white.opacity(0.35))
+                BetaBadge(style: .pill)
+                Spacer(minLength: 0)
+                if isSavingTemplate {
+                    TextField("Name", text: $newTemplateName)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 10))
+                        .frame(width: 90)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .onSubmit { commitSaveTemplate() }
+                    Button("Save", action: commitSaveTemplate)
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(accent)
+                } else {
+                    Button {
+                        newTemplateName = "\(Int(customMinutes))m Focus"
+                        isSavingTemplate = true
+                    } label: {
+                        Label("Save Current", systemImage: "plus.circle")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if !settings.settings.focusSessionTemplates.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(settings.settings.focusSessionTemplates) { template in
+                            Button {
+                                focusManager.startFocusSession(usingTemplate: template)
+                            } label: {
+                                Text(template.name)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.85))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.06), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("Delete", role: .destructive) {
+                                    focusManager.deleteFocusSessionTemplate(id: template.id)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func commitSaveTemplate() {
+        let name = newTemplateName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        focusManager.saveCurrentConfigurationAsTemplate(name: name)
+        isSavingTemplate = false
+        newTemplateName = ""
     }
 
     private var statusText: String {

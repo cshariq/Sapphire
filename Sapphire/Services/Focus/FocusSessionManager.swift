@@ -12,6 +12,18 @@ import UserNotifications
 
 // MARK: - Models
 
+/// BETA: a saved Focus Session preset — duration, intensity, and blocklist —
+/// for quick-starting a session without re-configuring each field.
+struct FocusSessionTemplate: Identifiable, Codable, Equatable, Hashable {
+    var id: UUID = UUID()
+    var name: String
+    var duration: TimeInterval
+    var breakDuration: TimeInterval
+    var intensity: FocusIntensity
+    var blockedApps: Set<String>
+    var blockedWebsites: Set<String>
+}
+
 enum FocusPhase: String, Codable, Equatable {
     case idle
     case focusing
@@ -220,6 +232,40 @@ final class FocusSessionManager: ObservableObject {
         plannedFocusDuration = max(1, duration)
         plannedBreakDuration = settingsModel.settings.focusBreakDuration
         beginSession()
+    }
+
+    // MARK: - Session Templates (BETA)
+
+    /// Saves the current duration/break/intensity/blocklist configuration as a
+    /// named, reusable template.
+    @discardableResult
+    func saveCurrentConfigurationAsTemplate(name: String) -> FocusSessionTemplate {
+        let settings = settingsModel.settings
+        let template = FocusSessionTemplate(
+            name: name,
+            duration: settings.focusSessionDuration,
+            breakDuration: settings.focusBreakDuration,
+            intensity: settings.focusIntensity,
+            blockedApps: settings.focusBlockedApps,
+            blockedWebsites: settings.focusBlockedWebsites
+        )
+        settingsModel.settings.focusSessionTemplates.append(template)
+        return template
+    }
+
+    /// Applies a template's configuration (overwriting the current one) and
+    /// immediately starts a session with it.
+    func startFocusSession(usingTemplate template: FocusSessionTemplate) {
+        settingsModel.settings.focusSessionDuration = template.duration
+        settingsModel.settings.focusBreakDuration = template.breakDuration
+        settingsModel.settings.focusIntensity = template.intensity
+        settingsModel.settings.focusBlockedApps = template.blockedApps
+        settingsModel.settings.focusBlockedWebsites = template.blockedWebsites
+        startFocusSession(duration: template.duration)
+    }
+
+    func deleteFocusSessionTemplate(id: UUID) {
+        settingsModel.settings.focusSessionTemplates.removeAll { $0.id == id }
     }
 
     private func beginSession() {
