@@ -93,6 +93,7 @@ class LiveActivityManager: ObservableObject {
 
     // MARK: - Private Properties
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "LiveActivityManager")
+    private let signposter = OSSignposter(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: .pointsOfInterest)
     private var hasStarted = false
     private var dismissalTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
@@ -769,6 +770,8 @@ class LiveActivityManager: ObservableObject {
             return
         }
         lastEvalTime = evalTime
+        let signpostState = signposter.beginInterval("Evaluate Activity")
+        defer { signposter.endInterval("Evaluate Activity", signpostState) }
         let now = Date()
         if now.timeIntervalSince(lastSnoozeCleanup) > snoozeCleanupInterval {
             snoozedActivities = snoozedActivities.filter { $0.value > now }
@@ -967,6 +970,7 @@ class LiveActivityManager: ObservableObject {
 
         let oldType = self.currentActivity
         let oldShape = notchShapeSignature
+        signposter.emitEvent("Set Activity", "\(String(describing: oldType), privacy: .public) -> \(String(describing: type), privacy: .public)")
 
         if Self.displayAnchoredActivityTypes.contains(type) {
             let cursorLocation = NSEvent.mouseLocation

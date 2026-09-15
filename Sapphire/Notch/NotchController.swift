@@ -13,6 +13,7 @@ import AppKit
 import os.log
 
 private let notchLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "NotchController")
+private let notchSignposter = OSSignposter(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: .pointsOfInterest)
 
 private struct FileDropResult {
     let fallbackZone: DropZone?
@@ -1032,15 +1033,22 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
 
         if newActivity != .none {
+            let transitionSignpost = notchSignposter.beginInterval(
+                "Activity Transition",
+                id: notchSignposter.makeSignpostID(),
+                "\(String(describing: newActivity), privacy: .public)"
+            )
             activitySwitchBlurWindowEnd = Date().addingTimeInterval(Self.activitySwitchBlurWindow)
             blurRemovalTask?.cancel()
             blurRemovalTask = nil
             activityBlurRadius = config.activityBlurRadiusMax
             activityContentScale = 0.9
             DispatchQueue.main.async {
-                withAnimation(config.focusPullAnimation) {
+                withAnimation(config.focusPullAnimation, completionCriteria: .removed) {
                     self.activityBlurRadius = 0
                     self.activityContentScale = 1.0
+                } completion: {
+                    notchSignposter.endInterval("Activity Transition", transitionSignpost)
                 }
             }
         }
@@ -1059,6 +1067,12 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func handleStateChange(from oldState: NotchState, to newState: NotchState, refreshSize: Bool = true) {
+        let signpostState = notchSignposter.beginInterval(
+            "Notch State Change",
+            id: notchSignposter.makeSignpostID(),
+            "\(String(describing: oldState), privacy: .public) -> \(String(describing: newState), privacy: .public)"
+        )
+        defer { notchSignposter.endInterval("Notch State Change", signpostState) }
         guard let config = config else { return }
         if isManuallyHidden {
             animatedWidth = 0
@@ -2179,6 +2193,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
         guard targetWidth > 0 && targetHeight > 0,
               (abs(targetWidth - animatedWidth) > epsilon || abs(targetHeight - animatedHeight) > epsilon) else { return }
+        notchSignposter.emitEvent("Auto Content Resize")
 
         let currentActivityType = liveActivityManager.currentActivity
         let isExemptFromBlur = (currentActivityType == .music || currentActivityType == .systemHUD)
