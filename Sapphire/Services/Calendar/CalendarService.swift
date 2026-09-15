@@ -7,6 +7,7 @@
 
 import Foundation
 import EventKit
+import AppKit
 
 class CalendarService: ObservableObject {
     private let eventStore = EKEventStore()
@@ -32,6 +33,12 @@ class CalendarService: ObservableObject {
             selector: #selector(eventStoreChanged),
             name: .EKEventStoreChanged,
             object: eventStore
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
         )
     }
 
@@ -82,6 +89,24 @@ class CalendarService: ObservableObject {
         }
     }
 
+    @objc private func applicationDidBecomeActive() {
+        fetchEvents(for: currentlyTrackedDate)
+        fetchAllUpcomingEvents()
+    }
+
+    private func visibleEventCalendars() -> [EKCalendar] {
+        let calendarPreferences = UserDefaults.standard.persistentDomain(
+            forName: CalendarVisibilityFilter.calendarPreferencesDomain
+        )
+
+        return eventStore.calendars(for: .event).filter {
+            CalendarVisibilityFilter.isVisible(
+                calendarIdentifier: $0.calendarIdentifier,
+                calendarPreferences: calendarPreferences
+            )
+        }
+    }
+
     func fetchEvents(for date: Date) {
         guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in self?.fetchEvents(for: date) }
@@ -95,7 +120,7 @@ class CalendarService: ObservableObject {
         workQueue.async { [weak self] in
             guard let self = self else { return }
 
-            let calendars = self.eventStore.calendars(for: .event)
+            let calendars = self.visibleEventCalendars()
             let calendar = Calendar.current
             let startDate = calendar.startOfDay(for: date)
             guard let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) else { return }
@@ -131,7 +156,7 @@ class CalendarService: ObservableObject {
         workQueue.async { [weak self] in
             guard let self = self else { return }
 
-            let calendars = self.eventStore.calendars(for: .event)
+            let calendars = self.visibleEventCalendars()
             let now = Date()
             guard let twoDaysFromNow = Calendar.current.date(byAdding: .hour, value: 48, to: now) else { return }
 
