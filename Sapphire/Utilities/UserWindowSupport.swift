@@ -128,7 +128,7 @@ enum UtilityWindowPresenter {
                 NSApp.unhide(nil)
             }
 
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            window.collectionBehavior = .fullScreenAuxiliary
             window.level = .normal
             if window.isMiniaturized {
                 window.deminiaturize(nil)
@@ -168,7 +168,7 @@ enum UtilityWindowPresenter {
 
 @MainActor
 enum HelperAlertPresenter {
-    private static var hostWindow: AlertHostWindow?
+    private static var hostWindow: KeyableWindow?
     private static var activeModalCount = 0
 
     static func showHelperConnectionLost(onDismiss: (() -> Void)? = nil) {
@@ -259,12 +259,12 @@ enum HelperAlertPresenter {
         }
     }
 
-    private static func acquireHostWindow() -> AlertHostWindow {
+    private static func acquireHostWindow() -> KeyableWindow {
         if let hostWindow {
             return hostWindow
         }
 
-        let window = AlertHostWindow(
+        let window = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 240),
             styleMask: [.borderless],
             backing: .buffered,
@@ -290,11 +290,6 @@ enum HelperAlertPresenter {
         hostWindow?.orderOut(nil)
         hostWindow = nil
     }
-}
-
-private final class AlertHostWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
 }
 
 final class FocusableHostingView<Content: View>: NSHostingView<Content> {

@@ -286,7 +286,7 @@ private struct FileShelfItemView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.secondary.opacity(0.25))
-                Image(systemName: IconGenerator.symbolName(for: item))
+                Image(systemName: item.storedAt.sapphireFileSymbolName)
                     .font(.system(size: 24, weight: .bold))
                     .foregroundColor(.white)
             }
@@ -304,23 +304,5 @@ private struct FileShelfItemView: View {
             }
         }
         .frame(width: 50, height: 50)
-    }
-}
-
-private struct IconGenerator {
-    static func symbolName(for item: ShelfItem) -> String {
-        guard let type = try? item.storedAt.resourceValues(forKeys: [.contentTypeKey]).contentType else {
-            return "doc.fill"
-        }
-
-        if type.conforms(to: .image) { return "photo.fill" }
-        if type.conforms(to: .movie) { return "video.fill" }
-        if type.conforms(to: .audio) { return "music.note" }
-        if type.conforms(to: .pdf) { return "doc.richtext.fill" }
-        if type.conforms(to: .text) { return "doc.text.fill" }
-        if type.conforms(to: .folder) { return "folder.fill" }
-        if type.conforms(to: .archive) { return "archivebox.fill" }
-
-        return "doc.fill"
     }
 }

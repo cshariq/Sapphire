@@ -29,20 +29,8 @@ struct SpotifyLoginWebView: View {
 private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
     let onComplete: ([[String: Any]]) -> Void
 
-    static let desktopUserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-
     func makeNSView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.customUserAgent = Self.desktopUserAgent
-        webView.navigationDelegate = context.coordinator
-        webView.uiDelegate = context.coordinator
-        webView.allowsBackForwardNavigationGestures = true
+        let webView = AuthLoginWebView.makeWebView(delegate: context.coordinator)
 
         print("[SpotifyLogin] Clearing residual Spotify website data, then loading a fresh login.")
         Self.clearSharedSpotifyWebsiteData {
@@ -95,28 +83,25 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
         return domain.contains("spotify.com") || domain.contains("spotify.net")
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: AuthLoginCoordinator {
         var parent: SpotifyLoginWebViewRepresentable
         private var isCompleting = false
         private var didPassLoginForm = false
         private var cookiePollTimer: Timer?
-        private var popupWindows: [WKWebView: NSWindow] = [:]
 
         init(_ parent: SpotifyLoginWebViewRepresentable) {
             self.parent = parent
+            super.init(serviceName: "Spotify", logPrefix: "SpotifyLogin")
         }
 
         deinit {
-            tearDown()
+            cookiePollTimer?.invalidate()
         }
 
-        func tearDown() {
+        override func tearDown() {
             cookiePollTimer?.invalidate()
             cookiePollTimer = nil
-            for (_, window) in popupWindows {
-                window.close()
-            }
-            popupWindows.removeAll()
+            super.tearDown()
         }
 
         func loadLoginPage(in webView: WKWebView) {
@@ -129,7 +114,7 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
 
         // MARK: - WKNavigationDelegate
 
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        override func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard let url = webView.url else { return }
             if popupWindows[webView] != nil {
                 print("[SpotifyLogin] Popup finished: \(url.absoluteString)")
@@ -148,88 +133,6 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
                 didPassLoginForm = true
                 checkForFreshSessionCookies(in: webView)
             }
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-        ) {
-            decisionHandler(.allow)
-        }
-
-        // MARK: - WKUIDelegate (social login / captcha popups)
-
-        func webView(
-            _ webView: WKWebView,
-            createWebViewWith configuration: WKWebViewConfiguration,
-            for navigationAction: WKNavigationAction,
-            windowFeatures: WKWindowFeatures
-        ) -> WKWebView? {
-            let popup = WKWebView(frame: .zero, configuration: configuration)
-            popup.customUserAgent = SpotifyLoginWebViewRepresentable.desktopUserAgent
-            popup.navigationDelegate = self
-            popup.uiDelegate = self
-
-            let width = CGFloat(windowFeatures.width?.doubleValue ?? 520)
-            let height = CGFloat(windowFeatures.height?.doubleValue ?? 720)
-            let rect = NSRect(x: 0, y: 0, width: max(width, 480), height: max(height, 640))
-
-            let window = NSWindow(
-                contentRect: rect,
-                styleMask: [.titled, .closable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = "Spotify Login"
-            window.contentView = popup
-            window.isReleasedWhenClosed = false
-            window.center()
-            window.makeKeyAndOrderFront(nil)
-
-            popupWindows[popup] = window
-            print("[SpotifyLogin] Opened auth popup for \(navigationAction.request.url?.absoluteString ?? "unknown")")
-
-            if let url = navigationAction.request.url {
-                popup.load(navigationAction.request)
-            }
-
-            return popup
-        }
-
-        func webViewDidClose(_ webView: WKWebView) {
-            if let window = popupWindows.removeValue(forKey: webView) {
-                window.close()
-                print("[SpotifyLogin] Auth popup closed by page.")
-            }
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            runJavaScriptAlertPanelWithMessage message: String,
-            initiatedByFrame frame: WKFrameInfo,
-            completionHandler: @escaping () -> Void
-        ) {
-            let alert = NSAlert()
-            alert.messageText = "Spotify"
-            alert.informativeText = message
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            completionHandler()
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            runJavaScriptConfirmPanelWithMessage message: String,
-            initiatedByFrame frame: WKFrameInfo,
-            completionHandler: @escaping (Bool) -> Void
-        ) {
-            let alert = NSAlert()
-            alert.messageText = "Spotify"
-            alert.informativeText = message
-            alert.addButton(withTitle: "OK")
-            alert.addButton(withTitle: "Cancel")
-            completionHandler(alert.runModal() == .alertFirstButtonReturn)
         }
 
         // MARK: - Cookie harvest

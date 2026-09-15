@@ -35,7 +35,8 @@ class Overlay: MTKView, MTKViewDelegate {
         colorPixelFormat = .rgba16Float
         colorspace = colorSpace
         clearColor = MTLClearColorMake(1.0, 1.0, 1.0, 1.0)
-        preferredFramesPerSecond = 5
+        isPaused = true
+        enableSetNeedsDisplay = true
 
         if let layer = self.layer as? CAMetalLayer {
             layer.wantsExtendedDynamicRangeContent = true
@@ -56,10 +57,10 @@ class Overlay: MTKView, MTKViewDelegate {
         let maxRenderedEdrValue = screen.maximumReferenceExtendedDynamicRangeColorComponentValue
         let factor = max(maxEdrValue / max(maxRenderedEdrValue, 1.0) - 1.0, 1.0)
         clearColor = MTLClearColorMake(factor, factor, factor, 1.0)
+        needsDisplay = true
     }
 
     func setMaxFrameRate(screen: NSScreen) {
-        preferredFramesPerSecond = screen.maximumFramesPerSecond
     }
 
     func setHDRBrightness(colorValue: Double, screen: NSScreen) {
@@ -67,19 +68,28 @@ class Overlay: MTKView, MTKViewDelegate {
         let percentage = (colorValue - 1.0) / 0.6
         let newColor = ((maxEdrValue - 1.0) * percentage) + 1.0
         clearColor = MTLClearColorMake(newColor, newColor, newColor, 1.0)
+        needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            needsDisplay = true
+        }
     }
 
     func draw(in view: MTKView) {
         guard let commandQueue = commandQueue,
               let renderPassDescriptor = view.currentRenderPassDescriptor,
               let commandBuffer = commandQueue.makeCommandBuffer(),
-              let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
+              let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor),
+              let drawable = view.currentDrawable else {
             return
         }
 
         renderEncoder.endEncoding()
 
-        commandBuffer.present(view.currentDrawable!)
+        commandBuffer.present(drawable)
         commandBuffer.commit()
     }
 

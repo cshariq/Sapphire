@@ -31,6 +31,7 @@ final class MicrophoneUsageManager: ObservableObject {
     }
     @Published var amplifierGain: Float {
         didSet {
+
             amplifierGain = min(max(amplifierGain, 1.0), 4.0)
             UserDefaults.standard.set(amplifierGain, forKey: gainDefaultsKey)
             updateMeteringTap()
@@ -39,10 +40,12 @@ final class MicrophoneUsageManager: ObservableObject {
 
     private var defaultInputListener: AudioObjectPropertyListenerBlock?
     private var deviceRunningListeners: [AudioDeviceID: AudioObjectPropertyListenerBlock] = [:]
+    private var micUsageUpdateTask: Task<Void, Never>?
     private var processListListener: AudioObjectPropertyListenerBlock?
     private var currentDefaultInputDeviceID: AudioDeviceID = kAudioObjectUnknown
     private var meteringTap: MicrophoneMeteringTap?
     private var meterResetTask: Task<Void, Never>?
+    private var activeBundlesObserver: NSObjectProtocol?
 
     private init() {
         amplifierEnabled = UserDefaults.standard.object(forKey: amplifierEnabledDefaultsKey) as? Bool ?? false
@@ -61,13 +64,15 @@ final class MicrophoneUsageManager: ObservableObject {
         }
         meteringTap?.stop()
         meterResetTask?.cancel()
-        NotificationCenter.default.removeObserver(self)
+        if let activeBundlesObserver {
+            NotificationCenter.default.removeObserver(activeBundlesObserver)
+        }
     }
 
     private func setup() {
         refreshMonitoredInputDevices()
         observeDefaultInputDeviceChanges()
-        NotificationCenter.default.addObserver(forName: .multiAudioActiveBundlesDidChange, object: nil, queue: .main) { [weak self] _ in
+        activeBundlesObserver = NotificationCenter.default.addObserver(forName: .multiAudioActiveBundlesDidChange, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.updateMicUsageState() }
         }
     }
@@ -78,7 +83,7 @@ final class MicrophoneUsageManager: ObservableObject {
         if let block = defaultInputListener { AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &defaultAddr, .main, block) }
 
         var listAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        processListListener = { [weak self] _, _ in Task { @MainActor in self?.updateMicUsageState() } }
+        processListListener = { [weak self] _, _ in Task { @MainActor in self?.scheduleMicUsageUpdate() } }
         if let block = processListListener { AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &listAddr, .main, block) }
     }
 
@@ -89,7 +94,6 @@ final class MicrophoneUsageManager: ObservableObject {
         for deviceID in deviceRunningListeners.keys where !monitored.contains(deviceID) { removeRunningListener(for: deviceID) }
         for deviceID in inputDevices where deviceRunningListeners[deviceID] == nil { addRunningListener(for: deviceID) }
         updateMicUsageState()
-        updateMeteringTap()
     }
 
     private func refreshDefaultInputDevice() {
@@ -101,7 +105,7 @@ final class MicrophoneUsageManager: ObservableObject {
 
     private func addRunningListener(for deviceID: AudioDeviceID) {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in Task { @MainActor in self?.updateMicUsageState() } }
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in Task { @MainActor in self?.scheduleMicUsageUpdate() } }
         deviceRunningListeners[deviceID] = block
         AudioObjectAddPropertyListenerBlock(deviceID, &addr, .main, block)
     }
@@ -110,6 +114,16 @@ final class MicrophoneUsageManager: ObservableObject {
         guard let block = deviceRunningListeners.removeValue(forKey: deviceID) else { return }
         var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         _ = AudioObjectRemovePropertyListenerBlock(deviceID, &addr, .main, block)
+    }
+
+    private func scheduleMicUsageUpdate() {
+        micUsageUpdateTask?.cancel()
+        micUsageUpdateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled, let self else { return }
+            self.micUsageUpdateTask = nil
+            self.updateMicUsageState()
+        }
     }
 
     private func updateMicUsageState() {
@@ -122,12 +136,13 @@ final class MicrophoneUsageManager: ObservableObject {
             peakLevel = 0
             isClipping = false
         }
+        updateMeteringTap()
     }
 
     private func updateMeteringTap() {
         meteringTap?.stop()
         meteringTap = nil
-        guard amplifierEnabled || isMicInUse, currentDefaultInputDeviceID != kAudioObjectUnknown else { return }
+        guard isMicInUse, currentDefaultInputDeviceID != kAudioObjectUnknown else { return }
         let tap = MicrophoneMeteringTap(deviceID: currentDefaultInputDeviceID, gain: amplifierEnabled ? amplifierGain : 1.0) { [weak self] level, peak, clipping in
             Task { @MainActor in self?.publishMeter(level: level, peak: peak, clipping: clipping) }
         }
@@ -179,9 +194,11 @@ final class MicrophoneUsageManager: ObservableObject {
 
     private static func readProcessBundleID(_ objectID: AudioObjectID) -> String? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyBundleID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var bundleID: CFString = "" as CFString; var size = UInt32(MemoryLayout<CFString>.size)
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &bundleID) == noErr else { return nil }
-        let id = bundleID as String
+        var bundleID: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &bundleID) == noErr,
+              let bundleID else { return nil }
+        let id = bundleID.takeRetainedValue() as String
         return id.isEmpty ? nil : id
     }
 
@@ -190,22 +207,7 @@ final class MicrophoneUsageManager: ObservableObject {
     }
 
     private static func allInputDeviceIDs() -> [AudioDeviceID] {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr, size > 0 else { return [] }
-        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return [] }
-        return ids.filter(hasInputChannels)
-    }
-
-    private static func hasInputChannels(_ deviceID: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr, size > 0 else { return false }
-        let ptr = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: Int(size)); defer { ptr.deallocate() }
-        var mutableSize = size
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &mutableSize, ptr) == noErr else { return false }
-        return UnsafeMutableAudioBufferListPointer(ptr).contains { $0.mNumberChannels > 0 }
+        (CoreAudioDevices.all() ?? []).filter { CoreAudioDevices.hasChannels($0, scope: kAudioObjectPropertyScopeInput) }
     }
 
     private static func readInputMuteState(of deviceID: AudioDeviceID) -> Bool {
@@ -217,6 +219,7 @@ final class MicrophoneUsageManager: ObservableObject {
 }
 
 private final class MicrophoneMeteringTap {
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "MicrophoneMeteringTap")
     private let deviceID: AudioDeviceID
     private let gain: Float
     private let callback: (Float, Float, Bool) -> Void
@@ -230,11 +233,16 @@ private final class MicrophoneMeteringTap {
 
     func start() -> Bool {
         var proc: AudioDeviceIOProcID?
-        let status = AudioDeviceCreateIOProcIDWithBlock(&proc, deviceID, queue) { [weak self] _, _, _, outData, _ in
-            self?.measure(outData)
+        let status = AudioDeviceCreateIOProcIDWithBlock(&proc, deviceID, queue) { [weak self] _, inputData, _, _, _ in
+            self?.measure(inputData)
         }
-        guard status == noErr, let proc else { return false }
-        guard AudioDeviceStart(deviceID, proc) == noErr else {
+        guard status == noErr, let proc else {
+            logger.error("Could not create microphone IO proc for device \(self.deviceID): \(status)")
+            return false
+        }
+        let startStatus = AudioDeviceStart(deviceID, proc)
+        guard startStatus == noErr else {
+            logger.error("Could not start microphone IO proc for device \(self.deviceID): \(startStatus)")
             AudioDeviceDestroyIOProcID(deviceID, proc)
             return false
         }
@@ -249,8 +257,8 @@ private final class MicrophoneMeteringTap {
         ioProcID = nil; isRunning = false
     }
 
-    private func measure(_ data: UnsafeMutablePointer<AudioBufferList>) {
-        let buffers = UnsafeMutableAudioBufferListPointer(data)
+    private func measure(_ data: UnsafePointer<AudioBufferList>) {
+        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: data))
         var sum: Float = 0
         var peak: Float = 0
         var count = 0

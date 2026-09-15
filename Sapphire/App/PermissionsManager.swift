@@ -72,7 +72,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     public let allPermissions: [PermissionItem] = [
         .init(type: .accessibility, title: "Accessibility", description: "Needed for media key presses, window snapping, and HUDs.", iconName: "figure.wave.circle.fill", iconColor: .purple, category: .required),
         .init(type: .fullDiskAccess, title: "Full Disk Access", description: "Enables File Shelf, Intelligence file access, and deeper system integrations.", iconName: "folder.badge.gearshape", iconColor: .gray, category: .recommended),
-        .init(type: .screenRecording, title: "Screen Recording", description: "Required for Gemini Live screen sharing and per-app audio capture.", iconName: "record.circle", iconColor: .orange, category: .recommended),
+        .init(type: .screenRecording, title: "Screen Recording", description: "Required for Gemini Live screen sharing, per-app audio capture, live window previews, and the hinge-driven desktop animation.", iconName: "record.circle", iconColor: .orange, category: .recommended),
         .init(type: .localNetwork, title: "Local Network", description: "Needed to discover and control supported media players on your network.", iconName: "network", iconColor: .cyan, category: .recommended),
         .init(type: .automation, title: "Automation", description: "Needed to control playback and get track info from Spotify and Music.", iconName: "play.display", iconColor: .green, category: .recommended),
         .init(type: .notifications, title: "Notifications", description: "Needed to show custom alerts for messages and system events.", iconName: "bell.badge.fill", iconColor: .red, category: .recommended),
@@ -190,7 +190,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
         let remStatus = EKEventStore.authorizationStatus(for: .reminder)
         switch remStatus {
-        case .fullAccess: remindersStatus = PermissionStatus.granted
+        case .fullAccess, .writeOnly: remindersStatus = PermissionStatus.granted
         case .denied, .restricted: remindersStatus = PermissionStatus.denied
         case .notDetermined: remindersStatus = PermissionStatus.notRequested
         @unknown default: remindersStatus = PermissionStatus.notRequested
@@ -226,12 +226,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     func requestPermission(_ type: PermissionType) {
         switch type {
         case .accessibility:
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-            let isTrusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
-            if !isTrusted {
-                let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-                NSWorkspace.shared.open(url)
-            }
+            AccessibilityPermission.request()
 
         case .fullDiskAccess:
             requestFullDiskAccessPrePopulation()
@@ -269,8 +264,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
         case .bluetooth:
             if CBManager.authorization == .denied {
-                let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth")!
-                NSWorkspace.shared.open(url)
+                SystemPreferencesPane.bluetooth.open()
             } else {
                 bluetoothManager.scanForPeripherals(withServices: nil, options: nil)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -357,8 +351,7 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     }
 
     private func openFullDiskAccessSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") else { return }
-        NSWorkspace.shared.open(url)
+        SystemPreferencesPane.allFiles.open()
     }
 
     // MARK: - TCC Private SPI (dynamic loading)

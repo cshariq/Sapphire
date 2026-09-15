@@ -7,109 +7,167 @@
 
 import Foundation
 import Security
+import Darwin
 
 enum CodesignCheckError: Error {
     case message(String)
 }
 
 struct CodesignCheck {
+    private static let sapphireSigningIdentifier = "com.cshariq.sapphire"
+    private static let helperSigningIdentifier = "com.shariq.sapphireHelper"
 
-    public static func codeSigningMatches(pid: pid_t) throws -> Bool {
-        if let selfTeam = try teamID(forStaticCode: try requireSelfStaticCode()),
-           let clientTeam = try teamID(forStaticCode: try requireStaticCode(forPID: pid)),
-           !selfTeam.isEmpty, !clientTeam.isEmpty {
-            return selfTeam == clientTeam
-        }
-        return try self.codeSigningCertificatesForSelf() == self.codeSigningCertificates(forPID: pid)
+    private static let adHocSignatureFlag: UInt32 = 0x0002
+
+    private struct SigningIdentity {
+        let signingIdentifier: String?
+        let bundleIdentifier: String?
+        let teamIdentifier: String?
+        let certificateData: [Data]
+        let isAdHoc: Bool
     }
 
-    private static func teamID(forStaticCode secStaticCode: SecStaticCode) throws -> String? {
-        try isValid(secStaticCode: secStaticCode)
-        var info: CFDictionary?
-        try executeSecFunction { SecCodeCopySigningInformation(secStaticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) }
-        return (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
+    static func isSapphireClient(auditToken: audit_token_t) throws -> Bool {
+        let helperStaticCode = try requireSelfStaticCode()
+        let clientCode = try requireCode(forAuditToken: auditToken)
+        let clientStaticCode = try requireStaticCode(forCode: clientCode)
+
+        let helperIdentity = try signingIdentity(forStaticCode: helperStaticCode)
+        let clientIdentity = try signingIdentity(forStaticCode: clientStaticCode)
+        let helperBundleMatches = helperIdentity.bundleIdentifier == helperSigningIdentifier
+            || (geteuid() != 0
+                && helperIdentity.isAdHoc
+                && helperIdentity.bundleIdentifier == nil)
+
+        guard helperIdentity.signingIdentifier == helperSigningIdentifier,
+              helperBundleMatches,
+              clientIdentity.signingIdentifier == sapphireSigningIdentifier,
+              clientIdentity.bundleIdentifier == sapphireSigningIdentifier,
+              trustedSignerMatches(helperIdentity, clientIdentity) else {
+            return false
+        }
+
+        var designatedRequirement: SecRequirement?
+        try executeSecFunction {
+            SecCodeCopyDesignatedRequirement(clientStaticCode, [], &designatedRequirement)
+        }
+        guard let designatedRequirement else {
+            throw CodesignCheckError.message("Client has no designated code-signing requirement")
+        }
+        try executeSecFunction {
+            SecCodeCheckValidity(clientCode, [], designatedRequirement)
+        }
+
+        return true
+    }
+
+    private static func trustedSignerMatches(
+        _ helper: SigningIdentity,
+        _ client: SigningIdentity
+    ) -> Bool {
+        if let helperTeam = helper.teamIdentifier,
+           let clientTeam = client.teamIdentifier,
+           !helperTeam.isEmpty,
+           !clientTeam.isEmpty {
+            return helperTeam == clientTeam
+        }
+
+        if !helper.certificateData.isEmpty || !client.certificateData.isEmpty {
+            return !helper.certificateData.isEmpty
+                && helper.certificateData == client.certificateData
+        }
+
+        return geteuid() != 0 && helper.isAdHoc && client.isAdHoc
+    }
+
+    private static func signingIdentity(forStaticCode staticCode: SecStaticCode) throws -> SigningIdentity {
+        try validateStrictly(staticCode: staticCode)
+
+        var information: CFDictionary?
+        try executeSecFunction {
+            SecCodeCopySigningInformation(
+                staticCode,
+                SecCSFlags(rawValue: kSecCSSigningInformation),
+                &information
+            )
+        }
+        guard let information = information as? [String: Any] else {
+            throw CodesignCheckError.message("Code signing information was empty")
+        }
+
+        let securedInfoPlist = information[kSecCodeInfoPList as String] as? [String: Any]
+        let certificates = information[kSecCodeInfoCertificates as String] as? [SecCertificate] ?? []
+        let flags = (information[kSecCodeInfoFlags as String] as? NSNumber)?.uint32Value ?? 0
+
+        return SigningIdentity(
+            signingIdentifier: information[kSecCodeInfoIdentifier as String] as? String,
+            bundleIdentifier: securedInfoPlist?["CFBundleIdentifier"] as? String,
+            teamIdentifier: information[kSecCodeInfoTeamIdentifier as String] as? String,
+            certificateData: certificates.map { SecCertificateCopyData($0) as Data },
+            isAdHoc: flags & adHocSignatureFlag != 0
+        )
+    }
+
+    private static func validateStrictly(staticCode: SecStaticCode) throws {
+        let flags = SecCSFlags(
+            rawValue: kSecCSCheckAllArchitectures
+                | kSecCSCheckNestedCode
+                | kSecCSStrictValidate
+        )
+        try executeSecFunction {
+            SecStaticCodeCheckValidity(staticCode, flags, nil)
+        }
     }
 
     private static func requireSelfStaticCode() throws -> SecStaticCode {
-        guard let code = try secStaticCodeSelf() else {
-            throw CodesignCheckError.message("SecStaticCode returned empty for self")
-        }
-        return code
-    }
-
-    private static func requireStaticCode(forPID pid: pid_t) throws -> SecStaticCode {
-        guard let code = try secStaticCode(forPID: pid) else {
-            throw CodesignCheckError.message("SecStaticCode returned empty for pid \(pid)")
-        }
-        return code
-    }
-
-    public static func codeSigningCertificatesForSelf() throws -> [SecCertificate] {
-        guard let secStaticCode = try secStaticCodeSelf() else { return [] }
-        return try codeSigningCertificates(forStaticCode: secStaticCode)
-    }
-
-    public static func codeSigningCertificates(forPID pid: pid_t) throws -> [SecCertificate] {
-        guard let secStaticCode = try secStaticCode(forPID: pid) else { return [] }
-        return try codeSigningCertificates(forStaticCode: secStaticCode)
-    }
-
-    private static func executeSecFunction(_ secFunction: () -> (OSStatus) ) throws {
-        let osStatus = secFunction()
-        guard osStatus == errSecSuccess else {
-            if let errorString = SecCopyErrorMessageString(osStatus, nil) {
-                throw CodesignCheckError.message(String(errorString))
-            } else {
-                throw CodesignCheckError.message("Unknown security error: \(osStatus)")
-            }
-        }
-    }
-
-    private static func secStaticCodeSelf() throws -> SecStaticCode? {
-        var secCodeSelf: SecCode?
-        try executeSecFunction { SecCodeCopySelf([], &secCodeSelf) }
-        guard let secCode = secCodeSelf else {
+        var code: SecCode?
+        try executeSecFunction { SecCodeCopySelf([], &code) }
+        guard let code else {
             throw CodesignCheckError.message("SecCode returned empty from SecCodeCopySelf")
         }
-        return try secStaticCode(forSecCode: secCode)
+        return try requireStaticCode(forCode: code)
     }
 
-    private static func secStaticCode(forPID pid: pid_t) throws -> SecStaticCode? {
-        var secCodePID: SecCode?
-        try executeSecFunction { SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &secCodePID) }
-        guard let secCode = secCodePID else {
-            throw CodesignCheckError.message("SecCode returned empty from SecCodeCopyGuestWithAttributes")
+    private static func requireCode(forAuditToken auditToken: audit_token_t) throws -> SecCode {
+        var token = auditToken
+        let tokenData = Data(bytes: &token, count: MemoryLayout<audit_token_t>.size)
+        var code: SecCode?
+        try executeSecFunction {
+            SecCodeCopyGuestWithAttributes(
+                nil,
+                [kSecGuestAttributeAudit: tokenData] as CFDictionary,
+                [],
+                &code
+            )
         }
-        return try secStaticCode(forSecCode: secCode)
+        guard let code else {
+            throw CodesignCheckError.message("SecCode returned empty for client audit token")
+        }
+        return code
     }
 
-    private static func secStaticCode(forSecCode secCode: SecCode) throws -> SecStaticCode? {
-        var secStaticCodeCopy: SecStaticCode?
-        try executeSecFunction { SecCodeCopyStaticCode(secCode, [], &secStaticCodeCopy) }
-        guard let secStaticCode = secStaticCodeCopy else {
+    private static func requireStaticCode(forCode code: SecCode) throws -> SecStaticCode {
+        var staticCode: SecStaticCode?
+        try executeSecFunction {
+            SecCodeCopyStaticCode(
+                code,
+                SecCSFlags(rawValue: kSecCSUseAllArchitectures),
+                &staticCode
+            )
+        }
+        guard let staticCode else {
             throw CodesignCheckError.message("SecStaticCode returned empty from SecCodeCopyStaticCode")
         }
-        return secStaticCode
+        return staticCode
     }
 
-    private static func isValid(secStaticCode: SecStaticCode) throws {
-        try executeSecFunction { SecStaticCodeCheckValidity(secStaticCode, SecCSFlags(rawValue: kSecCSDoNotValidateResources | kSecCSCheckNestedCode), nil) }
-    }
-
-    private static func secCodeInfo(forStaticCode secStaticCode: SecStaticCode) throws -> [String: Any]? {
-        try isValid(secStaticCode: secStaticCode)
-        var secCodeInfoCFDict:  CFDictionary?
-        try executeSecFunction { SecCodeCopySigningInformation(secStaticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &secCodeInfoCFDict) }
-        guard let secCodeInfo = secCodeInfoCFDict as? [String: Any] else {
-            throw CodesignCheckError.message("CFDictionary returned empty from SecCodeCopySigningInformation")
+    private static func executeSecFunction(_ function: () -> OSStatus) throws {
+        let status = function()
+        guard status == errSecSuccess else {
+            if let errorString = SecCopyErrorMessageString(status, nil) {
+                throw CodesignCheckError.message(String(errorString))
+            }
+            throw CodesignCheckError.message("Unknown security error: \(status)")
         }
-        return secCodeInfo
-    }
-
-    private static func codeSigningCertificates(forStaticCode secStaticCode: SecStaticCode) throws -> [SecCertificate] {
-        guard
-            let secCodeInfo = try secCodeInfo(forStaticCode: secStaticCode),
-            let secCertificates = secCodeInfo[kSecCodeInfoCertificates as String] as? [SecCertificate] else { return [] }
-        return secCertificates
     }
 }

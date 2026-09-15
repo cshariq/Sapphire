@@ -26,8 +26,10 @@ final class MediaKeyMonitor {
 
     // MARK: - Tap state
 
-    private var tap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var tapToken: GlobalEventTap.Token?
+
+    private nonisolated let handlerStateLock = NSLock()
+    private nonisolated(unsafe) var mediaKeysEnabled = false
 
     private var disableWatchdogTask: Task<Void, Never>?
     private(set) var watchdogOpen: Bool = false
@@ -62,11 +64,8 @@ final class MediaKeyMonitor {
     }
 
     deinit {
-        if let tap = tap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        if let tapToken {
+            GlobalEventTap.shared.unregister(tapToken)
         }
         let nc = NSWorkspace.shared.notificationCenter
         for observer in workspaceObservers { nc.removeObserver(observer) }
@@ -75,47 +74,36 @@ final class MediaKeyMonitor {
     // MARK: - Lifecycle
 
     func start() {
-        guard tap == nil else { return }
+        guard tapToken == nil else { return }
         guard settingsManager.appSettings.mediaKeyControlEnabled else {
-            logger.debug("Media key control disabled in settings; tap not installed")
+            logger.debug("Media key control disabled in settings; handler not registered")
             return
         }
         guard accessibility.isTrusted else {
-            logger.info("Accessibility not trusted; tap not installed")
+            logger.info("Accessibility not trusted; handler not registered")
             return
         }
 
-        let mask = CGEventMask(1 << 14)
-        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        setMediaKeysEnabled(true)
 
-        guard let newTap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: mediaKeyTapCallback,
-            userInfo: userInfo
-        ) else {
-            logger.error("CGEvent.tapCreate returned nil — media keys will not be intercepted")
-            mediaKeyStatus.isOffline = true
-            return
+        let selfRef = self
+        tapToken = GlobalEventTap.shared.register(
+            name: "MediaKeyMonitor",
+            mask: CGEventMask(1) << CGEventMask(NX_SYSDEFINED),
+            priority: EventTapPriority.media
+        ) { _, event in
+            selfRef.handleTapEvent(event) ? .swallow : .pass
         }
 
-        let source = CFMachPortCreateRunLoopSource(nil, newTap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: newTap, enable: true)
-
-        self.tap = newTap
-        self.runLoopSource = source
-        self.mediaKeyStatus.isOffline = false
-        logger.info("Media key tap installed")
+        mediaKeyStatus.isOffline = !GlobalEventTap.shared.isActive
+        logger.info("Media key handler registered on the shared event tap")
     }
 
     func reconcile() {
         if settingsManager.appSettings.mediaKeyControlEnabled && accessibility.isTrusted {
-            let wasOffline = (tap == nil)
+            let wasOffline = (tapToken == nil)
             start()
-            if wasOffline && tap != nil {
+            if wasOffline && tapToken != nil {
                 armGhostTapProbe()
             }
         } else {
@@ -141,19 +129,21 @@ final class MediaKeyMonitor {
     }
 
     private func handleWake() {
-        guard let tap else {
+        guard let tapToken else {
             reconcile()
             return
         }
-        CGEvent.tapEnable(tap: tap, enable: true)
-        logger.info("Media key tap re-enabled after wake / session activation")
+        setMediaKeysEnabled(true)
+        GlobalEventTap.shared.setEnabled(tapToken, true)
+        logger.info("Media key handler re-armed after wake / session activation")
         armGhostTapProbe()
     }
 
     private func handleSuspend() {
-        guard let tap else { return }
-        CGEvent.tapEnable(tap: tap, enable: false)
-        logger.info("Media key tap disabled for sleep / session resign")
+        guard let tapToken else { return }
+        setMediaKeysEnabled(false)
+        GlobalEventTap.shared.setEnabled(tapToken, false)
+        logger.info("Media key handler disarmed for sleep / session resign")
     }
 
     // MARK: - Ghost-tap probe
@@ -162,8 +152,8 @@ final class MediaKeyMonitor {
         cancelGhostTapProbe()
         ghostTapProbeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(1500))
-            guard !Task.isCancelled, let self, let tap = self.tap else { return }
-            if !CGEvent.tapIsEnabled(tap: tap) {
+            guard !Task.isCancelled, let self, self.tapToken != nil else { return }
+            if !GlobalEventTap.shared.isActive {
                 self.logger.error("Ghost-tap probe: tap reports disabled after regrant/wake — marking offline")
                 self.mediaKeyStatus.isOffline = true
             }
@@ -182,16 +172,19 @@ final class MediaKeyMonitor {
         watchdogOpen = false
         cancelGhostTapProbe()
 
-        if let tap = tap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        setMediaKeysEnabled(false)
+        if let tapToken {
+            GlobalEventTap.shared.unregister(tapToken)
             onRunLoopSourceRemoved?()
         }
-        tap = nil
-        runLoopSource = nil
-        logger.info("Media key tap removed")
+        tapToken = nil
+        logger.info("Media key handler removed")
+    }
+
+    private nonisolated func setMediaKeysEnabled(_ enabled: Bool) {
+        handlerStateLock.lock()
+        mediaKeysEnabled = enabled
+        handlerStateLock.unlock()
     }
 
     // MARK: - Event handling
@@ -315,64 +308,27 @@ final class MediaKeyMonitor {
             self?.disableWatchdogTask = nil
         }
 
-        if let tap = tap {
-            CGEvent.tapEnable(tap: tap, enable: true)
-        }
     }
 
     // MARK: - Callback bridge
 
-    fileprivate func processSystemDefined(_ cgEvent: CGEvent) -> Bool {
-        guard settingsManager.appSettings.mediaKeyControlEnabled else { return false }
+    nonisolated fileprivate func handleTapEvent(_ cgEvent: CGEvent) -> Bool {
+        handlerStateLock.lock()
+        let enabled = mediaKeysEnabled
+        handlerStateLock.unlock()
+        guard enabled else { return false }
+
         guard let nsEvent = NSEvent(cgEvent: cgEvent) else { return false }
         guard nsEvent.subtype.rawValue == 8 else { return false }
-        let data1 = nsEvent.data1
-        guard let mediaEvent = decoder.decode(data1: data1) else { return false }
+        guard let mediaEvent = decoder.decode(data1: nsEvent.data1) else { return false }
 
-        hudController.swallowObserved()
-        handle(mediaEvent)
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.hudController.swallowObserved()
+                self.handle(mediaEvent)
+            }
+        }
         return true
     }
-}
-
-// MARK: - CGEventTap C callback
-
-private let mediaKeyTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
-    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
-            if let userInfo = userInfo {
-                let monitor = Unmanaged<MediaKeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
-                MainActor.assumeIsolated {
-                    monitor.stop()
-                }
-            }
-            return Unmanaged.passUnretained(event)
-        }
-        guard let userInfo = userInfo else {
-            return Unmanaged.passUnretained(event)
-        }
-        let monitor = Unmanaged<MediaKeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
-        MainActor.assumeIsolated {
-            monitor.handleTapDisabled()
-        }
-        return nil
-    }
-
-    guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
-        return Unmanaged.passUnretained(event)
-    }
-
-    guard let userInfo = userInfo else {
-        return Unmanaged.passUnretained(event)
-    }
-    let monitor = Unmanaged<MediaKeyMonitor>.fromOpaque(userInfo).takeUnretainedValue()
-
-    guard type.rawValue == 14 else {
-        return Unmanaged.passUnretained(event)
-    }
-
-    let shouldSwallow = MainActor.assumeIsolated {
-        monitor.processSystemDefined(event)
-    }
-    return shouldSwallow ? nil : Unmanaged.passUnretained(event)
 }

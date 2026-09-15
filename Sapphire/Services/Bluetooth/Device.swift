@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import CoreBluetooth
+@preconcurrency import CoreBluetooth
 import Accelerate
 import AppKit
 
@@ -426,7 +426,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
         connectionTimer?.invalidate()
         let connectionTimeout = 10.0
-        connectionTimer = Timer.scheduledTimer(withTimeInterval: connectionTimeout, repeats: false, block: { [weak self] _ in
+        connectionTimer = Timer(timeInterval: connectionTimeout, repeats: false, block: { [weak self] _ in
             guard let self = self, let p = self.monitoredPeripheral, p.state == .connecting else { return }
             print("[BLE] Connection timed out for peripheral: \(p.identifier). Cancelling.")
             self.centralMgr.cancelPeripheralConnection(p)
@@ -436,7 +436,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     private func resetSignalTimer() {
         signalTimer?.invalidate()
-        signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
+        signalTimer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor in
                 self.delegate?.updateRSSI(rssi: nil, active: false)
@@ -469,7 +469,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             latestRSSIs.removeAll()
         } else if estimatedRSSI < lockRSSI {
             if proximityTimer == nil {
-                proximityTimer = Timer.scheduledTimer(withTimeInterval: proximityTimeout, repeats: false, block: { [weak self] _ in
+                proximityTimer = Timer(timeInterval: proximityTimeout, repeats: false, block: { [weak self] _ in
                     guard let self = self else { return }
                     Task { @MainActor in self.delegate?.updatePresence(presence: false, reason: "away") }
                     self.proximityTimer = nil
@@ -490,7 +490,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard activeModeTimer == nil, !passiveMode else { return }
         if centralMgr.isScanning { centralMgr.stopScan() }
 
-        activeModeTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { [weak self] _ in
+        activeModeTimer = Timer(timeInterval: 1, repeats: true, block: { [weak self] _ in
             guard let self = self else { return }
 
             if Date().timeIntervalSince1970 > self.lastReadAt + 10 && self.lastReadAt != 0 {

@@ -131,14 +131,7 @@ final class FocusSessionManager: ObservableObject {
     }
 
     static func format(_ time: TimeInterval) -> String {
-        let total = Int(time)
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        let seconds = total % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%02d:%02d", minutes, seconds)
+        time.asStopwatchClock
     }
 
     // MARK: Private state
@@ -146,7 +139,7 @@ final class FocusSessionManager: ObservableObject {
 
     private func startTickerIfNeeded() {
         guard ticker == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
             }
@@ -270,6 +263,14 @@ final class FocusSessionManager: ObservableObject {
 
     func stopSession() {
         guard canEndSessionEarly else { return }
+        finishStoppedSession()
+    }
+
+    func stopSessionFromSync() {
+        finishStoppedSession()
+    }
+
+    private func finishStoppedSession() {
         guard isSessionActive || phase == .finished else { return }
         recordCompletedSessionIfNeeded()
         phase = .idle
@@ -578,6 +579,7 @@ final class FocusSessionManager: ObservableObject {
         case .ultra: return 4
         case .pro: return 3
         case .basic: return 2
+        case .core: return 1
         case .free: return 1
         }
     }

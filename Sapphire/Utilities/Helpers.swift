@@ -10,10 +10,70 @@ import SwiftUI
 import AppKit
 import IOKit
 
+@MainActor
+enum FloatingPanelPositioning {
+    static func preferredAnchor() -> NSPoint {
+        if let caretPoint = CaretPositionTracker.anchorPoint() {
+            return caretPoint
+        }
+        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return NSPoint(x: visible.midX, y: visible.midY)
+    }
+
+    static func topLeftOrigin(for size: NSSize, below anchor: NSPoint) -> NSPoint {
+        let screen = NSScreen.screens.first { NSMouseInRect(anchor, $0.frame, false) } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return topLeftOrigin(for: size, below: anchor, in: visible)
+    }
+
+    static func topLeftOrigin(for size: NSSize, below anchor: NSPoint, in visible: NSRect) -> NSPoint {
+        var origin = NSPoint(x: anchor.x, y: anchor.y - 6)
+
+        origin.x = max(visible.minX + 8, min(origin.x, visible.maxX - size.width - 8))
+        if origin.y - size.height < visible.minY + 8 {
+            origin.y = min(anchor.y + size.height + 6, visible.maxY - 6)
+        }
+        origin.y = max(visible.minY + size.height + 8, min(origin.y, visible.maxY - 8))
+        return origin
+    }
+
+    static func preferredPickerTopLeftOrigin(for size: NSSize) -> NSPoint {
+        if let caret = CaretPositionTracker.caretInfo(), caret.isExact {
+            return topLeftOrigin(for: size, below: caret.anchorPoint)
+        }
+
+        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        return centeredTopLeftOrigin(for: size, in: visible)
+    }
+
+    static func centeredTopLeftOrigin(for size: NSSize, in visible: NSRect) -> NSPoint {
+        let horizontalInset: CGFloat = 8
+        let verticalInset: CGFloat = 8
+        let centered = NSPoint(
+            x: visible.midX - size.width / 2,
+            y: visible.midY + size.height / 2
+        )
+        return NSPoint(
+            x: max(visible.minX + horizontalInset, min(centered.x, visible.maxX - size.width - horizontalInset)),
+            y: max(visible.minY + size.height + verticalInset, min(centered.y, visible.maxY - verticalInset))
+        )
+    }
+}
+
 public class Debouncer {
+    private struct PendingAction {
+        let generation: UInt64
+        let item: DispatchWorkItem
+        let action: () -> Void
+    }
+
     private let delay: TimeInterval
-    private var workItem: DispatchWorkItem?
     private let queue: DispatchQueue
+    private let lock = NSLock()
+    private var generation: UInt64 = 0
+    private var pending: PendingAction?
 
     public init(delay: TimeInterval, queue: DispatchQueue = .main) {
         self.delay = delay
@@ -21,20 +81,58 @@ public class Debouncer {
     }
 
     public func debounce(action: @escaping (() -> Void)) {
-        workItem?.cancel()
-        let newWorkItem = DispatchWorkItem(block: action)
-        workItem = newWorkItem
-        queue.asyncAfter(deadline: .now() + delay, execute: newWorkItem)
+        lock.lock()
+        pending?.item.cancel()
+        generation &+= 1
+        let scheduledGeneration = generation
+        let item = DispatchWorkItem { [weak self] in
+            self?.execute(generation: scheduledGeneration)
+        }
+        pending = PendingAction(
+            generation: scheduledGeneration,
+            item: item,
+            action: action
+        )
+        lock.unlock()
+
+        queue.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     public func cancel() {
-        workItem?.cancel()
+        lock.lock()
+        pending?.item.cancel()
+        pending = nil
+        lock.unlock()
     }
 
     func flush() {
-        workItem?.perform()
-        workItem?.cancel()
-        workItem = nil
+        lock.lock()
+        guard let pending else {
+            lock.unlock()
+            return
+        }
+        self.pending = nil
+        pending.item.cancel()
+        lock.unlock()
+
+        pending.action()
+    }
+
+    private func execute(generation: UInt64) {
+        lock.lock()
+        guard let pending, pending.generation == generation else {
+            lock.unlock()
+            return
+        }
+        self.pending = nil
+        let action = pending.action
+        lock.unlock()
+
+        action()
+    }
+
+    deinit {
+        cancel()
     }
 }
 
@@ -225,18 +323,56 @@ struct InteractiveProgressBar: View {
 struct VisualEffectView: NSViewRepresentable {
     var material: NSVisualEffectView.Material
     var blendingMode: NSVisualEffectView.BlendingMode
+    var isEmphasized = false
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = material
         view.blendingMode = blendingMode
+        view.isEmphasized = isEmphasized
         view.state = .active
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
+        if nsView.material != material { nsView.material = material }
+        if nsView.blendingMode != blendingMode { nsView.blendingMode = blendingMode }
+        if nsView.isEmphasized != isEmphasized { nsView.isEmphasized = isEmphasized }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSVisualEffectView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 10, height: proposal.height ?? 10)
+    }
+}
+
+extension Int {
+    var compactFormatted: String {
+        let value = Double(self)
+        for (threshold, suffix) in [(1_000_000_000.0, "B"), (1_000_000.0, "M"), (1_000.0, "K")] where value >= threshold {
+            return String(format: "%.1f", value / threshold).replacingOccurrences(of: ".0", with: "") + suffix
+        }
+        return "\(self)"
+    }
+}
+
+private struct MusicStatPill: View {
+    let systemImage: String
+    let text: String
+    let color: Color
+    let help: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.system(size: 7, weight: .black))
+            Text(text)
+                .font(.system(size: 11, weight: .heavy, design: .rounded))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule(style: .continuous).fill(color.opacity(0.14)))
+        .help(help)
     }
 }
 
@@ -248,25 +384,13 @@ struct PlayCountIndicator: View {
         if playCount > 10_000_000 { return .secondary }
         return .secondary.opacity(0.5)
     }
-    private func formatNumber(_ n: Int) -> String {
-        let num = Double(n)
-        if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }
-        if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }
-        if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }
-        return "\(n)"
-    }
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "play.fill")
-                .font(.system(size: 7, weight: .black))
-            Text(formatNumber(playCount))
-                .font(.system(size: 11, weight: .heavy, design: .rounded))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Capsule(style: .continuous).fill(color.opacity(0.14)))
-        .help("Total Plays: \(playCount.formatted())")
+        MusicStatPill(
+            systemImage: "play.fill",
+            text: playCount.compactFormatted,
+            color: color,
+            help: "Total Plays: \(playCount.formatted())"
+        )
     }
 }
 
@@ -283,25 +407,13 @@ struct PopularityIndicator: View {
         let randomFactor = Double.random(in: 0.8...1.2)
         return Int(basePlays * randomFactor)
     }
-    private func formatNumber(_ n: Int) -> String {
-        let num = Double(n)
-        if num >= 1_000_000_000 { return String(format: "%.1fB", num / 1_000_000_000).replacingOccurrences(of: ".0", with: "") }
-        if num >= 1_000_000 { return String(format: "%.1fM", num / 1_000_000).replacingOccurrences(of: ".0", with: "") }
-        if num >= 1_000 { return String(format: "%.1fK", num / 1_000).replacingOccurrences(of: ".0", with: "") }
-        return "\(n)"
-    }
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 7, weight: .black))
-            Text(formatNumber(estimatedPlays))
-                .font(.system(size: 11, weight: .heavy, design: .rounded))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Capsule(style: .continuous).fill(color.opacity(0.14)))
-        .help("Popularity Score: \(popularity)/100")
+        MusicStatPill(
+            systemImage: "chart.line.uptrend.xyaxis",
+            text: estimatedPlays.compactFormatted,
+            color: color,
+            help: "Popularity Score: \(popularity)/100"
+        )
     }
 }
 
@@ -343,6 +455,51 @@ public struct Units {
         } else {
             return String(format: "%.1f GB/s", Double(b) / (1024.0 * 1024.0 * 1024.0))
         }
+    }
+}
+
+@MainActor
+enum TransferMetricsFormatter {
+    private static let secondsFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.second]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter
+    }()
+
+    private static let minuteSecondFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.minute, .second]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter
+    }()
+
+    nonisolated static func speed(_ bytesPerSecond: Double) -> String {
+        if bytesPerSecond >= 1_000_000 {
+            return String(format: "%.1f MB/s", bytesPerSecond / 1_000_000)
+        }
+        if bytesPerSecond >= 1_000 {
+            return String(format: "%.1f KB/s", bytesPerSecond / 1_000)
+        }
+        return String(format: "%.0f B/s", bytesPerSecond)
+    }
+
+    static func eta(currentBytes: Int64, totalBytes: Int64?, bytesPerSecond: Double) -> String? {
+        guard bytesPerSecond > 0,
+              let totalBytes,
+              totalBytes > currentBytes else { return nil }
+        let seconds = Double(totalBytes - currentBytes) / bytesPerSecond
+        guard seconds.isFinite, seconds > 0 else { return nil }
+        let formatter = seconds >= 60 ? minuteSecondFormatter : secondsFormatter
+        return formatter.string(from: seconds)
+    }
+}
+
+enum ByteFormatter {
+    nonisolated static func string(_ bytes: Int64, style: ByteCountFormatter.CountStyle = .file) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: style)
     }
 }
 

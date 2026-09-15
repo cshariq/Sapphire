@@ -47,7 +47,7 @@ enum RepeatInterval: String, Codable, CaseIterable, Identifiable {
     var displayName: String { self.rawValue.capitalized }
 }
 struct TaskHistoryEvent: Identifiable, Codable {
-    let id = UUID()
+    var id = UUID()
     let timestamp: Date
     let taskDescription: String
 }
@@ -68,7 +68,7 @@ class ScheduleManager: ObservableObject {
     @Published var taskHistory: [TaskHistoryEvent] = []
 
     private init() {
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalescing(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.checkScheduledTasks()
         }
     }

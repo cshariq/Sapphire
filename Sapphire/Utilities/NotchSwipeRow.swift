@@ -134,6 +134,10 @@ private struct NotchTrackpadSwipeCapture: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {}
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 10, height: proposal.height ?? 10)
+    }
+
     private final class CaptureView: NSView {
         let beginHorizontal: () -> Void
         let changeHorizontal: (CGFloat) -> Void

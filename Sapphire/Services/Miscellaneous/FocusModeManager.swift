@@ -11,7 +11,7 @@ import AppKit
 
 // MARK: - 1. Public-Facing Data Models & Conversion Logic
 
-public struct FocusStatus: Equatable {
+public struct FocusStatus: Equatable, Sendable {
     public let name: String
     public let symbolName: String
     public let isActive: Bool
@@ -62,8 +62,9 @@ class FocusModeManager: NSObject, ObservableObject {
     @Published private(set) var currentStatus: FocusStatus = .notActive
 
     private var cancellables = Set<AnyCancellable>()
-    private var lastKnownModeIdentifier: String?
     private var directoryMonitor: DirectoryMonitor?
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration: UInt = 0
 
     private let assertionsURL: URL
     private let modesURL: URL
@@ -75,8 +76,8 @@ class FocusModeManager: NSObject, ObservableObject {
         self.modesURL = homeDirectory.appendingPathComponent("Library/DoNotDisturb/DB/ModeConfigurations.json")
         self.monitorDirectoryURL = homeDirectory.appendingPathComponent("Library/DoNotDisturb/DB")
         super.init()
-        loadInitialFocusStatus()
         setupFocusMonitoring()
+        scheduleFocusRefresh(debounce: false)
     }
 
     private func setupFocusMonitoring() {
@@ -84,113 +85,86 @@ class FocusModeManager: NSObject, ObservableObject {
         directoryMonitor = monitor
 
         monitor.fileDidChangePublisher
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.checkFocusFilesForChange()
+                self?.scheduleFocusRefresh()
             }
             .store(in: &cancellables)
 
         monitor.start()
     }
 
-    private func loadInitialFocusStatus() {
-        do {
-            let assertionsData = try Data(contentsOf: assertionsURL)
-            let assertions = try JSONDecoder().decode(Assertions.self, from: assertionsData)
-            let latestAssertion = assertions.data.first?.storeAssertionRecords.max(by: { $0.assertionStartDateTimestamp < $1.assertionStartDateTimestamp })
-            let activeModeIdentifier = latestAssertion?.assertionDetails.assertionDetailsModeIdentifier
+    private func scheduleFocusRefresh(debounce: Bool = true) {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+        let assertionsURL = assertionsURL
+        let modesURL = modesURL
+        refreshTask?.cancel()
 
-            self.lastKnownModeIdentifier = activeModeIdentifier
-
-            if let activeIdentifier = activeModeIdentifier {
+        refreshTask = Task { @MainActor [weak self] in
+            if debounce {
                 do {
-                    let modesData = try Data(contentsOf: modesURL)
-                    let modeConfigs = try JSONDecoder().decode(ModeConfigurations.self, from: modesData)
-
-                    if let allModes = modeConfigs.data.first?.modeConfigurations,
-                       let activeModeConfig = allModes[activeIdentifier] {
-
-                        let mode = activeModeConfig.mode
-                        let symbolName = mode.symbolImageName ?? "questionmark.circle"
-                        let newStatus = FocusStatus(
-                            name: mode.name,
-                            symbolName: symbolName,
-                            isActive: true,
-                            identifier: mode.modeIdentifier,
-                            tintColorName: mode.tintColorName,
-                            tintColorNames: mode.symbolDescriptorTintColorNames
-                        )
-
-                        self.currentStatus = newStatus
-                    } else {
-                        self.currentStatus = .notActive
-                    }
+                    try await Task.sleep(for: .milliseconds(120))
                 } catch {
-                    self.currentStatus = .notActive
+                    return
                 }
-            } else {
-                self.currentStatus = .notActive
             }
-        } catch {
-            self.lastKnownModeIdentifier = nil
-            self.currentStatus = .notActive
-        }
-    }
 
-    private func checkFocusFilesForChange() {
-        do {
-            let assertionsData = try Data(contentsOf: assertionsURL)
-            let assertions = try JSONDecoder().decode(Assertions.self, from: assertionsData)
-            let latestAssertion = assertions.data.first?.storeAssertionRecords.max(by: { $0.assertionStartDateTimestamp < $1.assertionStartDateTimestamp })
-            let activeModeIdentifier = latestAssertion?.assertionDetails.assertionDetailsModeIdentifier
+            let snapshot = await Task.detached(priority: .utility) {
+                try? Self.readFocusSnapshot(assertionsURL: assertionsURL, modesURL: modesURL)
+            }.value
 
-            if activeModeIdentifier != self.lastKnownModeIdentifier {
-                self.lastKnownModeIdentifier = activeModeIdentifier
-                updateFocusStatus(with: activeModeIdentifier)
-            }
-        } catch {
-            if self.lastKnownModeIdentifier != nil {
-                self.lastKnownModeIdentifier = nil
-                updateFocusStatus(with: nil)
+            guard let self, !Task.isCancelled, self.refreshGeneration == generation else { return }
+            self.refreshTask = nil
+            guard let snapshot else { return }
+            if self.currentStatus != snapshot.status {
+                self.currentStatus = snapshot.status
             }
         }
     }
 
-    private func updateFocusStatus(with modeIdentifier: String?) {
-        guard let activeIdentifier = modeIdentifier else {
-            self.currentStatus = .notActive
-            return
+    nonisolated private static func readFocusSnapshot(
+        assertionsURL: URL,
+        modesURL: URL
+    ) throws -> FocusFileSnapshot {
+        let assertionsData = try Data(contentsOf: assertionsURL, options: .mappedIfSafe)
+        let assertions = try JSONDecoder().decode(Assertions.self, from: assertionsData)
+        let activeIdentifier = assertions.data.first?.storeAssertionRecords
+            .max(by: { $0.assertionStartDateTimestamp < $1.assertionStartDateTimestamp })?
+            .assertionDetails.assertionDetailsModeIdentifier
+
+        guard let activeIdentifier else {
+            return FocusFileSnapshot(status: .notActive)
         }
 
-        do {
-            let modesData = try Data(contentsOf: modesURL)
-            let modeConfigs = try JSONDecoder().decode(ModeConfigurations.self, from: modesData)
-
-            if let allModes = modeConfigs.data.first?.modeConfigurations,
-               let activeModeConfig = allModes[activeIdentifier] {
-
-                let mode = activeModeConfig.mode
-                let symbolName = mode.symbolImageName ?? "questionmark.circle"
-                let newStatus = FocusStatus(
-                    name: mode.name,
-                    symbolName: symbolName,
-                    isActive: true,
-                    identifier: mode.modeIdentifier,
-                    tintColorName: mode.tintColorName,
-                    tintColorNames: mode.symbolDescriptorTintColorNames
-                )
-
-                self.currentStatus = newStatus
-            }
-        } catch {
-            print("[FocusManager] ERROR: Failed to read ModeConfigurations file: \(error)")
+        let modesData = try Data(contentsOf: modesURL, options: .mappedIfSafe)
+        let configurations = try JSONDecoder().decode(ModeConfigurations.self, from: modesData)
+        guard let mode = configurations.data.first?.modeConfigurations[activeIdentifier]?.mode else {
+            return FocusFileSnapshot(status: .notActive)
         }
+
+        return FocusFileSnapshot(
+            status: FocusStatus(
+                name: mode.name,
+                symbolName: mode.symbolImageName ?? "questionmark.circle",
+                isActive: true,
+                identifier: mode.modeIdentifier,
+                tintColorName: mode.tintColorName,
+                tintColorNames: mode.symbolDescriptorTintColorNames
+            )
+        )
     }
 
     deinit {
+        refreshTask?.cancel()
         directoryMonitor?.stop()
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
     }
+}
+
+private struct FocusFileSnapshot: Sendable {
+    let status: FocusStatus
 }
 
 // MARK: - 3. Private Data Models for JSON Parsing

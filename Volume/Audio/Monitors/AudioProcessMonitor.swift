@@ -11,6 +11,9 @@ import os
 private struct AppFingerprint: Hashable {
     let pid: pid_t
     let objectIDs: [AudioObjectID]
+    let name: String
+    let bundleID: String?
+    let isHelperBacked: Bool
 }
 
 @Observable
@@ -76,6 +79,7 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
     private var processListListenerBlock: AudioObjectPropertyListenerBlock?
     private var processListenerBlocks: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
     private var monitoredProcesses: Set<AudioObjectID> = []
+    private var refreshDebounceTask: Task<Void, Never>?
     private var periodicRefreshTask: Task<Void, Never>?
 
     private var processListAddress = AudioObjectPropertyAddress(
@@ -134,9 +138,9 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
 
         logger.debug("Starting audio process monitor")
 
-        processListListenerBlock = { [weak self] numberAddresses, addresses in
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             Task { @MainActor [weak self] in
-                self?.refresh()
+                self?.scheduleRefresh()
             }
         }
 
@@ -144,10 +148,12 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
             .system,
             &processListAddress,
             .main,
-            processListListenerBlock!
+            listener
         )
 
-        if status != noErr {
+        if status == noErr {
+            processListListenerBlock = listener
+        } else {
             logger.error("Failed to add process list listener: \(status)")
         }
 
@@ -161,6 +167,8 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
 
         periodicRefreshTask?.cancel()
         periodicRefreshTask = nil
+        refreshDebounceTask?.cancel()
+        refreshDebounceTask = nil
 
         if let block = processListListenerBlock {
             AudioObjectRemovePropertyListenerBlock(.system, &processListAddress, .main, block)
@@ -178,6 +186,16 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
                 guard !Task.isCancelled, let self else { return }
                 self.refresh()
             }
+        }
+    }
+
+    private func scheduleRefresh() {
+        refreshDebounceTask?.cancel()
+        refreshDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(50))
+            guard !Task.isCancelled, let self else { return }
+            self.refreshDebounceTask = nil
+            self.refresh()
         }
     }
 
@@ -244,12 +262,28 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
 
             let sorted = appsByPID.values.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
-            let oldSet = Set(activeApps.map { AppFingerprint(pid: $0.id, objectIDs: $0.processObjectIDs) })
-            let newSet = Set(sorted.map { AppFingerprint(pid: $0.id, objectIDs: $0.processObjectIDs) })
+            let oldSet = Set(activeApps.map {
+                AppFingerprint(
+                    pid: $0.id,
+                    objectIDs: $0.processObjectIDs,
+                    name: $0.name,
+                    bundleID: $0.bundleID,
+                    isHelperBacked: $0.isHelperBacked
+                )
+            })
+            let newSet = Set(sorted.map {
+                AppFingerprint(
+                    pid: $0.id,
+                    objectIDs: $0.processObjectIDs,
+                    name: $0.name,
+                    bundleID: $0.bundleID,
+                    isHelperBacked: $0.isHelperBacked
+                )
+            })
 
-            activeApps = sorted
             if oldSet != newSet {
-                onAppsChanged?(activeApps)
+                activeApps = sorted
+                onAppsChanged?(sorted)
             }
 
         } catch {
@@ -270,7 +304,6 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
             addProcessListener(for: objectID)
         }
 
-        monitoredProcesses = currentSet
     }
 
     private func addProcessListener(for objectID: AudioObjectID) {
@@ -282,7 +315,7 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
 
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             Task { @MainActor [weak self] in
-                self?.refresh()
+                self?.scheduleRefresh()
             }
         }
 
@@ -290,12 +323,14 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
 
         if status == noErr {
             processListenerBlocks[objectID] = block
+            monitoredProcesses.insert(objectID)
         } else {
             logger.warning("Failed to add isRunning listener for \(objectID): \(status)")
         }
     }
 
     private func removeProcessListener(for objectID: AudioObjectID) {
+        monitoredProcesses.remove(objectID)
         guard let block = processListenerBlocks.removeValue(forKey: objectID) else { return }
 
         var address = AudioObjectPropertyAddress(
@@ -311,7 +346,7 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
     }
 
     private func removeAllProcessListeners() {
-        for objectID in monitoredProcesses {
+        for objectID in Array(monitoredProcesses) {
             removeProcessListener(for: objectID)
         }
         monitoredProcesses.removeAll()

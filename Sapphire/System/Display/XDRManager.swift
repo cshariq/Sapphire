@@ -37,8 +37,7 @@ class BrightnessManager {
             object: nil
         )
 
-        SettingsModel.shared.$settings
-            .map(\.brightness)
+        SettingsModel.shared.brightnessPublisher
             .removeDuplicates()
             .sink { [weak self] _ in
                 self?.brightnessTechnique?.adjustBrightness()
@@ -118,10 +117,10 @@ class BrightnessManager {
 
     private func enableExtraBrightness() {
         let maxBrightness = SettingsModel.shared.settings.xdrBrightnessLevel
-        let safeBrightness = max(1.0, min(maxBrightness, SettingsModel.shared.settings.brightness))
+        let safeBrightness = max(1.0, min(maxBrightness, SettingsModel.shared.brightness))
 
-        if safeBrightness != SettingsModel.shared.settings.brightness {
-            SettingsModel.shared.settings.brightness = safeBrightness
+        if safeBrightness != SettingsModel.shared.brightness {
+            SettingsModel.shared.brightness = safeBrightness
         }
         self.brightnessTechnique?.enable()
     }

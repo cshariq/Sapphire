@@ -427,10 +427,19 @@ struct SystemControl {
         }
     }
 
+    private static func builtInDisplayID() -> CGDirectDisplayID? {
+        var onlineDisplayIDs = [CGDirectDisplayID](repeating: 0, count: 16)
+        var displayCount: UInt32 = 0
+        guard CGGetOnlineDisplayList(16, &onlineDisplayIDs, &displayCount) == .success else { return nil }
+        for id in onlineDisplayIDs.prefix(Int(displayCount)) where CGDisplayIsBuiltin(id) != 0 {
+            return id
+        }
+        return nil
+    }
+
     static func getBrightness() -> Float {
         var brightness: Float = 0.0
-        guard let screen = NSScreen.main else { return 0.5 }
-        let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
+        guard let displayID = builtInDisplayID() else { return 0.5 }
         if DisplayServicesGetBrightness(displayID, &brightness) != 0 {
             return 0.5
         }
@@ -439,12 +448,10 @@ struct SystemControl {
 
     static func setBrightness(to level: Float) {
         let clampedLevel = min(1.0, max(0.0, level))
-        for screen in NSScreen.screens {
-            let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0
-            let result = DisplayServicesSetBrightness(displayID, clampedLevel)
-            if result != 0 {
-                print("[SystemControl] ERROR: DisplayServicesSetBrightness failed for display \(displayID) with result code \(result).")
-            }
+        guard let displayID = builtInDisplayID() else { return }
+        let result = DisplayServicesSetBrightness(displayID, clampedLevel)
+        if result != 0 {
+            print("[SystemControl] ERROR: DisplayServicesSetBrightness failed for display \(displayID) with result code \(result).")
         }
     }
 
@@ -480,27 +487,25 @@ struct CGSHelper {
     private static let connection = _CGSDefaultConnection()
 
     static func getActiveDesktopNumber() -> Int? {
-        let activeSpaceID = CGSGetActiveSpace(connection)
-
-        guard let displaySpaces = CGSCopyManagedDisplaySpaces(connection) as? [[String: Any]],
-              let mainDisplay = displaySpaces.first,
-              let spacesForMainDisplay = mainDisplay["Spaces"] as? [[String: Any]] else {
-            return nil
-        }
-
-        if let index = spacesForMainDisplay.firstIndex(where: { ($0["id64"] as? CGSSpaceID) == activeSpaceID }) {
-            return index + 1
-        }
-
-        return nil
+        getActiveDesktopNumbers().main
     }
 
     static func getActiveDesktopNumbersByDisplay() -> [String: Int] {
+        getActiveDesktopNumbers().byDisplay
+    }
+
+    static func getActiveDesktopNumbers() -> (main: Int?, byDisplay: [String: Int]) {
         let activeSpaceID = CGSGetActiveSpace(connection)
         var result: [String: Int] = [:]
 
         guard let displaySpaces = CGSCopyManagedDisplaySpaces(connection) as? [[String: Any]] else {
-            return result
+            return (nil, result)
+        }
+
+        var main: Int?
+        if let spacesForMainDisplay = displaySpaces.first?["Spaces"] as? [[String: Any]],
+           let index = spacesForMainDisplay.firstIndex(where: { ($0["id64"] as? CGSSpaceID) == activeSpaceID }) {
+            main = index + 1
         }
 
         for displayEntry in displaySpaces {
@@ -521,6 +526,6 @@ struct CGSHelper {
             }
         }
 
-        return result
+        return (main, result)
     }
 }

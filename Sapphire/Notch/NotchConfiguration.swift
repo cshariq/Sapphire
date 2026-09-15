@@ -83,7 +83,7 @@ struct NotchConfiguration {
     static var universalWidth: CGFloat { measuredNotchSize(for: referenceScreen).width }
     static var universalHeight: CGFloat { measuredNotchSize(for: referenceScreen).height }
     static var initialSize: CGSize { CGSize(width: universalWidth, height: universalHeight) }
-    static var initialCornerRadius: CGFloat = 10 * screenHeightAdjustment
+    static let initialCornerRadius: CGFloat = 10
 
     static var topBuffer: CGFloat = 0
 
@@ -207,6 +207,7 @@ struct NotchConfiguration {
     static var settingsWindowHeight: CGFloat = 720
     static var settingsWindowMinWidth: CGFloat = 800
     static var settingsWindowMinHeight: CGFloat = 520
+    static var settingsWindowCornerRadius: CGFloat = 20
 
     static var onboardingWindowWidth: CGFloat = 1200
     static var onboardingWindowHeight: CGFloat = 820
@@ -217,7 +218,7 @@ struct NotchConfiguration {
     // MARK: - Menu Type Detection
     static func isLargeVerticalMenu(_ mode: NotchWidgetMode) -> Bool {
         switch mode {
-        case .musicPlayer, .sportsPlayer, .financePlayer, .notesPlayer, .clipboardPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS, .blipHub, .circleToSearch, .multiAudio, .multiAudioDeviceAdjust, .multiAudioEQ, .multiAudioAppEQ:
+        case .musicPlayer, .sportsPlayer, .financePlayer, .notesPlayer, .clipboardPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS, .blipHub, .circleToSearch, .multiAudio, .multiAudioDeviceAdjust, .multiAudioEQ, .multiAudioAppEQ, .multiAudioApp8D, .multiAudioAppSurround:
             return true
         default:
             return false
@@ -226,7 +227,7 @@ struct NotchConfiguration {
 }
 
 // MARK: - Resolved Configuration
-struct ResolvedNotchConfiguration {
+struct ResolvedNotchConfiguration: Equatable {
 
     // MARK: - Basic Size Configuration
     let universalWidth: CGFloat
@@ -311,7 +312,7 @@ struct ResolvedNotchConfiguration {
         let measured = NotchConfiguration.measuredNotchSize(for: targetScreen)
         baseWidth = measured.width
         baseHeight = measured.height
-            self.initialCornerRadius = 10 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)
+            self.initialCornerRadius = NotchConfiguration.initialCornerRadius
             self.topBuffer = NotchConfiguration.topBuffer
             self.scaleFactor = NotchConfiguration.scaleFactor
             self.hoverExpandedCornerRadius = 18 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)

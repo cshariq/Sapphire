@@ -73,7 +73,7 @@ struct PersistentBatteryActivityView {
 struct statsLiveActivityView {
     enum DisplayableStat: Identifiable, Hashable {
         case highLevel(StatType)
-        case sensor(Sensor_p)
+        case sensor(any Sensor_p)
 
         var id: String {
             switch self {
@@ -92,27 +92,31 @@ struct statsLiveActivityView {
     }
 
     static func left(for payload: StatsPayload, selectedStats: [StatType], selectedSensorKeys: [String]) -> some View {
-        let allItems = getAllDisplayableItems(payload: payload, selectedStats: selectedStats, selectedSensorKeys: selectedSensorKeys)
-
-        return Group {
-            if allItems.count == 1 {
-                singleStatView(for: allItems[0], payload: payload, part: .icon)
-            } else {
-                let (leftItems, _) = splitItems(allItems)
-                dynamicStatHStack(for: leftItems, payload: payload)
-            }
-        }
+        SideView(seed: payload, selectedStats: selectedStats, selectedSensorKeys: selectedSensorKeys, part: .icon)
     }
 
     static func right(for payload: StatsPayload, selectedStats: [StatType], selectedSensorKeys: [String]) -> some View {
-        let allItems = getAllDisplayableItems(payload: payload, selectedStats: selectedStats, selectedSensorKeys: selectedSensorKeys)
+        SideView(seed: payload, selectedStats: selectedStats, selectedSensorKeys: selectedSensorKeys, part: .value)
+    }
 
-        return Group {
-            if allItems.count == 1 {
-                singleStatView(for: allItems[0], payload: payload, part: .value)
-            } else {
-                let (_, rightItems) = splitItems(allItems)
-                dynamicStatHStack(for: rightItems, payload: payload)
+    private struct SideView: View {
+        let seed: StatsPayload
+        let selectedStats: [StatType]
+        let selectedSensorKeys: [String]
+        let part: SingleStatPart
+        @ObservedObject private var statsManager = StatsManager.shared
+
+        private var payload: StatsPayload { statsManager.currentStats ?? seed }
+
+        var body: some View {
+            let allItems = getAllDisplayableItems(payload: payload, selectedStats: selectedStats, selectedSensorKeys: selectedSensorKeys)
+            Group {
+                if allItems.count == 1 {
+                    singleStatView(for: allItems[0], payload: payload, part: part)
+                } else {
+                    let (leftItems, rightItems) = splitItems(allItems)
+                    dynamicStatHStack(for: part == .icon ? leftItems : rightItems, payload: payload)
+                }
             }
         }
     }
@@ -282,7 +286,12 @@ struct FileProgressLiveActivityView {
         let iconName: String
         switch task {
         case .universalTransfer(let transfer):
-            iconName = transfer.sourceType == .finder ? "arrow.right.arrow.left.circle.fill" : "arrow.down.circle.fill"
+            switch transfer.sourceType {
+            case .finder: iconName = "arrow.right.arrow.left.circle.fill"
+            case .archiveExtraction: iconName = "archivebox.fill"
+            case .dmgInstall: iconName = "externaldrive.fill.badge.plus"
+            case .browserDownload, .manual: iconName = "arrow.down.circle.fill"
+            }
         case .airDrop: iconName = "airplayaudio"
         case .incomingTransfer: iconName = "arrow.down.circle.fill"
         case .fileConversion: iconName = "arrow.triangle.2.circlepath"
@@ -306,14 +315,20 @@ struct FileProgressLiveActivityView {
         case .universalTransfer(let transferTask):
             progress = transferTask.progress
             fileName = transferTask.fileName
-            if transferTask.sourceType == .finder {
-                statusText = transferTask.speed > 0 ? formatSpeed(transferTask.speed) : "Copying..."
-            } else if let progress {
-                statusText = "\(Int(progress * 100))% • " + (transferTask.speed > 0 ? formatSpeed(transferTask.speed) : "Downloading...")
-            } else {
-                statusText = transferTask.speed > 0 ? formatSpeed(transferTask.speed) : "Downloading..."
+            let verb: String
+            switch transferTask.sourceType {
+            case .finder: verb = "Copying..."
+            case .archiveExtraction: verb = "Extracting..."
+            case .dmgInstall: verb = "Installing..."
+            case .browserDownload, .manual: verb = "Downloading..."
             }
-            print("[LiveActivityView] Rendering Universal Transfer: '\(transferTask.fileName)', Progress: \(progress?.description ?? "nil"), Source: \(transferTask.sourceType)")
+            if transferTask.sourceType == .finder {
+                statusText = transferTask.speed > 0 ? TransferMetricsFormatter.speed(transferTask.speed) : verb
+            } else if let progress {
+                statusText = "\(Int(progress * 100))% • " + (transferTask.speed > 0 ? TransferMetricsFormatter.speed(transferTask.speed) : verb)
+            } else {
+                statusText = transferTask.speed > 0 ? TransferMetricsFormatter.speed(transferTask.speed) : verb
+            }
 
         case .airDrop(let airDropTask):
             progress = airDropTask.progress
@@ -366,15 +381,6 @@ struct FileProgressLiveActivityView {
         }
     }
 
-    private static func formatSpeed(_ bytesPerSecond: Double) -> String {
-        if bytesPerSecond >= 1_000_000 {
-            return String(format: "%.1f MB/s", bytesPerSecond / 1_000_000)
-        } else if bytesPerSecond >= 1_000 {
-            return String(format: "%.1f KB/s", bytesPerSecond / 1_000)
-        } else {
-            return String(format: "%.0f B/s", bytesPerSecond)
-        }
-    }
 }
 
 struct IntelligenceAgentActivityView {
@@ -430,24 +436,19 @@ struct BlipStepProgressRing: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .stroke(Color.white.opacity(0.18), lineWidth: lineWidth)
-
-            Circle()
-                .trim(from: 0, to: min(max(progress, 0), 1))
-                .stroke(
-                    AngularGradient(
-                        colors: [
-                            Color(red: 0.36, green: 0.90, blue: 0.76),
-                            Color(red: 0.18, green: 0.62, blue: 0.55),
-                            Color(red: 0.36, green: 0.90, blue: 0.76)
-                        ],
-                        center: .center
-                    ),
-                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+            ProgressRingView(
+                progress: progress,
+                lineWidth: lineWidth,
+                active: AngularGradient(
+                    colors: [
+                        Color(red: 0.36, green: 0.90, blue: 0.76),
+                        Color(red: 0.18, green: 0.62, blue: 0.55),
+                        Color(red: 0.36, green: 0.90, blue: 0.76)
+                    ],
+                    center: .center
                 )
-                .rotationEffect(.degrees(-90))
-                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: progress)
+            )
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: progress)
 
             if total > 0 {
                 Text("\(current)")
@@ -466,18 +467,13 @@ struct FileCircularProgressIndicator: View {
     let lineWidth: CGFloat
 
     var body: some View {
-        ZStack {
-            Circle()
-                .stroke(lineWidth: lineWidth)
-                .foregroundColor(.accentColor)
-                .opacity(0.3)
-
-            Circle()
-                .trim(from: 0.0, to: min(progress, 1.0))
-                .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
-                .foregroundColor(.accentColor)
-                .rotationEffect(Angle(degrees: 270.0))
-        }
+        ProgressRingView(
+            progress: progress,
+            lineWidth: lineWidth,
+            track: AnyShapeStyle(Color.accentColor.opacity(0.3)),
+            active: Color.accentColor,
+            rotation: .degrees(270)
+        )
         .frame(width: size, height: size)
         .animation(.linear(duration: 0.2), value: progress)
     }
@@ -572,15 +568,12 @@ struct MusicUpNextView: View {
 
                 Spacer(minLength: 6)
 
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.18), lineWidth: 2.5)
-                    Circle()
-                        .trim(from: 0, to: ringProgress)
-                        .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .animation(.linear(duration: 0.4), value: ringProgress)
-                }
+                ProgressRingView(
+                    progress: ringProgress,
+                    lineWidth: 2.5,
+                    active: Color.white
+                )
+                .animation(.linear(duration: 0.4), value: ringProgress)
                 .frame(width: 16, height: 16)
             }
             .frame(maxWidth: .infinity)
@@ -797,17 +790,10 @@ struct ReminderProximityActivityView {
         let dueDate = reminder.dueDateComponents?.date
         return TimelineView(.periodic(from: .now, by: 1.0)) { context in
             let remaining = dueDate?.timeIntervalSinceNow ?? 0
-            Text(formatRemainingTime(remaining))
+            Text(remaining.asRemainingClockOrNow)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundColor(.white.opacity(0.9))
         }
-    }
-
-    private static func formatRemainingTime(_ interval: TimeInterval) -> String {
-        if interval <= 0 { return "Now" }
-        let minutes = Int(interval) / 60
-        let seconds = Int(interval) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -893,22 +879,31 @@ struct BatteryRingView: View {
     }
 
     var body: some View {
-        ZStack {
-            Circle().stroke(Color.accentColor.opacity(0.3), lineWidth: 3)
-            Circle()
-                .trim(from: 0, to: CGFloat(level) / 100.0)
-                .stroke(setColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .animation(.easeOut, value: level)
-        }
+        ProgressRingView(
+            progress: Double(level) / 100.0,
+            lineWidth: 3,
+            track: AnyShapeStyle(Color.accentColor.opacity(0.3)),
+            active: setColor
+        )
+        .animation(.easeOut, value: level)
         .frame(width: 14, height: 14)
         .padding(3)
     }
 }
 
+private extension BluetoothDeviceState {
+    var liveActivityIconName: String {
+        guard !iconName.isEmpty,
+              NSImage(systemSymbolName: iconName, accessibilityDescription: nil) != nil else {
+            return "bluetooth"
+        }
+        return iconName
+    }
+}
+
 struct BluetoothConnectedPeripheralView {
     static func left(for device: BluetoothDeviceState) -> some View {
-        Image(systemName: device.iconName)
+        Image(systemName: device.liveActivityIconName)
             .font(.system(size: 18, weight: .semibold))
             .foregroundColor(.white)
             .symbolRenderingMode(.hierarchical)
@@ -945,7 +940,7 @@ struct BluetoothConnectedPeripheralView {
 
 struct BluetoothConnectedContinuityView {
     static func left(for device: BluetoothDeviceState) -> some View {
-        Image(systemName: device.iconName)
+        Image(systemName: device.liveActivityIconName)
             .font(.system(size: 18, weight: .semibold))
             .foregroundColor(.blue)
             .symbolRenderingMode(.hierarchical)
@@ -966,7 +961,7 @@ struct BluetoothConnectedContinuityView {
 
 struct BluetoothDisconnectedView {
     static func left(for device: BluetoothDeviceState) -> some View {
-        Image(systemName: device.iconName)
+        Image(systemName: device.liveActivityIconName)
             .font(.system(size: 18, weight: .semibold))
             .foregroundColor(.white.opacity(0.5))
             .symbolRenderingMode(.hierarchical)
@@ -987,7 +982,7 @@ struct BluetoothDisconnectedView {
 
 struct BluetoothBatteryLowView {
     static func left(for device: BluetoothDeviceState) -> some View {
-        Image(systemName: device.iconName)
+        Image(systemName: device.liveActivityIconName)
             .font(.system(size: 18, weight: .semibold))
             .foregroundColor(.white)
             .symbolRenderingMode(.hierarchical)
@@ -1020,17 +1015,10 @@ struct CalendarProximityActivityView {
     static func right(event: EKEvent) -> some View {
         TimelineView(.periodic(from: .now, by: 1.0)) { context in
             let remaining = event.startDate.timeIntervalSinceNow
-            Text(formatRemainingTime(remaining))
+            Text(remaining.asRemainingClockOrNow)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundColor(.white.opacity(0.9))
         }
-    }
-
-    private static func formatRemainingTime(_ interval: TimeInterval) -> String {
-        if interval <= 0 { return "Now" }
-        let minutes = Int(interval) / 60
-        let seconds = Int(interval) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -1064,14 +1052,13 @@ struct EyeBreakFullActivityView: View {
     var body: some View {
         HStack(spacing: 16) {
             ZStack {
-                Circle()
-                    .stroke(Color.white.opacity(0.15), lineWidth: 6)
-
-                Circle()
-                    .trim(from: 0, to: 1 - (eyeBreakManager.timeRemainingInBreak / breakDuration))
-                    .stroke(Color.cyan, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.3), value: eyeBreakManager.timeRemainingInBreak)
+                ProgressRingView(
+                    progress: 1 - (eyeBreakManager.timeRemainingInBreak / breakDuration),
+                    lineWidth: 6,
+                    track: AnyShapeStyle(Color.white.opacity(0.15)),
+                    active: Color.cyan
+                )
+                .animation(.linear(duration: 0.3), value: eyeBreakManager.timeRemainingInBreak)
 
                 Image(systemName: "eye.fill")
                     .font(.system(size: 32, weight: .light))
@@ -1381,23 +1368,10 @@ struct TimerActivityView {
     }
 
     static func right(timerManager: TimerManager) -> some View {
-        Text(formatTime(timerManager.displayTime))
+        Text(timerManager.displayTime.asStopwatchClock)
             .font(.system(size: 13, design: .monospaced).weight(.semibold))
             .contentTransition(.numericText(countsDown: timerManager.activeTimer == .system))
             .animation(.default, value: timerManager.displayTime)
-    }
-
-    private static func formatTime(_ time: TimeInterval) -> String {
-        let totalSeconds = Int(time)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let seconds = totalSeconds % 60
-
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            return String(format: "%02d:%02d", minutes, seconds)
-        }
     }
 }
 
@@ -1611,8 +1585,7 @@ struct NotificationLiveActivityView: View {
 
             if let code = payload.verificationCode, settings.settings.showCopyButtonForVerificationCodes {
                 Button(action: {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(code, forType: .string)
+                    NSPasteboard.general.copyString(code)
                     withAnimation(.spring) { didCopyCode = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                         withAnimation(.spring) { didCopyCode = false }
@@ -1926,12 +1899,7 @@ struct OTPLiveActivityView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(Color.white.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
-            )
+            .roundedCard(fill: Color.white.opacity(0.06), cornerRadius: 16, stroke: Color.white.opacity(0.06))
 
             HStack(spacing: 8) {
                 ForEach(Array(digits.enumerated()), id: \.offset) { _, digit in
@@ -1952,8 +1920,7 @@ struct OTPLiveActivityView: View {
 
             if settings.settings.showCopyButtonForVerificationCodes {
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(event.code, forType: .string)
+                    NSPasteboard.general.copyString(event.code)
                     withAnimation(.spring) { didCopy = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
                         SmartInboxMonitor.shared.dismissOTP()
@@ -1986,8 +1953,7 @@ struct OTPLiveActivityView: View {
                 isShowing = true
             }
             if settings.settings.autoCopyVerificationCodes {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(event.code, forType: .string)
+                NSPasteboard.general.copyString(event.code)
                 didCopy = true
             }
         }

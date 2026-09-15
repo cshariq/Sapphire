@@ -9,11 +9,17 @@ import SwiftUI
 import Combine
 import ScreenCaptureKit
 import NearbyShare
-import UniformTypeIdentifiers
 import AppKit
 import os.log
 
 private let notchLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "NotchController")
+
+private struct FileDropResult {
+    let fallbackZone: DropZone?
+    let finalLocation: CGPoint?
+    let copiedURLs: [URL]
+    let wasDraggedFromShelf: Bool
+}
 
 struct NotchController: View {
     let notchWindow: NSWindow?
@@ -36,11 +42,11 @@ struct NotchController: View {
 
     // MARK: - State Objects
     @StateObject private var fileShelfState = FileShelfState()
-    @StateObject private var dragManager = GlobalDragManager.shared
+    @StateObject private var dragManager = GlobalDragManager()
     @StateObject private var dragState = DragStateManager.shared
     @StateObject private var calendarViewModel: InteractiveCalendarViewModel
 
-    @ObservedObject private var activeAppMonitor = ActiveAppMonitor.shared
+    @ObservedObject private var windowDrag = WindowDragState.shared
     @ObservedObject private var systemHUD = SystemHUDManager.shared
 
     // MARK: - State Properties
@@ -48,9 +54,11 @@ struct NotchController: View {
     @State private var notchState: NotchState = .initial
     @State private var isHovered: Bool = false
     @State private var collapseTask: Task<Void, Never>?
+    @State private var dragEndCollapseTask: Task<Void, Never>?
     @State private var isCollapseTimerActive: Bool = false
     @State private var widgetSwitchProtectionTask: Task<Void, Never>?
     @State private var widgetSwitchProtectionGeneration: UInt64 = 0
+    @State private var clickExpandedOpenedAt: Date = .distantPast
     @State private var isPinned = false
     @State private var animatedWidth: CGFloat = 0
     @State private var animatedHeight: CGFloat = 0
@@ -70,19 +78,30 @@ struct NotchController: View {
     @State private var canRenderAutoContent: Bool = false
     @State private var isAnimatingActivityOut = false
     @State public var isFileDropTargeted: Bool = false
-    @State private var draggedAppBundleID: String? = nil
     @State private var activeDropZone: DropZone? = nil
+    @State private var activeSnapZone: SnapZone? = nil
+    @State private var notchDragLocation: CGPoint? = nil
+    @State private var dropZoneFrames: [DropZone: CGRect] = [:]
+    @State private var snapZoneHitRegions: [SnapZoneHitRegion] = []
     @State private var showLyrics: Bool = false
     @State private var liveActivityHorizontalPadding: CGFloat = 0
     @State private var expansionAnimation: Animation = .default
     @State private var awaitingDropCompletion: Bool = false
+    @State private var isFileDragSessionInProgress = false
+    @State private var activeFileDragIsFromShelf = false
+    @State private var displayedFileDragMode: FileDragMode = .newFile
+    @State private var nextFileDropSequence: UInt64 = 0
+    @State private var nextFileDropSequenceToRoute: UInt64 = 0
+    @State private var pendingFileDropSequences: Set<UInt64> = []
+    @State private var completedFileDrops: [UInt64: FileDropResult] = [:]
+    @State private var dropZoneResolutionTask: Task<Void, Never>?
+    @State private var isHandlingActiveWindowDrag = false
     @State private var hudOverlayOpacity: Double = 0.0
     @State private var hudOverlayBlur: CGFloat = 10.0
 
     @State private var hoverMonitor: NotchHoverMonitor?
     @State private var lastSampledMouseLocation: CGPoint?
     @State private var lastPublishedInteractiveFrame: CGRect = .null
-    @State private var appliedMouseState: AppliedMouseState?
     @State private var lastActivityShapeSignature: NotchShapeSignature = .none
     @State private var isCalendarHovered: Bool = false
     @State private var fileDropFlowObserver: NSObjectProtocol?
@@ -94,7 +113,6 @@ struct NotchController: View {
     @State private var hoverExpandTask: Task<Void, Never>?
     @State private var blurRemovalTask: Task<Void, Never>?
     @State private var activitySwitchBlurWindowEnd: Date = .distantPast
-    @State private var appearCursorLocation: CGPoint?
 
     private enum NotchCompleteHideReason {
         case manualSwipe
@@ -107,12 +125,7 @@ struct NotchController: View {
     private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
 
     private var effectiveActivity: ActivityType {
-        let activity = liveActivityManager.currentActivity
-        guard activity != .none else { return .none }
-        if shouldHideActivityForFullScreen || shouldHideActivityForInactiveDisplay {
-            return .none
-        }
-        return activity
+        liveActivityManager.effectiveActivity(on: notchWindow?.screen)
     }
     private var isFullViewActivity: Bool { liveActivityManager.isFullViewActivity }
     private var isGeminiActive: Bool { liveActivityManager.currentActivity == .geminiLive || liveActivityManager.currentActivity == .intelligenceAgent }
@@ -238,7 +251,7 @@ struct NotchController: View {
     }
 
     private var isInteractive: Bool {
-        !isManuallyHidden && (notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || activeAppMonitor.isWindowDragging)
+        !isManuallyHidden && (notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || windowDrag.isDragging)
     }
 
     private var cursorIsOnMyScreen: Bool {
@@ -249,46 +262,6 @@ struct NotchController: View {
         return notchScreen.frame.contains(mouseLocation)
     }
 
-    private var notchTargetsSingleMonitor: Bool {
-        settings.settings.notchDisplayTarget != .allDisplays
-    }
-
-    private var cursorIsOnActivityDisplay: Bool {
-        guard let notchScreen = notchWindow?.screen else {
-            return CursorPosition.targetNotchScreen() == nil
-        }
-        let mouseLocation: CGPoint
-        if notchTargetsSingleMonitor, let appearCursorLocation {
-            mouseLocation = appearCursorLocation
-        } else {
-            mouseLocation = NSEvent.mouseLocation
-        }
-        return notchScreen.frame.contains(mouseLocation)
-    }
-
-    private var myScreenIsFullScreen: Bool {
-        guard activeAppMonitor.isFullScreen,
-              let fsDisplayID = activeAppMonitor.fullScreenDisplayID,
-              let notchScreen = notchWindow?.screen,
-              let myDisplayID = notchScreen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            return false
-        }
-        return fsDisplayID == myDisplayID
-    }
-
-    private var shouldHideActivityForFullScreen: Bool {
-        guard settings.settings.hideLiveActivityInFullScreen, myScreenIsFullScreen else {
-            return false
-        }
-        notchLog.info("shouldHideActivityForFullScreen: hiding on this display (fullscreen on my screen)")
-        return true
-    }
-
-    private var shouldHideActivityForInactiveDisplay: Bool {
-        guard liveActivityManager.currentActivity == .systemHUD else { return false }
-        return !cursorIsOnActivityDisplay
-    }
-
     private var shouldHideWindowForSharing: Bool {
         settings.settings.hideFromScreenSharing
     }
@@ -296,17 +269,6 @@ struct NotchController: View {
     private var shouldBlockNotchExpansionWhileLocked: Bool {
         settings.settings.preventNotchExpandWhenLocked
             && ((NSApp.delegate as? AppDelegate)?.isScreenLocked == true)
-    }
-
-    private var geminiShadowGradient: LinearGradient {
-        LinearGradient(
-            gradient: Gradient(colors: [
-                .purple.opacity(0.7),
-                .indigo.opacity(0.8),
-            ]),
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 
     private var activeScaleFactor: CGFloat {
@@ -340,6 +302,11 @@ struct NotchController: View {
                 hudOverlayBlur = 10.0
             }
         }
+    }
+
+    private var surfaceShadowOpacity: Double {
+        guard !isGeminiActive, !isManuallyHidden else { return 0 }
+        return shadowOpacity
     }
 
     private var activeShape: CustomNotchShape {
@@ -380,7 +347,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     @ViewBuilder
     private func configuredNotchView(config: ResolvedNotchConfiguration) -> some View {
-        let chrome = applyNotchChrome(to: notchVisualStack(config: config), config: config)
+        let chrome = applyNotchChrome(to: notchSurface(config: config), config: config)
         applyNotchSettingsHandlers(
             to: applyNotchNotificationHandlers(
                 to: applyNotchStateHandlers(to: chrome)
@@ -389,95 +356,162 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     @ViewBuilder
-    private func notchVisualStack(config: ResolvedNotchConfiguration) -> some View {
+    private func notchSurface(config: ResolvedNotchConfiguration) -> some View {
         let appearance = resolvedAppearanceSettings
+        return notchBackground(appearance: appearance, config: config)
+            .overlay(alignment: .top) { notchContent(config: config) }
+            .onTapGesture(perform: handleTap)
+    }
+
+    @ViewBuilder
+    private func notchBackground(
+        appearance: NotchAppearanceSettings,
+        config: ResolvedNotchConfiguration
+    ) -> some View {
+        let isOpaqueSolid = appearance.backgroundStyle == .solid && appearance.opacity >= 1
+        let fillStyle = notchFillMaterial(appearance: appearance).opacity(appearance.opacity)
+
+        if #available(macOS 26.0, *), appearance.usesLiquidGlass, !isOpaqueSolid {
+            let params = LiquidGlassIntensityParams.resolve(appearance.liquidGlassIntensity)
+            ZStack {
+                LiquidGlassShapeView(
+                    backend: .automatic,
+                    material: params.material,
+                    shape: activeShape,
+                    tintColor: resolvedGlassTint(appearance: appearance),
+                    blendingMode: .behindWindow,
+                    appearance: .dark,
+                    interaction: .normal,
+                    contentLensing: params.contentLensing,
+                    scrim: params.scrim,
+                    subdued: params.subdued,
+                    shadow: nativeSurfaceShadow(config: config)
+                )
+                .allowsHitTesting(false)
+
+                if appearance.backgroundStyle != .solid {
+                    activeShape.fill(fillStyle)
+                }
+            }
+        } else if !isOpaqueSolid, appearance.enableTransparencyBlur {
+            ZStack {
+                LiquidGlassShapeView(
+                    backend: .visualEffect,
+                    material: .hud,
+                    shape: activeShape,
+                    tintColor: resolvedGlassTint(appearance: appearance),
+                    blendingMode: .behindWindow,
+                    appearance: .dark,
+                    interaction: .normal,
+                    shadow: nativeSurfaceShadow(config: config)
+                )
+                .allowsHitTesting(false)
+
+                if appearance.backgroundStyle != .solid {
+                    activeShape.fill(fillStyle)
+                }
+            }
+        } else {
+            directlyPaintedSurface(fillStyle: fillStyle, config: config)
+        }
+    }
+
+    private func nativeSurfaceShadow(config: ResolvedNotchConfiguration) -> LiquidGlassShadow {
+        let radius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
+        let yOffset = notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
+
+        if isGeminiActive {
+            let color = NSColor.systemPurple.blended(withFraction: 0.5, of: .systemIndigo)
+                ?? .systemPurple
+            return LiquidGlassShadow(
+                color: color,
+                opacity: notchState == .initial || isManuallyHidden ? 0 : 0.56,
+                radius: radius,
+                offset: CGSize(width: 0, height: yOffset)
+            )
+        }
+
+        return LiquidGlassShadow(
+            color: NSColor(config.expandedShadowColor),
+            opacity: surfaceShadowOpacity,
+            radius: radius,
+            offset: CGSize(width: 0, height: yOffset)
+        )
+    }
+
+    @ViewBuilder
+    private func directlyPaintedSurface(
+        fillStyle: some ShapeStyle,
+        config: ResolvedNotchConfiguration
+    ) -> some View {
+        let radius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
+        let yOffset = notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
+
+        if isGeminiActive {
+            let opacity = notchState == .initial || isManuallyHidden ? 0.0 : 0.75
+            activeShape
+                .fill(fillStyle)
+                .shadow(color: .purple.opacity(opacity * 0.7), radius: radius, x: -2, y: yOffset)
+                .shadow(color: .indigo.opacity(opacity * 0.8), radius: radius, x: 2, y: yOffset)
+        } else {
+            activeShape
+                .fill(fillStyle)
+                .shadow(
+                    color: config.expandedShadowColor.opacity(surfaceShadowOpacity),
+                    radius: radius,
+                    y: yOffset
+                )
+        }
+    }
+
+    private func resolvedGlassTint(appearance: NotchAppearanceSettings) -> NSColor? {
+        guard appearance.backgroundStyle == .solid, appearance.opacity > 0 else { return nil }
+        return NSColor(appearance.solidColor.color).withAlphaComponent(appearance.opacity)
+    }
+
+    @ViewBuilder
+    private func notchContent(config: ResolvedNotchConfiguration) -> some View {
+        let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
+
         ZStack(alignment: .top) {
-            if isGeminiActive {
-                let isShadowVisible = (notchState != .initial)
-                let shadowRadius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
-                let shadowYOffset = notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
-                activeShape
-                    .fill(geminiShadowGradient)
-                    .blur(radius: shadowRadius)
-                    .offset(y: shadowYOffset)
-                    .opacity(isShadowVisible ? 0.75 : 0)
-                    .allowsHitTesting(false)
+            if showActivityView && effectiveActivity != .none && canRenderAutoContent {
+                let activityTransition = liveActivityManager.activityHasBottomContent
+                    ? config.bottomContentTransitionAnimation
+                    : config.activityToActivityAnimation
+                NotchActivityContentView(
+                    content: liveActivityManager.activityContent,
+                    config: config,
+                    horizontalPadding: liveActivityHorizontalPadding,
+                    screen: notchWindow?.screen,
+                    measuredSize: $measuredAutoContentSize,
+                    showLyrics: $showLyrics,
+                    blurRadius: activityBlurRadius
+                )
+                    .geometryGroup()
+                    .id(liveActivityManager.currentActivity)
+                    .animation(activityTransition, value: liveActivityManager.activityAnimationKey)
+                    .opacity(autoContentOpacity)
+                    .scaleEffect(activityContentScale * animatedContentScale)
+            } else {
+                contentView
             }
 
-            notchBackground(appearance: appearance)
+            if notchState == .clickExpanded {
+                expandedOverlayIcons(config: config)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+                    .zIndex(1)
 
-            if shouldShowBottomEdgeFade(config: config, appearance: appearance) {
-                bottomEdgeFade(config: config, appearance: appearance)
-                    .mask(activeShape)
-                    .allowsHitTesting(false)
-            }
-
-            ZStack(alignment: .top) {
-                let showActivityView = (notchState == .autoExpanded || notchState == .hoverExpanded || isAnimatingActivityOut)
-                if showActivityView && effectiveActivity != .none && canRenderAutoContent {
-                    let activityTransition = liveActivityManager.activityHasBottomContent
-                        ? config.bottomContentTransitionAnimation
-                        : config.activityToActivityAnimation
-                    NotchActivityContentView(
-                        content: liveActivityManager.activityContent,
-                        config: config,
-                        shape: activeShape,
-                        horizontalPadding: liveActivityHorizontalPadding,
-                        screen: notchWindow?.screen,
-                        measuredSize: $measuredAutoContentSize,
-                        showLyrics: $showLyrics
-                    )
-                        .geometryGroup()
-                        .compositingGroup()
-                        .blur(radius: activityBlurRadius)
-                        .id(liveActivityManager.currentActivity)
-                        .animation(activityTransition, value: liveActivityManager.activityAnimationKey)
-                        .opacity(autoContentOpacity)
-                        .scaleEffect(activityContentScale * animatedContentScale)
-                } else {
-                    contentView
-                        .mask(activeShape)
-                }
-
-                if notchState == .clickExpanded {
-                    expandedOverlayIcons(config: config)
-                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
-                        .zIndex(1)
-
-                    hudOverlayView
-                        .transition(.opacity.animation(.easeOut(duration: 0.18)))
-                        .zIndex(3)
-                }
+                hudOverlayView
+                    .transition(.opacity.animation(.easeOut(duration: 0.18)))
+                    .zIndex(3)
             }
         }
     }
 
     private func applyNotchChrome<V: View>(to view: V, config: ResolvedNotchConfiguration) -> some View {
-        let shadowRadius: CGFloat = {
-            if isGeminiActive { return 0 }
-            switch notchState {
-            case .clickExpanded: return config.expandedShadowRadius
-            case .hoverExpanded: return 12
-            default: return 0
-            }
-        }()
-        let shadowY: CGFloat = {
-            if isGeminiActive { return 0 }
-            switch notchState {
-            case .clickExpanded: return config.expandedShadowOffsetY
-            case .hoverExpanded: return 6
-            default: return 0
-            }
-        }()
         return view
-            .shadow(
-                color: isGeminiActive ? .clear : config.expandedShadowColor.opacity(shadowOpacity),
-                radius: shadowRadius,
-                y: shadowY
-            )
             .frame(width: animatedWidth, height: animatedHeight)
             .contentShape(activeShape)
-            .onDrop(of: [UTType.fileURL, .plainText], isTargeted: $isFileDropTargeted, perform: handleItemDrop)
             .padding(.top, -config.topBuffer)
             .frame(maxWidth: .infinity, alignment: .top)
             .preferredColorScheme(.dark)
@@ -500,28 +534,53 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             }
             .onChange(of: navigationStack, handleNavigationStackChange)
             .onChange(of: dragManager.isDraggingInActivationZone, perform: handleDragActivationZoneChange)
-            .onChange(of: activeAppMonitor.isWindowDragging, perform: handleActiveWindowDragChange)
+            .onChange(of: windowDrag.isDragging, perform: handleActiveWindowDragChange)
             .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
             .onChange(of: measuredClickContentSize, perform: handleMeasuredClickSizeChange)
             .onChange(of: measuredAutoContentSize, perform: handleMeasuredAutoSizeChange)
     }
 
+    private static let notchNotifications = Publishers.MergeMany(
+        [
+            Notification.Name.sapphireOpenMusicQueue,
+            .sapphireOpenMusicDevices,
+            .sapphireRevealHiddenNotch,
+            .sapphireOpenCircleToSearch,
+            NSApplication.didChangeScreenParametersNotification
+        ].map { NotificationCenter.default.publisher(for: $0) }
+    )
+
     private func applyNotchNotificationHandlers<V: View>(to view: V) -> some View {
         view
             .background(GeminiPickerBridge())
-            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenMusicQueue), perform: handleOpenMusicQueueNotification)
-            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenMusicDevices), perform: handleOpenMusicDevicesNotification)
-            .onReceive(NotificationCenter.default.publisher(for: .sapphireRevealHiddenNotch), perform: handleRevealHiddenNotchNotification)
-            .onReceive(NotificationCenter.default.publisher(for: .sapphireOpenCircleToSearch), perform: handleOpenCircleToSearchNotification)
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-                handleScreenParametersChange()
+            .onReceive(Self.notchNotifications) { notification in
+                switch notification.name {
+                case .sapphireOpenMusicQueue:
+                    openMusicHub(mode: .musicQueueAndPlaylists)
+                case .sapphireOpenMusicDevices:
+                    openMusicHub(mode: .musicDevices)
+                case .sapphireRevealHiddenNotch:
+                    guard isManuallyHidden else { return }
+                    haptic()
+                    inactiveHideUserOverride = true
+                    revealNotchFromCompleteHide()
+                case .sapphireOpenCircleToSearch:
+                    openCircleToSearch(object: notification.object as? String)
+                case NSApplication.didChangeScreenParametersNotification:
+                    handleScreenParametersChange()
+                default:
+                    break
+                }
             }
     }
 
     private func applyNotchSettingsHandlers<V: View>(to view: V) -> some View {
         view
             .onChange(of: showLyrics, perform: handleShowLyricsChange)
-            .onChange(of: isInteractive, perform: handleInteractiveChange)
+            .onChange(of: isInteractive) { _, isNowInteractive in
+                updateMouseEventHandling(isInteractive: isNowInteractive)
+                MenuBarInteractionManager.shared.setSuspended(isNowInteractive)
+            }
             .onChange(of: CGSize(width: animatedWidth, height: animatedHeight)) { _, _ in
                 updateMouseEventHandling(isInteractive: isInteractive)
             }
@@ -529,15 +588,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 applyNotchIconsWidthFloor()
             }
             .onChange(of: shouldHideWindowForSharing, perform: handleSharingVisibilityChange)
-            .onChange(of: isInteractive, perform: handleMenuBarMonitoringChange)
             .onChange(of: settings.revision) { _, _ in
                 handleSettingsChange(settings.settings)
-            }
-            .onChange(of: activeAppMonitor.isFullScreen) { _ in
-                evaluateInactiveNotchVisibility()
-            }
-            .onChange(of: activeAppMonitor.fullScreenDisplayID) { _ in
-                evaluateInactiveNotchVisibility()
             }
     }
 
@@ -564,6 +616,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             let myDisplayID = notchScreen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
             notchLog.info("handleActiveWindowDragChange: isDragging=true mouse=\(mouseLocation.x),\(mouseLocation.y) myDisplayID=\(myDisplayID.map(String.init) ?? "nil") notchScreenFrame=\(notchScreenFrame.minX),\(notchScreenFrame.minY)-\(notchScreenFrame.maxX),\(notchScreenFrame.maxY) cursorIsOnMyScreen=\(cursorIsOnMyScreen)")
             guard cursorIsOnMyScreen else { return }
+            isHandlingActiveWindowDrag = true
+        } else {
+            guard isHandlingActiveWindowDrag else { return }
+            isHandlingActiveWindowDrag = false
         }
         handleWindowDragChange(isDragging: isDragging)
     }
@@ -576,35 +632,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         handleSizeChange(newSize, for: .autoExpanded)
     }
 
-    private func handleOpenMusicQueueNotification(_ notification: Notification) {
-        openMusicHub(mode: .musicQueueAndPlaylists)
-    }
-
-    private func handleOpenMusicDevicesNotification(_ notification: Notification) {
-        openMusicHub(mode: .musicDevices)
-    }
-
-    private func handleRevealHiddenNotchNotification(_ notification: Notification) {
-        guard isManuallyHidden else { return }
-        haptic()
-        inactiveHideUserOverride = true
-        revealNotchFromCompleteHide()
-    }
-
-    private func handleOpenCircleToSearchNotification(_ notification: Notification) {
-        openCircleToSearch(object: notification.object as? String)
-    }
-
-    private func handleInteractiveChange(_ isInteractive: Bool) {
-        updateMouseEventHandling(isInteractive: isInteractive)
-    }
-
     private func handleSharingVisibilityChange(_ shouldBeHidden: Bool) {
         updateWindowSharingBehavior(shouldBeHidden: shouldBeHidden)
-    }
-
-    private func handleMenuBarMonitoringChange(_ isNowInteractive: Bool) {
-        MenuBarInteractionManager.shared.setSuspended(isNowInteractive)
     }
 
     private func handleLiveActivityContentUpdate() {
@@ -621,9 +650,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     private func handleSettingsChange(_ newSettings: Settings) {
         let targetScreen = notchWindow?.screen ?? CursorPosition.targetNotchScreen()
         let newConfig = ResolvedNotchConfiguration(from: newSettings, screen: targetScreen)
-        self.config = newConfig
-        self.expansionAnimation = newConfig.expandAnimation
-        handleStateChange(from: notchState, to: notchState)
+        if newConfig != config {
+            self.config = newConfig
+            self.expansionAnimation = newConfig.expandAnimation
+            handleStateChange(from: notchState, to: notchState)
+        }
         if !newSettings.swipeToHideNotch, completeHideReason == .manualSwipe {
             revealNotchFromCompleteHide()
         }
@@ -653,74 +684,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     // MARK: - Subviews
-    @ViewBuilder
-    private func notchBackground(appearance: NotchAppearanceSettings) -> some View {
-        if #available(macOS 26.0, *), appearance.usesLiquidGlass {
-            let intensity = appearance.liquidGlassIntensity
-            let material = LiquidGlassMaterial.forIntensity(intensity)
-
-            ZStack {
-                LiquidGlassShapeFill(
-                    material: material,
-                    shape: activeShape,
-                    cornerRadius: 0,
-                    tint: nil,
-                    intensity: intensity,
-                    blendingMode: .behindWindow,
-                    appearance: .dark,
-                    interaction: .normal
-                )
-
-                activeShape
-                    .fill(notchFillMaterial(appearance: appearance))
-                    .opacity(appearance.opacity)
-            }
-            .contentShape(activeShape)
-            .onTapGesture(perform: handleTap)
-        } else {
-            ZStack {
-                if appearance.enableTransparencyBlur {
-                    VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                }
-                activeShape
-                    .fill(notchFillMaterial(appearance: appearance))
-                    .opacity(appearance.opacity)
-            }
-            .contentShape(activeShape)
-            .clipShape(activeShape)
-            .onTapGesture(perform: handleTap)
-        }
-    }
-
-    private func shouldShowBottomEdgeFade(config: ResolvedNotchConfiguration, appearance: NotchAppearanceSettings) -> Bool {
-        guard appearance.mode != .default else { return false }
-        guard appearance.bottomFadeEnabled else { return false }
-        guard notchState == .clickExpanded || notchState == .autoExpanded || notchState == .hoverExpanded else { return false }
-        guard isLiveActivityActive else { return notchState == .clickExpanded }
-        return liveActivityManager.isFullViewActivity || liveActivityManager.activityHasBottomContent
-    }
-
-    private func bottomEdgeFade(config: ResolvedNotchConfiguration, appearance: NotchAppearanceSettings) -> some View {
-        let initialHeight = config.initialSize.height
-        let fadeHeight = max(animatedHeight - initialHeight, 0)
-        let fadeStart = animatedHeight > 0 ? min(max(initialHeight / animatedHeight, 0), 1) : 0
-        let configuredStops = appearance.gradientColors
-            .sorted { $0.location < $1.location }
-            .map { Gradient.Stop(color: $0.color, location: fadeStart + $0.location * (1 - fadeStart)) }
-        let stops = (configuredStops.isEmpty
-            ? [Gradient.Stop(color: .black.opacity(0.8), location: fadeStart)]
-            : configuredStops)
-            + [Gradient.Stop(color: .clear, location: 1)]
-
-        return LinearGradient(
-            gradient: Gradient(stops: stops),
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .opacity(fadeHeight > 0 ? 1 : 0)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
     private func notchFillMaterial(appearance: NotchAppearanceSettings) -> AnyShapeStyle {
         let style = appearance.backgroundStyle
         switch style {
@@ -759,17 +722,12 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 .environmentObject(dragState)
                 .environment(\.navigationStack, $navigationStack)
                 .environment(\.activeDropZone, $activeDropZone)
-                .environment(\.isFileDropTargeted, $isFileDropTargeted)
                 .environment(\.isCalendarHovered, $isCalendarHovered)
-                .environment(\.onSnapDragEnd, {
-                    GlobalDragManager.shared.endDrag()
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(100))
-                        if !isPinned {
-                            notchState = isLiveActivityActive ? .autoExpanded : .initial
-                        }
-                    }
-                })
+                .environment(\.onActiveSnapZoneChange, { activeSnapZone = $0 })
+                .environment(\.onDropZoneFramesChange, handleDropZoneFramesChange)
+                .environment(\.onSnapZoneHitRegionsChange, { snapZoneHitRegions = $0 })
+                .environment(\.notchDragLocation, notchDragLocation)
+                .environment(\.fileDragMode, displayedFileDragMode)
                 .padding(.top, config.contentTopPadding)
                 .padding(.bottom, config.contentBottomPadding)
                 .padding(.horizontal, config.contentHorizontalPadding)
@@ -843,7 +801,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
     // MARK: - Setup and Teardown
     private func setupMonitors() {
-        appearCursorLocation = NSEvent.mouseLocation
         dragManager.startMonitoring()
         liveActivityManager.showLyricsBinding = $showLyrics
 
@@ -862,8 +819,12 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 object: nil,
                 queue: .main
             ) { _ in
+                guard self.pendingFileDropSequences.isEmpty,
+                      self.completedFileDrops.isEmpty else { return }
                 self.awaitingDropCompletion = false
-                if self.notchState == .clickExpanded && !self.isPinned {
+                if self.notchState == .clickExpanded,
+                   !self.isPinned,
+                   !self.isFileDragSessionInProgress {
                     self.startWidgetSwitchProtection()
                 }
             }
@@ -887,6 +848,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             self.fileDropFlowObserver = nil
         }
         collapseTask?.cancel()
+        dragEndCollapseTask?.cancel()
+        dragEndCollapseTask = nil
+        dropZoneResolutionTask?.cancel()
+        dropZoneResolutionTask = nil
         cancelWidgetSwitchProtection()
         stopNotchInteractionMonitoring()
         MenuBarInteractionManager.shared.setSuspended(false)
@@ -922,11 +887,13 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             }
             if activityType == .music, settings.settings.musicOpenOnClick { initiateWidgetView(.musicPlayer); return }
             if activityType == .weather, settings.settings.weatherOpenOnClick { initiateWidgetView(.weatherPlayer); return }
-            if activityType == .sports, settings.settings.sportsOpenOnClick, SubscriptionManager.shared.hasAccess(to: .sportsWidget) { initiateWidgetView(.sportsPlayer); return }
-            if activityType == .finance, settings.settings.financeOpenOnClick { initiateWidgetView(.financePlayer); return }
+            if activityType == .sports, settings.settings.sportsOpenOnClick, PremiumGate.hasAccess(.sportsWidget) { initiateWidgetView(.sportsPlayer); return }
+            if activityType == .finance, settings.settings.financeOpenOnClick, PremiumGate.hasAccess(.financeWidget) { initiateWidgetView(.financePlayer); return }
             if activityType == .calendar, settings.settings.calendarOpenOnClick { initiateWidgetView(.calendarPlayer); return }
             if activityType == .fileShelf, settings.settings.clickToOpenFileShelf { initiateWidgetView(.fileShelf); return }
             if activityType == .timer, settings.settings.clickToShowTimerView { initiateWidgetView(.timerDetailView); return }
+            if activityType == .continuity { initiateWidgetView(.continuityDetail); return }
+            if activityType == .continuityExternal { initiateWidgetView(.continuityActivityDetail); return }
             if activityType == .intelligenceAgent { initiateWidgetView(.agentS); return }
             if activityType == .updateAvailable { initiateWidgetView(.updateAvailable); return }
         }
@@ -938,7 +905,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             var targetStack: [NotchWidgetMode]
             if settings.settings.clickToOpenFileShelf && !FileShelfManager.shared.files.isEmpty {
                 targetStack = [.fileShelf]
-            } else if settings.settings.rememberLastMenu, let savedStack = settings.settings.lastNotchNavigationStack, !savedStack.isEmpty {
+            } else if settings.settings.rememberLastMenu, let savedStack = settings.lastNotchNavigationStack, !savedStack.isEmpty {
                 targetStack = savedStack.map { $0.toNotchWidgetMode() }
             } else {
                 targetStack = [.defaultWidgets]
@@ -978,13 +945,12 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 }
         } else if settings.settings.expandOnHover && !isFullViewActivity && !isInteractiveLiveActivity {
                 if notchState != .clickExpanded {
-                    NSApp.activate(ignoringOtherApps: true)
-                    notchWindow?.makeKeyAndOrderFront(nil)
+                    notchWindow?.orderFront(nil)
                     self.expansionAnimation = config.expandAnimation
                     var targetStack: [NotchWidgetMode]
                     if settings.settings.hoverToOpenFileShelf && !FileShelfManager.shared.files.isEmpty {
                         targetStack = [.fileShelf]
-                    } else if settings.settings.rememberLastMenu, let savedStack = settings.settings.lastNotchNavigationStack, !savedStack.isEmpty {
+                    } else if settings.settings.rememberLastMenu, let savedStack = settings.lastNotchNavigationStack, !savedStack.isEmpty {
                         targetStack = savedStack.map { $0.toNotchWidgetMode() }
                     } else {
                         targetStack = [.defaultWidgets]
@@ -1027,11 +993,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
     }
 
-    private func handleActivityChange(_ newActivity: ActivityType) {
-        if newActivity != .none {
-            appearCursorLocation = NSEvent.mouseLocation
-        }
-        let newActivity = shouldHideActivityForFullScreen || shouldHideActivityForInactiveDisplay ? .none : newActivity
+    private func handleActivityChange(_: ActivityType) {
+        let newActivity = liveActivityManager.effectiveActivity(on: notchWindow?.screen)
         if newActivity != .none {
             inactiveHideUserOverride = false
             if completeHideReason == .inactive {
@@ -1107,6 +1070,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
 
         if isContentUpdate { return }
+
+        if newState == .clickExpanded {
+            clickExpandedOpenedAt = Date()
+        }
 
         if newState != .clickExpanded {
             CircleToSearchManager.shared.endResultsPresentation()
@@ -1276,62 +1243,167 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
 
         if notchState == .clickExpanded && oldStack != newStack {
-            self.expansionAnimation = config.widgetSwitchAnimation
-            startWidgetSwitchProtection()
+            let panelJustOpened = Date().timeIntervalSince(clickExpandedOpenedAt) < 0.1
+            if !panelJustOpened {
+                self.expansionAnimation = config.widgetSwitchAnimation
+                startWidgetSwitchProtection()
+            }
         }
 
         if notchState == .clickExpanded {
             if settings.settings.rememberLastMenu {
                 let restorableStack = newStack.compactMap { toRestorableMenu(mode: $0) }
                 if !restorableStack.isEmpty {
-                    settings.settings.lastNotchNavigationStack = restorableStack
+                    settings.lastNotchNavigationStack = restorableStack
                 }
             }
         }
     }
 
-    private func handleItemDrop(providers: [NSItemProvider]) -> Bool {
-        let capturedDropZone = activeDropZone
-        dragState.didJustDrop = true
-        NotificationCenter.default.post(name: .fileDropFlowCompleted, object: nil)
+    private func handleFileDrop(urls: [URL], at screenLocation: NSPoint) -> Bool {
+        let fileManager = FileManager.default
+        let readableURLs = urls.filter {
+            $0.isFileURL
+                && fileManager.fileExists(atPath: $0.path)
+                && fileManager.isReadableFile(atPath: $0.path)
+        }
+        guard !readableURLs.isEmpty else { return false }
+
+        let finalLocation = updateNotchDragLocation(from: screenLocation)
+        let fallbackDropZone: DropZone?
+        let wasDraggedFromShelf = isFileDragSessionInProgress
+            ? activeFileDragIsFromShelf
+            : dragState.isDraggingFromShelf
+        fallbackDropZone = activeDropZone ?? (wasDraggedFromShelf ? nil : .shelf)
+        let temporaryRoot = fileManager.temporaryDirectory
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.shariq.Sapphire")
+            .appendingPathComponent("TemporaryDrop")
+        let accessGrants = readableURLs.map { url in
+            (url: url, shouldStopAccessing: url.startAccessingSecurityScopedResource())
+        }
+
+        let sequence = nextFileDropSequence
+        nextFileDropSequence &+= 1
+        pendingFileDropSequences.insert(sequence)
+        awaitingDropCompletion = true
 
         Task {
-            var successfullyConvertedURLs: [URL] = []
+            let copiedURLs = await Task.detached(priority: .userInitiated) {
+                let fileManager = FileManager.default
+                return accessGrants.compactMap { grant -> URL? in
+                    let sourceURL = grant.url
+                    defer {
+                        if grant.shouldStopAccessing { sourceURL.stopAccessingSecurityScopedResource() }
+                    }
 
-            for provider in providers {
-                do {
-                    let url = try await provider.convertToAccessibleURL()
-                    successfullyConvertedURLs.append(url)
-                } catch {
-                    print("[NotchController] Failed to process one of the dropped items: \(error.localizedDescription)")
+                    let destinationDirectory = temporaryRoot.appendingPathComponent(UUID().uuidString)
+                    let destinationURL = destinationDirectory.appendingPathComponent(sourceURL.lastPathComponent)
+                    do {
+                        try fileManager.createDirectory(
+                            at: destinationDirectory,
+                            withIntermediateDirectories: true
+                        )
+                        try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                        return destinationURL
+                    } catch {
+                        print("[NotchController] Failed to copy dropped file: \(error.localizedDescription)")
+                        return nil
+                    }
                 }
-            }
-
-            guard !successfullyConvertedURLs.isEmpty else {
-                return
-            }
+            }.value
 
             await MainActor.run {
-                if let dropZone = capturedDropZone {
-                    switch dropZone {
-                    case .shelf:
-                        FileShelfManager.shared.addFiles(from: successfullyConvertedURLs)
-                        self.navigationStack = [.fileShelf]
-                    case .airdrop:
-                        SharingManager.shared.share(items: successfullyConvertedURLs, via: .sendViaAirDrop)
-                        self.navigationStack = []
-                    }
-                } else {
-                    FileShelfManager.shared.addFiles(from: successfullyConvertedURLs)
-                    self.navigationStack = [.fileShelf]
-                }
+                self.pendingFileDropSequences.remove(sequence)
+                self.completedFileDrops[sequence] = FileDropResult(
+                    fallbackZone: fallbackDropZone,
+                    finalLocation: finalLocation,
+                    copiedURLs: copiedURLs,
+                    wasDraggedFromShelf: wasDraggedFromShelf
+                )
+                self.routeCompletedFileDropsInOrder()
             }
         }
         return true
     }
 
+    private func routeCompletedFileDropsInOrder(allowUnresolvedTarget: Bool = false) {
+        guard !isFileDragSessionInProgress else {
+            awaitingDropCompletion = !pendingFileDropSequences.isEmpty || !completedFileDrops.isEmpty
+            return
+        }
+
+        while let result = completedFileDrops.removeValue(forKey: nextFileDropSequenceToRoute) {
+            guard !result.copiedURLs.isEmpty else {
+                nextFileDropSequenceToRoute &+= 1
+                continue
+            }
+
+            let resolvedZone: DropZone?
+            if let finalLocation = result.finalLocation, !dropZoneFrames.isEmpty {
+                resolvedZone = dropZoneFrames.first(where: { $0.value.contains(finalLocation) })?.key
+                    ?? result.fallbackZone
+            } else if result.finalLocation != nil, !allowUnresolvedTarget {
+                completedFileDrops[nextFileDropSequenceToRoute] = result
+                scheduleDropZoneResolutionFallback()
+                break
+            } else {
+                resolvedZone = result.fallbackZone
+            }
+
+            nextFileDropSequenceToRoute &+= 1
+            dragState.didJustDrop = true
+            NotificationCenter.default.post(name: .fileDropFlowCompleted, object: nil)
+
+            switch resolvedZone {
+            case .shelf:
+                FileShelfManager.shared.addFiles(from: result.copiedURLs)
+                navigationStack = [.fileShelf]
+            case .airdrop:
+                SharingManager.shared.share(items: result.copiedURLs, via: .sendViaAirDrop)
+                navigationStack = []
+            case .device(let peerID):
+                ContinuityManager.shared.sendFiles(result.copiedURLs, toPeerID: peerID)
+                navigationStack = []
+            case nil:
+                if result.wasDraggedFromShelf {
+                    navigationStack = []
+                } else {
+                    FileShelfManager.shared.addFiles(from: result.copiedURLs)
+                    navigationStack = [.fileShelf]
+                }
+            }
+        }
+
+        awaitingDropCompletion = !pendingFileDropSequences.isEmpty || !completedFileDrops.isEmpty
+        if !awaitingDropCompletion,
+           !dragState.didJustDrop,
+           !isFileDragSessionInProgress,
+           !isFileDropTargeted,
+           navigationStack.last == .fileShelfLanding,
+           !isPinned {
+            notchState = isLiveActivityActive ? .autoExpanded : .initial
+        }
+    }
+
+    private func handleDropZoneFramesChange(_ frames: [DropZone: CGRect]) {
+        dropZoneFrames = frames
+        guard !frames.isEmpty else { return }
+        dropZoneResolutionTask?.cancel()
+        dropZoneResolutionTask = nil
+        routeCompletedFileDropsInOrder()
+    }
+
+    private func scheduleDropZoneResolutionFallback() {
+        guard dropZoneResolutionTask == nil else { return }
+        dropZoneResolutionTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            dropZoneResolutionTask = nil
+            routeCompletedFileDropsInOrder(allowUnresolvedTarget: true)
+        }
+    }
+
     private func handleDragActivationChange(isDragging: Bool) async {
-        guard let config = config else { return }
         collapseTask?.cancel()
         isCollapseTimerActive = false
 
@@ -1342,12 +1414,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
             dragState.didJustDrop = false
 
-            awaitingDropCompletion = false
-
             if isFileDropTargeted {
-                (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
-                let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
-                self.draggedAppBundleID = frontmostApp?.bundleIdentifier
                 notchState = .clickExpanded
                 navigationStack = [.fileShelfLanding]
 
@@ -1370,7 +1437,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 return
             }
 
-            draggedAppBundleID = nil
+            if isFileDropTargeted || isFileDragSessionInProgress {
+                return
+            }
 
             self.notchState = isLiveActivityActive ? .autoExpanded : .initial
         }
@@ -1381,6 +1450,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         isCollapseTimerActive = false
 
         if isDragging {
+            dragEndCollapseTask?.cancel()
+            dragEndCollapseTask = nil
             if isPinned {
                 isPinned = false
             }
@@ -1393,24 +1464,40 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         } else {
             (NSApp.delegate as? AppDelegate)?.revertNotchWindowFocus()
 
-            draggedAppBundleID = nil
-            if !self.isHovered && !self.dragManager.isDraggingInActivationZone {
-                self.notchState = isLiveActivityActive ? .autoExpanded : .initial
+            guard navigationStack.last == .snapZones else { return }
+            dragEndCollapseTask?.cancel()
+            dragEndCollapseTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled,
+                      !isPinned,
+                      !isHovered,
+                      !dragManager.isDraggingInActivationZone,
+                      !isFileDropTargeted,
+                      !isFileDragSessionInProgress,
+                      navigationStack.last == .snapZones else { return }
+                notchState = isLiveActivityActive ? .autoExpanded : .initial
+                dragEndCollapseTask = nil
             }
         }
     }
 
     private func handleFileDropTargetChange(isTargeted: Bool) {
-        if isTargeted {
-            guard cursorIsOnMyScreen else { return }
-            SnapPreviewManager.shared.hidePreview()
-            if navigationStack.last != .fileShelfLanding {
-                (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable()
-                let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive }
-                self.draggedAppBundleID = frontmostApp?.bundleIdentifier
-                navigationStack = [.fileShelfLanding]
-                notchState = .clickExpanded
-            }
+        guard isTargeted, cursorIsOnMyScreen else { return }
+        presentFileDragLanding()
+    }
+
+    private func presentFileDragLanding() {
+        collapseTask?.cancel()
+        collapseTask = nil
+        isCollapseTimerActive = false
+        dragEndCollapseTask?.cancel()
+        dragEndCollapseTask = nil
+        SnapPreviewManager.shared.hidePreview()
+        if navigationStack.last != .fileShelfLanding {
+            navigationStack = [.fileShelfLanding]
+        }
+        if notchState != .clickExpanded {
+            notchState = .clickExpanded
         }
     }
 
@@ -1600,7 +1687,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         let wasManualSwipeReveal = completeHideReason == .manualSwipe
         completeHideReason = nil
         stopHiddenNotchSwipeMonitor()
-        appearCursorLocation = NSEvent.mouseLocation
         if let dynamicWindow = notchWindow as? DynamicFocusWindow {
             dynamicWindow.forceMouseEventPassthrough = false
         }
@@ -1646,7 +1732,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             || isPinned
             || isHovered
             || dragManager.isDraggingInActivationZone
-            || activeAppMonitor.isWindowDragging
+            || windowDrag.isDragging
 
         if hasActivity {
             inactiveHideUserOverride = false
@@ -1708,6 +1794,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             return
         }
 
+        if liveActivityManager.cycleSportsActivity() {
+            haptic()
+            return
+        }
+
         if settings.settings.twoFingerTapToPauseMusic {
             haptic()
             MusicManager.shared.transientIcon = MusicManager.shared.isPlaying ? .paused : .played
@@ -1732,19 +1823,182 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
         let monitor = hoverMonitor ?? NotchHoverMonitor()
         hoverMonitor = monitor
-        monitor.start(window: window) {
-            refreshNotchInteractionState()
-        }
-        appliedMouseState = nil
+        monitor.start(
+            window: window,
+            handlers: NotchHoverMonitorHandlers(
+                onPointerEvent: { refreshNotchInteractionState() },
+                onMouseDrag: { isInside, location in
+                    handleProbeMouseDrag(isInside: isInside, screenLocation: location)
+                },
+                onMouseDragEnded: { location in
+                    handleProbeMouseDragEnded(at: location)
+                },
+                onFileDrag: { isTargeted, location in
+                    handleProbeFileDrag(isTargeted: isTargeted, screenLocation: location)
+                },
+                onFileDragEnded: { location, dropWasAccepted in
+                    handleProbeFileDragEnded(
+                        at: location,
+                        dropWasAccepted: dropWasAccepted
+                    )
+                },
+                onFileDrop: { urls, location in
+                    handleFileDrop(urls: urls, at: location)
+                }
+            )
+        )
         refreshNotchInteractionState()
     }
 
     private func stopNotchInteractionMonitoring() {
         hoverMonitor?.stop()
         hoverMonitor = nil
+        activeSnapZone = nil
+        activeDropZone = nil
+        notchDragLocation = nil
+        dropZoneFrames = [:]
+        snapZoneHitRegions = []
+        isFileDropTargeted = false
+        isFileDragSessionInProgress = false
+        activeFileDragIsFromShelf = false
+        routeCompletedFileDropsInOrder(allowUnresolvedTarget: true)
+        isHandlingActiveWindowDrag = false
         lastSampledMouseLocation = nil
         lastPublishedInteractiveFrame = .null
-        appliedMouseState = nil
+    }
+
+    private func handleProbeMouseDrag(isInside: Bool, screenLocation: NSPoint) {
+        if isInside {
+            dragEndCollapseTask?.cancel()
+            dragEndCollapseTask = nil
+        }
+        if windowDrag.isDragging,
+           settings.settings.snapOnWindowDragEnabled {
+            let isOnThisScreen = notchWindow?.screen?.frame.contains(screenLocation) ?? cursorIsOnMyScreen
+            if isOnThisScreen, !isHandlingActiveWindowDrag {
+                isHandlingActiveWindowDrag = true
+                handleWindowDragChange(isDragging: true)
+            } else if !isOnThisScreen, isHandlingActiveWindowDrag {
+                isHandlingActiveWindowDrag = false
+                handleWindowDragChange(isDragging: false)
+            }
+        }
+        if isInside || isHandlingActiveWindowDrag || navigationStack.last == .snapZones {
+            updateNotchDragLocation(from: screenLocation)
+        }
+        guard settings.settings.snapDragEnabled else {
+            dragManager.cancelActivation()
+            return
+        }
+        dragManager.updateDrag(
+            isInsideActivationZone: isInside || isNearNotchForSnapActivation(screenLocation)
+        )
+    }
+
+    private static let snapActivationOutset = CGSize(width: 140, height: 70)
+    private static let snapActivationRetainOutset = CGSize(width: 220, height: 130)
+
+    private func isNearNotchForSnapActivation(_ screenLocation: NSPoint) -> Bool {
+        guard let window = notchWindow, let config else { return false }
+        if let screenFrame = window.screen?.frame, !screenFrame.contains(screenLocation) {
+            return false
+        }
+        let notchFrame = window.convertToScreen(interactiveFrame(for: window, config: config))
+        guard !notchFrame.isEmpty else { return false }
+        let outset = dragManager.isActivationPending
+            ? Self.snapActivationRetainOutset
+            : Self.snapActivationOutset
+        return notchFrame
+            .insetBy(dx: -outset.width, dy: -outset.height)
+            .contains(screenLocation)
+    }
+
+    private func handleProbeMouseDragEnded(at screenLocation: NSPoint) {
+        let finalLocation = updateNotchDragLocation(from: screenLocation)
+        let wasShowingSnapZones = navigationStack.last == .snapZones
+        let finalSnapZone: SnapZone?
+        if let finalLocation, !snapZoneHitRegions.isEmpty {
+            finalSnapZone = SnapZoneHitTesting.nearest(snapZoneHitRegions, to: finalLocation) { $0.frame }?.zone
+        } else {
+            finalSnapZone = activeSnapZone
+        }
+
+        if let finalSnapZone {
+            SnappingManager.snap(zone: finalSnapZone)
+        }
+        activeSnapZone = nil
+        notchDragLocation = nil
+        dragManager.endDrag()
+
+        guard wasShowingSnapZones else { return }
+        dragEndCollapseTask?.cancel()
+        dragEndCollapseTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled,
+                  !isPinned,
+                  !isFileDropTargeted,
+                  !isFileDragSessionInProgress,
+                  navigationStack.last == .snapZones else { return }
+            notchState = isLiveActivityActive ? .autoExpanded : .initial
+            dragEndCollapseTask = nil
+        }
+    }
+
+    private func handleProbeFileDrag(isTargeted: Bool, screenLocation: NSPoint) {
+        if isTargeted {
+            dragEndCollapseTask?.cancel()
+            dragEndCollapseTask = nil
+        }
+        updateNotchDragLocation(from: screenLocation)
+        dragManager.cancelActivation()
+
+        if isTargeted, !isFileDragSessionInProgress {
+            isFileDragSessionInProgress = true
+            activeFileDragIsFromShelf = dragState.isDraggingFromShelf
+            displayedFileDragMode = activeFileDragIsFromShelf ? .existingFile : .newFile
+            dragState.didJustDrop = false
+        }
+        if isFileDropTargeted != isTargeted {
+            isFileDropTargeted = isTargeted
+        }
+        if isTargeted {
+            presentFileDragLanding()
+        }
+    }
+
+    private func handleProbeFileDragEnded(
+        at screenLocation: NSPoint,
+        dropWasAccepted: Bool
+    ) {
+        updateNotchDragLocation(from: screenLocation)
+
+        isFileDropTargeted = false
+        isFileDragSessionInProgress = false
+        activeDropZone = nil
+        activeSnapZone = nil
+        notchDragLocation = nil
+        dragManager.cancelActivation()
+        routeCompletedFileDropsInOrder()
+        activeFileDragIsFromShelf = false
+
+        guard !dropWasAccepted,
+              navigationStack.last == .fileShelfLanding,
+              !isPinned else { return }
+        notchState = isLiveActivityActive ? .autoExpanded : .initial
+    }
+
+    @discardableResult
+    private func updateNotchDragLocation(from screenLocation: NSPoint) -> CGPoint? {
+        guard let window = notchWindow, let contentView = window.contentView else { return nil }
+        let windowPoint = window.convertPoint(fromScreen: screenLocation)
+        let swiftUILocation = CGPoint(
+            x: windowPoint.x,
+            y: contentView.bounds.height - windowPoint.y
+        )
+        if notchDragLocation != swiftUILocation {
+            notchDragLocation = swiftUILocation
+        }
+        return swiftUILocation
     }
 
     private func refreshNotchInteractionState() {
@@ -1787,7 +2041,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             suppressHoverAfterReveal = false
         }
 
-        if isPointerInside != isHovered, !dragManager.isDraggingInActivationZone, !activeAppMonitor.isWindowDragging {
+        if isPointerInside != isHovered, !dragManager.isDraggingInActivationZone, !windowDrag.isDragging {
             if !isPointerInside, notchState == .clickExpanded, widgetSwitchProtectionTask != nil {
                 return
             }
@@ -1854,8 +2108,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .mirrorPlayer: return nil
         case .musicApiKeysMissing, .geminiApiKeysMissing, .musicLoginPrompt, .musicLyrics,
                 .musicPlaylistDetail, .musicArtistDetail, .musicAlbumDetail, .snapZones, .fileShelfLanding, .fileActionPreview,
-                .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioEQ, .dragActivated,
-                .agentS, .blipHub, .circleToSearch, .updateAvailable, .focusSessionDetailView, .batteryDetailView:
+                .multiAudioDeviceAdjust, .multiAudioAppEQ, .multiAudioApp8D, .multiAudioAppSurround, .multiAudioEQ, .dragActivated,
+                .agentS, .blipHub, .circleToSearch, .updateAvailable, .focusSessionDetailView, .batteryDetailView,
+                .storageDetailView, .continuityDetail, .continuityActivityDetail:
             return nil
         }
     }
@@ -1930,44 +2185,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
     }
 
-    private struct AppliedMouseState: Equatable {
-        var hidden: Bool
-        var interactiveFrame: CGRect
-        var interactive: Bool
-        var forcePassthrough: Bool
-        var hoverRect: CGRect
-        var pointerIsInside: Bool
-    }
-
     private func updateMouseEventHandling(isInteractive: Bool) {
         guard let window = notchWindow, let config = config else { return }
 
-        let desired: AppliedMouseState
         if isManuallyHidden {
-            desired = AppliedMouseState(
-                hidden: true,
-                interactiveFrame: .zero,
-                interactive: false,
-                forcePassthrough: true,
-                hoverRect: .null,
-                pointerIsInside: false
-            )
-        } else {
-            let frame = interactiveFrame(for: window, config: config)
-            desired = AppliedMouseState(
-                hidden: false,
-                interactiveFrame: frame,
-                interactive: isInteractive,
-                forcePassthrough: false,
-                hoverRect: frame.insetBy(dx: -Self.hoverDetectionMargin, dy: -Self.hoverDetectionMargin),
-                pointerIsInside: isHovered
-            )
-        }
-
-        guard desired != appliedMouseState else { return }
-        appliedMouseState = desired
-
-        if desired.hidden {
             window.ignoresMouseEvents = true
             if let dynamicWindow = window as? DynamicFocusWindow {
                 dynamicWindow.forceMouseEventPassthrough = true
@@ -1977,18 +2198,23 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             return
         }
 
+        let frame = interactiveFrame(for: window, config: config)
+
         if let dynamicWindow = window as? DynamicFocusWindow {
             dynamicWindow.forceMouseEventPassthrough = false
-            dynamicWindow.updateInteractiveContentFrame(desired.interactiveFrame)
-            dynamicWindow.syncMouseEventPassthrough(forceEnable: desired.interactive && notchState == .clickExpanded)
+            dynamicWindow.updateInteractiveContentFrame(frame)
+            dynamicWindow.syncMouseEventPassthrough(forceEnable: isInteractive && notchState == .clickExpanded)
         } else if window.contentView != nil {
-            let shouldIgnore = !desired.interactive
+            let shouldIgnore = !isInteractive
             if window.ignoresMouseEvents != shouldIgnore {
                 window.ignoresMouseEvents = shouldIgnore
             }
         }
 
-        hoverMonitor?.update(hoverRect: desired.hoverRect, pointerIsInside: desired.pointerIsInside)
+        hoverMonitor?.update(
+            hoverRect: frame.insetBy(dx: -Self.hoverDetectionMargin, dy: -Self.hoverDetectionMargin),
+            pointerIsInside: isHovered
+        )
     }
 
     private func updateWindowSharingBehavior(shouldBeHidden: Bool) {
@@ -2074,19 +2300,31 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             ? interactiveBounds
             : interactiveBounds.insetBy(dx: -Self.hoverCollapseMargin, dy: -Self.hoverCollapseMargin)
         guard !hoverBounds.contains(mouseLocation) else { return }
-        guard !dragManager.isDraggingInActivationZone && !activeAppMonitor.isWindowDragging else { return }
+        guard !dragManager.isDraggingInActivationZone && !windowDrag.isDragging else { return }
         scheduleCollapse(after: 0)
     }
 
     private func scheduleCollapse(after delay: TimeInterval) {
         collapseTask?.cancel()
-        guard !isPinned else { return }
+        collapseTask = nil
+        guard !isPinned,
+              !isFileDropTargeted,
+              !isFileDragSessionInProgress,
+              !awaitingDropCompletion else {
+            isCollapseTimerActive = false
+            return
+        }
         isCollapseTimerActive = true
         collapseTask = Task { @MainActor in
             do {
                 try await Task.sleep(for: .milliseconds(Int(delay * 1000)))
                 guard !Task.isCancelled else { return }
-                if !self.isHovered && !self.dragManager.isDraggingInActivationZone && !self.activeAppMonitor.isWindowDragging {
+                if !self.isHovered
+                    && !self.dragManager.isDraggingInActivationZone
+                    && !self.windowDrag.isDragging
+                    && !self.isFileDropTargeted
+                    && !self.isFileDragSessionInProgress
+                    && !self.awaitingDropCompletion {
                     self.notchState = isLiveActivityActive ? .autoExpanded : .initial
                     self.evaluateInactiveNotchVisibility()
                 }
@@ -2101,11 +2339,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         hoverExpandTask?.cancel()
         hoverExpandTask = nil
     }
-}
-
-final class KeyWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
 }
 
 enum MusicBottomContentKind: Equatable {

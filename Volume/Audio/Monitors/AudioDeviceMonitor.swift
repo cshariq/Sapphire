@@ -62,7 +62,7 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
 
         refresh()
 
-        deviceListListenerBlock = { [weak self] _, _ in
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             Task { @MainActor [weak self] in
                 self?.scheduleDeviceListRefresh()
             }
@@ -72,10 +72,12 @@ final class AudioDeviceMonitor: AudioDeviceProviding {
             .system,
             &deviceListAddress,
             .main,
-            deviceListListenerBlock!
+            listener
         )
 
-        if status != noErr {
+        if status == noErr {
+            deviceListListenerBlock = listener
+        } else {
             logger.error("Failed to add device list listener: \(status)")
         }
     }

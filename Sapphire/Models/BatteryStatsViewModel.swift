@@ -47,26 +47,19 @@ class BatteryStatsViewModel: ObservableObject {
 
     deinit { refreshTimer?.invalidate() }
 
-    func start() {
+    func start(highFrequency: Bool = false) {
         guard !isStarted else { return }
+        isHighFrequency = highFrequency
         isStarted = true
         setupBindings()
         fetchStats()
         startTimer()
     }
 
-    func setHighFrequencyPolling(_ enabled: Bool) {
-        guard enabled != isHighFrequency else { return }
-        isHighFrequency = enabled
-        guard isStarted else { return }
-        startTimer()
-        fetchStats()
-    }
-
     private func startTimer() {
         refreshTimer?.invalidate()
         let interval = isHighFrequency ? highFrequencyPollInterval : normalPollInterval
-        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.fetchStats()
             }
@@ -92,7 +85,7 @@ class BatteryStatsViewModel: ObservableObject {
 
         statsManager.$currentStats.compactMap { $0?.systemPower }.receive(on: DispatchQueue.main)
             .sink { [weak self] power in
-                self?.systemPower = power ?? 0
+                self?.systemPower = power
             }.store(in: &cancellables)
 
         statsManager.$currentStats.compactMap { $0?.battery }.receive(on: DispatchQueue.main)

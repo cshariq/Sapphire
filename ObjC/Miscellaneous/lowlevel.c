@@ -10,6 +10,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <IOKit/pwr_mgt/IOPMLibDefs.h>
+#include <IOKit/pwr_mgt/IOPM.h>
 #include <IOKit/IOKitLib.h>
 #include <mach/mach.h>
 #include <dlfcn.h>
@@ -143,6 +144,89 @@ void sleepDisplay(void)
     if (reg) {
         IORegistryEntrySetCFProperty(reg, CFSTR("IORequestIdle"), kCFBooleanTrue);
         IOObjectRelease(reg);
+    }
+}
+
+static IONotificationPortRef clamshellNotifyPort = NULL;
+static io_object_t clamshellNotification = IO_OBJECT_NULL;
+static io_service_t clamshellInterestService = IO_OBJECT_NULL;
+static ClamshellStateChangeCallback clamshellStateCallback = NULL;
+
+static void handleClamshellInterestMessage(void *refcon, io_service_t service, natural_t messageType, void *messageArgument)
+{
+    (void)refcon;
+    (void)service;
+    if (messageType != kIOPMMessageClamshellStateChange) {
+        return;
+    }
+
+    // kIOPMMessageClamshellStateChange packs both bits directly into the
+    // message argument rather than pointing at a data structure - see IOPM.h.
+    uintptr_t bits = (uintptr_t)messageArgument;
+    bool isClosed = (bits & kClamshellStateBit) != 0;
+
+    if (clamshellStateCallback) {
+        clamshellStateCallback(isClosed);
+    }
+}
+
+bool startClamshellStateNotifications(ClamshellStateChangeCallback callback)
+{
+    if (clamshellNotification != IO_OBJECT_NULL) {
+        clamshellStateCallback = callback;
+        return true;
+    }
+
+    clamshellInterestService = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"));
+    if (clamshellInterestService == IO_OBJECT_NULL) {
+        return false;
+    }
+
+    clamshellNotifyPort = IONotificationPortCreate(kIOMainPortDefault);
+    if (clamshellNotifyPort == NULL) {
+        IOObjectRelease(clamshellInterestService);
+        clamshellInterestService = IO_OBJECT_NULL;
+        return false;
+    }
+
+    IOReturn result = IOServiceAddInterestNotification(
+        clamshellNotifyPort,
+        clamshellInterestService,
+        kIOGeneralInterest,
+        handleClamshellInterestMessage,
+        NULL,
+        &clamshellNotification
+    );
+
+    if (result != kIOReturnSuccess) {
+        IONotificationPortDestroy(clamshellNotifyPort);
+        clamshellNotifyPort = NULL;
+        IOObjectRelease(clamshellInterestService);
+        clamshellInterestService = IO_OBJECT_NULL;
+        return false;
+    }
+
+    CFRunLoopAddSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(clamshellNotifyPort), kCFRunLoopDefaultMode);
+    clamshellStateCallback = callback;
+    return true;
+}
+
+void stopClamshellStateNotifications(void)
+{
+    clamshellStateCallback = NULL;
+
+    if (clamshellNotification != IO_OBJECT_NULL) {
+        IOObjectRelease(clamshellNotification);
+        clamshellNotification = IO_OBJECT_NULL;
+    }
+    if (clamshellNotifyPort != NULL) {
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(clamshellNotifyPort), kCFRunLoopDefaultMode);
+        IONotificationPortDestroy(clamshellNotifyPort);
+        clamshellNotifyPort = NULL;
+    }
+    if (clamshellInterestService != IO_OBJECT_NULL) {
+        IOObjectRelease(clamshellInterestService);
+        clamshellInterestService = IO_OBJECT_NULL;
     }
 }
 

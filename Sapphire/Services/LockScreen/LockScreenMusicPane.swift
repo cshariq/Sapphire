@@ -373,7 +373,7 @@ struct LockScreenFullScreenMusicPane: View {
                                                 }
                                             }
                                             if let listeners = artist.monthlyListeners ?? artist.followers {
-                                                Text(formatLarge(listeners) + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
+                                                Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
                                                     .font(.system(size: 13, weight: .medium, design: .rounded))
                                                     .foregroundStyle(.white.opacity(0.45))
                                             }
@@ -653,7 +653,7 @@ struct LockScreenFullScreenMusicPane: View {
                     }
                 }
                 if let listeners = artist.monthlyListeners ?? artist.followers {
-                    Text(formatLarge(listeners) + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
+                    Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.4))
                 }
@@ -764,7 +764,7 @@ struct LockScreenFullScreenMusicPane: View {
                         Image(systemName: "music.mic")
                             .font(.system(size: 10))
                             .foregroundStyle(musicManager.accentColor)
-                        Text(formatLarge(listeners) + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
+                        Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
                             .font(.system(size: 13, weight: .medium, design: .rounded))
                             .foregroundStyle(.white.opacity(0.5))
                     }
@@ -1231,12 +1231,6 @@ struct LockScreenFullScreenMusicPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func formatLarge(_ value: Int) -> String {
-        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000) }
-        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000) }
-        return "\(value)"
-    }
-
     // MARK: - Overlay
 
     @ViewBuilder private func overlayPanel(for overlay: LockScreenMusicPaneOverlay) -> some View {
@@ -1351,7 +1345,17 @@ private struct LockScreenMusicDock: View {
 private struct LockScreenMusicPaneLyrics: View {
     @EnvironmentObject var musicManager: MusicManager
     var body: some View {
-        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.2 : 1.0)) { _ in
+        TimelineView(.periodic(
+            from: .now,
+            by: musicManager.isPlaying ? 1.0 / 30.0 : 0.25
+        )) { context in
+            let activeLyricIDs = Set(
+                musicManager.activeLyricIndices(at: context.date).compactMap { index in
+                    musicManager.lyrics.indices.contains(index) ? musicManager.lyrics[index].id : nil
+                }
+            )
+            let elapsed = musicManager.lyricsElapsedTime(at: context.date)
+
             if musicManager.lyrics.isEmpty {
                 Text("Lyrics aren't available.")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -1361,14 +1365,21 @@ private struct LockScreenMusicPaneLyrics: View {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 24) {
                         ForEach(musicManager.lyrics) { lyric in
-                            Text(lyric.text)
+                            let isActive = activeLyricIDs.contains(lyric.id)
+
+                            WordSyncedLyricText(
+                                lyric: lyric,
+                                elapsedTime: elapsed,
+                                isActive: isActive,
+                                highlightColor: .white,
+                                inactiveColor: .white
+                            )
                                 .font(.system(
-                                    size: lyric.id == musicManager.currentLyric?.id ? 36 : 26,
+                                    size: isActive ? 36 : 26,
                                     weight: .bold,
                                     design: .rounded
                                 ))
-                                .foregroundStyle(.white)
-                                .opacity(lyric.id == musicManager.currentLyric?.id ? 1 : 0.28)
+                                .opacity(isActive ? 1 : 0.28)
                         }
                     }
                 }

@@ -7,11 +7,32 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C0DE20000000000000000001 /* comptest in Embed iDevice Tools */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000001 /* comptest */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE20000000000000000002 /* idevice_id in Embed iDevice Tools */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000002 /* idevice_id */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE20000000000000000003 /* ideviceinfo in Embed iDevice Tools */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000003 /* ideviceinfo */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE20000000000000000004 /* idevicesyslog in Embed iDevice Tools */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000004 /* idevicesyslog */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE20000000000000000005 /* wificonnection in Embed iDevice Tools */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000005 /* wificonnection */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE20000000000000000006 /* libcrypto.3.dylib in Embed iDevice Libraries */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000006 /* libcrypto.3.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE20000000000000000007 /* libimobiledevice-1.0.6.dylib in Embed iDevice Libraries */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000007 /* libimobiledevice-1.0.6.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE20000000000000000008 /* libimobiledevice-glue-1.0.0.dylib in Embed iDevice Libraries */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000008 /* libimobiledevice-glue-1.0.0.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE20000000000000000009 /* libplist-2.0.4.dylib in Embed iDevice Libraries */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000009 /* libplist-2.0.4.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE2000000000000000000A /* libssl.3.dylib in Embed iDevice Libraries */ = {isa = PBXBuildFile; fileRef = C0DE1000000000000000000A /* libssl.3.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0DE2000000000000000000B /* libusbmuxd-2.0.6.dylib in Embed iDevice Libraries */ = {isa = PBXBuildFile; fileRef = C0DE1000000000000000000B /* libusbmuxd-2.0.6.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		CAFE100000000000000007AA /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE100000000000000003AA /* main.swift */; };
+		CAFE100000000000000008AA /* SapphireCameraProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE100000000000000004AA /* SapphireCameraProvider.swift */; };
+		CAFE100000000000000009AA /* SapphireCameraIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE10000000000000000AAA /* SapphireCameraIdentifiers.swift */; };
+		CAFE100000000000000013AA /* SapphireCameraExtension.systemextension in Embed System Extensions */ = {isa = PBXBuildFile; fileRef = CAFE100000000000000001AA /* SapphireCameraExtension.systemextension */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CAFE200000000000000006BB /* SapphireAudioDriver.c in Sources */ = {isa = PBXBuildFile; fileRef = CAFE200000000000000003BB /* SapphireAudioDriver.c */; };
+		CAFE200000000000000010BB /* SapphireAudioDriver.driver in Embed Audio Driver */ = {isa = PBXBuildFile; fileRef = CAFE200000000000000001BB /* SapphireAudioDriver.driver */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		CAFE200000000000000013BB /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CAFE200000000000000014BB /* CoreAudio.framework */; };
 		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in Embed Helper Executable */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; };
 		DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262ADF2EA4841B0027CA69 /* OSD.framework */; };
 		DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AE52EA485150027CA69 /* CoreDisplay.framework */; };
 		DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AF42EA5D1B70027CA69 /* MultitouchSupport.framework */; };
 		DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = DA48B01A2E93DF9B0099BF74 /* SQLite */; };
+		DA5E100A304CBB63003D1D37 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = DA5E1009304CBB63003D1D37 /* FirebaseAnalytics */; };
+		DA5E1010304CBB63003D1D37 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = DA5E100F304CBB63003D1D37 /* FirebaseCore */; };
+		DA5E1012304CBB63003D1D37 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = DA5E1011304CBB63003D1D37 /* FirebaseCrashlytics */; };
 		DA6344C82E5AA816007EAB5F /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52567A2E162FA900D8F42E /* ShareViewController.swift */; };
 		DA7C49992E15D33A0049937A /* wire_format.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C49942E15D33A0049937A /* wire_format.pb.swift */; };
 		DA7C499A2E15D33A0049937A /* securemessage.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C49922E15D33A0049937A /* securemessage.pb.swift */; };
@@ -22,8 +43,6 @@
 		DA7C49A32E15D33A0049937A /* securegcm.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C49912E15D33A0049937A /* securegcm.pb.swift */; };
 		DA7C49A52E15D34D0049937A /* SwiftECC in Frameworks */ = {isa = PBXBuildFile; productRef = DA7C49A42E15D34D0049937A /* SwiftECC */; };
 		DA7C49A82E15D3660049937A /* SwiftProtobuf in Frameworks */ = {isa = PBXBuildFile; productRef = DA7C49A72E15D3660049937A /* SwiftProtobuf */; };
-		DA7C49AA2E15D3660049937A /* SwiftProtobufPluginLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = DA7C49A92E15D3660049937A /* SwiftProtobufPluginLibrary */; };
-		DA7C49AC2E15D3660049937A /* protoc-gen-swift in Frameworks */ = {isa = PBXBuildFile; productRef = DA7C49AB2E15D3660049937A /* protoc-gen-swift */; };
 		DA7C49AD2E15D3800049937A /* libNearbyShare.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49802E15CCA50049937A /* libNearbyShare.dylib */; settings = {ATTRIBUTES = (Required, ); }; };
 		DA8A79B02E5AAE260009F091 /* TransferDirection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DABC6CBC2E16F53E00A5CF83 /* TransferDirection.swift */; };
 		DA8A79B12E5AAE260009F091 /* OutboundNearbyConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C498D2E15D33A0049937A /* OutboundNearbyConnection.swift */; };
@@ -106,27 +125,44 @@
 		DA91BE752E773AC8001E7836 /* head_gestures_double_shake.caf in Resources */ = {isa = PBXBuildFile; fileRef = DA91BE0E2E773AC8001E7836 /* head_gestures_double_shake.caf */; };
 		DA91BE762E773AC8001E7836 /* Media Keys.aif in Resources */ = {isa = PBXBuildFile; fileRef = DA91BE112E773AC8001E7836 /* Media Keys.aif */; };
 		DA91BE772E773AC8001E7836 /* drag to trash.aif in Resources */ = {isa = PBXBuildFile; fileRef = DA91BDF22E773AC8001E7836 /* drag to trash.aif */; };
-		DA9709EC2E99E9CF00F34217 /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */; };
-		DA9709EE2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport in Frameworks */ = {isa = PBXBuildFile; productRef = DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */; };
 		DAA7D9142E848D340032748B /* busy_tone_cept.caf in Resources */ = {isa = PBXBuildFile; fileRef = DA91BE212E773AC8001E7836 /* busy_tone_cept.caf */; };
 		DAB2D08F2E78CE34002A9778 /* DisplayServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA9385452E17B443006C5361 /* DisplayServices.framework */; };
 		DABC6CDD2E17457A00A5CF83 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DABC6CDB2E17457700A5CF83 /* IOKit.framework */; };
 		DABC6CDF2E17458500A5CF83 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49B92E15DB160049937A /* UserNotifications.framework */; };
 		DABC6CE12E17458600A5CF83 /* UserNotificationsUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49B82E15DB160049937A /* UserNotificationsUI.framework */; };
 		DABC6CE32E1749CA00A5CF83 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DABC6CD72E17455F00A5CF83 /* CoreGraphics.framework */; };
-		DAC019172E9E9E3100CA587F /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = DAC019162E9E9E3100CA587F /* FirebaseCrashlytics */; };
 		DACA665D2E8B5FCE0056ED60 /* sharing_enums.pb.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACA665B2E8B5FCE0056ED60 /* sharing_enums.pb.swift */; };
 		DACA665E2E8B5FCE0056ED60 /* SymmetricKey+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DACA665C2E8B5FCE0056ED60 /* SymmetricKey+Extensions.swift */; };
 		DACA66622E8B70E60056ED60 /* QRCode in Frameworks */ = {isa = PBXBuildFile; productRef = DACA66612E8B70E60056ED60 /* QRCode */; };
 		DACBB01D2E20321D00740C9B /* libNearbyShare.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49802E15CCA50049937A /* libNearbyShare.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		DAD22F5A2ED3FEF1006CC3FF /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = DAD22F592ED3FEF1006CC3FF /* FirebaseCore */; };
-		DAD22F5C2ED3FEF1006CC3FF /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = DAD22F5B2ED3FEF1006CC3FF /* FirebaseDatabase */; };
-		DAD22F5E2ED3FEF1006CC3FF /* FirebasePerformance in Frameworks */ = {isa = PBXBuildFile; productRef = DAD22F5D2ED3FEF1006CC3FF /* FirebasePerformance */; };
-		DAF7D8AB2E207BBC00AB0820 /* SwiftProtobufPluginLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = DAF7D8AA2E207BBC00AB0820 /* SwiftProtobufPluginLibrary */; };
 		DAF7D8AE2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle in CopyFiles */ = {isa = PBXBuildFile; fileRef = DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		F1CE00000000000000001AA /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CE000000000000000002AA /* main.swift */; };
+		F1CE00000000000000002AA /* SapphireFinderSync.appex in Embed Finder Extensions */ = {isa = PBXBuildFile; fileRef = F1CE000000000000000001AA /* SapphireFinderSync.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F2DE000000000000000013BB /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000002BB /* FileProviderExtension.swift */; };
+		F2DE000000000000000014BB /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000003BB /* FileProviderItem.swift */; };
+		F2DE000000000000000015BB /* FileProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000004BB /* FileProviderEnumerator.swift */; };
+		F2DE000000000000000016BB /* HostConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000005BB /* HostConnection.swift */; };
+		F2DE000000000000000017BB /* ContinuityFileProviderShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000006BB /* ContinuityFileProviderShared.swift */; };
+		F2DE000000000000000018BB /* SapphireFileProvider.appex in Embed Finder Extensions */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000001BB /* SapphireFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F2DE00000000000000001ABB /* PhoneDrive.icns in Resources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000019BB /* PhoneDrive.icns */; };
+		F3A600000000000000000003 /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = F3A600000000000000000002 /* Yams */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		CAFE100000000000000015AA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CAFE10000000000000000EAA;
+			remoteInfo = SapphireCameraExtension;
+		};
+		CAFE200000000000000012BB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CAFE20000000000000000BBB;
+			remoteInfo = SapphireAudioDriver;
+		};
 		DA452EB82EAA58100070E5C9 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
@@ -148,9 +184,68 @@
 			remoteGlobalIDString = DA7C497F2E15CCA50049937A;
 			remoteInfo = NearbyShare;
 		};
+		F1CE00000000000000000DAA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F1CE000000000000000008AA;
+			remoteInfo = SapphireFinderSync;
+		};
+		F2DE000000000000000012BB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DA46CF6E2DCBCA0000F00EC5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F2DE00000000000000000ABB;
+			remoteInfo = SapphireFileProvider;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		C0DE40000000000000000001 /* Embed iDevice Tools */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = libimobiledevice/bin;
+			dstSubfolder = Resources;
+			files = (
+				C0DE20000000000000000001 /* comptest in Embed iDevice Tools */,
+				C0DE20000000000000000002 /* idevice_id in Embed iDevice Tools */,
+				C0DE20000000000000000003 /* ideviceinfo in Embed iDevice Tools */,
+				C0DE20000000000000000004 /* idevicesyslog in Embed iDevice Tools */,
+				C0DE20000000000000000005 /* wificonnection in Embed iDevice Tools */,
+			);
+			name = "Embed iDevice Tools";
+		};
+		C0DE40000000000000000002 /* Embed iDevice Libraries */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = libimobiledevice/lib;
+			dstSubfolder = Resources;
+			files = (
+				C0DE20000000000000000006 /* libcrypto.3.dylib in Embed iDevice Libraries */,
+				C0DE20000000000000000007 /* libimobiledevice-1.0.6.dylib in Embed iDevice Libraries */,
+				C0DE20000000000000000008 /* libimobiledevice-glue-1.0.0.dylib in Embed iDevice Libraries */,
+				C0DE20000000000000000009 /* libplist-2.0.4.dylib in Embed iDevice Libraries */,
+				C0DE2000000000000000000A /* libssl.3.dylib in Embed iDevice Libraries */,
+				C0DE2000000000000000000B /* libusbmuxd-2.0.6.dylib in Embed iDevice Libraries */,
+			);
+			name = "Embed iDevice Libraries";
+		};
+		CAFE100000000000000012AA /* Embed System Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = Contents/Library/SystemExtensions;
+			dstSubfolder = Wrapper;
+			files = (
+				CAFE100000000000000013AA /* SapphireCameraExtension.systemextension in Embed System Extensions */,
+			);
+			name = "Embed System Extensions";
+		};
+		CAFE20000000000000000FBB /* Embed Audio Driver */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = Contents/Resources;
+			dstSubfolder = Wrapper;
+			files = (
+				CAFE200000000000000010BB /* SapphireAudioDriver.driver in Embed Audio Driver */,
+			);
+			name = "Embed Audio Driver";
+		};
 		DA262B242EA942750027CA69 /* Embed Helper Executable */ = {
 			isa = PBXCopyFilesBuildPhase;
 			dstPath = "";
@@ -193,9 +288,41 @@
 				DAF7D8AE2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle in CopyFiles */,
 			);
 		};
+		F1CE00000000000000003AA /* Embed Finder Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = "";
+			dstSubfolder = PlugIns;
+			files = (
+				F1CE00000000000000002AA /* SapphireFinderSync.appex in Embed Finder Extensions */,
+				F2DE000000000000000018BB /* SapphireFileProvider.appex in Embed Finder Extensions */,
+			);
+			name = "Embed Finder Extensions";
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C0DE10000000000000000001 /* comptest */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = comptest; sourceTree = "<group>"; };
+		C0DE10000000000000000002 /* idevice_id */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = idevice_id; sourceTree = "<group>"; };
+		C0DE10000000000000000003 /* ideviceinfo */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = ideviceinfo; sourceTree = "<group>"; };
+		C0DE10000000000000000004 /* idevicesyslog */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = idevicesyslog; sourceTree = "<group>"; };
+		C0DE10000000000000000005 /* wificonnection */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = wificonnection; sourceTree = "<group>"; };
+		C0DE10000000000000000006 /* libcrypto.3.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = libcrypto.3.dylib; sourceTree = "<group>"; };
+		C0DE10000000000000000007 /* libimobiledevice-1.0.6.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = "libimobiledevice-1.0.6.dylib"; sourceTree = "<group>"; };
+		C0DE10000000000000000008 /* libimobiledevice-glue-1.0.0.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = "libimobiledevice-glue-1.0.0.dylib"; sourceTree = "<group>"; };
+		C0DE10000000000000000009 /* libplist-2.0.4.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = "libplist-2.0.4.dylib"; sourceTree = "<group>"; };
+		C0DE1000000000000000000A /* libssl.3.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = libssl.3.dylib; sourceTree = "<group>"; };
+		C0DE1000000000000000000B /* libusbmuxd-2.0.6.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = "libusbmuxd-2.0.6.dylib"; sourceTree = "<group>"; };
+		CAFE100000000000000001AA /* SapphireCameraExtension.systemextension */ = {isa = PBXFileReference; explicitFileType = "wrapper.system-extension"; includeInIndex = 0; path = SapphireCameraExtension.systemextension; sourceTree = BUILT_PRODUCTS_DIR; };
+		CAFE100000000000000003AA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		CAFE100000000000000004AA /* SapphireCameraProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SapphireCameraProvider.swift; sourceTree = "<group>"; };
+		CAFE100000000000000005AA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CAFE100000000000000006AA /* SapphireCameraExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireCameraExtension.entitlements; sourceTree = "<group>"; };
+		CAFE10000000000000000AAA /* SapphireCameraIdentifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SapphireCameraIdentifiers.swift; path = Sapphire/Services/Continuity/SapphireCameraIdentifiers.swift; sourceTree = SOURCE_ROOT; };
+		CAFE200000000000000001BB /* SapphireAudioDriver.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireAudioDriver.driver; sourceTree = BUILT_PRODUCTS_DIR; };
+		CAFE200000000000000003BB /* SapphireAudioDriver.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SapphireAudioDriver.c; sourceTree = "<group>"; };
+		CAFE200000000000000004BB /* SapphireMicRing.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SapphireMicRing.h; sourceTree = "<group>"; };
+		CAFE200000000000000005BB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CAFE200000000000000014BB /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		DA262ADF2EA4841B0027CA69 /* OSD.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OSD.framework; path = ../../../../System/Library/PrivateFrameworks/OSD.framework; sourceTree = "<group>"; };
 		DA262AE22EA484A70027CA69 /* Sapphire.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Sapphire.xcodeproj; sourceTree = "<group>"; };
 		DA262AE52EA485150027CA69 /* CoreDisplay.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreDisplay.framework; path = ../../../../System/Library/Frameworks/CoreDisplay.framework; sourceTree = "<group>"; };
@@ -315,6 +442,19 @@
 		DACE9E002EADC9D000D01379 /* DriverKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DriverKit.framework; path = System/Library/Frameworks/DriverKit.framework; sourceTree = SDKROOT; };
 		DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = SwiftProtobuf_SwiftProtobuf.bundle; sourceTree = "<group>"; };
 		DAF9CD382E54EA4600348E9F /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+		F1CE000000000000000001AA /* SapphireFinderSync.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SapphireFinderSync.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F1CE000000000000000002AA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		F1CE000000000000000004AA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F1CE000000000000000005AA /* SapphireFinderSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireFinderSync.entitlements; sourceTree = "<group>"; };
+		F2DE000000000000000001BB /* SapphireFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SapphireFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F2DE000000000000000002BB /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
+		F2DE000000000000000003BB /* FileProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItem.swift; sourceTree = "<group>"; };
+		F2DE000000000000000004BB /* FileProviderEnumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderEnumerator.swift; sourceTree = "<group>"; };
+		F2DE000000000000000005BB /* HostConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostConnection.swift; sourceTree = "<group>"; };
+		F2DE000000000000000006BB /* ContinuityFileProviderShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContinuityFileProviderShared.swift; path = Sapphire/Services/Continuity/FileProvider/ContinuityFileProviderShared.swift; sourceTree = SOURCE_ROOT; };
+		F2DE000000000000000007BB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F2DE000000000000000008BB /* SapphireFileProvider.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireFileProvider.entitlements; sourceTree = "<group>"; };
+		F2DE000000000000000019BB /* PhoneDrive.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = PhoneDrive.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -366,14 +506,6 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		DA7AFB332E75359B00DCEAED /* Exceptions for "ObjC" folder in "Copy Bundle Resources" phase from "Sapphire" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = DA46CF742DCBCA0000F00EC5 /* Resources */;
-			membershipExceptions = (
-				Miscellaneous/lowlevel.c,
-				Miscellaneous/lowlevel.h,
-			);
-		};
 		DA91BDAC2E75DDE2001E7836 /* Exceptions for "Sapphire" folder in "Copy Bundle Resources" phase from "Sapphire" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = DA46CF742DCBCA0000F00EC5 /* Resources */;
@@ -424,7 +556,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				DA8FAEEA2E7CA06700C9BD1A /* Exceptions for "ObjC" folder in "Sapphire" target */,
-				DA7AFB332E75359B00DCEAED /* Exceptions for "ObjC" folder in "Copy Bundle Resources" phase from "Sapphire" target */,
 				DA7C49BE2E15DC180049937A /* Exceptions for "ObjC" folder in "NearbyShare" target */,
 			);
 			path = ObjC;
@@ -443,6 +574,17 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		CAFE10000000000000000CAA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		CAFE200000000000000008BB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+				CAFE200000000000000013BB /* CoreAudio.framework in Frameworks */,
+			);
+		};
 		DA452EAC2EAA57C90070E5C9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
@@ -451,10 +593,10 @@
 		DA46CF732DCBCA0000F00EC5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				DAD22F5C2ED3FEF1006CC3FF /* FirebaseDatabase in Frameworks */,
+				F3A600000000000000000003 /* Yams in Frameworks */,
 				DA8FB0482E7CBE9400C9BD1A /* IMSharedUtilities.framework in Frameworks */,
-				DAD22F5E2ED3FEF1006CC3FF /* FirebasePerformance in Frameworks */,
 				DABC6CE32E1749CA00A5CF83 /* CoreGraphics.framework in Frameworks */,
+				DA5E1010304CBB63003D1D37 /* FirebaseCore in Frameworks */,
 				DABC6CE12E17458600A5CF83 /* UserNotificationsUI.framework in Frameworks */,
 				DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */,
 				DA8FB0442E7CBE9000C9BD1A /* TelephonyUtilities.framework in Frameworks */,
@@ -463,17 +605,14 @@
 				DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */,
 				DA262AF52EA5D1B70027CA69 /* MultitouchSupport.framework in Frameworks */,
 				DABC6CDF2E17458500A5CF83 /* UserNotifications.framework in Frameworks */,
-				DAD22F5A2ED3FEF1006CC3FF /* FirebaseCore in Frameworks */,
-				DA9709EC2E99E9CF00F34217 /* FirebaseAnalyticsCore in Frameworks */,
-				DAF7D8AB2E207BBC00AB0820 /* SwiftProtobufPluginLibrary in Frameworks */,
 				DAB2D08F2E78CE34002A9778 /* DisplayServices.framework in Frameworks */,
 				DA8FB0462E7CBE9300C9BD1A /* FTServices.framework in Frameworks */,
 				DA7C49AD2E15D3800049937A /* libNearbyShare.dylib in Frameworks */,
 				DABC6CDD2E17457A00A5CF83 /* IOKit.framework in Frameworks */,
 				DA8FB0532E7D898F00C9BD1A /* MobileTimerSupport.framework in Frameworks */,
-				DA9709EE2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport in Frameworks */,
-				DAC019172E9E9E3100CA587F /* FirebaseCrashlytics in Frameworks */,
+				DA5E1012304CBB63003D1D37 /* FirebaseCrashlytics in Frameworks */,
 				DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */,
+				DA5E100A304CBB63003D1D37 /* FirebaseAnalytics in Frameworks */,
 				DA8FB0512E7D898F00C9BD1A /* MobileTimer.framework in Frameworks */,
 			);
 		};
@@ -486,8 +625,6 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				DACA66622E8B70E60056ED60 /* QRCode in Frameworks */,
-				DA7C49AC2E15D3660049937A /* protoc-gen-swift in Frameworks */,
-				DA7C49AA2E15D3660049937A /* SwiftProtobufPluginLibrary in Frameworks */,
 				DA7C49A52E15D34D0049937A /* SwiftECC in Frameworks */,
 				DA7C49A82E15D3660049937A /* SwiftProtobuf in Frameworks */,
 			);
@@ -497,9 +634,75 @@
 			files = (
 			);
 		};
+		F1CE000000000000000006AA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		F2DE00000000000000000FBB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C0DE30000000000000000001 /* libimobiledevice */ = {
+			isa = PBXGroup;
+			children = (
+				C0DE30000000000000000002 /* bin */,
+				C0DE30000000000000000003 /* lib */,
+			);
+			path = libimobiledevice;
+			sourceTree = "<group>";
+		};
+		C0DE30000000000000000002 /* bin */ = {
+			isa = PBXGroup;
+			children = (
+				C0DE10000000000000000001 /* comptest */,
+				C0DE10000000000000000002 /* idevice_id */,
+				C0DE10000000000000000003 /* ideviceinfo */,
+				C0DE10000000000000000004 /* idevicesyslog */,
+				C0DE10000000000000000005 /* wificonnection */,
+			);
+			path = bin;
+			sourceTree = "<group>";
+		};
+		C0DE30000000000000000003 /* lib */ = {
+			isa = PBXGroup;
+			children = (
+				C0DE10000000000000000006 /* libcrypto.3.dylib */,
+				C0DE10000000000000000007 /* libimobiledevice-1.0.6.dylib */,
+				C0DE10000000000000000008 /* libimobiledevice-glue-1.0.0.dylib */,
+				C0DE10000000000000000009 /* libplist-2.0.4.dylib */,
+				C0DE1000000000000000000A /* libssl.3.dylib */,
+				C0DE1000000000000000000B /* libusbmuxd-2.0.6.dylib */,
+			);
+			path = lib;
+			sourceTree = "<group>";
+		};
+		CAFE100000000000000002AA /* SapphireCameraExtension */ = {
+			isa = PBXGroup;
+			children = (
+				CAFE100000000000000003AA /* main.swift */,
+				CAFE100000000000000004AA /* SapphireCameraProvider.swift */,
+				CAFE10000000000000000AAA /* SapphireCameraIdentifiers.swift */,
+				CAFE100000000000000005AA /* Info.plist */,
+				CAFE100000000000000006AA /* SapphireCameraExtension.entitlements */,
+			);
+			path = SapphireCameraExtension;
+			sourceTree = "<group>";
+		};
+		CAFE200000000000000002BB /* SapphireAudioDriver */ = {
+			isa = PBXGroup;
+			children = (
+				CAFE200000000000000003BB /* SapphireAudioDriver.c */,
+				CAFE200000000000000004BB /* SapphireMicRing.h */,
+				CAFE200000000000000005BB /* Info.plist */,
+			);
+			path = SapphireAudioDriver;
+			sourceTree = "<group>";
+		};
 		DA262AE32EA484A70027CA69 /* Products */ = {
 			isa = PBXGroup;
 			name = Products;
@@ -508,6 +711,9 @@
 		DA46CF6D2DCBCA0000F00EC5 = {
 			isa = PBXGroup;
 			children = (
+				C0DE30000000000000000001 /* libimobiledevice */,
+				F1CE000000000000000007AA /* SapphireFinderSync */,
+				F2DE000000000000000009BB /* SapphireFileProvider */,
 				DA46CF7F2DCBCA0100F00EC5 /* SapphireTests */,
 				DA91BDE72E773A9D001E7836 /* SystemSounds */,
 				DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */,
@@ -522,17 +728,24 @@
 				DA7C49B62E15D7360049937A /* ObjC */,
 				DA8FB0272E7CB76B00C9BD1A /* PrivateHeaders */,
 				DA789CFA2FAFC26000EB906E /* Volume */,
+				CAFE100000000000000002AA /* SapphireCameraExtension */,
+				CAFE200000000000000002BB /* SapphireAudioDriver */,
+				DA88288E304B06AB00E0ED48 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
 		DA46CF772DCBCA0000F00EC5 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				F1CE000000000000000001AA /* SapphireFinderSync.appex */,
+				F2DE000000000000000001BB /* SapphireFileProvider.appex */,
 				DA46CF762DCBCA0000F00EC5 /* Sapphire.app */,
 				DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */,
 				DA7C49802E15CCA50049937A /* libNearbyShare.dylib */,
 				DAA7D9D42E8633B20032748B /* abt */,
 				DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
+				CAFE100000000000000001AA /* SapphireCameraExtension.systemextension */,
+				CAFE200000000000000001BB /* SapphireAudioDriver.driver */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -608,6 +821,14 @@
 				DA7C49962E15D33A0049937A /* Data+Extensions.swift */,
 			);
 			path = Util;
+			sourceTree = "<group>";
+		};
+		DA88288E304B06AB00E0ED48 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				CAFE200000000000000014BB /* CoreAudio.framework */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		DA91BDE72E773A9D001E7836 /* SystemSounds */ = {
@@ -749,6 +970,31 @@
 			path = telephony;
 			sourceTree = "<group>";
 		};
+		F1CE000000000000000007AA /* SapphireFinderSync */ = {
+			isa = PBXGroup;
+			children = (
+				F1CE000000000000000002AA /* main.swift */,
+				F1CE000000000000000004AA /* Info.plist */,
+				F1CE000000000000000005AA /* SapphireFinderSync.entitlements */,
+			);
+			path = SapphireFinderSync;
+			sourceTree = "<group>";
+		};
+		F2DE000000000000000009BB /* SapphireFileProvider */ = {
+			isa = PBXGroup;
+			children = (
+				F2DE000000000000000002BB /* FileProviderExtension.swift */,
+				F2DE000000000000000003BB /* FileProviderItem.swift */,
+				F2DE000000000000000004BB /* FileProviderEnumerator.swift */,
+				F2DE000000000000000005BB /* HostConnection.swift */,
+				F2DE000000000000000006BB /* ContinuityFileProviderShared.swift */,
+				F2DE000000000000000019BB /* PhoneDrive.icns */,
+				F2DE000000000000000007BB /* Info.plist */,
+				F2DE000000000000000008BB /* SapphireFileProvider.entitlements */,
+			);
+			path = SapphireFileProvider;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -760,6 +1006,36 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
+		CAFE10000000000000000EAA /* SapphireCameraExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CAFE100000000000000011AA /* Build configuration list for PBXNativeTarget "SapphireCameraExtension" */;
+			buildPhases = (
+				CAFE10000000000000000BAA /* Sources */,
+				CAFE10000000000000000CAA /* Frameworks */,
+				CAFE10000000000000000DAA /* Resources */,
+			);
+			buildRules = (
+			);
+			name = SapphireCameraExtension;
+			productName = SapphireCameraExtension;
+			productReference = CAFE100000000000000001AA /* SapphireCameraExtension.systemextension */;
+			productType = "com.apple.product-type.system-extension";
+		};
+		CAFE20000000000000000BBB /* SapphireAudioDriver */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CAFE20000000000000000EBB /* Build configuration list for PBXNativeTarget "SapphireAudioDriver" */;
+			buildPhases = (
+				CAFE200000000000000007BB /* Sources */,
+				CAFE200000000000000008BB /* Frameworks */,
+				CAFE200000000000000009BB /* Resources */,
+			);
+			buildRules = (
+			);
+			name = SapphireAudioDriver;
+			productName = SapphireAudioDriver;
+			productReference = CAFE200000000000000001BB /* SapphireAudioDriver.driver */;
+			productType = "com.apple.product-type.bundle";
+		};
 		DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */;
@@ -784,18 +1060,27 @@
 				DA46CF722DCBCA0000F00EC5 /* Sources */,
 				DA46CF732DCBCA0000F00EC5 /* Frameworks */,
 				DA46CF742DCBCA0000F00EC5 /* Resources */,
+				C0DE40000000000000000001 /* Embed iDevice Tools */,
+				C0DE40000000000000000002 /* Embed iDevice Libraries */,
 				DAE70B782E12300B001F0890 /* Embed Frameworks */,
 				DAF7D8AC2E207C5100AB0820 /* CopyFiles */,
 				DABFA98B2EBFBA35000C5A8B /* Embed Helper LaunchDaemon Plist */,
 				DA262B242EA942750027CA69 /* Embed Helper Executable */,
+				CAFE100000000000000012AA /* Embed System Extensions */,
+				CAFE20000000000000000FBB /* Embed Audio Driver */,
+				F1CE00000000000000003AA /* Embed Finder Extensions */,
 				DA452EBA2EAA5A010070E5C9 /* Resign Sapphire Helper */,
-				DAC019182E9EA03E00CA587F /* ShellScript */,
+				DAC019182E9EA03E00CA587F /* Upload Crashlytics Symbols */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				CAFE100000000000000014AA /* PBXTargetDependency */,
+				CAFE200000000000000011BB /* PBXTargetDependency */,
 				DA452EB92EAA58100070E5C9 /* PBXTargetDependency */,
 				DA7C49B02E15D3800049937A /* PBXTargetDependency */,
+				F1CE00000000000000000CAA /* PBXTargetDependency */,
+				F2DE000000000000000011BB /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				DA183FC92E122AF30056667D /* Sapphire */,
@@ -804,14 +1089,11 @@
 			);
 			name = Sapphire;
 			packageProductDependencies = (
-				DAF7D8AA2E207BBC00AB0820 /* SwiftProtobufPluginLibrary */,
+				F3A600000000000000000002 /* Yams */,
 				DA48B01A2E93DF9B0099BF74 /* SQLite */,
-				DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */,
-				DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */,
-				DAC019162E9E9E3100CA587F /* FirebaseCrashlytics */,
-				DAD22F592ED3FEF1006CC3FF /* FirebaseCore */,
-				DAD22F5B2ED3FEF1006CC3FF /* FirebaseDatabase */,
-				DAD22F5D2ED3FEF1006CC3FF /* FirebasePerformance */,
+				DA5E1009304CBB63003D1D37 /* FirebaseAnalytics */,
+				DA5E100F304CBB63003D1D37 /* FirebaseCore */,
+				DA5E1011304CBB63003D1D37 /* FirebaseCrashlytics */,
 			);
 			productName = DynamicNotch;
 			productReference = DA46CF762DCBCA0000F00EC5 /* Sapphire.app */;
@@ -852,8 +1134,6 @@
 			packageProductDependencies = (
 				DA7C49A42E15D34D0049937A /* SwiftECC */,
 				DA7C49A72E15D3660049937A /* SwiftProtobuf */,
-				DA7C49A92E15D3660049937A /* SwiftProtobufPluginLibrary */,
-				DA7C49AB2E15D3660049937A /* protoc-gen-swift */,
 				DACA66612E8B70E60056ED60 /* QRCode */,
 			);
 			productName = NearbyShare;
@@ -877,6 +1157,36 @@
 			productName = abt;
 			productReference = DAA7D9D42E8633B20032748B /* abt */;
 			productType = "com.apple.product-type.tool";
+		};
+		F1CE000000000000000008AA /* SapphireFinderSync */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F1CE000000000000000009AA /* Build configuration list for PBXNativeTarget "SapphireFinderSync" */;
+			buildPhases = (
+				F1CE00000000000000000AAA /* Sources */,
+				F1CE000000000000000006AA /* Frameworks */,
+				F1CE00000000000000000BAA /* Resources */,
+			);
+			buildRules = (
+			);
+			name = SapphireFinderSync;
+			productName = SapphireFinderSync;
+			productReference = F1CE000000000000000001AA /* SapphireFinderSync.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		F2DE00000000000000000ABB /* SapphireFileProvider */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F2DE00000000000000000BBB /* Build configuration list for PBXNativeTarget "SapphireFileProvider" */;
+			buildPhases = (
+				F2DE00000000000000000EBB /* Sources */,
+				F2DE00000000000000000FBB /* Frameworks */,
+				F2DE000000000000000010BB /* Resources */,
+			);
+			buildRules = (
+			);
+			name = SapphireFileProvider;
+			productName = SapphireFileProvider;
+			productReference = F2DE000000000000000001BB /* SapphireFileProvider.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -916,13 +1226,14 @@
 			mainGroup = DA46CF6D2DCBCA0000F00EC5;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				F3A600000000000000000001 /* XCRemoteSwiftPackageReference "Yams" */,
 				DAD47CD22E13C3DB001B70C8 /* XCRemoteSwiftPackageReference "SwiftECC" */,
 				DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */,
 				DA8FAEFC2E7CA8B900C9BD1A /* XCRemoteSwiftPackageReference "CocoaAsyncSocket" */,
 				DAA7D8E02E8488800032748B /* XCRemoteSwiftPackageReference "swift-argument-parser" */,
 				DACA66602E8B70E60056ED60 /* XCRemoteSwiftPackageReference "qrcode" */,
 				DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */,
-				DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				DA5E1008304CBB63003D1D37 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 100;
 			productRefGroup = DA46CF772DCBCA0000F00EC5 /* Products */;
@@ -940,11 +1251,25 @@
 				DA7C497F2E15CCA50049937A /* NearbyShare */,
 				DAA7D9D32E8633B20032748B /* abt */,
 				DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */,
+				CAFE10000000000000000EAA /* SapphireCameraExtension */,
+				CAFE20000000000000000BBB /* SapphireAudioDriver */,
+				F1CE000000000000000008AA /* SapphireFinderSync */,
+				F2DE00000000000000000ABB /* SapphireFileProvider */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		CAFE10000000000000000DAA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		CAFE200000000000000009BB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 		DA46CF742DCBCA0000F00EC5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
@@ -1023,17 +1348,35 @@
 			files = (
 			);
 		};
+		F1CE00000000000000000BAA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		F2DE000000000000000010BB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+				F2DE00000000000000001ABB /* PhoneDrive.icns in Resources */,
+			);
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		DA452EBA2EAA5A010070E5C9 /* Resign Sapphire Helper */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/com.shariq.sapphireHelper",
+				"$(SRCROOT)/com.shariq.sapphireHelper/sapphireHelper.entitlements",
+			);
 			name = "Resign Sapphire Helper";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/sapphire-helper-resigned-$(CODE_SIGNING_ALLOWED)-$(EXPANDED_CODE_SIGN_IDENTITY).stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
 				"HELPER=\"${TARGET_BUILD_DIR}/${EXECUTABLE_FOLDER_PATH}/com.shariq.sapphireHelper\"",
 				"ENTITLEMENTS=\"${SRCROOT}/com.shariq.sapphireHelper/sapphireHelper.entitlements\"",
+				"STAMP=\"${SCRIPT_OUTPUT_FILE_0}\"",
 				"",
 				"if [ ! -f \"$HELPER\" ]; then",
 				"  echo \"error: Sapphire helper missing at $HELPER\"",
@@ -1043,6 +1386,7 @@
 				"if [ -z \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ] || [ \"${EXPANDED_CODE_SIGN_IDENTITY}\" = \"-\" ]; then",
 				"  echo \"warning: No code signing identity; leaving helper signature as-is\"",
 				"  codesign -d --entitlements - \"$HELPER\" || true",
+				"  touch \"$STAMP\"",
 				"  exit 0",
 				"fi",
 				"",
@@ -1070,10 +1414,11 @@
 				"  echo \"error: Failed to re-sign helper (exit $RESIGN_RC)\"",
 				"  exit 1",
 				"fi",
+				"touch \"$STAMP\"",
 				"",
 			);
 		};
-		DAC019182E9EA03E00CA587F /* ShellScript */ = {
+		DAC019182E9EA03E00CA587F /* Upload Crashlytics Symbols */ = {
 			isa = PBXShellScriptBuildPhase;
 			inputPaths = (
 				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
@@ -1082,16 +1427,35 @@
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
 				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
 			);
+			name = "Upload Crashlytics Symbols";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/firebase-crashlytics-uploaded.stamp",
+			);
 			shellPath = /bin/sh;
 			shellScript = (
-				"# Type a script or drag a script file from your workspace to insert its path.",
+				"set -e",
 				"\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"",
+				"touch \"${SCRIPT_OUTPUT_FILE_0}\"",
 				"",
 			);
 		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		CAFE10000000000000000BAA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+				CAFE100000000000000008AA /* SapphireCameraProvider.swift in Sources */,
+				CAFE100000000000000009AA /* SapphireCameraIdentifiers.swift in Sources */,
+				CAFE100000000000000007AA /* main.swift in Sources */,
+			);
+		};
+		CAFE200000000000000007BB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+				CAFE200000000000000006BB /* SapphireAudioDriver.c in Sources */,
+			);
+		};
 		DA452EAB2EAA57C90070E5C9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
@@ -1134,9 +1498,35 @@
 			files = (
 			);
 		};
+		F1CE00000000000000000AAA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+				F1CE00000000000000001AA /* main.swift in Sources */,
+			);
+		};
+		F2DE00000000000000000EBB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+				F2DE000000000000000013BB /* FileProviderExtension.swift in Sources */,
+				F2DE000000000000000014BB /* FileProviderItem.swift in Sources */,
+				F2DE000000000000000015BB /* FileProviderEnumerator.swift in Sources */,
+				F2DE000000000000000016BB /* HostConnection.swift in Sources */,
+				F2DE000000000000000017BB /* ContinuityFileProviderShared.swift in Sources */,
+			);
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		CAFE100000000000000014AA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CAFE10000000000000000EAA /* SapphireCameraExtension */;
+			targetProxy = CAFE100000000000000015AA /* PBXContainerItemProxy */;
+		};
+		CAFE200000000000000011BB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CAFE20000000000000000BBB /* SapphireAudioDriver */;
+			targetProxy = CAFE200000000000000012BB /* PBXContainerItemProxy */;
+		};
 		DA452EB92EAA58100070E5C9 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DA452EAE2EAA57C90070E5C9 /* com.shariq.sapphireHelper */;
@@ -1152,9 +1542,120 @@
 			target = DA7C497F2E15CCA50049937A /* NearbyShare */;
 			targetProxy = DA7C49AF2E15D3800049937A /* PBXContainerItemProxy */;
 		};
+		F1CE00000000000000000CAA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F1CE000000000000000008AA /* SapphireFinderSync */;
+			targetProxy = F1CE00000000000000000DAA /* PBXContainerItemProxy */;
+		};
+		F2DE000000000000000011BB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F2DE00000000000000000ABB /* SapphireFileProvider */;
+			targetProxy = F2DE000000000000000012BB /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		CAFE10000000000000000FAA /* Debug configuration for PBXNativeTarget "SapphireCameraExtension" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SapphireCameraExtension/SapphireCameraExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SapphireCameraExtension/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.CameraExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		CAFE100000000000000010AA /* Release configuration for PBXNativeTarget "SapphireCameraExtension" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SapphireCameraExtension/SapphireCameraExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SapphireCameraExtension/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.CameraExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		CAFE20000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireAudioDriver" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = NO;
+				EXECUTABLE_EXTENSION = driver;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SapphireAudioDriver/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.ContinuityMicDriver;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				WRAPPER_EXTENSION = driver;
+			};
+			name = Debug;
+		};
+		CAFE20000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireAudioDriver" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = NO;
+				EXECUTABLE_EXTENSION = driver;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SapphireAudioDriver/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.ContinuityMicDriver;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				WRAPPER_EXTENSION = driver;
+			};
+			name = Release;
+		};
 		DA452EB42EAA57C90070E5C9 /* Debug configuration for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1440,8 +1941,8 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = "/Users/shariq/Github/Sapphire/Sapphire/Stubs/*";
-				"EXCLUDED_SOURCE_FILE_NAMES[arch=*]" = "/Users/shariq/Github/Sapphire/Sapphire/Stubs/*";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SRCROOT)/Sapphire/Stubs/*";
+				"EXCLUDED_SOURCE_FILE_NAMES[arch=*]" = "$(SRCROOT)/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
@@ -1475,22 +1976,14 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/Sapphire/Services/Bluetooth/libimobiledevice/lib",
-					"$(PROJECT_DIR)/libimobiledevice/lib",
-					"$(PROJECT_DIR)/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
-				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
+				OTHER_SWIFT_FLAGS = "";
+				"OTHER_SWIFT_FLAGS[arch=*]" = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1503,6 +1996,7 @@
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "ObjC/Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = "$(SDKROOT)/System/Library/PrivateFrameworks";
 			};
@@ -1531,8 +2025,8 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = "/Users/shariq/Github/Sapphire/Sapphire/Stubs/*";
-				"EXCLUDED_SOURCE_FILE_NAMES[arch=*]" = "/Users/shariq/Github/Sapphire/Sapphire/Stubs/*";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SRCROOT)/Sapphire/Stubs/*";
+				"EXCLUDED_SOURCE_FILE_NAMES[arch=*]" = "$(SRCROOT)/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
@@ -1566,19 +2060,10 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/Sapphire/Services/Bluetooth/libimobiledevice/lib",
-					"$(PROJECT_DIR)/libimobiledevice/lib",
-					"$(PROJECT_DIR)/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
-					"$(PROJECT_DIR)\\ copy\\ 10/Sapphire/libimobiledevice/lib",
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
@@ -1659,9 +2144,142 @@
 			};
 			name = Release;
 		};
+		F1CE00000000000000000EAA /* Debug configuration for PBXNativeTarget "SapphireFinderSync" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SapphireFinderSync/SapphireFinderSync.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SapphireFinderSync/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 2.9;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FinderSync;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Debug;
+		};
+		F1CE00000000000000000FAA /* Release configuration for PBXNativeTarget "SapphireFinderSync" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SapphireFinderSync/SapphireFinderSync.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SapphireFinderSync/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 2.9;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FinderSync;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Release;
+		};
+		F2DE00000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireFileProvider" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SapphireFileProvider/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 2.9;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FileProvider;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Debug;
+		};
+		F2DE00000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireFileProvider" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SapphireFileProvider/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MARKETING_VERSION = 2.9;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FileProvider;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = appex;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		CAFE100000000000000011AA /* Build configuration list for PBXNativeTarget "SapphireCameraExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CAFE10000000000000000FAA /* Debug configuration for PBXNativeTarget "SapphireCameraExtension" */,
+				CAFE100000000000000010AA /* Release configuration for PBXNativeTarget "SapphireCameraExtension" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		CAFE20000000000000000EBB /* Build configuration list for PBXNativeTarget "SapphireAudioDriver" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CAFE20000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireAudioDriver" */,
+				CAFE20000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireAudioDriver" */,
+			);
+			defaultConfigurationName = Release;
+		};
 		DA452EB32EAA57C90070E5C9 /* Build configuration list for PBXNativeTarget "com.shariq.sapphireHelper" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1710,6 +2328,22 @@
 			);
 			defaultConfigurationName = Release;
 		};
+		F1CE000000000000000009AA /* Build configuration list for PBXNativeTarget "SapphireFinderSync" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F1CE00000000000000000EAA /* Debug configuration for PBXNativeTarget "SapphireFinderSync" */,
+				F1CE00000000000000000FAA /* Release configuration for PBXNativeTarget "SapphireFinderSync" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		F2DE00000000000000000BBB /* Build configuration list for PBXNativeTarget "SapphireFileProvider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F2DE00000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireFileProvider" */,
+				F2DE00000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireFileProvider" */,
+			);
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1719,6 +2353,14 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.15.4;
+			};
+		};
+		DA5E1008304CBB63003D1D37 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.18.0;
 			};
 		};
 		DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */ = {
@@ -1735,14 +2377,6 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 7.6.5;
-			};
-		};
-		DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 12.17.0;
 			};
 		};
 		DAA7D8E02E8488800032748B /* XCRemoteSwiftPackageReference "swift-argument-parser" */ = {
@@ -1769,6 +2403,14 @@
 				minimumVersion = 5.5.0;
 			};
 		};
+		F3A600000000000000000001 /* XCRemoteSwiftPackageReference "Yams" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jpsim/Yams.git";
+			requirement = {
+				kind = exactVersion;
+				version = 6.2.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1776,6 +2418,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */;
 			productName = SQLite;
+		};
+		DA5E1009304CBB63003D1D37 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA5E1008304CBB63003D1D37 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		DA5E100F304CBB63003D1D37 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA5E1008304CBB63003D1D37 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		DA5E1011304CBB63003D1D37 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA5E1008304CBB63003D1D37 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
 		};
 		DA7C49A42E15D34D0049937A /* SwiftECC */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1787,55 +2444,15 @@
 			package = DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */;
 			productName = SwiftProtobuf;
 		};
-		DA7C49A92E15D3660049937A /* SwiftProtobufPluginLibrary */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */;
-			productName = SwiftProtobufPluginLibrary;
-		};
-		DA7C49AB2E15D3660049937A /* protoc-gen-swift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */;
-			productName = "protoc-gen-swift";
-		};
-		DA9709EB2E99E9CF00F34217 /* FirebaseAnalyticsCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAnalyticsCore;
-		};
-		DA9709ED2E99E9CF00F34217 /* FirebaseAnalyticsIdentitySupport */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAnalyticsIdentitySupport;
-		};
-		DAC019162E9E9E3100CA587F /* FirebaseCrashlytics */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseCrashlytics;
-		};
 		DACA66612E8B70E60056ED60 /* QRCode */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = DACA66602E8B70E60056ED60 /* XCRemoteSwiftPackageReference "qrcode" */;
 			productName = QRCode;
 		};
-		DAD22F592ED3FEF1006CC3FF /* FirebaseCore */ = {
+		F3A600000000000000000002 /* Yams */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseCore;
-		};
-		DAD22F5B2ED3FEF1006CC3FF /* FirebaseDatabase */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseDatabase;
-		};
-		DAD22F5D2ED3FEF1006CC3FF /* FirebasePerformance */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA9709E62E99E9CF00F34217 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebasePerformance;
-		};
-		DAF7D8AA2E207BBC00AB0820 /* SwiftProtobufPluginLibrary */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DA7C49A62E15D3660049937A /* XCRemoteSwiftPackageReference "swift-protobuf" */;
-			productName = SwiftProtobufPluginLibrary;
+			package = F3A600000000000000000001 /* XCRemoteSwiftPackageReference "Yams" */;
+			productName = Yams;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

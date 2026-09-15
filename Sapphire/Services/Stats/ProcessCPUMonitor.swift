@@ -69,10 +69,12 @@ final class ProcessCPUMonitor: ObservableObject {
     func startPeriodicReporting(interval: TimeInterval = 60) {
         stopPeriodicReporting()
         enable()
-        reportingTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            print(self.formattedReport)
-            self.reset()
+        reportingTimer = Timer.scheduledCoalescing(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                print(self.formattedReport)
+                self.reset()
+            }
         }
     }
 

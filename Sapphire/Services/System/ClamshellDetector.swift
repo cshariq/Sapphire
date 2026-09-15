@@ -22,13 +22,10 @@ enum ClamshellDetector {
     static var isClosed: Bool {
         let now = Date()
         if let lastRead = lastRegistryReadTime, now.timeIntervalSince(lastRead) < minRegistryReadInterval {
-            if registryReportedClosed {
-                os_log("ClamshellDetector: isClosed - cached true (registryReportedClosed, within interval)")
-                return true
-            }
-        } else {
-            lastRegistryReadTime = now
+            os_log("ClamshellDetector: isClosed - cached %{public}@ (within interval)", registryReportedClosed ? "true" : "false")
+            return registryReportedClosed
         }
+        lastRegistryReadTime = now
 
         if let registryState = readAppleClamshellState() {
             if registryState {
@@ -76,6 +73,31 @@ enum ClamshellDetector {
     static func resetStickyState() {
         registryReportedClosed = false
         consecutiveRegistryOpenReadings = 0
+    }
+
+    private static var nativeChangeHandler: ((Bool) -> Void)?
+    private static var isObservingNatively = false
+
+    @discardableResult
+    static func startObservingNativeEvents(_ handler: @escaping (Bool) -> Void) -> Bool {
+        nativeChangeHandler = handler
+        guard !isObservingNatively else { return true }
+
+        let started = startClamshellStateNotifications { isClosed in
+            MainActor.assumeIsolated {
+                ClamshellDetector.receiveNativeStateChange(isClosed)
+            }
+        }
+        isObservingNatively = started
+        return started
+    }
+
+    private static func receiveNativeStateChange(_ isClosed: Bool) {
+        registryReportedClosed = isClosed
+        consecutiveRegistryOpenReadings = 0
+        lastRegistryReadTime = Date()
+        os_log("ClamshellDetector: native event - isClosed=%{public}@", isClosed ? "true" : "false")
+        nativeChangeHandler?(isClosed)
     }
 
     private static var isLikelyClamshellFromDisplays: Bool {

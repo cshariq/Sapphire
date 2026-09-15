@@ -7,18 +7,38 @@
 
 import SwiftUI
 
+struct SettingsSidebarGroup: Identifiable {
+    let title: String
+    let sections: [SettingsSection]
+    var id: String { title }
+}
+
+extension SettingsSection {
+    static let sidebarGroups: [SettingsSidebarGroup] = [
+        .init(title: "General", sections: [.general, .keyboardShortcuts, .bluetoothUnlock, .intelligence, .neardrop, .continuity]),
+        .init(title: "Notch", sections: [.appearance, .widgets, .liveActivities, .lockScreen, .notifications, .hud]),
+        .init(title: "Widgets & Content", sections: [.music, .weather, .calendar, .sports, .finance, .battery, .audio, .bluetooth, .shortcuts, .fileShelf, .notes, .clipboard, .mirror, .caffeine]),
+        .init(title: "System & Utilities", sections: [.systemEnhance, .snapZones, .dockLayouts, .mediaOptimizer, .mouse, .monitoring, .devActivity, .emoji, .archives, .apps, .storage]),
+        .init(title: "Focus & Security", sections: [.eyeBreak, .focusSession, .appLock]),
+        .init(title: "", sections: [.about])
+    ]
+}
+
 struct SettingsSidebarView: View {
     @Binding var selectedSection: SettingsSection?
     @Binding var showAccountPane: Bool
     @State private var searchText = ""
 
-    private var filteredSections: [SettingsSection] {
+    private var filteredGroups: [SettingsSidebarGroup] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return SettingsSection.allCases }
+        guard !query.isEmpty else { return SettingsSection.sidebarGroups }
 
-        return SettingsSection.allCases.filter { section in
-            let haystacks = [section.label, section.shortDescription] + section.searchTokens
-            return haystacks.contains { $0.localizedCaseInsensitiveContains(query) }
+        return SettingsSection.sidebarGroups.compactMap { group in
+            let matches = group.sections.filter { section in
+                let haystacks = [section.label, section.shortDescription] + section.searchTokens
+                return haystacks.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+            return matches.isEmpty ? nil : SettingsSidebarGroup(title: group.title, sections: matches)
         }
     }
 
@@ -27,22 +47,7 @@ struct SettingsSidebarView: View {
             Spacer().frame(height: 45)
 
             // MARK: 1. Search Settings (Top of Sidebar)
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search settings", text: $searchText)
-                    .textFieldStyle(.plain)
-
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+            ClearableSearchField(placeholder: "Search settings", text: $searchText)
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(Color.white.opacity(0.06))
@@ -68,9 +73,15 @@ struct SettingsSidebarView: View {
                     }
                 }
             )) {
-                Section {
-                    ForEach(filteredSections) { section in
-                        SidebarRowView(section: section).tag(section)
+                ForEach(filteredGroups) { group in
+                    Section {
+                        ForEach(group.sections) { section in
+                            SidebarRowView(section: section).tag(section)
+                        }
+                    } header: {
+                        Text(group.title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -86,7 +97,7 @@ struct SettingsSidebarView: View {
                 }
             }
 
-            if !searchText.isEmpty && filteredSections.isEmpty {
+            if !searchText.isEmpty && filteredGroups.isEmpty {
                 Text("No settings matched \"\(searchText)\".")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -177,29 +188,6 @@ struct SidebarAccountCardView: View {
     }
 }
 
-struct CustomTrafficLightButtons: View {
-    @Environment(\.window) private var settingsWindow: NSWindow?
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button(action: {
-                settingsWindow?.close()
-            }) {
-                Image(systemName: "xmark").font(.system(size: 7, weight: .bold, design: .rounded))
-            }.buttonStyle(TrafficLightButtonStyle(color: .red, isHovering: isHovering))
-
-            Button(action: { settingsWindow?.miniaturize(nil) }) {
-                Image(systemName: "minus").font(.system(size: 7, weight: .bold, design: .rounded))
-            }.buttonStyle(TrafficLightButtonStyle(color: .yellow, isHovering: isHovering))
-
-            Button(action: { settingsWindow?.zoom(nil) }) {
-                Image(systemName: "plus").font(.system(size: 7, weight: .bold, design: .rounded))
-            }.buttonStyle(TrafficLightButtonStyle(color: .green, isHovering: isHovering))
-        }.onHover { hovering in withAnimation(.easeInOut(duration: 0.1)) { isHovering = hovering } }
-    }
-}
-
 struct TrafficLightButtonStyle: ButtonStyle {
     let color: Color; let isHovering: Bool
     func makeBody(configuration: Configuration) -> some View {
@@ -211,16 +199,11 @@ fileprivate struct SidebarRowView: View {
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     let section: SettingsSection
 
-    private var isPremiumLocked: Bool {
-        section.isPremiumLocked(
-            for: subscriptionManager.activeTier,
-            features: subscriptionManager.entitlements.features
-        )
-    }
+    private var isPremiumLocked: Bool { section.isPremiumLocked }
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: section.systemImage).font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(LinearGradient(colors: section.iconGradientColors ?? [section.iconBackgroundColor], startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.8)).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            Image(systemName: section.systemImage).font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(LinearGradient(colors: section.iconGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.8)).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             Text(section.label).font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
             Spacer()
             if isPremiumLocked {

@@ -9,6 +9,21 @@ import SwiftUI
 import Combine
 import UniformTypeIdentifiers
 
+@MainActor
+final class LaunchpadPresentationModel: ObservableObject {
+    @Published private(set) var backgroundImage: NSImage?
+    @Published private(set) var bottomPadding: CGFloat = 0
+
+    func update(backgroundImage: NSImage?, bottomPadding: CGFloat) {
+        if self.backgroundImage !== backgroundImage {
+            self.backgroundImage = backgroundImage
+        }
+        if abs(self.bottomPadding - bottomPadding) > 0.5 {
+            self.bottomPadding = bottomPadding
+        }
+    }
+}
+
 // MARK: - Helper Models & Extensions
 extension SystemApp {
     var isDeletable: Bool {
@@ -30,6 +45,14 @@ struct FolderFramePreferenceKey: PreferenceKey {
     static var defaultValue: CGRect = .zero
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
         value = nextValue()
+    }
+}
+
+struct PageFramePreferenceKey: PreferenceKey {
+    typealias Value = [Int: CGRect]
+    static var defaultValue: Value = [:]
+    static func reduce(value: inout Value, nextValue: () -> Value) {
+        value.merge(nextValue()) { $1 }
     }
 }
 
@@ -71,12 +94,33 @@ class LaunchpadViewModel: ObservableObject {
 
     let dropPlaceholderID = "dropPlaceholder"
 
-    private var allApps: [SystemApp] = []; private let appFetcher = SystemAppFetcher.shared; private var settingsModel = SettingsModel.shared; private var cancellables = Set<AnyCancellable>()
+    private var allApps: [SystemApp] = []
+    private var appsByBundleID: [String: SystemApp] = [:]
+    private let appFetcher = SystemAppFetcher.shared
+    private var settingsModel = SettingsModel.shared
+    private var cancellables = Set<AnyCancellable>()
     private let appsPerPage = 6 * 5
 
     init() {
-        appFetcher.$apps.filter { !$0.isEmpty }.first().receive(on: DispatchQueue.main).sink { [weak self] apps in self?.allApps = apps; self?.synchronizeLayout() }.store(in: &cancellables)
-        $searchText.debounce(for: .milliseconds(300), scheduler: DispatchQueue.main).removeDuplicates().sink { [weak self] text in self?.filterApps(with: text) }.store(in: &cancellables)
+        appFetcher.$apps
+            .filter { !$0.isEmpty }
+            .first()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] apps in
+                guard let self else { return }
+                self.allApps = apps
+                self.appsByBundleID = apps.reduce(into: [:]) { result, app in
+                    result[app.id] = app
+                }
+                self.synchronizeLayout()
+            }
+            .store(in: &cancellables)
+
+        $searchText
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .removeDuplicates()
+            .sink { [weak self] text in self?.filterApps(with: text) }
+            .store(in: &cancellables)
     }
 
     func fetchApps() { appFetcher.fetchApps() }
@@ -102,14 +146,17 @@ class LaunchpadViewModel: ObservableObject {
     }
 
     private func saveLayout() {
-        settingsModel.settings.launchpadLayout = pages.map { $0.filter { $0.id != dropPlaceholderID } }
+        let layout = pages.map { $0.filter { $0.id != dropPlaceholderID } }
+        guard settingsModel.settings.launchpadLayout != layout else { return }
+        settingsModel.settings.launchpadLayout = layout
     }
 
     func reflowAndCompactLayout() {
-        removeDropPlaceholder()
-
-        let allCurrentItems = pages.flatMap { $0 }
+        let allCurrentItems = pages.lazy
+            .flatMap { $0 }
+            .filter { $0.id != self.dropPlaceholderID }
         var processedItems: [LaunchpadPageItem] = []
+        processedItems.reserveCapacity(allCurrentItems.count)
         var seenIDs = Set<String>()
 
         for item in allCurrentItems {
@@ -150,16 +197,18 @@ class LaunchpadViewModel: ObservableObject {
             newPages.append([])
         }
 
-        DispatchQueue.main.async {
-            self.pages = newPages
-            if self.currentPage >= self.pages.count {
-                self.currentPage = max(0, self.pages.count - 1)
-            }
-            self.saveLayout()
+        if pages != newPages {
+            pages = newPages
         }
+        if currentPage >= pages.count {
+            currentPage = max(0, pages.count - 1)
+        }
+        saveLayout()
     }
 
-    func getApp(for item: LaunchpadItem) -> SystemApp? { return allApps.first { $0.id == item.appBundleID } }
+    func getApp(for item: LaunchpadItem) -> SystemApp? {
+        appsByBundleID[item.appBundleID]
+    }
 
     private func filterApps(with query: String) {
         if query.isEmpty { filteredApps = [] } else { filteredApps = allApps.filter { $0.name.localizedCaseInsensitiveContains(query) } }
@@ -250,16 +299,31 @@ class LaunchpadViewModel: ObservableObject {
         cancelReorderTimer()
         pendingReorderPath = path
 
-        reorderTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { [weak self] _ in
-            guard let self = self, let pendingPath = self.pendingReorderPath else { return }
-            self.insertDropPlaceholder(at: pendingPath)
+        let timer = Timer(timeInterval: 0.7, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let pendingPath = self.pendingReorderPath else { return }
+                self.reorderTimer = nil
+                self.pendingReorderPath = nil
+                self.insertDropPlaceholder(at: pendingPath)
+            }
         }
+        timer.tolerance = 0.05
+        reorderTimer = timer
+        // Dragging runs the AppKit run loop in event-tracking mode. A timer in
+        // the default mode can pause until the drag ends, making reordering
+        // appear randomly broken.
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     func cancelReorderTimer() {
         reorderTimer?.invalidate()
         reorderTimer = nil
         pendingReorderPath = nil
+    }
+
+    func setFolderCreationTarget(_ id: String?) {
+        guard folderCreationTargetID != id else { return }
+        folderCreationTargetID = id
     }
 
     func requestDeleteItem(_ item: LaunchpadPageItem) {
@@ -413,17 +477,17 @@ struct LaunchpadItemView: View {
 // MARK: - Main Launchpad View
 struct LaunchpadView: View {
     @StateObject private var viewModel = LaunchpadViewModel()
+    @ObservedObject var presentation: LaunchpadPresentationModel
     @EnvironmentObject private var gestureManager: LaunchpadGestureManager
 
     let interceptor: LaunchpadInputInterceptor
-    let backgroundImage: NSImage?; let bottomPadding: CGFloat
 
     @FocusState private var searchFieldIsFocused: Bool
 
     @State private var hoveredItemID: String?
     @State private var itemFrames: [String: CGRect] = [:]
     @State private var pageFrames: [Int: CGRect] = [:]
-    @State private var gridMetrics = (
+    private let gridMetrics = (
         columns: 6,
         rows: 5,
         itemWidth: 110.0,
@@ -452,7 +516,7 @@ struct LaunchpadView: View {
                 }
 
             Group {
-                if let bgImage = backgroundImage {
+                if let bgImage = presentation.backgroundImage {
                     Image(nsImage: bgImage).resizable().aspectRatio(contentMode: .fill).ignoresSafeArea().allowsHitTesting(false)
                 }
                 VStack(spacing: 0) {
@@ -465,7 +529,7 @@ struct LaunchpadView: View {
                 if viewModel.searchText.isEmpty && viewModel.pages.count > 1 {
                     VStack {
                         Spacer()
-                        paginationDots.padding(.bottom, 60 + bottomPadding)
+                        paginationDots.padding(.bottom, 60 + presentation.bottomPadding)
                     }
                 }
                 if let draggedItem = viewModel.draggingItem {
@@ -486,27 +550,36 @@ struct LaunchpadView: View {
         .onReceive(NotificationCenter.default.publisher(for: .userStartedTypingInLaunchpad)) { _ in self.searchFieldIsFocused = true }
         .onReceive(gestureManager.$mouseLocation) { location in
             guard gestureManager.isDraggingItem else {
-                hoveredItemID = itemFrames.first { $0.value.contains(location) }?.key
+                let newHoveredItemID = itemFrames.first { $0.value.contains(location) }?.key
+                if hoveredItemID != newHoveredItemID {
+                    hoveredItemID = newHoveredItemID
+                }
                 return
             }
-            hoveredItemID = nil
+            if hoveredItemID != nil {
+                hoveredItemID = nil
+            }
             handleDragChange(at: location)
         }
         .onReceive(gestureManager.clickOccurred) { location in
-            if !isJiggleMode {
+            if !isJiggleMode, openedFolder == nil {
                 if let (itemID, _) = itemFrames.first(where: { $0.value.contains(location) }) {
                     handleItemClick(id: itemID)
                 }
             }
         }
         .onReceive(gestureManager.longPressOccurred) { location in
-            guard !isJiggleMode, openedFolder == nil, let (itemID, _) = itemFrames.first(where: { $0.value.contains(location) }) else { return }
-
-            if let path = viewModel.findPath(for: itemID) {
-                let draggedItem = viewModel.pages[path.page].remove(at: path.item)
-                viewModel.draggingItem = draggedItem
-                viewModel.dragOriginPath = path
+            guard !isJiggleMode,
+                  openedFolder == nil,
+                  let (itemID, _) = itemFrames.first(where: { $0.value.contains(location) }),
+                  let path = viewModel.findPath(for: itemID) else {
+                gestureManager.cancelItemDrag()
+                return
             }
+
+            let draggedItem = viewModel.pages[path.page].remove(at: path.item)
+            viewModel.draggingItem = draggedItem
+            viewModel.dragOriginPath = path
         }
         .onReceive(gestureManager.dragEnded) { location in
             edgeSwipeTimer?.invalidate()
@@ -541,6 +614,11 @@ struct LaunchpadView: View {
                 interceptor.folderFrame = .zero
             }
         }
+        .onDisappear {
+            edgeSwipeTimer?.invalidate()
+            edgeSwipeTimer = nil
+            viewModel.cancelReorderTimer()
+        }
     }
 
     private func handleDragChange(at location: CGPoint) {
@@ -550,7 +628,7 @@ struct LaunchpadView: View {
         if location.x < edgeZoneWidth || location.x > screenWidth - edgeZoneWidth {
             viewModel.cancelReorderTimer()
             viewModel.removeDropPlaceholder()
-            viewModel.folderCreationTargetID = nil
+            viewModel.setFolderCreationTarget(nil)
             startEdgeSwipeTimer(for: location.x < edgeZoneWidth ? .left : .right)
             return
         } else {
@@ -558,16 +636,17 @@ struct LaunchpadView: View {
             edgeSwipeTimer = nil
         }
 
-        guard let (pageIndex, pageFrame) = pageFrames.first(where: { $0.value.contains(location) }) else { return }
+        guard let (pageIndex, pageFrame) = pageFrames.first(where: { $0.value.contains(location) }),
+              viewModel.pages.indices.contains(pageIndex) else { return }
         let metrics = gridMetrics
 
         if let targetItem = viewModel.pages[pageIndex].first(where: { itemFrames[$0.id]?.contains(location) ?? false }) {
             viewModel.cancelReorderTimer()
             viewModel.removeDropPlaceholder()
-            viewModel.folderCreationTargetID = targetItem.id
+            viewModel.setFolderCreationTarget(targetItem.id)
 
         } else {
-            viewModel.folderCreationTargetID = nil
+            viewModel.setFolderCreationTarget(nil)
 
             let gridContentWidth = pageFrame.width - (2 * horizontalPadding)
             let columnHitBoxWidth = gridContentWidth / CGFloat(metrics.columns)
@@ -602,14 +681,19 @@ struct LaunchpadView: View {
 
     private func startEdgeSwipeTimer(for direction: SwipeDirection) {
         guard edgeSwipeTimer == nil else { return }
-        edgeSwipeTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
-            withAnimation(.spring()) {
-                if direction == .left { if viewModel.currentPage > 0 { viewModel.currentPage -= 1 } }
-                else { if viewModel.currentPage < viewModel.pages.count - 1 { viewModel.currentPage += 1 } }
+        let timer = Timer(timeInterval: 0.5, repeats: false) { _ in
+            Task { @MainActor in
+                withAnimation(.spring()) {
+                    if direction == .left { if viewModel.currentPage > 0 { viewModel.currentPage -= 1 } }
+                    else { if viewModel.currentPage < viewModel.pages.count - 1 { viewModel.currentPage += 1 } }
+                }
+                edgeSwipeTimer?.invalidate()
+                edgeSwipeTimer = nil
             }
-            self.edgeSwipeTimer?.invalidate()
-            self.edgeSwipeTimer = nil
         }
+        timer.tolerance = 0.05
+        edgeSwipeTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func handleDrop(of draggedItem: LaunchpadPageItem, at location: CGPoint) {
@@ -617,7 +701,7 @@ struct LaunchpadView: View {
            let targetItem = viewModel.pages.flatMap({ $0 }).first(where: { $0.id == targetID }),
            let draggedApp = draggedItem.appItem {
 
-            viewModel.folderCreationTargetID = nil
+            viewModel.setFolderCreationTarget(nil)
 
             switch targetItem {
             case .app:
@@ -704,19 +788,30 @@ struct LaunchpadView: View {
                 ForEach(Array(viewModel.pages.enumerated()), id: \.offset) { pageIndex, page in
                     appGridView(for: page)
                         .padding(.horizontal, horizontalPadding)
-                        .padding(.bottom, bottomPadding)
+                        .padding(.bottom, presentation.bottomPadding)
                         .frame(width: geometry.size.width)
                         .background(
                             GeometryReader { pageGeo in
                                 Color.clear
-                                    .onAppear { self.pageFrames[pageIndex] = pageGeo.frame(in: .global) }
-                                    .onChange(of: pageGeo.frame(in: .global)) { _, newFrame in self.pageFrames[pageIndex] = newFrame }
+                                    .preference(
+                                        key: PageFramePreferenceKey.self,
+                                        value: [pageIndex: pageGeo.frame(in: .global)]
+                                    )
                             }
                         )
                 }
             }
             .offset(x: (CGFloat(viewModel.currentPage) * -geometry.size.width) + gestureManager.dragOffset)
-            .onPreferenceChange(ItemFramePreferenceKey.self) { value in self.itemFrames = value }
+            .onPreferenceChange(ItemFramePreferenceKey.self) { value in
+                if itemFrames != value {
+                    itemFrames = value
+                }
+            }
+            .onPreferenceChange(PageFramePreferenceKey.self) { value in
+                if pageFrames != value {
+                    pageFrames = value
+                }
+            }
             .onChange(of: gestureManager.isPageSwiping) { _, isSwiping in
                 if !isSwiping {
                     let flickThreshold: CGFloat = 100; let dragThreshold = geometry.size.width / 4; var newPage = viewModel.currentPage
@@ -744,7 +839,7 @@ struct LaunchpadView: View {
                 }
             }
             .padding(.horizontal, horizontalPadding)
-            .padding(.bottom, 30 + bottomPadding)
+            .padding(.bottom, 30 + presentation.bottomPadding)
         }
     }
 

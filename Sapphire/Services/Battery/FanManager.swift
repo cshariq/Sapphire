@@ -260,7 +260,7 @@ class FanManager: ObservableObject {
             return
         }
         updateTimer?.invalidate()
-        updateTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        updateTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateData() }
         }
         if let updateTimer {

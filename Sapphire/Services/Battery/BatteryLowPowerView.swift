@@ -9,31 +9,41 @@ import SwiftUI
 
 struct BatteryLowPowerView: View {
     let state: BatteryState
-    let onEnable: () -> Void
+    let onToggle: () -> Void
     let onDismiss: () -> Void
+
+    @ObservedObject private var powerMode = PowerModeManager.shared
 
     @State private var isShowing = false
     @State private var isPressed = false
+
+    private var isLowPowerActive: Bool { powerMode.isLowPowerModeActive }
+    private var accentColor: Color { isLowPowerActive ? .green : .red }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
 
             Button(action: {
+                guard !isPressed else { return }
+
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                     isPressed = true
                 }
 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    onEnable()
+                    onToggle()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        isPressed = false
+                    }
                 }
             }) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(state.level)% Battery")
                             .font(.system(.title3, design: .rounded).bold())
-                            .foregroundColor(isPressed ? .yellow : .primary)
+                            .foregroundColor(isPressed ? accentColor : .primary)
 
-                        Text("Tap to turn on Low Power Mode")
+                        Text(isLowPowerActive ? "Tap to turn off Low Power Mode" : "Tap to turn on Low Power Mode")
                             .font(.body)
                             .foregroundColor(.secondary)
                     }
@@ -42,19 +52,19 @@ struct BatteryLowPowerView: View {
 
                     ZStack {
                         Capsule()
-                            .fill(isPressed ? Color.yellow.opacity(0.2) : Color.red.opacity(0.2))
+                            .fill(accentColor.opacity(isPressed ? 0.35 : 0.2))
                             .frame(width: 80, height: 45)
 
-                        Image(systemName: "battery.25")
+                        Image(systemName: isLowPowerActive ? "leaf.fill" : "battery.25")
                             .font(.system(size: 32, weight: .light))
-                            .foregroundColor(isPressed ? .yellow : .red)
+                            .foregroundColor(accentColor)
                     }
                 }
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 10)
             .padding(12)
-            .padding(.top, NotchConfiguration.universalHeight)
+            .padding(.top, (NotchConfiguration.universalHeight - 15))
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")

@@ -37,3 +37,56 @@ Sapphire/Services/FaceID/Models/PassiveLiveness.enc
 Sapphire.xcodeproj/project.xcworkspace/xcuserdata/Shariq.xcuserdatad/UserInterfaceState.xcuserstate
 Sapphire.xcodeproj/xcuserdata/Shariq.xcuserdatad/xcschemes/xcschememanagement.plist
 /Sapphire/Services/AppLock
+
+# Premium feature infrastructure
+/Sapphire/App Settings/PremiumFeatureKit.swift
+/Sapphire/Models/PremiumGate.swift
+
+# Premium feature settings
+/Sapphire/App Settings/AppSecurity.swift
+/Sapphire/App Settings/ArchivesAndDMGInstallerSettingsView.swift
+/Sapphire/App Settings/DockLayoutsSettingsView.swift
+/Sapphire/App Settings/EmojiSettingsView.swift
+/Sapphire/App Settings/KeyboardShortcutsSettingsView.swift
+/Sapphire/App Settings/MediaOptimizerSettingsView.swift
+/Sapphire/App Settings/MonitoringSettingsView.swift
+/Sapphire/App Settings/MouseSettingsView.swift
+/Sapphire/App Settings/StorageViews.swift
+
+# Premium feature implementations
+/Sapphire/Services/Continuity/
+/Sapphire/Services/DMGInstaller/
+/Sapphire/Services/DockLayouts/
+/Sapphire/Services/Emoji/
+/Sapphire/Services/MediaOptimizer/
+/Sapphire/Services/Mouse/
+/Sapphire/Services/SystemEnhance/
+/Sapphire/Services/Clipboard/CleanURLManager.swift
+/Sapphire/Services/Clipboard/ClipboardAutoClearManager.swift
+/Sapphire/Services/Clipboard/ClipboardPickerEmojiTabView.swift
+/Sapphire/Services/Clipboard/ClipboardPickerManager.swift
+/Sapphire/Services/Clipboard/ClipboardPickerViews.swift
+/Sapphire/Services/Clipboard/ClipboardThumbnails.swift
+/Sapphire/Services/Clipboard/FinderCutPasteManager.swift
+/Sapphire/Services/Clipboard/SnippetManager.swift
+/Sapphire/Services/Menubar/MenuBarProfileEngine.swift
+/Sapphire/Services/Menubar/MenuBarProfileModels.swift
+/Sapphire/Services/Menubar/WiFiStatusMonitor.swift
+/Sapphire/Services/System/CaretPositionTracker.swift
+/Sapphire/Widgets/Audio/AudioEffectComponents.swift
+/Sapphire/Widgets/Audio/EightDAudioView.swift
+/Sapphire/Widgets/Audio/SurroundAudioView.swift
+/Sapphire/Widgets/Battery/SystemPowerReading.swift
+/Sapphire/Widgets/Storage/
+
+# Premium continuity and audio extension targets
+/SapphireAudioDriver/
+/SapphireCameraExtension/
+/SapphireFileProvider/
+/SapphireFinderSync/
+
+# Premium feature documentation and focused tests
+/docs/continuity/
+/SapphireTests/AppStorageModelsTests.swift
+/SapphireTests/ClipboardPickerPositioningTests.swift
+/SapphireTests/ContinuityStatusProtocolTests.swift

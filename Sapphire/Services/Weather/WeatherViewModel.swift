@@ -40,7 +40,7 @@ class WeatherViewModel: ObservableObject {
 
     private init() {
         fetch()
-        Timer.scheduledTimer(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
+        Timer.scheduledCoalescing(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.fetch() }
         }
 

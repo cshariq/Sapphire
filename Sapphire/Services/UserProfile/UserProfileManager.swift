@@ -17,7 +17,6 @@ class UserProfileManager: ObservableObject {
     @Published var isEnabled: Bool = false
     @Published var autoDiscoveryEnabled: Bool = true
 
-    private let encryptionManager = EncryptionManager.shared
     private let contactStore = CNContactStore()
     private let eventStore = EKEventStore()
 
@@ -36,34 +35,31 @@ class UserProfileManager: ObservableObject {
         autoDiscoveryEnabled = UserDefaults.standard.bool(forKey: autoDiscoveryKey)
 
         guard isEnabled else { return }
+        let profileKey = profileKey
 
-        Task.detached(priority: .utility) { [weak self] in
-            guard let self = self else { return }
-
-            if let encryptedData = UserDefaults.standard.data(forKey: self.profileKey),
-               let decrypted = try? self.encryptionManager.decrypt(encryptedData),
-               let profile = try? JSONDecoder().decode(PersonalProfile.self, from: decrypted) {
-                await MainActor.run {
-                    self.profile = profile
-                }
-            } else {
-                await MainActor.run {
-                    self.profile = PersonalProfile()
-                }
-            }
+        Task { @MainActor [weak self] in
+            let loadedProfile = await Task.detached(priority: .utility) {
+                guard
+                    let encryptedData = UserDefaults.standard.data(forKey: profileKey),
+                    let decrypted = try? EncryptionManager.shared.decrypt(encryptedData),
+                    let profile = try? JSONDecoder().decode(PersonalProfile.self, from: decrypted)
+                else { return PersonalProfile() }
+                return profile
+            }.value
+            guard !Task.isCancelled else { return }
+            self?.profile = loadedProfile
         }
     }
 
     func saveProfile() {
         guard let profile = profile else { return }
+        let profileKey = profileKey
 
-        Task.detached(priority: .utility) { [weak self] in
-            guard let self = self else { return }
-
+        Task.detached(priority: .utility) {
             do {
                 let encoded = try JSONEncoder().encode(profile)
-                let encrypted = try self.encryptionManager.encrypt(encoded)
-                UserDefaults.standard.set(encrypted, forKey: self.profileKey)
+                let encrypted = try EncryptionManager.shared.encrypt(encoded)
+                UserDefaults.standard.set(encrypted, forKey: profileKey)
 
                 print(" User profile saved securely")
             } catch {
@@ -222,8 +218,8 @@ class UserProfileManager: ObservableObject {
             }
         }
 
-        profile.preferredLanguage = Locale.current.languageCode ?? "en"
-        profile.region = Locale.current.regionCode ?? "US"
+        profile.preferredLanguage = Locale.current.language.languageCode?.identifier ?? "en"
+        profile.region = Locale.current.region?.identifier ?? "US"
 
         profile.timezone = TimeZone.current.identifier
 
@@ -235,24 +231,22 @@ class UserProfileManager: ObservableObject {
     private func discoverFromCalendar(_ profile: inout PersonalProfile) async {
         let status = EKEventStore.authorizationStatus(for: .event)
 
-        guard status == .authorized || status == .notDetermined else {
+        guard status == .fullAccess || status == .notDetermined else {
             print("ℹ️ Calendar access not authorized")
             return
         }
 
         if status == .notDetermined {
-            let granted = await withCheckedContinuation { continuation in
-                eventStore.requestAccess(to: .event) { granted, _ in
-                    continuation.resume(returning: granted)
-                }
-            }
+            let granted = (try? await eventStore.requestFullAccessToEvents()) ?? false
             guard granted else { return }
         }
 
         if profile.birthday == nil {
             let calendar = Calendar.current
-            let startDate = calendar.date(byAdding: .year, value: -50, to: Date())!
-            let endDate = calendar.date(byAdding: .year, value: 1, to: Date())!
+            guard
+                let startDate = calendar.date(byAdding: .year, value: -50, to: Date()),
+                let endDate = calendar.date(byAdding: .year, value: 1, to: Date())
+            else { return }
 
             let predicate = eventStore.predicateForEvents(
                 withStart: startDate,
@@ -357,21 +351,18 @@ class UserProfileManager: ObservableObject {
     func requestCalendarPermission() async -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
 
-        if status == .authorized {
+        if status == .fullAccess {
             return true
         }
+        guard status == .notDetermined else { return false }
 
-        return await withCheckedContinuation { continuation in
-            eventStore.requestAccess(to: .event) { granted, _ in
-                continuation.resume(returning: granted)
-            }
-        }
+        return (try? await eventStore.requestFullAccessToEvents()) ?? false
     }
 }
 
 // MARK: - User Profile Model
 
-struct PersonalProfile: Codable, Equatable {
+struct PersonalProfile: Codable, Equatable, Sendable {
     var firstName: String = ""
     var lastName: String = ""
     var nickname: String = ""
@@ -413,7 +404,7 @@ struct PersonalProfile: Codable, Equatable {
         }
     }
 
-    enum Gender: String, Codable, CaseIterable {
+    enum Gender: String, Codable, CaseIterable, Sendable {
         case male = "Male"
         case female = "Female"
         case nonBinary = "Non-binary"
@@ -421,7 +412,7 @@ struct PersonalProfile: Codable, Equatable {
         case other = "Other"
     }
 
-    enum DiscoverySource: String, Codable {
+    enum DiscoverySource: String, Codable, Sendable {
         case manual = "Manual"
         case contacts = "Contacts"
         case calendar = "Calendar"

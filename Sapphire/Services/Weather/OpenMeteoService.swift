@@ -151,7 +151,14 @@ enum OpenMeteoServiceError: LocalizedError {
 final class OpenMeteoService {
 
     static let shared = OpenMeteoService()
-    private init() {}
+    private let session: URLSession
+
+    private init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 15
+        session = URLSession(configuration: config)
+    }
 
     private static let localISOFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -179,6 +186,13 @@ final class OpenMeteoService {
         return f
     }()
 
+    private static let dayInputFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
     func fetchWeather(
         for location: CLLocation,
         locationName: String
@@ -194,7 +208,7 @@ final class OpenMeteoService {
             .init(name: "hourly",                value: "temperature_2m,weathercode"),
             .init(name: "daily",                 value: "weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max"),
             .init(name: "temperature_unit",      value: "celsius"),
-            .init(name: "windspeed_unit",        value: "mph"),
+            .init(name: "windspeed_unit",        value: "kmh"),
             .init(name: "precipitation_unit",    value: "mm"),
             .init(name: "timezone",              value: "auto"),
             .init(name: "forecast_days",         value: "7"),
@@ -204,14 +218,13 @@ final class OpenMeteoService {
 
         guard let url = components.url else { throw OpenMeteoServiceError.invalidURL }
 
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest  = 10
-        config.timeoutIntervalForResource = 15
-        let session = URLSession(configuration: config)
-
         let data: Data
         do {
-            let (d, _) = try await session.data(from: url)
+            let (d, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode) else {
+                throw URLError(.badServerResponse)
+            }
             data = d
         } catch {
             throw OpenMeteoServiceError.networkError(error)
@@ -322,12 +335,12 @@ final class OpenMeteoService {
     private func buildDailyForecasts(
         from daily: OpenMeteoResponse.DailyWeather?
     ) -> [DailyForecastUIData] {
-        guard let daily, let times = daily.time else { return [] }
+        guard let daily, let times = daily.time, times.count > 1 else { return [] }
         var results: [DailyForecastUIData] = []
         for i in 1..<min(times.count, 7) {
-            let maxC = daily.temperature2mMax?[i].flatMap { $0 } ?? 0
-            let minC = daily.temperature2mMin?[i].flatMap { $0 } ?? 0
-            let wmo  = daily.weathercode?[i].flatMap { $0 } ?? 0
+            let maxC = element(at: i, in: daily.temperature2mMax) ?? 0
+            let minC = element(at: i, in: daily.temperature2mMin) ?? 0
+            let wmo  = element(at: i, in: daily.weathercode) ?? 0
             let dow  = dowAbbreviation(from: times[i])
             results.append(DailyForecastUIData(
                 dayOfWeek:      dow,
@@ -352,8 +365,8 @@ final class OpenMeteoService {
         for i in 0..<times.count {
             let timeStr = times[i].count >= 16 ? String(times[i].prefix(16)) : times[i]
             guard let date = Self.localISOFormatter.date(from: timeStr), date >= startOfCurrentHour else { continue }
-            let tempC = hourly.temperature2m?[i].flatMap { $0 } ?? 0
-            let wmo   = hourly.weathercode?[i].flatMap { $0 } ?? 0
+            let tempC = element(at: i, in: hourly.temperature2m) ?? 0
+            let wmo   = element(at: i, in: hourly.weathercode) ?? 0
             results.append(HourlyForecastUIData(
                 time:             Self.hourlyFormatter.string(from: date).uppercased(),
                 iconName:         WeatherIconMapper.map(from: wmcCodeToTWCIcon(wmo, isDay: isDay)),
@@ -366,9 +379,12 @@ final class OpenMeteoService {
     }
 
     private func dowAbbreviation(from isoDate: String) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        guard let date = f.date(from: isoDate) else { return "---" }
+        guard let date = Self.dayInputFormatter.date(from: isoDate) else { return "---" }
         return Self.dayOfWeekFormatter.string(from: date).uppercased()
+    }
+
+    private func element<T>(at index: Int, in values: [T?]?) -> T? {
+        guard let values, values.indices.contains(index) else { return nil }
+        return values[index]
     }
 }

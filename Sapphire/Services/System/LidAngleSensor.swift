@@ -72,7 +72,7 @@ struct LASDiagnostic {
     }
 
     private static func probeSensor() -> LASSensorProbeResult {
-        if let device = findHIDDevice(usagePage: 0x0020, usage: 0x008A) {
+        if let device = findStandardDevice() {
             return .foundStandard(device: device)
         }
 
@@ -81,6 +81,10 @@ struct LASDiagnostic {
         }
 
         return .notFound
+    }
+
+    static func findStandardDevice() -> IOHIDDevice? {
+        findHIDDevice(usagePage: 0x0020, usage: 0x008A)
     }
 
     private static func findHIDDevice(usagePage: Int, usage: Int) -> IOHIDDevice? {
@@ -92,9 +96,8 @@ struct LASDiagnostic {
 
         let matching: [String: Any] = [
             kIOHIDVendorIDKey as String: 0x05AC,
-            kIOHIDProductIDKey as String: 0x8104,
-            "UsagePage": usagePage,
-            "Usage": usage,
+            kIOHIDDeviceUsagePageKey as String: usagePage,
+            kIOHIDDeviceUsageKey as String: usage,
         ]
 
         IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
@@ -104,6 +107,9 @@ struct LASDiagnostic {
         }
 
         for device in devices {
+            guard (IOHIDDeviceGetProperty(device, kIOHIDBuiltInKey as CFString) as? NSNumber)?.boolValue == true else {
+                continue
+            }
             var report = [UInt8](repeating: 0, count: 8)
             var length = CFIndex(report.count)
 
@@ -154,7 +160,10 @@ final class LidAngleSensor: ObservableObject {
     enum Client: Hashable {
         case caffeineManager
         case automationManager
-        case settingsPreview
+        case hingeAnimationStandby
+        case hingeAnimation
+        case systemEnhanceSettingsPreview
+        case caffeineSettingsPreview
     }
 
     static let shared = LidAngleSensor()
@@ -162,6 +171,7 @@ final class LidAngleSensor: ObservableObject {
     @Published private(set) var angle = 120.0
     @Published private(set) var velocity = 0.0
     @Published private(set) var isAvailable = false
+    @Published private(set) var isReporting = false
     @Published private(set) var tick: UInt = 0
     @Published private(set) var statusMessage = "Sensor not available"
 
@@ -179,6 +189,9 @@ final class LidAngleSensor: ObservableObject {
     private var lastUpdateTime: TimeInterval = 0
     private var lastMovementTime: TimeInterval = 0
     private var isFirstUpdate = true
+    private var consecutiveReadFailures = 0
+    private var recoveryAttempts = 0
+    private var nextReopenAttemptTime: TimeInterval = 0
 
     private static let angleSmoothingFactor = 0.05
     private static let velocitySmoothingFactor = 0.3
@@ -188,6 +201,11 @@ final class LidAngleSensor: ObservableObject {
     private static let additionalDecay = 0.8
     private static let pollInterval: TimeInterval = 0.5
     private static let settingsPreviewPollInterval: TimeInterval = 0.15
+    private static let hingeAnimationStandbyPollInterval: TimeInterval = 0.1
+    private static let hingeAnimationPollInterval: TimeInterval = 1.0 / 30.0
+    private static let readFailureThreshold = 4
+    private static let reprobeThreshold = 3
+    private static let reopenRetryInterval: TimeInterval = 1
     nonisolated private static let noOptions = IOOptionBits(kIOHIDOptionsTypeNone)
 
     private init() {
@@ -211,7 +229,15 @@ final class LidAngleSensor: ObservableObject {
     }
 
     private var currentPollInterval: TimeInterval {
-        activeClients.contains(.settingsPreview) ? Self.settingsPreviewPollInterval : Self.pollInterval
+        if activeClients.contains(.hingeAnimation) {
+            return Self.hingeAnimationPollInterval
+        }
+        if activeClients.contains(.hingeAnimationStandby) {
+            return Self.hingeAnimationStandbyPollInterval
+        }
+        let isShowingSettings = activeClients.contains(.systemEnhanceSettingsPreview)
+            || activeClients.contains(.caffeineSettingsPreview)
+        return isShowingSettings ? Self.settingsPreviewPollInterval : Self.pollInterval
     }
 
     func acquire(_ client: Client) {
@@ -236,9 +262,10 @@ final class LidAngleSensor: ObservableObject {
 
     private func startIfNeeded() {
         guard isAvailable, timer == nil, let hidDevice else { return }
-        guard IOHIDDeviceOpen(hidDevice, Self.noOptions) == kIOReturnSuccess else { return }
-
-        isDeviceOpen = true
+        isDeviceOpen = IOHIDDeviceOpen(hidDevice, Self.noOptions) == kIOReturnSuccess
+        if !isDeviceOpen {
+            markReadingUnavailable()
+        }
         startTimer()
     }
 
@@ -251,13 +278,17 @@ final class LidAngleSensor: ObservableObject {
 
     private func startTimer() {
         let interval = currentPollInterval
-        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.poll()
             }
         }
-        timer.tolerance = min(0.2, interval * 0.2)
+        timer.tolerance = activeClients.contains(.hingeAnimation)
+            ? min(0.002, interval * 0.1)
+            : min(0.2, interval * 0.2)
         self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        poll()
     }
 
     func stop() {
@@ -268,10 +299,19 @@ final class LidAngleSensor: ObservableObject {
             IOHIDDeviceClose(hidDevice, Self.noOptions)
             isDeviceOpen = false
         }
+        isReporting = false
+        consecutiveReadFailures = 0
+        recoveryAttempts = 0
+        nextReopenAttemptTime = 0
     }
 
     private func poll() {
         guard let hidDevice else { return }
+
+        guard isDeviceOpen else {
+            reopenIfNeeded(hidDevice)
+            return
+        }
 
         var length = CFIndex(hidReport.count)
         let result = IOHIDDeviceGetReport(
@@ -282,7 +322,19 @@ final class LidAngleSensor: ObservableObject {
             &length
         )
 
-        guard result == kIOReturnSuccess, length >= 3 else { return }
+        guard result == kIOReturnSuccess, length >= 3 else {
+            handleReadFailure(on: hidDevice)
+            return
+        }
+
+        consecutiveReadFailures = 0
+        recoveryAttempts = 0
+        nextReopenAttemptTime = 0
+        if !isReporting {
+            isReporting = true
+            statusMessage = diagnostic?.statusMessage ?? "Sensor detected and ready."
+            isFirstUpdate = true
+        }
 
         let rawValue = UInt16(hidReport[2]) << 8 | UInt16(hidReport[1])
         let rawAngle = Double(rawValue)
@@ -290,6 +342,45 @@ final class LidAngleSensor: ObservableObject {
         updateVelocity(from: rawAngle)
         angle = rawAngle
         tick &+= 1
+    }
+
+    private func handleReadFailure(on hidDevice: IOHIDDevice) {
+        consecutiveReadFailures += 1
+        guard consecutiveReadFailures >= Self.readFailureThreshold else { return }
+
+        markReadingUnavailable()
+        IOHIDDeviceClose(hidDevice, Self.noOptions)
+        isDeviceOpen = false
+        recoveryAttempts += 1
+        nextReopenAttemptTime = CACurrentMediaTime() + Self.reopenRetryInterval
+    }
+
+    private func reopenIfNeeded(_ currentDevice: IOHIDDevice) {
+        let now = CACurrentMediaTime()
+        guard now >= nextReopenAttemptTime else { return }
+        nextReopenAttemptTime = now + Self.reopenRetryInterval
+
+        var device = currentDevice
+        if recoveryAttempts >= Self.reprobeThreshold,
+           let replacement = LASDiagnostic.findStandardDevice() {
+            hidDevice = replacement
+            device = replacement
+            recoveryAttempts = 0
+        }
+
+        isDeviceOpen = IOHIDDeviceOpen(device, Self.noOptions) == kIOReturnSuccess
+        if isDeviceOpen {
+            consecutiveReadFailures = 0
+        } else {
+            recoveryAttempts += 1
+            markReadingUnavailable()
+        }
+    }
+
+    private func markReadingUnavailable() {
+        isReporting = false
+        velocity = 0
+        statusMessage = "The lid angle sensor stopped responding. Reconnecting…"
     }
 
     private func updateVelocity(from rawAngle: Double) {

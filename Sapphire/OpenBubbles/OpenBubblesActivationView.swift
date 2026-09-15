@@ -178,8 +178,7 @@ struct OpenBubblesActivationView: View {
 
     // MARK: - Logic & Helpers
     private func copyToClipboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        NSPasteboard.general.copyString(text)
     }
     private func loadHardwareInfo() async {
         if identifiers != nil { return }

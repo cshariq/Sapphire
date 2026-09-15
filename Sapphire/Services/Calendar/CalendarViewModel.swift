@@ -26,6 +26,7 @@ class InteractiveCalendarViewModel: ObservableObject {
     @Published private(set) var today: Date
 
     private var currentCalendar: Calendar
+    private let calendarProvider: () -> Calendar
     private let now: () -> Date
     private var notificationObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
 
@@ -43,9 +44,10 @@ class InteractiveCalendarViewModel: ObservableObject {
         workspaceNotificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter
     ) {
         self.calendarStartOfWeek = calendarStartOfWeek
+        self.calendarProvider = calendar
         self.now = now
 
-        var cal = Calendar.current
+        var cal = calendar()
         cal.firstWeekday = calendarStartOfWeek.firstWeekday
         self.currentCalendar = cal
 
@@ -78,7 +80,7 @@ class InteractiveCalendarViewModel: ObservableObject {
     func updateStartOfWeek(_ day: Day) {
         guard day != calendarStartOfWeek else { return }
         calendarStartOfWeek = day
-        var cal = Calendar.current
+        var cal = calendarProvider()
         cal.firstWeekday = day.firstWeekday
         currentCalendar = cal
         generateDates(using: cal)
@@ -146,6 +148,11 @@ class InteractiveCalendarViewModel: ObservableObject {
     }
 
     private func refreshCurrentDay(for notificationName: Notification.Name) {
+        if notificationName == .NSSystemTimeZoneDidChange {
+            var updatedCalendar = calendarProvider()
+            updatedCalendar.firstWeekday = calendarStartOfWeek.firstWeekday
+            currentCalendar = updatedCalendar
+        }
         let calendar = currentCalendar
         let currentDay = calendar.startOfDay(for: now())
         guard currentDay != today else { return }

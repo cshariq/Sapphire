@@ -15,10 +15,10 @@ struct WeatherApiResponse: Codable {
 }
 
 struct ConditionsShort: Codable {
-    var observation: Observation?
+    var observation: WeatherObservation?
 }
 
-struct Observation: Codable {
+struct WeatherObservation: Codable {
     var imperial: ImperialObservation?
     var metric: ImperialObservation?
     var wx_phrase: String?

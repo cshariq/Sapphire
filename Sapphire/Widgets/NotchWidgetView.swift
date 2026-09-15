@@ -6,18 +6,46 @@
 
 import SwiftUI
 
+enum MusicWidgetVisibilityPolicy {
+    static func shouldShow(
+        isEnabled: Bool,
+        hideWhenNotPlaying: Bool,
+        isPlaying: Bool,
+        hidePausedSpotifyWhenIdle: Bool,
+        isSpotifyPausedWithNoOtherPlayback: Bool
+    ) -> Bool {
+        guard isEnabled else { return false }
+        if hideWhenNotPlaying && !isPlaying { return false }
+        if hidePausedSpotifyWhenIdle && isSpotifyPausedWithNoOtherPlayback { return false }
+        return true
+    }
+}
+
 private struct NavigationStackKey: EnvironmentKey {
     static let defaultValue: Binding<[NotchWidgetMode]> = .constant([.defaultWidgets])
 }
 private struct ActiveDropZoneKey: EnvironmentKey {
     static let defaultValue: Binding<DropZone?> = .constant(nil)
 }
-private struct IsFileDropTargetedKey: EnvironmentKey {
-    static let defaultValue: Binding<Bool> = .constant(false)
+
+private struct OnActiveSnapZoneChangeKey: EnvironmentKey {
+    static let defaultValue: (SnapZone?) -> Void = { _ in }
 }
 
-private struct OnSnapDragEndKey: EnvironmentKey {
-    static let defaultValue: () -> Void = {}
+private struct OnDropZoneFramesChangeKey: EnvironmentKey {
+    static let defaultValue: ([DropZone: CGRect]) -> Void = { _ in }
+}
+
+private struct OnSnapZoneHitRegionsChangeKey: EnvironmentKey {
+    static let defaultValue: ([SnapZoneHitRegion]) -> Void = { _ in }
+}
+
+private struct NotchDragLocationKey: EnvironmentKey {
+    static let defaultValue: CGPoint? = nil
+}
+
+private struct FileDragModeKey: EnvironmentKey {
+    static let defaultValue: FileDragMode = .newFile
 }
 
 private struct IsCalendarHoveredKey: EnvironmentKey {
@@ -33,14 +61,25 @@ extension EnvironmentValues {
         get { self[ActiveDropZoneKey.self] }
         set { self[ActiveDropZoneKey.self] = newValue }
     }
-    var isFileDropTargeted: Binding<Bool> {
-        get { self[IsFileDropTargetedKey.self] }
-        set { self[IsFileDropTargetedKey.self] = newValue }
+    var onActiveSnapZoneChange: (SnapZone?) -> Void {
+        get { self[OnActiveSnapZoneChangeKey.self] }
+        set { self[OnActiveSnapZoneChangeKey.self] = newValue }
     }
-
-    var onSnapDragEnd: () -> Void {
-        get { self[OnSnapDragEndKey.self] }
-        set { self[OnSnapDragEndKey.self] = newValue }
+    var onDropZoneFramesChange: ([DropZone: CGRect]) -> Void {
+        get { self[OnDropZoneFramesChangeKey.self] }
+        set { self[OnDropZoneFramesChangeKey.self] = newValue }
+    }
+    var onSnapZoneHitRegionsChange: ([SnapZoneHitRegion]) -> Void {
+        get { self[OnSnapZoneHitRegionsChangeKey.self] }
+        set { self[OnSnapZoneHitRegionsChangeKey.self] = newValue }
+    }
+    var notchDragLocation: CGPoint? {
+        get { self[NotchDragLocationKey.self] }
+        set { self[NotchDragLocationKey.self] = newValue }
+    }
+    var fileDragMode: FileDragMode {
+        get { self[FileDragModeKey.self] }
+        set { self[FileDragModeKey.self] = newValue }
     }
     var isCalendarHovered: Binding<Bool> {
         get { self[IsCalendarHoveredKey.self] }
@@ -51,19 +90,20 @@ extension EnvironmentValues {
 struct NotchWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
     @Environment(\.activeDropZone) var activeDropZone
-    @Environment(\.isFileDropTargeted) var isFileDropTargeted
     @Environment(\.isCalendarHovered) var isCalendarHovered
-    @Environment(\.onSnapDragEnd) var onSnapDragEnd
+    @Environment(\.onActiveSnapZoneChange) var onActiveSnapZoneChange
+    @Environment(\.onDropZoneFramesChange) var onDropZoneFramesChange
+    @Environment(\.onSnapZoneHitRegionsChange) var onSnapZoneHitRegionsChange
+    @Environment(\.fileDragMode) var fileDragMode
 
     private let calendarViewModel: InteractiveCalendarViewModel
 
     @EnvironmentObject var settings: SettingsModel
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @EnvironmentObject private var fileShelfState: FileShelfState
     @EnvironmentObject var musicWidget: MusicManager
     @EnvironmentObject private var calendarService: CalendarService
     @EnvironmentObject var intelligenceVM: IntelligenceNotchViewModel
-
-    @StateObject private var dragState = DragStateManager.shared
 
     private var currentMode: NotchWidgetMode {
         navigationStack.wrappedValue.last ?? .defaultWidgets
@@ -87,21 +127,30 @@ struct NotchWidgetView: View {
         let orderedTypes = menuWidgetOrder
 
         let enabled = orderedTypes.filter { widgetType in
+            guard !widgetType.isPremiumLocked else { return false }
             switch widgetType {
             case .music:
-                return settings.settings.musicWidgetEnabled && (!settings.settings.hideMusicWidgetWhenNotPlaying || (musicWidget.title != nil && !musicWidget.title!.isEmpty))
+                return MusicWidgetVisibilityPolicy.shouldShow(
+                    isEnabled: settings.settings.musicWidgetEnabled,
+                    hideWhenNotPlaying: settings.settings.hideMusicWidgetWhenNotPlaying,
+                    isPlaying: musicWidget.isPlaying,
+                    hidePausedSpotifyWhenIdle: settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle,
+                    isSpotifyPausedWithNoOtherPlayback: musicWidget.isSpotifyPausedWithNoSystemMediaPlaying
+                )
             case .weather:
                 return settings.settings.weatherWidgetEnabled
             case .sports:
-                return settings.settings.sportsWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .sportsWidget)
+                return settings.settings.sportsWidgetEnabled
             case .finance:
-                return settings.settings.financeWidgetEnabled && SubscriptionManager.shared.hasAccess(to: .financeWidget)
+                return settings.settings.financeWidgetEnabled
             case .shopify:
                 return settings.settings.shopifyWidgetEnabled
             case .calendar:
                 return settings.settings.calendarWidgetEnabled
             case .battery:
                 return settings.settings.batteryWidgetEnabled
+            case .timer:
+                return settings.settings.timerWidgetEnabled
             case .shortcuts:
                 return settings.settings.shortcutsWidgetEnabled
             case .notes:
@@ -110,6 +159,8 @@ struct NotchWidgetView: View {
                 return settings.settings.clipboardWidgetEnabled
             case .mirror:
                 return settings.settings.mirrorWidgetEnabled
+            case .storage:
+                return settings.settings.storageWidgetEnabled
             case .agent:
                 return false
             case .focusSession:
@@ -136,21 +187,34 @@ struct NotchWidgetView: View {
         }
         .onAppear {
             self.displayedMode = self.currentMode
+        }
+        .task {
+            if self.currentMode == .fileShelfLanding {
+                self.blurRadius = 0
+                self.isScaledIn = true
+                self.isPositioned = true
+                self.isFadedIn = true
+                return
+            }
             let animation: Animation
             if self.currentMode == .defaultWidgets {
                 animation = .interpolatingSpring(stiffness: 230, damping: 22)
             } else {
                 animation = .interpolatingSpring(stiffness: 220, damping: 18)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(animation) {
-                    self.isScaledIn = true
-                    self.isPositioned = true
-                    self.isFadedIn = true
-                }
-                withAnimation(.easeOut(duration: 0.6)) {
-                    self.blurRadius = 0
-                }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            withAnimation(animation) {
+                self.isScaledIn = true
+                self.isPositioned = true
+                self.isFadedIn = true
+            }
+            withAnimation(.easeOut(duration: 0.6)) {
+                self.blurRadius = 0
             }
         }
         .onChange(of: currentMode) {
@@ -186,12 +250,13 @@ struct NotchWidgetView: View {
     private func contentSwitch(for mode: NotchWidgetMode) -> some View {
         switch mode {
         case .defaultWidgets:
+            let widgets = enabledAndOrderedWidgets
             HStack(spacing: 20) {
-                ForEach(enabledAndOrderedWidgets) { widgetType in
+                ForEach(widgets) { widgetType in
                     widgetView(for: widgetType)
                         .id(widgetType)
 
-                    if widgetType != enabledAndOrderedWidgets.last && settings.settings.showDividersBetweenWidgets {
+                    if widgetType != widgets.last && settings.settings.showDividersBetweenWidgets {
                         Divider()
                             .frame(height: 60)
                             .background(Color.white.opacity(0.3))
@@ -235,17 +300,21 @@ struct NotchWidgetView: View {
         case .weatherPlayer:
             WeatherPlayerView()
         case .calendarPlayer:
-            CalendarDetailView()
+            CalendarDetailView(viewModel: calendarViewModel)
         case .timerDetailView:
             TimerDetailView(navigationStack: navigationStack)
         case .snapZones:
-            SnapZonesWidgetView(onDragEnd: onSnapDragEnd)
+            SnapZonesWidgetView(
+                onActiveZoneChange: onActiveSnapZoneChange,
+                onHitRegionsChange: onSnapZoneHitRegionsChange
+            )
         case .fileShelf:
             FileShelfView()
         case .fileShelfLanding:
             FileDragLandingView(
-                mode: dragState.isDraggingFromShelf ? .existingFile : .newFile,
-                activeZone: activeDropZone
+                mode: fileDragMode,
+                activeZone: activeDropZone,
+                onZoneFramesChange: onDropZoneFramesChange
             )
         case .fileActionPreview:
             if let item = fileShelfState.selectedItemForPreview {
@@ -265,11 +334,14 @@ struct NotchWidgetView: View {
             DeviceEQView(device: device)
         case .multiAudioAppEQ(let bundleID, let appName):
             AppEQView(bundleID: bundleID, appName: appName)
+        case .multiAudioApp8D(let bundleID, let appName):
+            EightDAudioView(bundleID: bundleID, appName: appName)
+        case .multiAudioAppSurround(let bundleID, let appName):
+            SurroundAudioView(bundleID: bundleID, appName: appName)
 
         case .dragActivated:
             Color.clear
                 .frame(width: 300, height: 200)
-                .onDrop(of: [.fileURL], isTargeted: isFileDropTargeted) { _ in return false }
         case .agentS:
             IntelligenceNotchView(navigationStack: navigationStack)
         case .blipHub:
@@ -282,6 +354,12 @@ struct NotchWidgetView: View {
             FocusSessionDetailView(navigationStack: navigationStack)
         case .batteryDetailView:
             BatteryDetailView()
+        case .storageDetailView:
+            StorageDetailView()
+        case .continuityDetail:
+            ContinuityNotchDetailView(navigationStack: navigationStack)
+        case .continuityActivityDetail:
+            ContinuityExternalActivityDetailView(bridge: ContinuityManager.shared.liveActivityBridge)
         }
     }
 
@@ -369,8 +447,20 @@ struct NotchWidgetView: View {
             MirrorWidgetView()
         case .focusSession:
             FocusWidgetView()
+        case .timer:
+            TimerWidgetView()
         case .battery:
             BatteryWidgetView()
+        case .storage:
+            StorageWidgetView()
+                .onTapGesture {
+                    if settings.settings.storageOpenOnClick {
+                        Task {
+                            try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
+                            navigationStack.wrappedValue.append(NotchWidgetMode.storageDetailView)
+                        }
+                    }
+                }
         case .agent:
             EmptyView()
         }

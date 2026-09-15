@@ -106,11 +106,13 @@ class CalibrationManager: ObservableObject {
         case .holdingAtFull:
             holdTimer?.invalidate()
             holdTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                self?.updateHoldTime()
+                Task { @MainActor [weak self] in
+                    self?.updateHoldTime()
+                }
             }
 
         case .dischargingToLow:
-            batteryManager.setDischarge(discharging: true)
+            batteryManager.setDischarge(discharging: true, safetyFloor: 10, rechargeOnFloor: false, bypassSafetyFloor: false)
 
         case .finalChargeToLimit:
             batteryManager.setDischarge(discharging: false)
@@ -163,9 +165,7 @@ class CalibrationManager: ObservableObject {
         holdTimer?.invalidate()
         holdTimer = nil
 
-        if caffeineManager.isActive {
-            caffeineManager.stop()
-        }
+        caffeineManager.stopIfAutoStartedByBatteryDischarge()
 
         batteryManager.setDischarge(discharging: false)
         restoreChargePolicy()

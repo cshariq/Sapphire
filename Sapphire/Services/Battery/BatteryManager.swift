@@ -156,7 +156,7 @@ class PowerStateController: ObservableObject {
                     self.settings.settings.oneTimeDischargeEnabled = false
                 } else {
                     statusManager.updateState(managementState: .discharging)
-                    batteryManager.setDischarge(discharging: true)
+                    batteryManager.setDischarge(discharging: true, safetyFloor: currentSettings.oneTimeDischargeTarget, rechargeOnFloor: true, bypassSafetyFloor: false)
                     let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: true)
                     batteryManager.setMagSafeLED(color: ledColor)
                     return
@@ -171,7 +171,7 @@ class PowerStateController: ObservableObject {
 
             if currentSettings.dischargeToLimitEnabled && currentCharge > currentSettings.batteryChargeLimit {
                 statusManager.updateState(managementState: .discharging)
-                batteryManager.setDischarge(discharging: true)
+                batteryManager.setDischarge(discharging: true, safetyFloor: currentSettings.batteryChargeLimit, rechargeOnFloor: true, bypassSafetyFloor: false)
                 if currentSettings.preventSleepDuringDischarge && !caffeineManager.isActive { caffeineManager.start(forcePreventSleepInClamshell: true) }
                 let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: true)
                 batteryManager.setMagSafeLED(color: ledColor)
@@ -201,7 +201,9 @@ class PowerStateController: ObservableObject {
                     isInHeatProtection = true
                     heatProtectionHysteresisTimer?.invalidate()
                     heatProtectionHysteresisTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { [weak self] _ in
-                        self?.evaluateState()
+                        Task { @MainActor [weak self] in
+                            self?.evaluateState()
+                        }
                     }
                 } else if isInHeatProtection, temp <= threshold - 3 {
                     isInHeatProtection = false
@@ -641,7 +643,7 @@ class BatteryManager {
         }
     }
 
-    func setDischarge(discharging: Bool) {
+    func setDischarge(discharging: Bool, safetyFloor: Int = 0, rechargeOnFloor: Bool = false, bypassSafetyFloor: Bool = false) {
         guard claimDischarge(discharging) else { return }
         guard let helper = getHelper() else {
             clearDischargeCommand(if: discharging)
@@ -649,7 +651,7 @@ class BatteryManager {
         }
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
-        helper.setDischarge(discharging) { [weak self] error in
+        helper.setDischarge(discharging, safetyFloor: safetyFloor, rechargeOnFloor: rechargeOnFloor, bypassSafetyFloor: bypassSafetyFloor) { [weak self] error in
             if let error = error {
                 self?.clearDischargeCommand(if: discharging)
                 recordFailure()

@@ -25,10 +25,9 @@ class EnergyReader {
 
     func start() {
         read()
-        let timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledCoalescing(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.read()
         }
-        RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 

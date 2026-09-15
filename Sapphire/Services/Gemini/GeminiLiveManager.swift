@@ -114,34 +114,13 @@ final class GeminiLiveManager: NSObject, ObservableObject, AVCaptureAudioDataOut
     }
 
     private static func builtInInputUID() -> String? {
-        guard let deviceID = builtInInputDeviceID() else { return nil }
-        var uid: CFString = "" as CFString
-        var size = UInt32(MemoryLayout<CFString>.size)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceUID,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &uid) == noErr else { return nil }
-        let value = uid as String
-        return value.isEmpty ? nil : value
+        guard let deviceID = builtInInputDeviceID(),
+              let uid = CoreAudioDevices.uid(of: deviceID), !uid.isEmpty else { return nil }
+        return uid
     }
 
     private static func builtInInputDeviceID() -> AudioDeviceID? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var dataSize: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &dataSize) == noErr,
-              dataSize > 0 else { return nil }
-
-        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
-        var deviceIDs = [AudioDeviceID](repeating: 0, count: count)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &dataSize, &deviceIDs) == noErr else {
-            return nil
-        }
+        guard let deviceIDs = CoreAudioDevices.all() else { return nil }
 
         for deviceID in deviceIDs {
             guard deviceHasInputChannels(deviceID) else { continue }

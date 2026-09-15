@@ -70,18 +70,15 @@ private struct FocusSessionActivitySideView: View {
     }
 
     private var ringContent: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.white.opacity(0.22), lineWidth: 5)
-            Circle()
-                .trim(from: 0, to: max(0.001, focusManager.progress))
-                .stroke(
-                    AngularGradient(colors: ringColors, center: .center),
-                    style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .animation(.linear(duration: 0.5), value: focusManager.progress)
-        }
+        ProgressRingView(
+            progress: max(0.001, focusManager.progress),
+            lineWidth: 2.5,
+            trackLineWidth: 5,
+            track: AnyShapeStyle(Color.white.opacity(0.22)),
+            active: AngularGradient(colors: ringColors, center: .center),
+            clampsProgress: false
+        )
+        .animation(.linear(duration: 0.5), value: focusManager.progress)
         .frame(width: 18, height: 18)
     }
 

@@ -13,6 +13,11 @@ struct AppEQView: View {
 
     @StateObject private var perAppCtrl = PerAppVolumeStoreForEQ()
     @StateObject private var audioManager = MultiAudioManager.shared
+    @AppStorage(AudioEQ.displayedBandCountDefaultsKey) private var displayedBandCount = AudioEQBandLayout.thirtyOne.rawValue
+
+    private var bandLayout: AudioEQBandLayout {
+        AudioEQBandLayout.resolved(from: displayedBandCount)
+    }
 
     private var eqPresetBinding: Binding<EQPreset?> {
         Binding(
@@ -29,8 +34,20 @@ struct AppEQView: View {
 
     private var customEQGainsBinding: Binding<[Double]> {
         Binding(
-            get: { perAppCtrl.eqGains(for: bundleID) },
-            set: { perAppCtrl.setEQGains($0, for: bundleID) }
+            get: { AudioEQ.displayedGains(from: perAppCtrl.eqGains(for: bundleID), layout: bandLayout) },
+            set: {
+                perAppCtrl.setEQGains(
+                    AudioEQ.canonicalGains(from: $0, layout: bandLayout),
+                    for: bundleID
+                )
+            }
+        )
+    }
+
+    private var bassGainBinding: Binding<Double> {
+        Binding(
+            get: { perAppCtrl.eqBass(for: bundleID) },
+            set: { perAppCtrl.setEQBass($0, for: bundleID) }
         )
     }
 
@@ -55,21 +72,18 @@ struct AppEQView: View {
         perAppCtrl.targetDeviceUIDs(for: bundleID)
     }
 
-    private let eqFrequencies = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
-
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Equalizer & Mix")
+                    Text("\(bandLayout.rawValue)-Band Equalizer & Mix")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.secondary)
                     Text(appName)
                         .font(.system(size: 20, weight: .bold))
                 }
                 Spacer()
-                Image(systemName: "slider.vertical.3")
-                    .font(.title)
+                EQBandCountPicker(selection: $displayedBandCount)
             }
             .padding(.horizontal, 24)
             .padding(.top, 0)
@@ -97,7 +111,7 @@ struct AppEQView: View {
                 }
                 .padding(.horizontal, 24)
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, 10)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -113,27 +127,25 @@ struct AppEQView: View {
                 }
                 .padding(.horizontal, 24)
             }
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
 
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 WaveformEQView(
                     gains: customEQGainsBinding,
-                    range: -18.0...18.0
+                    range: AudioEQ.gainRange
                 )
-                .frame(height: 140)
+                .frame(height: 128)
 
-                HStack {
-                    ForEach(eqFrequencies, id: \.self) { freq in
-                        Text(freq)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
+                EQFrequencyAxis(frequencies: bandLayout.frequencies)
+
+                EQBassControl(bassGain: bassGainBinding, bandGains: perAppCtrl.eqGains(for: bundleID))
+                    .padding(.top, 2)
             }
             .padding(.horizontal, 24)
+
+            Spacer(minLength: 0)
         }
-        .frame(width: 600, height: 400)
+        .frame(width: 600, height: 470)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: customEQGainsBinding.wrappedValue)
         .animation(.spring(response: 0.25, dampingFraction: 0.85), value: selectedUIDs?.sorted() ?? ["all"])
     }
@@ -212,6 +224,15 @@ fileprivate final class PerAppVolumeStoreForEQ: ObservableObject {
     func setEQGains(_ gains: [Double], for bundleID: String) {
         objectWillChange.send()
         PerAppAudioController.shared.setEQGains(gains, for: bundleID)
+    }
+
+    func eqBass(for bundleID: String) -> Double {
+        PerAppAudioController.shared.eqBass(for: bundleID)
+    }
+
+    func setEQBass(_ value: Double, for bundleID: String) {
+        objectWillChange.send()
+        PerAppAudioController.shared.setEQBass(value, for: bundleID)
     }
 
     func targetDeviceUIDs(for bundleID: String) -> Set<String>? {

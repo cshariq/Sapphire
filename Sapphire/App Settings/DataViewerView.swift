@@ -260,9 +260,7 @@ struct DataViewerView: View {
 
         Task.detached(priority: .userInitiated) {
             do {
-                let loadedSummary = try await PerformanceMonitor.shared.measureAsync("DataViewer.loadData") {
-                    try MemorySystemManager.shared.getDataSummary()
-                }
+                let loadedSummary = try MemorySystemManager.shared.getDataSummary()
 
                 await MainActor.run {
                     self.summary = loadedSummary
@@ -360,11 +358,15 @@ struct DataRangeRow: View {
     let title: String
     let date: Date
 
-    private var formattedDate: String {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private var formattedDate: String {
+        Self.dateFormatter.string(from: date)
     }
 
     var body: some View {

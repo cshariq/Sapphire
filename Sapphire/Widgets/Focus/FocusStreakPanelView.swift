@@ -287,6 +287,12 @@ struct FocusStreakWeekStrip: View {
     var days: Int = 7
     var showLetters: Bool = true
 
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEEE"
+        return formatter
+    }()
+
     private struct DayCell {
         let date: Date
         let covered: Bool
@@ -350,8 +356,6 @@ struct FocusStreakWeekStrip: View {
     }
 
     private func weekdayLetter(for date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "EEEEE"
-        return f.string(from: date)
+        Self.weekdayFormatter.string(from: date)
     }
 }

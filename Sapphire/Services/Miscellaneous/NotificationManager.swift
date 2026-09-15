@@ -195,23 +195,73 @@ class iMessageActionManager {
 }
 
 class NotificationManager: ObservableObject {
+    static let shared = NotificationManager()
+
     @Published var latestNotification: NotificationPayload?
     private var frequency: TimeInterval = 5.0
     private var isSilent: Bool = true
     private var dbPath: String?
     private var dbConnection: Connection?
     private var timer: Timer?
+    private var walSource: DispatchSourceFileSystemObject?
+    private var pendingWALCheck: DispatchWorkItem?
     private var lastNotificationId: Int64 = 0
     private var lastNotificationDate: Double = 0.0
     private let settingsModel = SettingsModel.shared
     private var isStarted = false
     init(frequency: TimeInterval = 5.0, silent: Bool = true) { self.frequency = frequency; self.isSilent = silent; setupDatabaseConnection() }
-    deinit { timer?.invalidate() }
+    deinit {
+        timer?.invalidate()
+        walSource?.cancel()
+    }
     func start() {
         guard !isStarted, dbConnection != nil else { return }
         isStarted = true
         check()
-        timer = Timer.scheduledTimer(withTimeInterval: frequency, repeats: true) { [weak self] _ in self?.check() }
+        watchWriteAheadLog()
+        let fallbackInterval = max(frequency, 60)
+        timer = Timer.scheduledTimer(withTimeInterval: fallbackInterval, repeats: true) { [weak self] _ in self?.check() }
+        timer?.tolerance = fallbackInterval * 0.2
+    }
+
+    private func watchWriteAheadLog() {
+        walSource?.cancel()
+        walSource = nil
+        guard isStarted, let dbPath else { return }
+
+        let fd = open(dbPath + "-wal", O_EVTONLY)
+        guard fd >= 0 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self, self.walSource == nil else { return }
+                self.watchWriteAheadLog()
+            }
+            return
+        }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .delete, .rename, .revoke],
+            queue: .main
+        )
+        source.setEventHandler { [weak self, weak source] in
+            guard let self, let source else { return }
+            let replaced = !source.data.isDisjoint(with: [.delete, .rename, .revoke])
+            self.scheduleCheck()
+            if replaced { self.watchWriteAheadLog() }
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        walSource = source
+    }
+
+    private func scheduleCheck() {
+        guard pendingWALCheck == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingWALCheck = nil
+            self?.check()
+        }
+        pendingWALCheck = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
     func dismissLatestNotification() { DispatchQueue.main.async { self.latestNotification = nil } }
     private func setupDatabaseConnection() {
@@ -226,19 +276,29 @@ class NotificationManager: ObservableObject {
         guard let validPath = self.dbPath else { return }
         do { dbConnection = try Connection(validPath, readonly: true); if let lastRecord = getLastNotificationFromDB() { self.lastNotificationId = lastRecord.id; self.lastNotificationDate = lastRecord.date } } catch { print("Error setting up database connection to \(validPath): \(error)") }
     }
-    private func startScheduler() { guard dbConnection != nil else { return }; check(); timer = Timer.scheduledTimer(withTimeInterval: frequency, repeats: true) { [weak self] _ in self?.check() } }
     @objc private func check() {
         do {
             guard let db = dbConnection else { return }
             let recordTable = Table("record"), recId = Expression<Int64>("rec_id"), deliveredDate = Expression<Double?>("delivered_date"), requestDate = Expression<Double?>("request_date"), data = Expression<Data>("data")
             let query = recordTable.select(recId, data, deliveredDate, requestDate).where(recId > lastNotificationId && (deliveredDate ?? requestDate) >= lastNotificationDate).order(recId.desc)
             var notificationsToPublish: [NotificationPayload] = []
+            var newestScannedID = lastNotificationId
+            var newestScannedDate = lastNotificationDate
             for row in try db.prepare(query) {
-                if let notification = parseNotification(from: row[data], id: row[recId], dateValue: row[deliveredDate] ?? row[requestDate] ?? 0) {
+                let rowID = row[recId]
+                let rowDate = row[deliveredDate] ?? row[requestDate] ?? 0
+                if rowID > newestScannedID {
+                    newestScannedID = rowID
+                    newestScannedDate = rowDate
+                }
+                if let notification = parseNotification(from: row[data], id: rowID, dateValue: rowDate) {
                     if _shouldShowNotification(for: notification) { notificationsToPublish.append(notification) }
                 }
             }
-            if let newest = notificationsToPublish.first { self.lastNotificationId = Int64(newest.id) ?? self.lastNotificationId; self.lastNotificationDate = newest.date.timeIntervalSinceReferenceDate }
+            if newestScannedID > lastNotificationId {
+                lastNotificationId = newestScannedID
+                lastNotificationDate = newestScannedDate
+            }
             for notification in notificationsToPublish.reversed() {
                 self.latestNotification = notification
                 if let code = notification.verificationCode {

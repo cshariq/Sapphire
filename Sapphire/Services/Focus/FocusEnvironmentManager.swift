@@ -98,7 +98,7 @@ final class FocusEnvironmentManager {
             }
             .store(in: &activeAppCancellables)
 
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledCoalescing(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             self?.refresh()
         }
         refresh()

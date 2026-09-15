@@ -9,33 +9,48 @@ import SwiftUI
 import EventKit
 
 private struct Weekday: Identifiable {
-    let id = UUID()
+    let id: Int
     let symbol: String
 }
 
 struct CalendarDetailView: View {
     @EnvironmentObject var settings: SettingsModel
-    @StateObject private var viewModel = InteractiveCalendarViewModel()
-    @StateObject private var calendarService = CalendarService()
+    @EnvironmentObject private var calendarService: CalendarService
+    @StateObject private var viewModel: InteractiveCalendarViewModel
 
     @State private var isMonthlyView: Bool = false
     @Namespace private var calendarAnimation
 
+    init() {
+        _viewModel = StateObject(wrappedValue: InteractiveCalendarViewModel())
+    }
+
+    init(viewModel: InteractiveCalendarViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
+
     private var weekdayHeaders: [Weekday] {
-        settings.settings.calendarStartOfWeek.weekdayHeaders.map { Weekday(symbol: String($0.prefix(1))) }
+        settings.settings.calendarStartOfWeek.weekdayHeaders.enumerated().map {
+            Weekday(id: $0.offset, symbol: String($0.element.prefix(1)))
+        }
     }
 
     private var combinedScheduleItems: [ScheduleItem] {
         let events = calendarService.eventsForSelectedDate.compactMap { event -> ScheduleItem? in
-            let id = event.eventIdentifier ?? UUID().uuidString
             guard let title = event.title, !title.isEmpty, let date = event.startDate else { return nil }
+            let eventIdentity = event.eventIdentifier ?? [
+                event.calendar.calendarIdentifier,
+                title,
+                String(date.timeIntervalSinceReferenceDate),
+                String(event.endDate?.timeIntervalSinceReferenceDate ?? 0)
+            ].joined(separator: "|")
             let color = event.calendar.color != nil ? Color(nsColor: event.calendar.color) : .accentColor
             let hasTime = !event.isAllDay
-            return ScheduleItem(id: id, type: .event, title: title, date: date, color: color, hasTime: hasTime)
+            return ScheduleItem(id: "event:\(eventIdentity)", type: .event, title: title, date: date, color: color, hasTime: hasTime)
         }
 
         let reminders = calendarService.remindersForSelectedDate.compactMap { reminder -> ScheduleItem? in
-            let id = reminder.calendarItemIdentifier
+            let id = "reminder:\(reminder.calendarItemIdentifier)"
             guard let title = reminder.title, !title.isEmpty, let components = reminder.dueDateComponents, let date = Calendar.current.date(from: components) else { return nil }
             let color = reminder.calendar.color != nil ? Color(nsColor: reminder.calendar.color) : .accentColor
             let hasTime = components.hour != nil && components.minute != nil
@@ -217,8 +232,10 @@ struct CalendarDetailView: View {
     }
 
     private var scheduleListView: some View {
-        VStack {
-            if combinedScheduleItems.isEmpty {
+        let scheduleItems = combinedScheduleItems
+
+        return VStack {
+            if scheduleItems.isEmpty {
                 VStack(spacing: 10) {
                     Spacer()
                     Image(systemName: "checkmark.circle.fill")
@@ -234,7 +251,7 @@ struct CalendarDetailView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(combinedScheduleItems) { item in
+                        ForEach(scheduleItems) { item in
                             DetailedScheduleItemRow(item: item)
                         }
                     }

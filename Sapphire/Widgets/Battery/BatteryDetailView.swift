@@ -51,26 +51,13 @@ struct BatteryDetailView: View {
 
     // MARK: - System Power hero (mirrors the Settings power hero card)
 
-    private static func finite(_ v: Double) -> Double {
-        guard v.isFinite else { return 0 }
-        return max(0, v)
-    }
-    private var systemLoad: Double { Self.finite(statsManager.currentStats?.systemPower ?? stats.powerConsumption) }
-    private var batteryPower: Double { Self.finite(statsManager.currentStats?.batteryPower ?? stats.powerConsumption) }
-    private var adapterPower: Double {
-        Self.finite(statsManager.currentStats?.sensors?.sensors.first { ["PDTR"].contains($0.key) }?.value ?? 0)
-    }
-    private var adapterConnected: Bool { (stats.powerAdapterInfo?.maxPower ?? 0) > 0 }
-    private var heroWatts: Double { adapterConnected ? max(adapterPower, systemLoad) : systemLoad }
-    private var powerStatusLabel: String {
-        if stats.isCharging { return "Charging" }
-        if adapterConnected { return "On AC Power" }
-        return "On Battery"
-    }
-    private var powerStatusColor: Color {
-        if stats.isCharging { return MaterialChartPalette.tertiary }
-        if adapterConnected { return MaterialChartPalette.primary }
-        return MaterialChartPalette.warning
+    private var power: SystemPowerReading {
+        SystemPowerReading(
+            systemLoad: statsManager.currentStats?.systemPower ?? stats.powerConsumption,
+            adapterPower: statsManager.adapterSensorPower,
+            adapterConnected: (stats.powerAdapterInfo?.maxPower ?? 0) > 0,
+            isCharging: stats.isCharging
+        )
     }
 
     var body: some View {
@@ -245,16 +232,16 @@ struct BatteryDetailView: View {
                 Spacer()
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(powerStatusColor)
+                        .fill(power.statusColor)
                         .frame(width: 6, height: 6)
-                    Text(powerStatusLabel)
+                    Text(power.statusLabel)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundColor(powerStatusColor)
+                        .foregroundColor(power.statusColor)
                 }
             }
 
             HStack(alignment: .lastTextBaseline, spacing: 5) {
-                Text(String(format: "%.2f", heroWatts))
+                Text(String(format: "%.2f", power.heroWatts))
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
                     .monospacedDigit()
@@ -263,35 +250,19 @@ struct BatteryDetailView: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundColor(.white.opacity(0.7))
                 Spacer(minLength: 0)
-                Image(systemName: adapterConnected ? "powerplug.fill" : "battery.100")
+                Image(systemName: power.adapterConnected ? "powerplug.fill" : "battery.100")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(powerStatusColor.opacity(0.85))
+                    .foregroundColor(power.statusColor.opacity(0.85))
             }
 
-            GeometryReader { geo in
-                let adapter = adapterPower > 0 ? adapterPower : heroWatts
-                let total = max(adapter + systemLoad, 0.001)
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.10))
-                    HStack(spacing: 0) {
-                        if adapterConnected {
-                            Capsule()
-                                .fill(MaterialChartPalette.primary)
-                                .frame(width: max(3, geo.size.width * CGFloat(adapter / total)))
-                        }
-                        Capsule()
-                            .fill(MaterialChartPalette.warning)
-                            .frame(width: max(3, geo.size.width * CGFloat(systemLoad / total)))
-                    }
-                }
-            }
-            .frame(height: 6)
+            PowerSplitBar(reading: power)
+                .frame(height: 6)
 
             HStack(spacing: 12) {
-                if adapterConnected {
-                    powerMetaChip(icon: "bolt.horizontal.fill", text: String(format: "Adapter %.0f W", adapterPower > 0 ? adapterPower : heroWatts))
+                if power.adapterConnected {
+                    powerMetaChip(icon: "bolt.horizontal.fill", text: String(format: "Adapter %.0f W", power.adapterDisplayWatts))
                 }
-                powerMetaChip(icon: "laptopcomputer", text: String(format: "Draw %.2f W", systemLoad))
+                powerMetaChip(icon: "laptopcomputer", text: String(format: "Draw %.2f W", power.systemLoad))
                 Spacer(minLength: 0)
             }
         }

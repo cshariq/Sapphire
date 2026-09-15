@@ -36,7 +36,7 @@ public struct RemoteDeviceInfo{
     }
 
     init(info:EndpointInfo, id: String? = nil){
-        self.name=info.name!
+        self.name=info.name ?? "Unknown Device"
         self.type=info.deviceType
         self.qrCodeData=info.qrCodeData
         self.id=id
@@ -178,7 +178,7 @@ struct EndpointInfo{
         for _ in 0...15{
             endpointInfo.append(UInt8.random(in: 0...255))
         }
-        var nameChars=[UInt8](name!.utf8)
+        var nameChars=[UInt8]((name ?? "").utf8)
         if nameChars.count>255{
             nameChars=[UInt8](nameChars[0..<255])
         }
@@ -199,7 +199,7 @@ public protocol ShareExtensionDelegate:AnyObject{
     func transferFinished()
 }
 
-public protocol MainAppDelegate {
+public protocol MainAppDelegate: AnyObject {
     func obtainUserConsent(for transfer: TransferMetadata, from device: RemoteDeviceInfo, fileURLs: [URL])
     func incomingTransfer(id: String, didUpdateProgress progress: Double)
     func incomingTransfer(id: String, didFinishWith error: Error?)
@@ -207,14 +207,14 @@ public protocol MainAppDelegate {
 
 public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDelegate, InboundNearbyConnectionDelegate, OutboundNearbyConnectionDelegate {
 
-    private var tcpListener: NWListener;
+    private var tcpListener: NWListener?
     public let endpointID: [UInt8] = generateEndpointID()
     private var mdnsService: NetService?
     private var activeConnections: [String: InboundNearbyConnection] = [:]
     private var foundServices: [String: FoundServiceInfo] = [:]
     private var shareExtensionDelegates: [ShareExtensionDelegate] = []
     private var outgoingTransfers: [String: OutgoingTransferInfo] = [:]
-    public var mainAppDelegate: (any MainAppDelegate)?
+    public weak var mainAppDelegate: (any MainAppDelegate)?
     private var discoveryRefCount = 0
     private var browser: NWBrowser?
     private var isTCPListenerStarted = false
@@ -240,11 +240,6 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
 
     public static let shared = NearbyConnectionManager()
 
-    override init() {
-        self.tcpListener = try! NWListener(using: NWParameters(tls: .none))
-        super.init()
-    }
-
     public func becomeVisible() {
         guard !isTCPListenerStarted, !isStoppingTCPListener else {
             print("[NCM] Ignoring duplicate becomeVisible() (started: \(isTCPListenerStarted), stopping: \(isStoppingTCPListener)).")
@@ -264,23 +259,43 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
         listenerGeneration += 1
         mdnsService?.stop()
         mdnsService = nil
-        tcpListener.stateUpdateHandler = nil
-        tcpListener.newConnectionHandler = nil
-        tcpListener.cancel()
+        tcpListener?.stateUpdateHandler = nil
+        tcpListener?.newConnectionHandler = nil
+        tcpListener?.cancel()
+        tcpListener = nil
         isTCPListenerStarted = false
         isStoppingTCPListener = false
     }
 
     private func startTCPListener() {
+        let listener: NWListener
+        do {
+            listener = try NWListener(using: NWParameters(tls: .none))
+        } catch {
+            print("[NCM] Unable to create NearbyShare listener: \(error)")
+            return
+        }
+
+        tcpListener = listener
         isTCPListenerStarted = true
         listenerGeneration += 1
         let generation = listenerGeneration
-        tcpListener.stateUpdateHandler = { [weak self] state in
+        listener.stateUpdateHandler = { [weak self, weak listener] state in
             guard let self, self.listenerGeneration == generation, self.isTCPListenerStarted else { return }
             print("[NCM] Listener state changed: \(state)")
-            if case .ready = state { self.initMDNS() }
+            switch state {
+            case .ready:
+                self.initMDNS()
+            case .failed(let error):
+                print("[NCM] NearbyShare listener failed: \(error)")
+                self.stopListener(listener, generation: generation)
+            case .cancelled:
+                self.stopListener(listener, generation: generation)
+            default:
+                break
+            }
         }
-        tcpListener.newConnectionHandler = { [weak self] connection in
+        listener.newConnectionHandler = { [weak self] connection in
             guard let self, self.listenerGeneration == generation, self.isTCPListenerStarted else {
                 connection.cancel()
                 return
@@ -292,7 +307,21 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
             conn.delegate = self
             conn.start()
         }
-        tcpListener.start(queue: .global(qos: .utility))
+        listener.start(queue: .main)
+    }
+
+    private func stopListener(_ listener: NWListener?, generation: Int) {
+        guard listenerGeneration == generation else { return }
+        mdnsService?.stop()
+        mdnsService = nil
+        listener?.stateUpdateHandler = nil
+        listener?.newConnectionHandler = nil
+        listener?.cancel()
+        if tcpListener === listener {
+            tcpListener = nil
+        }
+        isTCPListenerStarted = false
+        isStoppingTCPListener = false
     }
 
     private func getBroadcastName() -> String {
@@ -320,38 +349,33 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
         let endpointInfo = EndpointInfo(name: broadcastName, deviceType: .computer)
         let nameBytes: [UInt8] = [0x23] + endpointID + [0xFC, 0x9F, 0x5E, 0, 0]
         let name = Data(nameBytes).urlSafeBase64EncodedString()
-        guard let port = tcpListener.port, let servicePort = Int32(exactly: port.rawValue) else { print("[NCM] Error: Could not get a valid port from listener for mDNS broadcast."); return }
+        guard let port = tcpListener?.port, let servicePort = Int32(exactly: port.rawValue) else { print("[NCM] Error: Could not get a valid port from listener for mDNS broadcast."); return }
         print("[NCM] Broadcasting service on port \(servicePort) with final name '\(broadcastName)'")
         mdnsService = NetService(domain: "", type: "_FC9F5ED42C8A._tcp.", name: name, port: servicePort)
         mdnsService?.delegate = self
-        mdnsService?.setTXTRecord(NetService.data(fromTXTRecord: ["n": endpointInfo.serialize().urlSafeBase64EncodedString().data(using: .utf8)!]))
+        let encodedEndpoint = endpointInfo.serialize().urlSafeBase64EncodedString()
+        mdnsService?.setTXTRecord(NetService.data(fromTXTRecord: ["n": Data(encodedEndpoint.utf8)]))
         mdnsService?.publish()
     }
 
     func obtainUserConsent(for transfer: TransferMetadata, from device: RemoteDeviceInfo, fileURLs: [URL]) {
         let info = TransferProgressInfo(id: transfer.id, deviceName: device.name, fileDescription: fileDescription(for: transfer), direction: .incoming, iconName: iconName(for: transfer))
-        DispatchQueue.main.async {
-            self.transfers.insert(info, at: 0)
-        }
+        transfers.insert(info, at: 0)
         mainAppDelegate?.obtainUserConsent(for: transfer, from: device, fileURLs: fileURLs)
     }
 
     func connection(_ connection: InboundNearbyConnection, didUpdateProgress progress: Double) {
         mainAppDelegate?.incomingTransfer(id: connection.id, didUpdateProgress: progress)
-        DispatchQueue.main.async {
-            if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].progress = progress }
-        }
+        if let index = transfers.firstIndex(where: { $0.id == connection.id }) { transfers[index].progress = progress }
     }
 
     func connectionWasTerminated(connection: InboundNearbyConnection, error: Error?) {
         print("[NCM] Inbound connection \(connection.id) terminated. Error: \(String(describing: error))")
         mainAppDelegate?.incomingTransfer(id: connection.id, didFinishWith: error)
-        DispatchQueue.main.async {
-            if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) {
-                if let error = error { self.transfers[index].state = (error as? NearbyError) == .canceled(reason: .userCanceled) ? .canceled : .failed }
-                else { self.transfers[index].state = .finished }
-                self.scheduleCleanup(for: connection.id)
-            }
+        if let index = transfers.firstIndex(where: { $0.id == connection.id }) {
+            if let error = error { transfers[index].state = (error as? NearbyError) == .canceled(reason: .userCanceled) ? .canceled : .failed }
+            else { transfers[index].state = .finished }
+            scheduleCleanup(for: connection.id)
         }
         activeConnections.removeValue(forKey: connection.id)
     }
@@ -359,17 +383,15 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     public func submitUserConsent(transferID: String, accept: Bool, action: NearDropUserAction = .save) {
         print("[NCM] User consent for transfer \(transferID): \(accept ? "Accepted" : "Rejected") with action \(action)")
         activeConnections[transferID]?.submitUserConsent(accepted: accept, action: action)
-        DispatchQueue.main.async {
-            guard let index = self.transfers.firstIndex(where: { $0.id == transferID }) else {
-                print("[NCM] Warning: Could not find transfer with ID \(transferID) to update consent.")
-                return
-            }
+        guard let index = transfers.firstIndex(where: { $0.id == transferID }) else {
+            print("[NCM] Warning: Could not find transfer with ID \(transferID) to update consent.")
+            return
+        }
 
-            if accept {
-                self.transfers[index].state = .inProgress
-            } else {
-                self.transfers.remove(at: index)
-            }
+        if accept {
+            transfers[index].state = .inProgress
+        } else {
+            transfers.remove(at: index)
         }
     }
 
@@ -383,7 +405,16 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
         if discoveryRefCount == 0 {
             foundServices.removeAll()
             browser = NWBrowser(for: .bonjourWithTXTRecord(type: "_FC9F5ED42C8A._tcp.", domain: nil), using: .tcp)
-            browser?.browseResultsChangedHandler = { _, changes in for change in changes { switch change { case let .added(res): self.maybeAddFoundDevice(service: res); case let .removed(res): self.maybeRemoveFoundDevice(service: res); default: break } } }
+            browser?.browseResultsChangedHandler = { [weak self] _, changes in
+                guard let self else { return }
+                for change in changes {
+                    switch change {
+                    case let .added(result): self.maybeAddFoundDevice(service: result)
+                    case let .removed(result): self.maybeRemoveFoundDevice(service: result)
+                    default: break
+                    }
+                }
+            }
             browser?.start(queue: .main)
         }
         discoveryRefCount += 1
@@ -400,6 +431,7 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     }
 
     public func addShareExtensionDelegate(_ delegate: ShareExtensionDelegate) {
+        guard !shareExtensionDelegates.contains(where: { $0 === delegate }) else { return }
         shareExtensionDelegates.append(delegate)
         for service in foundServices.values { if let device = service.device { delegate.addDevice(device: device) } }
     }
@@ -407,7 +439,12 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     public func removeShareExtensionDelegate(_ delegate: ShareExtensionDelegate) { shareExtensionDelegates.removeAll { $0 === delegate } }
     public func cancelOutgoingTransfer(id: String) {
         print("[NCM] Canceling outgoing transfer \(id)")
-        outgoingTransfers[id]?.connection.cancel()
+        guard let transfer = outgoingTransfers.removeValue(forKey: id) else { return }
+        transfer.connection.cancel()
+        if let index = transfers.firstIndex(where: { $0.id == id }) {
+            transfers[index].state = .canceled
+            scheduleCleanup(for: id)
+        }
     }
 
     private func endpointID(for service: NWBrowser.Result) -> String? {
@@ -444,20 +481,21 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
             deviceInfo=addFoundDevice(foundService: &foundService, endpointInfo: endpointInfo, endpointID: endpointID)
         }
 
-        if let qrData=endpointInfo.qrCodeData, let _=qrCodeAdvertisingToken{
+        if let qrData=endpointInfo.qrCodeData,
+           let advertisingToken=qrCodeAdvertisingToken {
             #if DEBUG
-            print("[NCM] Device has QR data: \(qrData.base64EncodedString()), our advertising token is \(qrCodeAdvertisingToken!.base64EncodedString())")
+            print("[NCM] Device has QR data: \(qrData.base64EncodedString()), our advertising token is \(advertisingToken.base64EncodedString())")
             #endif
-            if qrData==qrCodeAdvertisingToken!{
+            if qrData==advertisingToken{
                 if let deviceInfo=deviceInfo{
                     for delegate in shareExtensionDelegates{
                         delegate.startTransferWithQrCode(device: deviceInfo)
                     }
                 }
-            }else if qrData.count>28{
+            } else if qrData.count > 28, let nameEncryptionKey = qrCodeNameEncryptionKey {
                 do{
                     let box=try AES.GCM.SealedBox(combined: qrData)
-                    let decryptedName=try AES.GCM.open(box, using: qrCodeNameEncryptionKey!, authenticating: qrCodeAdvertisingToken!)
+                    let decryptedName=try AES.GCM.open(box, using: nameEncryptionKey, authenticating: advertisingToken)
                     guard let name=String.init(data: decryptedName, encoding: .utf8) else {return}
                     endpointInfo.name=name
                     let deviceInfo=addFoundDevice(foundService: &foundService, endpointInfo: endpointInfo, endpointID: endpointID)
@@ -476,8 +514,18 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     private func addFoundDevice(foundService:inout FoundServiceInfo, endpointInfo:EndpointInfo, endpointID:String) -> RemoteDeviceInfo{
         let deviceInfo=RemoteDeviceInfo(info: endpointInfo, id: endpointID)
         foundService.device=deviceInfo
+        if let existing = foundServices[endpointID]?.device,
+           existing.name == deviceInfo.name,
+           existing.type == deviceInfo.type,
+           existing.qrCodeData == deviceInfo.qrCodeData {
+            foundServices[endpointID] = foundService
+            return deviceInfo
+        }
+        if foundServices[endpointID]?.device != nil {
+            for delegate in shareExtensionDelegates { delegate.removeDevice(id: endpointID) }
+        }
         foundServices[endpointID]=foundService
-        print("[NCM] Added device: \(deviceInfo.name) (\(deviceInfo.id!))")
+        print("[NCM] Added device: \(deviceInfo.name) (\(endpointID))")
         for delegate in shareExtensionDelegates{
             delegate.addDevice(device: deviceInfo)
         }
@@ -521,76 +569,86 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
     public func startOutgoingTransfer(deviceID: String, delegate: ShareExtensionDelegate, urls: [URL]) {
         guard isTCPListenerStarted else {
             print("[NCM] Refusing outgoing transfer while NearbyShare listener is stopped.")
+            delegate.connectionFailed(with: NearbyError.inputOutput)
             return
         }
-        guard let info = foundServices[deviceID] else { print("[NCM] Error: Attempted to start transfer to unknown device ID \(deviceID)"); return }
+        guard !urls.isEmpty else {
+            delegate.connectionFailed(with: NearbyError.inputOutput)
+            return
+        }
+        guard outgoingTransfers[deviceID] == nil else {
+            delegate.connectionFailed(with: NearbyError.protocolError("A transfer to this device is already active"))
+            return
+        }
+        guard let info = foundServices[deviceID], let device = info.device else {
+            print("[NCM] Error: Attempted to start transfer to unknown device ID \(deviceID)")
+            delegate.connectionFailed(with: NearbyError.protocolError("The selected device is no longer available"))
+            return
+        }
         print("[NCM] Starting outgoing transfer to \(info.device?.name ?? "Unknown") (\(deviceID))")
         let tcp = NWProtocolTCP.Options(); tcp.noDelay = true
         let nwconn = NWConnection(to: info.service.endpoint, using: NWParameters(tls: .none, tcp: tcp))
         let conn = OutboundNearbyConnection(connection: nwconn, id: deviceID, urlsToSend: urls)
         conn.delegate = self
         conn.qrCodePrivateKey=qrCodePrivateKey
-        outgoingTransfers[deviceID] = OutgoingTransferInfo(service: info.service, device: info.device!, connection: conn, delegate: delegate)
+        outgoingTransfers[deviceID] = OutgoingTransferInfo(service: info.service, device: device, connection: conn, delegate: delegate)
 
-        let transferInfo = TransferProgressInfo(id: deviceID, deviceName: info.device!.name, fileDescription: urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) files", direction: .outgoing, iconName: "arrow.up.doc")
-        DispatchQueue.main.async { self.transfers.insert(transferInfo, at: 0) }
+        let transferInfo = TransferProgressInfo(id: deviceID, deviceName: device.name, fileDescription: urls.count == 1 ? urls[0].lastPathComponent : "\(urls.count) files", direction: .outgoing, iconName: "arrow.up.doc")
+        transfers.removeAll { $0.id == deviceID }
+        transfers.insert(transferInfo, at: 0)
         conn.start()
     }
 
     func outboundConnectionWasEstablished(connection: OutboundNearbyConnection) {
-        if let transfer = outgoingTransfers[connection.id] {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let transfer = self.outgoingTransfers[connection.id], let pinCode = connection.pinCode else { return }
             print("[NCM] Outbound connection to \(transfer.device.name) established. PIN: \(connection.pinCode ?? "N/A")")
-            DispatchQueue.main.async { transfer.delegate.connectionWasEstablished(pinCode: connection.pinCode!) }
+            transfer.delegate.connectionWasEstablished(pinCode: pinCode)
         }
     }
 
     func outboundConnectionTransferAccepted(connection: OutboundNearbyConnection) {
-        if let transfer = outgoingTransfers[connection.id] {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let transfer = self.outgoingTransfers[connection.id] else { return }
             print("[NCM] Transfer to \(transfer.device.name) accepted by peer.")
-            DispatchQueue.main.async {
-                transfer.delegate.transferAccepted()
-                if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].state = .inProgress }
-            }
+            transfer.delegate.transferAccepted()
+            if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].state = .inProgress }
         }
     }
 
     func outboundConnection(connection: OutboundNearbyConnection, transferProgress: Double) {
-        if let transfer = outgoingTransfers[connection.id] {
-            DispatchQueue.main.async {
-                transfer.delegate.transferProgress(progress: transferProgress)
-                if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].progress = transferProgress }
-            }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let transfer = self.outgoingTransfers[connection.id] else { return }
+            let clampedProgress = min(max(transferProgress, 0), 1)
+            transfer.delegate.transferProgress(progress: clampedProgress)
+            if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].progress = clampedProgress }
         }
     }
 
     func outboundConnection(connection: OutboundNearbyConnection, failedWithError: Error) {
-        if let transfer = outgoingTransfers.removeValue(forKey: connection.id) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let transfer = self.outgoingTransfers.removeValue(forKey: connection.id) else { return }
             print("[NCM] Outbound connection to \(transfer.device.name) failed with error: \(failedWithError)")
-            DispatchQueue.main.async {
-                transfer.delegate.connectionFailed(with: failedWithError)
-                if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].state = .failed; self.scheduleCleanup(for: connection.id) }
-            }
+            transfer.delegate.connectionFailed(with: failedWithError)
+            if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].state = .failed; self.scheduleCleanup(for: connection.id) }
         }
     }
 
     func outboundConnectionTransferFinished(connection: OutboundNearbyConnection) {
-        if let transfer = outgoingTransfers.removeValue(forKey: connection.id) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let transfer = self.outgoingTransfers.removeValue(forKey: connection.id) else { return }
             print("[NCM] Outbound transfer to \(transfer.device.name) finished successfully.")
-            DispatchQueue.main.async {
-                transfer.delegate.transferFinished()
-                if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].state = .finished; self.scheduleCleanup(for: connection.id) }
-            }
+            transfer.delegate.transferFinished()
+            if let index = self.transfers.firstIndex(where: { $0.id == connection.id }) { self.transfers[index].state = .finished; self.scheduleCleanup(for: connection.id) }
         }
     }
 
     private func scheduleCleanup(for transferID: String) {
         cleanupTimers[transferID]?.invalidate()
         let timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.transfers.removeAll { $0.id == transferID }
-                self.cleanupTimers.removeValue(forKey: transferID)
-            }
+            guard let self else { return }
+            self.transfers.removeAll { $0.id == transferID }
+            self.cleanupTimers.removeValue(forKey: transferID)
         }
         cleanupTimers[transferID] = timer
     }

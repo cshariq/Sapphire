@@ -186,9 +186,7 @@ private struct HelperInstallationStepView: View {
 
             HelperStatusBanner(helperManager: helperManager)
                 .padding()
-                .background(.black.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .roundedCard(fill: Color.black.opacity(0.15), cornerRadius: 20, stroke: Color.white.opacity(0.1))
                 .padding(.horizontal, 50)
 
             if !helperReady {
@@ -477,15 +475,11 @@ private struct BatterySetupStepView: View {
                 }
 
                 ModernOnboardingRow(iconName: "sailboat.fill", iconColor: .blue, title: "Enable Sailing Mode", description: "Reduces micro-charging cycles when the limit is reached.") {
-                    Toggle("", isOn: $settings.settings.sailingModeEnabled)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
+                    SettingsSwitch(isOn: $settings.settings.sailingModeEnabled)
                 }
 
                 ModernOnboardingRow(iconName: "thermometer.medium", iconColor: .red, title: "Enable Heat Protection", description: "Pauses charging if the battery gets too hot.") {
-                    Toggle("", isOn: $settings.settings.heatProtectionEnabled)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
+                    SettingsSwitch(isOn: $settings.settings.heatProtectionEnabled)
                 }
             }
             .padding(50)
@@ -506,12 +500,12 @@ private struct CorePreferencesStepView: View {
             Text("Quick Setup").font(.system(size: 32, weight: .bold, design: .rounded))
             Text("Personalize your experience. You can change these any time in Settings.").font(.title3).multilineTextAlignment(.center).foregroundColor(.secondary).padding(.horizontal, 50)
             VStack(spacing: 15) {
-                ModernOnboardingRow(iconName: "sparkles.tv", iconColor: .cyan, title: "Show Custom HUDs", description: "Replace default volume & brightness indicators.") { Toggle("", isOn: showHudsBinding).labelsHidden().toggleStyle(.switch) }
+                ModernOnboardingRow(iconName: "sparkles.tv", iconColor: .cyan, title: "Show Custom HUDs", description: "Replace default volume & brightness indicators.") { SettingsSwitch(isOn: showHudsBinding) }
                 ModernOnboardingRow(iconName: "eye.fill", iconColor: .cyan, title: "Enable Eye Break Reminders", description: "Get reminded to look away from your screen periodically.") {
-                    Toggle("", isOn: $settings.settings.eyeBreakLiveActivityEnabled).labelsHidden().toggleStyle(.switch)
+                    SettingsSwitch(isOn: $settings.settings.eyeBreakLiveActivityEnabled)
                 }
                 ModernOnboardingRow(iconName: "thermometer.sun.fill", iconColor: .orange, title: "Temperature Unit", description: "Preferred unit for weather forecasts.") { Picker("", selection: $settings.settings.weatherUseCelsius) { Text("°C").tag(true); Text("°F").tag(false) }.pickerStyle(.segmented).labelsHidden().frame(width: 100) }
-                ModernOnboardingRow(iconName: "bolt.horizontal.circle.fill", iconColor: .purple, title: "Launch at Login", description: "Start Sapphire automatically with your Mac.") { Toggle("", isOn: $settings.settings.launchAtLogin).labelsHidden().toggleStyle(.switch) }
+                ModernOnboardingRow(iconName: "bolt.horizontal.circle.fill", iconColor: .purple, title: "Launch at Login", description: "Start Sapphire automatically with your Mac.") { SettingsSwitch(isOn: $settings.settings.launchAtLogin) }
             }.padding(50)
             Spacer()
             OnboardingButton(title: "Continue", action: onNext)
@@ -537,16 +531,16 @@ private struct LockScreenSetupStepView: View {
 
             VStack(spacing: 15) {
                 ModernOnboardingRow(iconName: "lock.display", iconColor: .red, title: "Enable on Lock Screen", description: "Show Sapphire's notch and features when your Mac is locked.") {
-                    Toggle("", isOn: $settings.settings.lockScreenShowNotch).labelsHidden().toggleStyle(.switch)
+                    SettingsSwitch(isOn: $settings.settings.lockScreenShowNotch)
                 }
 
                 VStack(spacing: 15) {
                     ModernOnboardingRow(iconName: "timer", iconColor: .cyan, title: "Show Live Activities", description: "Display timers, music, and more.") {
-                        Toggle("", isOn: $settings.settings.lockScreenLiveActivityEnabled).labelsHidden().toggleStyle(.switch)
+                        SettingsSwitch(isOn: $settings.settings.lockScreenLiveActivityEnabled)
                     }
 
                     ModernOnboardingRow(iconName: "info.circle.fill", iconColor: .blue, title: "Show Info Widgets", description: "Display static info like weather or battery.") {
-                        Toggle("", isOn: $settings.settings.lockScreenShowInfoWidget).labelsHidden().toggleStyle(.switch)
+                        SettingsSwitch(isOn: $settings.settings.lockScreenShowInfoWidget)
                     }
                 }
                 .disabled(!settings.settings.lockScreenShowNotch)
@@ -677,6 +671,7 @@ private struct SubscriptionOverviewStepView: View {
         case .basic: return 1
         case .pro: return 2
         case .ultra: return 3
+        case .core: return 0
         }
     }
 }

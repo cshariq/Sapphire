@@ -15,8 +15,8 @@ final class GlobalInputMonitor {
     private var leftMouseDownHandlers: [UUID: () -> Void] = [:]
     private var leftMouseUpHandlers: [UUID: () -> Void] = [:]
 
-    private var leftMouseDownMonitor: Any?
-    private var leftMouseUpMonitor: Any?
+    private var leftMouseDownToken: UUID?
+    private var leftMouseUpToken: UUID?
 
     private init() {}
 
@@ -49,36 +49,34 @@ final class GlobalInputMonitor {
     // MARK: - Monitor lifecycle
 
     private func installLeftMouseDownMonitorIfNeeded() {
-        guard leftMouseDownMonitor == nil else { return }
-        leftMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
-            Task { @MainActor in
-                guard let handlers = self?.leftMouseDownHandlers.values else { return }
-                for handler in handlers { handler() }
-            }
+        guard leftMouseDownToken == nil else { return }
+        leftMouseDownToken = EventMonitorHub.shared.register(for: .leftMouseDown) { [weak self] _ in
+            guard let self else { return }
+            let handlers = Array(self.leftMouseDownHandlers.values)
+            for handler in handlers { handler() }
         }
     }
 
     private func installLeftMouseUpMonitorIfNeeded() {
-        guard leftMouseUpMonitor == nil else { return }
-        leftMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
-            Task { @MainActor in
-                guard let handlers = self?.leftMouseUpHandlers.values else { return }
-                for handler in handlers { handler() }
-            }
+        guard leftMouseUpToken == nil else { return }
+        leftMouseUpToken = EventMonitorHub.shared.register(for: .leftMouseUp) { [weak self] _ in
+            guard let self else { return }
+            let handlers = Array(self.leftMouseUpHandlers.values)
+            for handler in handlers { handler() }
         }
     }
 
     private func refreshLeftMouseDownMonitor() {
-        if leftMouseDownHandlers.isEmpty, let monitor = leftMouseDownMonitor {
-            NSEvent.removeMonitor(monitor)
-            leftMouseDownMonitor = nil
+        if leftMouseDownHandlers.isEmpty, let token = leftMouseDownToken {
+            EventMonitorHub.shared.unregister(token: token, for: .leftMouseDown)
+            leftMouseDownToken = nil
         }
     }
 
     private func refreshLeftMouseUpMonitor() {
-        if leftMouseUpHandlers.isEmpty, let monitor = leftMouseUpMonitor {
-            NSEvent.removeMonitor(monitor)
-            leftMouseUpMonitor = nil
+        if leftMouseUpHandlers.isEmpty, let token = leftMouseUpToken {
+            EventMonitorHub.shared.unregister(token: token, for: .leftMouseUp)
+            leftMouseUpToken = nil
         }
     }
 }

@@ -9,35 +9,7 @@ import AppKit
 import Combine
 import Carbon.HIToolbox
 
-private func executionTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
-            if let refcon = refcon {
-                let manager = Unmanaged<KeyboardShortcutManager>.fromOpaque(refcon).takeUnretainedValue()
-                Task { @MainActor in
-                    manager.stopMonitoring()
-                }
-            }
-            return Unmanaged.passRetained(event)
-        }
-        if let refcon = refcon {
-            let manager = Unmanaged<KeyboardShortcutManager>.fromOpaque(refcon).takeUnretainedValue()
-            Task { @MainActor in
-                manager.ensureEventTapEnabled(forceRebuild: true)
-            }
-        }
-        return Unmanaged.passRetained(event)
-    }
-
-    guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
-        return Unmanaged.passRetained(event)
-    }
-
-    guard let refcon = refcon else { return Unmanaged.passRetained(event) }
-    let manager = Unmanaged<KeyboardShortcutManager>.fromOpaque(refcon).takeUnretainedValue()
-    return manager.handle(event: event, type: type)
-}
-
+@MainActor
 class KeyboardShortcutManager {
     static let shared = KeyboardShortcutManager()
 
@@ -46,71 +18,69 @@ class KeyboardShortcutManager {
         case snapZone(SnapZoneShortcut)
     }
 
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var tapToken: GlobalEventTap.Token?
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
-    private var notificationObservers: [NSObjectProtocol] = []
+    private var shortcutRecordingObserver: ShortcutRecordingObserver?
 
-    private var registeredShortcuts: [KeyboardShortcut: ShortcutAction] = [:]
+    private nonisolated(unsafe) var registeredShortcuts: [KeyboardShortcut: ShortcutAction] = [:]
     private let cacheLock = NSLock()
     private let triggerLock = NSLock()
-    private var lastTriggerAt = Date.distantPast
+    private nonisolated(unsafe) var lastTriggerAt = Date.distantPast
 
-    private var isAccessibilitySuspended = false
+    private nonisolated(unsafe) var isAccessibilitySuspended = false
     private var isShortcutRecording = false
 
     private init() {
         registerTrustAwareness()
 
-        notificationObservers = [
-            NotificationCenter.default.addObserver(
-                forName: .sapphireShortcutRecordingDidStart,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.isShortcutRecording = true
-                self?.stopMonitoring()
-            },
-            NotificationCenter.default.addObserver(
-                forName: .sapphireShortcutRecordingDidEnd,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.isShortcutRecording = false
-                self?.setupMonitor()
+        shortcutRecordingObserver = ShortcutRecordingObserver { [weak self] isRecording in
+            MainActor.assumeIsolated {
+                self?.isShortcutRecording = isRecording
+                if isRecording {
+                    self?.removeTap()
+                } else {
+                    self?.installTap()
+                }
             }
-        ]
+        }
 
         SettingsModel.shared.$settings
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.setupMonitor()
+                self?.installTap()
             }
+            .store(in: &cancellables)
+
+        PremiumGate.accessChanges
+            .sink { [weak self] in self?.installTap() }
             .store(in: &cancellables)
     }
 
-    deinit {
-        notificationObservers.forEach(NotificationCenter.default.removeObserver)
-    }
-
     private func registerTrustAwareness() {
-        AccessibilityTrustMonitor.shared.register(name: "KeyboardShortcutManager") { [weak self] in
-            self?.isAccessibilitySuspended = true
-            self?.stopMonitoring()
-        } reinstall: { [weak self] in
-            self?.isAccessibilitySuspended = false
-            self?.setupMonitor()
+        AccessibilityTrustMonitor.shared.register(name: "KeyboardShortcutManager", owner: self) {
+            $0.isAccessibilitySuspended = true
+            $0.removeTap()
+        } reinstall: {
+            $0.isAccessibilitySuspended = false
+            $0.installTap()
         }
     }
 
-    func setupMonitor() {
+    private func installTap() {
         guard !isAccessibilitySuspended, !isShortcutRecording else { return }
-        stopMonitoring()
+        removeTap()
 
-        let planesWithShortcuts = SettingsModel.shared.settings.planes.filter { $0.shortcut != nil }
-        let snapZoneShortcuts = SettingsModel.shared.settings.snapZoneShortcuts
+        let settings = SettingsModel.shared.settings
+        let planesWithShortcuts = settings.planes.filter {
+            $0.shortcut != nil && settings.isShortcutEnabled(ShortcutIdentifier.plane($0.id))
+        }
+        let snapZoneShortcuts = PremiumGate.hasAccess(.snapZonesKeyboardShortcuts)
+            ? settings.snapZoneShortcuts.filter {
+                settings.isShortcutEnabled(ShortcutIdentifier.snapZone(layoutID: $0.layoutID, zoneID: $0.zoneID))
+            }
+            : []
 
         cacheLock.withLock {
             registeredShortcuts.removeAll()
@@ -130,34 +100,24 @@ class KeyboardShortcutManager {
         }
 
         let eventsToMonitor: CGEventMask = (1 << CGEventType.keyDown.rawValue)
-        let selfAsUnsafeMutableRawPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
 
-        eventTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: eventsToMonitor,
-            callback: executionTapCallback,
-            userInfo: selfAsUnsafeMutableRawPointer
-        )
-
-        if let eventTap {
-            runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-            if let runLoopSource {
-                CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-            }
-            CGEvent.tapEnable(tap: eventTap, enable: true)
+        tapToken = GlobalEventTap.shared.register(
+            name: "KeyboardShortcutManager",
+            mask: eventsToMonitor,
+            priority: EventTapPriority.shortcut
+        ) { [weak self] type, event in
+            self?.handleEvent(type, event) ?? .pass
         }
 
-        if eventTap == nil {
+        if tapToken == nil {
             installFallbackMonitors()
         }
     }
 
     private func installFallbackMonitors() {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            Task { @MainActor in
-                self?.handleNSEvent(event, swallow: false)
+            MainActor.assumeIsolated {
+                _ = self?.handleNSEvent(event, swallow: false)
             }
         }
 
@@ -167,29 +127,11 @@ class KeyboardShortcutManager {
         }
     }
 
-    func ensureEventTapEnabled(forceRebuild: Bool = false) {
-        if forceRebuild || eventTap == nil {
-            setupMonitor()
-            return
+    private func removeTap() {
+        if let token = tapToken {
+            GlobalEventTap.shared.unregister(token)
+            tapToken = nil
         }
-        if let eventTap, !CGEvent.tapIsEnabled(tap: eventTap) {
-            CGEvent.tapEnable(tap: eventTap, enable: true)
-            if !CGEvent.tapIsEnabled(tap: eventTap) {
-                setupMonitor()
-            }
-        }
-    }
-
-    func stopMonitoring() {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            CFMachPortInvalidate(tap)
-        }
-        if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        }
-        eventTap = nil
-        runLoopSource = nil
         if let globalMonitor {
             NSEvent.removeMonitor(globalMonitor)
         }
@@ -203,31 +145,31 @@ class KeyboardShortcutManager {
         }
     }
 
-    nonisolated func handle(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
-        guard type == .keyDown else { return Unmanaged.passRetained(event) }
+    nonisolated private func handleEvent(_ type: CGEventType, _ event: CGEvent) -> EventTapDecision {
+        guard type == .keyDown else { return .pass }
         guard event.getIntegerValueField(.eventSourceUserData) != SapphireSyntheticEventMarker.plainTextPaste else {
-            return Unmanaged.passRetained(event)
+            return .pass
         }
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
 
         guard let nsEvent = NSEvent(cgEvent: event) else {
-            return Unmanaged.passRetained(event)
+            return .pass
         }
 
         let flags = nsEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
         guard let keyString = KeyCodeTranslator.shared.string(for: keyCode, from: nsEvent) else {
-            return Unmanaged.passRetained(event)
+            return .pass
         }
 
         let currentShortcut = KeyboardShortcut(key: keyString, modifiers: flags)
 
-        guard let action = action(for: currentShortcut) else { return Unmanaged.passRetained(event) }
-        guard shouldTrigger() else { return nil }
+        guard let action = action(for: currentShortcut) else { return .pass }
+        guard shouldTrigger() else { return .swallow }
 
         perform(action)
-        return nil
+        return .swallow
     }
 
     @discardableResult
@@ -252,13 +194,13 @@ class KeyboardShortcutManager {
         return swallow
     }
 
-    private func action(for shortcut: KeyboardShortcut) -> ShortcutAction? {
+    nonisolated private func action(for shortcut: KeyboardShortcut) -> ShortcutAction? {
         cacheLock.withLock {
             registeredShortcuts[shortcut]
         }
     }
 
-    private func shouldTrigger() -> Bool {
+    nonisolated private func shouldTrigger() -> Bool {
         triggerLock.withLock {
             let now = Date()
             guard now.timeIntervalSince(lastTriggerAt) > 0.3 else { return false }
@@ -267,12 +209,16 @@ class KeyboardShortcutManager {
         }
     }
 
-    private func perform(_ action: ShortcutAction) {
-        Task { @MainActor in
+    nonisolated private func perform(_ action: ShortcutAction) {
+        DispatchQueue.main.async {
             switch action {
             case .plane(let plane):
+                guard SettingsModel.shared.settings.isShortcutEnabled(ShortcutIdentifier.plane(plane.id)) else { return }
                 WindowArrangementManager.shared.activate(plane: plane)
             case .snapZone(let mapping):
+                guard SettingsModel.shared.settings.isShortcutEnabled(
+                    ShortcutIdentifier.snapZone(layoutID: mapping.layoutID, zoneID: mapping.zoneID)
+                ) else { return }
                 SnappingManager.snap(layoutID: mapping.layoutID, zoneID: mapping.zoneID)
             }
         }

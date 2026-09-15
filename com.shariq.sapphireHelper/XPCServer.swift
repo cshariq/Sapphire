@@ -33,7 +33,7 @@ class XPCServer: NSObject {
 
     private func isValidClient(forConnection connection: NSXPCConnection) -> Bool {
         do {
-            return try CodesignCheck.codeSigningMatches(pid: connection.processIdentifier)
+            return try CodesignCheck.isSapphireClient(auditToken: connection.auditToken)
         } catch {
             NSLog("[SMJBS]: Code signing check failed with error: \(error)")
             return false

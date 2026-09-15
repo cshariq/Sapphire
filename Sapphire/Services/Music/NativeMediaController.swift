@@ -26,49 +26,49 @@ struct PlaybackTimingAnchor: Equatable {
 
 struct TrackInfo: Equatable {
     struct Payload: Equatable {
-        let processIdentifier: Int?
-        let bundleIdentifier: String?
-        let parentApplicationBundleIdentifier: String?
-        let title: String?
-        let artist: String?
-        let album: String?
-        let albumArtist: String?
-        let composer: String?
-        let genre: String?
-        let chapterNumber: NSNumber?
-        let totalChapterCount: NSNumber?
-        let trackNumber: NSNumber?
-        let discNumber: NSNumber?
-        let totalTrackCount: NSNumber?
-        let queueIndex: NSNumber?
-        let totalQueueCount: NSNumber?
-        let isPlaying: Bool?
-        let durationMicros: Int64?
-        let currentElapsedTime: TimeInterval?
-        let elapsedTimeMicros: Int64?
-        let playbackRate: Float?
-        let startTime: NSNumber?
-        let timestamp: NSNumber?
-        let timestampEpochMicros: Int64?
-        let repeatMode: Int?
-        let shuffleMode: Int?
-        let isLiked: Bool?
-        let isBanned: Bool?
-        let isInWishList: Bool?
-        let isAdvertisement: Bool?
-        let isMusicApp: Bool?
-        let supportsIsLiked: Bool?
-        let supportsIsBanned: Bool?
-        let supportsFastForward15Seconds: Bool?
-        let supportsRewind15Seconds: Bool?
-        let prohibitsSkip: Bool?
-        let radioStationIdentifier: String?
-        let radioStationHash: String?
-        let contentItemIdentifier: String?
-        let uniqueIdentifier: String?
-        let mediaType: String?
-        let artwork: NSImage?
-        let artworkMimeType: String?
+        var processIdentifier: Int? = nil
+        var bundleIdentifier: String? = nil
+        var parentApplicationBundleIdentifier: String? = nil
+        var title: String? = nil
+        var artist: String? = nil
+        var album: String? = nil
+        var albumArtist: String? = nil
+        var composer: String? = nil
+        var genre: String? = nil
+        var chapterNumber: NSNumber? = nil
+        var totalChapterCount: NSNumber? = nil
+        var trackNumber: NSNumber? = nil
+        var discNumber: NSNumber? = nil
+        var totalTrackCount: NSNumber? = nil
+        var queueIndex: NSNumber? = nil
+        var totalQueueCount: NSNumber? = nil
+        var isPlaying: Bool? = nil
+        var durationMicros: Int64? = nil
+        var currentElapsedTime: TimeInterval? = nil
+        var elapsedTimeMicros: Int64? = nil
+        var playbackRate: Float? = nil
+        var startTime: NSNumber? = nil
+        var timestamp: NSNumber? = nil
+        var timestampEpochMicros: Int64? = nil
+        var repeatMode: Int? = nil
+        var shuffleMode: Int? = nil
+        var isLiked: Bool? = nil
+        var isBanned: Bool? = nil
+        var isInWishList: Bool? = nil
+        var isAdvertisement: Bool? = nil
+        var isMusicApp: Bool? = nil
+        var supportsIsLiked: Bool? = nil
+        var supportsIsBanned: Bool? = nil
+        var supportsFastForward15Seconds: Bool? = nil
+        var supportsRewind15Seconds: Bool? = nil
+        var prohibitsSkip: Bool? = nil
+        var radioStationIdentifier: String? = nil
+        var radioStationHash: String? = nil
+        var contentItemIdentifier: String? = nil
+        var uniqueIdentifier: String? = nil
+        var mediaType: String? = nil
+        var artwork: NSImage? = nil
+        var artworkMimeType: String? = nil
 
         var calculatedElapsedTime: TimeInterval {
             interpolatedElapsedTime(at: Date())
@@ -114,6 +114,10 @@ struct TrackInfo: Equatable {
 
 @MainActor
 final class NativeMediaController: NSObject {
+    private struct SendableMetadata: @unchecked Sendable {
+        let value: [String: Any]
+    }
+
     var onActiveClientsChanged: (([String: TrackInfo]) -> Void)?
     var onListenerTerminated: (() -> Void)?
     var onDecodingError: ((String, String?) -> Void)?
@@ -121,10 +125,10 @@ final class NativeMediaController: NSObject {
 
     @Published var activeClients: [String: TrackInfo] = [:]
 
-    private let pollQueue = DispatchQueue(label: "com.sapphire.mediaremote.adapter", qos: .userInitiated)
+    nonisolated private let pollQueue = DispatchQueue(label: "com.sapphire.mediaremote.adapter", qos: .userInitiated)
     private var isListening = false
     private var streamProcess: Process?
-    private var buffer = Data()
+    nonisolated(unsafe) private var buffer = Data()
     private var lastActiveClientKey: String?
     private var lastTrackIdentity: String?
     private var lastMediaFingerprint: String?
@@ -132,7 +136,7 @@ final class NativeMediaController: NSObject {
     private var lastDecodedArtworkHash: Int?
     private var lastDecodedArtworkImage: NSImage?
 
-    private static let cachedPaths: (script: String, adapter: String, testClient: String?)? = {
+    nonisolated private static let cachedPaths: (script: String, adapter: String, testClient: String?)? = {
         let fm = FileManager.default
         guard let resourcePath = Bundle.main.resourcePath else { return nil }
 
@@ -162,6 +166,33 @@ final class NativeMediaController: NSObject {
 
     override init() {
         super.init()
+    }
+
+    private static var didReapOrphanedStreams = false
+
+    private static func reapOrphanedStreamsOnce() {
+        guard !didReapOrphanedStreams else { return }
+        didReapOrphanedStreams = true
+        DispatchQueue.global(qos: .utility).async {
+            let ps = Process()
+            ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+            ps.arguments = ["-axo", "pid=,ppid=,command="]
+            let output = Pipe()
+            ps.standardOutput = output
+            ps.standardError = FileHandle.nullDevice
+            guard (try? ps.run()) != nil else { return }
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            ps.waitUntilExit()
+            guard let listing = String(data: data, encoding: .utf8) else { return }
+            for line in listing.split(separator: "\n") {
+                let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+                guard fields.count == 3,
+                      let pid = pid_t(fields[0]), fields[1] == "1",
+                      fields[2].contains("Sapphire.app/Contents/Resources/mediaremote-adapter.pl"),
+                      fields[2].contains(" stream") else { continue }
+                kill(pid, SIGTERM)
+            }
+        }
     }
 
     func startListening() {
@@ -243,7 +274,10 @@ final class NativeMediaController: NSObject {
 
         var env = ProcessInfo.processInfo.environment
         env["PERLIO"] = ":unix"
+        env["SAPPHIRE_WATCH_PARENT_STDIN"] = "1"
         task.environment = env
+        task.standardInput = Pipe()
+        Self.reapOrphanedStreamsOnce()
 
         let stdout = Pipe()
         task.standardOutput = stdout
@@ -280,7 +314,7 @@ final class NativeMediaController: NSObject {
         try? task.run()
     }
 
-    private func appendAndProcessBuffer(_ data: Data) {
+    nonisolated private func appendAndProcessBuffer(_ data: Data) {
         buffer.append(data)
         while let range = buffer.range(of: Data("\n".utf8)) {
             let lineData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
@@ -298,8 +332,9 @@ final class NativeMediaController: NSObject {
                 payload = parsed
             }
 
-            Task { @MainActor in
-                self.handleTrackUpdate(payload)
+            let metadata = SendableMetadata(value: payload)
+            Task { @MainActor [weak self] in
+                self?.handleTrackUpdate(metadata.value)
             }
         }
     }
@@ -329,7 +364,7 @@ final class NativeMediaController: NSObject {
 
         let incomingBundle: String? = {
             if let raw = metadata["bundleIdentifier"] as? String {
-                return Self.normalizeBundleID(raw) ?? raw
+                return MediaApplicationIdentity.canonicalBundleID(raw) ?? raw
             }
             return nil
         }()
@@ -411,7 +446,15 @@ final class NativeMediaController: NSObject {
         let hasNoArtworkRecord = lastDecodedArtworkImage == nil && lastDecodedArtworkHash == nil
         if eventCarriesArtwork || hasNoArtworkRecord,
            let base64 = currentMergedMetadata["artworkData"] as? String, !base64.isEmpty {
-            let currentHash = base64.hashValue
+            let utf8 = base64.utf8
+            let currentHash: Int = {
+                var h = base64.count
+                h &+= Int(utf8.first ?? 0)
+                h &+= Int(utf8.last ?? 0) << 8
+                let midIndex = utf8.index(utf8.startIndex, offsetBy: min(63, utf8.count - 1))
+                h &+= Int(utf8[midIndex]) << 16
+                return h
+            }()
             if currentHash == lastDecodedArtworkHash, let cached = lastDecodedArtworkImage {
                 artworkImage = cached
             } else if let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters),
@@ -450,7 +493,7 @@ final class NativeMediaController: NSObject {
     }
 
     private func playbackPositionChanged(from previous: TrackInfo.Payload?, to current: TrackInfo.Payload) -> Bool {
-        guard let prev = previous, let prevElapsed = prev.currentElapsedTime else {
+        guard let prev = previous, prev.currentElapsedTime != nil else {
             return previous?.currentElapsedTime != current.currentElapsedTime
         }
         guard let currElapsed = current.currentElapsedTime else { return true }
@@ -479,10 +522,6 @@ final class NativeMediaController: NSObject {
         if let playing = metadata["playing"] as? NSNumber { return playing.boolValue }
         if let rate = (metadata["playbackRate"] as? NSNumber)?.floatValue { return rate != 0 }
         return nil
-    }
-
-    nonisolated private static func transportFieldsChanged(in metadata: [String: Any]) -> Bool {
-        metadata["playing"] != nil || metadata["playbackRate"] != nil || metadata["playbackState"] != nil
     }
 
     nonisolated private static func isTransportOnlyMetadata(_ metadata: [String: Any]) -> Bool {
@@ -525,22 +564,11 @@ final class NativeMediaController: NSObject {
         return false
     }
 
-    nonisolated private static func normalizeBundleID(_ bundleID: String?) -> String? {
-        guard let bundleID else { return nil }
-        switch bundleID {
-        case "com.apple.WebKit.GPU", "com.apple.WebKit.WebContent": return "com.apple.Safari"
-        case let id where id.starts(with: "com.google.Chrome.helper"): return "com.google.Chrome"
-        case let id where id.starts(with: "com.microsoft.edgemac.helper"): return "com.microsoft.edgemac"
-        case "company.thebrowser.Browser.helper": return "company.thebrowser.Browser"
-        default: return bundleID
-        }
-    }
-
     nonisolated private func buildTrackInfo(from metadata: [String: Any], artwork: NSImage?) -> TrackInfo? {
         let title = metadata["title"] as? String
         let artist = metadata["artist"] as? String
         let rawBundle = metadata["bundleIdentifier"] as? String
-        let bundleId = Self.normalizeBundleID(rawBundle) ?? rawBundle
+        let bundleId = MediaApplicationIdentity.canonicalBundleID(rawBundle) ?? rawBundle
 
         let hasIdentity = (title?.isEmpty == false) || (bundleId?.isEmpty == false)
         guard hasIdentity else { return nil }

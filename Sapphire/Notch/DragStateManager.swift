@@ -20,6 +20,53 @@ struct DraggedFilePreview: Identifiable, Equatable {
     }
 }
 
+enum FileDragPasteboard {
+    static let legacyFilenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+
+    static func containsFiles(
+        _ pasteboard: NSPasteboard,
+        newerThan baselineChangeCount: Int? = nil
+    ) -> Bool {
+        if let baselineChangeCount, pasteboard.changeCount == baselineChangeCount {
+            return false
+        }
+        if pasteboard.canReadObject(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) {
+            return true
+        }
+        return !(legacyFilePaths(from: pasteboard)?.isEmpty ?? true)
+    }
+
+    static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        if let urls = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !urls.isEmpty {
+            return urls
+        }
+
+        if let paths = legacyFilePaths(from: pasteboard), !paths.isEmpty {
+            return paths.map(URL.init(fileURLWithPath:))
+        }
+
+        guard let items = pasteboard.pasteboardItems else { return [] }
+        return items.compactMap { item in
+            guard let value = item.string(forType: .fileURL) else { return nil }
+            let decoded = value.removingPercentEncoding ?? value
+            if let url = URL(string: decoded), url.isFileURL {
+                return url
+            }
+            return decoded.hasPrefix("/") ? URL(fileURLWithPath: decoded) : nil
+        }
+    }
+
+    private static func legacyFilePaths(from pasteboard: NSPasteboard) -> [String]? {
+        pasteboard.propertyList(forType: legacyFilenamesType) as? [String]
+    }
+}
+
 @MainActor
 class DragStateManager: ObservableObject {
     static let shared = DragStateManager()
@@ -29,7 +76,7 @@ class DragStateManager: ObservableObject {
 
     private var shelfDragItemID: UUID?
     private var shelfDragLocalMouseUpMonitor: Any?
-    private var shelfDragGlobalMouseUpMonitor: Any?
+    private var shelfDragGlobalMouseUpToken: UUID?
 
     private init() {}
 
@@ -40,7 +87,7 @@ class DragStateManager: ObservableObject {
     }
 
     private func startShelfDragMouseUpMonitor() {
-        guard shelfDragLocalMouseUpMonitor == nil, shelfDragGlobalMouseUpMonitor == nil else { return }
+        guard shelfDragLocalMouseUpMonitor == nil, shelfDragGlobalMouseUpToken == nil else { return }
 
         shelfDragLocalMouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
             Task { @MainActor in
@@ -48,7 +95,7 @@ class DragStateManager: ObservableObject {
             }
             return event
         }
-        shelfDragGlobalMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
+        shelfDragGlobalMouseUpToken = EventMonitorHub.shared.register(for: .leftMouseUp) { [weak self] _ in
             Task { @MainActor in
                 self?.endShelfDragIfNeeded()
             }
@@ -75,15 +122,15 @@ class DragStateManager: ObservableObject {
             NSEvent.removeMonitor(monitor)
             shelfDragLocalMouseUpMonitor = nil
         }
-        if let monitor = shelfDragGlobalMouseUpMonitor {
-            NSEvent.removeMonitor(monitor)
-            shelfDragGlobalMouseUpMonitor = nil
+        if let token = shelfDragGlobalMouseUpToken {
+            EventMonitorHub.shared.unregister(token: token, for: .leftMouseUp)
+            shelfDragGlobalMouseUpToken = nil
         }
     }
 
     func refreshDraggedFilePreviews() {
         let pasteboard = NSPasteboard(name: .drag)
-        let urls = Self.readFileURLs(from: pasteboard)
+        let urls = FileDragPasteboard.fileURLs(from: pasteboard)
         guard !urls.isEmpty else {
             if !draggedFilePreviews.isEmpty {
                 draggedFilePreviews = []
@@ -110,27 +157,4 @@ class DragStateManager: ObservableObject {
         }
     }
 
-    private static func readFileURLs(from pasteboard: NSPasteboard) -> [URL] {
-        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [
-            .urlReadingFileURLsOnly: true
-        ]) as? [URL], !urls.isEmpty {
-            return urls
-        }
-
-        if let items = pasteboard.pasteboardItems {
-            var urls: [URL] = []
-            for item in items {
-                if let path = item.string(forType: .fileURL) {
-                    let decoded = path.removingPercentEncoding ?? path
-                    if let url = URL(string: decoded), url.isFileURL {
-                        urls.append(url)
-                    } else if decoded.hasPrefix("/") {
-                        urls.append(URL(fileURLWithPath: decoded))
-                    }
-                }
-            }
-            if !urls.isEmpty { return urls }
-        }
-        return []
-    }
 }

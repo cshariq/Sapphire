@@ -27,6 +27,19 @@ struct BatteryDebugMenu: View {
     @State private var limitInput = 80
     @State private var isBusy = false
 
+    private static let integerFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.allowsFloats = false
+        return formatter
+    }()
+
+    private static let logTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
     private var battery: BatteryState? { BatteryMonitor.shared.currentState }
 
     var body: some View {
@@ -165,8 +178,8 @@ struct BatteryDebugMenu: View {
                     appendLog("enableCharging(true) + setChargeLimit(100)")
                 }
                 Button("Start Discharge") {
-                    BatteryManager.shared.setDischarge(discharging: true)
-                    appendLog("setDischarge(true)")
+                    BatteryManager.shared.setDischarge(discharging: true, safetyFloor: 5, rechargeOnFloor: true, bypassSafetyFloor: false)
+                    appendLog("setDischarge(true, safetyFloor: 5, rechargeOnFloor: true, bypassSafetyFloor: false)")
                 }
                 Button("Stop Discharge") {
                     BatteryManager.shared.setDischarge(discharging: false)
@@ -178,7 +191,7 @@ struct BatteryDebugMenu: View {
 
             HStack(spacing: 8) {
                 Text("Limit:")
-                TextField("80", value: $limitInput, formatter: NumberFormatter())
+                TextField("80", value: $limitInput, formatter: Self.integerFormatter)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 60)
                 Button("Set Charge Limit") {
@@ -304,9 +317,7 @@ struct BatteryDebugMenu: View {
     }
 
     private func appendLog(_ message: String) {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        log.append("[\(formatter.string(from: Date()))] \(message)")
+        log.append("[\(Self.logTimeFormatter.string(from: Date()))] \(message)")
         if log.count > 200 { log.removeFirst(log.count - 200) }
     }
 
@@ -384,12 +395,7 @@ private struct BatteryDebugCardModifier: ViewModifier {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.orange.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.orange.opacity(0.25), lineWidth: 1)
-            )
+            .roundedCard(fill: Color.orange.opacity(0.06), cornerRadius: 18, stroke: Color.orange.opacity(0.25))
     }
 }
 
