@@ -1574,15 +1574,6 @@ struct GeneralSettingsView: View {
 
                 SettingsCard(title: "System") {
 
-                    InfoContainer(
-                        text: "Use “Hide from Screen Sharing” when you never want Sapphire captured. Use “Hide notch when inactive” when you only want the notch hidden while it is idle.",
-                        iconName: "questionmark.circle",
-                        color: .blue
-                    )
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-                    .padding(.bottom, 10)
-
                     ToggleRow(title: "Launch at Login", description: "Start Sapphire automatically when you log in to your Mac.", isOn: $settings.settings.launchAtLogin)
                     Divider().padding(.leading, 20)
 
@@ -1761,10 +1752,6 @@ struct GeneralSettingsView: View {
             SystemAppFetcher.shared.releaseCachedApps()
             AppIconLoader.releaseCache()
         }
-    }
-    .onDisappear {                SystemAppFetcher.shared.releaseCachedApps()
-                AppIconLoader.releaseCache()
-
     }
     .sheet(isPresented: $showingCustomConfig) {
             CustomNotchConfigView(config: $settings.settings.customNotchConfiguration)
@@ -2739,6 +2726,11 @@ struct WidgetsSettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Appearance").font(.headline).padding([.top, .horizontal])
                     ToggleRow(title: "Show Dividers Between Widgets", description: "Display a subtle line separating each widget.", isOn: $settings.settings.showDividersBetweenWidgets)
+                    ToggleRow(
+                        title: "Ignore Widget Space Limit",
+                        description: "Allow any widget to be enabled even when Sapphire estimates there is not enough notch space.",
+                        isOn: $settings.settings.bypassWidgetSpaceLimit
+                    )
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -3694,115 +3686,90 @@ struct LockScreenSettingsView: View {
 
                     ToggleRow(
                         title: "Custom Lock Screen Wallpaper",
-                        description: "Change the system wallpaper to your chosen image or video while your Mac is locked and restore it automatically when you unlock.",
+                        description: "Show your own image or video behind the clock, sign-in controls, and Sapphire widgets on the lock screen.",
                         isOn: $settings.settings.lockScreenCustomWallpaperEnabled
                     )
 
                     if settings.settings.lockScreenCustomWallpaperEnabled {
                         Divider().padding(.leading, 20)
 
-                        HStack(spacing: 10) {
-                            Image(systemName: lockScreenWallpaperIsVideo ? "film" : "photo.fill")
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let path = settings.settings.lockScreenCustomWallpaperPath,
-                                   !path.isEmpty,
-                                   FileManager.default.fileExists(atPath: path) {
-                                    Text((path as NSString).lastPathComponent)
-                                        .font(.caption.weight(.medium))
-                                        .lineLimit(1)
-                                    Text(path)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                } else {
-                                    Text("No wallpaper selected")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            Button("Choose…") { chooseLockScreenWallpaper() }
-                            if settings.settings.lockScreenCustomWallpaperPath != nil {
-                                Button("Remove") {
-                                    settings.settings.lockScreenCustomWallpaperPath = nil
-                                }
-                            }
-                        }
-                        .padding()
+                        WallpaperFileRow(
+                            path: $settings.settings.lockScreenCustomWallpaperPath,
+                            panelTitle: "Choose Lock Screen Wallpaper",
+                            panelMessage: "Select an image or video to show on your lock screen."
+                        )
 
                         Divider().padding(.leading, 20)
 
                         ToggleRow(
-                            title: "Keep Wallpaper After Unlock",
-                            description: "Don't revert the wallpaper when you unlock — keep the lock screen wallpaper (live video included) as your desktop wallpaper.",
+                            title: "Use on Desktop",
+                            description: "Also show the lock screen wallpaper (live video included) on your desktop, unless a separate desktop wallpaper is set below.",
                             isOn: $settings.settings.lockScreenKeepWallpaperAfterUnlock
                         )
-
-                        if lockScreenWallpaperIsVideo {
-                            Text("The video plays live on your lock screen.")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .padding([.horizontal])
-                                .padding(.bottom, 8)
-                        }
                     }
 
                     Divider().padding(.leading, 20)
 
                     ToggleRow(
                         title: "Custom Desktop Wallpaper",
-                        description: "Use a separate wallpaper (live video included) on your desktop after unlocking, instead of the lock screen wallpaper.",
+                        description: "Use your own image or video on the desktop. A video plays behind your desktop icons and pauses whenever the desktop is covered. The lock screen shows it too unless it has its own wallpaper.",
                         isOn: $settings.settings.desktopWallpaperEnabled
                     )
 
                     if settings.settings.desktopWallpaperEnabled {
                         Divider().padding(.leading, 20)
 
-                        HStack(spacing: 10) {
-                            Image(systemName: desktopWallpaperIsVideo ? "film" : "photo.fill")
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                if let path = settings.settings.desktopWallpaperPath,
-                                   !path.isEmpty,
-                                   FileManager.default.fileExists(atPath: path) {
-                                    Text((path as NSString).lastPathComponent)
-                                        .font(.caption.weight(.medium))
-                                        .lineLimit(1)
-                                    Text(path)
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                } else {
-                                    Text("No wallpaper selected")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                        WallpaperFileRow(
+                            path: $settings.settings.desktopWallpaperPath,
+                            panelTitle: "Choose Desktop Wallpaper",
+                            panelMessage: "Select an image or video to use as your desktop wallpaper."
+                        )
+                    }
+
+                    if wallpaperConfiguration.desktopPath != nil || wallpaperConfiguration.lockScreenPath != nil {
+                        Divider().padding(.leading, 20)
+
+                        HStack {
+                            SettingsRowLabel(
+                                title: "Scaling",
+                                description: "How the wallpaper fits screens with a different shape.",
+                                titleFont: .system(size: 14, weight: .medium)
+                            )
                             Spacer()
-                            Button("Choose…") { chooseDesktopWallpaper() }
-                            if settings.settings.desktopWallpaperPath != nil {
-                                Button("Remove") {
-                                    settings.settings.desktopWallpaperPath = nil
+                            Picker("Scaling", selection: $settings.settings.liveWallpaperScaling) {
+                                ForEach(WallpaperScaling.allCases) { scaling in
+                                    Text(scaling.displayName).tag(scaling)
                                 }
                             }
+                            .labelsHidden()
+                            .frame(width: 160)
                         }
                         .padding()
-
-                        if desktopWallpaperIsVideo {
-                            Text("The video plays live on your desktop behind your icons.")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .padding([.horizontal])
-                                .padding(.bottom, 8)
-                        }
                     }
+
+                    if hasVideoWallpaper {
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Pause in Low Power Mode",
+                            description: "Show the first frame instead of playing the video while Low Power Mode is on.",
+                            isOn: $settings.settings.liveWallpaperPauseOnLowPower
+                        )
+
+                        Divider().padding(.leading, 20)
+
+                        ToggleRow(
+                            title: "Pause on Battery Power",
+                            description: "Only play video wallpapers while your Mac is plugged in.",
+                            isOn: $settings.settings.liveWallpaperPauseOnBattery
+                        )
+                    }
+
                 }
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: settings.settings.lockScreenCustomWallpaperEnabled)
                 .animation(.default, value: settings.settings.desktopWallpaperEnabled)
+                .animation(.default, value: hasVideoWallpaper)
 
                 ToggleRow(
                     title: "Show Music When Paused",
@@ -3953,68 +3920,111 @@ struct LockScreenSettingsView: View {
         }
     }
 
-    private var lockScreenWallpaperIsVideo: Bool {
-        guard let path = settings.settings.lockScreenCustomWallpaperPath else { return false }
-        let url = URL(fileURLWithPath: path)
-        if let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
-            var isVideo = contentType.conforms(to: .movie) || contentType.conforms(to: .audiovisualContent)
-            if #available(macOS 15, *) {
-                isVideo = isVideo || contentType.conforms(to: .heics)
+    private var wallpaperConfiguration: LiveWallpaperConfiguration {
+        LiveWallpaperConfiguration(settings: settings.settings)
+    }
+
+    private var hasVideoWallpaper: Bool {
+        let configuration = wallpaperConfiguration
+        return WallpaperMedia.isVideo(path: configuration.desktopPath)
+            || WallpaperMedia.isVideo(path: configuration.lockScreenPath)
+    }
+
+}
+
+private struct WallpaperFileRow: View {
+    @Binding var path: String?
+    let panelTitle: String
+    let panelMessage: String
+
+    @State private var thumbnail: CGImage?
+
+    private var media: WallpaperMedia? { WallpaperMedia(path: path) }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.08))
+                if let thumbnail {
+                    Image(decorative: thumbnail, scale: 2)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: media?.isVideo == true ? "film" : "photo")
+                        .foregroundStyle(.secondary)
+                }
             }
-            return isVideo
-        }
-        let videoExtensions: Set<String> = ["mov", "mp4", "m4v", "mpeg", "mpg", "webm", "avi", "heics"]
-        return videoExtensions.contains(url.pathExtension.lowercased())
-    }
-
-    private var desktopWallpaperIsVideo: Bool {
-        guard let path = settings.settings.desktopWallpaperPath else { return false }
-        let url = URL(fileURLWithPath: path)
-        if let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
-            var isVideo = contentType.conforms(to: .movie) || contentType.conforms(to: .audiovisualContent)
-            if #available(macOS 15, *) {
-                isVideo = isVideo || contentType.conforms(to: .heics)
+            .frame(width: 64, height: 40)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(alignment: .bottomTrailing) {
+                if media?.isVideo == true, thumbnail != nil {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(3)
+                        .background(.black.opacity(0.45), in: Circle())
+                        .padding(3)
+                }
             }
-            return isVideo
+
+            VStack(alignment: .leading, spacing: 2) {
+                if let media {
+                    Text(media.url.lastPathComponent)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                    Text(media.isVideo ? "Live video" : "Image")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if let path, !path.isEmpty {
+                    Text((path as NSString).lastPathComponent)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                    Text("File not found")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                } else {
+                    Text("No wallpaper selected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Button("Choose…") { choose() }
+            if path != nil {
+                Button("Remove") { path = nil }
+            }
         }
-        let videoExtensions: Set<String> = ["mov", "mp4", "m4v", "mpeg", "mpg", "webm", "avi", "heics"]
-        return videoExtensions.contains(url.pathExtension.lowercased())
+        .padding()
+        .task(id: path) {
+            thumbnail = nil
+            guard let media else { return }
+            let image = await Task.detached(priority: .utility) {
+                await WallpaperAssetStore.thumbnail(for: media, maxPixelSize: 160)
+            }.value
+            guard !Task.isCancelled else { return }
+            thumbnail = image
+        }
     }
 
-    private func chooseLockScreenWallpaper() {
-        chooseWallpaper(
-            title: "Choose Lock Screen Wallpaper",
-            message: "Select an image or video to show as your lock screen wallpaper."
-        ) { [weak settings] url in
-            settings?.settings.lockScreenCustomWallpaperPath = url.path
-        }
-    }
-
-    private func chooseDesktopWallpaper() {
-        chooseWallpaper(
-            title: "Choose Desktop Wallpaper",
-            message: "Select an image or video to use as your desktop wallpaper."
-        ) { [weak settings] url in
-            settings?.settings.desktopWallpaperPath = url.path
-        }
-    }
-
-    private func chooseWallpaper(title: String, message: String, completion: @escaping (URL) -> Void) {
+    private func choose() {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
-        panel.title = title
-        panel.message = message
+        panel.title = panelTitle
+        panel.message = panelMessage
         panel.prompt = "Choose"
-        if #available(macOS 15, *) {
-            panel.allowedContentTypes = [.image, .movie, .heics]
-        } else {
-            panel.allowedContentTypes = [.image, .movie]
-        }
+        panel.allowedContentTypes = WallpaperMedia.allowedContentTypes
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
+        if let path, !path.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: path).deletingLastPathComponent()
+        }
+        let binding = $path
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            completion(url)
+            binding.wrappedValue = url.path
         }
     }
 }
@@ -4157,10 +4167,6 @@ struct SnapZonesSettingsView: View {
             .animation(.easeInOut(duration: 0.2), value: settings.settings.snapZoneViewMode)
         }
         .onAppear(perform: appFetcher.fetchApps)
-        .onDisappear {
-            appFetcher.releaseCachedApps()
-            AppIconLoader.releaseCache()
-        }
         .sheet(item: $layoutToEdit) { layout in
             LayoutEditorView(layout: Binding(
                 get: { layout },
@@ -5022,10 +5028,6 @@ struct NotificationsSettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 appFetcher.fetchApps()
-            }
-            .onDisappear {
-                SystemAppFetcher.shared.releaseCachedApps()
-            AppIconLoader.releaseCache()
             }
         }
     }
@@ -8953,10 +8955,6 @@ VStack(alignment: .leading, spacing: 8) {
                 appFetcher.fetchApps()
                 syncMusicAuthState()
             }
-            .onDisappear {
-            appFetcher.releaseCachedApps()
-            AppIconLoader.releaseCache()
-        }
             .onReceive(MusicManager.shared.$isPrivateAPIAuthenticated) { isPrivateAuth = $0 }
             .onReceive(MusicManager.shared.$isOfficialAPIAuthenticated) { isOfficialAuth = $0 }
             .onReceive(MusicManager.shared.$isTidalAPIAuthenticated) { isTidalAuth = $0 }
@@ -9147,7 +9145,8 @@ struct CalendarSettingsView: View {
             .calendar,
             in: settings.settings.enabledWidgetTypes,
             availableWidth: WidgetLayoutPolicy.availableBarWidth(),
-            showDividers: settings.settings.showDividersBetweenWidgets
+            showDividers: settings.settings.showDividersBetweenWidgets,
+            bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
         )
     }
 

@@ -244,6 +244,55 @@ final class AppsSettingsRevampTests: XCTestCase {
         XCTAssertEqual(releases.first?.assets.first?.size, 1234)
     }
 
+    func testSapphireUpdaterChoosesZipInsteadOfPackage() {
+        let package = GitHubReleaseAsset(
+            name: "Sapphire.pkg",
+            browserDownloadUrl: URL(string: "https://github.com/cshariq/Sapphire/releases/download/3.0/Sapphire.pkg")!,
+            size: 1_000,
+            digest: "sha256:" + String(repeating: "a", count: 64),
+            contentType: "application/octet-stream"
+        )
+        let archive = GitHubReleaseAsset(
+            name: "Sapphire.zip",
+            browserDownloadUrl: URL(string: "https://github.com/cshariq/Sapphire/releases/download/3.0/Sapphire.zip")!,
+            size: 1_000,
+            digest: "sha256:" + String(repeating: "b", count: 64),
+            contentType: "application/zip"
+        )
+        let release = GitHubRelease(
+            name: "Sapphire 3.0",
+            tagName: "3.0",
+            body: nil,
+            htmlUrl: nil,
+            prerelease: false,
+            draft: false,
+            publishedAt: nil,
+            assets: [package, archive]
+        )
+
+        XCTAssertEqual(UpdateChecker.preferredUpdateAsset(in: release), archive)
+    }
+
+    func testTransactionalAppBundleReplacementKeepsDestinationAvailable() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("UpdateReplacement-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        let installed = root.appendingPathComponent("Sapphire.app", isDirectory: true)
+        let staged = root.appendingPathComponent(".Sapphire-update.app", isDirectory: true)
+        try fileManager.createDirectory(at: installed, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: staged, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: installed.appendingPathComponent("version"))
+        try Data("new".utf8).write(to: staged.appendingPathComponent("version"))
+
+        try UpdateChecker.atomicallyReplaceAppBundle(installedURL: installed, stagedURL: staged)
+
+        XCTAssertTrue(fileManager.fileExists(atPath: installed.path))
+        XCTAssertEqual(try String(contentsOf: installed.appendingPathComponent("version")), "new")
+        XCTAssertFalse(fileManager.fileExists(atPath: staged.path))
+    }
+
     func testIdentifierValidationRejectsPathInjection() {
         XCTAssertTrue(AppSecurityValidator.isSafeIdentifier("com.example.Useful-App"))
         XCTAssertFalse(AppSecurityValidator.isSafeIdentifier("../Library/Caches"))

@@ -34,16 +34,9 @@ final class LockScreenState: ObservableObject {
 final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
     var displayID: CGDirectDisplayID = 0
     var isFocusable: Bool = false
-    private(set) var isSuppressedForFullScreen = false
-    private var wasVisibleBeforeFullScreenSuppression = false
 
     override var canBecomeKey: Bool { isFocusable }
     override var canBecomeMain: Bool { isFocusable }
-
-    override func orderFront(_ sender: Any?) {
-        guard !isSuppressedForFullScreen else { return }
-        super.orderFront(sender)
-    }
 
     override init(
         contentRect: NSRect,
@@ -77,25 +70,6 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
 
     func setMouseEventHandlingEnabled(_ isEnabled: Bool = false) {
         ignoresMouseEvents = !isEnabled
-    }
-
-    func setFullScreenSuppressed(_ suppressed: Bool) {
-        guard isSuppressedForFullScreen != suppressed else { return }
-
-        if suppressed {
-            wasVisibleBeforeFullScreenSuppression = isVisible
-            isSuppressedForFullScreen = true
-            super.orderOut(nil)
-            return
-        }
-
-        isSuppressedForFullScreen = false
-        let shouldRestoreVisibility = wasVisibleBeforeFullScreenSuppression
-        wasVisibleBeforeFullScreenSuppression = false
-        if shouldRestoreVisibility {
-            super.orderFront(nil)
-            setMouseEventHandlingEnabled()
-        }
     }
 }
 
@@ -318,22 +292,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func observeSettings() {
-        Publishers.CombineLatest(
-            activeAppMonitor.$fullScreenDisplayIDs.removeDuplicates(),
-            settingsModel.$settings
-                .map(\.hideLiveActivityInFullScreen)
-                .removeDuplicates()
-        )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] displayIDs, shouldHide in
-            let ids = displayIDs.sorted().map(String.init).joined(separator: ",")
-            appDelegateLog.info("Full-screen visibility update enabled=\(shouldHide) displayIDs=[\(ids)]")
-            self?.applyFullScreenNotchVisibility(
-                displayIDs: shouldHide ? displayIDs : []
-            )
-        }
-        .store(in: &cancellables)
-
         settingsModel.$settings
             .map(\.googleAnalyticsEnabled)
             .dropFirst()
@@ -528,7 +486,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         liveActivityStartTask = nil
         liveActivityManager.stop()
         DevActivityMonitor.shared.stop()
-        LockScreenWallpaperManager.shared.restore()
+        LiveWallpaperManager.shared.shutdown()
 
         NotificationCenter.default.removeObserver(
             self,
@@ -703,6 +661,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         menuBarReadoutsManager.start()
         systemAlertsManager.start()
         DevActivityMonitor.shared.start()
+        LiveWallpaperManager.shared.start()
         _ = archiveExtractor
         _ = keyboardShortcutManager
         _ = plainTextPasteManager
@@ -1002,14 +961,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         }
 
+        LiveWallpaperManager.shared.screenDidLock()
+
         guard let mainScreen = NSScreen.main else { return }
         var widgetConfigs: [LockScreenManager.LockScreenWidgetConfig] = []
-
-        if settingsModel.settings.lockScreenCustomWallpaperEnabled {
-            LockScreenWallpaperManager.shared.applyCustomWallpaperIfEnabled(
-                path: settingsModel.settings.lockScreenCustomWallpaperPath
-            )
-        }
 
         if settingsModel.settings.lockScreenShowInfoWidget {
             widgetConfigs.append(.init(
@@ -1112,7 +1067,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @objc private func screenIsUnlocked() {
-        LockScreenWallpaperManager.shared.restore()
+        LiveWallpaperManager.shared.screenDidUnlock()
 
         LockScreenMusicPaneController.shared.reset()
 
@@ -1509,21 +1464,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.orderFront(nil)
 
         notchWindows.append(window)
-        applyFullScreenNotchVisibility(
-            displayIDs: settingsModel.settings.hideLiveActivityInFullScreen
-                ? activeAppMonitor.fullScreenDisplayIDs
-                : []
-        )
-    }
-
-    func applyFullScreenNotchVisibility(displayIDs: Set<CGDirectDisplayID>) {
-        for case let window as DynamicFocusWindow in notchWindows {
-            let shouldSuppress = window.displayID != 0 && displayIDs.contains(window.displayID)
-            guard window.isSuppressedForFullScreen != shouldSuppress else { continue }
-
-            window.setFullScreenSuppressed(shouldSuppress)
-            appDelegateLog.info("Notch window displayID=\(window.displayID) hidden=\(shouldSuppress)")
-        }
     }
 
     private func displayID(for screen: NSScreen) -> CGDirectDisplayID? {

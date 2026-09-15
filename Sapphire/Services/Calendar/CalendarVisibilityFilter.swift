@@ -2,13 +2,11 @@
 //  CalendarVisibilityFilter.swift
 //  Sapphire
 //
+//  Created by Shariq Charolia on 2026-09-15
 
 import Foundation
 
 enum CalendarVisibilityFilter {
-    // EventKit does not expose Calendar's sidebar visibility. Calendar stores
-    // unchecked identifiers in this undocumented preference. Fail open if
-    // Apple changes its name or shape so calendar access does not disappear.
     static let calendarPreferencesDomain = "com.apple.iCal"
 
     static func isVisible(

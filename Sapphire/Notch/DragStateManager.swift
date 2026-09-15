@@ -22,14 +22,19 @@ struct DraggedFilePreview: Identifiable, Equatable {
 
 enum FileDragPasteboard {
     static let legacyFilenamesType = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+    static let droppableTypes: [NSPasteboard.PasteboardType] = [.fileURL, legacyFilenamesType, .string]
 
-    static func containsFiles(
+    static func containsDroppableContent(
         _ pasteboard: NSPasteboard,
         newerThan baselineChangeCount: Int? = nil
     ) -> Bool {
         if let baselineChangeCount, pasteboard.changeCount == baselineChangeCount {
             return false
         }
+        return containsFiles(pasteboard) || pasteboard.availableType(from: [.string]) != nil
+    }
+
+    static func containsFiles(_ pasteboard: NSPasteboard) -> Bool {
         if pasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -37,6 +42,45 @@ enum FileDragPasteboard {
             return true
         }
         return !(legacyFilePaths(from: pasteboard)?.isEmpty ?? true)
+    }
+
+    static func droppedURLs(from pasteboard: NSPasteboard) -> [URL] {
+        let urls = fileURLs(from: pasteboard)
+        if !urls.isEmpty { return urls }
+
+        guard let text = pasteboard.string(forType: .string),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let url = writeTextFile(text) else { return [] }
+        return [url]
+    }
+
+    private static func writeTextFile(_ text: String) -> URL? {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.shariq.Sapphire")
+            .appendingPathComponent("DroppedText")
+            .appendingPathComponent(UUID().uuidString)
+        let url = directory.appendingPathComponent("\(textFileName(for: text)).txt")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            print("[FileDragPasteboard] Failed to write dropped text: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private static func textFileName(for text: String) -> String {
+        let firstLine = text
+            .split(whereSeparator: \.isNewline)
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        let sanitized = firstLine
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let name = String(sanitized.prefix(40)).trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "Text" : name
     }
 
     static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {

@@ -110,6 +110,7 @@ struct NotchController: View {
     @State private var completeHideReason: NotchCompleteHideReason? = nil
     @State private var lastInactiveVisibilityEvaluation: (hideWhenInactive: Bool, hideReason: NotchCompleteHideReason?)?
     @State private var inactiveHideUserOverride: Bool = false
+    @State private var inactiveRehideTask: Task<Void, Never>?
     @State private var suppressHoverAfterReveal = false
     @State private var revealSettlingUntil: Date = .distantPast
     @State private var hoverExpandTask: Task<Void, Never>?
@@ -124,7 +125,11 @@ struct NotchController: View {
     private var isManuallyHidden: Bool { completeHideReason != nil }
 
     // MARK: - Computed Properties
-    private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
+    private var isLiveActivityActive: Bool { effectiveActivity != .none }
+
+    private var shouldSuppressSnapZoneActivation: Bool {
+        notchState == .clickExpanded && navigationStack.last != .snapZones
+    }
 
     private var notchDisplayID: CGDirectDisplayID? {
         if let window = notchWindow as? DynamicFocusWindow, window.displayID != 0 {
@@ -570,10 +575,13 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                 case .sapphireOpenMusicDevices:
                     openMusicHub(mode: .musicDevices)
                 case .sapphireRevealHiddenNotch:
-                    guard isManuallyHidden else { return }
+                    guard isManuallyHidden,
+                          let displayID = notchDisplayID,
+                          (notification.object as? NSNumber)?.uint32Value == displayID else { return }
                     haptic()
                     inactiveHideUserOverride = true
                     revealNotchFromCompleteHide()
+                    scheduleInactiveRehideAfterReveal()
                 case .sapphireOpenCircleToSearch:
                     openCircleToSearch(object: notification.object as? String)
                 case NSApplication.didChangeScreenParametersNotification:
@@ -627,6 +635,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
 
         guard settings.settings.snapOnWindowDragEnabled else { return }
+        guard !shouldSuppressSnapZoneActivation else { return }
         let mouseLocation = NSEvent.mouseLocation
         let notchScreen = notchWindow?.screen
         let notchScreenFrame = notchScreen?.frame ?? .zero
@@ -856,7 +865,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         TrackpadGestureHandler.shared.stopMonitoring()
         TrackpadGestureHandler.shared.onSwipe = nil
         TrackpadGestureHandler.shared.onTwoFingerTap = nil
-        HiddenNotchRevealMonitor.shared.stop()
+        stopHiddenNotchSwipeMonitor()
+        inactiveRehideTask?.cancel()
         if let fileDropFlowObserver {
             NotificationCenter.default.removeObserver(fileDropFlowObserver)
             self.fileDropFlowObserver = nil
@@ -1362,7 +1372,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
             let resolvedZone: DropZone?
             if let finalLocation = result.finalLocation, !dropZoneFrames.isEmpty {
-                resolvedZone = dropZoneFrames.first(where: { $0.value.contains(finalLocation) })?.key
+                resolvedZone = SnapZoneHitTesting.nearest(
+                    dropZoneFrames.map { (zone: $0.key, frame: $0.value) },
+                    to: finalLocation
+                ) { $0.frame }?.zone
                     ?? result.fallbackZone
             } else if result.finalLocation != nil, !allowUnresolvedTarget {
                 completedFileDrops[nextFileDropSequenceToRoute] = result
@@ -1430,6 +1443,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         isCollapseTimerActive = false
 
         if isDragging {
+            guard !shouldSuppressSnapZoneActivation else { return }
             if isPinned {
                 isPinned = false
             }
@@ -1448,6 +1462,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             }
 
         } else {
+            guard navigationStack.last == .snapZones else { return }
             try? await Task.sleep(for: .milliseconds(50))
             (NSApp.delegate as? AppDelegate)?.revertNotchWindowFocus()
 
@@ -1667,7 +1682,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         case .manualSwipe:
             guard settings.settings.swipeToHideNotch else { return }
         case .inactive:
-            guard settings.settings.hideNotchWhenInactive else { return }
+            guard shouldHideWhenInactive else { return }
             guard !inactiveHideUserOverride else { return }
         }
         guard completeHideReason == nil else {
@@ -1675,6 +1690,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             return
         }
 
+        notchLog.info("hideNotchCompletely: displayID=\(notchDisplayID.map(String.init) ?? "nil", privacy: .public) reason=\(String(describing: reason), privacy: .public)")
         completeHideReason = reason
         if reason == .manualSwipe {
             inactiveHideUserOverride = false
@@ -1707,6 +1723,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     private func revealNotchFromCompleteHide() {
         guard completeHideReason != nil else { return }
         let wasManualSwipeReveal = completeHideReason == .manualSwipe
+        notchLog.info("revealNotchFromCompleteHide: displayID=\(notchDisplayID.map(String.init) ?? "nil", privacy: .public) previousReason=\(completeHideReason.map { "\($0)" } ?? "nil", privacy: .public) effectiveActivity=\(String(describing: effectiveActivity), privacy: .public) currentActivity=\(String(describing: liveActivityManager.currentActivity), privacy: .public) swipeOverride=\(inactiveHideUserOverride, privacy: .public)")
         completeHideReason = nil
         stopHiddenNotchSwipeMonitor()
         if let dynamicWindow = notchWindow as? DynamicFocusWindow {
@@ -1719,7 +1736,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
         guard let config else { return }
 
-        let hasActivity = liveActivityManager.currentActivity != .none
+        let hasActivity = effectiveActivity != .none
         if hasActivity, notchState != .clickExpanded {
             notchState = .autoExpanded
         } else {
@@ -1743,13 +1760,13 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         let evaluation = (hideWhenInactive, completeHideReason)
         if lastInactiveVisibilityEvaluation?.hideWhenInactive != evaluation.0
             || lastInactiveVisibilityEvaluation?.hideReason != evaluation.1 {
-            notchLog.info("evaluateInactiveNotchVisibility: shouldHideWhenInactive=\(hideWhenInactive) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil")")
+            notchLog.info("evaluateInactiveNotchVisibility: displayID=\(notchDisplayID.map(String.init) ?? "nil", privacy: .public) shouldHideWhenInactive=\(hideWhenInactive) completeHideReason=\(completeHideReason.map { "\($0)" } ?? "nil") effectiveActivity=\(effectiveActivity.rawValue, privacy: .public)")
             lastInactiveVisibilityEvaluation = evaluation
         }
         guard hideWhenInactive else { return }
         if completeHideReason == .manualSwipe { return }
 
-        let hasActivity = liveActivityManager.currentActivity != .none
+        let hasActivity = effectiveActivity != .none
         let isBusy = notchState == .clickExpanded
             || isPinned
             || isHovered
@@ -1773,11 +1790,39 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func startHiddenNotchSwipeMonitor() {
-        HiddenNotchRevealMonitor.shared.start(screen: nil)
+        guard let displayID = notchDisplayID else { return }
+        HiddenNotchRevealMonitor.shared.start(displayID: displayID)
     }
 
     private func stopHiddenNotchSwipeMonitor() {
-        HiddenNotchRevealMonitor.shared.stop()
+        guard let displayID = notchDisplayID else { return }
+        HiddenNotchRevealMonitor.shared.stop(displayID: displayID)
+    }
+
+    private static let revealedIdleRehideDelay: Duration = .seconds(3)
+
+    private func scheduleInactiveRehideAfterReveal() {
+        inactiveRehideTask?.cancel()
+        inactiveRehideTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.revealedIdleRehideDelay)
+            guard !Task.isCancelled else { return }
+            releaseInactiveHideOverrideIfIdle()
+        }
+    }
+
+    private func releaseInactiveHideOverrideIfIdle() {
+        guard inactiveHideUserOverride else {
+            evaluateInactiveNotchVisibility()
+            return
+        }
+        guard !isHovered,
+              !isPinned,
+              notchState != .clickExpanded,
+              !dragManager.isDraggingInActivationZone,
+              !windowDrag.isDragging else { return }
+        notchLog.info("Releasing swipe-reveal override on displayID=\(notchDisplayID.map(String.init) ?? "nil", privacy: .public)")
+        inactiveHideUserOverride = false
+        evaluateInactiveNotchVisibility()
     }
 
     private func openMusicHub(mode: NotchWidgetMode) {
@@ -1895,7 +1940,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             dragEndCollapseTask = nil
         }
         if windowDrag.isDragging,
-           settings.settings.snapOnWindowDragEnabled {
+           settings.settings.snapOnWindowDragEnabled,
+           !shouldSuppressSnapZoneActivation {
             let isOnThisScreen = notchWindow?.screen?.frame.contains(screenLocation) ?? cursorIsOnMyScreen
             if isOnThisScreen, !isHandlingActiveWindowDrag {
                 isHandlingActiveWindowDrag = true
@@ -2344,7 +2390,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
                     && !self.isFileDragSessionInProgress
                     && !self.awaitingDropCompletion {
                     self.notchState = isLiveActivityActive ? .autoExpanded : .initial
-                    self.evaluateInactiveNotchVisibility()
+                    self.releaseInactiveHideOverrideIfIdle()
                 }
                 self.isCollapseTimerActive = false
             } catch {

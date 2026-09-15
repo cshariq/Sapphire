@@ -80,7 +80,7 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
     }
 
     func enableFileDropDestination() {
-        registerForDraggedTypes([.fileURL, FileDragPasteboard.legacyFilenamesType])
+        registerForDraggedTypes(FileDragPasteboard.droppableTypes)
     }
 
     func disableFileDropDestination() {
@@ -150,7 +150,7 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
 
     private func canAcceptFiles(from sender: NSDraggingInfo) -> Bool {
         guard onFileDrop != nil else { return false }
-        return FileDragPasteboard.containsFiles(sender.draggingPasteboard)
+        return FileDragPasteboard.containsDroppableContent(sender.draggingPasteboard)
     }
 
     private func acceptedOperation(for sender: NSDraggingInfo) -> NSDragOperation {
@@ -162,7 +162,7 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
     }
 
     private func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
-        FileDragPasteboard.fileURLs(from: pasteboard)
+        FileDragPasteboard.droppedURLs(from: pasteboard)
     }
 
     private func screenLocation(for sender: NSDraggingInfo?) -> NSPoint {
@@ -666,7 +666,7 @@ final class NotchHoverMonitor {
     private func publishMouseDragContainment(_ isInside: Bool, at location: NSPoint) {
         let dragPasteboard = NSPasteboard(name: .drag)
         if let baseline = dragPasteboardChangeCountBeforeMouseSequence,
-           FileDragPasteboard.containsFiles(dragPasteboard, newerThan: baseline) {
+           FileDragPasteboard.containsDroppableContent(dragPasteboard, newerThan: baseline) {
             didObserveFileDragInMouseSequence = true
             hasEnteredDuringMouseDrag = false
             if isInside {
@@ -702,7 +702,7 @@ final class NotchHoverMonitor {
            let baseline = dragPasteboardChangeCountBeforeMouseSequence,
            probeWindow.isVisible,
            probeWindow.frame.contains(location),
-           FileDragPasteboard.containsFiles(NSPasteboard(name: .drag), newerThan: baseline) {
+           FileDragPasteboard.containsDroppableContent(NSPasteboard(name: .drag), newerThan: baseline) {
             didObserveFileDragInMouseSequence = true
             didTargetFileDragInMouseSequence = true
             isProactiveFileDragTargeted = true

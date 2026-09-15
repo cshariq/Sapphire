@@ -75,4 +75,26 @@ final class MusicWidgetVisibilityTests: XCTestCase {
         XCTAssertEqual(WidgetLayoutPolicy.capacityWidth(for: .music), 0)
         XCTAssertEqual(widgets, [.music, .weather, .sports])
     }
+
+    func testSpaceLimitCanBeBypassedForAnyWidget() {
+        let widgets = WidgetLayoutPolicy.fittingWidgets(
+            from: [.music, .weather, .calendar, .shortcuts, .agent],
+            availableWidth: 1,
+            showDividers: true,
+            bypassSpaceLimit: true
+        )
+
+        XCTAssertEqual(widgets, [.music, .weather, .calendar, .shortcuts])
+        XCTAssertTrue(WidgetLayoutPolicy.canFit(
+            .calendar,
+            in: [.music, .weather],
+            availableWidth: 1,
+            showDividers: true,
+            bypassSpaceLimit: true
+        ))
+    }
+
+    func testSpaceLimitBypassIsDisabledByDefault() {
+        XCTAssertFalse(Settings().bypassWidgetSpaceLimit)
+    }
 }

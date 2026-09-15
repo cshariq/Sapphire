@@ -467,7 +467,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
 
             applyReleaseNotes(from: releases, offeredVersion: shouldOffer ? latestVersion : nil)
             if shouldOffer {
-                guard let asset = Self.preferredAsset(in: release) else {
+                guard let asset = Self.preferredUpdateAsset(in: release) else {
                     throw UpdateMetadataError.noEligibleAsset
                 }
                 applyStatus(.available(version: latestVersion, asset: asset))
@@ -626,7 +626,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         return try decodeReleases(data)
     }
 
-    private static func preferredAsset(in release: GitHubRelease) -> GitHubReleaseAsset? {
+    nonisolated static func preferredUpdateAsset(in release: GitHubRelease) -> GitHubReleaseAsset? {
         let architecture = machineArchitecture
         let candidates = release.assets.filter { asset in
             let lower = asset.name.lowercased()
@@ -642,7 +642,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         }.first
     }
 
-    private static var machineArchitecture: String {
+    nonisolated private static var machineArchitecture: String {
         hardwareArchitecture == .arm64 ? "arm64" : "x86_64"
     }
 
@@ -672,7 +672,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
 #endif
     }
 
-    private static func isAssetNameCompatible(_ assetName: String, with architecture: String) -> Bool {
+    nonisolated private static func isAssetNameCompatible(_ assetName: String, with architecture: String) -> Bool {
         let name = assetName.lowercased()
         let tokens = name.split { !$0.isLetter && !$0.isNumber }
         if name.contains("universal") { return true }
@@ -689,7 +689,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         return architecture == "arm64" ? advertisesARM : advertisesIntel
     }
 
-    private static func assetScore(_ asset: GitHubReleaseAsset, architecture: String) -> Int {
+    nonisolated private static func assetScore(_ asset: GitHubReleaseAsset, architecture: String) -> Int {
         let name = asset.name.lowercased()
         var score = 0
         if name.contains("universal") { score += 30 }
@@ -719,7 +719,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         }
     }
 
-    private static func isTrustedDownloadURL(_ url: URL) -> Bool {
+    nonisolated private static func isTrustedDownloadURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
         return host == "github.com"
             || host == "objects.githubusercontent.com"
@@ -991,6 +991,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                         throw NSError(domain: "UpdateError", code: 11, userInfo: [NSLocalizedDescriptionKey: "The update archive was incomplete."])
                     }
                     try Self.verifyDigest(of: destinationURL, expected: asset.digest)
+                    try Self.validateArchiveEntries(destinationURL)
                     await MainActor.run {
                         guard self.downloadGeneration == generation,
                               self.pendingDownloadAsset == asset,
@@ -1055,6 +1056,33 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         return FileManager.default.isWritableFile(atPath: parentPath)
     }
 
+    nonisolated private static func validateUpdatePublisher(
+        candidate: URL,
+        replacing installed: URL
+    ) throws {
+        let installedIdentity = try AppSecurityValidator.identity(at: installed)
+        let candidateIdentity = try AppSecurityValidator.identity(at: candidate)
+
+        guard candidateIdentity.bundleIdentifier == installedIdentity.bundleIdentifier else {
+            throw NSError(
+                domain: "UpdateError",
+                code: 25,
+                userInfo: [NSLocalizedDescriptionKey: "The downloaded update has the wrong bundle identifier."]
+            )
+        }
+        guard let installedTeam = installedIdentity.teamIdentifier else {
+            try AppSecurityValidator.validateReplacement(candidate: candidate, replacing: installed)
+            return
+        }
+        guard candidateIdentity.teamIdentifier == installedTeam else {
+            throw NSError(
+                domain: "UpdateError",
+                code: 26,
+                userInfo: [NSLocalizedDescriptionKey: "The update was not signed by the same Apple developer team."]
+            )
+        }
+    }
+
     nonisolated private static func stageForCurrentUserInstallation(
         candidate: URL,
         replacing currentAppURL: URL,
@@ -1066,7 +1094,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
 
         do {
             try fileManager.copyItem(at: candidate, to: stagedURL)
-            try AppSecurityValidator.validateReplacement(candidate: stagedURL, replacing: currentAppURL)
+            try validateUpdatePublisher(candidate: stagedURL, replacing: currentAppURL)
 
             let stagedVersion = Bundle(url: stagedURL)?
                 .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -1077,7 +1105,6 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                     userInfo: [NSLocalizedDescriptionKey: "The staged app version changed before installation."]
                 )
             }
-            try assessWithGatekeeper(stagedURL)
             return stagedURL
         } catch {
             try? fileManager.removeItem(at: stagedURL)
@@ -1085,12 +1112,10 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         }
     }
 
-    nonisolated private static func atomicallySwapAppBundles(
+    nonisolated static func atomicallyReplaceAppBundle(
         installedURL: URL,
         stagedURL: URL
     ) throws {
-        let installedPath = installedURL.standardizedFileURL.path
-        let stagedPath = stagedURL.standardizedFileURL.path
         guard installedURL.deletingLastPathComponent().standardizedFileURL
                 == stagedURL.deletingLastPathComponent().standardizedFileURL else {
             throw NSError(
@@ -1100,25 +1125,12 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             )
         }
 
-        let result = installedPath.withCString { installedCString in
-            stagedPath.withCString { stagedCString in
-                renameatx_np(
-                    AT_FDCWD,
-                    installedCString,
-                    AT_FDCWD,
-                    stagedCString,
-                    UInt32(RENAME_SWAP)
-                )
-            }
-        }
-        guard result == 0 else {
-            let code = errno
-            throw NSError(
-                domain: NSPOSIXErrorDomain,
-                code: Int(code),
-                userInfo: [NSLocalizedDescriptionKey: "The filesystem could not atomically install the update: \(String(cString: strerror(code)))."]
-            )
-        }
+        _ = try FileManager.default.replaceItemAt(
+            installedURL,
+            withItemAt: stagedURL,
+            backupItemName: nil,
+            options: []
+        )
     }
 
     func installAndRelaunch() {
@@ -1135,7 +1147,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         guard let version = await XPCClient.shared.helperProtocolVersion(timeout: 5) else {
             return .failure("The privileged update helper is unavailable. Reinstall or repair Sapphire's helper, then try again.")
         }
-        guard version >= 10 else {
+        guard version >= SapphireHelperProtocolVersion else {
             return .failure("The privileged update helper is out of date. Reinstall or repair Sapphire's helper, then try again.")
         }
 
@@ -1205,7 +1217,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
 
                 let unzipProcess = Process()
                 unzipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-                unzipProcess.arguments = ["-x", "-k", "--noqtn", downloadedZipPath.path, tempUnzipDirectory.path]
+                unzipProcess.arguments = ["-x", "-k", downloadedZipPath.path, tempUnzipDirectory.path]
                 unzipProcess.standardOutput = FileHandle.nullDevice
                 unzipProcess.standardError = FileHandle.nullDevice
                 try unzipProcess.run()
@@ -1232,7 +1244,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                     throw NSError(domain: "UpdateError", code: 3, userInfo: [NSLocalizedDescriptionKey: "The archive did not contain the expected Sapphire app."])
                 }
                 try Self.validateRuntimeArchitecture(newAppURL)
-                try AppSecurityValidator.validateReplacement(candidate: newAppURL, replacing: currentAppURL)
+                try Self.validateUpdatePublisher(candidate: newAppURL, replacing: currentAppURL)
                 let candidateVersion = Bundle(url: newAppURL)?
                     .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
                 guard SapphireVersionOrdering.compare(candidateVersion, expectedVersion) == .orderedSame else {
@@ -1242,7 +1254,6 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                         userInfo: [NSLocalizedDescriptionKey: "The signed app version (\(candidateVersion)) does not match the offered release (\(expectedVersion))."]
                     )
                 }
-                try Self.assessWithGatekeeper(newAppURL)
                 let currentAppPath = Bundle.main.bundlePath
                 let userWritable = await MainActor.run { self.isInstallPathUserWritable() }
                 var stagedAppURL: URL?
@@ -1259,16 +1270,11 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                         expectedVersion: candidateVersion
                     )
                     stagedAppURL = stagedURL
-                    try Self.atomicallySwapAppBundles(
+                    try Self.atomicallyReplaceAppBundle(
                         installedURL: currentAppURL,
                         stagedURL: stagedURL
                     )
-                    do {
-                        try fileManager.removeItem(at: stagedURL)
-                        stagedAppURL = nil
-                    } catch {
-                        NSLog("[UpdateChecker] Installed update but could not remove previous hidden bundle at %@: %@", stagedURL.path, error.localizedDescription)
-                    }
+                    stagedAppURL = nil
                 } else {
                     switch strategy {
                     case .withoutPassword:
@@ -1293,7 +1299,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                     }
                 }
 
-                Self.scheduleRelaunch(of: currentAppPath)
+                try Self.scheduleRelaunch(of: currentAppPath)
                 await MainActor.run {
                     NSApp.terminate(nil)
                 }
@@ -1523,26 +1529,19 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         return matches.first
     }
 
-    nonisolated private static func assessWithGatekeeper(_ appURL: URL) throws {
+    nonisolated private static func scheduleRelaunch(of appPath: String) throws {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/spctl")
-        process.arguments = ["--assess", "--type", "execute", "--verbose=2", appURL.path]
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [
+            "-c",
+            "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open -n \"$2\"",
+            "sapphire-relaunch",
+            String(ProcessInfo.processInfo.processIdentifier),
+            appPath
+        ]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw NSError(domain: "UpdateError", code: 18, userInfo: [NSLocalizedDescriptionKey: "Gatekeeper could not verify or notarize the update."])
-        }
-    }
-
-    nonisolated private static func scheduleRelaunch(of appPath: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", "sleep 3; open \"$1\"", "sapphire-relaunch", appPath]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try? process.run()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

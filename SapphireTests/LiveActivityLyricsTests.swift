@@ -82,7 +82,7 @@ struct LiveActivityLyricsTests {
         #expect(MusicPlaybackTickPolicy.interval(for: withoutLyrics) == nil)
     }
 
-    @Test("The tick stops when paused, disabled, or hidden, and speeds up for detail views")
+    @Test("The tick stops when paused, disabled, hidden, or handled by an anchored timeline")
     func tickGates() {
         var paused = Self.liveActivityWithLyrics
         paused.isPlaying = false
@@ -99,7 +99,28 @@ struct LiveActivityLyricsTests {
         var detail = Self.liveActivityWithLyrics
         detail.hasLyrics = false
         detail.isLyricsDetailOpen = true
-        #expect(MusicPlaybackTickPolicy.interval(for: detail) == 0.2)
+        #expect(MusicPlaybackTickPolicy.interval(for: detail) == nil)
+
+        var detached = detail
+        detached.isLyricsDetailOpen = false
+        detached.isDetachedLyricsOpen = true
+        #expect(MusicPlaybackTickPolicy.interval(for: detached) == 0.2)
+    }
+
+    @Test("Live activity ticks are scheduled at content boundaries")
+    func eventDrivenTick() throws {
+        let lyrics = [
+            LyricLine(text: "First", timestamp: 1, endTimestamp: 2),
+            LyricLine(text: "Second", timestamp: 3, endTimestamp: 4),
+        ]
+        let delay = MusicPlaybackTickPolicy.nextLiveActivityEventDelay(
+            for: Self.liveActivityWithLyrics,
+            elapsed: 1.25,
+            lyricsElapsed: 1.25,
+            lyrics: lyrics,
+            duration: 100
+        )
+        #expect(abs(try #require(delay) - 0.75) < 1e-9)
     }
 
     // MARK: Word fill
@@ -125,7 +146,7 @@ struct LiveActivityLyricsTests {
         #expect(line.wordFillEndTimestamp(at: 2) == nil)
     }
 
-    @Test("The fill schedule always advances, at 30 fps inside a word and 0.25s between words")
+    @Test("The fill schedule advances only at word boundaries")
     func fillScheduleCadence() throws {
         let reference = Date(timeIntervalSinceReferenceDate: 0)
         let schedule = KaraokeFillSchedule(
@@ -135,16 +156,17 @@ struct LiveActivityLyricsTests {
         )
         var entries = schedule.entries(from: reference, mode: .normal)
         var dates: [Date] = []
-        for _ in 0..<200 {
+        for _ in 0..<6 {
             let next = entries.next()
             dates.append(try #require(next))
         }
 
         let gaps = zip(dates, dates.dropFirst()).map { $1.timeIntervalSince($0) }
         #expect(gaps.allSatisfy { $0 > 0 })
-        #expect(gaps.allSatisfy { $0 <= KaraokeFillSchedule.fallbackInterval + 1e-9 })
-        #expect(abs(gaps[0] - KaraokeFillSchedule.frameInterval) < 1e-9)
+        #expect(abs(gaps[0] - 0.5) < 1e-9)
         #expect(dates.contains { abs($0.timeIntervalSince(reference) - 2.0) < 1e-9 })
+        #expect(dates.contains { abs($0.timeIntervalSince(reference) - 3.0) < 1e-9 })
+        #expect(gaps.last == KaraokeFillSchedule.idleInterval)
     }
 
     // MARK: LRCLIB format

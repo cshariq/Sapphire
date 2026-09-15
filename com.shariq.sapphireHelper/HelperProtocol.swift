@@ -7,7 +7,7 @@
 
 import Foundation
 
-let SapphireHelperProtocolVersion: Int = 10
+let SapphireHelperProtocolVersion: Int = 11
 
 public enum ChargeControlMode: Int {
     case unsupported = 0

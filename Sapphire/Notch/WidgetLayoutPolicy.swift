@@ -54,7 +54,16 @@ enum WidgetLayoutPolicy {
         return total
     }
 
-    static func fittingWidgets(from ordered: [WidgetType], availableWidth: CGFloat, showDividers: Bool) -> [WidgetType] {
+    static func fittingWidgets(
+        from ordered: [WidgetType],
+        availableWidth: CGFloat,
+        showDividers: Bool,
+        bypassSpaceLimit: Bool = false
+    ) -> [WidgetType] {
+        if bypassSpaceLimit {
+            return ordered.filter { $0 != .agent }
+        }
+
         var used: CGFloat = 0
         var result: [WidgetType] = []
 
@@ -77,8 +86,15 @@ enum WidgetLayoutPolicy {
         return result
     }
 
-    static func canFit(_ widget: WidgetType, in orderedEnabled: [WidgetType], availableWidth: CGFloat, showDividers: Bool) -> Bool {
+    static func canFit(
+        _ widget: WidgetType,
+        in orderedEnabled: [WidgetType],
+        availableWidth: CGFloat,
+        showDividers: Bool,
+        bypassSpaceLimit: Bool = false
+    ) -> Bool {
         guard widget != .agent else { return false }
+        if bypassSpaceLimit { return true }
         var candidates = orderedEnabled.filter { $0 != .agent }
         if !candidates.contains(widget) {
             candidates.append(widget)

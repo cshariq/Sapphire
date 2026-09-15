@@ -165,7 +165,8 @@ struct WidgetRowView: View {
             widgetType,
             in: enabledWidgetTypes,
             availableWidth: availableBarWidth,
-            showDividers: settings.settings.showDividersBetweenWidgets
+            showDividers: settings.settings.showDividersBetweenWidgets,
+            bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
         )
     }
 

@@ -32,6 +32,8 @@ final class LyricsWordTimingGenerator {
 
     private var task: Task<Void, Never>?
     private var trackIdentity: String?
+    private var activeTap: LyricsAudioTap?
+    private var activeContinuation: AsyncStream<AnalyzerInput>.Continuation?
 
     private init() {}
 
@@ -51,6 +53,10 @@ final class LyricsWordTimingGenerator {
 
     func stop() {
         task?.cancel()
+        activeTap?.stop()
+        activeContinuation?.finish()
+        activeTap = nil
+        activeContinuation = nil
         task = nil
         trackIdentity = nil
     }
@@ -113,6 +119,16 @@ final class LyricsWordTimingGenerator {
             LyricsLog.error("Word timing for \(label) skipped: audio tap on pid \(request.processID) failed: \(error.localizedDescription)")
             return
         }
+        activeTap = tap
+        activeContinuation = continuation
+        defer {
+            tap.stop()
+            continuation.finish()
+            if activeTap === tap {
+                activeTap = nil
+                activeContinuation = nil
+            }
+        }
         LyricsLog.info("Word timing started for \(label): \(locale.identifier), pid \(request.processID), from \(Self.seconds(songTimeAtStart))")
 
         let results = transcriber.results
@@ -166,6 +182,10 @@ final class LyricsWordTimingGenerator {
 
         tap.stop()
         continuation.finish()
+        if activeTap === tap {
+            activeTap = nil
+            activeContinuation = nil
+        }
         if let failure = await analysis.value {
             LyricsLog.error("Word timing for \(label): analysis failed: \(failure)")
         }

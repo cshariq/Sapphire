@@ -148,13 +148,11 @@ struct FileDragLandingView: View {
             }
         }
 
-        var newHover: DropZone? = nil
-
-        for (zone, frame) in zoneFrames {
-            guard frame.contains(globalMousePoint) else { continue }
-            newHover = zone
-            break
-        }
+        let candidates = zoneFrames.map { (zone: $0.key, frame: $0.value) }
+        let newHover = SnapZoneHitTesting.nearest(
+            candidates,
+            to: globalMousePoint
+        ) { $0.frame }?.zone
 
         guard activeZone != newHover else { return }
         activeZone = newHover

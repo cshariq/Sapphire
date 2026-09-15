@@ -171,7 +171,8 @@ struct NotchWidgetView: View {
         return WidgetLayoutPolicy.fittingWidgets(
             from: enabled,
             availableWidth: WidgetLayoutPolicy.availableBarWidth(),
-            showDividers: settings.settings.showDividersBetweenWidgets
+            showDividers: settings.settings.showDividersBetweenWidgets,
+            bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
         )
     }
 
@@ -189,13 +190,6 @@ struct NotchWidgetView: View {
             self.displayedMode = self.currentMode
         }
         .task {
-            if self.currentMode == .fileShelfLanding {
-                self.blurRadius = 0
-                self.isScaledIn = true
-                self.isPositioned = true
-                self.isFadedIn = true
-                return
-            }
             let animation: Animation
             if self.currentMode == .defaultWidgets {
                 animation = .interpolatingSpring(stiffness: 230, damping: 22)

@@ -77,8 +77,8 @@ struct KaraokeLyricTicker: View {
             referenceDate: Date(),
             referenceElapsed: musicWidget.lyricsElapsedTime(),
             windows: tracksWords && musicWidget.isPlaying ? fillWindows : []
-        )) { _ in
-            let elapsed = musicWidget.lyricsElapsedTime(at: Date())
+        )) { context in
+            let elapsed = musicWidget.lyricsElapsedTime(at: context.date)
             if tracksWords {
                 wordTicker(elapsed: elapsed)
             } else {
@@ -146,8 +146,19 @@ struct KaraokeFillSchedule: TimelineSchedule {
     let referenceElapsed: TimeInterval
     let windows: [ClosedRange<TimeInterval>]
 
-    static let frameInterval: TimeInterval = 1.0 / 30.0
-    static let fallbackInterval: TimeInterval = 0.25
+    static let idleInterval: TimeInterval = 60
+
+    static func eventWindows(for lyrics: [LyricLine]) -> [ClosedRange<TimeInterval>] {
+        lyrics.flatMap { line in
+            var events = [line.timestamp]
+            if let end = line.endTimestamp { events.append(end) }
+            for word in line.words {
+                events.append(word.timestamp)
+                if let end = word.endTimestamp { events.append(end) }
+            }
+            return events.map { $0...$0 }
+        }
+    }
 
     func entries(from startDate: Date, mode: TimelineScheduleMode) -> Entries {
         Entries(schedule: self, cursor: startDate, lowFrequency: mode == .lowFrequency)
@@ -171,19 +182,11 @@ struct KaraokeFillSchedule: TimelineSchedule {
             let elapsed = schedule.elapsed(at: date)
             let epsilon = 0.0005
 
-            if !lowFrequency,
-               let filling = schedule.windows.first(where: {
-                   elapsed >= $0.lowerBound - epsilon && elapsed < $0.upperBound - epsilon
-               }) {
-                let endDate = schedule.date(atElapsed: filling.upperBound)
-                cursor = Swift.min(date.addingTimeInterval(KaraokeFillSchedule.frameInterval), endDate)
-            } else if let upcoming = schedule.windows.first(where: { $0.lowerBound > elapsed + epsilon }) {
-                cursor = Swift.min(
-                    schedule.date(atElapsed: upcoming.lowerBound),
-                    date.addingTimeInterval(KaraokeFillSchedule.fallbackInterval)
-                )
+            let boundaries = schedule.windows.flatMap { [$0.lowerBound, $0.upperBound] }
+            if !lowFrequency, let nextBoundary = boundaries.filter({ $0 > elapsed + epsilon }).min() {
+                cursor = schedule.date(atElapsed: nextBoundary)
             } else {
-                cursor = date.addingTimeInterval(KaraokeFillSchedule.fallbackInterval)
+                cursor = date.addingTimeInterval(KaraokeFillSchedule.idleInterval)
             }
             return date
         }
@@ -266,9 +269,10 @@ struct LyricsView: View {
     private let lineSpacing: CGFloat = 70.0
 
     var body: some View {
-        TimelineView(.periodic(
-            from: .now,
-            by: musicManager.isPlaying ? 1.0 / 30.0 : 0.25
+        TimelineView(KaraokeFillSchedule(
+            referenceDate: Date(),
+            referenceElapsed: musicManager.lyricsElapsedTime(),
+            windows: musicManager.isPlaying ? KaraokeFillSchedule.eventWindows(for: lyrics) : []
         )) { context in
             let elapsed = musicManager.lyricsElapsedTime(at: context.date)
             let activeLyricIndices = musicManager.activeLyricIndices(at: context.date)
@@ -628,9 +632,10 @@ private struct LyricsDetachedRightPane: View {
     private var lyrics: [LyricLine] { musicManager.lyrics }
 
     var body: some View {
-        TimelineView(.periodic(
-            from: .now,
-            by: musicManager.isPlaying ? 1.0 / 30.0 : 0.25
+        TimelineView(KaraokeFillSchedule(
+            referenceDate: Date(),
+            referenceElapsed: musicManager.lyricsElapsedTime(),
+            windows: musicManager.isPlaying ? KaraokeFillSchedule.eventWindows(for: lyrics) : []
         )) { context in
             let elapsed = musicManager.lyricsElapsedTime(at: context.date)
             let activeLyricIndices = musicManager.activeLyricIndices(at: context.date)

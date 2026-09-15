@@ -797,47 +797,17 @@ class Helper: NSObject, HelperProtocol {
             return
         }
 
-        let assessment = Process()
-        assessment.executableURL = URL(fileURLWithPath: "/usr/sbin/spctl")
-        assessment.arguments = ["--assess", "--type", "execute", "--verbose=2", stagingURL.path]
-        assessment.standardOutput = FileHandle.nullDevice
-        assessment.standardError = FileHandle.nullDevice
         do {
-            try assessment.run()
-            assessment.waitUntilExit()
+            _ = try fileManager.replaceItemAt(
+                currentURL,
+                withItemAt: stagingURL,
+                backupItemName: nil,
+                options: []
+            )
         } catch {
             try? fileManager.removeItem(at: stagingURL)
-            fail("Gatekeeper could not assess the staged update: \(error.localizedDescription)")
+            fail("The filesystem could not transactionally install the update: \(error.localizedDescription)")
             return
-        }
-        guard assessment.terminationStatus == 0 else {
-            try? fileManager.removeItem(at: stagingURL)
-            fail("Gatekeeper rejected the staged update.")
-            return
-        }
-
-        let swapResult = currentURL.path.withCString { currentPath in
-            stagingURL.path.withCString { stagingPath in
-                renameatx_np(
-                    AT_FDCWD,
-                    currentPath,
-                    AT_FDCWD,
-                    stagingPath,
-                    UInt32(RENAME_SWAP)
-                )
-            }
-        }
-        guard swapResult == 0 else {
-            let code = errno
-            try? fileManager.removeItem(at: stagingURL)
-            fail("The filesystem could not atomically install the update: \(String(cString: strerror(code))).")
-            return
-        }
-
-        do {
-            try fileManager.removeItem(at: stagingURL)
-        } catch {
-            logger.warning("[Helper] Installed update but could not remove previous hidden bundle at \(stagingURL.path): \(error.localizedDescription)")
         }
 
         logger.log("[Helper] installUpdate succeeded; new app is in place at \(currentAppPath)")

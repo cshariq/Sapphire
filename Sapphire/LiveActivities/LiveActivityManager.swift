@@ -87,6 +87,37 @@ class LiveActivityManager: ObservableObject {
         return NSScreen.screens.contains { effectiveActivity(on: $0) != .none }
     }
 
+    private var lastFullScreenGateDescription: String?
+
+    private func notchDisplaysAreFullScreen() -> Bool {
+        let fullScreenDisplays = activeAppMonitor.fullScreenDisplayIDs
+        guard !fullScreenDisplays.isEmpty else { return false }
+        let notchDisplays = notchDisplayIDs()
+        guard !notchDisplays.isEmpty else { return false }
+        return notchDisplays.isSubset(of: fullScreenDisplays)
+    }
+
+    private func notchDisplayIDs() -> Set<CGDirectDisplayID> {
+        let windows = (NSApp.delegate as? AppDelegate)?.notchWindows ?? []
+        return Set(windows.compactMap { ($0 as? DynamicFocusWindow)?.displayID }.filter { $0 != 0 })
+    }
+
+    private func isHiddenInFullScreen(_ activityType: ActivityType) -> Bool {
+        guard let liveActivitySettingsType = activityType.toLiveActivityType() else { return false }
+        return settingsModel.settings.hideActivitiesInFullScreen[liveActivitySettingsType.rawValue] == true
+    }
+
+    private func logFullScreenGateIfChanged(isFullScreen: Bool) {
+        let settings = settingsModel.settings
+        let hiddenTypes = settings.hideActivitiesInFullScreen.filter(\.value).keys.sorted().joined(separator: ",")
+        let fullScreen = activeAppMonitor.fullScreenDisplayIDs.sorted().map(String.init).joined(separator: ",")
+        let notch = notchDisplayIDs().sorted().map(String.init).joined(separator: ",")
+        let description = "notchFullScreen=\(isFullScreen) hideAll=\(settings.hideLiveActivityInFullScreen) hiddenTypes=[\(hiddenTypes)] fullScreenDisplays=[\(fullScreen)] notchDisplays=[\(notch)]"
+        guard description != lastFullScreenGateDescription else { return }
+        lastFullScreenGateDescription = description
+        logger.info("full-screen gate: \(description, privacy: .public)")
+    }
+
     private static let displayAnchoredActivityTypes: Set<ActivityType> = [.systemHUD]
 
     @Published private(set) var activityAnchorDisplayID: CGDirectDisplayID?
@@ -548,12 +579,10 @@ class LiveActivityManager: ObservableObject {
         .sink { [weak self] displayIDs in
             guard let self else { return }
             self.objectWillChange.send()
-            if !displayIDs.isEmpty {
-                let ids = displayIDs.sorted().map(String.init).joined(separator: ",")
-                self.logger.info("full-screen app on displayIDs=[\(ids)]; per-notch suppression decides visibility")
-            } else {
-                self.logger.info("full-screen app ended")
-            }
+            let ids = displayIDs.sorted().map(String.init).joined(separator: ",")
+            let notchDisplays = self.notchDisplayIDs()
+            let notchDisplaysFullScreen = !displayIDs.isEmpty && !notchDisplays.isEmpty && notchDisplays.isSubset(of: displayIDs)
+            self.logger.info("full-screen displays=[\(ids, privacy: .public)] notchDisplaysFullScreen=\(notchDisplaysFullScreen, privacy: .public)")
         }
         .store(in: &cancellables)
     }
@@ -790,6 +819,17 @@ class LiveActivityManager: ObservableObject {
         if self.currentActivity == .battery, let state = batteryMonitor.currentState, !state.isPluggedIn, self.dismissalTimer != nil {
             return
         }
+
+        let isFullScreen = notchDisplaysAreFullScreen()
+        logFullScreenGateIfChanged(isFullScreen: isFullScreen)
+        if isFullScreen && settingsModel.settings.hideLiveActivityInFullScreen {
+            consumeBlockedEphemeralActivities(winningType: nil)
+            if currentActivity != .none {
+                logger.info("full-screen: hiding \(self.currentActivity.rawValue, privacy: .public) (Hide All in Full Screen)")
+                setActivity(type: .none, content: .none)
+            }
+            return
+        }
         if !musicWidget.shouldShowLiveActivity {
             musicWidget.showQuickPeek = false
         }
@@ -817,6 +857,10 @@ class LiveActivityManager: ObservableObject {
             guard snoozedActivities[activityType] == nil else { continue }
             guard activityCheckers[activityType] != nil else { continue }
 
+            if isFullScreen && isHiddenInFullScreen(activityType) {
+                continue
+            }
+
             if let candidate = candidate(for: activityType) {
                 winningCandidate = candidate
                 break
@@ -843,18 +887,21 @@ class LiveActivityManager: ObservableObject {
 
         if winningCandidate == nil,
            !settingsModel.settings.devActivityHighPriority,
+           !(isFullScreen && isHiddenInFullScreen(.devActivity)),
            snoozedActivities[.devActivity] == nil,
            let candidate = checkForDevActivity() {
             winningCandidate = candidate
         }
 
         if winningCandidate == nil,
+           !(isFullScreen && isHiddenInFullScreen(.persistentStats)),
            snoozedActivities[.persistentStats] == nil,
            let candidate = checkForPersistentStats() {
             winningCandidate = candidate
         }
 
         if winningCandidate == nil,
+           !(isFullScreen && isHiddenInFullScreen(.persistentBattery)),
            snoozedActivities[.persistentBattery] == nil,
            let candidate = checkForPersistentBattery() {
             winningCandidate = candidate
@@ -867,6 +914,7 @@ class LiveActivityManager: ObservableObject {
         }
 
         if winningCandidate == nil,
+           !(isFullScreen && isHiddenInFullScreen(.persistentWeather)),
            snoozedActivities[.persistentWeather] == nil,
            let candidate = checkForPersistentWeather() {
             winningCandidate = candidate
@@ -893,10 +941,15 @@ class LiveActivityManager: ObservableObject {
         candidate: ((ActivityType) -> ActivityCandidate?)? = nil
     ) {
         let candidate = candidate ?? { [weak self] type in self?.activityCheckers[type]?() }
+        let isFullScreen = notchDisplaysAreFullScreen()
         for activityType in ephemeralActivityTypes {
             guard activityType != winningType else { continue }
             guard snoozedActivities[activityType] == nil else { continue }
             guard activityCheckers[activityType] != nil else { continue }
+
+            if isFullScreen && isHiddenInFullScreen(activityType) {
+                continue
+            }
 
             guard candidate(activityType) != nil else { continue }
             consumeEphemeralActivity(activityType)

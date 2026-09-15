@@ -69,6 +69,7 @@ class MusicManager: ObservableObject {
                 }
             }
             refreshTimers()
+            refreshWordTimingGenerationState()
         }
     }
 
@@ -270,6 +271,7 @@ class MusicManager: ObservableObject {
 
     private var liveActivityTimer: Timer?
     private var liveActivityTimerInterval: TimeInterval = 0
+    private var liveActivityTimerRepeats = false
     private var latestTrackPayload: TrackInfo.Payload?
     private var playbackTimingAnchor: PlaybackTimingAnchor?
     private var lastTrackIdentity: String?
@@ -2343,20 +2345,61 @@ class MusicManager: ObservableObject {
             liveActivityTimer?.invalidate()
             liveActivityTimer = nil
             liveActivityTimerInterval = 0
+            liveActivityTimerRepeats = false
             return
         }
 
-        guard liveActivityTimer == nil || liveActivityTimerInterval != interval else { return }
+        let needsProgressUI = inputs.isDetachedLyricsOpen
+        let repeats = needsProgressUI
+        let scheduledInterval: TimeInterval
+        if repeats {
+            scheduledInterval = interval
+        } else {
+            guard let nextDelay = MusicPlaybackTickPolicy.nextLiveActivityEventDelay(
+                for: inputs,
+                elapsed: elapsedTime(),
+                lyricsElapsed: lyricsElapsedTime(),
+                lyrics: lyrics,
+                duration: totalDuration
+            ) else {
+                liveActivityTimer?.invalidate()
+                liveActivityTimer = nil
+                liveActivityTimerInterval = 0
+                liveActivityTimerRepeats = false
+                return
+            }
+            scheduledInterval = nextDelay
+        }
 
-        liveActivityTimer?.invalidate()
-        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, self.isPlaying else { return }
-                self.publishPlaybackTime(includeProgressUI: true)
+        if let timer = liveActivityTimer {
+            if repeats, liveActivityTimerRepeats, liveActivityTimerInterval == scheduledInterval {
+                return
+            }
+            if !repeats, !liveActivityTimerRepeats,
+               abs(timer.fireDate.timeIntervalSinceNow - scheduledInterval) < 0.1 {
+                return
             }
         }
+
+        liveActivityTimer?.invalidate()
+        let timer = Timer(timeInterval: scheduledInterval, repeats: repeats) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isPlaying else { return }
+                if !repeats {
+                    self.liveActivityTimer = nil
+                    self.liveActivityTimerInterval = 0
+                    self.liveActivityTimerRepeats = false
+                }
+                self.publishPlaybackTime(includeProgressUI: true)
+                if !repeats {
+                    self.refreshTimers()
+                }
+            }
+        }
+        timer.tolerance = repeats ? 0.05 : 0.02
         liveActivityTimer = timer
-        liveActivityTimerInterval = interval
+        liveActivityTimerInterval = scheduledInterval
+        liveActivityTimerRepeats = repeats
         RunLoop.main.add(timer, forMode: .common)
     }
 
@@ -2385,6 +2428,7 @@ class MusicManager: ObservableObject {
         liveActivityTimer?.invalidate()
         liveActivityTimer = nil
         liveActivityTimerInterval = 0
+        liveActivityTimerRepeats = false
     }
 
     func trimExpandedUIMemory() {
@@ -2543,11 +2587,15 @@ class MusicManager: ObservableObject {
     }
 
     private func refreshLyricsLoadingState() {
-        guard needsLyricsUpdates else { return }
+        guard needsLyricsUpdates else {
+            stopWordTimingGeneration()
+            return
+        }
         if lyrics.isEmpty {
             Task { await ensureLyricsForCurrentTrack() }
         } else {
             updateCurrentLyric(for: currentElapsedTime)
+            refreshWordTimingGenerationState()
         }
     }
 
@@ -2574,6 +2622,7 @@ class MusicManager: ObservableObject {
             guard !cachedLyrics.isEmpty else { return }
             replaceLyrics(cachedLyrics)
             retranslateLyricsIfNeeded()
+            refreshWordTimingGenerationState()
             return
         }
 
@@ -2700,6 +2749,7 @@ class MusicManager: ObservableObject {
         cacheKey: String
     ) {
         guard settingsModel.settings.generateWordTimedLyrics else { return }
+        guard needsLyricsUpdates else { return }
         guard !lines.contains(where: \.hasWordTiming) else { return }
         guard #available(macOS 26.0, *) else {
             LyricsLog.infoOnChange("generator", "Word timing generation needs macOS 26")
@@ -2727,7 +2777,10 @@ class MusicManager: ObservableObject {
             currentSongTime: { [weak self] in self?.elapsedTime() },
             isCurrentTrack: { [weak self] in
                 guard let self else { return false }
-                return self.lastTrackIdentity == identity && self.isPlaying
+                return self.settingsModel.settings.generateWordTimedLyrics
+                    && self.needsLyricsUpdates
+                    && self.lastTrackIdentity == identity
+                    && self.isPlaying
             },
             onGenerated: { [weak self] generated in
                 guard let self, self.lastTrackIdentity == identity, self.lyrics.map(\.id) == lineIDs else { return }
@@ -2736,6 +2789,35 @@ class MusicManager: ObservableObject {
                 self.lyricsCache[cacheKey] = generated
             }
         )
+    }
+
+    private func refreshWordTimingGenerationState() {
+        guard #available(macOS 26.0, *) else { return }
+        guard settingsModel.settings.generateWordTimedLyrics,
+              needsLyricsUpdates,
+              isPlaying,
+              !lyrics.isEmpty,
+              !lyrics.contains(where: \.hasWordTiming),
+              let title = title.trimmedOrNil,
+              let artist = artist.trimmedOrNil else {
+            LyricsWordTimingGenerator.shared.stop()
+            return
+        }
+
+        let album = self.album.trimmedOrNil ?? ""
+        startWordTimingGenerationIfNeeded(
+            lines: lyrics,
+            title: title,
+            artist: artist,
+            album: album,
+            spotifyTrackID: lastKnownBundleID == "com.spotify.client" ? trackID : nil,
+            cacheKey: lyricsCacheKey(title: title, artist: artist, album: album)
+        )
+    }
+
+    private func stopWordTimingGeneration() {
+        guard #available(macOS 26.0, *) else { return }
+        LyricsWordTimingGenerator.shared.stop()
     }
 
     private func fetchSpotifyLyricsFallback(trackID: String?, imageURL: String) async -> [LyricLine] {
@@ -2987,6 +3069,15 @@ class MusicManager: ObservableObject {
                 guard let self else { return }
                 self.refreshTimers()
                 self.refreshLyricsLoadingState()
+            }
+            .store(in: &cancellables)
+
+        settingsModel.$settings
+            .map(\.generateWordTimedLyrics)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.refreshWordTimingGenerationState()
             }
             .store(in: &cancellables)
 

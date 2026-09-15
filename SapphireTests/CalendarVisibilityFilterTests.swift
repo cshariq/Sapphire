@@ -1,7 +1,8 @@
 //
 //  CalendarVisibilityFilterTests.swift
-//  SapphireTests
+//  Sapphire
 //
+//  Created by Shariq Charolia on 2026-09-15
 
 import Foundation
 import Testing

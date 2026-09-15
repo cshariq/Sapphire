@@ -121,7 +121,15 @@ private struct SizeObservingView<Content: View>: View {
 }
 
 public enum LockScreenSpaceLevel: Int32 {
-    case kCGSSpaceAbsoluteLevelDefault = 0, kCGSSpaceAbsoluteLevelSetupAssistant = 100, kCGSSpaceAbsoluteLevelSecurityAgent = 200, kCGSSpaceAbsoluteLevelScreenLock = 300, kSLSSpaceAbsoluteLevelNotificationCenterAtScreenLock = 400, kCGSSpaceAbsoluteLevelBootProgress = 500, kCGSSpaceAbsoluteLevelVoiceOver = 600
+    case kCGSSpaceAbsoluteLevelDefault = 0
+    case kCGSSpaceAbsoluteLevelSetupAssistant = 100
+    case kCGSSpaceAbsoluteLevelSecurityAgent = 200
+    case kCGSSpaceAbsoluteLevelScreenLock = 300
+    case kSLSSpaceAbsoluteLevelNotificationCenterAtScreenLock = 400
+    case kCGSSpaceAbsoluteLevelBootProgress = 500
+    case kCGSSpaceAbsoluteLevelVoiceOver = 600
+
+    static let lockScreenWallpaper = kCGSSpaceAbsoluteLevelScreenLock.rawValue - 1
 }
 
 public class LockScreenManager {
@@ -129,6 +137,7 @@ public class LockScreenManager {
 
     private let connection: Int32
     private let space: Int32
+    private let wallpaperSpace: Int32
     private var windows: [String: NSWindowController] = [:]
 
     private var delegatedWindowIds: Set<String> = []
@@ -189,17 +198,27 @@ public class LockScreenManager {
         SLSSpaceAddWindowsAndRemoveFromSpaces = unsafeBitCast(dlsym(handler, "SLSSpaceAddWindowsAndRemoveFromSpaces"), to: F_SLSSpaceAddWindowsAndRemoveFromSpaces.self)
         SLSRemoveWindowsFromSpaces = unsafeBitCast(dlsym(handler, "SLSRemoveWindowsFromSpaces"), to: F_SLSRemoveWindowsFromSpaces.self)
         connection = SLSMainConnectionID()
+        wallpaperSpace = SLSSpaceCreate(connection, 1, 0)
+        _ = SLSSpaceSetAbsoluteLevel(connection, wallpaperSpace, LockScreenSpaceLevel.lockScreenWallpaper)
         space = SLSSpaceCreate(connection, 1, 0)
         _ = SLSSpaceSetAbsoluteLevel(connection, space, LockScreenSpaceLevel.kSLSSpaceAbsoluteLevelNotificationCenterAtScreenLock.rawValue)
-        _ = SLSShowSpaces(connection, [space] as CFArray)
+        _ = SLSShowSpaces(connection, [wallpaperSpace, space] as CFArray)
     }
 
     public func delegateWindow(_ window: NSWindow) {
         _ = SLSSpaceAddWindowsAndRemoveFromSpaces(connection, space, [window.windowNumber] as CFArray, 7)
     }
 
+    public func delegateWallpaperWindow(_ window: NSWindow) {
+        _ = SLSSpaceAddWindowsAndRemoveFromSpaces(connection, wallpaperSpace, [window.windowNumber] as CFArray, 7)
+    }
+
     public func removeWindow(_ window: NSWindow) {
         _ = SLSRemoveWindowsFromSpaces(connection, [window.windowNumber] as CFArray, [space] as CFArray)
+    }
+
+    public func removeWallpaperWindow(_ window: NSWindow) {
+        _ = SLSRemoveWindowsFromSpaces(connection, [window.windowNumber] as CFArray, [wallpaperSpace] as CFArray)
     }
 
     public func setupAndShowWindows(configs: [LockScreenWidgetConfig], on screen: NSScreen) {

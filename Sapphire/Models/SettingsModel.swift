@@ -853,6 +853,11 @@ struct Settings: Codable, Equatable {
     var lockScreenKeepWallpaperAfterUnlock: Bool = false
     var desktopWallpaperEnabled: Bool = false
     var desktopWallpaperPath: String? = nil
+    var liveWallpaperScaling: WallpaperScaling = .fill
+    var liveWallpaperPauseOnLowPower: Bool = false
+    var liveWallpaperPauseOnBattery: Bool = false
+    var lockScreenLiveWallpaperShowsClock: Bool = false
+    var lockScreenLiveWallpaperIdleDelay: Double = 8
     var lockScreenLiveActivityEnabled: Bool = true
     var lockScreenLiquidGlassLook: Bool = true
     var lockScreenLiquidGlassStyle: LiquidGlassMaterial = .widgets
@@ -862,13 +867,13 @@ struct Settings: Codable, Equatable {
     var lockScreenWeatherInfo: [WeatherInfoType] = [.temperature]
     var lockScreenBatteryInfo: [BatteryInfoType] = [.batteryIcon, .percentage, .statusText]
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
-    var systemEnhanceDockPreviewsEnabled: Bool = true
-    var systemEnhanceAltTabEnabled: Bool = true
+    var systemEnhanceDockPreviewsEnabled: Bool = false
+    var systemEnhanceAltTabEnabled: Bool = false
     var systemEnhanceSwitcherActivationRaw: String = "both"
     var systemEnhanceSwitcherIncludeOtherSpaces: Bool = false
-    var systemEnhanceCalendarIntegrationEnabled: Bool = true
-    var systemEnhanceCompactPreviewEnabled: Bool = true
-    var systemEnhanceEnhancedPreviewsEnabled: Bool = true
+    var systemEnhanceCalendarIntegrationEnabled: Bool = false
+    var systemEnhanceCompactPreviewEnabled: Bool = false
+    var systemEnhanceEnhancedPreviewsEnabled: Bool = false
     var systemEnhanceDockLocked: Bool = false
     var systemEnhanceLockedDisplayID: String? = nil
     var systemEnhancePreviewLayoutRaw: String = "grid"
@@ -876,7 +881,7 @@ struct Settings: Codable, Equatable {
     var systemEnhancePreviewTriggerRaw: String = "hover"
     var systemEnhancePreviewDelay: Double = 0.25
     var systemEnhanceLivePreviewKeepAlive: Int = 2
-    var systemEnhancePasteAsPlainTextEnabled: Bool = true
+    var systemEnhancePasteAsPlainTextEnabled: Bool = false
     var systemEnhancePasteAsPlainStripLinks: Bool = false
     var systemEnhancePasteAsPlainStripEmojis: Bool = false
     var systemEnhancePasteAsPlainStripListMarkers: Bool = false
@@ -926,12 +931,12 @@ struct Settings: Codable, Equatable {
 
     // MARK: - Quit on close (Vorssaint-style)
 
-    var systemEnhanceAutoQuitEnabled: Bool = true
+    var systemEnhanceAutoQuitEnabled: Bool = false
     var systemEnhanceAutoQuitExcludedApps: [String] = []
 
     // MARK: - Quit & close protection (Vorssaint-style)
 
-    var systemEnhanceQuitProtectionEnabled: Bool = true
+    var systemEnhanceQuitProtectionEnabled: Bool = false
     var systemEnhanceQuitProtectionModeRaw: String = "hold"
     var systemEnhanceQuitProtectionExtraModifierRaw: String = "option"
     var systemEnhanceQuitProtectionProtectQuit: Bool = true
@@ -983,8 +988,8 @@ struct Settings: Codable, Equatable {
 
     // MARK: - Installed app updates (Latest-style)
 
-    var installedAppUpdatesEnabled: Bool = true
-    var installedAppUpdateNotificationsEnabled: Bool = true
+    var installedAppUpdatesEnabled: Bool = false
+    var installedAppUpdateNotificationsEnabled: Bool = false
     var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .focusSession, .spacer, .battery, .multiAudio, .caffeine, .pin]
     var circleToSearchEnabled: Bool = true
     var circleToSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "C", modifiers: [.control, .shift])
@@ -1035,6 +1040,7 @@ struct Settings: Codable, Equatable {
     var rememberLastMenu: Bool = false
     var lastNotchNavigationStack: [RestorableNotchMenu]? = nil
     var showDividersBetweenWidgets: Bool = false
+    var bypassWidgetSpaceLimit: Bool = false
     var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .focusSession, .battery, .timer, .shortcuts, .notes, .clipboard, .mirror]
     var musicWidgetEnabled: Bool = true
     var weatherWidgetEnabled: Bool = true
@@ -1055,7 +1061,7 @@ struct Settings: Codable, Equatable {
     var clipboardMonitoringEnabled: Bool = true
     var clipboardHistoryUnlimited: Bool = true
     var clipboardIgnoreConcealedItems: Bool = true
-    var clipboardPickerEnabled: Bool = true
+    var clipboardPickerEnabled: Bool = false
     var clipboardPickerShortcut: KeyboardShortcut = KeyboardShortcut(key: "V", modifiers: [.command, .shift])
 
     // MARK: - Auto-clear clipboard (Vorssaint-style)
@@ -1075,7 +1081,7 @@ struct Settings: Codable, Equatable {
 
     var clipboardFinderCutPasteEnabled: Bool = false
     var clipboardFinderPasteImagesAsPNG: Bool = true
-    var clipboardFinderF2RenameEnabled: Bool = true
+    var clipboardFinderF2RenameEnabled: Bool = false
 
     // MARK: - Text snippets (Vorssaint-style)
 
@@ -1083,7 +1089,7 @@ struct Settings: Codable, Equatable {
     var snippetsExpandAfterSpace: Bool = true
     var snippetsList: [SnippetEntry] = []
 
-    var emojiEnabled: Bool = true
+    var emojiEnabled: Bool = false
     var emojiSuggestOnColon: Bool = true
     var emojiDisabledAppBundleIDs: Set<String> = []
     var emojiSkinTone: EmojiSkinTone = .none
@@ -1131,23 +1137,23 @@ struct Settings: Codable, Equatable {
     var monitoringAlertLowDiskEnabled: Bool = true
     var monitoringAlertDiskThresholdGB: Double = 10
 
-    var archiveExtractorEnabled: Bool = true
+    var archiveExtractorEnabled: Bool = false
     var archiveExtractionMode: ArchiveExtractionMode = .smart
     var archivePostExtractAction: ArchivePostExtractAction = .reveal
     var archiveDeleteAfterExtract: Bool = false
     var archivePromptForPasswords: Bool = true
     var archiveProgressDisplay: FileOperationProgressDisplay = .liveActivity
-    var dmgInstallerEnabled: Bool = true
+    var dmgInstallerEnabled: Bool = false
     var dmgInstallerTrashAfterInstall: Bool = true
     var dmgInstallerPostInstallAction: DMGPostInstallAction = .open
     var dmgInstallerInstallLocation: DMGInstallLocation = .systemApplications
     var dmgInstallerReplaceNewerVersions: Bool = true
     var dmgInstallerReplaceWithoutPrompting: Bool = false
     var dmgInstallerProgressDisplay: FileOperationProgressDisplay = .liveActivity
-    var timerWidgetEnabled: Bool = true
+    var timerWidgetEnabled: Bool = false
     var batteryWidgetEnabled: Bool = true
     var focusSessionWidgetEnabled: Bool = true
-    var storageWidgetEnabled: Bool = true
+    var storageWidgetEnabled: Bool = false
     var storageOpenOnClick: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
     var liveActivityOrder: [LiveActivityType] = LiveActivityType.allCases
@@ -1373,7 +1379,7 @@ struct Settings: Codable, Equatable {
     var useStaticWaveform: Bool = false
     var waveformBarCount: Int = 3
     var waveformBarThickness: Double = 4.0
-    var musicWaveformIsVolumeSensitive: Bool = true
+    var musicWaveformIsVolumeSensitive: Bool = false
     var spotifyClientId: String {
         get { APIKeyManager.shared.spotifyClientId }
         set { APIKeyManager.shared.spotifyClientId = newValue }
@@ -1578,7 +1584,7 @@ struct Settings: Codable, Equatable {
     var clickToOpenFileShelf: Bool = true
     var hoverToOpenFileShelf: Bool = true
     var removeFileFromShelfAfterDrag: Bool = false
-    var fileShelfAirDropDestinationEnabled: Bool = true
+    var fileShelfAirDropDestinationEnabled: Bool = false
     var fileShelfDeviceDestinationsEnabled: Bool = false
     var launchpadLayout: [[LaunchpadPageItem]] = []
     var weatherUseCelsius: Bool = false
@@ -1603,7 +1609,7 @@ struct Settings: Codable, Equatable {
 
     // MARK: - Developer Activity
 
-    var devActivityEnabled: Bool = true
+    var devActivityEnabled: Bool = false
     var devActivityKinds: Set<String> = ["ai", "build", "command"]
     var devActivityDetectIDEAgents: Bool = true
     var devActivitySensitivity: Double = 1.0

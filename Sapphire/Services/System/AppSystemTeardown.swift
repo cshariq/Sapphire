@@ -15,7 +15,7 @@ enum AppSystemTeardown {
             CalibrationManager.shared.cancel()
         }
 
-        LockScreenWallpaperManager.shared.restore()
+        LiveWallpaperManager.shared.shutdown()
 
         CaffeineManager.shared.stop()
         LidAngleAutomationManager.shared.releaseForcedSystemChanges()

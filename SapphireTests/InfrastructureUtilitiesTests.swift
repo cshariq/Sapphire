@@ -51,47 +51,6 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         window.close()
     }
 
-    @MainActor
-    func testFullScreenVisibilitySuppressesOnlyTheMatchingDisplayWindow() {
-        let delegate = AppDelegate()
-        let firstWindow = makeDynamicFocusWindow(displayID: 101)
-        let secondWindow = makeDynamicFocusWindow(displayID: 202)
-        delegate.notchWindows = [firstWindow, secondWindow]
-        firstWindow.orderFront(nil)
-        secondWindow.orderFront(nil)
-        defer {
-            firstWindow.close()
-            secondWindow.close()
-        }
-
-        delegate.applyFullScreenNotchVisibility(displayIDs: [101])
-
-        XCTAssertTrue(firstWindow.isSuppressedForFullScreen)
-        XCTAssertFalse(firstWindow.isVisible)
-        XCTAssertFalse(secondWindow.isSuppressedForFullScreen)
-        XCTAssertTrue(secondWindow.isVisible)
-
-        firstWindow.orderFront(nil)
-        XCTAssertFalse(firstWindow.isVisible, "An unrelated orderFront must not defeat full-screen suppression")
-
-        delegate.applyFullScreenNotchVisibility(displayIDs: [])
-        XCTAssertFalse(firstWindow.isSuppressedForFullScreen)
-        XCTAssertTrue(firstWindow.isVisible)
-    }
-
-    @MainActor
-    func testFullScreenVisibilityDoesNotRevealAnAlreadyHiddenWindow() {
-        let delegate = AppDelegate()
-        let window = makeDynamicFocusWindow(displayID: 101)
-        delegate.notchWindows = [window]
-        defer { window.close() }
-
-        delegate.applyFullScreenNotchVisibility(displayIDs: [101])
-        delegate.applyFullScreenNotchVisibility(displayIDs: [])
-
-        XCTAssertFalse(window.isVisible)
-    }
-
     func testFullScreenActivityVisibilityIsScopedToOneDisplay() {
         let fullScreenDisplays: Set<CGDirectDisplayID> = [101]
 
@@ -242,6 +201,54 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertFalse(recovered.showOnHover)
         XCTAssertEqual(recovered.volumesliderstep, Settings().volumesliderstep)
         XCTAssertEqual(recovered.hapticFeedbackEnabled, Settings().hapticFeedbackEnabled)
+    }
+
+    func testNewFeaturesAreDisabledByDefault() {
+        let settings = Settings()
+
+        XCTAssertFalse(settings.systemEnhanceDockPreviewsEnabled)
+        XCTAssertFalse(settings.systemEnhanceAltTabEnabled)
+        XCTAssertFalse(settings.systemEnhanceCalendarIntegrationEnabled)
+        XCTAssertFalse(settings.systemEnhanceCompactPreviewEnabled)
+        XCTAssertFalse(settings.systemEnhanceEnhancedPreviewsEnabled)
+        XCTAssertFalse(settings.systemEnhancePasteAsPlainTextEnabled)
+        XCTAssertFalse(settings.systemEnhanceHingeAnimationEnabled)
+        XCTAssertFalse(settings.systemEnhanceDockClicksEnabled)
+        XCTAssertFalse(settings.systemEnhanceAutoQuitEnabled)
+        XCTAssertFalse(settings.systemEnhanceQuitProtectionEnabled)
+        XCTAssertFalse(settings.systemEnhanceGreenMaximizeEnabled)
+        XCTAssertFalse(settings.dockLayoutsEnabled)
+        XCTAssertFalse(settings.mediaToolsAutoOptimizeClipboard)
+        XCTAssertFalse(settings.mediaToolsShowShelfActions)
+        XCTAssertFalse(settings.mediaToolsOCRShortcutEnabled)
+        XCTAssertFalse(settings.automaticUpdateChecksEnabled)
+        XCTAssertFalse(settings.automaticallyDownloadSapphireUpdates)
+        XCTAssertFalse(settings.updateAvailableNotificationsEnabled)
+        XCTAssertFalse(settings.showUpdateAvailableLiveActivity)
+        XCTAssertFalse(settings.installedAppUpdatesEnabled)
+        XCTAssertFalse(settings.installedAppUpdateNotificationsEnabled)
+        XCTAssertFalse(settings.clipboardPickerEnabled)
+        XCTAssertFalse(settings.clipboardAutoClearEnabled)
+        XCTAssertFalse(settings.clipboardCleanURLEnabled)
+        XCTAssertFalse(settings.clipboardFinderCutPasteEnabled)
+        XCTAssertFalse(settings.clipboardFinderF2RenameEnabled)
+        XCTAssertFalse(settings.snippetsEnabled)
+        XCTAssertFalse(settings.emojiEnabled)
+        XCTAssertFalse(settings.mouseControlEnabled)
+        XCTAssertFalse(settings.monitoringMenuBarReadoutsEnabled)
+        XCTAssertFalse(settings.monitoringAlertsEnabled)
+        XCTAssertFalse(settings.archiveExtractorEnabled)
+        XCTAssertFalse(settings.dmgInstallerEnabled)
+        XCTAssertFalse(settings.timerWidgetEnabled)
+        XCTAssertFalse(settings.storageWidgetEnabled)
+        XCTAssertFalse(settings.continuityEnabled)
+        XCTAssertFalse(settings.fileShelfAirDropDestinationEnabled)
+        XCTAssertFalse(settings.fileShelfDeviceDestinationsEnabled)
+        XCTAssertFalse(settings.caffeinateAutoDuringTasks)
+        XCTAssertFalse(settings.devActivityEnabled)
+        XCTAssertFalse(settings.menuBarEnabled)
+        XCTAssertFalse(settings.menuBarProfilesEnabled)
+        XCTAssertFalse(settings.showOnlyRunningAppsInDock)
     }
 
     func testEventHandlingSnapshotPreservesHotPathPreferences() {

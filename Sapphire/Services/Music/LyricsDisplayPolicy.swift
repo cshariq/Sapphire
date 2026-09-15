@@ -52,7 +52,7 @@ enum MusicPlaybackTickPolicy {
     }
 
     static func interval(for inputs: Inputs) -> TimeInterval? {
-        let needsProgressUI = inputs.isDetailPlayerOpen || inputs.isLyricsDetailOpen || inputs.isDetachedLyricsOpen
+        let needsProgressUI = inputs.isDetachedLyricsOpen
         let needsLyricLiveActivity = inputs.isMusicLiveActivityActive
             && inputs.musicLiveActivityEnabled
             && inputs.showLyricsInLiveActivity
@@ -64,5 +64,44 @@ enum MusicPlaybackTickPolicy {
             && inputs.upNextSourceSupported
         guard inputs.isPlaying, needsProgressUI || needsLyricLiveActivity || needsUpNextLiveActivity else { return nil }
         return needsProgressUI ? 0.2 : 0.5
+    }
+
+    static func nextLiveActivityEventDelay(
+        for inputs: Inputs,
+        elapsed: TimeInterval,
+        lyricsElapsed: TimeInterval,
+        lyrics: [LyricLine],
+        duration: TimeInterval
+    ) -> TimeInterval? {
+        guard inputs.isPlaying, inputs.isMusicLiveActivityActive, inputs.musicLiveActivityEnabled else {
+            return nil
+        }
+
+        let epsilon = 0.01
+        var delays: [TimeInterval] = []
+
+        if inputs.showLyricsInLiveActivity, inputs.lyricsAllowedForActiveApp, inputs.hasLyrics {
+            for line in lyrics {
+                if line.timestamp > lyricsElapsed + epsilon {
+                    delays.append(line.timestamp - lyricsElapsed)
+                }
+                if let end = line.endTimestamp, end > lyricsElapsed + epsilon {
+                    delays.append(end - lyricsElapsed)
+                }
+            }
+        }
+
+        if inputs.showNextSong, inputs.upNextSourceSupported, duration > 0 {
+            let upNextStart = max(0, duration - 10)
+            if upNextStart > elapsed + epsilon {
+                delays.append(upNextStart - elapsed)
+            }
+        }
+
+        if duration > elapsed + epsilon {
+            delays.append(duration - elapsed)
+        }
+
+        return delays.min().map { max(0.02, $0) }
     }
 }
