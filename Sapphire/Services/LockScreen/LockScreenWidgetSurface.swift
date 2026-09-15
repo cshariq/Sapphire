@@ -16,9 +16,9 @@ struct LockScreenWidgetSurface<S: Shape>: View {
         ZStack {
             if settings.settings.lockScreenLiquidGlassLook {
                 LiquidGlassShapeFill(
+                    material: settings.settings.lockScreenLiquidGlassStyle,
                     shape: shape,
                     cornerRadius: cornerRadius,
-                    intensity: settings.settings.lockScreenLiquidGlassIntensity,
                     blendingMode: .behindWindow,
                     appearance: .dark
                 )

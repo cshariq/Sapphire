@@ -248,6 +248,7 @@ struct LiveActivityRowView: View {
         case .fileShelf: return $settings.settings.fileShelfLiveActivityEnabled
         case .fileProgress: return $settings.settings.fileProgressLiveActivityEnabled
         case .microphone: return $settings.settings.microphoneLiveActivityEnabled
+        case .devActivity: return $settings.settings.devActivityEnabled
         case .stats: return $settings.settings.statsLiveActivityEnabled
         case .finance: return $settings.settings.financeLiveActivityEnabled
         case .sports: return $settings.settings.sportsLiveActivityEnabled
@@ -752,6 +753,48 @@ struct SwipeActionPickerRow<Action: Hashable & Identifiable>: View {
             .frame(width: 150)
         }
         .padding()
+    }
+}
+
+struct LiquidGlassStylePickerRow: View {
+    var title: String = "Liquid Glass Style"
+    @Binding var selection: LiquidGlassMaterial
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingsRowLabel(title: title, description: selection.summary)
+            Spacer()
+            HStack(spacing: 4) {
+                stepButton(systemName: "chevron.left", help: "Previous Style", offset: -1)
+                Picker("", selection: $selection) {
+                    ForEach(LiquidGlassMaterial.allCases) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 160)
+                stepButton(systemName: "chevron.right", help: "Next Style", offset: 1)
+            }
+        }
+        .padding()
+    }
+
+    private func stepButton(systemName: String, help: String, offset: Int) -> some View {
+        Button {
+            let styles = LiquidGlassMaterial.allCases
+            let index = styles.firstIndex(of: selection) ?? 0
+            selection = styles[(index + offset + styles.count) % styles.count]
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 

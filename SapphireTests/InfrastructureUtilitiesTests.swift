@@ -11,6 +11,12 @@ import XCTest
 @testable import Sapphire
 
 final class InfrastructureUtilitiesTests: XCTestCase {
+    func testDevActivityParticipatesInLiveActivityOrdering() {
+        XCTAssertTrue(LiveActivityType.allCases.contains(.devActivity))
+        XCTAssertEqual(ActivityType(from: .devActivity), .devActivity)
+        XCTAssertEqual(ActivityType.devActivity.toLiveActivityType(), .devActivity)
+    }
+
     @MainActor
     func testRuntimeBrightnessDrivesXDRWithoutInvalidatingSettingsObservers() {
         let model = SettingsModel.shared
@@ -43,6 +49,145 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertTrue(window.collectionBehavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(window.collectionBehavior.contains(.fullScreenAuxiliary))
         window.close()
+    }
+
+    @MainActor
+    func testFullScreenVisibilitySuppressesOnlyTheMatchingDisplayWindow() {
+        let delegate = AppDelegate()
+        let firstWindow = makeDynamicFocusWindow(displayID: 101)
+        let secondWindow = makeDynamicFocusWindow(displayID: 202)
+        delegate.notchWindows = [firstWindow, secondWindow]
+        firstWindow.orderFront(nil)
+        secondWindow.orderFront(nil)
+        defer {
+            firstWindow.close()
+            secondWindow.close()
+        }
+
+        delegate.applyFullScreenNotchVisibility(displayIDs: [101])
+
+        XCTAssertTrue(firstWindow.isSuppressedForFullScreen)
+        XCTAssertFalse(firstWindow.isVisible)
+        XCTAssertFalse(secondWindow.isSuppressedForFullScreen)
+        XCTAssertTrue(secondWindow.isVisible)
+
+        firstWindow.orderFront(nil)
+        XCTAssertFalse(firstWindow.isVisible, "An unrelated orderFront must not defeat full-screen suppression")
+
+        delegate.applyFullScreenNotchVisibility(displayIDs: [])
+        XCTAssertFalse(firstWindow.isSuppressedForFullScreen)
+        XCTAssertTrue(firstWindow.isVisible)
+    }
+
+    @MainActor
+    func testFullScreenVisibilityDoesNotRevealAnAlreadyHiddenWindow() {
+        let delegate = AppDelegate()
+        let window = makeDynamicFocusWindow(displayID: 101)
+        delegate.notchWindows = [window]
+        defer { window.close() }
+
+        delegate.applyFullScreenNotchVisibility(displayIDs: [101])
+        delegate.applyFullScreenNotchVisibility(displayIDs: [])
+
+        XCTAssertFalse(window.isVisible)
+    }
+
+    func testFullScreenActivityVisibilityIsScopedToOneDisplay() {
+        let fullScreenDisplays: Set<CGDirectDisplayID> = [101]
+
+        XCTAssertTrue(FullScreenActivityVisibilityPolicy.shouldHide(
+            activity: .music,
+            on: 101,
+            fullScreenDisplayIDs: fullScreenDisplays,
+            hideAll: true,
+            hiddenActivityTypes: [:]
+        ))
+        XCTAssertFalse(FullScreenActivityVisibilityPolicy.shouldHide(
+            activity: .music,
+            on: 202,
+            fullScreenDisplayIDs: fullScreenDisplays,
+            hideAll: true,
+            hiddenActivityTypes: [:]
+        ))
+    }
+
+    func testSpecificFullScreenActivityVisibilityUsesActivityType() {
+        let hiddenTypes = [LiveActivityType.music.rawValue: true]
+
+        XCTAssertTrue(FullScreenActivityVisibilityPolicy.shouldHide(
+            activity: .music,
+            on: 101,
+            fullScreenDisplayIDs: [101],
+            hideAll: false,
+            hiddenActivityTypes: hiddenTypes
+        ))
+        XCTAssertFalse(FullScreenActivityVisibilityPolicy.shouldHide(
+            activity: .weather,
+            on: 101,
+            fullScreenDisplayIDs: [101],
+            hideAll: false,
+            hiddenActivityTypes: hiddenTypes
+        ))
+    }
+
+    @MainActor
+    func testDynamicFocusWindowMouseEventHandlingIsDirect() {
+        let window = makeDynamicFocusWindow(displayID: 101)
+        defer { window.close() }
+
+        window.setMouseEventHandlingEnabled(true)
+        XCTAssertFalse(window.ignoresMouseEvents)
+
+        window.setMouseEventHandlingEnabled()
+        XCTAssertTrue(window.ignoresMouseEvents)
+    }
+
+    @MainActor
+    func testNotchHoverMonitorOnlyRegistersMouseEventsWhilePointerIsInside() {
+        let window = makeDynamicFocusWindow(displayID: 101)
+        let monitor = NotchHoverMonitor()
+        monitor.start(
+            window: window,
+            handlers: NotchHoverMonitorHandlers(
+                onPointerEvent: {},
+                onMouseDrag: { _, _ in },
+                onMouseDragEnded: { _ in },
+                onFileDrag: { _, _ in },
+                onFileDragEnded: { _, _ in },
+                onFileDrop: { _, _ in false }
+            )
+        )
+        defer {
+            monitor.stop()
+            window.close()
+        }
+
+        XCTAssertFalse(monitor.hasActiveMouseEventMonitors)
+        XCTAssertFalse(monitor.isHoverProbeListeningForPointer)
+
+        monitor.update(hoverRect: CGRect(x: 0, y: 0, width: 100, height: 40), pointerIsInside: false)
+        XCTAssertFalse(monitor.hasActiveMouseEventMonitors)
+        XCTAssertTrue(monitor.isHoverProbeListeningForPointer)
+
+        monitor.update(hoverRect: CGRect(x: 0, y: 0, width: 100, height: 40), pointerIsInside: true)
+        XCTAssertTrue(monitor.hasActiveMouseEventMonitors)
+        XCTAssertFalse(monitor.isHoverProbeListeningForPointer)
+
+        monitor.update(hoverRect: CGRect(x: 0, y: 0, width: 100, height: 40), pointerIsInside: false)
+        XCTAssertFalse(monitor.hasActiveMouseEventMonitors)
+        XCTAssertTrue(monitor.isHoverProbeListeningForPointer)
+    }
+
+    @MainActor
+    private func makeDynamicFocusWindow(displayID: CGDirectDisplayID) -> DynamicFocusWindow {
+        let window = DynamicFocusWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 40),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        window.displayID = displayID
+        return window
     }
 
     func testDebouncerFlushExecutesPendingActionExactlyOnce() {

@@ -1375,6 +1375,71 @@ struct TimerActivityView {
     }
 }
 
+struct TimerFinishedActivityView: View {
+    @ObservedObject var timerManager: TimerManager
+    let timerID: String
+
+    private var timer: SapphireTimer? {
+        timerManager.ringingTimers.first { $0.id == timerID }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: NotchConfiguration.initialSize.height)
+
+            if let timer {
+                VStack(spacing: 14) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.orange.opacity(0.18))
+                            Image(systemName: "timer")
+                                .font(.system(size: 21, weight: .semibold))
+                                .foregroundStyle(.orange)
+                        }
+                        .frame(width: 46, height: 46)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Timer")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            Text(timer.label)
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 18)
+
+                        Text("00:00")
+                            .font(.system(size: 19, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.orange)
+                    }
+
+                    Button {
+                        timerManager.dismissRingingTimer(id: timer.id)
+                    } label: {
+                        Label("Stop", systemImage: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .foregroundStyle(.white)
+                            .background(Color.orange.opacity(0.9))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss timer")
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
+                .frame(width: 360)
+            }
+        }
+    }
+}
+
 struct WeatherActivityView {
     static func left(for data: ProcessedWeatherData) -> some View {
         Image(systemName: WeatherIconMapper.map(from: data.iconCode))

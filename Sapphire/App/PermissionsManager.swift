@@ -16,6 +16,7 @@ import CoreBluetooth
 import Intents
 import ApplicationServices
 import AppKit
+import CoreServices
 import Network
 
 // MARK: - Permission Enums
@@ -62,6 +63,16 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
     private lazy var bluetoothManager = CBCentralManager(delegate: self, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: 0])
 
     private let automationPermissionRequestedKey = "automationPermissionRequested"
+
+    private struct AutomationTarget {
+        let name: String
+        let bundleIdentifier: String
+    }
+
+    private let automationTargets = [
+        AutomationTarget(name: "Music", bundleIdentifier: "com.apple.Music"),
+        AutomationTarget(name: "Spotify", bundleIdentifier: "com.spotify.client"),
+    ]
 
     private var localNetworkListener: NWListener?
     private var dummyNetService: NetService?
@@ -287,13 +298,19 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
             return
         }
 
-        Task {
-            let spotifyStatus = await getAutomationPermissionStatus(for: "Spotify")
-            let musicStatus = await getAutomationPermissionStatus(for: "Music")
+        let installedTargets = automationTargets.filter {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.bundleIdentifier) != nil
+        }
 
-            if spotifyStatus == PermissionStatus.denied || musicStatus == PermissionStatus.denied {
+        Task {
+            var statuses: [PermissionStatus] = []
+            for target in installedTargets {
+                statuses.append(await getAutomationPermissionStatus(for: target.name))
+            }
+
+            if statuses.contains(PermissionStatus.denied) {
                 automationStatus = PermissionStatus.denied
-            } else if spotifyStatus == PermissionStatus.granted && musicStatus == PermissionStatus.granted {
+            } else if !statuses.isEmpty && statuses.allSatisfy({ $0 == PermissionStatus.granted }) {
                 automationStatus = PermissionStatus.granted
             } else {
                 automationStatus = PermissionStatus.notRequested
@@ -303,18 +320,66 @@ class PermissionsManager: NSObject, ObservableObject, @MainActor CLLocationManag
 
     private func triggerAutomationPermissionRequest() {
         Task(priority: .userInitiated) {
+            var foundTarget = false
+
+            for target in automationTargets {
+                guard await launchAutomationTarget(target) else { continue }
+                foundTarget = true
+
+                print("[PermissionsManager] Requesting Automation permission for \(target.name)...")
+                let status = await Self.determineAutomationPermission(
+                    for: target.bundleIdentifier,
+                    askUserIfNeeded: true
+                )
+                print("[PermissionsManager] Automation request for \(target.name) returned \(status).")
+            }
+
+            guard foundTarget else { return }
             UserDefaults.standard.set(true, forKey: automationPermissionRequestedKey)
-
-            print("[PermissionsManager] Triggering Automation permission for Spotify...")
-            _ = await executeAppleScript(command: #"tell application "Spotify" to activate"#, for: "Spotify")
-
-            try? await Task.sleep(for: .seconds(1))
-
-            print("[PermissionsManager] Triggering Automation permission for Music...")
-            _ = await executeAppleScript(command: #"tell application "Music" to activate"#, for: "Music")
 
             self.checkAutomationStatus()
         }
+    }
+
+    private func launchAutomationTarget(_ target: AutomationTarget) async -> Bool {
+        if !NSRunningApplication.runningApplications(withBundleIdentifier: target.bundleIdentifier).isEmpty {
+            return true
+        }
+
+        guard let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: target.bundleIdentifier) else {
+            print("[PermissionsManager] Application '\(target.name)' not found.")
+            return false
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        configuration.addsToRecentItems = false
+
+        return await withCheckedContinuation { continuation in
+            NSWorkspace.shared.openApplication(at: applicationURL, configuration: configuration) { application, error in
+                if let error {
+                    print("[PermissionsManager] Could not launch \(target.name) for Automation permission: \(error.localizedDescription)")
+                }
+                continuation.resume(returning: application != nil)
+            }
+        }
+    }
+
+    private nonisolated static func determineAutomationPermission(
+        for bundleIdentifier: String,
+        askUserIfNeeded: Bool
+    ) async -> OSStatus {
+        await Task.detached(priority: .userInitiated) {
+            let target = NSAppleEventDescriptor(bundleIdentifier: bundleIdentifier)
+            guard let descriptor = target.aeDesc else { return OSStatus(paramErr) }
+
+            return AEDeterminePermissionToAutomateTarget(
+                descriptor,
+                AEEventClass(typeWildCard),
+                AEEventID(typeWildCard),
+                askUserIfNeeded
+            )
+        }.value
     }
 
     private func getAutomationPermissionStatus(for appName: String) async -> PermissionStatus {

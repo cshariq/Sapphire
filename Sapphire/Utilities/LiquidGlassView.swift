@@ -11,7 +11,7 @@ import Darwin
 
 // MARK: - Materials (qt-liquid-glass mapping)
 
-enum LiquidGlassMaterial: String, CaseIterable, Identifiable, Hashable {
+enum LiquidGlassMaterial: String, Codable, CaseIterable, Identifiable, Hashable {
     case sidebar
     case sheet
     case hud
@@ -29,6 +29,46 @@ enum LiquidGlassMaterial: String, CaseIterable, Identifiable, Hashable {
     case chromatic
 
     var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .sidebar: return "Sidebar"
+        case .sheet: return "Sheet"
+        case .hud: return "HUD"
+        case .windowBackground: return "Window Background"
+        case .popover: return "Popover"
+        case .menu: return "Menu"
+        case .fullscreenUI: return "Fullscreen UI"
+        case .controlCenter: return "Control Center"
+        case .widgets: return "Widgets"
+        case .inspector: return "Inspector"
+        case .titlebar: return "Titlebar"
+        case .tooltip: return "Tooltip"
+        case .frosted: return "Frosted"
+        case .clearGlass: return "Clear Glass"
+        case .chromatic: return "Chromatic"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .sidebar: return "Thick, vibrant blur like a macOS sidebar."
+        case .sheet: return "The standard glass used by modal sheets."
+        case .hud: return "Dark, satiny glass like the Dock."
+        case .windowBackground: return "Subtle, lightly blurred glass."
+        case .popover: return "Modern popover glass."
+        case .menu: return "Notification Center-style glass."
+        case .fullscreenUI: return "Deep blur used by fullscreen media controls."
+        case .controlCenter: return "Translucent Control Center module glass."
+        case .widgets: return "Desktop widget background glass."
+        case .inspector: return "Sidebar glass tuned for inspector panels."
+        case .titlebar: return "Sidebar glass that blends into the title bar."
+        case .tooltip: return "Loupe glass used by hover cards."
+        case .frosted: return "Soft, strong blur with bright diffusion."
+        case .clearGlass: return "Almost no blur, crisp and transparent."
+        case .chromatic: return "Frosted glass with chromatic aberration."
+        }
+    }
 
     var variant: Int {
         switch self {
@@ -74,8 +114,8 @@ enum LiquidGlassMaterial: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    static func forIntensity(_ intensity: Double) -> LiquidGlassMaterial {
-        switch intensity {
+    static func migrating(fromLegacyIntensity intensity: Double) -> LiquidGlassMaterial {
+        switch max(0, min(1, intensity)) {
         case ..<0.25: return .clearGlass
         case ..<0.45: return .windowBackground
         case ..<0.7: return .frosted
@@ -113,25 +153,6 @@ struct LiquidGlassShadow: Equatable {
     var offset: CGSize = .zero
 
     static let none = LiquidGlassShadow()
-}
-
-struct LiquidGlassIntensityParams: Equatable {
-    var material: LiquidGlassMaterial
-    var tintAlpha: CGFloat
-    var contentLensing: Int
-    var subdued: Int
-    var scrim: Int
-
-    static func resolve(_ intensity: Double) -> LiquidGlassIntensityParams {
-        let t = max(0, min(1, intensity))
-        return LiquidGlassIntensityParams(
-            material: .forIntensity(t),
-            tintAlpha: CGFloat(0.04 + t * 0.22),
-            contentLensing: t < 0.35 ? 0 : 1,
-            subdued: t < 0.4 ? 1 : 0,
-            scrim: t > 0.85 ? 1 : 0
-        )
-    }
 }
 
 // MARK: - Runtime
@@ -406,7 +427,13 @@ final class LiquidGlassHostView: NSView {
         subdued: Int?
     ) {
         currentBlendingMode = blendingMode
-        if effectView == nil { rebuildEffectView() }
+        if effectView == nil {
+            rebuildEffectView()
+        } else if let appliedMaterial = appliedConfiguration?.material,
+                  appliedMaterial != material,
+                  !(effectView is NSVisualEffectView) {
+            rebuildEffectView()
+        }
         guard let effectView else { return }
 
         let requested = AppliedConfiguration(
@@ -438,6 +465,11 @@ final class LiquidGlassHostView: NSView {
             scrim: scrim,
             subdued: subdued
         )
+
+        if supportsCustomPath {
+            appliedShapePath = nil
+            shapeNeedsUpdate = true
+        }
 
         if blendingMode == .behindWindow {
             GlassRuntime.prepareWindowForBehindGlass(window)
@@ -593,7 +625,7 @@ struct LiquidGlassView: NSViewRepresentable {
     var blendingMode: LiquidGlassBlendingMode = .behindWindow
     var appearance: LiquidGlassAppearance = .auto
     var interaction: LiquidGlassInteraction = .normal
-    var contentLensing: Int? = 1
+    var contentLensing: Int? = nil
     var scrim: Int? = nil
     var subdued: Int? = nil
     var shapePath: CGPath? = nil
@@ -647,7 +679,7 @@ struct LiquidGlassShapeView<S: Shape & Hashable>: View, Animatable {
     var blendingMode: LiquidGlassBlendingMode = .behindWindow
     var appearance: LiquidGlassAppearance = .auto
     var interaction: LiquidGlassInteraction = .normal
-    var contentLensing: Int? = 1
+    var contentLensing: Int? = nil
     var scrim: Int? = nil
     var subdued: Int? = nil
     var shadow: LiquidGlassShadow = .none
@@ -704,31 +736,24 @@ struct LiquidGlassShapeView<S: Shape & Hashable>: View, Animatable {
 }
 
 struct LiquidGlassShapeFill<S: Shape>: View {
-    var material: LiquidGlassMaterial? = nil
+    var material: LiquidGlassMaterial = .frosted
     var shape: S
     var cornerRadius: CGFloat = 0
     var tint: Color? = nil
-    var intensity: Double = 0.65
     var blendingMode: LiquidGlassBlendingMode = .behindWindow
     var appearance: LiquidGlassAppearance = .auto
     var interaction: LiquidGlassInteraction = .normal
 
     var body: some View {
-        let params = LiquidGlassIntensityParams.resolve(intensity)
-        let resolvedMaterial = material ?? params.material
         let shape = self.shape
-        let tintNSColor = resolvedTint(alpha: params.tintAlpha)
 
         LiquidGlassView(
-            material: resolvedMaterial,
+            material: material,
             cornerRadius: 0,
-            tintColor: tintNSColor,
+            tintColor: tint.map { NSColor($0) },
             blendingMode: blendingMode,
             appearance: appearance,
             interaction: interaction,
-            contentLensing: params.contentLensing,
-            scrim: params.scrim,
-            subdued: params.subdued,
             shapePathProvider: { rect in
                 guard rect.width > 0, rect.height > 0,
                       rect.width.isFinite, rect.height.isFinite else { return nil }
@@ -736,17 +761,5 @@ struct LiquidGlassShapeFill<S: Shape>: View {
             }
         )
         .allowsHitTesting(false)
-    }
-
-    private func resolvedTint(alpha: CGFloat) -> NSColor? {
-        if let tint { return NSColor(tint) }
-        switch appearance {
-        case .dark:
-            return NSColor.white.withAlphaComponent(alpha * 0.85)
-        case .light:
-            return NSColor.black.withAlphaComponent(alpha * 0.35)
-        case .auto:
-            return NSColor.white.withAlphaComponent(alpha)
-        }
     }
 }

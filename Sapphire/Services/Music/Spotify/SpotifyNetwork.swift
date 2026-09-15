@@ -2,8 +2,7 @@
 //  SpotifyNetwork.swift
 //  Sapphire
 //
-//  Consolidated Spotify networking, crypto, protobuf, and APQ hash registry.
-//
+//  Created by Shariq Charolia on 2026-09-14
 
 import Foundation
 import Combine
@@ -12,7 +11,6 @@ import CryptoKit
 import CommonCrypto
 import JavaScriptCore
 
-
 struct HTTPResponse {
     let statusCode: Int
     let headers: [String: String]
@@ -20,9 +18,6 @@ struct HTTPResponse {
     let cookies: [HTTPCookie]
 }
 
-/// Tracks Spotify's HTTP 429 responses so the whole integration backs off instead of
-/// hammering an endpoint that is actively throttling the account. Spotify rate limits
-/// tend to hit the account/session broadly, so any 429 also pauses every host briefly.
 actor SpotifyRateLimitTracker {
     static let shared = SpotifyRateLimitTracker()
 
@@ -41,14 +36,12 @@ actor SpotifyRateLimitTracker {
     private let maxCooldown: TimeInterval = 300
     private let strikeWindow: TimeInterval = 60
 
-    /// Records a 429. `retryAfter` (seconds) comes from the Retry-After header when present.
     func record(host: String, retryAfter: TimeInterval?) {
         let now = Date()
         if let last = last429At, now.timeIntervalSince(last) > strikeWindow {
             globalStrikes = 0
         }
 
-        // Per-host cooldown with exponential strike escalation within a short window.
         let base = retryAfter.map { max($0, 5) } ?? baseCooldown
         var strikes = 1
         if let entry = perHost[host], now.timeIntervalSince(entry.lastSeen) < strikeWindow {
@@ -57,7 +50,6 @@ actor SpotifyRateLimitTracker {
         let cooldown = min(base * Double(strikes), maxCooldown)
         perHost[host] = HostEntry(until: now.addingTimeInterval(cooldown), strikeCount: strikes, lastSeen: now)
 
-        // Any 429 pauses everything briefly — throttling usually covers the whole session.
         globalStrikes += 1
         let globalCooldown = min(20.0 * Double(globalStrikes), maxCooldown)
         let newGlobalUntil = now.addingTimeInterval(globalCooldown)
@@ -68,7 +60,6 @@ actor SpotifyRateLimitTracker {
         print("[SpotifyRateLimit] 429 on \(host) — backing off \(Int(cooldown))s (host), \(Int(globalCooldown))s (global).")
     }
 
-    /// True when we should NOT fire a request to `host` right now.
     func isThrottled(host: String) -> Bool {
         let now = Date()
         if let globalUntil, now < globalUntil { return true }
@@ -84,7 +75,6 @@ actor SpotifyRateLimitTracker {
     }
 }
 
-/// Domain-aware cookie jar matching browser Cookie storage for Spotify hosts.
 actor CookieManager {
     private var cookiesByKey: [String: HTTPCookie] = [:]
 
@@ -102,7 +92,6 @@ actor CookieManager {
 
     func clear() { cookiesByKey.removeAll() }
 
-    /// Legacy name-keyed map (last write wins) for callers that look up `sp_dc` / `sp_t`.
     func allCookies() -> [String: HTTPCookie] {
         var byName: [String: HTTPCookie] = [:]
         for cookie in cookiesByKey.values {
@@ -128,7 +117,6 @@ actor CookieManager {
     }
 }
 
-/// Shared web-player identity — keep UA / Client Hints aligned with login WKWebView.
 enum SpotifyWebPlayerIdentity {
     static let chromeMajor = "131"
     static let userAgent =
@@ -140,7 +128,6 @@ enum SpotifyWebPlayerIdentity {
     static let acceptLanguage = "en-US,en;q=0.9"
 }
 
-/// URLSession client that impersonates the Spotify Web Player request surface.
 final class CustomTLSClient: @unchecked Sendable {
     private let hostName: String
     internal let userAgent: String
@@ -211,7 +198,6 @@ final class CustomTLSClient: @unchecked Sendable {
             await cookieManager.setCookies(parsed)
             return
         }
-        // Fallback for Set-Cookie strings missing Domain.
         if let raw = response.value(forHTTPHeaderField: "Set-Cookie") {
             for part in raw.components(separatedBy: ", ") {
                 if let cookie = HTTPCookie(string: part, defaultDomain: hostName) {
@@ -227,89 +213,7 @@ final class CustomTLSClient: @unchecked Sendable {
         queryItems: [URLQueryItem]? = nil,
         body: Data? = nil,
         contentType: String? = nil,
-        acceptType: String = "*/*",
-        additionalHeaders: [String: String]? = nil,
-        authenticate: Bool = true,
-        allowAuthRetry: Bool = true
-    ) async throws -> HTTPResponse {
-        // Fail fast while Spotify is throttling us — every request fired during a
-        // rate-limit window deepens the block and extends the cooldown.
-        if await SpotifyRateLimitTracker.shared.isThrottled(host: hostName) {
-            throw SpotAPIError.rateLimited("Suppressing request to \(hostName) while rate-limited.")
-        }
-
-        guard var components = URLComponents(url: baseURL(path: path)!, resolvingAgainstBaseURL: false) else {
-            throw URLError(.badURL)
-        }
-        if let queryItems, !queryItems.isEmpty {
-            components.queryItems = (components.queryItems ?? []) + queryItems
-        }
-        guard let url = components.url else { throw URLError(.badURL) }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method.uppercased()
-        request.httpBody = body
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-
-        var headers = await webPlayerHeaders(authenticate: authenticate, contentType: contentType, acceptType: acceptType)
-        additionalHeaders?.forEach { headers[$0.key] = $0.value }
-        for (key, value) in headers {
-            request.setValue(value, forHTTPHeaderField: key)
-        }
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
-        }
-        await ingestResponseCookies(http)
-
-        var responseHeaders: [String: String] = [:]
-        for (key, value) in http.allHeaderFields {
-            if let k = key as? String, let v = value as? String {
-                responseHeaders[k] = v
-            }
-        }
-        if http.statusCode == 429 {
-            // Retry-After may arrive as "Retry-After" or lowercase — match case-insensitively.
-            let retryAfter = responseHeaders.first(where: { $0.key.caseInsensitiveCompare("Retry-After") == .orderedSame })
-                .flatMap { Double($0.value.trimmingCharacters(in: .whitespaces)) }
-            await SpotifyRateLimitTracker.shared.record(host: hostName, retryAfter: retryAfter)
-        }
-        if allowAuthRetry,
-           authenticate,
-           (http.statusCode == 401 || http.statusCode == 403),
-           let onUnauthorized,
-           await onUnauthorized() {
-            return try await performRequest(
-                method: method,
-                path: path,
-                queryItems: queryItems,
-                body: body,
-                contentType: contentType,
-                acceptType: acceptType,
-                additionalHeaders: additionalHeaders,
-                authenticate: authenticate,
-                allowAuthRetry: false
-            )
-        }
-
-        let cookies = await cookieManager.cookies(for: hostName)
-        return HTTPResponse(statusCode: http.statusCode, headers: responseHeaders, body: data, cookies: cookies)
-    }
-
-    internal func get(path: String, queryItems: [URLQueryItem]? = nil, additionalHeaders: [String: String]? = nil, authenticate: Bool = true) async throws -> HTTPResponse {
-        try await performRequest(method: "GET", path: path, queryItems: queryItems, additionalHeaders: additionalHeaders, authenticate: authenticate)
-    }
-
-    internal func post(path: String, bodyData: Data, additionalHeaders: [String: String]? = nil) async throws -> HTTPResponse {
-        let contentType = additionalHeaders?["Content-Type"] ?? "application/octet-stream"
-        return try await performRequest(method: "POST", path: path, body: bodyData, contentType: contentType, additionalHeaders: additionalHeaders)
-    }
-
-    internal func post(path: String, queryItems: [URLQueryItem]? = nil, jsonBody: [String: Any]? = nil, urlEncodedBody: [String: String]? = nil, additionalHeaders: [String: String]? = nil, authenticate: Bool = true) async throws -> HTTPResponse {
-        var bodyData: Data?
-        var contentType: String?
-        var acceptType = "*/*"
+        acceptType: String = "**"
         if let json = jsonBody {
             bodyData = try? JSONSerialization.data(withJSONObject: json)
             contentType = "application/json"
@@ -398,9 +302,7 @@ extension HTTPCookie {
     }
 }
 
-
 // MARK: - Consolidated from WebSocketManager.swift
-
 
 class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegate {
     private var webSocketTask: URLSessionWebSocketTask?
@@ -477,7 +379,6 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         receiveMessages()
     }
 
-    /// Soft reconnect: keep session cookies/tokens; only reopen dealer and emit a fresh connection_id.
     func softReconnect(withAccessToken token: String?) {
         if let token { accessToken = token }
         softReconnectAttempts = 0
@@ -548,8 +449,6 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         guard let data = message.data(using: .utf8) else { return }
         do {
             let webSocketMessage = try JSONDecoder().decode(WebSocketMessage.self, from: data)
-            // Dealer device maps are snake_case; Cluster's nested Decodable often misses them
-            // without convertFromSnakeCase — repair from the raw payload asynchronously-safe.
             let repairedDevices = Self.decodeClusterDevices(from: data) ?? [:]
 
             if let cluster = webSocketMessage.payloads?.first?.cluster,
@@ -557,7 +456,6 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
                 let devices = !repairedDevices.isEmpty ? repairedDevices : (cluster.devices ?? [:])
                 let signature = PlayerStateSignature(playerState)
                 let playerChanged = signature != lastPublishedPlayerStateSignature
-                // Device roster can change while the track signature stays identical — still publish.
                 if !playerChanged && devices.isEmpty { return }
                 if playerChanged {
                     lastPublishedPlayerStateSignature = signature
@@ -587,7 +485,6 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         }
     }
 
-    /// Decode `cluster.devices` with snake_case so Connect device IDs/names aren't dropped.
     private static func decodeClusterDevices(from data: Data) -> [String: SpotifyNativeDevice]? {
         guard
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -632,7 +529,6 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
         reconnectTimer?.invalidate(); reconnectTimer = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
-        // Keep latestConnectionID until a replacement arrives so in-flight Connect calls can finish.
         lastPublishedPlayerStateSignature = nil
         isConnected = false
         isConnecting = false
@@ -671,13 +567,11 @@ class WebSocketManager: NSObject, URLSessionWebSocketDelegate, URLSessionDelegat
                 self.reconnectTimer = nil
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    // Refresh bearer first (web player does this before dealer reconnect).
                     await self.privateAPIManager?.refreshTokensIfNeeded(force: false)
                     if let token = self.privateAPIManager?.currentAccessToken() {
                         self.accessToken = token
                     }
                     self.connect()
-                    // Rebind Connect device once we get a new connection_id.
                     self.privateAPIManager?.observeSoftReconnectConnection(from: self)
                 }
             }
@@ -749,9 +643,7 @@ struct Cluster: Decodable {
     }
 }
 
-
 // MARK: - Consolidated from TotpGenerator.swift
-
 
 func hmacSHA1(key: Data, message: Data) -> Data {
     var result = Data(count: Int(CC_SHA1_DIGEST_LENGTH))
@@ -773,10 +665,6 @@ class TotpGenerator {
     private static var cacheExpiry: Date?
     private static let cacheTTL: TimeInterval = 15 * 60
 
-    // `getLatestTotpSecret()` is invoked concurrently from multiple async auth flows
-    // (token refreshes and in-flight requests). Guard the mutable cache so racing
-    // tasks can't corrupt the ref-counted `Data` storage (which crashes in
-    // `_swift_release_dealloc`).
     private static let cacheLock = NSLock()
 
     private static func cachedSecret() -> (version: Int, secretBytes: Data)? {
@@ -848,7 +736,6 @@ class TotpGenerator {
         return getLatestFallbackSecret()
     }
 
-    /// Generates TOTP codes for the current and adjacent 30s windows (web player retries around clock skew).
     static func generateTotpCandidates() async -> [(totp: String, version: Int)] {
         let (version, secretBytes) = await getLatestTotpSecret()
         guard let base32Secret = makeBase32Secret(from: secretBytes) else { return [] }
@@ -990,7 +877,6 @@ extension Data {
 
 // MARK: - Consolidated from SpotifyProtoWire.swift
 
-
 // MARK: - Minimal protobuf2 writer / field reader
 
 enum SpotifyProtoWire {
@@ -1029,20 +915,19 @@ enum SpotifyProtoWire {
         writeBytes(field: field, message)
     }
 
-    /// Resilient reader that skips unrecognized field tags during Protobuf parsing.
     static func skipField(wireType: Int, in data: inout Data) -> Bool {
         switch wireType {
-        case 0: // Varint
+        case 0:
             return readVarint(from: &data) != nil
-        case 1: // 64-bit
+        case 1:
             guard data.count >= 8 else { return false }
             data.removeFirst(8)
             return true
-        case 2: // Length-delimited
+        case 2:
             guard let length = readVarint(from: &data), data.count >= length else { return false }
             data.removeFirst(Int(length))
             return true
-        case 5: // 32-bit
+        case 5:
             guard data.count >= 4 else { return false }
             data.removeFirst(4)
             return true
@@ -1089,8 +974,6 @@ enum SpotifyProtoWire {
                 map[field, default: []].append(Data(remaining.prefix(8)))
                 remaining.removeFirst(8)
             default:
-                // Unknown wire type — stop rather than corrupt subsequent fields.
-                // Known types above already skip unrecognized *field numbers*.
                 if !skipField(wireType: wire, in: &remaining) {
                     return map
                 }
@@ -1124,27 +1007,20 @@ enum SpotifyProtoWire {
     }
 }
 
-
 // MARK: - Consolidated from SpotifyExtendedMetadataParser.swift
-
 
 enum SpotifyExtendedMetadataParser {
 
-    /// BatchedExtensionResponse → TRACK_V4 Any.value → metadata.Track
     static func parseTrack(fromBatchedResponse data: Data) -> SpotifyTrackMetadata? {
         let root = SpotifyProtoWire.readFields(data)
-        // field 2: repeated EntityExtensionDataArray extended_metadata
         guard let arrays = root[2], !arrays.isEmpty else { return nil }
 
         for arrayBytes in arrays {
             let array = SpotifyProtoWire.readFields(Data(arrayBytes))
-            // field 3: repeated EntityExtensionData
             for extBytes in array[3] ?? [] {
                 let ext = SpotifyProtoWire.readFields(Data(extBytes))
-                // field 3: google.protobuf.Any extension_data
                 guard let anyBytes = SpotifyProtoWire.firstBytes(ext, 3) else { continue }
                 let anyFields = SpotifyProtoWire.readFields(anyBytes)
-                // Any.value = field 2
                 guard let trackBytes = SpotifyProtoWire.firstBytes(anyFields, 2) else { continue }
                 if let track = parseTrackMessage(trackBytes) {
                     return track
@@ -1154,7 +1030,6 @@ enum SpotifyExtendedMetadataParser {
         return nil
     }
 
-    /// metadata.Track protobuf (proto2)
     static func parseTrackMessage(_ data: Data) -> SpotifyTrackMetadata? {
         let fields = SpotifyProtoWire.readFields(data)
 
@@ -1168,9 +1043,7 @@ enum SpotifyExtendedMetadataParser {
         }()
         let canonicalUri = SpotifyProtoWire.firstBytes(fields, 36).flatMap { String(data: $0, encoding: .utf8) }
 
-        // field 12: repeated AudioFile file
         let files = (fields[12] ?? []).compactMap { parseAudioFile(Data($0)) }
-        // field 13: repeated Track alternative — each may contain files at field 12
         let alternatives: [SpotifyTrackMetadata.AlternativeNode] = (fields[13] ?? []).compactMap { altData in
             let altFields = SpotifyProtoWire.readFields(Data(altData))
             let altGid = SpotifyProtoWire.firstBytes(altFields, 1).map(hexString)
@@ -1218,16 +1091,13 @@ enum SpotifyExtendedMetadataParser {
         data.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Protobuf zigzag decode for sint32.
     private static func decodeSInt32(_ raw: UInt64) -> Int {
         let n = Int32(truncatingIfNeeded: raw)
         return Int((n >> 1) ^ (-(n & 1)))
     }
 }
 
-
 // MARK: - Consolidated from SpotifyOperationHashRegistry.swift
-
 
 actor SpotifyOperationHashRegistry {
     static let shared = SpotifyOperationHashRegistry()
@@ -1248,8 +1118,6 @@ actor SpotifyOperationHashRegistry {
     private let userAgent =
         SpotifyWebPlayerIdentity.userAgent
 
-    /// Seeds / merges hashes discovered during session bootstrap.
-    /// Only pass live CDN hashes here — never seed stale hardcoded values.
     func seed(_ discovered: [String: String], clientVersion: String? = nil, jsPackURL: String? = nil, replaceAll: Bool = false) {
         guard !discovered.isEmpty else { return }
         if replaceAll {
@@ -1267,19 +1135,16 @@ actor SpotifyOperationHashRegistry {
     func hashCount() -> Int { hashes.count }
     func liveHash(for operationName: String) -> String? { hashes[operationName] }
 
-    /// Drop a single operation hash after a wrong-shape response (stale APQ).
     func invalidate(operation operationName: String) {
         hashes.removeValue(forKey: operationName)
     }
 
-    /// Forces the next lookup to re-scrape CDN bundles.
     func invalidate() {
         lastFetchTime = nil
         inFlightRefresh?.cancel()
         inFlightRefresh = nil
     }
 
-    /// Resolves an operation hash from live CDN scrape. `fallback` is last-resort only.
     func getHash(for operationName: String, fallback: String? = nil, forceRefresh: Bool = false, allowFallback: Bool = true) async -> String? {
         if !forceRefresh, let hash = hashes[operationName] {
             return hash
@@ -1300,7 +1165,6 @@ actor SpotifyOperationHashRegistry {
         return allowFallback ? fallback : nil
     }
 
-    /// Scrapes open.spotify.com JS bundles for GraphQL operationName → sha256Hash mappings.
     @discardableResult
     func refreshHashesFromCDN(force: Bool = false) async -> ScrapeResult? {
         if !force,
@@ -1360,15 +1224,12 @@ actor SpotifyOperationHashRegistry {
                 }
             }
 
-            // Prefer the main web-player bundle first for clientVersion + xpui route discovery.
             if let mainIndex = bundleURLs.firstIndex(where: { $0.contains("/web-player.") }) {
                 let main = bundleURLs.remove(at: mainIndex)
                 bundleURLs.insert(main, at: 0)
             }
 
             var extractedHashes: [String: String] = [:]
-            // The web player now serves its version inside the base64 "appServerConfig"
-            // script tag; the old clientVersion:"…" literal is gone from the JS bundles.
             var clientVersion = extractClientVersion(fromServerConfig: html)
             var jsPackURL: String?
             var mainJsContent: String?
@@ -1390,7 +1251,6 @@ actor SpotifyOperationHashRegistry {
                 extractedHashes.merge(hashes) { _, new in new }
             }
 
-            // Pull route chunks that historically hold search / track / collection ops.
             if let mainJsContent {
                 for xpuiName in ["xpui-routes-search", "xpui-routes-track-v2", "xpui-routes-collection", "xpui-routes-home", "xpui-routes-profile"] {
                     if let extra = try await fetchXpuiChunk(content: mainJsContent, xpuiName: xpuiName) {
@@ -1411,7 +1271,6 @@ actor SpotifyOperationHashRegistry {
     private static func extractOperationHashes(from content: String) throws -> [String: String] {
         var hashes: [String: String] = [:]
 
-        // Classic APQ tuple: "OperationName","query|mutation","<64-hex>"
         let classic = try NSRegularExpression(pattern: #"\"([A-Za-z][A-Za-z0-9_]*)\",\"(?:query|mutation)\",\"([a-f0-9]{64})\""#)
         let range = NSRange(location: 0, length: content.utf16.count)
         for match in classic.matches(in: content, options: [], range: range) {
@@ -1420,13 +1279,10 @@ actor SpotifyOperationHashRegistry {
                 let hashRange = Range(match.range(at: 2), in: content)
             else { continue }
             let name = String(content[operationRange])
-            // Skip obvious non-operation identifiers.
             guard name.count >= 3, name != "query", name != "mutation" else { continue }
             hashes[name] = String(content[hashRange])
         }
 
-        // Newer object form: operationName:"getTrack" ... sha256Hash:"..."
-        // Keep associations within a short window to reduce false pairing.
         let namedOps = try NSRegularExpression(pattern: #"operationName[\"']?\s*[:=]\s*[\"']([A-Za-z][A-Za-z0-9_]*)[\"']"#)
         let hashLiteral = try NSRegularExpression(pattern: #"(?:sha256Hash|hash)[\"']?\s*[:=]\s*[\"']([a-f0-9]{64})[\"']"#)
         let opMatches = namedOps.matches(in: content, options: [], range: range)
@@ -1435,7 +1291,6 @@ actor SpotifyOperationHashRegistry {
             guard let opRange = Range(opMatch.range(at: 1), in: content) else { continue }
             let opName = String(content[opRange])
             let opEnd = opMatch.range.location + opMatch.range.length
-            // Nearest hash within ~400 chars after the operationName.
             let window = NSRange(location: opEnd, length: min(400, content.utf16.count - opEnd))
             guard window.length > 0 else { continue }
             if let nearest = hashMatches.first(where: { NSLocationInRange($0.range.location, window) }),
@@ -1457,8 +1312,6 @@ actor SpotifyOperationHashRegistry {
         return foundVersion
     }
 
-    /// Reads the live web-player client version from the base64 `appServerConfig`
-    /// script tag embedded in open.spotify.com's HTML (the current web player layout).
     private static func extractClientVersion(fromServerConfig html: String) -> String? {
         let pattern = #"<script id="appServerConfig" type="text/plain">([^<]+)</script>"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
@@ -1487,9 +1340,7 @@ actor SpotifyOperationHashRegistry {
     }
 }
 
-
 // MARK: - Consolidated from LightweightSpotifyJSEngine.swift
-
 
 final class LightweightSpotifyJSEngine: @unchecked Sendable {
     static let shared = LightweightSpotifyJSEngine()
@@ -1503,7 +1354,6 @@ final class LightweightSpotifyJSEngine: @unchecked Sendable {
             print("[JSEngine Exception]: \(exception?.toString() ?? "Unknown error")")
         }
 
-        // Minimal Web Crypto–style helpers used by some Spotify token scripts.
         jsContext.evaluateScript("""
         var globalThis = this;
         if (typeof console === 'undefined') {
@@ -1512,7 +1362,6 @@ final class LightweightSpotifyJSEngine: @unchecked Sendable {
         """)
     }
 
-    /// Evaluates a JS script and returns the result value.
     @discardableResult
     func evaluate(script: String) -> JSValue? {
         lock.lock()
@@ -1520,7 +1369,6 @@ final class LightweightSpotifyJSEngine: @unchecked Sendable {
         return jsContext.evaluateScript(script)
     }
 
-    /// Calls a named global function with JSON-serializable arguments.
     func call(functionName: String, arguments: [Any] = []) -> JSValue? {
         lock.lock()
         defer { lock.unlock() }
@@ -1530,7 +1378,6 @@ final class LightweightSpotifyJSEngine: @unchecked Sendable {
         return fn.call(withArguments: arguments)
     }
 
-    /// Loads a remote JS snippet (e.g. a small helper from CDN) and evaluates it.
     func loadRemoteScript(from url: URL) async throws -> JSValue? {
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {

@@ -39,6 +39,8 @@ struct NotchController: View {
     // MARK: - Environment Objects
     @EnvironmentObject var liveActivityManager: LiveActivityManager
     @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var activeAppMonitor: ActiveAppMonitor
+    @EnvironmentObject var timerManager: TimerManager
 
     // MARK: - State Objects
     @StateObject private var fileShelfState = FileShelfState()
@@ -124,8 +126,15 @@ struct NotchController: View {
     // MARK: - Computed Properties
     private var isLiveActivityActive: Bool { liveActivityManager.currentActivity != .none }
 
+    private var notchDisplayID: CGDirectDisplayID? {
+        if let window = notchWindow as? DynamicFocusWindow, window.displayID != 0 {
+            return window.displayID
+        }
+        return notchWindow?.screen?.displayID
+    }
+
     private var effectiveActivity: ActivityType {
-        liveActivityManager.effectiveActivity(on: notchWindow?.screen)
+        liveActivityManager.effectiveActivity(onDisplayID: notchDisplayID)
     }
     private var isFullViewActivity: Bool { liveActivityManager.isFullViewActivity }
     private var isGeminiActive: Bool { liveActivityManager.currentActivity == .geminiLive || liveActivityManager.currentActivity == .intelligenceAgent }
@@ -149,6 +158,8 @@ struct NotchController: View {
             }
         case .eyeBreak, .notification, .otp, .parcel:
             return true
+        case .timer:
+            return timerManager.hasRingingTimer
         default:
             break
         }
@@ -372,19 +383,15 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         let fillStyle = notchFillMaterial(appearance: appearance).opacity(appearance.opacity)
 
         if #available(macOS 26.0, *), appearance.usesLiquidGlass, !isOpaqueSolid {
-            let params = LiquidGlassIntensityParams.resolve(appearance.liquidGlassIntensity)
             ZStack {
                 LiquidGlassShapeView(
                     backend: .automatic,
-                    material: params.material,
+                    material: appearance.liquidGlassStyle,
                     shape: activeShape,
                     tintColor: resolvedGlassTint(appearance: appearance),
                     blendingMode: .behindWindow,
                     appearance: .dark,
                     interaction: .normal,
-                    contentLensing: params.contentLensing,
-                    scrim: params.scrim,
-                    subdued: params.subdued,
                     shadow: nativeSurfaceShadow(config: config)
                 )
                 .allowsHitTesting(false)
@@ -538,6 +545,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
             .onChange(of: measuredClickContentSize, perform: handleMeasuredClickSizeChange)
             .onChange(of: measuredAutoContentSize, perform: handleMeasuredAutoSizeChange)
+            .onChange(of: activeAppMonitor.fullScreenDisplayIDs) { _, _ in
+                handleFullScreenDisplayChange()
+            }
     }
 
     private static let notchNotifications = Publishers.MergeMany(
@@ -608,20 +618,24 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func handleActiveWindowDragChange(_ isDragging: Bool) {
-        guard settings.settings.snapOnWindowDragEnabled else { return }
-        if isDragging {
-            let mouseLocation = NSEvent.mouseLocation
-            let notchScreen = notchWindow?.screen
-            let notchScreenFrame = notchScreen?.frame ?? .zero
-            let myDisplayID = notchScreen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-            notchLog.info("handleActiveWindowDragChange: isDragging=true mouse=\(mouseLocation.x),\(mouseLocation.y) myDisplayID=\(myDisplayID.map(String.init) ?? "nil") notchScreenFrame=\(notchScreenFrame.minX),\(notchScreenFrame.minY)-\(notchScreenFrame.maxX),\(notchScreenFrame.maxY) cursorIsOnMyScreen=\(cursorIsOnMyScreen)")
-            guard cursorIsOnMyScreen else { return }
-            isHandlingActiveWindowDrag = true
-        } else {
+        if !isDragging {
             guard isHandlingActiveWindowDrag else { return }
             isHandlingActiveWindowDrag = false
+            handleWindowDragChange(isDragging: false)
+            hoverMonitor?.setExternalMouseDragActive(false)
+            return
         }
-        handleWindowDragChange(isDragging: isDragging)
+
+        guard settings.settings.snapOnWindowDragEnabled else { return }
+        let mouseLocation = NSEvent.mouseLocation
+        let notchScreen = notchWindow?.screen
+        let notchScreenFrame = notchScreen?.frame ?? .zero
+        let myDisplayID = notchScreen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        notchLog.info("handleActiveWindowDragChange: isDragging=true mouse=\(mouseLocation.x),\(mouseLocation.y) myDisplayID=\(myDisplayID.map(String.init) ?? "nil") notchScreenFrame=\(notchScreenFrame.minX),\(notchScreenFrame.minY)-\(notchScreenFrame.maxX),\(notchScreenFrame.maxY) cursorIsOnMyScreen=\(cursorIsOnMyScreen)")
+        guard cursorIsOnMyScreen else { return }
+        isHandlingActiveWindowDrag = true
+        hoverMonitor?.setExternalMouseDragActive(true)
+        handleWindowDragChange(isDragging: true)
     }
 
     private func handleMeasuredClickSizeChange(_ newSize: CGSize) {
@@ -862,6 +876,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard !isManuallyHidden else { return }
         guard !shouldBlockNotchExpansionWhileLocked else { return }
         guard let config = config else { return }
+        (notchWindow as? DynamicFocusWindow)?.setMouseEventHandlingEnabled(true)
         if notchState == .clickExpanded { return }
 
         let flags = NSEvent.modifierFlags
@@ -921,6 +936,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard !isManuallyHidden else { return }
         guard let config = config else { return }
         self.isHovered = hovering
+        if hovering {
+            (notchWindow as? DynamicFocusWindow)?.setMouseEventHandlingEnabled(true)
+        }
 
         if hovering {
             TrackpadGestureHandler.shared.startMonitoring()
@@ -994,7 +1012,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func handleActivityChange(_: ActivityType) {
-        let newActivity = liveActivityManager.effectiveActivity(on: notchWindow?.screen)
+        let newActivity = liveActivityManager.effectiveActivity(onDisplayID: notchDisplayID)
         if newActivity != .none {
             inactiveHideUserOverride = false
             if completeHideReason == .inactive {
@@ -1034,6 +1052,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             lastActivityShapeSignature = liveActivityManager.notchShapeSignature
         }
         evaluateInactiveNotchVisibility()
+    }
+
+    private func handleFullScreenDisplayChange() {
+        handleActivityChange(liveActivityManager.currentActivity)
     }
 
     private func handleStateChange(from oldState: NotchState, to newState: NotchState, refreshSize: Bool = true) {
@@ -1673,11 +1695,11 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             shadowOpacity = 0
         }
         if let dynamicWindow = notchWindow as? DynamicFocusWindow {
-            dynamicWindow.forceMouseEventPassthrough = true
-            dynamicWindow.updateInteractiveContentFrame(.zero)
+            dynamicWindow.setMouseEventHandlingEnabled()
+        } else {
+            notchWindow?.ignoresMouseEvents = true
         }
         notchWindow?.alphaValue = 0
-        notchWindow?.ignoresMouseEvents = true
         syncNotchHostWindowHeight(contentHeight: 0)
         startHiddenNotchSwipeMonitor()
     }
@@ -1688,7 +1710,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         completeHideReason = nil
         stopHiddenNotchSwipeMonitor()
         if let dynamicWindow = notchWindow as? DynamicFocusWindow {
-            dynamicWindow.forceMouseEventPassthrough = false
+            dynamicWindow.setMouseEventHandlingEnabled()
         }
         notchWindow?.alphaValue = 1
         if wasManualSwipeReveal {
@@ -2186,35 +2208,31 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     private func updateMouseEventHandling(isInteractive: Bool) {
-        guard let window = notchWindow, let config = config else { return }
+        guard let window = notchWindow else { return }
 
         if isManuallyHidden {
-            window.ignoresMouseEvents = true
             if let dynamicWindow = window as? DynamicFocusWindow {
-                dynamicWindow.forceMouseEventPassthrough = true
-                dynamicWindow.updateInteractiveContentFrame(.zero)
+                dynamicWindow.setMouseEventHandlingEnabled()
+            } else {
+                window.ignoresMouseEvents = true
             }
             hoverMonitor?.update(hoverRect: .null, pointerIsInside: false)
             return
         }
 
-        let frame = interactiveFrame(for: window, config: config)
-
         if let dynamicWindow = window as? DynamicFocusWindow {
-            dynamicWindow.forceMouseEventPassthrough = false
-            dynamicWindow.updateInteractiveContentFrame(frame)
-            dynamicWindow.syncMouseEventPassthrough(forceEnable: isInteractive && notchState == .clickExpanded)
+            dynamicWindow.setMouseEventHandlingEnabled(isInteractive)
         } else if window.contentView != nil {
-            let shouldIgnore = !isInteractive
-            if window.ignoresMouseEvents != shouldIgnore {
-                window.ignoresMouseEvents = shouldIgnore
-            }
+            window.ignoresMouseEvents = !isInteractive
         }
 
-        hoverMonitor?.update(
-            hoverRect: frame.insetBy(dx: -Self.hoverDetectionMargin, dy: -Self.hoverDetectionMargin),
-            pointerIsInside: isHovered
-        )
+        if let config {
+            let frame = interactiveFrame(for: window, config: config)
+            hoverMonitor?.update(
+                hoverRect: frame.insetBy(dx: -Self.hoverDetectionMargin, dy: -Self.hoverDetectionMargin),
+                pointerIsInside: isHovered
+            )
+        }
     }
 
     private func updateWindowSharingBehavior(shouldBeHidden: Bool) {

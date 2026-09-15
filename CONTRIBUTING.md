@@ -77,3 +77,6 @@ Enhancement suggestions are tracked as [GitHub issues](https://github.com/cshari
 
 ## Attribution
 This guide is based on the **contributing.md**. [Make your own](https://contributing.md/)!
+
+## Contributor License Agreement
+To contribute to this project, please accept the CLA by typing "I have read the CLA Document and I hereby sign the CLA" in your pull request's comment.

@@ -31,6 +31,10 @@ enum WidgetLayoutPolicy {
         }
     }
 
+    static func capacityWidth(for widget: WidgetType) -> CGFloat {
+        widget == .music ? 0 : estimatedWidth(for: widget)
+    }
+
     static func availableBarWidth(for screen: NSScreen? = nil) -> CGFloat {
         let targetScreen = screen ?? CursorPosition.targetNotchScreen() ?? NSScreen.main
         let screenWidth = targetScreen?.frame.width ?? 1440
@@ -55,8 +59,7 @@ enum WidgetLayoutPolicy {
         var result: [WidgetType] = []
 
         for widget in ordered where widget != .agent {
-            let width = estimatedWidth(for: widget)
-            guard width > 0 else { continue }
+            let width = capacityWidth(for: widget)
 
             let spacing: CGFloat
             if result.isEmpty {
@@ -68,8 +71,6 @@ enum WidgetLayoutPolicy {
             if result.isEmpty || used + spacing + width <= availableWidth {
                 used += spacing + width
                 result.append(widget)
-            } else {
-                break
             }
         }
 

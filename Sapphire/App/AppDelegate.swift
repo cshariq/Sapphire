@@ -14,6 +14,12 @@ import ApplicationServices
 import IOBluetooth
 import ServiceManagement
 import Network
+import os.log
+
+private let appDelegateLog = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "Sapphire",
+    category: "AppDelegate"
+)
 
 @MainActor
 final class LockScreenState: ObservableObject {
@@ -28,24 +34,16 @@ final class LockScreenState: ObservableObject {
 final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
     var displayID: CGDirectDisplayID = 0
     var isFocusable: Bool = false
-    var forceMouseEventPassthrough: Bool = false {
-        didSet {
-            guard forceMouseEventPassthrough != oldValue else { return }
-            scheduleMouseEventPassthroughRefresh()
-        }
-    }
-    private var interactiveContentFrame: CGRect = .zero
-    private var isHandlingMouseInteraction = false
-    private var passthroughRefreshPending = false
-    private var pendingForceEnable = false
-    private var pendingMousePoint: NSPoint?
-    private var lastAppliedMousePoint: NSPoint?
-    private var lastAppliedInteractiveFrame: CGRect = .null
-    private var lastAppliedForcePassthrough = false
-    private var lastAppliedFocusable = false
+    private(set) var isSuppressedForFullScreen = false
+    private var wasVisibleBeforeFullScreenSuppression = false
 
     override var canBecomeKey: Bool { isFocusable }
     override var canBecomeMain: Bool { isFocusable }
+
+    override func orderFront(_ sender: Any?) {
+        guard !isSuppressedForFullScreen else { return }
+        super.orderFront(sender)
+    }
 
     override init(
         contentRect: NSRect,
@@ -77,118 +75,28 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func updateInteractiveContentFrame(_ frame: CGRect) {
-        let previousFrame = interactiveContentFrame
-
-        if frame.isNull || frame.isEmpty {
-            interactiveContentFrame = .zero
-        } else {
-            interactiveContentFrame = frame.integral.insetBy(dx: -1, dy: -1)
-        }
-
-        guard interactiveContentFrame != previousFrame else { return }
-        scheduleMouseEventPassthroughRefresh()
+    func setMouseEventHandlingEnabled(_ isEnabled: Bool = false) {
+        ignoresMouseEvents = !isEnabled
     }
 
-    func containsInteractivePoint(_ point: CGPoint) -> Bool {
-        interactiveContentFrame.contains(point)
-    }
+    func setFullScreenSuppressed(_ suppressed: Bool) {
+        guard isSuppressedForFullScreen != suppressed else { return }
 
-    override func sendEvent(_ event: NSEvent) {
-        switch event.type {
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            isHandlingMouseInteraction = true
-        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
-            isHandlingMouseInteraction = false
-        default:
-            break
-        }
-
-        if event.type == .leftMouseDown || event.type == .rightMouseDown || event.type == .otherMouseDown {
-            scheduleMouseEventPassthroughRefresh(forceEnable: true)
-        }
-
-        if shouldDropPassivePointerEvent(event) {
+        if suppressed {
+            wasVisibleBeforeFullScreenSuppression = isVisible
+            isSuppressedForFullScreen = true
+            super.orderOut(nil)
             return
         }
 
-        super.sendEvent(event)
-    }
-
-    func syncMouseEventPassthrough(forceEnable: Bool = false) {
-        if NSEvent.pressedMouseButtons == 0 {
-            isHandlingMouseInteraction = false
-        }
-        scheduleMouseEventPassthroughRefresh(forceEnable: forceEnable)
-    }
-
-    private func scheduleMouseEventPassthroughRefresh(forceEnable: Bool = false) {
-        pendingForceEnable = pendingForceEnable || forceEnable
-        guard !passthroughRefreshPending else { return }
-        passthroughRefreshPending = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.passthroughRefreshPending = false
-            let forceEnable = self.pendingForceEnable
-            self.pendingForceEnable = false
-            self.refreshMouseEventPassthrough(forceEnable: forceEnable)
+        isSuppressedForFullScreen = false
+        let shouldRestoreVisibility = wasVisibleBeforeFullScreenSuppression
+        wasVisibleBeforeFullScreenSuppression = false
+        if shouldRestoreVisibility {
+            super.orderFront(nil)
+            setMouseEventHandlingEnabled()
         }
     }
-
-    private func refreshMouseEventPassthrough(forceEnable: Bool = false) {
-        guard contentView != nil else { return }
-
-        let mousePoint = mouseLocationOutsideOfEventStream
-        if forceMouseEventPassthrough {
-            guard !lastAppliedForcePassthrough || !ignoresMouseEvents else { return }
-            lastAppliedForcePassthrough = true
-            lastAppliedMousePoint = mousePoint
-            if !ignoresMouseEvents { ignoresMouseEvents = true }
-            return
-        }
-
-        guard isHandlingMouseInteraction || isVisible || forceEnable else { return }
-        let frameChanged = interactiveContentFrame != lastAppliedInteractiveFrame
-        let pointChanged = mousePoint != lastAppliedMousePoint
-        let stateChanged = isFocusable != lastAppliedFocusable
-        guard forceEnable || frameChanged || pointChanged || stateChanged || lastAppliedForcePassthrough else { return }
-
-        let desiredReceive = desiredReceiveState(at: mousePoint, forceEnable: forceEnable)
-        let shouldIgnoreMouseEvents = !desiredReceive
-        let shouldAcceptMouseMovedEvents = false
-
-        if ignoresMouseEvents != shouldIgnoreMouseEvents { ignoresMouseEvents = shouldIgnoreMouseEvents }
-        if acceptsMouseMovedEvents != shouldAcceptMouseMovedEvents { acceptsMouseMovedEvents = shouldAcceptMouseMovedEvents }
-
-        lastAppliedForcePassthrough = false
-        lastAppliedMousePoint = mousePoint
-        lastAppliedInteractiveFrame = interactiveContentFrame
-        lastAppliedFocusable = isFocusable
-    }
-
-    private func desiredReceiveState(at point: NSPoint, forceEnable: Bool = false) -> Bool {
-        if isHandlingMouseInteraction { return true }
-        guard !interactiveContentFrame.isEmpty else { return false }
-        let enableFrame = interactiveContentFrame.insetBy(dx: -12, dy: -12)
-        if forceEnable && enableFrame.contains(point) { return true }
-        return enableFrame.contains(point)
-    }
-
-    private func shouldDropPassivePointerEvent(_ event: NSEvent) -> Bool {
-        guard !isHandlingMouseInteraction else { return false }
-        guard !interactiveContentFrame.isEmpty else {
-            return true
-        }
-        let enableFrame = interactiveContentFrame.insetBy(dx: -12, dy: -12)
-
-        switch event.type {
-        case .mouseMoved, .mouseEntered, .mouseExited:
-            return !enableFrame.contains(event.locationInWindow)
-        default:
-            return false
-        }
-    }
-
 }
 
 final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
@@ -200,21 +108,6 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard Thread.isMainThread else {
-            return nil
-        }
-
-        guard let window = window as? DynamicFocusWindow else {
-            return super.hitTest(point)
-        }
-
-        if window.forceMouseEventPassthrough { return nil }
-        if !window.containsInteractivePoint(point) { return nil }
-
-        return super.hitTest(point)
     }
 }
 
@@ -425,6 +318,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func observeSettings() {
+        Publishers.CombineLatest(
+            activeAppMonitor.$fullScreenDisplayIDs.removeDuplicates(),
+            settingsModel.$settings
+                .map(\.hideLiveActivityInFullScreen)
+                .removeDuplicates()
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] displayIDs, shouldHide in
+            let ids = displayIDs.sorted().map(String.init).joined(separator: ",")
+            appDelegateLog.info("Full-screen visibility update enabled=\(shouldHide) displayIDs=[\(ids)]")
+            self?.applyFullScreenNotchVisibility(
+                displayIDs: shouldHide ? displayIDs : []
+            )
+        }
+        .store(in: &cancellables)
+
         settingsModel.$settings
             .map(\.googleAnalyticsEnabled)
             .dropFirst()
@@ -1556,7 +1465,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.displayID = displayID(for: screen) ?? 0
         window.level = .statusBar
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        window.ignoresMouseEvents = true
+        window.setMouseEventHandlingEnabled()
         window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
 
         if cgsSpace == nil { cgsSpace = CGSSpace() }
@@ -1600,6 +1509,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.orderFront(nil)
 
         notchWindows.append(window)
+        applyFullScreenNotchVisibility(
+            displayIDs: settingsModel.settings.hideLiveActivityInFullScreen
+                ? activeAppMonitor.fullScreenDisplayIDs
+                : []
+        )
+    }
+
+    func applyFullScreenNotchVisibility(displayIDs: Set<CGDirectDisplayID>) {
+        for case let window as DynamicFocusWindow in notchWindows {
+            let shouldSuppress = window.displayID != 0 && displayIDs.contains(window.displayID)
+            guard window.isSuppressedForFullScreen != shouldSuppress else { continue }
+
+            window.setFullScreenSuppressed(shouldSuppress)
+            appDelegateLog.info("Notch window displayID=\(window.displayID) hidden=\(shouldSuppress)")
+        }
     }
 
     private func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
@@ -1640,7 +1564,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 previouslyFrontmostApp = currentFrontmost
             }
         }
-        window.ignoresMouseEvents = false
+        window.setMouseEventHandlingEnabled(true)
         window.isFocusable = true
         if !NSApp.isActive { didActivateForNotchFocus = true }
         NSApp.activate(ignoringOtherApps: true)
@@ -1651,7 +1575,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard let window = notchWindows.first as? DynamicFocusWindow else { return }
         if window.isKeyWindow { window.resignKey() }
         window.isFocusable = false
-        window.syncMouseEventPassthrough()
         if NSApp.activationPolicy() != .accessory {
             NSApp.setActivationPolicy(.accessory)
         }
@@ -1670,12 +1593,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func detachAuxiliaryNotchWindow(_ window: NSWindow) {
         cgsSpace?.windows.remove(window)
-    }
-
-    func refreshNotchMousePassthrough() {
-        for window in notchWindows {
-            (window as? DynamicFocusWindow)?.syncMouseEventPassthrough()
-        }
     }
 
     func updateNotchHostWindowHeight(requiredContentHeight: CGFloat) {

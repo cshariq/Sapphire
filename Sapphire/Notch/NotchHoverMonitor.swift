@@ -53,6 +53,7 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
 
     private(set) var isFileDragSessionActive = false
     private(set) var isArmedForMouseSequence = false
+    private(set) var isHoverDetectionEnabled = false
     private var didAcceptFileDropInCurrentSession = false
 
     override var canBecomeKey: Bool { false }
@@ -95,7 +96,12 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
 
     func setArmedForMouseSequence(_ isArmed: Bool) {
         isArmedForMouseSequence = isArmed
-        ignoresMouseEvents = !isArmed && !isFileDragSessionActive
+        updateMouseEventHandling()
+    }
+
+    func setHoverDetectionEnabled(_ isEnabled: Bool) {
+        isHoverDetectionEnabled = isEnabled
+        updateMouseEventHandling()
     }
 
     // MARK: NSDraggingDestination
@@ -105,7 +111,7 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
         guard !operation.isEmpty else { return [] }
         isFileDragSessionActive = true
         didAcceptFileDropInCurrentSession = false
-        ignoresMouseEvents = false
+        updateMouseEventHandling()
         let location = screenLocation(for: sender)
         onFileDragBegan?(location)
         return operation
@@ -169,8 +175,14 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
         let dropWasAccepted = didAcceptFileDropInCurrentSession
         isFileDragSessionActive = false
         didAcceptFileDropInCurrentSession = false
-        ignoresMouseEvents = !isArmedForMouseSequence
+        updateMouseEventHandling()
         onFileDragEnded?(location, dropWasAccepted)
+    }
+
+    private func updateMouseEventHandling() {
+        ignoresMouseEvents = !isHoverDetectionEnabled
+            && !isArmedForMouseSequence
+            && !isFileDragSessionActive
     }
 }
 
@@ -195,7 +207,6 @@ final class NotchHoverMonitor {
     private var pendingPlainDragEndLocation: NSPoint?
     private var pendingProactiveFileDragEndLocation: NSPoint?
     private var localMouseMonitor: Any?
-    private var mouseDownToken: UUID?
     private var mouseUpToken: UUID?
     private var mouseDownLocation: NSPoint?
     private var lastIdleDragPasteboardChangeCount = 0
@@ -208,6 +219,8 @@ final class NotchHoverMonitor {
     private var didTargetFileDragInMouseSequence = false
     private var isProactiveFileDragTargeted = false
     private var isUsingDragEnvelope = false
+    private var isExternalMouseDragActive = false
+    private var lastExternalMouseDragLocation: NSPoint?
 
     private static let resizeThreshold: CGFloat = 6
     private static let mouseDragThresholdSquared: CGFloat = 9
@@ -217,6 +230,12 @@ final class NotchHoverMonitor {
     private static let stuckHoverWatchdogInterval: TimeInterval = 0.2
 
     var isRunning: Bool { notchWindow != nil }
+    var hasActiveMouseEventMonitors: Bool {
+        localMouseMonitor != nil || mouseUpToken != nil
+    }
+    var isHoverProbeListeningForPointer: Bool {
+        probeWindow?.isHoverDetectionEnabled == true
+    }
 
     // MARK: Lifecycle
 
@@ -262,33 +281,6 @@ final class NotchHoverMonitor {
         (NSApp.delegate as? AppDelegate)?.attachAuxiliaryNotchWindow(probe)
         window.addChildWindow(probe, ordered: .above)
 
-        mouseDownToken = EventMonitorHub.shared.register(for: .leftMouseDown) { [weak self] event in
-            guard let self else { return }
-            self.armForPotentialMouseDrag(at: self.screenLocation(for: event))
-        }
-        mouseUpToken = EventMonitorHub.shared.register(for: .leftMouseUp) { [weak self] event in
-            guard let self else { return }
-            self.handleMouseUp(at: self.screenLocation(for: event))
-        }
-        localMouseMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
-        ) { [weak self] event in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let location = self.screenLocation(for: event)
-                switch event.type {
-                case .leftMouseDown:
-                    self.armForPotentialMouseDrag(at: location)
-                case .leftMouseDragged:
-                    self.handleMouseDragged(at: location)
-                case .leftMouseUp:
-                    self.handleMouseUp(at: location)
-                default:
-                    break
-                }
-            }
-            return event
-        }
     }
 
     func stop() {
@@ -302,19 +294,8 @@ final class NotchHoverMonitor {
         settleTask?.cancel()
         settleTask = nil
 
-        if let localMouseMonitor {
-            NSEvent.removeMonitor(localMouseMonitor)
-            self.localMouseMonitor = nil
-        }
-
-        if let token = mouseDownToken {
-            EventMonitorHub.shared.unregister(token: token, for: .leftMouseDown)
-            mouseDownToken = nil
-        }
-        if let token = mouseUpToken {
-            EventMonitorHub.shared.unregister(token: token, for: .leftMouseUp)
-            mouseUpToken = nil
-        }
+        removeLocalMouseMonitor()
+        stopGlobalMouseUpMonitoring()
         mouseDownLocation = nil
         activeMouseSequenceGeneration = nil
         dragPasteboardChangeCountBeforeMouseSequence = nil
@@ -324,6 +305,8 @@ final class NotchHoverMonitor {
         didObserveFileDragInMouseSequence = false
         didTargetFileDragInMouseSequence = false
         isProactiveFileDragTargeted = false
+        isExternalMouseDragActive = false
+        lastExternalMouseDragLocation = nil
 
         tracker?.onPointerEvent = nil
         tracker = nil
@@ -353,7 +336,9 @@ final class NotchHoverMonitor {
         guard let window = notchWindow, let probeWindow else { return }
 
         self.pointerIsInside = pointerIsInside
+        probeWindow.setHoverDetectionEnabled(!pointerIsInside)
         syncStuckHoverWatchdog()
+        syncLocalMouseMonitor()
 
         guard !rect.isNull, !rect.isEmpty else {
             requestedRect = .null
@@ -421,6 +406,7 @@ final class NotchHoverMonitor {
         settleTask?.cancel()
         settleTask = nil
         pendingRect = .null
+        probeWindow?.setHoverDetectionEnabled(false)
         guard !isParked else { return }
         isParked = true
         currentRect = .null
@@ -488,6 +474,77 @@ final class NotchHoverMonitor {
         }
     }
 
+    private func syncLocalMouseMonitor() {
+        let shouldMonitor = pointerIsInside || activeMouseSequenceGeneration != nil
+        if shouldMonitor {
+            installLocalMouseMonitor()
+        } else {
+            removeLocalMouseMonitor()
+        }
+    }
+
+    private func installLocalMouseMonitor() {
+        guard localMouseMonitor == nil else { return }
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let location = self.screenLocation(for: event)
+                switch event.type {
+                case .leftMouseDown:
+                    self.armForPotentialMouseDrag(at: location)
+                case .leftMouseDragged:
+                    self.handleMouseDragged(at: location)
+                case .leftMouseUp:
+                    self.handleMouseUp(at: location)
+                default:
+                    break
+                }
+            }
+            return event
+        }
+    }
+
+    private func removeLocalMouseMonitor() {
+        guard let localMouseMonitor else { return }
+        NSEvent.removeMonitor(localMouseMonitor)
+        self.localMouseMonitor = nil
+    }
+
+    private func startGlobalMouseUpMonitoring() {
+        guard mouseUpToken == nil else { return }
+        mouseUpToken = EventMonitorHub.shared.register(for: .leftMouseUp) { [weak self] event in
+            guard let self else { return }
+            self.handleMouseUp(at: self.screenLocation(for: event))
+        }
+    }
+
+    private func stopGlobalMouseUpMonitoring() {
+        guard let mouseUpToken else { return }
+        EventMonitorHub.shared.unregister(token: mouseUpToken, for: .leftMouseUp)
+        self.mouseUpToken = nil
+    }
+
+    func setExternalMouseDragActive(_ isActive: Bool) {
+        guard isExternalMouseDragActive != isActive else { return }
+        isExternalMouseDragActive = isActive
+
+        if isActive {
+            lastExternalMouseDragLocation = nil
+            startDragPolling()
+            pollMouseDrag()
+        } else {
+            let location = NSEvent.mouseLocation
+            lastExternalMouseDragLocation = nil
+            if probeWindow?.isArmedForMouseSequence != true {
+                stopDragPolling()
+            }
+            handlers?.onMouseDrag(false, location)
+            handlers?.onMouseDragEnded(location)
+        }
+    }
+
     // MARK: Drag ownership
 
     private func handleProbeBoundary(isInside: Bool, event: NSEvent) {
@@ -533,7 +590,8 @@ final class NotchHoverMonitor {
         didObserveFileDragInMouseSequence = false
         didTargetFileDragInMouseSequence = false
         isProactiveFileDragTargeted = false
-        probeWindow.setArmedForMouseSequence(true)
+        startGlobalMouseUpMonitoring()
+        syncLocalMouseMonitor()
         startDragPolling()
     }
 
@@ -635,7 +693,9 @@ final class NotchHoverMonitor {
 
     private func handleMouseUp(at location: NSPoint) {
         guard let probeWindow,
-              let sequenceGeneration = activeMouseSequenceGeneration else { return }
+              let sequenceGeneration = activeMouseSequenceGeneration,
+              mouseDownLocation != nil else { return }
+        stopGlobalMouseUpMonitoring()
         stopDragPolling()
 
         if !didObserveFileDragInMouseSequence,
@@ -705,6 +765,7 @@ final class NotchHoverMonitor {
 
     private func handleFileDragEnded(at location: NSPoint, dropWasAccepted: Bool) {
         stopDragPolling()
+        stopGlobalMouseUpMonitoring()
         deferredDisarmTask?.cancel()
         deferredDisarmTask = nil
         pendingPlainDragEndLocation = nil
@@ -720,6 +781,7 @@ final class NotchHoverMonitor {
         activeMouseSequenceGeneration = nil
         deactivateDragEnvelope()
         probeWindow?.setArmedForMouseSequence(false)
+        syncLocalMouseMonitor()
         handlers?.onFileDrag(false, location)
         handlers?.onFileDragEnded(location, dropWasAccepted)
     }
@@ -779,11 +841,24 @@ final class NotchHoverMonitor {
             self.deactivateDragEnvelope()
             probeWindow.setArmedForMouseSequence(false)
             self.deferredDisarmTask = nil
+            self.stopGlobalMouseUpMonitoring()
+            self.syncLocalMouseMonitor()
         }
     }
 
     private func pollMouseDrag() {
-        guard probeWindow?.isArmedForMouseSequence == true else {
+        if isExternalMouseDragActive {
+            let location = NSEvent.mouseLocation
+            if location != lastExternalMouseDragLocation {
+                lastExternalMouseDragLocation = location
+                let isInside = probeWindow?.isVisible == true
+                    && (probeWindow?.frame.contains(location) ?? false)
+                handlers?.onMouseDrag(isInside, location)
+            }
+            return
+        }
+
+        guard activeMouseSequenceGeneration != nil else {
             stopDragPolling()
             return
         }
@@ -801,6 +876,7 @@ final class NotchHoverMonitor {
             let dy = location.y - origin.y
             guard (dx * dx) + (dy * dy) >= Self.mouseDragThresholdSquared else { return }
             hasObservedMouseDrag = true
+            probeWindow?.setArmedForMouseSequence(true)
         }
         refreshMouseDragContainment(at: location)
     }

@@ -289,15 +289,7 @@ struct NotchAppearanceEditorView: View {
 
             if appearance.mode == .liquidGlass || appearance.mode == .custom {
                 Divider().padding(.leading, 20)
-                CustomSliderRowView(
-                    label: "Liquid Glass Intensity",
-                    value: Binding(
-                        get: { appearance.liquidGlassIntensity * 100 },
-                        set: { appearance.liquidGlassIntensity = min(max($0 / 100, 0), 1) }
-                    ),
-                    range: 0...100,
-                    specifier: "%.0f%%"
-                )
+                LiquidGlassStylePickerRow(selection: $appearance.liquidGlassStyle)
             }
 
             if appearance.mode == .default {
@@ -1099,6 +1091,7 @@ private struct AppUninstallReviewSheet: View {
                 HStack {
                     Menu("Selection") {
                         Button("Recommended") { model.selectRecommendedArtifacts() }
+                        Button("Select All Related Files") { model.selectAllArtifacts() }
                     }
                     .disabled(model.isRemoving)
                     Text("\(model.selectedArtifacts.count) items · \(model.selectedSize.formatted(.byteCount(style: .file)))")
@@ -3920,16 +3913,7 @@ struct LockScreenSettingsView: View {
 
                     if settings.settings.lockScreenLiquidGlassLook {
                         Divider().padding(.leading, 20)
-                        let intensityBinding = Binding<Double>(
-                            get: { settings.settings.lockScreenLiquidGlassIntensity * 100 },
-                            set: { settings.settings.lockScreenLiquidGlassIntensity = $0 / 100 }
-                        )
-                        CustomSliderRowView(
-                            label: "Liquid Glass Intensity",
-                            value: intensityBinding,
-                            range: 0...100,
-                            specifier: "%.0f%%"
-                        )
+                        LiquidGlassStylePickerRow(selection: $settings.settings.lockScreenLiquidGlassStyle)
 
                         Divider().padding(.leading, 20)
 
@@ -8937,6 +8921,14 @@ VStack(alignment: .leading, spacing: 8) {
                                 Text(label).font(.caption).foregroundColor(.secondary).frame(width: 80, alignment: .trailing)
                             }
                         }.padding()
+                        if #available(macOS 26.0, *) {
+                            Divider().padding(.leading, 20)
+                            ToggleRow(
+                                title: "Generate Word-by-Word Timing",
+                                description: "When a song only has line timing, listen to the music app's audio on this Mac to time each word, and share good results. Asks for audio access and downloads Apple's speech model once.",
+                                isOn: $settings.settings.generateWordTimedLyrics
+                            )
+                        }
                     }
                 }
                 .modifier(SettingsContainerModifier())
@@ -10086,15 +10078,6 @@ struct AboutSettingsView: View {
     @State private var showingResetConfirmation = false
     @State private var debugTapCount = 0
     @State private var debugTapResetTask: Task<Void, Never>?
-    @State private var selectedTab: AboutTab = .overview
-
-    private enum AboutTab: String, CaseIterable, Identifiable {
-        case overview = "Overview"
-        case updates = "Updates"
-
-        var id: String { rawValue }
-        var icon: String { self == .overview ? "info.circle" : "arrow.triangle.2.circlepath" }
-    }
 
     private var displayedReleaseChannel: ReleaseChannel {
         ReleaseChannelPolicy.displayedChannel(for: settingsModel.settings)
@@ -10120,17 +10103,8 @@ struct AboutSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("About").font(.largeTitle.bold())
+                Text("About").font(.largeTitle.bold()).padding(.bottom)
 
-                Picker("About section", selection: $selectedTab) {
-                    ForEach(AboutTab.allCases) { tab in
-                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-
-                if selectedTab == .overview {
                 HStack {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable()
@@ -10202,67 +10176,9 @@ struct AboutSettingsView: View {
                     Spacer()
                 }
 
-                HStack(alignment: .top, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Settings Backup").font(.headline).padding([.horizontal, .top]).padding(.bottom, 10)
+                sapphireUpdatesPane
 
-                        HStack(spacing: 8) {
-                            Button {
-                                backupDocument = settingsModel.makeBackupDocument()
-                                isExportingSettings = true
-                            } label: {
-                                Label("Export", systemImage: "square.and.arrow.down")
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .clipShape(Capsule())
-
-                            Button {
-                                isImportingSettings = true
-                            } label: {
-                                Label("Import", systemImage: "square.and.arrow.up")
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.bordered)
-                            .clipShape(Capsule())
-
-                            Button {
-                                showingResetConfirmation = true
-                            } label: {
-                                Label("Reset", systemImage: "arrow.counterclockwise")
-                                    .font(.subheadline)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(.red)
-                            .clipShape(Capsule())
-                        }
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
-
-                        if let backupStatusMessage {
-                            HStack(spacing: 6) {
-                                Image(systemName: backupStatusMessage.icon)
-                                    .foregroundStyle(backupStatusMessage.color)
-                                Text(backupStatusMessage.message)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal)
-                            .padding(.bottom, 10)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                }
-                .modifier(SettingsContainerModifier())
+                settingsBackupPane
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Permissions Overview").font(.headline).padding([.horizontal, .top])
@@ -10273,9 +10189,6 @@ struct AboutSettingsView: View {
                 }.modifier(SettingsContainerModifier()).onAppear(perform: permissionsManager.checkAllPermissions)
 
                 Text("© 2025 Shariq Charolia. All rights reserved.").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .center).padding(.top, 20)
-                } else {
-                    sapphireUpdatesPane
-                }
             }.padding(25).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 ReleaseChannelPolicy.reconcileStoredPreference(&settingsModel.settings)
@@ -10365,21 +10278,92 @@ struct AboutSettingsView: View {
         }
     }
 
-    private var sapphireUpdatesPane: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(.purple)
+    private var settingsBackupPane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                SettingsIconBadge(systemImage: "externaldrive.badge.timemachine", color: .blue)
+
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Sapphire Updates")
-                        .font(.title2.bold())
-                    Text("Version \(currentAppVersion) · Choose how Sapphire checks for and receives new releases.")
-                        .font(.subheadline)
+                    Text("Settings Backup")
+                        .font(.headline)
+                    Text("Save a portable copy of your Sapphire preferences or restore one you exported earlier.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Spacer(minLength: 0)
+            }
+            .padding()
+
+            HStack(spacing: 10) {
+                Button {
+                    backupDocument = settingsModel.makeBackupDocument()
+                    isExportingSettings = true
+                } label: {
+                    Label("Export Backup", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    isImportingSettings = true
+                } label: {
+                    Label("Restore Backup", systemImage: "square.and.arrow.down")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+            .padding(.horizontal)
+            .padding(.bottom)
+
+            if let backupStatusMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: backupStatusMessage.icon)
+                        .foregroundStyle(backupStatusMessage.color)
+                    Text(backupStatusMessage.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 0)
+                }
+                .padding(10)
+                .background(backupStatusMessage.color.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal)
+                .padding(.bottom)
             }
 
+            Divider()
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Start Fresh")
+                        .font(.subheadline.weight(.medium))
+                    Text("Restore all Sapphire preferences to their defaults.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    showingResetConfirmation = true
+                } label: {
+                    Label("Reset Settings", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+            }
+            .padding()
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private var sapphireUpdatesPane: some View {
+        VStack(alignment: .leading, spacing: 18) {
             ModernUpdateStatusView(updateChecker: updateChecker)
 
             if let error = updateChecker.lastCheckError {
@@ -10450,6 +10434,12 @@ struct AboutSettingsView: View {
                 )
                 .disabled(!settingsModel.settings.automaticUpdateChecksEnabled)
                 .opacity(settingsModel.settings.automaticUpdateChecksEnabled ? 1 : 0.5)
+                Divider().padding(.leading)
+                ToggleRow(
+                    title: "Show update Live Activity",
+                    description: "Show an alert in the notch when a new Sapphire version is available.",
+                    isOn: $settingsModel.settings.showUpdateAvailableLiveActivity
+                )
             }
             .modifier(SettingsContainerModifier())
         }
@@ -11668,16 +11658,7 @@ struct MenuBarAppearanceEditor: View {
 
             if settings.settings.menuBarLiquidGlass {
                 Divider().padding(.leading, 20)
-                let glassIntensityBinding = Binding<Double>(
-                    get: { settings.settings.menuBarLiquidGlassIntensity * 100 },
-                    set: { settings.settings.menuBarLiquidGlassIntensity = $0 / 100 }
-                )
-                CustomSliderRowView(
-                    label: "Liquid Glass Intensity",
-                    value: glassIntensityBinding,
-                    range: 0...100,
-                    specifier: "%.0f%%"
-                )
+                LiquidGlassStylePickerRow(selection: $settings.settings.menuBarLiquidGlassStyle)
 
                 Divider().padding(.leading, 20)
                 ToggleRow(
@@ -11770,7 +11751,7 @@ struct MenuBarAppearanceEditor: View {
 
     private func resetTintSettings() {
         settings.settings.menuBarLiquidGlass = false
-        settings.settings.menuBarLiquidGlassIntensity = 0.65
+        settings.settings.menuBarLiquidGlassStyle = .frosted
         settings.settings.menuBarTintStyle = "none"
         settings.settings.menuBarSolidColor = CodableColor(color: .clear)
         settings.settings.menuBarGradientAngle = 0.0
@@ -11844,7 +11825,7 @@ struct MenuBarAppearanceSettingsView: View {
 
     private func resetAllAppearanceSettings() {
         settings.settings.menuBarLiquidGlass = false
-        settings.settings.menuBarLiquidGlassIntensity = 0.65
+        settings.settings.menuBarLiquidGlassStyle = .frosted
         settings.settings.menuBarTintStyle = "none"
         settings.settings.menuBarSolidColor = CodableColor(color: .clear)
         settings.settings.menuBarGradientAngle = 0.0

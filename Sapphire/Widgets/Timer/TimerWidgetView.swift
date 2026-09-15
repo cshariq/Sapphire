@@ -11,8 +11,6 @@ struct TimerWidgetView: View {
     @EnvironmentObject private var timerManager: TimerManager
     @Environment(\.navigationStack) private var navigationStack
 
-    @State private var showQuickStart = false
-
     private static let quickStartPresets: [Int] = [1, 5, 10, 30, 60]
 
     private var accentColor: Color {
@@ -31,15 +29,12 @@ struct TimerWidgetView: View {
         Group {
             if timerManager.isRunning {
                 activeContent
-            } else if showQuickStart {
-                quickStartContent
             } else {
-                idleContent
+                quickStartContent
             }
         }
         .animation(.default, value: timerManager.isRunning)
         .animation(.default, value: timerManager.displayTime)
-        .animation(.default, value: showQuickStart)
     }
 
     // MARK: - Running (tap to open the full timer detail view)
@@ -72,39 +67,13 @@ struct TimerWidgetView: View {
         .help("Open Timers")
     }
 
-    // MARK: - Idle (tap to expand quick-start presets)
-
-    private var idleContent: some View {
-        Button {
-            showQuickStart = true
-        } label: {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "timer")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.55))
-
-                Text("No Timer")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.55))
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 10)
-        }
-        .buttonStyle(.plain)
-        .frame(height: 32)
-        .fixedSize()
-        .contentShape(Rectangle())
-        .help("Set a Timer")
-    }
-
     // MARK: - Quick Start (one-tap Sapphire-owned timers)
 
     private var quickStartContent: some View {
         HStack(alignment: .center, spacing: 6) {
             ForEach(Self.quickStartPresets, id: \.self) { minutes in
                 Button {
-                    timerManager.startSapphireTimer(duration: TimeInterval(minutes * 60))
-                    showQuickStart = false
+                    _ = timerManager.startSapphireTimer(duration: TimeInterval(minutes * 60))
                 } label: {
                     Text(minutes >= 60 ? "1h" : "\(minutes)m")
                         .font(.system(size: 11, weight: .semibold))
@@ -119,7 +88,6 @@ struct TimerWidgetView: View {
 
             Button {
                 Task {
-                    showQuickStart = false
                     try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
                     navigationStack.wrappedValue.append(NotchWidgetMode.timerDetailView)
                 }
@@ -132,18 +100,6 @@ struct TimerWidgetView: View {
             }
             .buttonStyle(.plain)
             .help("Custom Duration…")
-
-            Button {
-                showQuickStart = false
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .background(Circle().fill(Color.white.opacity(0.14)))
-                    .foregroundColor(.white.opacity(0.6))
-            }
-            .buttonStyle(.plain)
-            .help("Close")
         }
         .padding(.horizontal, 10)
         .frame(height: 32)

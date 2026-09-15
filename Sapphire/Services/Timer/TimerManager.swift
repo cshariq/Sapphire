@@ -98,9 +98,13 @@ class TimerManager: ObservableObject {
     @Published private(set) var activeTimers: [SystemTimerInfo] = []
     @Published private(set) var activeStopwatches: [SystemStopwatchInfo] = []
     @Published private(set) var sapphireTimers: [SapphireTimer] = []
+    @Published private(set) var ringingTimers: [SapphireTimer] = []
     @Published var isRunning: Bool = false
     @Published private(set) var displayTime: TimeInterval = 0
     @Published private(set) var activeTimer: ActiveTimerType = .none
+
+    var ringingTimer: SapphireTimer? { ringingTimers.first }
+    var hasRingingTimer: Bool { !ringingTimers.isEmpty }
 
     private var internalTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
@@ -113,6 +117,7 @@ class TimerManager: ObservableObject {
     private var logReadBuffer = Data()
     private let maxLogRecordBytes = 1_048_576
     private var logSyncPending = false
+    private var alarmSound: NSSound?
     private var sapphireTimerSaveURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Sapphire", isDirectory: true)
@@ -139,6 +144,8 @@ class TimerManager: ObservableObject {
         plistSyncWorkItem?.cancel()
         stopSystemTimerMonitoring()
         internalTimer?.invalidate()
+        alarmSound?.stop()
+        alarmSound?.loops = false
     }
 
     // MARK: - Sapphire-Owned Timers
@@ -155,6 +162,7 @@ class TimerManager: ObservableObject {
         )
         sapphireTimers.append(timer)
         persistSapphireTimers()
+        scheduleCompletionNotification(for: timer)
         selectTimerToDisplay()
         return timer.id
     }
@@ -165,6 +173,7 @@ class TimerManager: ObservableObject {
         sapphireTimers[index].state = .none
         sapphireTimers[index].remainingTimeOnLastUpdate = remaining
         sapphireTimers[index].fireDate = nil
+        removeCompletionNotification(for: id)
         persistSapphireTimers()
         selectTimerToDisplay()
     }
@@ -177,6 +186,7 @@ class TimerManager: ObservableObject {
         }
         sapphireTimers[index].state = .system
         sapphireTimers[index].fireDate = Date().addingTimeInterval(sapphireTimers[index].remainingTimeOnLastUpdate)
+        scheduleCompletionNotification(for: sapphireTimers[index])
         persistSapphireTimers()
         selectTimerToDisplay()
     }
@@ -187,6 +197,7 @@ class TimerManager: ObservableObject {
         sapphireTimers[index].remainingTimeOnLastUpdate = extendedRemaining
         if sapphireTimers[index].state == .system {
             sapphireTimers[index].fireDate = Date().addingTimeInterval(extendedRemaining)
+            scheduleCompletionNotification(for: sapphireTimers[index])
         }
         persistSapphireTimers()
         selectTimerToDisplay()
@@ -194,14 +205,46 @@ class TimerManager: ObservableObject {
 
     func removeSapphireTimer(id: String) {
         sapphireTimers.removeAll { $0.id == id }
+        ringingTimers.removeAll { $0.id == id }
+        removeCompletionNotification(for: id)
+        stopAlarmSoundIfIdle()
+        persistSapphireTimers()
+        selectTimerToDisplay()
+    }
+
+    func dismissRingingTimer(id: String) {
+        guard ringingTimers.contains(where: { $0.id == id }) else { return }
+        ringingTimers.removeAll { $0.id == id }
+        sapphireTimers.removeAll { $0.id == id }
+        removeCompletionNotification(for: id)
+        stopAlarmSoundIfIdle()
+        persistSapphireTimers()
+        selectTimerToDisplay()
+    }
+
+    func dismissAllRingingTimers() {
+        let ringingIDs = Set(ringingTimers.map(\.id))
+        guard !ringingIDs.isEmpty else { return }
+        ringingTimers.removeAll()
+        sapphireTimers.removeAll { ringingIDs.contains($0.id) }
+        for id in ringingIDs {
+            removeCompletionNotification(for: id)
+        }
+        stopAlarmSoundIfIdle()
         persistSapphireTimers()
         selectTimerToDisplay()
     }
 
     func clearFinishedSapphireTimers() {
         let hadFinished = sapphireTimers.contains { $0.remainingTime <= 0 }
+        let finishedIDs = Set(sapphireTimers.lazy.filter { $0.remainingTime <= 0 }.map(\.id))
         sapphireTimers.removeAll { $0.remainingTime <= 0 }
+        ringingTimers.removeAll { finishedIDs.contains($0.id) }
         if hadFinished {
+            for id in finishedIDs {
+                removeCompletionNotification(for: id)
+            }
+            stopAlarmSoundIfIdle()
             persistSapphireTimers()
             selectTimerToDisplay()
         }
@@ -221,6 +264,9 @@ class TimerManager: ObservableObject {
         sapphireTimers = stored
             .map(\.asSapphireTimer)
             .filter { $0.remainingTime > 0 }
+        for timer in sapphireTimers where timer.isRunning {
+            scheduleCompletionNotification(for: timer)
+        }
     }
 
     func pauseTimer(id: String) {
@@ -530,7 +576,7 @@ class TimerManager: ObservableObject {
             sapphireTimers[index].remainingTimeOnLastUpdate = 0
             sapphireTimers[index].fireDate = nil
             didFinishTimer = true
-            notifySapphireTimerFinished(sapphireTimers[index])
+            beginRinging(for: sapphireTimers[index])
         }
         if didFinishTimer {
             persistSapphireTimers()
@@ -538,25 +584,80 @@ class TimerManager: ObservableObject {
         }
     }
 
-    private func notifySapphireTimerFinished(_ timer: SapphireTimer) {
-        NSSound(named: "Glass")?.play()
+    private func beginRinging(for timer: SapphireTimer) {
+        if !ringingTimers.contains(where: { $0.id == timer.id }) {
+            ringingTimers.append(timer)
+        }
+        startAlarmSoundIfNeeded()
+    }
 
+    private func startAlarmSoundIfNeeded() {
+        if let alarmSound {
+            if !alarmSound.isPlaying { alarmSound.play() }
+            return
+        }
+
+        let soundNames = ["Glass", "Ping", "Funk"]
+        guard let sound = soundNames.lazy.compactMap({ NSSound(named: NSSound.Name($0)) }).first else {
+            NSSound.beep()
+            return
+        }
+        sound.loops = true
+        sound.volume = 1
+        alarmSound = sound
+        if !sound.play() {
+            alarmSound = nil
+            NSSound.beep()
+        }
+    }
+
+    private func stopAlarmSoundIfIdle() {
+        guard ringingTimers.isEmpty else { return }
+        alarmSound?.stop()
+        alarmSound?.loops = false
+        alarmSound = nil
+    }
+
+    private func completionNotificationIdentifier(for id: String) -> String {
+        "sapphire-timer-\(id)"
+    }
+
+    private func scheduleCompletionNotification(for timer: SapphireTimer) {
+        guard let fireDate = timer.fireDate else { return }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
-            switch settings.authorizationStatus {
-            case .notDetermined:
-                center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-            case .authorized, .provisional:
-                let content = UNMutableNotificationContent()
-                content.title = "Timer Done"
-                content.body = "\(timer.label) finished."
-                content.sound = .default
-                let request = UNNotificationRequest(identifier: "sapphire-timer-\(timer.id)", content: content, trigger: nil)
-                center.add(request)
-            default:
-                break
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      let currentTimer = self.sapphireTimers.first(where: { $0.id == timer.id }),
+                      currentTimer.isRunning,
+                      currentTimer.fireDate == fireDate else { return }
+
+                switch settings.authorizationStatus {
+                case .authorized, .provisional:
+                    let content = UNMutableNotificationContent()
+                    content.title = "Timer Done"
+                    content.body = "\(currentTimer.label) finished."
+                    content.sound = .default
+                    let delay = max(fireDate.timeIntervalSinceNow, 1)
+                    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
+                    let request = UNNotificationRequest(
+                        identifier: self.completionNotificationIdentifier(for: currentTimer.id),
+                        content: content,
+                        trigger: trigger
+                    )
+                    center.add(request)
+                default:
+                    break
+                }
             }
         }
+    }
+
+    private func removeCompletionNotification(for id: String) {
+        let identifier = completionNotificationIdentifier(for: id)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        center.removeDeliveredNotifications(withIdentifiers: [identifier])
     }
 
     private func startInternalTimer() {

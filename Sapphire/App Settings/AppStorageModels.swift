@@ -2099,7 +2099,9 @@ struct InstalledApp: Identifiable {
     let resourceIdentifier: String?
     let version: String
     var sizeMeasuredAt: Date = .distantPast
-    var formattedSize: String { size.formatted(.byteCount(style: .file)) }
+    var formattedSize: String {
+        size > 0 ? size.formatted(.byteCount(style: .file)) : "Size calculated during review"
+    }
 }
 
 private struct InstalledAppDescriptor: Sendable {
@@ -2143,7 +2145,7 @@ enum InstalledAppDiscoveryPolicy {
 }
 
 private enum InstalledAppScanner {
-    private static let maximumConcurrentSizes = 2
+    private static let maximumConcurrentMetadataLoads = 8
 
     static func scan() async -> InstalledAppScanOutput {
         let fileManager = FileManager.default
@@ -2231,11 +2233,11 @@ private enum InstalledAppScanner {
         var descriptors: [InstalledAppDescriptor] = []
         await withTaskGroup(of: InstalledAppDescriptor?.self) { group in
             var nextIndex = 0
-            let initialCount = min(maximumConcurrentSizes, discovered.count)
+            let initialCount = min(maximumConcurrentMetadataLoads, discovered.count)
             for _ in 0..<initialCount {
                 let url = discovered[nextIndex]
                 nextIndex += 1
-                group.addTask { descriptor(at: url, fileManager: FileManager.default) }
+                group.addTask { descriptor(at: url) }
             }
 
             while let completedDescriptor = await group.next() {
@@ -2247,7 +2249,7 @@ private enum InstalledAppScanner {
                 if nextIndex < discovered.count {
                     let url = discovered[nextIndex]
                     nextIndex += 1
-                    group.addTask { descriptor(at: url, fileManager: FileManager.default) }
+                    group.addTask { descriptor(at: url) }
                 }
             }
         }
@@ -2258,7 +2260,7 @@ private enum InstalledAppScanner {
         )
     }
 
-    private static func descriptor(at url: URL, fileManager: FileManager) -> InstalledAppDescriptor? {
+    private static func descriptor(at url: URL) -> InstalledAppDescriptor? {
         guard !Task.isCancelled,
               let bundle = Bundle(url: url),
               let bundleIdentifier = bundle.bundleIdentifier,
@@ -2289,30 +2291,21 @@ private enum InstalledAppScanner {
             )
         }
 
-        let volumeValues = try? url.resourceValues(forKeys: [.volumeIdentifierKey, .volumeURLKey])
-        let measurement = DirectorySize.measure(
-            url,
-            using: fileManager,
-            preferAllocated: false,
-            rootVolumeIdentifier: volumeValues.flatMap(StorageFileIdentity.volumeIdentifier(from:)),
-            rootVolumeURL: volumeValues?.volume?.standardizedFileURL,
-            ancestorDirectoryIdentities: [],
-            collectCandidates: false,
-            insightLimitPerCategory: 0,
-            isCancelled: { Task.isCancelled }
-        )
-        guard !Task.isCancelled, !measurement.wasCancelled else { return nil }
+        let indexedSize = (NSMetadataItem(url: standardizedURL)?
+            .value(forAttribute: NSMetadataItemFSSizeKey) as? NSNumber)?
+            .int64Value
+        guard !Task.isCancelled else { return nil }
 
         return InstalledAppDescriptor(
             id: standardizedURL.path,
             name: name,
             bundleIdentifier: bundleIdentifier,
             url: standardizedURL,
-            size: measurement.bytes,
+            size: max(indexedSize ?? 0, 0),
             isSystem: false,
             resourceIdentifier: rootIdentity?.serialized ?? AppUninstaller.currentResourceIdentifier(at: url),
             version: version,
-            sizeMeasuredAt: Date()
+            sizeMeasuredAt: indexedSize == nil ? .distantPast : Date()
         )
     }
 }
@@ -2467,6 +2460,10 @@ private enum InstalledAppScanner {
 
     func selectRecommendedArtifacts() {
         selectedArtifactIDs = Set(artifacts.filter { $0.confidence == .exact }.map(\.id))
+    }
+
+    func selectAllArtifacts() {
+        selectedArtifactIDs = Set(artifacts.map(\.id))
     }
 
     func requestRemoval(_ app: InstalledApp) {

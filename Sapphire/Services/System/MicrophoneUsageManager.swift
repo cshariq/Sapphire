@@ -170,8 +170,18 @@ final class MicrophoneUsageManager: ObservableObject {
 
     private static func anyProcessUsingMicrophone() -> Bool {
         let ourBundleID = Bundle.main.bundleIdentifier
+        let ourProcessID = ProcessInfo.processInfo.processIdentifier
         for objectID in allProcessObjectIDs() where processIsRunningInput(objectID) {
-            if let bundleID = readProcessBundleID(objectID), (bundleID == ourBundleID || isIgnoredMicProcess(bundleID: bundleID)) { continue }
+            let processID = readProcessID(objectID)
+            let bundleID = readProcessBundleID(objectID)
+            let inputDeviceNames = processInputDeviceIDs(objectID).map { CoreAudioDevices.name(of: $0) }
+            guard MicrophoneUsageFilter.shouldCount(
+                processID: processID,
+                bundleID: bundleID,
+                inputDeviceNames: inputDeviceNames,
+                ownProcessID: ourProcessID,
+                ownBundleID: ourBundleID
+            ) else { continue }
             return true
         }
         return false
@@ -192,6 +202,24 @@ final class MicrophoneUsageManager: ObservableObject {
         return AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &running) == noErr && running != 0
     }
 
+    private static func processInputDeviceIDs(_ objectID: AudioObjectID) -> [AudioDeviceID] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyDevices, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(objectID, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var ids = [AudioDeviceID](repeating: kAudioObjectUnknown, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard !ids.isEmpty,
+              AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids
+    }
+
+    private static func readProcessID(_ objectID: AudioObjectID) -> pid_t? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyPID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var processID: pid_t = 0
+        var size = UInt32(MemoryLayout<pid_t>.size)
+        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &processID) == noErr else { return nil }
+        return processID
+    }
+
     private static func readProcessBundleID(_ objectID: AudioObjectID) -> String? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyBundleID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var bundleID: Unmanaged<CFString>?
@@ -202,12 +230,11 @@ final class MicrophoneUsageManager: ObservableObject {
         return id.isEmpty ? nil : id
     }
 
-    private static func isIgnoredMicProcess(bundleID: String) -> Bool {
-        ["com.apple.siri", "com.apple.Siri", "com.apple.assistant", "com.apple.audio", "com.apple.coreaudio", "com.apple.mediaremote", "com.apple.accessibility.heard", "com.apple.hearingd", "com.apple.voicebankingd", "com.apple.systemsound", "com.apple.speech", "com.apple.dictation", "com.apple.corespeech", "com.apple.CoreSpeech", "com.apple.VoiceControl", "com.apple.voicecontrol"].contains { bundleID.hasPrefix($0) }
-    }
-
     private static func allInputDeviceIDs() -> [AudioDeviceID] {
-        (CoreAudioDevices.all() ?? []).filter { CoreAudioDevices.hasChannels($0, scope: kAudioObjectPropertyScopeInput) }
+        (CoreAudioDevices.all() ?? []).filter {
+            CoreAudioDevices.hasChannels($0, scope: kAudioObjectPropertyScopeInput)
+                && MicrophoneUsageFilter.isMicrophoneInputDevice(name: CoreAudioDevices.name(of: $0))
+        }
     }
 
     private static func readInputMuteState(of deviceID: AudioDeviceID) -> Bool {
@@ -215,6 +242,36 @@ final class MicrophoneUsageManager: ObservableObject {
         guard AudioObjectHasProperty(deviceID, &address) else { return false }
         var muted: UInt32 = 0; var size = UInt32(MemoryLayout<UInt32>.size)
         return AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muted) == noErr && muted != 0
+    }
+}
+
+enum MicrophoneUsageFilter {
+    private static let ignoredBundleIDPrefixes = [
+        "com.apple.siri", "com.apple.Siri", "com.apple.assistant", "com.apple.audio",
+        "com.apple.coreaudio", "com.apple.mediaremote", "com.apple.accessibility.heard",
+        "com.apple.hearingd", "com.apple.voicebankingd", "com.apple.systemsound",
+        "com.apple.speech", "com.apple.dictation", "com.apple.corespeech",
+        "com.apple.CoreSpeech", "com.apple.VoiceControl", "com.apple.voicecontrol"
+    ]
+
+    static func shouldCount(
+        processID: pid_t?,
+        bundleID: String?,
+        inputDeviceNames: [String?],
+        ownProcessID: pid_t,
+        ownBundleID: String?
+    ) -> Bool {
+        if processID == ownProcessID { return false }
+        if let bundleID {
+            if bundleID == ownBundleID { return false }
+            if ignoredBundleIDPrefixes.contains(where: bundleID.hasPrefix) { return false }
+        }
+        return inputDeviceNames.contains(where: { isMicrophoneInputDevice(name: $0) })
+    }
+
+    static func isMicrophoneInputDevice(name: String?) -> Bool {
+        guard let name else { return true }
+        return !name.hasPrefix("Sapphire-")
     }
 }
 

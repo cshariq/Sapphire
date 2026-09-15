@@ -45,4 +45,34 @@ final class MusicWidgetVisibilityTests: XCTestCase {
             isSpotifyPausedWithNoOtherPlayback: false
         ))
     }
+
+    func testLayoutKeepsLookingForSmallerWidgetsAfterOneDoesNotFit() {
+        let widgets = WidgetLayoutPolicy.fittingWidgets(
+            from: [.weather, .calendar, .shortcuts],
+            availableWidth: 350,
+            showDividers: false
+        )
+
+        XCTAssertEqual(widgets, [.weather, .shortcuts])
+    }
+
+    func testSmallerWidgetCanBeEnabledAfterAnOversizedCandidate() {
+        XCTAssertTrue(WidgetLayoutPolicy.canFit(
+            .shortcuts,
+            in: [.weather, .calendar],
+            availableWidth: 350,
+            showDividers: false
+        ))
+    }
+
+    func testMusicDoesNotConsumeSupplementaryWidgetCapacity() {
+        let widgets = WidgetLayoutPolicy.fittingWidgets(
+            from: [.music, .weather, .sports, .shortcuts],
+            availableWidth: 450,
+            showDividers: false
+        )
+
+        XCTAssertEqual(WidgetLayoutPolicy.capacityWidth(for: .music), 0)
+        XCTAssertEqual(widgets, [.music, .weather, .sports])
+    }
 }

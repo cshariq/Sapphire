@@ -197,7 +197,7 @@ struct TimerDetailView: View {
                 controlButton("pause.fill", accent: .orange) {
                     timerManager.pauseSapphireTimer(id: timer.id)
                 }
-                controlButton("plus.forwardslash.hourglass", accent: .orange) {
+                controlButton("hourglass.badge.plus", accent: .orange) {
                     timerManager.addOneMinuteToSapphireTimer(id: timer.id)
                 }
                 .help("Add 1 minute")

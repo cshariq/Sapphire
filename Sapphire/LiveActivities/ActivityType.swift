@@ -65,6 +65,7 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
         case .fileProgress: self = .fileProgress
         case .stats: self = .stats
         case .microphone: self = .microphone
+        case .devActivity: self = .devActivity
         case .sports: self = .sports
         case .finance: self = .finance
         }
@@ -84,6 +85,7 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
         case .fileShelf: return .fileShelf
         case .fileProgress: return .fileProgress
         case .microphone: return .microphone
+        case .devActivity: return .devActivity
         case .stats, .persistentStats: return .stats
         case .sports: return .sports
         case .finance: return .finance

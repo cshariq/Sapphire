@@ -391,6 +391,9 @@ struct LyricLine: Identifiable, Hashable {
     let endTimestamp: TimeInterval?
     let words: [LyricWord]
     var translatedText: String?
+    let background: [LyricWord]
+    let agent: String?
+    let songPart: String?
 
     var hasWordTiming: Bool { !words.isEmpty }
 
@@ -411,7 +414,10 @@ struct LyricLine: Identifiable, Hashable {
         timestamp: TimeInterval,
         endTimestamp: TimeInterval? = nil,
         words: [LyricWord] = [],
-        translatedText: String? = nil
+        translatedText: String? = nil,
+        background: [LyricWord] = [],
+        agent: String? = nil,
+        songPart: String? = nil
     ) {
         self.id = id
         self.text = text
@@ -419,6 +425,9 @@ struct LyricLine: Identifiable, Hashable {
         self.endTimestamp = endTimestamp
         self.words = words
         self.translatedText = translatedText
+        self.background = background
+        self.agent = agent
+        self.songPart = songPart
     }
 }
 

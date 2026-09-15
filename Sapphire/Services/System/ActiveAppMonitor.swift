@@ -46,8 +46,6 @@ class ActiveAppMonitor: ObservableObject {
 
     private var axObserver: AXObserverHandle?
     private var observedPID: pid_t?
-    private var lastFullScreenRefreshTime: TimeInterval = 0
-    private let fullScreenRefreshThrottle: TimeInterval = 0.3
     private var mouseUpToken: UUID?
     private var lastMoveTime: TimeInterval = 0
 
@@ -65,6 +63,11 @@ class ActiveAppMonitor: ObservableObject {
         Publishers.Merge3(spaceChangePublisher, appChangePublisher, screenChangePublisher)
             .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateActiveAppState() }
+            .store(in: &cancellables)
+
+        FullScreenDisplayMonitor.shared.$displayIDs
+            .removeDuplicates()
+            .sink { [weak self] displayIDs in self?.fullScreenDisplayIDs = displayIDs }
             .store(in: &cancellables)
 
         $activeAppBundleID
@@ -93,8 +96,6 @@ class ActiveAppMonitor: ObservableObject {
     }
 
     private func updateActiveAppState() {
-        refreshFullScreenState()
-
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication, let bundleID = frontmostApp.bundleIdentifier else {
             if activeAppBundleID != nil { activeAppBundleID = nil }
             teardownAXObserver()
@@ -115,103 +116,6 @@ class ActiveAppMonitor: ObservableObject {
     func isScreenFullScreen(_ screen: NSScreen?) -> Bool {
         guard let screen else { return false }
         return fullScreenDisplayIDs.contains(screen.displayID)
-    }
-
-    // MARK: - Full Screen Detection
-
-    private func refreshFullScreenState() {
-        let nativeSpaceIDs = fullScreenDisplayIDsFromManagedSpaces() ?? []
-        let borderlessWindowIDs = fullScreenDisplayIDsFromOnScreenWindows()
-        let displayIDs = nativeSpaceIDs.union(borderlessWindowIDs)
-
-        guard fullScreenDisplayIDs != displayIDs else { return }
-        let ids = displayIDs.sorted().map(String.init).joined(separator: ",")
-        activeAppLog.info("WindowServer full-screen displays changed: displayIDs=[\(ids)]")
-        fullScreenDisplayIDs = displayIDs
-    }
-
-    private func fullScreenDisplayIDsFromManagedSpaces() -> Set<CGDirectDisplayID>? {
-        let connection = CGSMainConnectionID()
-        guard connection != 0,
-              let displayEntries = CGSCopyManagedDisplaySpaces(connection) as? [[String: Any]],
-              !displayEntries.isEmpty else {
-            return nil
-        }
-
-        var entriesByIdentifier: [String: [String: Any]] = [:]
-        for entry in displayEntries {
-            if let identifier = entry["Display Identifier"] as? String {
-                entriesByIdentifier[identifier.uppercased()] = entry
-            }
-        }
-
-        var matchedDisplayCount = 0
-        var displayIDs = Set<CGDirectDisplayID>()
-
-        for screen in NSScreen.screens {
-            let identifier = screen.cgsDisplayIdentifier?.uppercased()
-            let entry = identifier.flatMap { entriesByIdentifier[$0] }
-                ?? (screen.displayID == CGMainDisplayID() ? entriesByIdentifier["MAIN"] : nil)
-            guard let entry,
-                  let currentSpace = currentSpace(in: entry),
-                  let type = integerValue(currentSpace["type"]) else {
-                continue
-            }
-
-            matchedDisplayCount += 1
-            if type == Int(CGSSpaceType.fullscreen.rawValue) {
-                displayIDs.insert(screen.displayID)
-            }
-        }
-
-        return matchedDisplayCount > 0 ? displayIDs : nil
-    }
-
-    private func currentSpace(in displayEntry: [String: Any]) -> [String: Any]? {
-        if let current = displayEntry["Current Space"] as? [String: Any] {
-            return current
-        }
-        return (displayEntry["Spaces"] as? [[String: Any]])?.first {
-            ($0["is-current"] as? Bool) == true
-        }
-    }
-
-    private func integerValue(_ value: Any?) -> Int? {
-        if let number = value as? NSNumber { return number.intValue }
-        return value as? Int
-    }
-
-    private func fullScreenDisplayIDsFromOnScreenWindows() -> Set<CGDirectDisplayID> {
-        guard let windowList = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
-            return []
-        }
-
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        let candidateFrames: [CGRect] = windowList.compactMap { info in
-            guard integerValue(info[kCGWindowLayer as String]) == 0,
-                  integerValue(info[kCGWindowOwnerPID as String]) != Int(ownPID),
-                  ((info[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1) > 0.05,
-                  let boundsDictionary = info[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsDictionary as CFDictionary),
-                  bounds.width > 0, bounds.height > 0 else {
-                return nil
-            }
-            return bounds
-        }
-
-        return Set(NSScreen.screens.compactMap { screen in
-            let displayBounds = CGDisplayBounds(screen.displayID)
-            let isCovered = candidateFrames.contains { frame in
-                let intersection = frame.intersection(displayBounds)
-                return !intersection.isNull
-                    && intersection.width >= displayBounds.width * 0.99
-                    && intersection.height >= displayBounds.height * 0.99
-            }
-            return isCovered ? screen.displayID : nil
-        })
     }
 
     private func updateLyricPermission() {
@@ -271,8 +175,11 @@ class ActiveAppMonitor: ObservableObject {
 
         let appElement = AX.application(pid: pid)
         observer.observe([
+            kAXWindowCreatedNotification as String,
             kAXWindowResizedNotification as String,
-            kAXFocusedUIElementChangedNotification as String
+            kAXWindowMiniaturizedNotification as String,
+            kAXWindowDeminiaturizedNotification as String,
+            kAXFocusedWindowChangedNotification as String
         ], on: appElement)
         if settingsModel.settings.snapOnWindowDragEnabled {
             observer.observe(kAXWindowMovedNotification as String, on: appElement)
@@ -298,15 +205,12 @@ class ActiveAppMonitor: ObservableObject {
 
     nonisolated func handleAXEvent(_ notification: String) {
         Task { @MainActor in
-            let now = CACurrentMediaTime()
-
-            if notification != kAXWindowMovedNotification as String {
-                guard now - lastFullScreenRefreshTime >= fullScreenRefreshThrottle else { return }
-                lastFullScreenRefreshTime = now
-                refreshFullScreenState()
+            guard notification == kAXWindowMovedNotification as String else {
+                FullScreenDisplayMonitor.shared.setNeedsRefresh()
                 return
             }
 
+            let now = CACurrentMediaTime()
             if now - lastMoveTime < 0.016 { return }
             lastMoveTime = now
 

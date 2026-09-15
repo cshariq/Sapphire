@@ -20,6 +20,21 @@ private struct SystemHUDIdentifier: Hashable {
     let style: HUDStyle
 }
 
+enum FullScreenActivityVisibilityPolicy {
+    static func shouldHide(
+        activity: ActivityType,
+        on displayID: CGDirectDisplayID,
+        fullScreenDisplayIDs: Set<CGDirectDisplayID>,
+        hideAll: Bool,
+        hiddenActivityTypes: [String: Bool]
+    ) -> Bool {
+        guard fullScreenDisplayIDs.contains(displayID) else { return false }
+        if hideAll { return true }
+        guard let settingsType = activity.toLiveActivityType() else { return false }
+        return hiddenActivityTypes[settingsType.rawValue] == true
+    }
+}
+
 // MARK: - LiveActivityManager
 
 @MainActor
@@ -41,17 +56,26 @@ class LiveActivityManager: ObservableObject {
     }
 
     func effectiveActivity(on screen: NSScreen?) -> ActivityType {
-        guard currentActivity != .none else { return .none }
-        guard let screen else { return currentActivity }
+        effectiveActivity(onDisplayID: screen?.displayID)
+    }
 
-        if settingsModel.settings.hideLiveActivityInFullScreen,
-           activeAppMonitor.isScreenFullScreen(screen) {
+    func effectiveActivity(onDisplayID displayID: CGDirectDisplayID?) -> ActivityType {
+        guard currentActivity != .none else { return .none }
+        guard let displayID else { return currentActivity }
+
+        if FullScreenActivityVisibilityPolicy.shouldHide(
+            activity: currentActivity,
+            on: displayID,
+            fullScreenDisplayIDs: activeAppMonitor.fullScreenDisplayIDs,
+            hideAll: settingsModel.settings.hideLiveActivityInFullScreen,
+            hiddenActivityTypes: settingsModel.settings.hideActivitiesInFullScreen
+        ) {
             return .none
         }
 
         if Self.displayAnchoredActivityTypes.contains(currentActivity),
            let anchorDisplayID = activityAnchorDisplayID,
-           anchorDisplayID != screen.displayID {
+           anchorDisplayID != displayID {
             return .none
         }
 
@@ -64,8 +88,6 @@ class LiveActivityManager: ObservableObject {
     }
 
     private static let displayAnchoredActivityTypes: Set<ActivityType> = [.systemHUD]
-
-    private var notchDisplayIsFullScreen: Bool { activeAppMonitor.isFullScreen }
 
     @Published private(set) var activityAnchorDisplayID: CGDirectDisplayID?
 
@@ -226,7 +248,8 @@ class LiveActivityManager: ObservableObject {
     }
 
     private func scheduleInitialUpdateActivityEvaluationIfNeeded() {
-        guard UpdateChecker.shared.status.isUpdateAvailable else { return }
+        guard settingsModel.settings.showUpdateAvailableLiveActivity,
+              UpdateChecker.shared.status.isUpdateAvailable else { return }
         DispatchQueue.main.async { [weak self] in
             self?.lastEvalTime = 0
             self?.evaluateAndDisplayActivity()
@@ -466,6 +489,7 @@ class LiveActivityManager: ObservableObject {
             NotificationCenter.default.publisher(for: NSNotification.Name("IOBluetoothHostControllerPoweredOffNotification")).mapToVoid(),
             eyeBreakManager.$isBreakTime.removeDuplicates().mapToVoid(),
             timerManager.$isRunning.removeDuplicates().mapToVoid(),
+            timerManager.$ringingTimers.removeDuplicates().mapToVoid(),
             FocusSessionManager.shared.$phase.removeDuplicates().mapToVoid(),
             WeatherViewModel.shared.$weatherData
                 .removeDuplicates()
@@ -770,8 +794,12 @@ class LiveActivityManager: ObservableObject {
             musicWidget.showQuickPeek = false
         }
 
+        if timerManager.hasRingingTimer {
+            snoozedActivities[.timer] = nil
+        }
+        let urgentActivities: [ActivityType] = timerManager.hasRingingTimer ? [.timer] : []
         let finalEvaluationOrder = chain(
-            highPriorityActivities,
+            urgentActivities + highPriorityActivities,
             settingsModel.settings.liveActivityOrder.lazy.compactMap(ActivityType.init(from:))
         )
 
@@ -789,22 +817,11 @@ class LiveActivityManager: ObservableObject {
             guard snoozedActivities[activityType] == nil else { continue }
             guard activityCheckers[activityType] != nil else { continue }
 
-            if notchDisplayIsFullScreen {
-                if let liveActivitySettingsType = activityType.toLiveActivityType(),
-                   settingsModel.settings.hideActivitiesInFullScreen[liveActivitySettingsType.rawValue] == true {
-                    logger.info("full-screen: blocking activity \(activityType.rawValue) (hidden-in-fullscreen set)")
-                    continue
-                }
-            }
-
             if let candidate = candidate(for: activityType) {
                 winningCandidate = candidate
                 break
             }
         }
-
-        let fullScreenSettingsType = settingsModel.settings.hideActivitiesInFullScreen
-        let isFullScreen = notchDisplayIsFullScreen
 
         if winningCandidate == nil,
            snoozedActivities[.continuityExternal] == nil,
@@ -832,14 +849,12 @@ class LiveActivityManager: ObservableObject {
         }
 
         if winningCandidate == nil,
-           !(isFullScreen && fullScreenSettingsType[LiveActivityType.stats.rawValue] == true),
            snoozedActivities[.persistentStats] == nil,
            let candidate = checkForPersistentStats() {
             winningCandidate = candidate
         }
 
         if winningCandidate == nil,
-           !(isFullScreen && fullScreenSettingsType[LiveActivityType.battery.rawValue] == true),
            snoozedActivities[.persistentBattery] == nil,
            let candidate = checkForPersistentBattery() {
             winningCandidate = candidate
@@ -852,7 +867,6 @@ class LiveActivityManager: ObservableObject {
         }
 
         if winningCandidate == nil,
-           !(isFullScreen && fullScreenSettingsType[LiveActivityType.weather.rawValue] == true),
            snoozedActivities[.persistentWeather] == nil,
            let candidate = checkForPersistentWeather() {
             winningCandidate = candidate
@@ -883,14 +897,6 @@ class LiveActivityManager: ObservableObject {
             guard activityType != winningType else { continue }
             guard snoozedActivities[activityType] == nil else { continue }
             guard activityCheckers[activityType] != nil else { continue }
-
-            if notchDisplayIsFullScreen {
-                if let liveActivitySettingsType = activityType.toLiveActivityType(),
-                   settingsModel.settings.hideActivitiesInFullScreen[liveActivitySettingsType.rawValue] == true {
-                    logger.info("full-screen: blocking activity \(activityType.rawValue) (hidden-in-fullscreen set)")
-                    continue
-                }
-            }
 
             guard candidate(activityType) != nil else { continue }
             consumeEphemeralActivity(activityType)
@@ -1083,7 +1089,8 @@ class LiveActivityManager: ObservableObject {
     }
 
     private func checkForUpdateAvailable() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
-        guard case .available(let version, _) = UpdateChecker.shared.status else {
+        guard settingsModel.settings.showUpdateAvailableLiveActivity,
+              case .available(let version, _) = UpdateChecker.shared.status else {
             return nil
         }
         let data = StandardActivityData.updateAvailable(version: version)
@@ -1608,9 +1615,27 @@ class LiveActivityManager: ObservableObject {
     }
 
     private func checkForTimer() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
-        guard settingsModel.settings.timersLiveActivityEnabled, timerManager.isRunning else {
+        guard settingsModel.settings.timersLiveActivityEnabled else {
             return nil
         }
+
+        if let ringingTimer = timerManager.ringingTimer {
+            let view = TimerFinishedActivityView(
+                timerManager: timerManager,
+                timerID: ringingTimer.id
+            )
+            return (
+                .timer,
+                .full(
+                    view: AnyView(view),
+                    id: "ringing_timer_\(ringingTimer.id)",
+                    bottomCornerRadius: 24
+                ),
+                nil
+            )
+        }
+
+        guard timerManager.isRunning else { return nil }
         return (.timer, .standard(data: .timer, id: "active_timer"), nil)
     }
 
@@ -2012,6 +2037,13 @@ class LiveActivityManager: ObservableObject {
             appDelegate.revertNotchWindowFocus()
         }
 
+        if currentActivity == .timer, timerManager.hasRingingTimer {
+            timerManager.dismissAllRingingTimers()
+            setActivity(type: .none, content: .none)
+            evaluateAndDisplayActivity()
+            return
+        }
+
         if snoozableActivityTypes.contains(currentActivity) {
             snoozedActivities[currentActivity] = Date().addingTimeInterval(300)
         } else {
@@ -2114,7 +2146,8 @@ class LiveActivityManager: ObservableObject {
                 guard let self else { return }
                 UpdateChecker.shared.checkInBackgroundIfNeeded()
 
-                let updateIsAvailable = UpdateChecker.shared.status.isUpdateAvailable
+                let updateIsAvailable = self.settingsModel.settings.showUpdateAvailableLiveActivity
+                    && UpdateChecker.shared.status.isUpdateAvailable
                 let updateSnoozed = self.snoozedActivities[.updateAvailable] != nil
                 let shouldEvaluate = self.currentActivity == .none
                     || (updateIsAvailable && self.currentActivity != .updateAvailable && !updateSnoozed)

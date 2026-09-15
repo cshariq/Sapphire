@@ -323,8 +323,8 @@ fileprivate struct MenuBarAppearanceView: View {
     private func liquidGlassOverlay(shape: AnyShape) -> some View {
         ZStack {
             LiquidGlassShapeFill(
+                material: model.settings.menuBarLiquidGlassStyle,
                 shape: shape,
-                intensity: model.settings.menuBarLiquidGlassIntensity,
                 blendingMode: .behindWindow,
                 appearance: .auto
             )

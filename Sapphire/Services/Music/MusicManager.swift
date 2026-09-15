@@ -2618,13 +2618,29 @@ class MusicManager: ObservableObject {
                 }
             }
 
+            async let databaseLookup = LyricsDatabase.shared.lyrics(
+                title: title,
+                artist: artist,
+                spotifyTrackID: spotifyTrackID
+            )
             let fetchedLRCLIB = await lyricsFetcher.fetchSyncedLyrics(
                 for: title,
                 artist: artist,
                 album: album
             )
+            let databaseLyrics = await databaseLookup
             guard !Task.isCancelled, self.lastTrackIdentity == fetchIdentity else {
-                LyricsLog.info("LRCLIB result for '\(title)' dropped: fetch cancelled or track changed")
+                LyricsLog.info("Lyrics results for '\(title)' dropped: fetch cancelled or track changed")
+                return
+            }
+
+            if let databaseLyrics {
+                LyricsLog.info(
+                    "Lyrics applied from Sapphire database for '\(title)': \(databaseLyrics.count) lines (\(databaseLyrics.filter(\.hasWordTiming).count) word-synced)"
+                )
+                self.replaceLyrics(databaseLyrics)
+                self.lyricsCache[cacheKey] = databaseLyrics
+                self.retranslateLyricsIfNeeded()
                 return
             }
 
@@ -2663,8 +2679,63 @@ class MusicManager: ObservableObject {
             self.lyricsCache[cacheKey] = selectedLyrics
             self.retranslateLyricsIfNeeded()
             self.refreshTimers()
+            self.startWordTimingGenerationIfNeeded(
+                lines: selectedLyrics,
+                title: title,
+                artist: artist,
+                album: album,
+                spotifyTrackID: spotifyTrackID,
+                cacheKey: cacheKey
+            )
         }
         await lyricsFetchTask?.value
+    }
+
+    private func startWordTimingGenerationIfNeeded(
+        lines: [LyricLine],
+        title: String,
+        artist: String,
+        album: String,
+        spotifyTrackID: String?,
+        cacheKey: String
+    ) {
+        guard settingsModel.settings.generateWordTimedLyrics else { return }
+        guard !lines.contains(where: \.hasWordTiming) else { return }
+        guard #available(macOS 26.0, *) else {
+            LyricsLog.infoOnChange("generator", "Word timing generation needs macOS 26")
+            return
+        }
+        guard isPlaying,
+              let identity = lastTrackIdentity,
+              let processID = latestTrackPayload?.processIdentifier, processID > 0 else {
+            LyricsLog.info("Word timing for '\(title)' skipped: not playing, or the source app's process is unknown")
+            return
+        }
+
+        let lineIDs = lines.map(\.id)
+        LyricsWordTimingGenerator.shared.start(
+            request: .init(
+                trackIdentity: identity,
+                title: title,
+                artist: artist,
+                album: album.isEmpty ? nil : album,
+                spotifyTrackID: spotifyTrackID,
+                durationMs: totalDuration > 0 ? Int(totalDuration * 1000) : nil,
+                lines: lines,
+                processID: pid_t(processID)
+            ),
+            currentSongTime: { [weak self] in self?.elapsedTime() },
+            isCurrentTrack: { [weak self] in
+                guard let self else { return false }
+                return self.lastTrackIdentity == identity && self.isPlaying
+            },
+            onGenerated: { [weak self] generated in
+                guard let self, self.lastTrackIdentity == identity, self.lyrics.map(\.id) == lineIDs else { return }
+                LyricsLog.info("Word timing applied for '\(title)': \(generated.filter(\.hasWordTiming).count) word-synced lines")
+                self.replaceLyrics(generated, preservePosition: true)
+                self.lyricsCache[cacheKey] = generated
+            }
+        )
     }
 
     private func fetchSpotifyLyricsFallback(trackID: String?, imageURL: String) async -> [LyricLine] {
@@ -2876,6 +2947,9 @@ class MusicManager: ObservableObject {
     }
 
     private func resetLyricsState() {
+        if #available(macOS 26.0, *) {
+            LyricsWordTimingGenerator.shared.stop()
+        }
         lyricsFetchTask?.cancel()
         lyricsTranslationTask?.cancel()
         lyrics = []

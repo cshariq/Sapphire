@@ -439,14 +439,13 @@ struct NotchAppearanceSettings: Codable, Equatable {
     var opacity: Double = 1.0
     var enableTransparencyBlur: Bool = true
     var liquidGlassLook: Bool = false
-    var liquidGlassIntensity: Double = 0.65
+    var liquidGlassStyle: LiquidGlassMaterial = .frosted
     var bottomFadeEnabled: Bool = false
 
     var usesLiquidGlass: Bool { mode == .liquidGlass || liquidGlassLook }
 
     mutating func normalize() {
         opacity = min(max(opacity, 0), 1)
-        liquidGlassIntensity = min(max(liquidGlassIntensity, 0), 1)
         if mode != .custom {
             liquidGlassLook = mode == .liquidGlass
         }
@@ -856,7 +855,7 @@ struct Settings: Codable, Equatable {
     var desktopWallpaperPath: String? = nil
     var lockScreenLiveActivityEnabled: Bool = true
     var lockScreenLiquidGlassLook: Bool = true
-    var lockScreenLiquidGlassIntensity: Double = 0.75
+    var lockScreenLiquidGlassStyle: LiquidGlassMaterial = .widgets
     var lockScreenFrostedOverLiquidGlass: Bool = true
     var lockScreenShowInfoWidgetBackgrounds: Bool = true
     var lockScreenShowMusicWhenPaused: Bool = true
@@ -980,6 +979,7 @@ struct Settings: Codable, Equatable {
     var automaticUpdateChecksEnabled: Bool = true
     var automaticallyDownloadSapphireUpdates: Bool = true
     var updateAvailableNotificationsEnabled: Bool = true
+    var showUpdateAvailableLiveActivity: Bool = true
 
     // MARK: - Installed app updates (Latest-style)
 
@@ -1388,6 +1388,7 @@ struct Settings: Codable, Equatable {
     var enableLyricTranslation: Bool = true
     var lyricTranslationLanguage: String = "en"
     var lyricOffset: Double = 0.0
+    var generateWordTimedLyrics: Bool = false
     var musicAppStates: [String: Bool] = [:]
     var musicOpenOnClick: Bool = true
     var musicPlayerButtonOrder: [MusicPlayerButtonType] = [.playlists, .devices, .like, .shuffle, .repeat]
@@ -1643,7 +1644,7 @@ struct Settings: Codable, Equatable {
     var menuBarOpacity: Double = 1.0
     var menuBarBlur: Bool = false
     var menuBarLiquidGlass: Bool = false
-    var menuBarLiquidGlassIntensity: Double = 0.65
+    var menuBarLiquidGlassStyle: LiquidGlassMaterial = .frosted
 
     var menuBarBorderWidth: CGFloat = 0.0
     var menuBarBorderColor: CodableColor = CodableColor(color: .black)
@@ -1871,6 +1872,13 @@ private enum SettingsPersistence {
            dictionary["systemEnhanceDockClicksSelectedApps"] != nil {
             dictionary["systemEnhanceDockClicksAllAppsEnabled"] = false
         }
+        migrateLegacyGlassIntensity(in: &dictionary, from: "lockScreenLiquidGlassIntensity", to: "lockScreenLiquidGlassStyle")
+        migrateLegacyGlassIntensity(in: &dictionary, from: "menuBarLiquidGlassIntensity", to: "menuBarLiquidGlassStyle")
+        for key in ["notchWidgetAppearance", "notchLiveActivityAppearance"] {
+            guard var appearance = dictionary[key] as? [String: Any] else { continue }
+            migrateLegacyGlassIntensity(in: &appearance, from: "liquidGlassIntensity", to: "liquidGlassStyle")
+            dictionary[key] = appearance
+        }
         if let settings = decodeFromJSONDictionary(dictionary) {
             return settings
         }
@@ -1920,6 +1928,17 @@ private enum SettingsPersistence {
         let midpoint = entries.index(entries.startIndex, offsetBy: entries.count / 2)
         applyCompatibleEntries(entries[..<midpoint], to: &merged, droppedKeys: &droppedKeys)
         applyCompatibleEntries(entries[midpoint...], to: &merged, droppedKeys: &droppedKeys)
+    }
+
+    private static func migrateLegacyGlassIntensity(
+        in dictionary: inout [String: Any],
+        from legacyKey: String,
+        to styleKey: String
+    ) {
+        guard let legacyValue = dictionary.removeValue(forKey: legacyKey),
+              dictionary[styleKey] == nil,
+              let intensity = legacyValue as? Double else { return }
+        dictionary[styleKey] = LiquidGlassMaterial.migrating(fromLegacyIntensity: intensity).rawValue
     }
 
     private static func decodeFromJSONDictionary(_ dictionary: [String: Any]) -> Settings? {
@@ -2579,11 +2598,11 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
 }
 
 enum LiveActivityType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case fileShelf, eyeBreak, focus, desktop, battery, timers, calendar, reminders, weather, music, fileProgress, stats, microphone, sports, finance
+    case fileShelf, eyeBreak, focus, desktop, battery, timers, calendar, reminders, weather, music, fileProgress, stats, microphone, devActivity, sports, finance
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .reminders: "Reminders"; case .timers: "Timers"; case .battery: "Battery"; case .eyeBreak: "Eye Break"; case .desktop: "Desktop"; case .focus: "Focus"; case .fileShelf: "File Shelf"; case .fileProgress: "File Progress"; case .stats: "Stats"; case .microphone: "Microphone"; case .sports: "Sports"; case .finance: "Finance"
+        case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .reminders: "Reminders"; case .timers: "Timers"; case .battery: "Battery"; case .eyeBreak: "Eye Break"; case .desktop: "Desktop"; case .focus: "Focus"; case .fileShelf: "File Shelf"; case .fileProgress: "File Progress"; case .stats: "Stats"; case .microphone: "Microphone"; case .devActivity: "Dev Activity"; case .sports: "Sports"; case .finance: "Finance"
         }
     }
 }
