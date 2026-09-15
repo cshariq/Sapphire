@@ -10798,7 +10798,7 @@ fileprivate struct NotchButtonRowView: View {
                     settings.settings.intelligenceEnabled = newValue
                 }
             )
-        case .focusSession: return $settings.settings.focusSessionWidgetEnabled
+        case .focusSession: return $settings.settings.focusSessionIconEnabled
         case .caffeine: return $settings.settings.caffeinateEnabled
         case .battery: return $settings.settings.batteryEstimatorEnabled
         case .multiAudio: return $settings.settings.showMultiAudioIcon

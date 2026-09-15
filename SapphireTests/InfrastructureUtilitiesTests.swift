@@ -203,6 +203,17 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertEqual(recovered.hapticFeedbackEnabled, Settings().hapticFeedbackEnabled)
     }
 
+    func testFocusNotchBarItemPreferenceIsIndependentFromFocusWidget() throws {
+        var settings = Settings()
+        settings.focusSessionIconEnabled = false
+        settings.focusSessionWidgetEnabled = true
+
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
+
+        XCTAssertFalse(decoded.focusSessionIconEnabled)
+        XCTAssertTrue(decoded.focusSessionWidgetEnabled)
+    }
+
     func testNewFeaturesAreDisabledByDefault() {
         let settings = Settings()
 

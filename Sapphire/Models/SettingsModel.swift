@@ -965,6 +965,7 @@ struct Settings: Codable, Equatable {
     var notesIconEnabled: Bool = true
     var clipboardIconEnabled: Bool = true
     var fileShelfIconEnabled: Bool = true
+    var focusSessionIconEnabled: Bool = true
     var batteryEstimatorEnabled: Bool = true
     var showMultiAudioIcon: Bool = true
     var intelligenceEnabled: Bool = true

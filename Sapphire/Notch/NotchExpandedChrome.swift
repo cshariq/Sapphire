@@ -271,7 +271,12 @@ struct NotchExpandedChrome: View {
         case .intelligenceLive:
             EmptyView()
         case .focusSession:
-            EmptyView()
+            if settings.settings.focusSessionIconEnabled {
+                SubtleIconButton(
+                    systemName: "moon.fill",
+                    action: { navigationStack.append(.focusSessionDetailView) }
+                )
+            }
         case .caffeine:
             if settings.settings.caffeinateEnabled {
                 SubtleIconButton(systemName: caffeineManager.isActive ? "cup.and.heat.waves.fill" : "cup.and.heat.waves", action: { caffeineManager.toggle() }, horizontalPadding: 6)
