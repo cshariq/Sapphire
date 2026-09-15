@@ -139,12 +139,12 @@ struct NotchActivityContentView: View {
             case .lyrics(let line):
                 let view = KaraokeLyricTicker(
                     lyric: line,
-                    containerWidth: NotchConfiguration.lyricsMaxWidth,
-                    font: .system(size: NotchConfiguration.lyricsFontSize, weight: .semibold, design: .rounded),
+                    containerWidth: config.lyricsMaxWidth,
+                    font: .system(size: config.lyricsFontSize, weight: .semibold, design: .rounded),
                     highlightColor: musicWidget.accentColor.opacity(0.9),
                     inactiveColor: musicWidget.accentColor
                 )
-                    .frame(maxWidth: NotchConfiguration.lyricsMaxWidth)
+                    .frame(maxWidth: config.lyricsMaxWidth)
                     .transition(.opacity.animation(.easeInOut(duration: 0.3)))
                     .id("lyric-\(line.id.uuidString)")
                     .onTapGesture { showLyrics = true }

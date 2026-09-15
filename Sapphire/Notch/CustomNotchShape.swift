@@ -8,11 +8,6 @@
 import SwiftUI
 
 struct CustomNotchShape: Shape, Hashable {
-    static let screenWidthAdjustment: CGFloat =
-        (NSScreen.main?.frame.size.width ?? 1728) / 1728
-    static let screenHeightAdjustment: CGFloat =
-        (NSScreen.main?.frame.size.height ?? 1117) / 1117
-
     var cornerRadius: CGFloat
     var bottomCornerRadius: CGFloat
     var isMusicActivity: Bool = false
@@ -114,10 +109,6 @@ struct CustomNotchShape: Shape, Hashable {
 
     static func calculateHorizontalPadding() -> CGFloat {
         horizontalContentPadding
-    }
-
-    static func adjustValue(_ value: CGFloat, isWidth: Bool = true) -> CGFloat {
-        return value * (isWidth ? screenWidthAdjustment : screenHeightAdjustment)
     }
 }
 

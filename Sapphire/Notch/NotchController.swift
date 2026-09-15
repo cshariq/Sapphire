@@ -170,7 +170,7 @@ struct NotchController: View {
     private var currentMode: NotchWidgetMode { navigationStack.last ?? .defaultWidgets }
 
     private var notchIconsIntrinsicWidth: CGFloat {
-        notchIconsLeftWidth + notchIconsRightWidth + NotchConfiguration.defaultModeIconsHorizontalPadding * 2
+        notchIconsLeftWidth + notchIconsRightWidth + (config?.defaultModeIconsHorizontalPadding ?? 0) * 2
     }
 
     private var activeAppearanceSettings: NotchAppearanceSettings {
@@ -791,7 +791,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     @ViewBuilder
     private var hudOverlayView: some View {
         if let config = config, showRightHUDOverlay, let hud = systemHUD.currentHUD {
-            let trailingPadding = NotchConfiguration.defaultModeIconsHorizontalPadding
+            let trailingPadding = config.defaultModeIconsHorizontalPadding
             let availableWidth = max(0, animatedWidth - trailingPadding)
             HStack {
                 Spacer()

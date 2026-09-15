@@ -81,25 +81,25 @@ struct NotchExpandedChrome: View {
                     }
                 }) {
                     NotchCapsuleBackButtonContent()
-                        .padding(.leading, NotchConfiguration.navHeaderLeadingPadding + 10)
+                        .padding(.leading, config.navHeaderLeadingPadding + 10)
                 }
-                .padding(.top, NotchConfiguration.navHeaderTopPadding)
+                .padding(.top, config.navHeaderTopPadding)
                 .buttonStyle(.plain)
 
                 if mode == .musicPlayer, musicWidget.activeMediaSources.count > 1 {
                     NotchMediaSourceSwitcher()
                         .environmentObject(musicWidget)
-                        .padding(.top, NotchConfiguration.navHeaderTopPadding)
+                        .padding(.top, config.navHeaderTopPadding)
                         .padding(.leading, 6)
                 }
 
                 if let title = currentViewTitle {
                     Text(title)
-                        .font(.system(size: NotchConfiguration.navHeaderTitleFontSize, weight: .bold))
+                        .font(.system(size: config.navHeaderTitleFontSize, weight: .bold))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .foregroundColor(.white.opacity(0.9))
-                        .padding(.top, NotchConfiguration.navHeaderTitleTopPadding)
+                        .padding(.top, config.navHeaderTitleTopPadding)
                 }
                 Spacer()
             }
@@ -131,7 +131,7 @@ struct NotchExpandedChrome: View {
             .fixedSize(horizontal: true, vertical: false)
             .measureIdealWidth(into: $iconsRightWidth)
         }
-        .padding(.horizontal, NotchConfiguration.defaultModeIconsHorizontalPadding)
+        .padding(.horizontal, config.defaultModeIconsHorizontalPadding)
         .frame(height: config.initialSize.height)
         .frame(width: max(animatedWidth, iconsIntrinsicWidth))
     }
