@@ -116,7 +116,6 @@ final class PlainTextPasteManager: @unchecked Sendable {
     private let stateLock = NSLock()
     private var isArmed = false
     private var isRecordingShortcut = false
-    private var syntheticPostDepth = 0
 
     private init() {
         tapToken = GlobalEventTap.shared.register(
@@ -166,7 +165,6 @@ final class PlainTextPasteManager: @unchecked Sendable {
 
     private func handle(event: CGEvent, type: CGEventType) -> EventTapDecision {
         guard type == .keyDown,
-              event.getIntegerValueField(.eventSourceUserData) != SapphireSyntheticEventMarker.plainTextPaste,
               event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else {
             return .pass
         }
@@ -188,48 +186,41 @@ final class PlainTextPasteManager: @unchecked Sendable {
             return .pass
         }
 
-        let flagsRawValue = flags.rawValue
-        DispatchQueue.main.async { [weak self] in
-            self?.performPlainTextPaste(payload: payload, flagsRawValue: flagsRawValue)
-        }
-        return .swallow
+        rewritePasteboardForPlainTextPaste(payload)
+        return .pass
     }
 
     private func stateAllowsHandling() -> Bool {
         stateLock.lock()
         defer { stateLock.unlock() }
-        return isArmed && !isRecordingShortcut && syntheticPostDepth == 0
+        return isArmed && !isRecordingShortcut
     }
 
-    @MainActor
-    private func performPlainTextPaste(payload: PlainTextPastePayload, flagsRawValue: UInt64) {
-        guard stateAllowsHandling() else {
-            postNativePaste(flagsRawValue: flagsRawValue)
-            return
+    private func rewritePasteboardForPlainTextPaste(_ payload: PlainTextPastePayload) {
+        var temporaryChangeCount: Int?
+        DispatchQueue.main.sync {
+            let pasteboard = NSPasteboard.general
+            guard pasteboard.changeCount == payload.sourceChangeCount else { return }
+
+            let clipboardManager = ClipboardManager.shared
+            clipboardManager.beginIgnoringExternalPasteboardChanges()
+
+            let cleanedText = Self.sanitizedText(from: payload.text)
+            pasteboard.clearContents()
+            guard pasteboard.setString(cleanedText, forType: .string) else {
+                payload.restore(to: pasteboard)
+                clipboardManager.endIgnoringExternalPasteboardChanges(ownChangeCount: pasteboard.changeCount)
+                return
+            }
+
+            temporaryChangeCount = pasteboard.changeCount
         }
 
-        let pasteboard = NSPasteboard.general
-        guard pasteboard.changeCount == payload.sourceChangeCount else {
-            postNativePaste(flagsRawValue: flagsRawValue)
-            return
-        }
-
-        let clipboardManager = ClipboardManager.shared
-        clipboardManager.beginIgnoringExternalPasteboardChanges()
-
-        let cleanedText = sanitizedText(from: payload.text)
-        pasteboard.clearContents()
-        guard pasteboard.setString(cleanedText, forType: .string) else {
-            payload.restore(to: pasteboard)
-            clipboardManager.endIgnoringExternalPasteboardChanges(ownChangeCount: pasteboard.changeCount)
-            postNativePaste(flagsRawValue: flagsRawValue)
-            return
-        }
-
-        let temporaryChangeCount = pasteboard.changeCount
-        postNativePaste(flagsRawValue: flagsRawValue)
+        guard let temporaryChangeCount else { return }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let pasteboard = NSPasteboard.general
+            let clipboardManager = ClipboardManager.shared
             if pasteboard.changeCount == temporaryChangeCount {
                 payload.restore(to: pasteboard)
                 clipboardManager.endIgnoringExternalPasteboardChanges(ownChangeCount: pasteboard.changeCount)
@@ -241,16 +232,20 @@ final class PlainTextPasteManager: @unchecked Sendable {
 
     @MainActor
     func sanitizedText(from text: String) -> String {
+        Self.sanitizedText(from: text)
+    }
+
+    private static func sanitizedText(from text: String) -> String {
         let settings = SettingsModel.shared.settings
         var result = text
         if settings.systemEnhancePasteAsPlainStripLinks {
-            result = Self.stripLinks(from: result)
+            result = stripLinks(from: result)
         }
         if settings.systemEnhancePasteAsPlainStripEmojis {
-            result = Self.stripEmojis(from: result)
+            result = stripEmojis(from: result)
         }
         if settings.systemEnhancePasteAsPlainStripListMarkers {
-            result = Self.stripListMarkers(from: result)
+            result = stripListMarkers(from: result)
         }
         return result
     }
@@ -296,39 +291,5 @@ final class PlainTextPasteManager: @unchecked Sendable {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
         let range = NSRange(text.startIndex..., in: text)
         return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
-    }
-
-    private func postNativePaste(flagsRawValue: UInt64) {
-        guard let source = CGEventSource(stateID: .hidSystemState),
-              let keyDown = CGEvent(
-                keyboardEventSource: source,
-                virtualKey: CGKeyCode(kVK_ANSI_V),
-                keyDown: true
-              ),
-              let keyUp = CGEvent(
-                keyboardEventSource: source,
-                virtualKey: CGKeyCode(kVK_ANSI_V),
-                keyDown: false
-              ) else {
-            return
-        }
-
-        let flags = CGEventFlags(rawValue: flagsRawValue)
-        keyDown.flags = flags
-        keyUp.flags = flags
-        keyDown.setIntegerValueField(.eventSourceUserData, value: SapphireSyntheticEventMarker.plainTextPaste)
-        keyUp.setIntegerValueField(.eventSourceUserData, value: SapphireSyntheticEventMarker.plainTextPaste)
-
-        stateLock.lock()
-        syntheticPostDepth += 1
-        stateLock.unlock()
-        defer {
-            stateLock.lock()
-            syntheticPostDepth = max(0, syntheticPostDepth - 1)
-            stateLock.unlock()
-        }
-
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
     }
 }
