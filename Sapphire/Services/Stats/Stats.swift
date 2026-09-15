@@ -148,7 +148,7 @@ public extension Sensor_p {
 
 private func fetchIOService(_ name: String) -> [[String: Any]]? {
     var iterator: io_iterator_t = 0
-    let result = IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching(name), &iterator)
+    let result = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching(name), &iterator)
     guard result == kIOReturnSuccess, iterator != 0 else { return nil }
 
     var services: [[String: Any]] = []
@@ -169,7 +169,7 @@ private func fetchIOService(_ name: String) -> [[String: Any]]? {
 }
 
 public struct SensorWrapper: Codable {
-    let sensor: Sensor_p
+    let sensor: any Sensor_p
 
     private enum CodingKeys: String, CodingKey {
         case base, payload
@@ -178,7 +178,7 @@ public struct SensorWrapper: Codable {
         case sensor, fan
     }
 
-    init(_ sensor: Sensor_p) {
+    init(_ sensor: any Sensor_p) {
         self.sensor = sensor
     }
 
@@ -208,7 +208,7 @@ public struct SensorWrapper: Codable {
 }
 
 public class Sensors_List: Codable {
-    public var sensors: [Sensor_p] = []
+    public var sensors: [any Sensor_p] = []
 
     enum CodingKeys: String, CodingKey {
         case sensors
@@ -293,7 +293,7 @@ public class StatsManager: ObservableObject {
     public static let shared = StatsManager()
 
     @Published public private(set) var currentStats: StatsPayload?
-    @Published public private(set) var allSensors: [Sensor_p] = []
+    @Published public private(set) var allSensors: [any Sensor_p] = []
 
     private lazy var cpuReader: CPUUsageReader = CPUUsageReader { [weak self] value in self?.cpu = value }
     private lazy var ramReader: RAMUsageReader = RAMUsageReader { [weak self] value in self?.ram = value }
@@ -302,15 +302,19 @@ public class StatsManager: ObservableObject {
     private lazy var sensorsReader: SensorsStatsReader = SensorsStatsReader { [weak self] value in self?.sensors = value ?? Sensors_List() }
     private lazy var batteryReader: BatteryStatsReader = BatteryStatsReader { [weak self] value in self?.battery = value }
 
-    private var cpu: CPU_Load? { didSet { updatePayload() } }
-    private var ram: RAM_Usage? { didSet { updatePayload() } }
-    private var gpus = GPUs() { didSet { updatePayload() } }
-    private var disks = Disks() { didSet { updatePayload() } }
+    private var cpu: CPU_Load? { didSet { schedulePayloadUpdate() } }
+    private var ram: RAM_Usage? { didSet { schedulePayloadUpdate() } }
+    private var gpus = GPUs() { didSet { schedulePayloadUpdate() } }
+    private var disks = Disks() { didSet { schedulePayloadUpdate() } }
     private var sensors = Sensors_List() { didSet {
-        self.allSensors = sensors.sensors.sorted(by: { $0.name < $1.name })
-        updatePayload()
+        let sortedSensors = sensors.sensors.sorted(by: { $0.name < $1.name })
+        if !Self.sensorsEqual(allSensors, sortedSensors) {
+            allSensors = sortedSensors
+        }
+        schedulePayloadUpdate()
     }}
-    private var battery: Battery_Usage? { didSet { updatePayload() } }
+    private var battery: Battery_Usage? { didSet { schedulePayloadUpdate() } }
+    private var payloadUpdateTask: Task<Void, Never>?
 
     private var pollingRequesters: [String: Set<StatType>] = [:]
 
@@ -326,7 +330,9 @@ public class StatsManager: ObservableObject {
 
         let workspace = NSWorkspace.shared.notificationCenter
         workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.refreshActiveReaders()
+            Task { @MainActor [weak self] in
+                self?.refreshActiveReaders()
+            }
         }
     }
 
@@ -366,15 +372,21 @@ public class StatsManager: ObservableObject {
     private var pollingIntervals: [String: DispatchTimeInterval] = [:]
 
     public func setPolling(for requester: String, requiredStats: Set<StatType>, interval: DispatchTimeInterval? = nil) {
+        var changed = false
         if requiredStats.isEmpty {
-            pollingRequesters.removeValue(forKey: requester)
-            pollingIntervals.removeValue(forKey: requester)
+            changed = pollingRequesters.removeValue(forKey: requester) != nil || changed
+            changed = pollingIntervals.removeValue(forKey: requester) != nil || changed
         } else {
-            pollingRequesters[requester] = requiredStats
-            if let interval {
+            if pollingRequesters[requester] != requiredStats {
+                pollingRequesters[requester] = requiredStats
+                changed = true
+            }
+            if let interval, pollingIntervals[requester]?.nanoseconds != interval.nanoseconds {
                 pollingIntervals[requester] = interval
+                changed = true
             }
         }
+        guard changed else { return }
         updatePollingState()
     }
 
@@ -412,17 +424,36 @@ public class StatsManager: ObservableObject {
         }
     }
 
+    private func schedulePayloadUpdate() {
+        guard payloadUpdateTask == nil else { return }
+        payloadUpdateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(10))
+            guard let self, !Task.isCancelled else { return }
+            self.payloadUpdateTask = nil
+            self.updatePayload()
+        }
+    }
+
+    private static func sensorsEqual(_ lhs: [any Sensor_p], _ rhs: [any Sensor_p]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        return zip(lhs, rhs).allSatisfy { left, right in
+            left.id == right.id && left.value == right.value && left.name == right.name
+        }
+    }
+
     private func updatePayload() {
         let primaryDisk = disks.array.first(where: { $0.root }) ?? disks.array.first
         let activeGPUs = gpus.list.filter{ $0.state && $0.utilization != nil }.sorted{ $0.utilization ?? 0 > $1.utilization ?? 0 }
         let primaryGPU = activeGPUs.first
+        let sensorSnapshot = Sensors_List()
+        sensorSnapshot.sensors = sensors.sensors
 
         let newPayload = StatsPayload(
             cpu: self.cpu,
             ram: self.ram,
             disk: primaryDisk,
             gpu: primaryGPU,
-            sensors: self.sensors,
+            sensors: sensorSnapshot,
             battery: self.battery
         )
         if currentStats != newPayload {
@@ -447,8 +478,8 @@ private extension DispatchTimeInterval {
 
 // MARK: - Base Reader Class
 internal class Reader<T> {
-    public var active: Bool = false
-    internal var interval: DispatchTimeInterval
+    private var isActive = false
+    private var interval: DispatchTimeInterval
     internal let callback: (T?) -> Void
     private let queue: DispatchQueue
     private let readerName: String
@@ -462,10 +493,10 @@ internal class Reader<T> {
     }
 
     public func start() {
-        guard !self.active else { return }
-        self.active = true
         self.queue.async { [weak self] in
             guard let self else { return }
+            guard !self.isActive else { return }
+            self.isActive = true
             self.setup()
             self.startTimer()
             self.read()
@@ -473,56 +504,118 @@ internal class Reader<T> {
     }
 
     public func stop() {
-        guard self.active else { return }
-        self.active = false
         self.queue.async { [weak self] in
-            self?.source?.cancel()
-            self?.source = nil
+            guard let self, self.isActive else { return }
+            self.isActive = false
+            self.source?.cancel()
+            self.source = nil
         }
     }
 
     public func setInterval(_ interval: DispatchTimeInterval) {
-        self.interval = interval
-        guard active else { return }
         queue.async { [weak self] in
-            self?.startTimer()
+            guard let self else { return }
+            guard self.interval.nanoseconds != interval.nanoseconds else { return }
+            self.interval = interval
+            if self.isActive {
+                self.startTimer()
+            }
         }
     }
 
     public func refresh() {
-        guard active else { return }
         queue.async { [weak self] in
-            self?.read()
+            guard let self, self.isActive else { return }
+            self.read()
         }
     }
 
     private func startTimer() {
         source?.cancel()
-        let s = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
+        let s = DispatchSource.makeTimerSource(queue: queue)
         let nano = interval.nanoseconds
         guard nano > 0 else { return }
         let intervalTI = DispatchTimeInterval.nanoseconds(nano)
         let leeway = DispatchTimeInterval.nanoseconds(Int(Double(nano) * 0.3))
-        s.schedule(deadline: .now(), repeating: intervalTI, leeway: leeway)
-        s.setEventHandler { [weak self] in self?.read() }
+        s.schedule(deadline: .now() + intervalTI, repeating: intervalTI, leeway: leeway)
+        s.setEventHandler { [weak self] in
+            guard let self, self.isActive else { return }
+            self.read()
+        }
         s.resume()
         source = s
     }
 
-    func read() {
-        guard self.active else { return }
-    }
+    func read() {}
 
     public func setup() {}
 
     internal func fireCallback(_ value: T?) {
+        let callback = callback
         DispatchQueue.main.async {
-            self.callback(value)
+            callback(value)
         }
+    }
+
+    deinit {
+        source?.cancel()
     }
 }
 
 // MARK: - CPU Readers
+
+final class AggregateCPUUsageSampler: @unchecked Sendable {
+    private struct Snapshot {
+        let total: UInt64
+        let idle: UInt64
+    }
+
+    private let lock = NSLock()
+    private var previous: Snapshot?
+
+    func sample() -> Double? {
+        guard let current = Self.snapshot() else { return nil }
+
+        lock.lock()
+        let previous = self.previous
+        self.previous = current
+        lock.unlock()
+
+        guard let previous,
+              current.total >= previous.total,
+              current.idle >= previous.idle else {
+            return nil
+        }
+
+        let totalDelta = current.total - previous.total
+        guard totalDelta > 0 else { return 0 }
+        let idleDelta = current.idle - previous.idle
+        return max(0, min(1, Double(totalDelta - min(idleDelta, totalDelta)) / Double(totalDelta)))
+    }
+
+    func reset() {
+        lock.withLock { previous = nil }
+    }
+
+    private static func snapshot() -> Snapshot? {
+        let count = MemoryLayout<host_cpu_load_info>.stride / MemoryLayout<integer_t>.stride
+        var infoCount = mach_msg_type_number_t(count)
+        var info = host_cpu_load_info()
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: count) {
+                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &infoCount)
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+
+        let user = UInt64(info.cpu_ticks.0)
+        let system = UInt64(info.cpu_ticks.1)
+        let idle = UInt64(info.cpu_ticks.2)
+        let nice = UInt64(info.cpu_ticks.3)
+        return Snapshot(total: user + system + idle + nice, idle: idle)
+    }
+}
+
 internal class CPUUsageReader: Reader<CPU_Load> {
     private var prevCpuInfo: processor_info_array_t?
     private var numPrevCpuInfo: mach_msg_type_number_t = 0
@@ -640,7 +733,11 @@ internal class RAMUsageReader: Reader<RAM_Usage> {
                 host_info(mach_host_self(), HOST_BASIC_INFO, $0, &count)
             }
         }
-        if kerr == KERN_SUCCESS { self.totalSize = Double(stats.max_mem) }
+        if kerr == KERN_SUCCESS, stats.max_mem > 0 {
+            self.totalSize = Double(stats.max_mem)
+        } else {
+            self.totalSize = Double(ProcessInfo.processInfo.physicalMemory)
+        }
     }
 
     override func read() {
@@ -863,7 +960,11 @@ internal class DiskActivityReader: Reader<Disks> {
 @MainActor
 internal class SensorsStatsReader {
     private var timer: Timer?
+    private var startupTask: Task<Void, Never>?
+    private var scheduledReadTask: Task<Void, Never>?
     private var readInFlight = false
+    private var isRunning = false
+    private var lifecycleGeneration: UInt = 0
     internal let callback: (Sensors_List?) -> Void
     private var list: Sensors_List = Sensors_List()
     private var initialized: Bool = false
@@ -875,28 +976,45 @@ internal class SensorsStatsReader {
 
     @MainActor
     public func start() {
-        guard self.timer == nil else { return }
-        Task {
-            if !self.initialized {
-                await self.initializeSensors()
-                self.initialized = true
-            }
-            await self.read()
+        guard !isRunning else { return }
+        isRunning = true
+        lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
 
-            let timer = Timer.scheduledTimer(withTimeInterval: self.pollInterval, repeats: true) { [weak self] _ in
-                Task {
-                    await self?.read()
+        startupTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.lifecycleGeneration == generation {
+                    self.startupTask = nil
                 }
             }
-            RunLoop.main.add(timer, forMode: .common)
+
+            if !self.initialized {
+                await self.initializeSensors()
+                guard self.isCurrent(generation) else { return }
+                self.initialized = true
+            }
+            await self.read(generation: generation)
+            guard self.isCurrent(generation) else { return }
+
+            let timer = Timer.scheduledCoalescing(withTimeInterval: self.pollInterval, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.scheduleRead(generation: generation)
+                }
+            }
             self.timer = timer
         }
     }
 
     public func stop() {
-        guard self.timer != nil else { return }
-        self.timer?.invalidate()
-        self.timer = nil
+        isRunning = false
+        lifecycleGeneration &+= 1
+        startupTask?.cancel()
+        startupTask = nil
+        scheduledReadTask?.cancel()
+        scheduledReadTask = nil
+        timer?.invalidate()
+        timer = nil
     }
 
     @MainActor
@@ -912,7 +1030,7 @@ internal class SensorsStatsReader {
         guard let helper = BatteryManager.shared.getHelper() else { return }
 
         let availableKeys = Set(await helper.getAllSMCKeys())
-        var sensors: [Sensor_p] = []
+        var sensors: [any Sensor_p] = []
 
         SENSORS_LIST.forEach { def in
             if availableKeys.contains(def.key) {
@@ -941,7 +1059,25 @@ internal class SensorsStatsReader {
         self.list.sensors = sensors.sorted(by: { $0.name < $1.name })
     }
 
-    private func read() async {
+    private func scheduleRead(generation: UInt) {
+        guard isCurrent(generation), scheduledReadTask == nil else { return }
+        scheduledReadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.lifecycleGeneration == generation {
+                    self.scheduledReadTask = nil
+                }
+            }
+            await self.read(generation: generation)
+        }
+    }
+
+    private func isCurrent(_ generation: UInt) -> Bool {
+        isRunning && lifecycleGeneration == generation && !Task.isCancelled
+    }
+
+    private func read(generation: UInt? = nil) async {
+        if let generation, !isCurrent(generation) { return }
         guard !readInFlight else { return }
         guard initialized, let helper = BatteryManager.shared.getHelper() else { return }
         readInFlight = true
@@ -952,6 +1088,7 @@ internal class SensorsStatsReader {
         guard count > 0 else { return }
 
         let values = await helper.getSensorValues(keys: sensors.map(\.key))
+        if let generation, !isCurrent(generation) { return }
         var updatedSensors = self.list.sensors
         for (index, sensor) in sensors.enumerated() {
             guard let number = values[sensor.key] as? NSNumber else { continue }
@@ -964,10 +1101,7 @@ internal class SensorsStatsReader {
             }
         }
         self.list.sensors = updatedSensors
-
-        DispatchQueue.main.async {
-            self.callback(self.list)
-        }
+        callback(list)
     }
 }
 
@@ -976,13 +1110,13 @@ internal class BatteryStatsReader: Reader<Battery_Usage> {
     private var service: io_connect_t = 0
 
     override func setup() {
-        service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"))
+        service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
     }
 
     override func read() {
         let psInfo = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-        if let psList = IOPSCopyPowerSourcesList(psInfo).takeRetainedValue() as? [CFTypeRef],
-           let ps = psList.first,
+        let psList = IOPSCopyPowerSourcesList(psInfo).takeRetainedValue() as [CFTypeRef]
+        if let ps = psList.first,
            let list = IOPSGetPowerSourceDescription(psInfo, ps).takeUnretainedValue() as? [String: Any] {
 
             let powerSource = list[kIOPSPowerSourceStateKey] as? String ?? "AC Power"

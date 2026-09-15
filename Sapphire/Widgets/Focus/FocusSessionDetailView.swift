@@ -77,14 +77,14 @@ struct FocusSessionDetailView: View {
 
     private var timerRing: some View {
         ZStack {
-            Circle()
-                .stroke(Color.white.opacity(0.05), lineWidth: 9)
-
-            Circle()
-                .trim(from: 0, to: max(focusManager.progress, 0.001))
-                .stroke(accent, style: StrokeStyle(lineWidth: 9, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .shadow(color: accent.opacity(0.4), radius: 12)
+            ProgressRingView(
+                progress: max(focusManager.progress, 0.001),
+                lineWidth: 9,
+                track: AnyShapeStyle(Color.white.opacity(0.05)),
+                active: accent,
+                clampsProgress: false,
+                activeShadow: (accent.opacity(0.4), 12)
+            )
 
             VStack(spacing: 5) {
                 Text(focusManager.remainingLabel)

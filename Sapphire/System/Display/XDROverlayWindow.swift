@@ -13,13 +13,13 @@ class OverlayWindow: NSWindow {
         let rect = NSRect(x: 0, y: 0, width: 1, height: 1)
         super.init(contentRect: rect, styleMask: [], backing: .buffered, defer: false)
 
-        collectionBehavior = [.stationary, .ignoresCycle, .canJoinAllSpaces]
+        collectionBehavior = [.stationary, .ignoresCycle, .canJoinAllSpaces, .fullScreenAuxiliary]
         level = .screenSaver
         isOpaque = false
         hasShadow = false
         backgroundColor = .clear
         ignoresMouseEvents = true
-        isReleasedWhenClosed = true
+        isReleasedWhenClosed = false
         hidesOnDeactivate = false
     }
 

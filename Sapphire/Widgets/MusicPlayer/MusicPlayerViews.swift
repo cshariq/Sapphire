@@ -129,12 +129,11 @@ struct MusicPlayerView: View {
     @State private var isPressingDevices = false
     @State private var longPressTask: Task<Void, Never>?
     @State private var didTriggerLongPress = false
-    @State private var holdFeedbackAction: MusicLongPressAction?
-    @State private var holdFeedbackIcon: String?
-    @State private var holdFeedbackColor: Color = .primary
-    @State private var holdFeedbackRestoreTask: Task<Void, Never>?
-    @State private var holdFeedbackButtonID: String?
-    @State private var holdActionInFlight = false
+    @StateObject private var holdFeedback = MusicHoldFeedbackController()
+
+    private var holdFeedbackIcon: String? { holdFeedback.icon }
+    private var holdFeedbackColor: Color { holdFeedback.color }
+    private var holdFeedbackButtonID: String? { holdFeedback.buttonID }
 
     private var isSpotifyOrAppleMusic: Bool {
         let bundleID = musicManager.lastKnownBundleID
@@ -519,65 +518,24 @@ struct MusicPlayerView: View {
 
     private func accessoryLongPressHandler(for target: MusicLongPressTarget) -> (() -> Void)? {
         guard let action = settings.settings.resolvedAccessoryHoldAction(for: target) else { return nil }
-        return {
-            Task { @MainActor in
-                guard !holdActionInFlight else { return }
-                holdActionInFlight = true
-                defer { holdActionInFlight = false }
-                await musicManager.performLongPressAction(action, navigation: longPressNavigation)
-                refreshHoldFeedbackIcon()
-            }
-        }
+        return holdFeedback.handler(for: action, musicManager: musicManager, navigation: longPressNavigation)
     }
 
     private func skipHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction? {
-        let action = settings.settings.resolvedSkipHoldAction(for: target)
-        if action == .none || action == .seek { return nil }
-        return action
+        holdFeedback.skipAction(for: target, settings: settings.settings)
     }
 
     private func skipHoldClosure(for target: MusicLongPressTarget) -> (() -> Void)? {
         guard let action = skipHoldAction(for: target) else { return nil }
-        return {
-            Task { @MainActor in
-                guard !holdActionInFlight else { return }
-                holdActionInFlight = true
-                defer { holdActionInFlight = false }
-                await musicManager.performLongPressAction(action, navigation: longPressNavigation)
-                refreshHoldFeedbackIcon()
-            }
-        }
+        return holdFeedback.handler(for: action, musicManager: musicManager, navigation: longPressNavigation)
     }
 
     private func beginHoldFeedback(action: MusicLongPressAction, buttonID: String) {
-        holdFeedbackRestoreTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.15)) {
-            holdFeedbackButtonID = buttonID
-            holdFeedbackAction = action
-            holdFeedbackIcon = action.feedbackSystemImage(musicManager: musicManager)
-            holdFeedbackColor = action.feedbackColor(musicManager: musicManager)
-        }
-    }
-
-    private func refreshHoldFeedbackIcon() {
-        guard let action = holdFeedbackAction else { return }
-        withAnimation(.easeInOut(duration: 0.15)) {
-            holdFeedbackIcon = action.feedbackSystemImage(musicManager: musicManager)
-            holdFeedbackColor = action.feedbackColor(musicManager: musicManager)
-        }
+        holdFeedback.begin(action: action, buttonID: buttonID, musicManager: musicManager)
     }
 
     private func endHoldFeedback() {
-        holdFeedbackRestoreTask?.cancel()
-        holdFeedbackRestoreTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.25)) {
-                holdFeedbackAction = nil
-                holdFeedbackIcon = nil
-                holdFeedbackButtonID = nil
-            }
-        }
+        holdFeedback.end()
     }
 
     private func resetTransientButtonState() {
@@ -588,10 +546,7 @@ struct MusicPlayerView: View {
         didTriggerLongPress = false
         playlistsFeedbackType = nil
         devicesFeedbackType = nil
-        holdFeedbackRestoreTask?.cancel()
-        holdFeedbackAction = nil
-        holdFeedbackIcon = nil
-        holdFeedbackButtonID = nil
+        holdFeedback.reset()
     }
 
     @ViewBuilder

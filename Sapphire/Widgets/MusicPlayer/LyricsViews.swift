@@ -10,17 +10,237 @@ import Combine
 
 // MARK: - Consolidated from LyricsView.swift
 
+struct WordSyncedLyricText: View {
+    let lyric: LyricLine
+    let elapsedTime: TimeInterval
+    let isActive: Bool
+    let highlightColor: Color
+    let inactiveColor: Color
+
+    var body: some View {
+        renderedText
+            .animation(.linear(duration: 0.12), value: highlightedWordCount)
+            .accessibilityLabel(lyric.text)
+    }
+
+    private var renderedText: Text {
+        guard isActive, lyric.hasReconstructibleWordTiming else {
+            return Text(lyric.text)
+                .foregroundColor(isActive ? highlightColor : inactiveColor)
+        }
+
+        return lyric.words.reduce(Text("")) { text, word in
+            let color = word.timestamp <= elapsedTime
+                ? highlightColor
+                : inactiveColor.opacity(0.38)
+            return text + Text(word.text).foregroundColor(color)
+        }
+    }
+
+    private var highlightedWordCount: Int {
+        guard isActive, lyric.hasReconstructibleWordTiming else { return 0 }
+        return lyric.words.reduce(into: 0) { count, word in
+            if word.timestamp <= elapsedTime {
+                count += 1
+            }
+        }
+    }
+}
+
+// MARK: - Compact Karaoke Ticker (Live Activity bottom bar)
+
+struct KaraokeLyricTicker: View {
+    let lyric: LyricLine
+    let containerWidth: CGFloat
+    let font: Font
+    let highlightColor: Color
+    let inactiveColor: Color
+
+    @EnvironmentObject private var musicWidget: MusicManager
+
+    private var tracksWords: Bool {
+        lyric.translatedText == nil && lyric.hasReconstructibleWordTiming
+    }
+
+    private var fillWindows: [ClosedRange<TimeInterval>] {
+        lyric.words.indices
+            .map { index -> ClosedRange<TimeInterval> in
+                let start = lyric.words[index].timestamp
+                let end = max(start, lyric.wordFillEndTimestamp(at: index) ?? start)
+                return start...end
+            }
+            .sorted { $0.lowerBound < $1.lowerBound }
+    }
+
+    var body: some View {
+        TimelineView(KaraokeFillSchedule(
+            referenceDate: Date(),
+            referenceElapsed: musicWidget.lyricsElapsedTime(),
+            windows: tracksWords && musicWidget.isPlaying ? fillWindows : []
+        )) { _ in
+            let elapsed = musicWidget.lyricsElapsedTime(at: Date())
+            if tracksWords {
+                wordTicker(elapsed: elapsed)
+            } else {
+                Text(lyric.translatedText ?? lyric.text)
+                    .font(font)
+                    .foregroundColor(highlightColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .frame(width: containerWidth)
+        .onAppear {
+            LyricsLog.info(
+                "Live activity ticker shown: \(lyric.words.count) words, tracksWords=\(tracksWords), translated=\(lyric.translatedText != nil), playing=\(musicWidget.isPlaying)"
+            )
+        }
+    }
+
+    private func wordTicker(elapsed: TimeInterval) -> some View {
+        let activeIndex = activeWordIndex(elapsed: elapsed)
+        return ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(lyric.words.indices, id: \.self) { index in
+                        KaraokeWordView(
+                            text: lyric.words[index].text,
+                            fillFraction: KaraokeWordView.fillFraction(
+                                elapsed: elapsed,
+                                start: lyric.words[index].timestamp,
+                                fillEnd: lyric.wordFillEndTimestamp(at: index)
+                            ),
+                            font: font,
+                            highlightColor: highlightColor,
+                            inactiveColor: inactiveColor
+                        )
+                        .equatable()
+                        .id(index)
+                    }
+                }
+                .padding(.horizontal, containerWidth / 2)
+            }
+            .scrollDisabled(true)
+            .allowsHitTesting(false)
+            .onAppear { proxy.scrollTo(activeIndex, anchor: .center) }
+            .onChange(of: activeIndex) { _, newIndex in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(newIndex, anchor: .center)
+                }
+            }
+        }
+    }
+
+    private func activeWordIndex(elapsed: TimeInterval) -> Int {
+        var index = 0
+        for wordIndex in lyric.words.indices {
+            guard lyric.words[wordIndex].timestamp <= elapsed else { break }
+            index = wordIndex
+        }
+        return index
+    }
+}
+
+struct KaraokeFillSchedule: TimelineSchedule {
+    let referenceDate: Date
+    let referenceElapsed: TimeInterval
+    let windows: [ClosedRange<TimeInterval>]
+
+    static let frameInterval: TimeInterval = 1.0 / 30.0
+    static let fallbackInterval: TimeInterval = 0.25
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> Entries {
+        Entries(schedule: self, cursor: startDate, lowFrequency: mode == .lowFrequency)
+    }
+
+    fileprivate func elapsed(at date: Date) -> TimeInterval {
+        referenceElapsed + date.timeIntervalSince(referenceDate)
+    }
+
+    fileprivate func date(atElapsed elapsed: TimeInterval) -> Date {
+        referenceDate.addingTimeInterval(elapsed - referenceElapsed)
+    }
+
+    struct Entries: Sequence, IteratorProtocol {
+        let schedule: KaraokeFillSchedule
+        var cursor: Date
+        let lowFrequency: Bool
+
+        mutating func next() -> Date? {
+            let date = cursor
+            let elapsed = schedule.elapsed(at: date)
+            let epsilon = 0.0005
+
+            if !lowFrequency,
+               let filling = schedule.windows.first(where: {
+                   elapsed >= $0.lowerBound - epsilon && elapsed < $0.upperBound - epsilon
+               }) {
+                let endDate = schedule.date(atElapsed: filling.upperBound)
+                cursor = Swift.min(date.addingTimeInterval(KaraokeFillSchedule.frameInterval), endDate)
+            } else if let upcoming = schedule.windows.first(where: { $0.lowerBound > elapsed + epsilon }) {
+                cursor = Swift.min(
+                    schedule.date(atElapsed: upcoming.lowerBound),
+                    date.addingTimeInterval(KaraokeFillSchedule.fallbackInterval)
+                )
+            } else {
+                cursor = date.addingTimeInterval(KaraokeFillSchedule.fallbackInterval)
+            }
+            return date
+        }
+    }
+}
+
+struct KaraokeWordView: View, Equatable {
+    let text: String
+    let fillFraction: Double
+    let font: Font
+    let highlightColor: Color
+    let inactiveColor: Color
+
+    static func fillFraction(elapsed: TimeInterval, start: TimeInterval, fillEnd: TimeInterval?) -> Double {
+        guard elapsed > start else { return 0 }
+        guard let fillEnd, fillEnd > start else { return 1 }
+        return min(max((elapsed - start) / (fillEnd - start), 0), 1)
+    }
+
+    var body: some View {
+        Text(text)
+            .font(font)
+            .foregroundColor(inactiveColor.opacity(0.35))
+            .overlay(
+                Text(text)
+                    .font(font)
+                    .foregroundColor(highlightColor)
+                    .mask(
+                        GeometryReader { geometry in
+                            HStack(spacing: 0) {
+                                Rectangle().frame(width: geometry.size.width * fillFraction)
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    ),
+                alignment: .leading
+            )
+    }
+}
+
 struct LyricLineView: View {
     let lyric: LyricLine
     let isCurrent: Bool
     let accentColor: Color
+    let elapsedTime: TimeInterval
 
     var body: some View {
         VStack(alignment: .center, spacing: 6) {
-            Text(lyric.text)
+            WordSyncedLyricText(
+                lyric: lyric,
+                elapsedTime: elapsedTime,
+                isActive: isCurrent,
+                highlightColor: accentColor,
+                inactiveColor: .primary
+            )
                 .font(.system(size: 26, weight: .bold))
                 .multilineTextAlignment(.center)
-                .foregroundColor(isCurrent ? accentColor : .primary)
                 .shadow(radius: 5)
 
             if let translated = lyric.translatedText, !translated.isEmpty {
@@ -46,10 +266,26 @@ struct LyricsView: View {
     private let lineSpacing: CGFloat = 70.0
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.2 : 1.0)) { context in
-            let currentIndex = musicManager.lyricIndex(at: context.date)
-            let currentLyricID = currentIndex.flatMap { lyrics.indices.contains($0) ? lyrics[$0].id : nil }
-            let elapsed = musicManager.elapsedTime(at: context.date)
+        TimelineView(.periodic(
+            from: .now,
+            by: musicManager.isPlaying ? 1.0 / 30.0 : 0.25
+        )) { context in
+            let elapsed = musicManager.lyricsElapsedTime(at: context.date)
+            let activeLyricIndices = musicManager.activeLyricIndices(at: context.date)
+            let activeLyricIDs = Set(
+                activeLyricIndices.compactMap { index in
+                    lyrics.indices.contains(index) ? lyrics[index].id : nil
+                }
+            )
+            let activePrimaryLyricID = activeLyricIndices.max { lhs, rhs in
+                if lyrics[lhs].timestamp == lyrics[rhs].timestamp {
+                    return lhs < rhs
+                }
+                return lyrics[lhs].timestamp < lyrics[rhs].timestamp
+            }.map { lyrics[$0].id }
+            let currentLyricID = activePrimaryLyricID
+                ?? lyrics.last(where: { $0.timestamp <= elapsed })?.id
+            let playbackElapsed = musicManager.elapsedTime(at: context.date)
 
             GeometryReader { geometry in
                 let computedOffset = calculateScrollOffset(
@@ -67,8 +303,9 @@ struct LyricsView: View {
                                 ForEach(lyrics) { lyric in
                                     LyricLineView(
                                         lyric: lyric,
-                                        isCurrent: lyric.id == currentLyricID,
-                                        accentColor: accentColor
+                                        isCurrent: activeLyricIDs.contains(lyric.id),
+                                        accentColor: accentColor,
+                                        elapsedTime: elapsed
                                     )
                                     .frame(height: lineSpacing)
                                 }
@@ -108,7 +345,7 @@ struct LyricsView: View {
                         }
                     }
 
-                    trackHeaderView(elapsed: elapsed)
+                    trackHeaderView(elapsed: playbackElapsed)
                         .padding(.leading, 5)
                 }
             }
@@ -391,9 +628,25 @@ private struct LyricsDetachedRightPane: View {
     private var lyrics: [LyricLine] { musicManager.lyrics }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.2 : 1.0)) { context in
-            let currentIndex = musicManager.lyricIndex(at: context.date)
-            let currentLyricID = currentIndex.flatMap { lyrics.indices.contains($0) ? lyrics[$0].id : nil }
+        TimelineView(.periodic(
+            from: .now,
+            by: musicManager.isPlaying ? 1.0 / 30.0 : 0.25
+        )) { context in
+            let elapsed = musicManager.lyricsElapsedTime(at: context.date)
+            let activeLyricIndices = musicManager.activeLyricIndices(at: context.date)
+            let activeLyricIDs = Set(
+                activeLyricIndices.compactMap { index in
+                    lyrics.indices.contains(index) ? lyrics[index].id : nil
+                }
+            )
+            let activePrimaryLyricID = activeLyricIndices.max { lhs, rhs in
+                if lyrics[lhs].timestamp == lyrics[rhs].timestamp {
+                    return lhs < rhs
+                }
+                return lyrics[lhs].timestamp < lyrics[rhs].timestamp
+            }.map { lyrics[$0].id }
+            let currentLyricID = activePrimaryLyricID
+                ?? lyrics.last(where: { $0.timestamp <= elapsed })?.id
 
             Group {
                 if lyrics.isEmpty {
@@ -410,12 +663,13 @@ private struct LyricsDetachedRightPane: View {
                                 Spacer().frame(height: 120)
 
                                 ForEach(lyrics) { lyric in
-                                    let isCurrent = lyric.id == currentLyricID
+                                    let isCurrent = activeLyricIDs.contains(lyric.id)
 
                                     LyricLineView(
                                         lyric: lyric,
                                         isCurrent: isCurrent,
-                                        accentColor: .white
+                                        accentColor: .white,
+                                        elapsedTime: elapsed
                                     )
                                     .id(lyric.id)
                                     .multilineTextAlignment(.leading)
@@ -478,12 +732,11 @@ private struct LyricsDetachedBottomBar: View {
     @EnvironmentObject var settings: SettingsModel
     @State private var currentProgress: Double = 0.0
     @State private var displayedElapsedTime: TimeInterval = 0
-    @State private var holdFeedbackAction: MusicLongPressAction?
-    @State private var holdFeedbackIcon: String?
-    @State private var holdFeedbackColor: Color = .white
-    @State private var holdFeedbackRestoreTask: Task<Void, Never>?
-    @State private var holdFeedbackButtonID: String?
-    @State private var holdActionInFlight = false
+    @StateObject private var holdFeedback = MusicHoldFeedbackController(palette: .lightOverlay)
+
+    private var holdFeedbackIcon: String? { holdFeedback.icon }
+    private var holdFeedbackColor: Color { holdFeedback.color }
+    private var holdFeedbackButtonID: String? { holdFeedback.buttonID }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -586,65 +839,24 @@ private struct LyricsDetachedBottomBar: View {
 
     private func accessoryHoldHandler(for target: MusicLongPressTarget) -> (() -> Void)? {
         guard let action = settings.settings.resolvedAccessoryHoldAction(for: target) else { return nil }
-        return {
-            Task { @MainActor in
-                guard !holdActionInFlight else { return }
-                holdActionInFlight = true
-                defer { holdActionInFlight = false }
-                await musicManager.performLongPressAction(action, navigation: .notifications)
-                refreshHoldFeedbackIcon()
-            }
-        }
+        return holdFeedback.handler(for: action, musicManager: musicManager, navigation: .notifications)
     }
 
     private func skipHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction? {
-        let action = settings.settings.resolvedSkipHoldAction(for: target)
-        if action == .none || action == .seek { return nil }
-        return action
+        holdFeedback.skipAction(for: target, settings: settings.settings)
     }
 
     private func skipHoldClosure(for target: MusicLongPressTarget) -> (() -> Void)? {
         guard let action = skipHoldAction(for: target) else { return nil }
-        return {
-            Task { @MainActor in
-                guard !holdActionInFlight else { return }
-                holdActionInFlight = true
-                defer { holdActionInFlight = false }
-                await musicManager.performLongPressAction(action, navigation: .notifications)
-                refreshHoldFeedbackIcon()
-            }
-        }
+        return holdFeedback.handler(for: action, musicManager: musicManager, navigation: .notifications)
     }
 
     private func beginHoldFeedback(action: MusicLongPressAction, buttonID: String) {
-        holdFeedbackRestoreTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.15)) {
-            holdFeedbackButtonID = buttonID
-            holdFeedbackAction = action
-            holdFeedbackIcon = action.feedbackSystemImage(musicManager: musicManager)
-            holdFeedbackColor = action.feedbackColor(musicManager: musicManager) == .secondary ? .white.opacity(0.7) : action.feedbackColor(musicManager: musicManager)
-        }
-    }
-
-    private func refreshHoldFeedbackIcon() {
-        guard let action = holdFeedbackAction else { return }
-        withAnimation(.easeInOut(duration: 0.15)) {
-            holdFeedbackIcon = action.feedbackSystemImage(musicManager: musicManager)
-            holdFeedbackColor = action.feedbackColor(musicManager: musicManager) == .secondary ? .white.opacity(0.7) : action.feedbackColor(musicManager: musicManager)
-        }
+        holdFeedback.begin(action: action, buttonID: buttonID, musicManager: musicManager)
     }
 
     private func endHoldFeedback() {
-        holdFeedbackRestoreTask?.cancel()
-        holdFeedbackRestoreTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.25)) {
-                holdFeedbackAction = nil
-                holdFeedbackIcon = nil
-                holdFeedbackButtonID = nil
-            }
-        }
+        holdFeedback.end()
     }
 
 }

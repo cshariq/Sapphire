@@ -5,7 +5,7 @@
 //  Created by Shariq Charolia on 2026-08-10
 
 import Foundation
-import CoreBluetooth
+@preconcurrency import CoreBluetooth
 import IOBluetooth
 import OSLog
 

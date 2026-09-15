@@ -43,6 +43,24 @@ extension AudioObjectID {
         return value != 0
     }
 
+    func write<T>(
+        _ value: T,
+        to selector: AudioObjectPropertySelector,
+        scope: AudioScope = .global
+    ) throws {
+        var address = AudioObjectPropertyAddress(
+            mSelector: selector,
+            mScope: scope.propertyScope,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var value = value
+        let size = UInt32(MemoryLayout<T>.size)
+        let err = AudioObjectSetPropertyData(self, &address, 0, nil, size, &value)
+        guard err == noErr else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(err))
+        }
+    }
+
     func readString(_ selector: AudioObjectPropertySelector, scope: AudioScope = .global) throws -> String {
         var address = AudioObjectPropertyAddress(
             mSelector: selector,

@@ -16,11 +16,7 @@ struct SettingsDetailView: View {
     var selectedSection: SettingsSection?
 
     private var isSelectedSectionLocked: Bool {
-        guard let selectedSection else { return false }
-        return selectedSection.isPremiumLocked(
-            for: subscriptionManager.activeTier,
-            features: subscriptionManager.entitlements.features
-        )
+        selectedSection?.isPremiumLocked ?? false
     }
 
     var body: some View {
@@ -39,6 +35,7 @@ struct SettingsDetailView: View {
     private func settingsPane(for selectedSection: SettingsSection?) -> some View {
         switch selectedSection {
         case .general: GeneralSettingsView()
+        case .systemEnhance: SystemEnhanceSettingsView()
         case .apps: AppsSettingsView()
         case .storage: StorageSettingsView()
         case .widgets: WidgetsSettingsView()
@@ -47,6 +44,7 @@ struct SettingsDetailView: View {
         case .lockScreen: LockScreenSettingsView()
         case .bluetoothUnlock: ProximityUnlockSettingsView()
         case .shortcuts: ShortcutsSettingsView()
+        case .keyboardShortcuts: KeyboardShortcutsSettingsView()
         case .snapZones: SnapZonesSettingsView()
         case .audio: AudioSettingsView()
         case .battery: BatterySettingsView()
@@ -54,11 +52,17 @@ struct SettingsDetailView: View {
         case .hud: HUDSettingsView()
         case .notifications: NotificationsSettingsView()
         case .neardrop: NeardropSettingsView()
+        case .continuity: ContinuitySettingsView()
         case .fileShelf: FileShelfSettingsView()
         case .notes: NotesSettingsView()
         case .clipboard: ClipboardSettingsView()
+        case .emoji: EmojiSettingsView()
+        case .mouse: MouseSettingsView()
+        case .monitoring: MonitoringSettingsView()
+        case .archives: ArchivesAndDMGInstallerSettingsView()
         case .mirror: MirrorSettingsView()
         case .caffeine: CaffeineSettingsView()
+        case .devActivity: DevActivitySettingsView()
         case .music: MusicSettingsView()
         case .weather: WeatherSettingsView()
         case .calendar: CalendarSettingsView()
@@ -68,6 +72,8 @@ struct SettingsDetailView: View {
         case .intelligence: IntelligenceSettingsView()
         case .sports: SportsSettingsView()
         case .finance: FinanceSettingsView()
+        case .dockLayouts: DockLayoutsSettingsView()
+        case .mediaOptimizer: MediaOptimizerSettingsView()
         case .about: AboutSettingsView()
         case nil:
             VStack {
@@ -370,8 +376,10 @@ struct NotchAppearanceEditorView: View {
                         ColorPicker("Color Stop", selection: $color.color, supportsOpacity: true)
                         Spacer()
                         Button(action: {
-                            if appearance.gradientColors.count > 1 {
-                                appearance.gradientColors.removeAll { $0.id == color.id }
+                            guard appearance.gradientColors.count > 1 else { return }
+                            let doomed = color.id
+                            DispatchQueue.main.async {
+                                appearance.gradientColors.removeAll { $0.id == doomed }
                             }
                         }) {
                             Image(systemName: "minus.circle.fill").foregroundColor(.red)
@@ -416,65 +424,1110 @@ struct NotchAppearanceEditorView: View {
     }
 }
 
-struct AppsSettingsView: View {
-    @StateObject private var model = InstalledAppsViewModel()
-    @State private var query = ""
-    @State private var showSystemApps = false
+struct SystemEnhanceSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
 
-    private var visibleApps: [InstalledApp] {
-        model.apps.filter { app in
-            (showSystemApps || !app.isSystem) && (query.isEmpty || app.name.localizedCaseInsensitiveContains(query) || app.bundleIdentifier.localizedCaseInsensitiveContains(query))
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("System").font(.largeTitle.bold())
+                Text("Desktop motion, input, and window enhancements that stay out of your way.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+
+                SystemEnhanceHingeAnimationSettingsCard()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    PremiumFeatureView(feature: .windowsPreview) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("App Switching").font(.headline).padding([.top, .horizontal])
+                            ToggleRow(title: "Window Switcher", description: "Replace the switcher with a keyboard-driven, window-aware overlay. Hold the shortcut and press Tab to cycle, arrows to move, Q to quit an app, W to close a window.", isOn: $settings.settings.systemEnhanceAltTabEnabled)
+                            if settings.settings.systemEnhanceAltTabEnabled {
+                                Divider().padding(.leading, 20)
+                                HStack { Text("Activate With"); Spacer(); Picker("", selection: Binding(
+                                    get: { settings.settings.systemEnhanceSwitcherActivation.rawValue },
+                                    set: { settings.settings.systemEnhanceSwitcherActivation = SESwitcherActivation(rawValue: $0) ?? .both }
+                                )) {
+                                    Text("⌘ Tab").tag(SESwitcherActivation.command.rawValue)
+                                    Text("⌥ Tab").tag(SESwitcherActivation.option.rawValue)
+                                    Text("Both").tag(SESwitcherActivation.both.rawValue)
+                                }.labelsHidden().frame(width: 160) }.padding()
+                                Divider().padding(.leading, 20)
+                                ToggleRow(title: "Include Windows From Other Spaces", description: "Also list windows on other Spaces and full-screen apps. Selecting one switches to its Space.", isOn: $settings.settings.systemEnhanceSwitcherIncludeOtherSpaces)
+                                Divider().padding(.leading, 20)
+                                HStack { Text("Window Switcher Layout"); Spacer(); Picker("", selection: Binding(
+                                    get: { settings.settings.systemEnhanceWindowSwitcherLayout.rawValue },
+                                    set: { settings.settings.systemEnhanceWindowSwitcherLayout = SEPreviewLayout(rawValue: $0) ?? .grid }
+                                )) { Text("Grid").tag(SEPreviewLayout.grid.rawValue); Text("List").tag(SEPreviewLayout.list.rawValue); Text("Carousel").tag(SEPreviewLayout.carousel.rawValue) }.labelsHidden().frame(width: 150) }.padding()
+                            }
+                        }
+                    }
+                }.modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Input Behavior").font(.headline).padding([.top, .horizontal])
+                    ToggleRow(title: "Paste as Plain Text", description: "Remove text formatting when using Command-V.", isOn: $settings.settings.systemEnhancePasteAsPlainTextEnabled)
+                    if settings.settings.systemEnhancePasteAsPlainTextEnabled {
+                        Divider().padding(.leading, 20)
+                        ToggleRow(title: "Remove Links", description: "Strip web addresses from pasted text.", isOn: $settings.settings.systemEnhancePasteAsPlainStripLinks)
+                        Divider().padding(.leading, 20)
+                        ToggleRow(title: "Remove Emojis", description: "Strip emoji characters from pasted text.", isOn: $settings.settings.systemEnhancePasteAsPlainStripEmojis)
+                        Divider().padding(.leading, 20)
+                        ToggleRow(title: "Remove List Markers", description: "Remove bullets and numbered markers such as •, -, and 1. from list items.", isOn: $settings.settings.systemEnhancePasteAsPlainStripListMarkers)
+                    }
+                }.modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Calendar Integration").font(.headline).padding([.top, .horizontal])
+                    ToggleRow(title: "Calendar Integration", description: "Include calendar context in enhanced window and Dock previews.", isOn: $settings.settings.systemEnhanceCalendarIntegrationEnabled)
+                }.modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Quit on Close").font(.headline).padding([.top, .horizontal])
+                    ToggleRow(title: "Quit Apps When Their Last Window Closes", description: "Apps quit themselves once they have no windows left, after a short grace period. Enabled for every app by default.", isOn: $settings.settings.systemEnhanceAutoQuitEnabled)
+                    if settings.settings.systemEnhanceAutoQuitEnabled {
+                        Divider().padding(.leading, 20)
+                        Text("Apps to quit when window-less:")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                        AppTogglesListView(
+                            isEnabled: { app in $settings.settings.systemEnhanceAutoQuitExcludedApps.membership(of: app.id).negated },
+                            showSearch: true
+                        )
+                        .padding(.horizontal)
+                        .padding(.bottom, 12)
+                    }
+                }.modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Quit & Close Protection").font(.headline).padding([.top, .horizontal])
+                    ToggleRow(title: "Protect Quit and Close Shortcuts", description: "Require a hold, a double press, or an extra modifier for ⌘Q and ⌘W. Enabled for every app by default.", isOn: $settings.settings.systemEnhanceQuitProtectionEnabled)
+                    if settings.settings.systemEnhanceQuitProtectionEnabled {
+                        Divider().padding(.leading, 20)
+                        ToggleRow(title: "Protect ⌘Q (Quit)", description: "Require confirmation before the app quits.", isOn: $settings.settings.systemEnhanceQuitProtectionProtectQuit)
+                        Divider().padding(.leading, 20)
+                        ToggleRow(title: "Protect ⌘W (Close Window)", description: "Require confirmation before a window closes.", isOn: $settings.settings.systemEnhanceQuitProtectionProtectClose)
+                        Divider().padding(.leading, 20)
+                        HStack { Text("Protection Mode"); Spacer(); Picker("", selection: Binding(
+                            get: { settings.settings.systemEnhanceQuitProtectionMode.rawValue },
+                            set: { settings.settings.systemEnhanceQuitProtectionMode = SEQuitProtectionMode(rawValue: $0) ?? .hold }
+                        )) {
+                            Text("Hold the Shortcut").tag(SEQuitProtectionMode.hold.rawValue)
+                            Text("Double Press").tag(SEQuitProtectionMode.doublePress.rawValue)
+                            Text("Require Extra Modifier").tag(SEQuitProtectionMode.extraModifier.rawValue)
+                        }.labelsHidden().frame(width: 200) }.padding()
+                        if settings.settings.systemEnhanceQuitProtectionMode == .hold {
+                            Divider().padding(.leading, 20)
+                            CustomSliderRowView(label: "Hold Duration", value: $settings.settings.systemEnhanceQuitProtectionHoldInterval, range: 0.4...3, specifier: "%.2fs").padding(.horizontal)
+                        }
+                        if settings.settings.systemEnhanceQuitProtectionMode == .doublePress {
+                            Divider().padding(.leading, 20)
+                            CustomSliderRowView(label: "Double Press Window", value: $settings.settings.systemEnhanceQuitProtectionDoublePressInterval, range: 0.2...1.5, specifier: "%.2fs").padding(.horizontal)
+                        }
+                        if settings.settings.systemEnhanceQuitProtectionMode == .extraModifier {
+                            Divider().padding(.leading, 20)
+                            HStack { Text("Extra Modifier"); Spacer(); Picker("", selection: Binding(
+                                get: { settings.settings.systemEnhanceQuitProtectionExtraModifier.rawValue },
+                                set: { settings.settings.systemEnhanceQuitProtectionExtraModifier = SEQuitProtectionExtraModifier(rawValue: $0) ?? .option }
+                            )) {
+                                Text("⌥ Option").tag(SEQuitProtectionExtraModifier.option.rawValue)
+                                Text("⌃ Control").tag(SEQuitProtectionExtraModifier.control.rawValue)
+                                Text("⇧ Shift").tag(SEQuitProtectionExtraModifier.shift.rawValue)
+                            }.labelsHidden().frame(width: 140) }.padding()
+                        }
+                        Divider().padding(.leading, 20)
+                        Text("Apps with protected ⌘Q/⌘W:")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                        AppTogglesListView(
+                            isEnabled: { app in $settings.settings.systemEnhanceQuitProtectionExcludedApps.membership(of: app.id).negated },
+                            showSearch: true
+                        )
+                        .padding(.horizontal)
+                        .padding(.bottom, 12)
+                    }
+                }.modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Green Button Maximize").font(.headline).padding([.top, .horizontal])
+                    ToggleRow(title: "Maximize in Current Space", description: "The green traffic-light button fills the screen without creating a new Space; clicking it again restores the window.", isOn: $settings.settings.systemEnhanceGreenMaximizeEnabled)
+                }.modifier(SettingsContainerModifier())
+            }.padding(25)
+        }
+    }
+}
+
+private struct SystemEnhanceHingeAnimationSettingsCard: View {
+    @EnvironmentObject private var settings: SettingsModel
+    @ObservedObject private var lidAngleSensor = LidAngleSensor.shared
+    @ObservedObject private var permissionsManager = PermissionsManager.shared
+
+    private var currentLidAngleText: String {
+        guard lidAngleSensor.isAvailable else { return "Unavailable" }
+        guard lidAngleSensor.isReporting else { return "Connecting…" }
+        return "\(Int(lidAngleSensor.angle.rounded()))°"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+        }
+    }
+}
+
+struct AppsSettingsView: View {
+    @EnvironmentObject private var settingsModel: SettingsModel
+    @ObservedObject private var installedUpdates = InstalledAppUpdatesChecker.shared
+    @StateObject private var appModel = InstalledAppsViewModel()
+    @State private var selectedTab: AppsTab = .updates
+    @State private var updatesQuery = ""
+    @State private var uninstallQuery = ""
+    @State private var updateFilter: AppUpdateFilter = .updates
+    @State private var showSystemApps = false
+    @State private var reviewApp: InstalledApp?
+
+    private enum AppsTab: String, CaseIterable, Identifiable {
+        case updates = "Updates"
+        case uninstall = "Uninstall"
+        var id: String { rawValue }
+        var icon: String { self == .updates ? "arrow.triangle.2.circlepath" : "trash" }
+    }
+
+    private enum AppUpdateFilter: String, CaseIterable, Identifiable {
+        case updates = "Updates"
+        case current = "Current"
+        case attention = "Needs attention"
+        case ignored = "Ignored"
+        case all = "All"
+        var id: String { rawValue }
+    }
+
+    private var filteredUpdateEntries: [InstalledAppUpdateEntry] {
+        installedUpdates.entries.filter { entry in
+            let matchesQuery = updatesQuery.isEmpty
+                || entry.name.localizedCaseInsensitiveContains(updatesQuery)
+                || entry.bundleIdentifier.localizedCaseInsensitiveContains(updatesQuery)
+            guard matchesQuery else { return false }
+            switch updateFilter {
+            case .updates: return entry.status.isUpdateAvailable && !installedUpdates.isIgnored(entry)
+            case .current: return entry.status.isUpToDate && !installedUpdates.isIgnored(entry)
+            case .attention: return (entry.status.isUnsupported || entry.status.isError) && !installedUpdates.isIgnored(entry)
+            case .ignored: return installedUpdates.isIgnored(entry)
+            case .all: return true
+            }
+        }
+    }
+
+    private var filteredInstalledApps: [InstalledApp] {
+        appModel.apps.filter { app in
+            (showSystemApps || !app.isSystem)
+                && (uninstallQuery.isEmpty
+                    || app.name.localizedCaseInsensitiveContains(uninstallQuery)
+                    || app.bundleIdentifier.localizedCaseInsensitiveContains(uninstallQuery))
         }
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Apps").font(.largeTitle.bold())
-                Text("Inspired by AppCleaner and Pearcleaner: inspect applications before removing them. Sapphire only moves items to Trash after explicit confirmation.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                    TextField("Search installed apps", text: $query).textFieldStyle(.plain)
-                    Toggle("System apps", isOn: $showSystemApps).toggleStyle(.checkbox)
-                }.padding().background(.quaternary).clipShape(RoundedRectangle(cornerRadius: 12))
-                if model.isLoading { ProgressView("Scanning Applications…") }
-                VStack(spacing: 0) {
-                    ForEach(visibleApps) { app in
+            VStack(alignment: .leading, spacing: 18) {
+                header
+
+                switch selectedTab {
+                case .updates:
+                    updatesPane
+                case .uninstall:
+                    uninstallPane
+                }
+            }
+            .padding(25)
+        }
+        .onAppear {
+            if settingsModel.settings.installedAppUpdatesEnabled,
+               installedUpdates.entries.isEmpty {
+                installedUpdates.checkInBackgroundIfNeeded(force: true)
+            }
+        }
+        .onChange(of: selectedTab) { _, tab in
+            if tab == .uninstall { loadInstalledAppInventoryIfNeeded() }
+        }
+        .onChange(of: settingsModel.settings.installedAppUpdatesEnabled) { _, _ in syncInstalledUpdateSettings() }
+        .onChange(of: settingsModel.settings.installedAppUpdateNotificationsEnabled) { _, enabled in
+            syncInstalledUpdateSettings()
+            if enabled { installedUpdates.requestNotificationAuthorization() }
+        }
+        .sheet(item: $reviewApp) { app in
+            AppUninstallReviewSheet(app: app, model: appModel)
+        }
+        .sheet(item: $installedUpdates.releaseNotesEntry) { item in
+            InstalledAppReleaseNotesSheet(entry: item)
+        }
+        .onDisappear {
+            appModel.cancelScan()
+            appModel.cancelArtifactScan()
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Apps")
+                        .font(.largeTitle.bold())
+                    Text("Keep installed apps current and review app-linked data before cleanup.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if installedUpdates.updatesAvailableCount > 0 {
+                    Label("\(installedUpdates.updatesAvailableCount) available", systemImage: "arrow.down.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.blue.opacity(0.13), in: Capsule())
+                }
+            }
+
+            Picker("Apps section", selection: $selectedTab) {
+                ForEach(AppsTab.allCases) { tab in
+                    Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+        }
+    }
+
+    private var updatesPane: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    updateMetricCards
+                        .frame(minWidth: 170)
+                }
+                VStack(spacing: 10) {
+                    updateMetricCards
+                }
+            }
+
+            installedAppsUpdateCard
+        }
+    }
+
+    @ViewBuilder
+    private var updateMetricCards: some View {
+        AppsMetricCard(
+            title: "Updates",
+            value: "\(installedUpdates.updatesAvailableCount)",
+            detail: installedUpdates.updatesAvailableCount == 1 ? "app available" : "apps available",
+            systemImage: "arrow.down.circle.fill",
+            tint: .blue
+        )
+        AppsMetricCard(
+            title: "Current",
+            value: "\(installedUpdates.upToDateCount)",
+            detail: installedUpdates.upToDateCount == 1 ? "app up to date" : "apps up to date",
+            systemImage: "checkmark.circle.fill",
+            tint: .green
+        )
+        AppsMetricCard(
+            title: "Needs attention",
+            value: "\(installedUpdates.unsupportedCount)",
+            detail: installedUpdates.unsupportedCount == 1 ? "app unsupported" : "apps unsupported",
+            systemImage: "exclamationmark.triangle.fill",
+            tint: .orange
+        )
+    }
+
+    private var installedAppsUpdateCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Installed app updates", systemImage: "square.stack.3d.up.fill")
+                    .font(.headline)
+                Spacer()
+                Text("Last checked \(installedUpdates.lastCheckedDescription)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    installedUpdates.checkNow()
+                } label: {
+                    Label("Check now", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(
+                    installedUpdates.isChecking
+                        || installedUpdates.updatingBundleID != nil
+                        || !settingsModel.settings.installedAppUpdatesEnabled
+                )
+            }
+
+            VStack(spacing: 0) {
+                ToggleRow(
+                    title: "Monitor installed apps",
+                    description: "Use each app's App Store, Homebrew, Sparkle, Electron, Google, or Mozilla channel.",
+                    isOn: $settingsModel.settings.installedAppUpdatesEnabled
+                )
+                Divider().padding(.leading)
+                ToggleRow(
+                    title: "Installed app notifications",
+                    description: "Notify you when a background scan discovers new updates.",
+                    isOn: $settingsModel.settings.installedAppUpdateNotificationsEnabled
+                )
+                .disabled(!settingsModel.settings.installedAppUpdatesEnabled)
+                .opacity(settingsModel.settings.installedAppUpdatesEnabled ? 1 : 0.5)
+            }
+            .modifier(SettingsContainerModifier())
+
+            AppsSearchField(placeholder: "Search update results", text: $updatesQuery)
+
+            Picker("Update filter", selection: $updateFilter) {
+                ForEach(AppUpdateFilter.allCases) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+
+            if installedUpdates.isChecking {
+                HStack(spacing: 10) {
+                    ProgressView(value: installedUpdates.checkProgress)
+                        .progressViewStyle(.linear)
+                    Text("\(installedUpdates.checkingCount) remaining")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(spacing: 0) {
+                if filteredUpdateEntries.isEmpty {
+                    ContentUnavailableView(
+                        "No matching apps",
+                        systemImage: updateFilter == .updates ? "checkmark.circle" : "magnifyingglass",
+                        description: Text(updateFilter == .updates ? "No installed app updates are currently available." : "Try a different filter or search.")
+                    )
+                    .frame(minHeight: 150)
+                } else {
+                    ForEach(filteredUpdateEntries) { entry in
+                        InstalledAppUpdateRowView(entry: entry, checker: installedUpdates)
+                        if entry.id != filteredUpdateEntries.last?.id { Divider().padding(.leading, 60) }
+                    }
+                }
+            }
+            .modifier(SettingsContainerModifier())
+        }
+    }
+
+    private var uninstallPane: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "trash.slash.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Reviewed app cleanup")
+                        .font(.headline)
+                    Text("The app is selected automatically. Related files stay unchecked whenever exclusive ownership cannot be proven.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    appModel.rescan()
+                } label: {
+                    Label("Rescan", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(appModel.isLoading)
+            }
+            .padding(14)
+            .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.orange.opacity(0.2)))
+
+            HStack(spacing: 12) {
+                AppsSearchField(placeholder: "Search installed apps", text: $uninstallQuery)
+                Toggle("System apps", isOn: $showSystemApps)
+                    .toggleStyle(.checkbox)
+                    .fixedSize()
+            }
+
+            if appModel.isLoading {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Scanning Applications…")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel scan") { appModel.cancelScan() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+                .padding(.vertical, 12)
+            }
+
+            if let scanError = appModel.scanError, !scanError.isEmpty {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Some applications could not be scanned")
+                            .font(.subheadline.weight(.semibold))
+                        Text(scanError)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                            .help(scanError)
+                    }
+                    Spacer()
+                    Button("Rescan") { appModel.rescan() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(appModel.isLoading)
+                }
+                .padding(12)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            VStack(spacing: 0) {
+                if !appModel.isLoading && filteredInstalledApps.isEmpty {
+                    ContentUnavailableView.search(text: uninstallQuery)
+                        .frame(minHeight: 180)
+                } else {
+                    ForEach(filteredInstalledApps) { app in
                         HStack(spacing: 12) {
-                            Image(nsImage: app.icon).resizable().frame(width: 36, height: 36)
-                            VStack(alignment: .leading) {
+                            Image(nsImage: app.icon)
+                                .resizable()
+                                .frame(width: 40, height: 40)
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(app.name).font(.headline)
-                                Text("\(app.bundleIdentifier) · \(app.formattedSize)").font(.caption).foregroundStyle(.secondary)
+                                Text(app.isSystem
+                                    ? "Version \(app.version) · protected app"
+                                    : "Version \(app.version) · \(app.formattedSize)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(app.bundleIdentifier)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
                             }
                             Spacer()
-                            Button("Move to Trash", role: .destructive) { model.requestRemoval(app) }.disabled(app.isSystem)
-                        }.padding()
-                        if app.id != visibleApps.last?.id { Divider().padding(.leading, 60) }
+                            if installedUpdates.updatingBundleID == app.bundleIdentifier {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Updating…")
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            } else if app.isSystem {
+                                Label("Protected", systemImage: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Button("Review Uninstall…") {
+                                    appModel.select(app)
+                                    reviewApp = app
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                        if app.id != filteredInstalledApps.last?.id { Divider().padding(.leading, 66) }
                     }
-                }.modifier(SettingsContainerModifier())
-            }.padding(25)
-        }.onAppear { model.scan() }
-        .alert("Move app to Trash?", isPresented: $model.confirmingRemoval) {
-            Button("Move to Trash", role: .destructive) { model.removeConfirmed() }
+                }
+            }
+            .modifier(SettingsContainerModifier())
+        }
+    }
+
+    private func syncInstalledUpdateSettings() {
+        installedUpdates.applySettings(
+            installedAppUpdatesEnabled: settingsModel.settings.installedAppUpdatesEnabled,
+            notificationsEnabled: settingsModel.settings.installedAppUpdateNotificationsEnabled
+        )
+    }
+
+    private func loadInstalledAppInventoryIfNeeded() {
+        guard appModel.apps.isEmpty, !appModel.isLoading else { return }
+        appModel.scan()
+    }
+
+}
+
+private struct AppsMetricCard: View {
+    let title: String
+    let value: String
+    let detail: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+                .frame(width: 24, height: 24)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.caption).foregroundStyle(.secondary)
+                Text(value).font(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(detail).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.1)))
+    }
+}
+
+private struct AppsSearchField: View {
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        ClearableSearchField(placeholder: LocalizedStringKey(placeholder), text: $text)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct AppUninstallReviewSheet: View {
+    let app: InstalledApp
+    @ObservedObject var model: InstalledAppsViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    private var groupedArtifacts: [(AppArtifactCategory, [AppUninstallArtifact])] {
+        Dictionary(grouping: model.artifacts, by: \.category)
+            .map { ($0.key, $0.value) }
+            .sorted { $0.0.rawValue < $1.0.rawValue }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(nsImage: app.icon).resizable().frame(width: 48, height: 48)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Uninstall \(app.name)").font(.title2.bold())
+                    Text("The app is selected. Identifier-linked, shared, and name-based data requires review unless ownership is verified.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .disabled(model.isRemoving)
+            }
+            .padding(20)
+
+            Divider()
+
+            if model.isScanningArtifacts {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Finding related files…").foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let result = model.uninstallResult, result.appName == app.name {
+                uninstallResultView(result)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        if model.artifacts.contains(where: { $0.confidence != .exact }) {
+                            Label("Unverified, shared, nested-component, duplicate-identifier, and app-name matches stay unchecked until you review them.", systemImage: "exclamationmark.shield.fill")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        }
+
+                        ForEach(groupedArtifacts, id: \.0.id) { category, artifacts in
+                            VStack(alignment: .leading, spacing: 0) {
+                                Label(category.rawValue, systemImage: category.systemImage)
+                                    .font(.headline)
+                                    .padding(.bottom, 7)
+                                ForEach(artifacts) { artifact in
+                                    Toggle(isOn: Binding(
+                                        get: { model.selectedArtifactIDs.contains(artifact.id) },
+                                        set: { model.setArtifact(artifact, selected: $0) }
+                                    )) {
+                                        HStack(spacing: 10) {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(artifact.url.lastPathComponent)
+                                                    .font(.subheadline.weight(.medium))
+                                                    .lineLimit(1)
+                                                Text(artifact.url.path)
+                                                    .font(.caption2.monospaced())
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                                    .truncationMode(.middle)
+                                                if artifact.confidence != .exact {
+                                                    Text(artifact.confidence.explanation)
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.orange)
+                                                }
+                                            }
+                                            Spacer()
+                                            if artifact.requiresAuthorization {
+                                                Image(systemName: "lock.fill")
+                                                    .foregroundStyle(.secondary)
+                                                    .help("Administrator access may be required")
+                                            }
+                                            Text(artifact.formattedSize)
+                                                .font(.caption.monospacedDigit())
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .toggleStyle(.checkbox)
+                                    .disabled(artifact.isApplication || model.isRemoving)
+                                    .padding(.vertical, 7)
+                                    if artifact.id != artifacts.last?.id { Divider().padding(.leading, 24) }
+                                }
+                            }
+                            .padding(14)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.1)))
+                        }
+                    }
+                    .padding(20)
+                }
+
+                Divider()
+                HStack {
+                    Menu("Selection") {
+                        Button("Recommended") { model.selectRecommendedArtifacts() }
+                    }
+                    .disabled(model.isRemoving)
+                    Text("\(model.selectedArtifacts.count) items · \(model.selectedSize.formatted(.byteCount(style: .file)))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(role: .destructive) {
+                        model.requestRemoval(app)
+                    } label: {
+                        if model.isRemoving {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("Uninstall \(app.name)")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .disabled(model.isRemoving || model.selectedArtifacts.isEmpty)
+                }
+                .padding(16)
+            }
+        }
+        .frame(minWidth: 680, idealWidth: 760, minHeight: 560, idealHeight: 700)
+        .interactiveDismissDisabled(model.isRemoving)
+        .onDisappear {
+            if !model.isRemoving { model.cancelArtifactScan() }
+        }
+        .alert("Move app and selected related files to Trash?", isPresented: $model.confirmingRemoval) {
+            Button("Uninstall", role: .destructive) { model.removeConfirmed() }
             Button("Cancel", role: .cancel) {}
-        } message: { Text(model.removalMessage) }
+        } message: {
+            Text(model.removalMessage)
+        }
+    }
+
+    @ViewBuilder
+    private func uninstallResultView(_ result: AppUninstallResult) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: result.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 44))
+                .foregroundStyle(result.succeeded ? .green : .orange)
+            Text(result.applicationRemoved
+                ? (result.succeeded ? "App and selected data removed" : "App removed with some leftovers")
+                : "App could not be removed")
+                .font(.title3.bold())
+            Text("\(result.removed.count) item\(result.removed.count == 1 ? "" : "s") moved to Trash.")
+                .foregroundStyle(.secondary)
+            if !result.failures.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(result.failures) { failure in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(failure.url.path).font(.caption.monospaced()).lineLimit(1)
+                            Text(failure.message).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+            Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+        }
+        .padding(30)
+    }
+}
+
+private struct InstalledAppUpdateRowView: View {
+    let entry: InstalledAppUpdateEntry
+    @ObservedObject var checker: InstalledAppUpdatesChecker
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(nsImage: entry.icon)
+                .resizable()
+                .frame(width: 36, height: 36)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+
+                switch entry.status {
+                case .checking:
+                    Text("Checking…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .upToDate(let latest):
+                    Text("Version \(entry.currentVersion) · Up to date")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if AppVersionOrdering.isNewer(latest, than: entry.currentVersion) {
+                        Text("Latest available: \(latest)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                case .updateAvailable(let latest, _, _, let releaseNotes, _):
+                    HStack(spacing: 6) {
+                        Text("\(entry.currentVersion) → \(latest)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.blue)
+                        if let releaseNotes, !releaseNotes.isEmpty {
+                            Button("Release notes") {
+                                checker.releaseNotesEntry = InstalledAppUpdatesChecker.ReleaseNotesEntry(entry: entry)
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        }
+                    }
+                    if checker.buttonLabel(for: entry) == "Open App" {
+                        Text("Uses its own signed updater — Sapphire will open the app.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                case .unsupported:
+                    Text(checker.canOpenManagedUpdater(for: entry)
+                        ? "Updates are managed inside this app"
+                        : "No update source found")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                case .ignored:
+                    Text("Ignored")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                case .error(let message):
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            statusActions
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var statusActions: some View {
+        switch entry.status {
+        case .updateAvailable:
+            HStack(spacing: 8) {
+                if checker.updatingBundleID == entry.id {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Upgrading…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button(checker.buttonLabel(for: entry)) {
+                        checker.updateAction(for: entry.id)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                Menu {
+                    Button("Ignore this app") { checker.setIgnored(true, for: entry.id) }
+                    if case .updateAvailable(_, _, let pageURL, _, _) = entry.status, let pageURL {
+                        Button(checker.isAppStoreEntry(entry) ? "Open in App Store" : "Open update page") {
+                            checker.openUpdatePage(for: entry, pageURL: pageURL)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+        case .checking, .upToDate:
+            Menu {
+                Button("Check again") { checker.checkAgain(entryID: entry.id) }
+                Button("Ignore this app") { checker.setIgnored(true, for: entry.id) }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        case .ignored, .unsupported, .error:
+            Menu {
+                if checker.canOpenManagedUpdater(for: entry) {
+                    Button("Open app updater") { checker.openManagedUpdater(entryID: entry.id) }
+                }
+                Button("Check again") { checker.checkAgain(entryID: entry.id) }
+                Button(checker.isIgnored(entry) ? "Stop ignoring" : "Ignore this app") {
+                    checker.setIgnored(!checker.isIgnored(entry), for: entry.id)
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+}
+
+private struct InstalledAppReleaseNotesSheet: View {
+    let entry: InstalledAppUpdatesChecker.ReleaseNotesEntry
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(nsImage: entry.icon)
+                    .resizable()
+                    .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(entry.name) \(entry.latestVersion)")
+                        .font(.headline)
+                    Text("Release notes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            Divider()
+            ScrollView {
+                if let notes = entry.releaseNotes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let url = entry.releaseNotesURL {
+                    VStack(spacing: 12) {
+                        Text("Notes are published online.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Button("Open in Browser") {
+                            NSWorkspace.shared.open(url)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                } else {
+                    Text("No release notes were published for this update.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 460, height: 380)
     }
 }
 
 struct StorageSettingsView: View {
     @StateObject private var model = StorageViewModel()
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Storage").font(.largeTitle.bold())
-                Text("A safe, read-only disk overview inspired by DaisyDisk and GrandPerspective. Select a folder to inspect it; cleanup never runs automatically.").font(.subheadline).foregroundStyle(.secondary)
-                HStack { Image(systemName: "internaldrive.fill").font(.largeTitle).foregroundStyle(.orange); VStack(alignment: .leading) { Text(model.volumeName).font(.headline); Text("\(model.used.formatted(.byteCount(style: .file))) used of \(model.total.formatted(.byteCount(style: .file)))") .font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Refresh") { model.refresh() } }
-                    .padding().modifier(SettingsContainerModifier())
-                VStack(alignment: .leading, spacing: 0) { Text("Largest folders").font(.headline).padding(); ForEach(model.entries) { entry in HStack { Image(systemName: "folder.fill").foregroundStyle(.yellow); Text(entry.name); Spacer(); Text(entry.size.formatted(.byteCount(style: .file))).foregroundStyle(.secondary) }.padding(); Divider().padding(.leading, 20) } }.modifier(SettingsContainerModifier())
-                Text("For safety, protected locations and system files are not deleted by this feature.").font(.caption).foregroundStyle(.secondary)
-            }.padding(25)
-        }.onAppear { model.refresh() }
+            PremiumFeatureView(feature: .basicStorageFeatures) {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Storage")
+                            .font(.largeTitle.bold())
+                        Text("See exactly what is using space, trace what changed, and reclaim it safely.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if model.currentURL.path != "/" {
+                        StorageBreadcrumbBar(model: model)
+                    }
+
+                    StorageWorkspaceView(model: model)
+
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .foregroundStyle(MaterialChartPalette.tertiary)
+                        Text("Protected system locations are inspection-only. Every cleanup is reviewed and moved to Trash before space is reclaimed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .padding(25)
+            }
+        }
+        .onAppear { model.refreshFromCache() }
+        .onDisappear { model.cancelScan() }
+        .alert("Move item to Trash?", isPresented: $model.confirmingRemoval) {
+            Button("Move to Trash", role: .destructive) { model.removeConfirmed() }
+            Button("Cancel", role: .cancel) { model.cancelRemovalRequest() }
+        } message: { Text(model.removalMessage) }
+    }
+}
+
+private struct StorageBreadcrumbBar: View {
+    @ObservedObject var model: StorageViewModel
+
+    private var pathComponents: [(String, URL)] {
+        let path = model.currentURL.standardizedFileURL.path
+        let parts = path.split(separator: "/").map(String.init)
+        var result: [(String, URL)] = [("Macintosh HD", URL(fileURLWithPath: "/"))]
+        var url = URL(fileURLWithPath: "/")
+        for part in parts where part != "" {
+            url.appendPathComponent(part)
+            result.append((part, url))
+        }
+        return result
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: model.goUp) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .background(.thinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.12)))
+            .disabled(model.currentURL.path == "/")
+            .help("Go to parent folder")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(pathComponents.enumerated()), id: \.offset) { index, component in
+                        if index > 0 {
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        Button {
+                            model.open(StorageEntry(url: component.1, size: 0, isDirectory: true))
+                        } label: {
+                            Label(component.0, systemImage: index == 0 ? "internaldrive.fill" : "folder.fill")
+                                .font(.subheadline.weight(.medium))
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(index == pathComponents.count - 1 ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.07), in: Capsule())
+                        .overlay(Capsule().stroke(index == pathComponents.count - 1 ? Color.accentColor.opacity(0.55) : Color.white.opacity(0.10)))
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .frame(width: 30, height: 30)
+                .background(.thinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(.white.opacity(0.12)))
+                .help("Refresh folder contents")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.14)))
+    }
+}
+
+private struct IndexingPill: View {
+    let progress: Double
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView(value: progress)
+                .progressViewStyle(.linear)
+                .frame(width: 130)
+            Text(label).font(.caption.weight(.medium)).lineLimit(1)
+            Text("\(Int(progress * 100))%")
+                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.thinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.12)))
+    }
+}
+
+private struct StoragePieSlice: View {
+    let start: Double
+    let end: Double
+    let color: Color
+    let label: String
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                PieSlicePath(start: start, end: end)
+                    .fill(color)
+                    .overlay(PieSlicePath(start: start, end: end).stroke(Color.black.opacity(0.35), lineWidth: 1))
+                let angle = (start + end) / 2 * 2 * .pi - .pi / 2
+                let radius = min(geometry.size.width, geometry.size.height) * 0.36
+                if fraction >= 0.035 {
+                    Text(label)
+                        .font(.system(size: fraction < 0.06 ? 8 : 10, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(width: fraction < 0.06 ? 48 : 82)
+                        .foregroundStyle(.white)
+                        .shadow(radius: 2)
+                        .clipped()
+                        .rotationEffect(.radians(angle + .pi / 2))
+                        .position(x: geometry.size.width / 2 + cos(angle) * radius, y: geometry.size.height / 2 + sin(angle) * radius)
+                }
+            }
+        }
+    }
+}
+
+private struct PieSlicePath: Shape {
+    let start: Double
+    let end: Double
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        path.move(to: center)
+        path.addArc(center: center, radius: radius, startAngle: .degrees(start * 360 - 90), endAngle: .degrees(end * 360 - 90), clockwise: false)
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -482,8 +1535,6 @@ struct GeneralSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
     @State private var showingCustomConfig = false
     @ObservedObject private var appFetcher = SystemAppFetcher.shared
-    private var browserApps: [SystemApp] { appFetcher.apps.filter { $0.isBrowser } }
-    private var otherApps: [SystemApp] { appFetcher.apps.filter { !$0.isBrowser } }
 
     var body: some View {
         ScrollView {
@@ -493,10 +1544,9 @@ struct GeneralSettingsView: View {
                     .padding(.bottom)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Behavior").font(.headline).padding([.top, .horizontal])
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    SettingsSectionHeader(title: "Behavior")
                 ForEach(GeneralSettingType.allCases) { setting in
-                    GeneralSettingToggleRowView(setting: setting, isEnabled: binding(for: setting))
+                    IconToggleRow(systemImage: setting.systemImage, color: setting.iconColor, title: setting.displayName, isOn: binding(for: setting))
                     if setting == .expandOnHover, settings.settings.expandOnHover {
                         CustomSliderRowView(
                             label: "Hover Delay",
@@ -517,51 +1567,19 @@ struct GeneralSettingsView: View {
                         Text("Allow in Apps")
                             .font(.headline)
                             .padding([.horizontal])
-                        HStack {
-                            Button("Select All") { setAllApps(to: true) }
-                            Button("Deselect All") { setAllApps(to: false) }
-                        }
-                        .padding(.vertical, 4)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                Text("Browsers (Disabled by Default)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.vertical, 5)
-                                ForEach(browserApps) { app in
-                                    SystemAppRowView(app: app, isEnabled: capsLockAppBinding(for: app, isBrowser: true))
-                                    if app.id != browserApps.last?.id {
-                                        Rectangle()
-                                            .fill(Color.white.opacity(0.2))
-                                            .frame(height: 1)
-                                            .padding(.leading, 50)
-                                    }
-                                }
-                                Text("Other Apps")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.vertical, 5)
-                                ForEach(otherApps) { app in
-                                    SystemAppRowView(app: app, isEnabled: capsLockAppBinding(for: app, isBrowser: false))
-                                    if app.id != otherApps.last?.id {
-                                        Rectangle()
-                                            .fill(Color.white.opacity(0.2))
-                                            .frame(height: 1)
-                                            .padding(.leading, 50)
-                                    }
-                                }
-                            }
-                        }
-                        .frame(maxHeight: 360)
+                        AppTogglesListView(
+                            isEnabled: { app in capsLockAppBinding(for: app, isBrowser: app.isBrowser) },
+                            maxHeight: 360,
+                            browsersSectionTitle: "Browsers (Disabled by Default)",
+                            onSelectAll: setAllApps
+                        )
                     }
                     .padding()
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }.modifier(SettingsContainerModifier())
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("System").font(.headline).padding([.top, .horizontal])
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                SettingsCard(title: "System") {
 
                     InfoContainer(
                         text: "Use “Hide from Screen Sharing” when you never want Sapphire captured. Use “Hide notch when inactive” when you only want the notch hidden while it is idle.",
@@ -615,19 +1633,8 @@ struct GeneralSettingsView: View {
                         .padding(.bottom)
 
                 }
-                .modifier(SettingsContainerModifier())
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Widget Transitions")
-                        .font(.headline)
-                        .padding([.top, .horizontal])
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text("Control the visual effects when switching between widgets inside the expanded notch.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                        .padding(.bottom, 5)
+                SettingsCard(title: "Widget Transitions", description: "Control the visual effects when switching between widgets inside the expanded notch.") {
 
                     Toggle("Enable Fade Effect", isOn: $settings.settings.enableWidgetSwitchFade)
                         .padding()
@@ -638,7 +1645,6 @@ struct GeneralSettingsView: View {
                     Toggle("Enable Bounce Effect", isOn: $settings.settings.enableWidgetSwitchBounce)
                         .padding()
                 }
-                .modifier(SettingsContainerModifier())
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Animation Profile")
@@ -1038,6 +2044,7 @@ struct CustomNotchConfigView: View {
 
 struct FileShelfSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
+    @ObservedObject private var continuity = ContinuityManager.shared
 
     var body: some View {
         ScrollView {
@@ -1070,10 +2077,37 @@ struct FileShelfSettingsView: View {
                     )
                 }
                 .modifier(SettingsContainerModifier())
+
+                SettingsCard(
+                    title: "Drop Destinations",
+                    description: "Choose which destinations appear when you drag files into the notch."
+                ) {
+                    ToggleRow(
+                        title: "AirDrop",
+                        description: "Show the AirDrop box in the File Shelf landing view.",
+                        isOn: $settings.settings.fileShelfAirDropDestinationEnabled
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Share to Devices",
+                        description: deviceDestinationDescription,
+                        isOn: $settings.settings.fileShelfDeviceDestinationsEnabled
+                    )
+                }
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+    }
+
+    private var deviceDestinationDescription: String {
+        let count = continuity.peers.count
+        if count == 0 {
+            return "Show a same-size card for your paired Continuity devices. Pair a device in Continuity settings to make it available."
+        }
+        return "Show all \(count) paired \(count == 1 ? "device" : "devices") in an adaptive, same-size sharing card. Offline devices stay visible."
     }
 }
 
@@ -1112,17 +2146,7 @@ struct NotesSettingsView: View {
                 }
                 .modifier(SettingsContainerModifier())
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Swipe Actions")
-                        .font(.headline)
-                        .padding([.top, .horizontal])
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text("Customize what happens when you swipe a note row left or right in the full notes view.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                        .padding(.bottom, 5)
+                SettingsCard(title: "Swipe Actions", description: "Customize what happens when you swipe a note row left or right in the full notes view.") {
 
                     SwipeActionPickerRow(
                         title: "Swipe Right",
@@ -1142,7 +2166,6 @@ struct NotesSettingsView: View {
                         label: { $0.displayName }
                     )
                 }
-                .modifier(SettingsContainerModifier())
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1153,6 +2176,92 @@ struct NotesSettingsView: View {
 struct ClipboardSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
     @State private var historyCount = 0
+    @ObservedObject private var shortcutRecorder = GlobalShortcutRecorder.shared
+    @ObservedObject private var clipboardPickerManager = ClipboardPickerManager.shared
+
+    private var isRecordingPickerShortcut: Bool {
+        shortcutRecorder.isRecording && shortcutRecorder.recordingIdentifier == "clipboardPickerShortcut"
+    }
+
+    private var pickerShortcutLabel: String {
+        let shortcut = settings.settings.clipboardPickerShortcut
+        return "\(KeyboardShortcutHelper.description(for: shortcut.modifiers))\(shortcut.key)"
+    }
+
+    private var quickPickerSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PremiumFeatureView(feature: .clipboardPicker) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsSectionHeader(title: "Quick Picker", description: "Open the unified Sapphire picker right where you're typing with a global shortcut. Selecting a clipboard item copies it and pastes it at the cursor; the Emoji tab types emoji directly. (The emoji shortcut opens the same panel on its Emoji tab.)")
+
+                    ToggleRow(
+                        title: "Enable Quick Picker",
+                        description: "Allow the global shortcut to open the clipboard panel anywhere.",
+                        isOn: $settings.settings.clipboardPickerEnabled
+                    )
+
+                    Divider().padding(.leading, 20)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Picker Shortcut")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("Replaces the default paste-and-match-style shortcut.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+
+                        if !isRecordingPickerShortcut {
+                            Text(pickerShortcutLabel)
+                                .font(.caption.monospaced())
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.white.opacity(0.07))
+                                .clipShape(Capsule())
+                        }
+
+                        Button(isRecordingPickerShortcut ? "Cancel" : "Record…") {
+                            if isRecordingPickerShortcut {
+                                shortcutRecorder.stopRecording()
+                            } else {
+                                shortcutRecorder.startRecording(identifier: "clipboardPickerShortcut") { key, modifiers in
+                                    settings.settings.clipboardPickerShortcut = KeyboardShortcut(key: key, modifiers: modifiers)
+                                }
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!settings.settings.clipboardPickerEnabled)
+                    }
+                    .padding()
+
+                    Divider().padding(.leading, 20)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Open Picker")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("Try the picker right now — it opens on the Clipboard tab.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            clipboardPickerManager.presentPicker()
+                        } label: {
+                            Label("Open Picker", systemImage: "list.clipboard")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.mint)
+                        .disabled(!settings.settings.clipboardPickerEnabled)
+                    }
+                    .padding()
+                }
+            }
+        }
+        .modifier(SettingsContainerModifier())
+    }
 
     var body: some View {
         ScrollView {
@@ -1160,6 +2269,8 @@ struct ClipboardSettingsView: View {
                 Text("Clipboard")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
+
+                RequiredPermissionsView(section: .clipboard)
 
                 VStack(alignment: .leading, spacing: 0) {
                     ToggleRow(
@@ -1200,6 +2311,8 @@ struct ClipboardSettingsView: View {
                     }
                 }
                 .modifier(SettingsContainerModifier())
+
+                quickPickerSection
 
                 VStack(alignment: .leading, spacing: 0) {
                     ToggleRow(
@@ -1258,17 +2371,7 @@ struct ClipboardSettingsView: View {
                 }
                 .modifier(SettingsContainerModifier())
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Swipe Actions")
-                        .font(.headline)
-                        .padding([.top, .horizontal])
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Text("Customize what happens when you swipe a clipboard row left or right in the full clipboard view.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                        .padding(.bottom, 5)
+                SettingsCard(title: "Swipe Actions", description: "Customize what happens when you swipe a clipboard row left or right in the full clipboard view.") {
 
                     SwipeActionPickerRow(
                         title: "Swipe Right",
@@ -1287,6 +2390,192 @@ struct ClipboardSettingsView: View {
                         options: ClipboardSwipeAction.allCases,
                         label: { $0.displayName }
                     )
+                }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    PremiumFeatureView(feature: .clipboardAdvancedTools) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsSectionHeader(title: "Auto-Clear Clipboard", description: "Empty the system clipboard a set time after copying, or when the Mac sleeps or the screen locks. Saved history items are never touched.")
+
+                            ToggleRow(
+                                title: "Enable Auto-Clear",
+                                description: "Work with or without clipboard history enabled.",
+                                isOn: $settings.settings.clipboardAutoClearEnabled
+                            )
+
+                            if settings.settings.clipboardAutoClearEnabled {
+                                Divider().padding(.leading, 20)
+
+                                ToggleRow(
+                                    title: "Clear After a Delay",
+                                    description: "Empty the clipboard this long after you copy something.",
+                                    isOn: Binding(
+                                        get: { settings.settings.clipboardAutoClearInterval > 0 },
+                                        set: { on in
+                                            if on, settings.settings.clipboardAutoClearInterval <= 0 {
+                                                settings.settings.clipboardAutoClearInterval = 30
+                                            } else if !on {
+                                                settings.settings.clipboardAutoClearInterval = 0
+                                            }
+                                        }
+                                    )
+                                )
+
+                                if settings.settings.clipboardAutoClearInterval > 0 {
+                                    Divider().padding(.leading, 20)
+                                    CustomSliderRowView(
+                                        label: "Clear After",
+                                        value: $settings.settings.clipboardAutoClearInterval,
+                                        range: 5...300,
+                                        specifier: "%.0f s"
+                                    )
+                                    .padding(.horizontal)
+                                }
+
+                                Divider().padding(.leading, 20)
+                                ToggleRow(
+                                    title: "Clear When Mac Sleeps",
+                                    description: "Empty the clipboard when the Mac (or its display) sleeps.",
+                                    isOn: $settings.settings.clipboardAutoClearOnSleep
+                                )
+
+                                Divider().padding(.leading, 20)
+                                ToggleRow(
+                                    title: "Clear When Screen Locks",
+                                    description: "Empty the clipboard when the screen locks.",
+                                    isOn: $settings.settings.clipboardAutoClearOnLock
+                                )
+                            }
+                        }
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    PremiumFeatureView(feature: .clipboardAdvancedTools) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsSectionHeader(title: "Clean URL", description: "Strip tracking parameters (utm_*, fbclid, gclid, …) from copied links automatically. Images, files and rich text pass through untouched.")
+
+                            ToggleRow(
+                                title: "Clean Copied Links",
+                                description: "Rewrite copied URLs without their tracking parameters.",
+                                isOn: $settings.settings.clipboardCleanURLEnabled
+                            )
+
+                            if settings.settings.clipboardCleanURLEnabled {
+                                Divider().padding(.leading, 20)
+                                ToggleRow(
+                                    title: "Clean Automatically on Copy",
+                                    description: "Clean as soon as a link is copied. Turn off to only clean from the picker.",
+                                    isOn: $settings.settings.clipboardCleanURLAutoClean
+                                )
+                            }
+                        }
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    PremiumFeatureView(feature: .clipboardAdvancedTools) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsSectionHeader(title: "Finder Cut & Paste", description: "⌘X then ⌘V moves copied files instead of copying them, ⌘V pastes copied images as PNG files into the front Finder folder, and F2 renames the selected item.")
+
+                            ToggleRow(
+                                title: "Enable Finder Shortcuts",
+                                description: "Active only while Finder is the app in front.",
+                                isOn: $settings.settings.clipboardFinderCutPasteEnabled
+                            )
+
+                            if settings.settings.clipboardFinderCutPasteEnabled {
+                                Divider().padding(.leading, 20)
+                                ToggleRow(
+                                    title: "Paste Images as PNG Files",
+                                    description: "⌘V in Finder turns a copied image into a PNG file in the front folder.",
+                                    isOn: $settings.settings.clipboardFinderPasteImagesAsPNG
+                                )
+
+                                Divider().padding(.leading, 20)
+                                ToggleRow(
+                                    title: "F2 Renames the Selection",
+                                    description: "Press F2 in Finder to start an inline rename.",
+                                    isOn: $settings.settings.clipboardFinderF2RenameEnabled
+                                )
+                            }
+                        }
+                    }
+                }
+                .modifier(SettingsContainerModifier())
+
+                VStack(alignment: .leading, spacing: 0) {
+                    PremiumFeatureView(feature: .clipboardAdvancedTools) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            SettingsSectionHeader(title: "Text Snippets", description: "Type a short trigger anywhere and it becomes your text. Use \"{{date}}\", \"{{time}}\", \"{{date:MMMM d}}\" or \"{{clipboard}}\" in the replacement. Sapphire never expands while you type inside Sapphire itself.")
+
+                            ToggleRow(
+                                title: "Enable Text Snippets",
+                                description: "Expand triggers as you type in any app.",
+                                isOn: $settings.settings.snippetsEnabled
+                            )
+
+                            if settings.settings.snippetsEnabled {
+                                Divider().padding(.leading, 20)
+                                ToggleRow(
+                                    title: "Expand After Space or Punctuation",
+                                    description: "Off expands the moment the trigger completes.",
+                                    isOn: $settings.settings.snippetsExpandAfterSpace
+                                )
+
+                                Divider().padding(.leading, 20)
+                                HStack {
+                                    Text("Snippets").font(.subheadline).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button {
+                                        settings.settings.snippetsList.append(SnippetEntry())
+                                    } label: {
+                                        Label("Add Snippet", systemImage: "plus.circle")
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                                .padding(.horizontal)
+
+                                ForEach($settings.settings.snippetsList) { $snippet in
+                                    Divider().padding(.leading, 20)
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack(spacing: 8) {
+                                            Toggle("", isOn: $snippet.isEnabled)
+                                                .toggleStyle(.switch)
+                                                .controlSize(.small)
+                                            TextField("Trigger", text: $snippet.trigger)
+                                                .textFieldStyle(.roundedBorder)
+                                                .frame(width: 150)
+                                            Spacer()
+                                            Button {
+                                                let doomed = snippet.id
+                                                DispatchQueue.main.async {
+                                                    settings.settings.snippetsList.removeAll { $0.id == doomed }
+                                                }
+                                            } label: {
+                                                Image(systemName: "minus.circle.fill").foregroundStyle(.red)
+                                            }
+                                            .buttonStyle(.borderless)
+                                        }
+                                        TextField("Replacement text…", text: $snippet.replacement, axis: .vertical)
+                                            .textFieldStyle(.roundedBorder)
+                                            .lineLimit(1...4)
+                                    }
+                                    .padding(.horizontal)
+                                }
+
+                                if settings.settings.snippetsList.isEmpty {
+                                    Text("No snippets yet — add one, then type its trigger in any app.")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                        .padding(.horizontal)
+                                        .padding(.bottom, 6)
+                                }
+                            }
+                        }
+                    }
                 }
                 .modifier(SettingsContainerModifier())
             }
@@ -1418,6 +2707,8 @@ struct CaffeineSettingsView: View {
                 }
                 .modifier(SettingsContainerModifier())
 
+                CaffeineAutoTaskSettingsView()
+
                 LidAngleCaffeineSettingsView()
             }
             .padding(25)
@@ -1447,6 +2738,7 @@ struct WidgetsSettingsView: View {
                     )
                     Divider().padding(.leading, 20)
                     ToggleRow(title: "Hide Music Widget", description: "Hide music widget if no media is playing", isOn: $settings.settings.hideMusicWidgetWhenNotPlaying)
+                    ToggleRow(title: "Hide Paused Spotify Song", description: "Hide the music widget when Spotify is paused and no other system media is playing", isOn: $settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle)
                     ToggleRow(title: "Persist Music Widget", description: "Keep the music widget visible with the last track even when playback is paused or stopped", isOn: $settings.settings.persistMusicWidgetWhenPaused)
                 }
                 .modifier(SettingsContainerModifier())
@@ -1487,7 +2779,7 @@ struct WidgetsSettingsView: View {
 
 struct LiveActivitiesSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
-    @State private var availableSensors: [Sensor_p] = []
+    @State private var availableSensors: [any Sensor_p] = []
 
     private enum PersistentActivitySelection: String, CaseIterable, Identifiable {
         case none = "None"
@@ -2369,31 +3661,12 @@ struct WeatherInfoSettingsView: View {
     @Binding var selectedInfo: [WeatherInfoType]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Visible Weather Info")
-                .font(.caption.weight(.medium))
-                .foregroundColor(.secondary)
-                .padding(.top, 8)
-
-            ForEach(WeatherInfoType.selectableCases) { infoType in
-                let isSelectedBinding = Binding<Bool>(
-                    get: { selectedInfo.contains(infoType) },
-                    set: { isSelected in
-                        if isSelected {
-                            if !selectedInfo.contains(infoType) {
-                                selectedInfo.append(infoType)
-                            }
-                        } else {
-                            selectedInfo.removeAll { $0 == infoType }
-                        }
-                    }
-                )
-
-                Toggle(infoType.displayName, isOn: isSelectedBinding)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.bottom)
+        SettingsMultiSelectList(
+            title: "Visible Weather Info",
+            options: WeatherInfoType.selectableCases,
+            selection: $selectedInfo,
+            label: \.displayName
+        )
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
@@ -2402,31 +3675,12 @@ struct BatteryInfoSettingsView: View {
     @Binding var selectedInfo: [BatteryInfoType]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Visible Battery Info")
-                .font(.caption.weight(.medium))
-                .foregroundColor(.secondary)
-                .padding(.top, 8)
-
-            ForEach(BatteryInfoType.allCases) { infoType in
-                let isSelectedBinding = Binding<Bool>(
-                    get: { selectedInfo.contains(infoType) },
-                    set: { isSelected in
-                        if isSelected {
-                            if !selectedInfo.contains(infoType) {
-                                selectedInfo.append(infoType)
-                            }
-                        } else {
-                            selectedInfo.removeAll { $0 == infoType }
-                        }
-                    }
-                )
-
-                Toggle(infoType.displayName, isOn: isSelectedBinding)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.bottom)
+        SettingsMultiSelectList(
+            title: "Visible Battery Info",
+            options: BatteryInfoType.allCases,
+            selection: $selectedInfo,
+            label: \.displayName
+        )
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
@@ -2584,30 +3838,12 @@ struct LockScreenSettingsView: View {
 
                         Divider().padding(.leading, 20)
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Visible Widgets")
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(.secondary)
-                                .padding(.top, 8)
-
-                            ForEach(LockScreenWidgetType.selectableCases) { widgetType in
-                                let isSelectedBinding = Binding<Bool>(
-                                    get: { settings.settings.lockScreenWidgets.contains(widgetType) },
-                                    set: { isSelected in
-                                        if isSelected {
-                                            if !settings.settings.lockScreenWidgets.contains(widgetType) {
-                                                settings.settings.lockScreenWidgets.append(widgetType)
-                                            }
-                                        } else {
-                                            settings.settings.lockScreenWidgets.removeAll { $0 == widgetType }
-                                        }
-                                    }
-                                )
-                                Toggle(widgetType.displayName, isOn: isSelectedBinding)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.bottom)
+                        SettingsMultiSelectList(
+                            title: "Visible Widgets",
+                            options: LockScreenWidgetType.selectableCases,
+                            selection: $settings.settings.lockScreenWidgets,
+                            label: \.displayName
+                        )
 
                         if settings.settings.lockScreenWidgets.contains(.weather) {
                             Divider().padding(.horizontal)
@@ -2637,30 +3873,12 @@ struct LockScreenSettingsView: View {
                     if settings.settings.lockScreenShowMainWidget {
                         Divider().padding(.leading, 20)
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Visible Main Widgets")
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(.secondary)
-                                .padding(.top, 8)
-
-                            ForEach(LockScreenMainWidgetType.selectableCases) { widgetType in
-                                let isSelectedBinding = Binding<Bool>(
-                                    get: { settings.settings.lockScreenMainWidgets.contains(widgetType) },
-                                    set: { isSelected in
-                                        if isSelected {
-                                            if !settings.settings.lockScreenMainWidgets.contains(widgetType) {
-                                                settings.settings.lockScreenMainWidgets.append(widgetType)
-                                            }
-                                        } else {
-                                            settings.settings.lockScreenMainWidgets.removeAll { $0 == widgetType }
-                                        }
-                                    }
-                                )
-                                Toggle(widgetType.displayName, isOn: isSelectedBinding)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.bottom)
+                        SettingsMultiSelectList(
+                            title: "Visible Main Widgets",
+                            options: LockScreenMainWidgetType.selectableCases,
+                            selection: $settings.settings.lockScreenMainWidgets,
+                            label: \.displayName
+                        )
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
@@ -2679,30 +3897,12 @@ struct LockScreenSettingsView: View {
                     if settings.settings.lockScreenShowMiniWidgets {
                         Divider().padding(.leading, 20)
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Visible Mini Widgets")
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(.secondary)
-                                .padding(.top, 8)
-
-                            ForEach(LockScreenMiniWidgetType.selectableCases) { widgetType in
-                                let isSelectedBinding = Binding<Bool>(
-                                    get: { settings.settings.lockScreenMiniWidgets.contains(widgetType) },
-                                    set: { isSelected in
-                                        if isSelected {
-                                            if !settings.settings.lockScreenMiniWidgets.contains(widgetType) {
-                                                settings.settings.lockScreenMiniWidgets.append(widgetType)
-                                            }
-                                        } else {
-                                            settings.settings.lockScreenMiniWidgets.removeAll { $0 == widgetType }
-                                        }
-                                    }
-                                )
-                                Toggle(widgetType.displayName, isOn: isSelectedBinding)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.bottom)
+                        SettingsMultiSelectList(
+                            title: "Visible Mini Widgets",
+                            options: LockScreenMiniWidgetType.selectableCases,
+                            selection: $settings.settings.lockScreenMiniWidgets,
+                            label: \.displayName
+                        )
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
@@ -2845,6 +4045,7 @@ struct SnapZonesSettingsView: View {
 
     @State private var appToConfigureMultiLayout: String?
     @State private var multiLayoutIDsForSheet: [UUID] = []
+    @State private var snapShortcutsExpanded = false
 
     private var allLayouts: [SnapLayout] {
         LayoutTemplate.allTemplates + settings.settings.customSnapLayouts
@@ -2906,8 +4107,32 @@ struct SnapZonesSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding()
+
+                    Divider().padding(.leading, 20)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Reposition & Resize")
+                                .font(.system(size: 14, weight: .medium))
+                            Spacer()
+                            Picker("Reposition & Resize", selection: $settings.settings.snapWindowAnimation) {
+                                ForEach(SnapWindowAnimation.allCases) { animation in
+                                    Text(animation.displayName).tag(animation)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(width: 150)
+                        }
+                        Text(settings.settings.snapWindowAnimation.summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
                 }
                 .modifier(SettingsContainerModifier())
+
+                snapShortcutsManagementSection
 
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
@@ -2979,6 +4204,44 @@ struct SnapZonesSettingsView: View {
         .popover(isPresented: $isShowingAppPicker, arrowEdge: .bottom) {
             AppPickerView(apps: appFetcher.apps, onSelect: addAppSpecificLayout)
         }
+    }
+
+    @ViewBuilder
+    private var snapShortcutsManagementSection: some View {
+        DisclosureGroup(isExpanded: $snapShortcutsExpanded) {
+            VStack(alignment: .leading, spacing: 0) {
+                PremiumFeatureView(feature: .snapZonesKeyboardShortcuts) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Assign a shortcut to a zone to snap the currently focused window there. Recording a shortcut already used by another zone moves it to this zone.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal)
+                            .padding(.top, 12)
+                            .padding(.bottom, 8)
+
+                        ForEach(allLayouts) { layout in
+                            SnapZoneShortcutLayoutView(
+                                layout: layout,
+                                shortcuts: settings.settings.snapZoneShortcuts,
+                                onChange: { zoneID, shortcut in
+                                    modifySettings { $0.setSnapZoneShortcut(shortcut, for: layout.id, zoneID: zoneID) }
+                                }
+                            )
+                            if layout.id != allLayouts.last?.id {
+                                Divider().padding(.leading, 20)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label("Snap Zone Shortcuts", systemImage: "keyboard")
+                .font(.headline)
+                .padding([.top, .horizontal])
+                .padding(.bottom, 6)
+        }
+        .modifier(SettingsContainerModifier())
     }
 
     @ViewBuilder
@@ -3159,6 +4422,7 @@ struct SnapZonesSettingsView: View {
                     break
                 }
             }
+            settings.snapZoneShortcuts.removeAll { $0.layoutID == layoutToDelete.id }
             settings.planes.removeAll { $0.layoutID == layoutToDelete.id }
         }
     }
@@ -3188,6 +4452,103 @@ struct SnapZonesSettingsView: View {
     private func addLayoutOption(_ layoutID: UUID) { modifySettings { $0.snapZoneLayoutOptions.append(layoutID) } }
     private func moveLayoutOption(from source: IndexSet, to destination: Int) { modifySettings { $0.snapZoneLayoutOptions.move(fromOffsets: source, toOffset: destination) } }
     private func deleteLayoutOption(at offsets: IndexSet) { modifySettings { $0.snapZoneLayoutOptions.remove(atOffsets: offsets) } }
+}
+
+fileprivate struct SnapZoneShortcutLayoutView: View {
+    let layout: SnapLayout
+    let shortcuts: [SnapZoneShortcut]
+    let onChange: (UUID, KeyboardShortcut?) -> Void
+
+    @ObservedObject private var shortcutRecorder = GlobalShortcutRecorder.shared
+
+    private func shortcut(for zoneID: UUID) -> KeyboardShortcut? {
+        shortcuts.first { $0.layoutID == layout.id && $0.zoneID == zoneID }?.shortcut
+    }
+
+    private func recordingIdentifier(for zoneID: UUID) -> String {
+        "snap-zone-\(layout.id.uuidString)-\(zoneID.uuidString)"
+    }
+
+    private func toggleRecording(for zoneID: UUID) {
+        let identifier = recordingIdentifier(for: zoneID)
+        if shortcutRecorder.isRecording {
+            if shortcutRecorder.recordingIdentifier == identifier {
+                shortcutRecorder.stopRecording()
+            }
+            return
+        }
+
+        shortcutRecorder.startRecording(identifier: identifier) { key, flags in
+            onChange(zoneID, KeyboardShortcut(key: key, modifiers: flags))
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Image(systemName: "rectangle.3.group")
+                    .foregroundStyle(Color.accentColor)
+                Text(layout.name)
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Text("\(layout.zones.count) zones")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+
+            ForEach(Array(layout.zones.enumerated()), id: \.element.id) { index, zone in
+                let zoneShortcut = shortcut(for: zone.id)
+                let identifier = recordingIdentifier(for: zone.id)
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Zone \(index + 1)")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("\(Int(zone.width * 100))% x \(Int(zone.height * 100))%")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+
+                    Button(action: { toggleRecording(for: zone.id) }) {
+                        HStack(spacing: 6) {
+                            if shortcutRecorder.isRecording && shortcutRecorder.recordingIdentifier == identifier {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Recording...")
+                            } else if let zoneShortcut {
+                                Image(systemName: "keyboard")
+                                Text("\(KeyboardShortcutHelper.description(for: zoneShortcut.modifiers))\(zoneShortcut.key)")
+                            } else {
+                                Image(systemName: "keyboard")
+                                Text("Record")
+                            }
+                        }
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .frame(minWidth: 125)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(shortcutRecorder.isRecording && shortcutRecorder.recordingIdentifier != identifier)
+                    .help(zoneShortcut == nil ? "Record a shortcut for Zone \(index + 1)" : "Change the shortcut for Zone \(index + 1)")
+
+                    if zoneShortcut != nil {
+                        Button {
+                            onChange(zone.id, nil)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .help("Clear shortcut")
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+            }
+        }
+    }
 }
 
 fileprivate struct AppSpecificLayoutConfigRow: View {
@@ -3414,47 +4775,6 @@ fileprivate struct CustomLayoutRow: View {
     }
 }
 
-fileprivate struct AppSpecificLayoutRow: View {
-    let appIcon: NSImage?
-    let appName: String
-    @Binding var selection: UUID
-    let options: [SnapLayout]
-    let defaultID: UUID
-    let onDelete: () -> Void
-
-    var body: some View {
-        HStack {
-            if let icon = appIcon {
-                Image(nsImage: icon)
-                    .resizable().frame(width: 28, height: 28)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            } else {
-                Image(systemName: "app.dashed")
-                    .font(.title2).frame(width: 28)
-            }
-
-            Text(appName).lineLimit(1)
-            Spacer()
-            ModernMenuPickerWithID(
-                selection: $selection,
-                options: options,
-                titleKeyPath: \.name,
-                defaultID: defaultID
-            )
-
-            Button(action: onDelete) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.body)
-                    .foregroundColor(.secondary.opacity(0.7))
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 8)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 20)
-    }
-}
-
 fileprivate struct ModernMenuPickerWithID<T: Identifiable & Hashable>: View where T.ID == UUID {
     @Binding var selection: T.ID
     let options: [T]
@@ -3585,9 +4905,7 @@ struct NotificationsSettingsView: View {
                         Text("Enable Notifications")
                             .font(.system(size: 14, weight: .medium))
                         Spacer()
-                        Toggle("", isOn: $settings.settings.masterNotificationsEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
+                        SettingsSwitch(isOn: $settings.settings.masterNotificationsEnabled)
                             .animation(.default, value: settings.settings.masterNotificationsEnabled)
                     }
                     .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
@@ -3690,9 +5008,7 @@ struct NotificationsSettingsView: View {
                             Text("System Notifications")
                                 .font(.system(size: 14, weight: .medium))
                             Spacer()
-                            Toggle("", isOn: $settings.settings.systemNotificationsEnabled)
-                                .labelsHidden()
-                                .toggleStyle(.switch)
+                            SettingsSwitch(isOn: $settings.settings.systemNotificationsEnabled)
                                 .animation(.default, value: settings.settings.systemNotificationsEnabled)
                         }
                         .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
@@ -3706,22 +5022,9 @@ struct NotificationsSettingsView: View {
                             .disabled(!settings.settings.systemNotificationsEnabled)
                             .opacity(settings.settings.systemNotificationsEnabled ? 1.0 : 0.5)
 
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(appFetcher.apps) { app in
-                                    SystemAppRowView(app: app, isEnabled: binding(for: app))
-                                    if app.id != appFetcher.apps.last?.id {
-                                        Rectangle()
-                                            .fill(Color.white.opacity(0.2))
-                                            .frame(height: 1)
-                                            .padding(.leading, 50)
-                                    }
-                                }
-                            }
-                        }
-                        .frame(maxHeight: 360)
-                        .disabled(!settings.settings.systemNotificationsEnabled)
-                        .opacity(settings.settings.systemNotificationsEnabled ? 1.0 : 0.5)
+                        AppTogglesListView(isEnabled: { app in binding(for: app) }, maxHeight: 360)
+                            .disabled(!settings.settings.systemNotificationsEnabled)
+                            .opacity(settings.settings.systemNotificationsEnabled ? 1.0 : 0.5)
                     }
                 }
                 .modifier(SettingsContainerModifier())
@@ -3760,6 +5063,8 @@ struct ProximityUnlockSettingsView: View {
     @State private var isFindingByDistance = false
     @State private var isCalibratingRSSI = false
     @State private var pendingFaceProfileAction: FaceProfileAction?
+    @State private var newFaceIDWiFiNetworkName = ""
+    @ObservedObject private var wifiMonitor = WiFiStatusMonitor.shared
 
     private let deviceRowHeight: CGFloat = 38
     private let maxDeviceListHeight: CGFloat = 228
@@ -3893,6 +5198,7 @@ struct ProximityUnlockSettingsView: View {
         }
         .onAppear {
             authManager.fetchRegisteredFaces()
+            authManager.refreshFaceIDLocation()
         }
         .onDisappear {
             if authManager.isScanning {
@@ -3982,6 +5288,8 @@ struct ProximityUnlockSettingsView: View {
                 }
 
                 Divider().padding(.leading, 20)
+                faceIDLocationSection
+                Divider().padding(.leading, 20)
                 faceIDSecuritySection
 
                 Divider().padding(.horizontal)
@@ -3989,6 +5297,101 @@ struct ProximityUnlockSettingsView: View {
         }
         .modifier(SettingsContainerModifier())
         .opacity(authManager.isPasswordSet ? 1.0 : 0.6)
+    }
+
+    @ViewBuilder
+    private var faceIDLocationSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Locations").font(.subheadline).bold().padding([.horizontal, .top])
+
+            Picker("Face ID works", selection: $settings.settings.faceIDLocationPolicy) {
+                ForEach(FaceIDLocationPolicy.allCases) { policy in
+                    Text(policy.displayName).tag(policy)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+
+            if settings.settings.faceIDLocationPolicy == .selectedWiFiNetworks {
+                Text("Use trusted Wi-Fi networks as locations. Face ID will not start on other networks or when the network name is unavailable.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+
+                HStack(spacing: 8) {
+                    if let currentNetwork = wifiMonitor.state.networkName {
+                        Button {
+                            addFaceIDWiFiNetwork(currentNetwork)
+                        } label: {
+                            Label("Use \(currentNetwork)", systemImage: "wifi")
+                        }
+                        .disabled(settings.settings.faceIDAllowedWiFiNetworks.contains(currentNetwork))
+                    } else {
+                        Text("No Wi-Fi network detected")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        authManager.refreshFaceIDLocation()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Refresh current Wi-Fi network")
+                }
+                .padding(.horizontal)
+
+                HStack(spacing: 8) {
+                    TextField("Wi-Fi network name", text: $newFaceIDWiFiNetworkName)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        addFaceIDWiFiNetwork(newFaceIDWiFiNetworkName)
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .disabled(newFaceIDWiFiNetworkName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help("Add Wi-Fi network")
+                }
+                .padding(.horizontal)
+
+                if settings.settings.faceIDAllowedWiFiNetworks.isEmpty {
+                    Text("No trusted locations have been added. Face ID will remain unavailable until one is added.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .padding(.horizontal)
+                } else {
+                    ForEach(settings.settings.faceIDAllowedWiFiNetworks, id: \.self) { networkName in
+                        HStack {
+                            Image(systemName: "wifi")
+                                .foregroundStyle(.secondary)
+                            Text(networkName)
+                            Spacer()
+                            Button {
+                                settings.settings.faceIDAllowedWiFiNetworks.removeAll { $0 == networkName }
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.red)
+                            .help("Remove \(networkName)")
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+            }
+        }
+        .padding(.bottom, 8)
+    }
+
+    private func addFaceIDWiFiNetwork(_ name: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              !settings.settings.faceIDAllowedWiFiNetworks.contains(trimmedName) else { return }
+        settings.settings.faceIDAllowedWiFiNetworks.append(trimmedName)
+        newFaceIDWiFiNetworkName = ""
     }
 
     @ViewBuilder
@@ -5032,10 +6435,10 @@ struct LidAngleCaffeineSettingsView: View {
         }
         .modifier(SettingsContainerModifier())
         .onAppear {
-            lidAngleSensor.acquire(.settingsPreview)
+            lidAngleSensor.acquire(.caffeineSettingsPreview)
         }
         .onDisappear {
-            lidAngleSensor.release(.settingsPreview)
+            lidAngleSensor.release(.caffeineSettingsPreview)
         }
     }
 
@@ -5493,19 +6896,6 @@ struct PowerShareRow: View {
     }
 }
 
-struct PowerBreakdownCard: View {
-    let icon: String
-    let title: String
-    let power: Double
-    let color: Color
-
-    var body: some View {
-        PowerShareRow(icon: icon, title: title, power: power, fraction: 1, color: color)
-            .padding(12)
-            .materialChartCard(accent: color)
-    }
-}
-
 struct ModernBatteryStatsView: View {
     @StateObject private var viewModel = BatteryStatsViewModel()
     @StateObject private var historyViewModel = BatteryHistoryViewModel()
@@ -5551,8 +6941,7 @@ struct ModernBatteryStatsView: View {
             .padding(.bottom, 25)
         }
         .onAppear {
-            viewModel.start()
-            viewModel.setHighFrequencyPolling(true)
+            viewModel.start(highFrequency: true)
             StatsManager.shared.setPolling(for: "BatterySettingsView", requiredStats: [.batteryPower], interval: .seconds(1))
             historyViewModel.fetchHistory()
             energyViewModel.start()
@@ -5584,47 +6973,9 @@ struct ModernBatteryStatsView: View {
 
     private func tearDownBatteryStats() {
         energyViewModel.stop()
-        viewModel.setHighFrequencyPolling(false)
         viewModel.stop()
         historyViewModel.releaseMemory()
         StatsManager.shared.setPolling(for: "BatterySettingsView", requiredStats: [])
-    }
-}
-
-struct PowerStatCard: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let value: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(iconColor)
-                    .font(.system(size: 16))
-                Spacer()
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                Text(value)
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-
-                Text(subtitle)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(12)
-        .materialChartCard(height: 100)
     }
 }
 
@@ -5685,29 +7036,39 @@ struct BatterySpecsCard: View {
     }
 }
 
-struct MaxCapacityGraphCard: View {
-    @ObservedObject var viewModel: BatteryStatsViewModel
-    @ObservedObject var historyViewModel: BatteryHistoryViewModel
+private extension Array where Element == BatteryLogEntry {
+    func closest(to date: Date) -> BatteryLogEntry? {
+        self.min {
+            abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date))
+        }
+    }
+}
+
+private struct BatteryMetricGraphCard<Value: Plottable & Comparable>: View {
+    let title: String
+    let currentValue: String
+    let color: Color
+    let chartData: [BatteryLogEntry]
     @Binding var selectedTimeRange: TimeRange
-    @State private var isHovered = false
+    let yDomain: ClosedRange<Value>
+    let yAxisMarkCount: Int
+    let metricLabel: String
+    let metricValue: (BatteryLogEntry) -> Value
+    let annotationText: (BatteryLogEntry) -> String
+
     @State private var selectedDate: Date?
 
     var body: some View {
-        let chartData = historyViewModel.chartData.filter({ $0.maxCapacity > 0 })
-        let capacities = chartData.map { $0.maxCapacity }
-        let yDomainMin = (capacities.min() ?? 0) - 50
-        let yDomainMax = (capacities.max() ?? 8000) + 50
-
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Max Capacity").font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text(title).font(.system(size: 15, weight: .semibold, design: .rounded))
                 Spacer()
-                Text("\(viewModel.maxCapacityPercentage)%")
+                Text(currentValue)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(MaterialChartPalette.primary)
+                    .foregroundStyle(color)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(MaterialChartPalette.primary.opacity(0.14))
+                    .background(color.opacity(0.14))
                     .clipShape(Capsule())
             }
             .padding(.horizontal, 18)
@@ -5721,31 +7082,41 @@ struct MaxCapacityGraphCard: View {
             } else {
                 Chart {
                     ForEach(chartData) { entry in
-                        LineMark(x: .value("Time", entry.timestamp), y: .value("Capacity", entry.maxCapacity))
-                            .foregroundStyle(MaterialChartPalette.lineGradient(for: MaterialChartPalette.primary))
-                            .interpolationMethod(.linear)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        AreaMark(x: .value("Time", entry.timestamp), y: .value("Capacity", entry.maxCapacity))
-                            .foregroundStyle(MaterialChartPalette.tonalGradient(for: MaterialChartPalette.primary))
-                            .interpolationMethod(.linear)
+                        LineMark(
+                            x: .value("Time", entry.timestamp),
+                            y: .value(metricLabel, metricValue(entry))
+                        )
+                        .foregroundStyle(MaterialChartPalette.lineGradient(for: color))
+                        .interpolationMethod(.linear)
+                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+
+                        AreaMark(
+                            x: .value("Time", entry.timestamp),
+                            y: .value(metricLabel, metricValue(entry))
+                        )
+                        .foregroundStyle(MaterialChartPalette.tonalGradient(for: color))
+                        .interpolationMethod(.linear)
                     }
 
-                    if let selectedDate, let entry = findClosest(to: selectedDate, in: chartData) {
-                        PointMark(x: .value("Time", entry.timestamp), y: .value("Capacity", entry.maxCapacity))
-                            .foregroundStyle(MaterialChartPalette.primary)
-                            .symbolSize(80)
+                    if let selectedDate, let entry = chartData.closest(to: selectedDate) {
+                        PointMark(
+                            x: .value("Time", entry.timestamp),
+                            y: .value(metricLabel, metricValue(entry))
+                        )
+                        .foregroundStyle(color)
+                        .symbolSize(80)
 
                         RuleMark(x: .value("Selected", selectedDate))
                             .foregroundStyle(MaterialChartPalette.outline)
                             .annotation(position: .top, alignment: .center) {
-                                MaterialSelectionPill(text: "\(entry.maxCapacity) mAh", color: MaterialChartPalette.primary)
+                                MaterialSelectionPill(text: annotationText(entry), color: color)
                             }
                     }
                 }
                 .materialChartPlotStyle()
-                .chartYScale(domain: yDomainMin...yDomainMax)
+                .chartYScale(domain: yDomain)
                 .dynamicXAxis(for: selectedTimeRange, isVisible: true)
-                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
+                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: yAxisMarkCount)) }
                 .chartXSelection(value: $selectedDate)
                 .frame(height: 150)
                 .padding(.horizontal, 12)
@@ -5754,11 +7125,30 @@ struct MaxCapacityGraphCard: View {
             Spacer()
         }
         .materialChartCard(height: 220)
-        .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
     }
+}
 
-    private func findClosest(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
-        data.min(by: { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) })
+struct MaxCapacityGraphCard: View {
+    @ObservedObject var viewModel: BatteryStatsViewModel
+    @ObservedObject var historyViewModel: BatteryHistoryViewModel
+    @Binding var selectedTimeRange: TimeRange
+
+    var body: some View {
+        let chartData = historyViewModel.chartData.filter { $0.maxCapacity > 0 }
+        let capacities = chartData.map(\.maxCapacity)
+
+        BatteryMetricGraphCard(
+            title: "Max Capacity",
+            currentValue: "\(viewModel.maxCapacityPercentage)%",
+            color: MaterialChartPalette.primary,
+            chartData: chartData,
+            selectedTimeRange: $selectedTimeRange,
+            yDomain: ((capacities.min() ?? 0) - 50)...((capacities.max() ?? 8000) + 50),
+            yAxisMarkCount: 3,
+            metricLabel: "Capacity",
+            metricValue: { $0.maxCapacity },
+            annotationText: { "\($0.maxCapacity) mAh" }
+        )
     }
 }
 
@@ -5766,76 +7156,23 @@ struct CycleCountGraphCard: View {
     @ObservedObject var viewModel: BatteryStatsViewModel
     @ObservedObject var historyViewModel: BatteryHistoryViewModel
     @Binding var selectedTimeRange: TimeRange
-    @State private var isHovered = false
-    @State private var selectedDate: Date?
 
     var body: some View {
-        let chartData = historyViewModel.chartData.filter({ $0.cycleCount > 0 })
-        let cycles = chartData.map { $0.cycleCount }
-        let yDomainMin = (cycles.min() ?? 0) - 10
-        let yDomainMax = (cycles.max() ?? 1000) + 10
+        let chartData = historyViewModel.chartData.filter { $0.cycleCount > 0 }
+        let cycles = chartData.map(\.cycleCount)
 
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Cycle Count").font(.system(size: 15, weight: .semibold, design: .rounded))
-                Spacer()
-                Text("\(viewModel.cycleCount)")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(MaterialChartPalette.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(MaterialChartPalette.secondary.opacity(0.14))
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
-
-            Spacer()
-
-            if chartData.isEmpty {
-                EmptyStatsView(height: 150)
-                    .padding(.horizontal, 16)
-            } else {
-                Chart {
-                    ForEach(chartData) { entry in
-                        LineMark(x: .value("Time", entry.timestamp), y: .value("Cycles", entry.cycleCount))
-                            .foregroundStyle(MaterialChartPalette.lineGradient(for: MaterialChartPalette.secondary))
-                            .interpolationMethod(.linear)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        AreaMark(x: .value("Time", entry.timestamp), y: .value("Cycles", entry.cycleCount))
-                            .foregroundStyle(MaterialChartPalette.tonalGradient(for: MaterialChartPalette.secondary))
-                            .interpolationMethod(.linear)
-                    }
-
-                    if let selectedDate, let entry = findClosest(to: selectedDate, in: chartData) {
-                        PointMark(x: .value("Time", entry.timestamp), y: .value("Cycles", entry.cycleCount))
-                            .foregroundStyle(MaterialChartPalette.secondary)
-                            .symbolSize(80)
-
-                        RuleMark(x: .value("Selected", selectedDate))
-                            .foregroundStyle(MaterialChartPalette.outline)
-                            .annotation(position: .top, alignment: .center) {
-                                MaterialSelectionPill(text: "\(entry.cycleCount) cycles", color: MaterialChartPalette.secondary)
-                            }
-                    }
-                }
-                .materialChartPlotStyle()
-                .chartYScale(domain: yDomainMin...yDomainMax)
-                .dynamicXAxis(for: selectedTimeRange, isVisible: true)
-                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) }
-                .chartXSelection(value: $selectedDate)
-                .frame(height: 150)
-                .padding(.horizontal, 12)
-            }
-
-            Spacer()
-        }
-        .materialChartCard(height: 220)
-        .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
-    }
-
-    private func findClosest(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
-        data.min(by: { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) })
+        BatteryMetricGraphCard(
+            title: "Cycle Count",
+            currentValue: "\(viewModel.cycleCount)",
+            color: MaterialChartPalette.secondary,
+            chartData: chartData,
+            selectedTimeRange: $selectedTimeRange,
+            yDomain: ((cycles.min() ?? 0) - 10)...((cycles.max() ?? 1000) + 10),
+            yAxisMarkCount: 3,
+            metricLabel: "Cycles",
+            metricValue: { $0.cycleCount },
+            annotationText: { "\($0.cycleCount) cycles" }
+        )
     }
 }
 
@@ -5843,80 +7180,26 @@ struct TemperatureGraphCard: View {
     @ObservedObject var viewModel: BatteryStatsViewModel
     @ObservedObject var historyViewModel: BatteryHistoryViewModel
     @Binding var selectedTimeRange: TimeRange
-    @State private var isHovered = false
-    @State private var selectedDate: Date?
 
     var body: some View {
-        let chartData = historyViewModel.chartData.filter({ $0.temperature > 0 })
-
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Temperature").font(.system(size: 15, weight: .semibold, design: .rounded))
-                Spacer()
-                Text(String(format: "%.1f °C", viewModel.temperature))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(MaterialChartPalette.error)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(MaterialChartPalette.error.opacity(0.14))
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
-
-            Spacer()
-
-            if chartData.isEmpty {
-                EmptyStatsView(height: 150)
-                    .padding(.horizontal, 16)
-            } else {
-                Chart {
-                    ForEach(chartData) { entry in
-                        LineMark(x: .value("Time", entry.timestamp), y: .value("Temp", entry.temperature))
-                            .foregroundStyle(MaterialChartPalette.lineGradient(for: MaterialChartPalette.error))
-                            .interpolationMethod(.linear)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                        AreaMark(x: .value("Time", entry.timestamp), y: .value("Temp", entry.temperature))
-                            .foregroundStyle(MaterialChartPalette.tonalGradient(for: MaterialChartPalette.error))
-                            .interpolationMethod(.linear)
-                    }
-
-                    if let selectedDate, let entry = findClosest(to: selectedDate, in: chartData) {
-                        PointMark(x: .value("Time", entry.timestamp), y: .value("Temp", entry.temperature))
-                            .foregroundStyle(MaterialChartPalette.error)
-                            .symbolSize(80)
-
-                        RuleMark(x: .value("Selected", selectedDate))
-                            .foregroundStyle(MaterialChartPalette.outline)
-                            .annotation(position: .top, alignment: .center) {
-                                MaterialSelectionPill(text: String(format: "%.1f °C", entry.temperature), color: MaterialChartPalette.error)
-                            }
-                    }
-                }
-                .materialChartPlotStyle()
-                .chartYScale(domain: 20...55)
-                .dynamicXAxis(for: selectedTimeRange, isVisible: true)
-                .chartYAxis { AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) }
-                .chartXSelection(value: $selectedDate)
-                .frame(height: 150)
-                .padding(.horizontal, 12)
-            }
-
-            Spacer()
-        }
-        .materialChartCard(height: 220)
-        .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
-    }
-
-    private func findClosest(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
-        data.min(by: { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) })
+        BatteryMetricGraphCard(
+            title: "Temperature",
+            currentValue: String(format: "%.1f °C", viewModel.temperature),
+            color: MaterialChartPalette.error,
+            chartData: historyViewModel.chartData.filter { $0.temperature > 0 },
+            selectedTimeRange: $selectedTimeRange,
+            yDomain: 20...55,
+            yAxisMarkCount: 4,
+            metricLabel: "Temp",
+            metricValue: { $0.temperature },
+            annotationText: { String(format: "%.1f °C", $0.temperature) }
+        )
     }
 }
 
 struct PowerTimeHistoryGraphView: View {
     @ObservedObject var historyViewModel: BatteryHistoryViewModel
     @Binding var selectedTimeRange: TimeRange
-    @State private var isHovered = false
     @State private var selectedDate: Date?
 
     var body: some View {
@@ -5950,12 +7233,12 @@ struct PowerTimeHistoryGraphView: View {
                     }
 
                     if let selectedDate {
-                        if let powerEntry = findClosest(to: selectedDate, in: powerData) {
+                        if let powerEntry = powerData.closest(to: selectedDate) {
                             PointMark(x: .value("Time", powerEntry.timestamp), y: .value("Power", powerEntry.powerConsumption))
                                 .foregroundStyle(MaterialChartPalette.primary)
                                 .symbolSize(80)
                         }
-                        if let timeEntry = findClosest(to: selectedDate, in: timeData) {
+                        if let timeEntry = timeData.closest(to: selectedDate) {
                             PointMark(x: .value("Time", timeEntry.timestamp), y: .value("Time", Double(timeEntry.timeRemainingMinutes) / 60.0))
                                 .foregroundStyle(MaterialChartPalette.tertiary)
                                 .symbolSize(80)
@@ -5983,18 +7266,17 @@ struct PowerTimeHistoryGraphView: View {
             Spacer()
         }
         .materialChartCard(height: 220)
-        .onHover { hovering in withAnimation(.easeInOut) { self.isHovered = hovering } }
     }
 
     @ViewBuilder
     private func annotationView(for date: Date, powerData: [BatteryLogEntry], timeData: [BatteryLogEntry]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            if let powerEntry = findClosest(to: date, in: powerData) {
+            if let powerEntry = powerData.closest(to: date) {
                 Text(String(format: "%.2f W", powerEntry.powerConsumption))
                     .font(.caption)
                     .foregroundColor(.yellow)
             }
-            if let timeEntry = findClosest(to: date, in: timeData) {
+            if let timeEntry = timeData.closest(to: date) {
                 Text(String(format: "%.1f h", Double(timeEntry.timeRemainingMinutes) / 60.0))
                     .font(.caption)
                     .foregroundColor(.mint)
@@ -6005,9 +7287,6 @@ struct PowerTimeHistoryGraphView: View {
         .cornerRadius(4)
     }
 
-    private func findClosest(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
-        data.min(by: { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) })
-    }
 }
 
 struct BatteryHistoryView: View {
@@ -6017,7 +7296,7 @@ struct BatteryHistoryView: View {
 
     private var hoveredEntry: BatteryLogEntry? {
         guard let hoveredDate else { return nil }
-        return findClosestEntry(to: hoveredDate, in: historyViewModel.chartData)
+        return historyViewModel.chartData.closest(to: hoveredDate)
     }
 
     private var summaryStats: (min: Int, max: Int, avg: Int, avgTemp: Double, avgPower: Double)? {
@@ -6131,13 +7410,6 @@ struct BatteryHistoryView: View {
         .background(MaterialChartPalette.surfaceContainer, in: Capsule())
     }
 
-    private func findClosestEntry(to date: Date, in data: [BatteryLogEntry]) -> BatteryLogEntry? {
-        guard !data.isEmpty else { return nil }
-        return data.min { entry1, entry2 in
-            abs(entry1.timestamp.timeIntervalSince(date)) < abs(entry2.timestamp.timeIntervalSince(date))
-        }
-    }
-
     private var chargeLineSegments: [(id: String, color: Color, a: BatteryLogEntry, b: BatteryLogEntry)] {
         let data = historyViewModel.chartData
         guard data.count >= 2 else { return [] }
@@ -6216,7 +7488,7 @@ struct BatteryHistoryView: View {
             }
         }
         .materialChartPlotStyle()
-        .chartYScale(domain: 0...100)
+        .chartYScale(domain: 0...108)
         .chartYAxis {
             AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
@@ -6266,38 +7538,6 @@ struct BatteryHistoryView: View {
         return MaterialChartPalette.primary
     }
 }
-struct HoverAnnotationView: View {
-    let entry: BatteryLogEntry
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(entry.timestamp, style: .time)
-                .font(.caption.bold())
-
-            HStack(spacing: 4) {
-                Image(systemName: entry.isCharging ? "bolt.fill" : "battery.100")
-                    .foregroundColor(entry.isCharging ? .green : .cyan)
-                    .font(.caption2)
-
-                Text("\(entry.charge)%")
-                    .font(.headline.bold())
-            }
-
-            if entry.powerConsumption > 0 {
-                Text(String(format: "%.1f W", entry.powerConsumption))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
-        )
-    }
-}
-
 struct StatPill: View {
     let label: String
     let value: String
@@ -6516,70 +7756,6 @@ private struct BatteryAlignedDetailRow: View {
     }
 }
 
-struct DataPointDetailView: View {
-    let entry: BatteryLogEntry
-    let onDismiss: () -> Void
-
-    var body: some View {
-        BatteryDataPointCard(entry: entry, onDismiss: onDismiss)
-            .frame(width: 360)
-            .padding(12)
-            .background(MaterialChartPalette.surface)
-    }
-}
-
-struct DetailSection<Content: View>: View {
-    let title: String
-    let content: Content
-
-    init(title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-
-            VStack(spacing: 8) {
-                content
-            }
-            .padding(12)
-            .background(Color.primary.opacity(0.03))
-            .cornerRadius(8)
-        }
-    }
-}
-
-struct DetailRow: View {
-    let icon: String
-    let label: String
-    let value: String
-    let color: Color
-
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundColor(color)
-                .frame(width: 24)
-
-            Text(label)
-                .font(.system(size: 13))
-                .foregroundColor(.secondary)
-
-            Spacer()
-
-            Text(value)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.primary)
-        }
-    }
-}
-
 struct BatteryHealthCard: View {
     @ObservedObject var viewModel: BatteryStatsViewModel
     var body: some View {
@@ -6727,25 +7903,6 @@ struct EmptyStatsView: View {
     }
 }
 
-struct ModernBatteryHealthCard: View {
-    @ObservedObject var viewModel: BatteryStatsViewModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "heart.fill").foregroundColor(.pink)
-                Text("Battery Health").font(.headline)
-            }
-            Spacer()
-            HealthStatRow(label: "Design Capacity", value: "\(viewModel.designCapacity) mAh", percentage: 100)
-            HealthStatRow(label: "Maximum Capacity", value: "\(viewModel.maxCapacity) mAh", percentage: viewModel.maxCapacityPercentage)
-            HealthStatRow(label: "macOS Capacity", value: "\(viewModel.appleMaxCapacity) mAh", percentage: viewModel.appleMaxCapacityPercentage)
-            SimpleHealthStatRow(label: "Condition", value: viewModel.health)
-            Spacer()
-        }
-        .padding(16).frame(height: 180).modifier(SettingsContainerModifier())
-    }
-}
-
 struct HealthStatRow: View {
     let label: String, value: String, percentage: Int
     var body: some View {
@@ -6765,48 +7922,6 @@ struct SimpleHealthStatRow: View {
             Spacer()
             Text(value).font(.caption.weight(.semibold))
         }
-    }
-}
-
-struct ModernPowerAdapterCard: View {
-    @ObservedObject var viewModel: BatteryStatsViewModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "powerplug.fill").foregroundColor(.gray)
-                Text("Power Adapter").font(.headline)
-            }
-            Spacer()
-            if let adapterInfo = viewModel.powerAdapterInfo, adapterInfo.power > 0 {
-                HStack {
-                    Text("Connected:").font(.caption).foregroundColor(.secondary)
-                    Spacer()
-                    Text("\(adapterInfo.power) W").font(.caption.weight(.semibold))
-                }
-            } else {
-                Text("Not Connected").font(.caption).foregroundColor(.secondary)
-            }
-            Spacer()
-        }
-        .padding(16).frame(height: 180).modifier(SettingsContainerModifier())
-    }
-}
-
-struct ModernLivePowerCard: View {
-    @ObservedObject var viewModel: BatteryStatsViewModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "bolt.fill").foregroundColor(.yellow)
-                Text("Live Power").font(.headline)
-            }
-            Spacer()
-            PowerRow(label: "Status", value: viewModel.isCharging ? "Charging" : "Discharging", color: viewModel.isCharging ? .green : .orange)
-            PowerRow(label: "Time Remaining", value: viewModel.timeRemaining, color: .cyan)
-            PowerRow(label: "Power Usage", value: String(format: "%.2f W", abs(viewModel.powerConsumption)), color: .yellow)
-            Spacer()
-        }
-        .padding(16).frame(height: 180).modifier(SettingsContainerModifier())
     }
 }
 
@@ -6835,9 +7950,7 @@ struct BatteryConfigurationView: View {
                     HelperStatusBanner(helperManager: helperManager)
                 }
                 .padding()
-                .background(.black.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .roundedCard(fill: Color.black.opacity(0.15), cornerRadius: 20, stroke: Color.white.opacity(0.1))
                 .onAppear { helperManager.checkIfRunning() }
 
                 notificationsSection
@@ -7018,50 +8131,12 @@ struct OneTimeDischargeView: View {
     }
 }
 
-fileprivate struct StatView: View {
-    let value: String, label: String, color: Color
-    var body: some View {
-        VStack {
-            Text(value).font(.system(.title3, design: .rounded).bold()).foregroundColor(color)
-            Text(label).font(.caption).foregroundColor(.secondary)
-        }.frame(maxWidth: .infinity)
-    }
-}
-
-fileprivate struct InfoColumn: View {
-    let title: String, value: String, color: Color, icon: String
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundColor(color)
-                .frame(width: 15, alignment: .center)
-
-            VStack(alignment: .leading) {
-                Text(title).font(.caption2).foregroundColor(.secondary)
-                Text(value).font(.subheadline.bold()).foregroundColor(color)
-            }
-        }
-        .frame(minWidth: 100, alignment: .leading)
-    }
-}
-
 fileprivate extension TimeInterval {
     func formatted() -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute]
         formatter.unitsStyle = .abbreviated
         return formatter.string(from: self) ?? "0m"
-    }
-}
-
-fileprivate struct CalibrationStepView: View {
-    let icon: String, label: String
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon).font(.title).foregroundColor(.accentColor).symbolRenderingMode(.hierarchical)
-            Text(label).font(.caption).multilineTextAlignment(.center).frame(height: 30)
-        }.frame(width: 80)
     }
 }
 
@@ -7586,10 +8661,10 @@ struct MusicSettingsView: View {
     @State private var isPrivateAuth = false
     @State private var isOfficialAuth = false
     @State private var officialDisplayName: String?
+    @State private var isTidalAuth = false
+    @State private var tidalDisplayName: String?
     @State private var loginChallenge: LoginChallengeDetails?
-
-    private var browserApps: [SystemApp] { appFetcher.apps.filter { $0.isBrowser } }
-    private var otherApps: [SystemApp] { appFetcher.apps.filter { !$0.isBrowser } }
+    @State private var showTidalLogin = false
 
     var body: some View {
         ScrollView {
@@ -7620,18 +8695,7 @@ struct MusicSettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal)
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                Text("Browsers").font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
-                                ForEach(browserApps) { app in
-                                    SystemAppRowView(app: app, isEnabled: mediaVisibilityBinding(for: app, isBrowser: true))
-                                }
-                                Text("Other Apps").font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
-                                ForEach(otherApps) { app in
-                                    SystemAppRowView(app: app, isEnabled: mediaVisibilityBinding(for: app, isBrowser: false))
-                                }
-                            }
-                        }.frame(maxHeight: 280)
+                        AppTogglesListView(isEnabled: { app in mediaVisibilityBinding(for: app, isBrowser: app.isBrowser) })
                     }
                     .modifier(SettingsContainerModifier())
                     .transition(.opacity.combined(with: .move(edge: .top)))
@@ -7698,9 +8762,9 @@ struct MusicSettingsView: View {
                     }
                     .padding()
                     Divider().padding(.leading, 20)
-                    HStack { Text("Open detailed Music widget on live activity click"); Spacer(); Toggle("", isOn: $settings.settings.musicOpenOnClick).labelsHidden().toggleStyle(.switch) }.padding()
+                    HStack { Text("Open detailed Music widget on live activity click"); Spacer(); SettingsSwitch(isOn: $settings.settings.musicOpenOnClick) }.padding()
                     Divider().padding(.leading, 20)
-                    HStack { Text("Waveform is volume sensitive"); Spacer(); Toggle("", isOn: $settings.settings.musicWaveformIsVolumeSensitive).labelsHidden().toggleStyle(.switch) }.padding()
+                    HStack { Text("Waveform is volume sensitive"); Spacer(); SettingsSwitch(isOn: $settings.settings.musicWaveformIsVolumeSensitive) }.padding()
                     Divider().padding(.leading, 20)
                     Text("Waveform Appearance").font(.headline).padding([.top, .horizontal])
                     ToggleRow(title: "Enable Gradient", description: "Apply a gradient based on the album art to the waveform.", isOn: $settings.settings.waveformUseGradient)
@@ -7814,6 +8878,39 @@ VStack(alignment: .leading, spacing: 8) {
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: isOfficialAuth)
 
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("TIDAL").font(.headline).padding([.horizontal, .top])
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("TIDAL API Credentials").font(.system(size: 14, weight: .medium))
+                        Text("Create an app at developer.tidal.com, enable the user.read, search.read, collection.read/write, and playlists.read/write scopes, and set the redirect URI exactly to sapphire://callback.").font(.caption).foregroundColor(.secondary).padding(.bottom, 4)
+                        Text("Client ID").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8))
+                        SecureField("Enter your Client ID", text: Binding(
+                            get: { APIKeyManager.shared.tidalClientId },
+                            set: { APIKeyManager.shared.tidalClientId = $0 }
+                        )).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
+                        Text("Client Secret").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8)).padding(.top, 5)
+                        SecureField("Enter your Client Secret", text: Binding(
+                            get: { APIKeyManager.shared.tidalClientSecret },
+                            set: { APIKeyManager.shared.tidalClientSecret = $0 }
+                        )).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
+                    }.padding().padding(.top, 5)
+                    Text("Log in here to enable TIDAL features like catalog search and syncing liked tracks and playlists. Requires a TIDAL developer account (third-party access tier).").font(.caption).foregroundColor(.secondary).padding(.horizontal)
+                    Divider().padding(.horizontal, 20)
+                    HStack {
+                        if isTidalAuth, let name = tidalDisplayName {
+                            HStack { Image(systemName: "checkmark.circle.fill").foregroundColor(.green); Text("Logged in as \(name)") }
+                            Spacer()
+                            Button("Log Out", role: .destructive) { MusicManager.shared.tidalAPI.logout() }
+                        } else {
+                            Text("Not logged in.").foregroundColor(.secondary)
+                            Spacer()
+                            Button("Log In") { showTidalLogin = true }
+                        }
+                    }.padding()
+                }
+                .modifier(SettingsContainerModifier())
+                .animation(.default, value: isTidalAuth)
+
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Lyrics").font(.headline).padding([.top, .horizontal])
                     ToggleRow(title: "Show Lyrics in Live Activity", description: "Display synchronized lyrics when available.", isOn: $settings.settings.showLyricsInLiveActivity)
@@ -7848,14 +8945,11 @@ VStack(alignment: .leading, spacing: 8) {
                 if settings.settings.showLyricsInLiveActivity {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Allow Lyrics From:").font(.headline).padding([.horizontal, .top])
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                Text("Browsers (Disabled by Default)").font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
-                                ForEach(browserApps) { app in SystemAppRowView(app: app, isEnabled: binding(for: app, isBrowser: true)) }
-                                Text("Other Apps").font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
-                                ForEach(otherApps) { app in SystemAppRowView(app: app, isEnabled: binding(for: app, isBrowser: false)) }
-                            }
-                        }.frame(maxHeight: 360)
+                        AppTogglesListView(
+                            isEnabled: { app in binding(for: app, isBrowser: app.isBrowser) },
+                            maxHeight: 360,
+                            browsersSectionTitle: "Browsers (Disabled by Default)"
+                        )
                     }.modifier(SettingsContainerModifier()).transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
@@ -7873,6 +8967,10 @@ VStack(alignment: .leading, spacing: 8) {
         }
             .onReceive(MusicManager.shared.$isPrivateAPIAuthenticated) { isPrivateAuth = $0 }
             .onReceive(MusicManager.shared.$isOfficialAPIAuthenticated) { isOfficialAuth = $0 }
+            .onReceive(MusicManager.shared.$isTidalAPIAuthenticated) { isTidalAuth = $0 }
+            .onReceive(MusicManager.shared.tidalAPI.$userProfile) { profile in
+                tidalDisplayName = profile?.username
+            }
             .onReceive(MusicManager.shared.spotifyOfficialAPI.$userProfile) { profile in
                 officialDisplayName = profile?.displayName
             }
@@ -7892,6 +8990,12 @@ VStack(alignment: .leading, spacing: 8) {
                 }
             )
         }
+        .sheet(isPresented: $showTidalLogin) {
+            TidalLoginWebView(
+                onComplete: { showTidalLogin = false },
+                onCancel: { showTidalLogin = false }
+            )
+        }
     }
 
     private func syncMusicAuthState() {
@@ -7899,6 +9003,8 @@ VStack(alignment: .leading, spacing: 8) {
         music.spotifyPrivateAPI.bootstrapIfNeeded(policy: .onDemand)
         isPrivateAuth = music.isPrivateAPIAuthenticated
         isOfficialAuth = music.isOfficialAPIAuthenticated
+        isTidalAuth = music.isTidalAPIAuthenticated
+        tidalDisplayName = music.tidalAPI.userProfile?.username
         officialDisplayName = music.spotifyOfficialAPI.userProfile?.displayName
         loginChallenge = music.spotifyPrivateAPI.loginChallenge
     }
@@ -7980,14 +9086,9 @@ fileprivate struct PlayerButtonSettingsRow: View {
 
             Spacer()
 
-            Toggle("", isOn: isEnabledBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
+            SettingsSwitch(isOn: isEnabledBinding)
 
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.white.opacity(0.6))
-                .padding(.leading, 8)
+            ReorderHandle()
         }
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
     }
@@ -8045,8 +9146,6 @@ struct WeatherSettingsView: View {
 struct CalendarSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
 
-    // Same guards as the Widgets pane: keep at least one widget on, and do not
-    // switch a widget on when the notch has no room for it.
     private var isLastEnabledWidget: Bool {
         settings.settings.calendarWidgetEnabled && settings.settings.enabledWidgetTypes.count <= 1
     }
@@ -8840,9 +9939,7 @@ struct NeardropSettingsView: View {
                             Text("Enable Nearby Share")
                                 .font(.system(size: 14, weight: .medium))
                             Spacer()
-                            Toggle("", isOn: $settings.settings.neardropEnabled)
-                                .labelsHidden()
-                                .toggleStyle(.switch)
+                            SettingsSwitch(isOn: $settings.settings.neardropEnabled)
                         }
                         .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
 
@@ -8920,17 +10017,7 @@ struct NeardropSettingsView: View {
                     .modifier(SettingsContainerModifier())
                     .animation(.easeInOut, value: settings.settings.neardropEnabled)
 
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Swipe Actions")
-                            .font(.headline)
-                            .padding([.top, .horizontal])
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        Text("Customize what happens when you swipe a file drop row left or right. Share only applies to File Shelf items.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal)
-                            .padding(.bottom, 5)
+                    SettingsCard(title: "Swipe Actions", description: "Customize what happens when you swipe a file drop row left or right. Share only applies to File Shelf items.") {
 
                         SwipeActionPickerRow(
                             title: "Swipe Right",
@@ -8950,7 +10037,6 @@ struct NeardropSettingsView: View {
                             label: { $0.displayName }
                         )
                     }
-                    .modifier(SettingsContainerModifier())
                 }
                 OpenBubblesActivationView()
 
@@ -9000,6 +10086,15 @@ struct AboutSettingsView: View {
     @State private var showingResetConfirmation = false
     @State private var debugTapCount = 0
     @State private var debugTapResetTask: Task<Void, Never>?
+    @State private var selectedTab: AboutTab = .overview
+
+    private enum AboutTab: String, CaseIterable, Identifiable {
+        case overview = "Overview"
+        case updates = "Updates"
+
+        var id: String { rawValue }
+        var icon: String { self == .overview ? "info.circle" : "arrow.triangle.2.circlepath" }
+    }
 
     private var displayedReleaseChannel: ReleaseChannel {
         ReleaseChannelPolicy.displayedChannel(for: settingsModel.settings)
@@ -9025,8 +10120,17 @@ struct AboutSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("About").font(.largeTitle.bold()).padding(.bottom)
+                Text("About").font(.largeTitle.bold())
 
+                Picker("About section", selection: $selectedTab) {
+                    ForEach(AboutTab.allCases) { tab in
+                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+
+                if selectedTab == .overview {
                 HStack {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable()
@@ -9098,8 +10202,6 @@ struct AboutSettingsView: View {
                     Spacer()
                 }
 
-                ModernUpdateStatusView(updateChecker: updateChecker)
-
                 HStack(alignment: .top, spacing: 0) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Settings Backup").font(.headline).padding([.horizontal, .top]).padding(.bottom, 10)
@@ -9159,48 +10261,6 @@ struct AboutSettingsView: View {
                     }
                     .frame(maxWidth: .infinity)
 
-                    Divider()
-                        .frame(maxHeight: 140)
-                        .padding(.vertical)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Release Channel").font(.headline).padding([.horizontal, .top])
-                        Text("Choose which update channel to receive releases from.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
-                            .padding(.bottom, 10)
-
-                        ModernChannelSwitcher(
-                            selection: releaseChannelBinding,
-                            hasBetaAccess: SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates),
-                            isLockedToRunningBuild: false
-                        )
-                        .padding(.horizontal)
-                        .padding(.bottom)
-
-                        if BetaEntitlementRuntime.isBetaBuild && settingsModel.settings.releaseChannel == .stable {
-                            Text("You're on a beta build. Switching to Stable lets you install the latest stable release.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal)
-                                .padding(.bottom, 8)
-                        } else if !SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "lock.fill").font(.caption2)
-                                Text("Beta access requires a Plus subscription or higher.")
-                                    .font(.caption)
-                            }
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
-                            .padding(.bottom, 8)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    .onChange(of: settingsModel.settings.releaseChannel) { _, _ in
-                        updateChecker.checkForUpdatesMatchingCurrentChannel()
-                    }
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -9213,11 +10273,29 @@ struct AboutSettingsView: View {
                 }.modifier(SettingsContainerModifier()).onAppear(perform: permissionsManager.checkAllPermissions)
 
                 Text("© 2025 Shariq Charolia. All rights reserved.").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .center).padding(.top, 20)
+                } else {
+                    sapphireUpdatesPane
+                }
             }.padding(25).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 ReleaseChannelPolicy.reconcileStoredPreference(&settingsModel.settings)
                 updateChecker.checkForUpdatesMatchingCurrentChannel()
             }
+        }
+        .onChange(of: settingsModel.settings.releaseChannel) { _, _ in
+            updateChecker.checkForUpdatesMatchingCurrentChannel()
+        }
+        .onChange(of: settingsModel.settings.automaticUpdateChecksEnabled) { _, enabled in
+            updateChecker.setAutomaticChecksEnabled(enabled)
+        }
+        .onChange(of: settingsModel.settings.updateAvailableNotificationsEnabled) { _, enabled in
+            if enabled { updateChecker.requestNotificationAuthorization() }
+        }
+        .onChange(of: settingsModel.settings.automaticallyDownloadSapphireUpdates) { _, enabled in
+            guard enabled,
+                  settingsModel.settings.automaticUpdateChecksEnabled,
+                  case .available(_, let asset) = updateChecker.status else { return }
+            updateChecker.downloadUpdate(asset: asset)
         }
         .fileExporter(
             isPresented: $isExportingSettings,
@@ -9287,6 +10365,96 @@ struct AboutSettingsView: View {
         }
     }
 
+    private var sapphireUpdatesPane: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.purple)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Sapphire Updates")
+                        .font(.title2.bold())
+                    Text("Version \(currentAppVersion) · Choose how Sapphire checks for and receives new releases.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ModernUpdateStatusView(updateChecker: updateChecker)
+
+            if let error = updateChecker.lastCheckError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Release Channel")
+                    .font(.headline)
+                    .padding([.horizontal, .top])
+                Text("Choose which update channel to receive releases from.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
+
+                ModernChannelSwitcher(
+                    selection: releaseChannelBinding,
+                    hasBetaAccess: SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates),
+                    isLockedToRunningBuild: false
+                )
+                .padding(.horizontal)
+                .padding(.bottom)
+
+                if BetaEntitlementRuntime.isBetaBuild && settingsModel.settings.releaseChannel == .stable {
+                    Text("You're on a beta build. Switching to Stable lets you install the latest stable release.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                        .padding(.bottom, 12)
+                } else if !SubscriptionAccess.hasAccess(to: .betaSoftwareUpdates) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.fill").font(.caption2)
+                        Text("Beta access requires a Plus subscription or higher.")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+                    .padding(.bottom, 12)
+                }
+            }
+            .modifier(SettingsContainerModifier())
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Update Preferences")
+                    .font(.headline)
+                    .padding([.horizontal, .top])
+                ToggleRow(
+                    title: "Automatic update checks",
+                    description: "Check after launch, wake, network recovery, and on a recurring schedule.",
+                    isOn: $settingsModel.settings.automaticUpdateChecksEnabled
+                )
+                Divider().padding(.leading)
+                ToggleRow(
+                    title: "Download verified updates automatically",
+                    description: "Download in the background. Installation always waits for you.",
+                    isOn: $settingsModel.settings.automaticallyDownloadSapphireUpdates
+                )
+                .disabled(!settingsModel.settings.automaticUpdateChecksEnabled)
+                .opacity(settingsModel.settings.automaticUpdateChecksEnabled ? 1 : 0.5)
+                Divider().padding(.leading)
+                ToggleRow(
+                    title: "Update notifications",
+                    description: "Notify you when a verified Sapphire release is ready.",
+                    isOn: $settingsModel.settings.updateAvailableNotificationsEnabled
+                )
+                .disabled(!settingsModel.settings.automaticUpdateChecksEnabled)
+                .opacity(settingsModel.settings.automaticUpdateChecksEnabled ? 1 : 0.5)
+            }
+            .modifier(SettingsContainerModifier())
+        }
+    }
+
     var currentAppVersion: String {
         return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "N/A"
     }
@@ -9321,16 +10489,6 @@ private struct BackupStatusMessage: Identifiable {
     let icon: String
     let color: Color
     let message: String
-}
-
-fileprivate struct AboutLinkStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .foregroundColor(.primary)
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-    }
 }
 
 struct ModernUpdateStatusView: View {
@@ -9395,6 +10553,11 @@ struct ModernUpdateStatusView: View {
                     if canShowReleaseNotes {
                         releaseNotesButton
                     }
+                    Button("Check Again") {
+                        updateChecker.checkForUpdatesMatchingCurrentChannel()
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             case .downloading(let progress):
@@ -9423,14 +10586,6 @@ struct ModernUpdateStatusView: View {
                         .background(Color.green.gradient)
                         .clipShape(Capsule())
                         .shadow(color: .green.opacity(0.4), radius: 8, y: 4)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: { updateChecker.installAndRelaunchCurrentMethod() }) {
-                        Text("Use current update method (may prompt for password)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .underline()
                     }
                     .buttonStyle(.plain)
 
@@ -9468,8 +10623,6 @@ struct ModernUpdateStatusView: View {
         }
     }
 
-    // Only offered when idle or after an error. Re-checking while an update is
-    // available or downloaded would drop that state and force a new download.
     private var checkForUpdatesButton: some View {
         Button("Check for Updates") {
             updateChecker.checkForUpdatesMatchingCurrentChannel()
@@ -9697,16 +10850,11 @@ fileprivate struct NotchButtonRowView: View {
 
             Spacer()
 
-            Toggle("", isOn: isEnabledBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
+            SettingsSwitch(isOn: isEnabledBinding)
                 .disabled(isToggleDisabled)
                 .opacity(isToggleDisabled ? 0 : 1)
 
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.white.opacity(0.6))
-                .padding(.leading, 8)
+            ReorderHandle()
         }
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
     }
@@ -9724,6 +10872,7 @@ struct AppearanceSettingsView: View {
                 NotchAppearanceEditorView(appearance: $settings.settings.notchWidgetAppearance, title: "Expanded Notch Appearance")
                 NotchAppearanceEditorView(appearance: $settings.settings.notchLiveActivityAppearance, title: "Collapsed Notch Appearance")
                 MenuBarHidingSettingsView()
+                MenuBarProfilesSettingsView()
                 MenuBarAppearanceSettingsView()
                 MenuBarSpacingSettingsView()
                 RequiredPermissionsView(section: .appearance)
@@ -9992,6 +11141,508 @@ struct MenuBarHidingSettingsView: View {
     }
 }
 
+// MARK: - Menu Bar Profiles (Conditional Reveal + Display/Space/Focus Bindings)
+
+struct MenuBarProfilesSettingsView: View {
+    @EnvironmentObject var settings: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Menu Bar Profiles").font(.title2.bold())
+                Text("Reveal hidden menu bar items when a condition is met — battery level, active Focus, Wi-Fi network, or a script's exit code — and bind profiles to displays, Spaces, or Focus filters.").font(.caption).foregroundColor(.secondary)
+            }
+
+            VStack(spacing: 0) {
+                PremiumFeatureView(feature: .menuBarProfiles) {
+                    ToggleRow(
+                        title: "Enable Menu Bar Profiles",
+                        description: "Evaluate profile conditions in the background to reveal hidden items automatically",
+                        isOn: $settings.settings.menuBarProfilesEnabled
+                    )
+                }
+            }.modifier(SettingsContainerModifier())
+
+            if settings.settings.menuBarProfilesEnabled {
+                MenuBarProfileEditorView()
+                    .premiumFeature(.menuBarProfiles)
+            }
+        }
+        .animation(.easeInOut, value: settings.settings.menuBarProfilesEnabled)
+    }
+}
+
+private struct MenuBarProfileEditorView: View {
+    @EnvironmentObject var settings: SettingsModel
+    @State private var expandedProfileIDs: Set<UUID> = []
+
+    private var profilesBinding: Binding<[MenuBarProfile]> {
+        $settings.settings.menuBarProfiles
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Profiles").font(.headline)
+                Spacer()
+                Button {
+                    let newProfile = MenuBarProfile(name: "Profile \(settings.settings.menuBarProfiles.count + 1)")
+                    _ = withAnimation(.easeInOut(duration: 0.2)) { expandedProfileIDs.insert(newProfile.id) }
+                    settings.settings.menuBarProfiles.append(newProfile)
+                } label: {
+                    Label("Add Profile", systemImage: "plus")
+                        .font(.callout)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if settings.settings.menuBarProfiles.isEmpty {
+                InfoContainer(
+                    text: "Create a profile, add reveal conditions, and optionally bind it to a display, a Space, or a Focus filter. When a bound context is active and any condition is met, hidden items are revealed.",
+                    iconName: "info.circle",
+                    color: .mint
+                ).padding()
+                .modifier(SettingsContainerModifier())
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(profilesBinding) { $profile in
+                        MenuBarProfileCardView(profile: $profile, isExpanded: expandedProfileIDs.contains(profile.id)) { changed in
+                            if changed {
+                                expandedProfileIDs.insert(profile.id)
+                            } else {
+                                expandedProfileIDs.remove(profile.id)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct MenuBarProfileCardView: View {
+    @Binding var profile: MenuBarProfile
+    let isExpanded: Bool
+    var onExpandedChange: (Bool) -> Void = { _ in }
+    @EnvironmentObject var settings: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: profile.symbolName)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
+
+                TextField("Profile name", text: $profile.name)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14, weight: .semibold))
+
+                Spacer()
+
+                Text(profile.summaryText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+
+                SettingsSwitch(isOn: $profile.isEnabled)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { onExpandedChange(!isExpanded) }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    settings.settings.menuBarProfiles.removeAll { $0.id == profile.id }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if isExpanded {
+                Divider()
+
+                MenuBarRevealConditionsSection(profile: $profile)
+
+                Divider()
+
+                MenuBarProfileBindingsSection(profile: $profile)
+            }
+        }
+        .padding()
+        .modifier(SettingsContainerModifier())
+    }
+}
+
+// MARK: - Reveal Conditions
+
+private struct MenuBarRevealConditionsSection: View {
+    @Binding var profile: MenuBarProfile
+    @State private var focusOptions: [MenuBarProfileEngine.FocusModeOption] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Reveal When").font(.subheadline.weight(.semibold))
+                Spacer()
+                Menu {
+                    ForEach(MenuBarRevealConditionKind.allCases) { kind in
+                        Button {
+                            profile.revealConditions.append(MenuBarRevealCondition(kind: kind))
+                        } label: {
+                            Label(kind.displayName, systemImage: kind.systemImage)
+                        }
+                    }
+                } label: {
+                    Label("Add Condition", systemImage: "plus.circle")
+                        .font(.callout)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+
+            if profile.revealConditions.isEmpty {
+                Text("No conditions — this profile will never reveal items.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                ForEach($profile.revealConditions) { $condition in
+                    HStack(spacing: 10) {
+                        Image(systemName: condition.kind.systemImage)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18)
+
+                        MenuBarRevealConditionEditor(condition: $condition, focusOptions: focusOptions)
+
+                        Button {
+                            let doomed = condition.id
+                            DispatchQueue.main.async {
+                                profile.revealConditions.removeAll { $0.id == doomed }
+                            }
+                        } label: {
+                            Image(systemName: "minus.circle")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .onAppear { refreshFocusOptions() }
+    }
+
+    private func refreshFocusOptions() {
+        Task.detached(priority: .utility) {
+            let options = MenuBarProfileEngine.fetchAvailableFocusModes()
+            await MainActor.run { self.focusOptions = options }
+        }
+    }
+}
+
+private struct MenuBarRevealConditionEditor: View {
+    @Binding var condition: MenuBarRevealCondition
+    let focusOptions: [MenuBarProfileEngine.FocusModeOption]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Picker("", selection: $condition.kind) {
+                ForEach(MenuBarRevealConditionKind.allCases) { kind in
+                    Text(kind.displayName).tag(kind)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 210)
+
+            switch condition.kind {
+            case .batteryBelow, .batteryAbove:
+                HStack(spacing: 4) {
+                    TextField("Level", value: $condition.batteryThreshold, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 50)
+                    Text("%")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+            case .charging:
+                Text("while plugged in")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+            case .onBatteryPower:
+                Text("while unplugged")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+            case .focusActive:
+                Text("any Focus mode")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+            case .focusIdentifier:
+                Picker("", selection: $condition.focusIdentifier) {
+                    Text("Choose Focus…").tag("")
+                    ForEach(focusOptions) { option in
+                        Label(option.name, systemImage: option.symbolName).tag(option.identifier)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 190)
+
+            case .wifiEquals:
+                TextField("Wi-Fi network name", text: $condition.wifiNetworkName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 170)
+
+            case .wifiConnected:
+                Text("any network")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+            case .scriptSucceeds, .scriptFails, .scriptExitCode:
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        TextField("/path/to/script.sh", text: $condition.scriptPath)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+                        if condition.kind == .scriptExitCode {
+                            Text("exit =")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField("0", value: $condition.scriptExitCode, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 44)
+                        }
+                    }
+                    HStack(spacing: 6) {
+                        TextField("optional argument", text: $condition.scriptArgument)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 140)
+                        Text("re-checked every")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("30", value: $condition.scriptPollInterval, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 44)
+                        Text("sec")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Profile Bindings
+
+private struct MenuBarProfileBindingsSection: View {
+    @Binding var profile: MenuBarProfile
+    @EnvironmentObject var settings: SettingsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Bind To").font(.subheadline.weight(.semibold))
+
+            ToggleRow(
+                title: "Displays",
+                description: "Apply this profile only on the selected displays",
+                isOn: $profile.bindsToDisplays
+            )
+            if profile.bindsToDisplays {
+                MenuBarDisplayBindingsEditor(profile: $profile)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            }
+
+            ToggleRow(
+                title: "Spaces",
+                description: "Apply this profile only on the selected desktop Spaces (numbered like the Space switcher)",
+                isOn: $profile.bindsToSpaces
+            )
+            if profile.bindsToSpaces {
+                MenuBarSpaceBindingsEditor(profile: $profile)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            }
+
+            ToggleRow(
+                title: "Focus",
+                description: "Apply this profile only while the selected Focus filters are active",
+                isOn: $profile.bindsToFocus
+            )
+            if profile.bindsToFocus {
+                MenuBarFocusBindingsEditor(profile: $profile)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            }
+        }
+    }
+}
+
+private struct MenuBarDisplayBindingsEditor: View {
+    @Binding var profile: MenuBarProfile
+
+    private var connectedScreens: [NSScreen] { NSScreen.screens }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: $profile.displayScope) {
+                Text("All displays").tag(MenuBarProfileDisplayScope.allDisplays)
+                Text("Selected displays").tag(MenuBarProfileDisplayScope.selectedDisplays)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if profile.displayScope == .selectedDisplays {
+                if connectedScreens.isEmpty {
+                    Text("No displays detected.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    VStack(spacing: 4) {
+                        ForEach(connectedScreens, id: \.displayIdentifier) { screen in
+                            let id = screen.displayIdentifier
+                            let isBound = profile.displayBindings.contains { $0.displayIdentifier == id }
+                            Button {
+                                if isBound {
+                                    profile.displayBindings.removeAll { $0.displayIdentifier == id }
+                                } else {
+                                    profile.displayBindings.append(MenuBarDisplayBinding(displayIdentifier: id, displayLabel: screen.displayLabel))
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: isBound ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(isBound ? Color.accentColor : Color.secondary)
+                                    Image(systemName: CGDisplayIsBuiltin(screen.displayID) != 0 ? "laptopcomputer" : "display")
+                                    Text(screen.displayLabel)
+                                        .font(.callout)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct MenuBarSpaceBindingsEditor: View {
+    @Binding var profile: MenuBarProfile
+    @State private var availableSpaces: Int = 1
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Spaces to activate this profile on:")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(1...max(1, availableSpaces), id: \.self) { number in
+                        let isBound = profile.spaceNumbers.contains(number)
+                        Button {
+                            if isBound {
+                                profile.spaceNumbers.removeAll { $0 == number }
+                            } else {
+                                profile.spaceNumbers.append(number)
+                                profile.spaceNumbers.sort()
+                            }
+                        } label: {
+                            Text("\(number)")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .frame(width: 32, height: 28)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(isBound ? Color.accentColor.opacity(0.25) : Color.white.opacity(0.06))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(isBound ? Color.accentColor : Color.white.opacity(0.12), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            HStack {
+                Text("Detected Spaces: \(availableSpaces)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Stepper("Add space", onIncrement: { availableSpaces += 1 }, onDecrement: { availableSpaces = max(1, availableSpaces - 1) })
+                    .font(.caption)
+            }
+        }
+    }
+}
+
+private struct MenuBarFocusBindingsEditor: View {
+    @Binding var profile: MenuBarProfile
+    @State private var focusOptions: [MenuBarProfileEngine.FocusModeOption] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if focusOptions.isEmpty {
+                Text("No Focus modes found (or unavailable without Focus permission).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(focusOptions) { option in
+                        let isBound = profile.focusIdentifiers.contains(option.identifier)
+                        Button {
+                            if isBound {
+                                profile.focusIdentifiers.removeAll { $0 == option.identifier }
+                            } else {
+                                profile.focusIdentifiers.append(option.identifier)
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: isBound ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(isBound ? Color.accentColor : Color.secondary)
+                                Image(systemName: option.symbolName)
+                                    .font(.callout)
+                                Text(option.name)
+                                    .font(.callout)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Text("Leave empty selections unchecked to bind to any Focus filter by enabling \"Focus\" alone.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .onAppear { refreshFocusOptions() }
+    }
+
+    private func refreshFocusOptions() {
+        Task.detached(priority: .utility) {
+            let options = MenuBarProfileEngine.fetchAvailableFocusModes()
+            await MainActor.run { self.focusOptions = options }
+        }
+    }
+}
+
 struct MenuBarAppearanceEditor: View {
     @EnvironmentObject var settings: SettingsModel
 
@@ -10088,8 +11739,10 @@ struct MenuBarAppearanceEditor: View {
                         ColorPicker("Color Stop", selection: $color.color, supportsOpacity: true)
                         Spacer()
                         Button(action: {
-                            if settings.settings.menuBarGradientColors.count > 1 {
-                                settings.settings.menuBarGradientColors.removeAll { $0.id == color.id }
+                            guard settings.settings.menuBarGradientColors.count > 1 else { return }
+                            let doomed = color.id
+                            DispatchQueue.main.async {
+                                settings.settings.menuBarGradientColors.removeAll { $0.id == doomed }
                             }
                         }) {
                             Image(systemName: "minus.circle.fill").foregroundColor(.red)
@@ -10212,7 +11865,7 @@ struct MenuBarAppearanceSettingsView: View {
 
 struct MenuBarSpacingSettingsView: View {
     @EnvironmentObject var settings: SettingsModel
-    private let spacingManager = MenuBarSpacingManager()
+    @State private var spacingManager: MenuBarSpacingManager?
 
     private var spacingBinding: Binding<Double> {
         Binding<Double>(
@@ -10242,19 +11895,26 @@ struct MenuBarSpacingSettingsView: View {
 
                 HStack {
                     Button("Reset to System Default") {
-                        spacingManager.restoreDefaults()
+                        spacingManager?.restoreDefaults()
                     }
+                    .disabled(spacingManager == nil)
 
                     Spacer()
 
                     Button("Apply & Refresh Menu Bar") {
-                        spacingManager.applyChanges()
+                        spacingManager?.applyChanges()
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(spacingManager == nil)
                 }
                 .padding()
 
             }.modifier(SettingsContainerModifier())
+        }
+        .onAppear {
+            if spacingManager == nil {
+                spacingManager = MenuBarSpacingManager()
+            }
         }
     }
 }
@@ -10595,36 +12255,15 @@ struct IntelligenceRunnerView: View {
     }
 }
 
-struct IntelligenceStepRow: View {
-    let number: String
-    let title: String
-    let detail: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Text(number)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(Color.purple.gradient)
-                .clipShape(Circle())
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
 // MARK: - Focus Session Settings
 
 struct FocusSessionSettingsView: View {
+    private struct AppCandidate: Identifiable, Sendable {
+        let name: String
+        let bundleID: String
+        var id: String { bundleID }
+    }
+
     @EnvironmentObject var settings: SettingsModel
     @StateObject private var shortcutRecorder = GlobalShortcutRecorder.shared
     @StateObject private var ambient = FocusAmbientSoundManager.shared
@@ -10632,37 +12271,11 @@ struct FocusSessionSettingsView: View {
     @State private var newBlockedApp: String = ""
     @State private var newBlockedSite: String = ""
     @State private var showingAddSchedule = false
+    @State private var appCandidates: [AppCandidate] = []
 
-    private var appCandidates: [(name: String, bundleID: String)] {
-        Self.installedApps
+    nonisolated private static func loadInstalledApps() -> [AppCandidate] {
+        InstalledApplications.namesAndBundleIDs().map { AppCandidate(name: $0.name, bundleID: $0.bundleID) }
     }
-
-    private static let installedApps: [(name: String, bundleID: String)] = {
-        let dirs = [
-            "/Applications",
-            "/System/Applications",
-            "/System/Applications/Utilities",
-            NSHomeDirectory() + "/Applications",
-        ]
-        var seen = Set<String>()
-        var result: [(name: String, bundleID: String)] = []
-        let fm = FileManager.default
-        for dir in dirs {
-            guard let items = try? fm.contentsOfDirectory(atPath: dir) else { continue }
-            for item in items where item.hasSuffix(".app") {
-                let path = dir + "/" + item
-                guard let bundle = Bundle(path: path),
-                      let bundleID = bundle.bundleIdentifier, !bundleID.isEmpty,
-                      !seen.contains(bundleID) else { continue }
-                seen.insert(bundleID)
-                let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
-                    ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
-                    ?? (item as NSString).deletingPathExtension
-                result.append((name, bundleID))
-            }
-        }
-        return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }()
 
     var body: some View {
         ScrollView {
@@ -10681,7 +12294,15 @@ struct FocusSessionSettingsView: View {
                 historySection
             }
             .padding(25)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .task {
+            guard appCandidates.isEmpty else { return }
+            let candidates = await Task.detached(priority: .utility) {
+                Self.loadInstalledApps()
+            }.value
+            guard !Task.isCancelled else { return }
+            appCandidates = candidates
         }
     }
 
@@ -11362,9 +12983,7 @@ private struct FocusScheduleRowView: View {
 
             Spacer()
 
-            Toggle("", isOn: $schedule.isActive)
-                .labelsHidden()
-                .toggleStyle(.switch)
+            SettingsSwitch(isOn: $schedule.isActive)
                 .controlSize(.mini)
 
             Button {
@@ -11526,8 +13145,7 @@ private struct AddFocusScheduleView: View {
                     isOn ? Color.green : Color.white.opacity(0.08),
                     in: Capsule()
                 )
-        }
-        .buttonStyle(.plain)
+        }        .buttonStyle(.plain)
         .help(token.label)
     }
 }

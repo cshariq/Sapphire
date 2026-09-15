@@ -236,68 +236,23 @@ final class AirPlayManager: NSObject, ObservableObject {
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID) == noErr,
               deviceID != kAudioObjectUnknown else { return nil }
 
-        var name: CFString = "" as CFString
-        var nameSize = UInt32(MemoryLayout<CFString>.size)
-        var nameAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioObjectPropertyName,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        let status = withUnsafeMutablePointer(to: &name) { ptr in
-            AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &nameSize, ptr)
-        }
-        guard status == noErr else { return nil }
-        return name as String
+        return CoreAudioDevices.name(of: deviceID)
     }
 
     private static func outputDeviceID(named name: String) -> AudioDeviceID? {
         let target = name.lowercased()
 
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr,
-              size > 0 else { return nil }
-
-        let count = Int(size) / MemoryLayout<AudioDeviceID>.size
-        var deviceIDs = [AudioDeviceID](repeating: 0, count: count)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceIDs) == noErr else {
-            return nil
-        }
+        guard let deviceIDs = CoreAudioDevices.all() else { return nil }
 
         for deviceID in deviceIDs {
-            guard hasOutputChannels(deviceID) else { continue }
+            guard CoreAudioDevices.hasStreams(deviceID, scope: kAudioObjectPropertyScopeOutput) else { continue }
 
-            var deviceName: CFString = "" as CFString
-            var nameSize = UInt32(MemoryLayout<CFString>.size)
-            var nameAddress = AudioObjectPropertyAddress(
-                mSelector: kAudioObjectPropertyName,
-                mScope: kAudioObjectPropertyScopeGlobal,
-                mElement: kAudioObjectPropertyElementMain
-            )
-            let status = withUnsafeMutablePointer(to: &deviceName) { ptr in
-                AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &nameSize, ptr)
-            }
-            guard status == noErr else { continue }
-            if (deviceName as String).lowercased() == target {
+            guard let deviceName = CoreAudioDevices.name(of: deviceID) else { continue }
+            if deviceName.lowercased() == target {
                 return deviceID
             }
         }
         return nil
-    }
-
-    private static func hasOutputChannels(_ deviceID: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreams,
-            mScope: kAudioObjectPropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr else { return false }
-        return size > 0
     }
 
     private static func outputVolumePercent(forDeviceNamed name: String) -> Int? {

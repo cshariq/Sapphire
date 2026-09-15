@@ -29,7 +29,7 @@ class Display {
     self.isDummy = isDummy
   }
 
-  func stepBrightness(isUp: Bool, isSmallIncrement: Bool) {}
+  func stepBrightness(isUp: Bool, isSmallIncrement: Bool, step: Float = 0.0625) {}
 
   func getBrightness() -> Float {
     return 1.0

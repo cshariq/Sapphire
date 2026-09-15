@@ -47,42 +47,149 @@ class BatteryDataLogger {
         } catch {
             print("[BatteryDataLogger] FATAL: Could not create log directory: \(error)")
         }
-        self.logFileURL = logDirURL.appendingPathComponent("battery_log.json")
+        self.logFileURL = logDirURL.appendingPathComponent("battery_log.jsonl")
+        self.legacyLogFileURL = logDirURL.appendingPathComponent("battery_log.json")
         self.sleepLogFileURL = logDirURL.appendingPathComponent("battery_sleep_log.jsonl")
 
-        if !fileManager.fileExists(atPath: logFileURL.path) {
-            writeLogFile(entries: [])
-        }
+        migrateLegacyJSONLogIfNeeded()
     }
+
+    private var cachedEntries: [BatteryLogEntry]?
+    private var cachedEntriesDirty = true
+    private var bufferedLines: [Data] = []
+    private var pendingFlush: Task<Void, Never>?
+
+    private static let appendFlushDelay: Duration = .seconds(5)
+
+    private let legacyLogFileURL: URL
+    private let sleepLogFileURL: URL
+
+    // MARK: - Appending (O(1) per entry)
 
     func logCurrentState() {
         Task(priority: .background) {
             guard let entry = await createLogEntry() else { return }
-            var existingLogs = readLogFile()
-            existingLogs.append(entry)
-
-            let oneMonthAgo = Calendar.current.date(byAdding: .month, value: -1, to: Date())!
-            let recentLogs = existingLogs.filter { $0.timestamp >= oneMonthAgo }
-
-            writeLogFile(entries: recentLogs)
+            appendEntry(entry)
         }
     }
 
-    func readLogFile() -> [BatteryLogEntry] {
-        var entries: [BatteryLogEntry] = []
-        do {
-            let data = try Data(contentsOf: logFileURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            entries = try decoder.decode([BatteryLogEntry].self, from: data)
-        } catch {
-            print("[BatteryDataLogger] ERROR: Could not read or decode log file: \(error)")
+    private func appendEntry(_ entry: BatteryLogEntry) {
+        guard let lineData = try? Self.encodeLine(entry) else { return }
+        cachedEntriesDirty = true
+        bufferedLines.append(Data(lineData))
+        scheduleFlushIfNeeded()
+    }
+
+    private func scheduleFlushIfNeeded() {
+        guard pendingFlush == nil, !bufferedLines.isEmpty else { return }
+        let lines = bufferedLines
+        bufferedLines = []
+        let url = logFileURL
+        pendingFlush = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.appendFlushDelay)
+            guard !Task.isCancelled else {
+                self?.pendingFlush = nil
+                return
+            }
+            await Self.writeAppend(lines, to: url)
+            self?.pendingFlush = nil
+            self?.scheduleFlushIfNeeded()
         }
+    }
+
+    private nonisolated static func writeAppend(_ lines: [Data], to url: URL) async {
+        await Task.detached(priority: .utility) {
+            var payload = Data()
+            payload.reserveCapacity(lines.reduce(0) { $0 + $1.count })
+            lines.forEach { payload.append($0) }
+            guard let handle = try? FileHandle(forWritingTo: url) else {
+                if !FileManager.default.createFile(atPath: url.path, contents: payload) {
+                    print("[BatteryDataLogger] ERROR: Could not create log file for append.")
+                }
+                return
+            }
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: payload)
+        }.value
+    }
+
+    private static func encodeLine(_ entry: BatteryLogEntry) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var data = try encoder.encode(entry)
+        data.append(0x0A)
+        return data
+    }
+
+    // MARK: - Migration from legacy JSON array file
+
+    private func migrateLegacyJSONLogIfNeeded() {
+        guard !FileManager.default.fileExists(atPath: logFileURL.path),
+              FileManager.default.fileExists(atPath: legacyLogFileURL.path) else { return }
+
+        let legacy = decodeLegacyEntries()
+        guard !legacy.isEmpty else { return }
+        print("[BatteryDataLogger] Migrating \(legacy.count) legacy JSON entries to JSONL…")
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var body = Data()
+        for entry in legacy {
+            if let line = try? encoder.encode(entry) {
+                body.append(line)
+                body.append(0x0A)
+            }
+        }
+        FileManager.default.createFile(atPath: logFileURL.path, contents: body)
+        if FileManager.default.fileExists(atPath: logFileURL.path) {
+            try? FileManager.default.removeItem(at: legacyLogFileURL)
+        }
+    }
+
+    private nonisolated func decodeLegacyEntries() -> [BatteryLogEntry] {
+        guard let data = try? Data(contentsOf: legacyLogFileURL) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([BatteryLogEntry].self, from: data)) ?? []
+    }
+
+    // MARK: - Reading
+
+    func readLogFile() -> [BatteryLogEntry] {
+        if !cachedEntriesDirty, let cached = cachedEntries {
+            var result = cached
+            result.append(contentsOf: readSleepLogFile())
+            return result
+        }
+
+        var entries = decodePersistedEntries()
+        pruneOldEntries(&entries)
+        cachedEntries = entries
+        cachedEntriesDirty = false
+
         entries.append(contentsOf: readSleepLogFile())
         return entries
     }
 
-    private let sleepLogFileURL: URL
+    private func decodePersistedEntries() -> [BatteryLogEntry] {
+        guard let data = try? Data(contentsOf: logFileURL) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        var results: [BatteryLogEntry] = []
+        results.reserveCapacity(data.count / 220)
+        for lineData in data.split(separator: 0x0A) {
+            if let entry = try? decoder.decode(BatteryLogEntry.self, from: Data(lineData)) {
+                results.append(entry)
+            }
+        }
+        return results
+    }
+
+    private func pruneOldEntries(_ entries: inout [BatteryLogEntry]) {
+        guard let oneMonthAgo = Calendar.current.date(byAdding: .month, value: -1, to: Date()) else { return }
+        entries.removeAll { $0.timestamp < oneMonthAgo }
+    }
 
     private func readSleepLogFile() -> [BatteryLogEntry] {
         guard let data = try? Data(contentsOf: sleepLogFileURL) else { return [] }
@@ -93,16 +200,7 @@ class BatteryDataLogger {
         }
     }
 
-    private func writeLogFile(entries: [BatteryLogEntry]) {
-        do {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(entries)
-            try data.write(to: logFileURL, options: .atomic)
-        } catch {
-            print("[BatteryDataLogger] ERROR writing to log file: \(error)")
-        }
-    }
+    // MARK: - Entry creation
 
     private func createLogEntry() async -> BatteryLogEntry? {
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),

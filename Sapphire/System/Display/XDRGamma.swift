@@ -93,7 +93,7 @@ class GammaTechnique: BrightnessTechnique {
         isEnabled = true
         adjustBrightness()
         registerFullScreenObserver()
-        updateGammaEnforcer()
+        updateGammaEnforcer(isFullScreen: ActiveAppMonitor.shared.isFullScreen)
     }
 
     override func enableScreen(screen: NSScreen) {
@@ -136,10 +136,11 @@ class GammaTechnique: BrightnessTechnique {
 
     private func startGammaEnforcer() {
         guard gammaEnforcerTimer == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: gammaEnforcerInterval, repeats: true) { [weak self] _ in
-            self?.enforceGamma()
+        let timer = Timer.scheduledCoalescing(withTimeInterval: gammaEnforcerInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.enforceGamma(isFullScreen: ActiveAppMonitor.shared.isFullScreen)
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
         gammaEnforcerTimer = timer
     }
 
@@ -148,13 +149,13 @@ class GammaTechnique: BrightnessTechnique {
         gammaEnforcerTimer = nil
     }
 
-    private func updateGammaEnforcer() {
+    private func updateGammaEnforcer(isFullScreen: Bool) {
         guard isEnabled else { return }
-        if !ActiveAppMonitor.shared.isFullScreen {
+        if !isFullScreen {
             stopGammaEnforcer()
         } else {
             startGammaEnforcer()
-            enforceGamma()
+            enforceGamma(isFullScreen: true)
         }
     }
 
@@ -162,8 +163,8 @@ class GammaTechnique: BrightnessTechnique {
         guard fullScreenStateCancellable == nil else { return }
         fullScreenStateCancellable = ActiveAppMonitor.shared.$isFullScreen
             .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.updateGammaEnforcer()
+            .sink { [weak self] isFullScreen in
+                self?.updateGammaEnforcer(isFullScreen: isFullScreen)
             }
     }
 
@@ -172,14 +173,11 @@ class GammaTechnique: BrightnessTechnique {
         fullScreenStateCancellable = nil
     }
 
-    private func enforceGamma() {
-        guard isEnabled else { return }
-        let factor = SettingsModel.shared.settings.brightness
+    private func enforceGamma(isFullScreen: Bool) {
+        guard isEnabled, isFullScreen else { return }
+        let factor = SettingsModel.shared.brightness
 
         for (displayId, gammaTable) in gammaTables {
-            guard ActiveAppMonitor.shared.isFullScreen else {
-                continue
-            }
             guard let currentTable = GammaTable.createFromCurrentGammaTable(displayId: displayId) else { continue }
             let expected = gammaTable.scaledTable(factor: factor)
             let drifted = !currentTable.matches(red: expected.red, green: expected.green, blue: expected.blue, tolerance: gammaEnforcerTolerance)
@@ -195,7 +193,7 @@ class GammaTechnique: BrightnessTechnique {
         super.adjustBrightness()
 
         if isEnabled {
-            let gamma = SettingsModel.shared.settings.brightness
+            let gamma = SettingsModel.shared.brightness
             overlayWindowControllers.values.forEach { controller in
                 if let displayId = controller.screen.displayId, let gammaTable = gammaTables[displayId] {
                     gammaTable.setTableForScreen(displayId: displayId, factor: gamma)

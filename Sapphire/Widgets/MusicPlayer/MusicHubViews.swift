@@ -77,7 +77,7 @@ struct QueueAndPlaylistsView: View {
     @State private var appleMusicQueue: [AppleMusicManager.QueueTrack] = []
 
     @State private var showSpotifyNotOpenAlert = false
-    @State private var queueRefreshTimer: Timer?
+    @State private var delayedRefreshTask: Task<Void, Never>?
 
     // MARK: - Animation State
     @Namespace private var namespace
@@ -235,9 +235,12 @@ struct QueueAndPlaylistsView: View {
         .padding(.top, 10)
         .padding(.horizontal, 18)
         .frame(width: 800, height: 350)
-        .task { await fetchData(for: hubPane) }
+        .task(id: selection) {
+            let pane = hubPane
+            await fetchData(for: pane)
+            await runQueueRefreshLoop(for: pane)
+        }
         .onAppear {
-            startQueueRefreshTimer()
             Task { await musicManager.setMusicHubOpen(true) }
             if isAppleMusic, hubPane == .now {
             }
@@ -252,12 +255,13 @@ struct QueueAndPlaylistsView: View {
             }
         }
         .onDisappear {
-            stopQueueRefreshTimer()
+            delayedRefreshTask?.cancel()
+            delayedRefreshTask = nil
             Task { await musicManager.setMusicHubOpen(false) }
         }
         .onChange(of: selection) { _, newValue in
+            delayedRefreshTask?.cancel()
             UserDefaults.standard.set(newValue, forKey: MusicHubPane.paneDefaultsKey)
-            Task { await fetchData(for: MusicHubPane(rawValue: newValue) ?? .now) }
         }
         .onChange(of: audioHubSection) { _, newValue in
             UserDefaults.standard.set(newValue.rawValue, forKey: MusicAudioHubSection.defaultsKey)
@@ -422,9 +426,16 @@ struct QueueAndPlaylistsView: View {
     }
 
     private func refreshData() {
-        Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            await fetchData(for: hubPane)
+        delayedRefreshTask?.cancel()
+        let pane = hubPane
+        delayedRefreshTask = Task {
+            do {
+                try await Task.sleep(for: .milliseconds(500))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await fetchData(for: pane)
         }
     }
 
@@ -455,9 +466,10 @@ struct QueueAndPlaylistsView: View {
             await musicManager.spotifyPrivateAPI.refreshQueueForUI()
             await musicManager.ensureSpotifyPlayerExtrasLoaded(force: true)
         case .library:
+            let needsProfileRefresh = musicManager.spotifyPrivateAPI.accountInfo == nil
             async let library: Void = musicManager.spotifyPrivateAPI.fetchUserLibrary()
             async let profile: Void = {
-                if musicManager.spotifyPrivateAPI.accountInfo == nil {
+                if needsProfileRefresh {
                     await musicManager.spotifyPrivateAPI.refreshExtendedSessionData()
                 }
             }()
@@ -471,29 +483,23 @@ struct QueueAndPlaylistsView: View {
         }
     }
 
-    private func startQueueRefreshTimer() {
-        stopQueueRefreshTimer()
-        queueRefreshTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { _ in
-            Task { @MainActor in
-                let manager = MusicManager.shared
-                guard manager.isPrivateAPIAuthenticated else { return }
-                let paneRaw = UserDefaults.standard.integer(forKey: MusicHubPane.paneDefaultsKey)
-                let pane = MusicHubPane(rawValue: paneRaw) ?? .now
-                switch pane {
-                case .now:
-                    await manager.spotifyPrivateAPI.refreshQueueForUI()
-                case .library where manager.spotifyPrivateAPI.nativePlaylists.isEmpty:
-                    await manager.spotifyPrivateAPI.fetchUserLibrary()
-                default:
-                    break
-                }
+    private func runQueueRefreshLoop(for pane: MusicHubPane) async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(15))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, musicManager.isPrivateAPIAuthenticated else { continue }
+            switch pane {
+            case .now:
+                await musicManager.spotifyPrivateAPI.refreshQueueForUI()
+            case .library where musicManager.spotifyPrivateAPI.nativePlaylists.isEmpty:
+                await musicManager.spotifyPrivateAPI.fetchUserLibrary()
+            default:
+                break
             }
         }
-    }
-
-    private func stopQueueRefreshTimer() {
-        queueRefreshTimer?.invalidate()
-        queueRefreshTimer = nil
     }
 
     @ViewBuilder
@@ -1401,12 +1407,11 @@ struct ActionButtonsView: View {
     let onAction: () -> Void
     var longPressNavigation: MusicLongPressNavigation = .notifications
 
-    @State private var holdFeedbackAction: MusicLongPressAction?
-    @State private var holdFeedbackIcon: String?
-    @State private var holdFeedbackColor: Color = .primary
-    @State private var holdFeedbackRestoreTask: Task<Void, Never>?
-    @State private var holdFeedbackButtonID: String?
-    @State private var holdActionInFlight = false
+    @StateObject private var holdFeedback = MusicHoldFeedbackController()
+
+    private var holdFeedbackIcon: String? { holdFeedback.icon }
+    private var holdFeedbackColor: Color { holdFeedback.color }
+    private var holdFeedbackButtonID: String? { holdFeedback.buttonID }
 
     private func performAction(_ action: @escaping () async -> Void) {
         Task {
@@ -1417,67 +1422,34 @@ struct ActionButtonsView: View {
 
     private func accessoryHoldHandler(for target: MusicLongPressTarget) -> (() -> Void)? {
         guard let action = settings.settings.resolvedAccessoryHoldAction(for: target) else { return nil }
-        return {
-            Task { @MainActor in
-                guard !holdActionInFlight else { return }
-                holdActionInFlight = true
-                defer { holdActionInFlight = false }
-                await musicManager.performLongPressAction(action, navigation: longPressNavigation)
-                refreshHoldFeedbackIcon()
-                onAction()
-            }
-        }
+        return holdFeedback.handler(
+            for: action,
+            musicManager: musicManager,
+            navigation: longPressNavigation,
+            onCompletion: onAction
+        )
     }
 
     private func skipHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction? {
-        let action = settings.settings.resolvedSkipHoldAction(for: target)
-        if action == .none || action == .seek { return nil }
-        return action
+        holdFeedback.skipAction(for: target, settings: settings.settings)
     }
 
     private func skipHoldClosure(for target: MusicLongPressTarget) -> (() -> Void)? {
         guard let action = skipHoldAction(for: target) else { return nil }
-        return {
-            Task { @MainActor in
-                guard !holdActionInFlight else { return }
-                holdActionInFlight = true
-                defer { holdActionInFlight = false }
-                await musicManager.performLongPressAction(action, navigation: longPressNavigation)
-                refreshHoldFeedbackIcon()
-                onAction()
-            }
-        }
+        return holdFeedback.handler(
+            for: action,
+            musicManager: musicManager,
+            navigation: longPressNavigation,
+            onCompletion: onAction
+        )
     }
 
     private func beginHoldFeedback(action: MusicLongPressAction, buttonID: String) {
-        holdFeedbackRestoreTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.15)) {
-            holdFeedbackButtonID = buttonID
-            holdFeedbackAction = action
-            holdFeedbackIcon = action.feedbackSystemImage(musicManager: musicManager)
-            holdFeedbackColor = action.feedbackColor(musicManager: musicManager)
-        }
-    }
-
-    private func refreshHoldFeedbackIcon() {
-        guard let action = holdFeedbackAction else { return }
-        withAnimation(.easeInOut(duration: 0.15)) {
-            holdFeedbackIcon = action.feedbackSystemImage(musicManager: musicManager)
-            holdFeedbackColor = action.feedbackColor(musicManager: musicManager)
-        }
+        holdFeedback.begin(action: action, buttonID: buttonID, musicManager: musicManager)
     }
 
     private func endHoldFeedback() {
-        holdFeedbackRestoreTask?.cancel()
-        holdFeedbackRestoreTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.25)) {
-                holdFeedbackAction = nil
-                holdFeedbackIcon = nil
-                holdFeedbackButtonID = nil
-            }
-        }
+        holdFeedback.end()
     }
 
     var body: some View {
@@ -1976,9 +1948,6 @@ struct QueueTrackRow: View {
     var onPlay: (PlaybackResult) -> Void
     @State private var isHovered = false
     @EnvironmentObject var musicManager: MusicManager
-    private func formatDuration(ms: Int) -> String {
-        let s = ms / 1000; return "\(s / 60):\(String(format: "%02d", s % 60))"
-    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1991,7 +1960,7 @@ struct QueueTrackRow: View {
                 Text(track.artists.map(\.name).joined(separator: ", ")).font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
             Spacer()
-            Text(formatDuration(ms: track.durationMs)).font(.caption.monospacedDigit()).foregroundColor(.secondary)
+            Text((Double(track.durationMs) / 1000.0).asMinuteSecondClock).font(.caption.monospacedDigit()).foregroundColor(.secondary)
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)        .background(Color.white.opacity(isHovered ? 0.15 : 0.1)).cornerRadius(10)
@@ -2271,53 +2240,105 @@ struct RecommendedTrackRow: View {
     }
 }
 
+fileprivate struct MarqueeContentWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 fileprivate struct Marquee<Content: View>: View {
     @ViewBuilder var content: Content
 
     @State private var animate = false
     @State private var containerWidth: CGFloat = 0
     @State private var contentWidth: CGFloat = 0
+    @State private var isVisible = false
+    @State private var animationTask: Task<Void, Never>?
+
+    private let spacing: CGFloat = 24
 
     private var isOverflowing: Bool {
         contentWidth > containerWidth
     }
 
     private var animation: Animation {
-        .linear(duration: contentWidth / 30)
+        .linear(duration: max((contentWidth + spacing) / 30, 0.1))
         .delay(1.5)
         .repeatForever(autoreverses: false)
     }
 
     var body: some View {
-        let base = content
-            .fixedSize(horizontal: true, vertical: false)
-            .background(GeometryReader { proxy in
-                Color.clear.onAppear { contentWidth = proxy.size.width }
-            })
-
         GeometryReader { proxy in
-            HStack(spacing: 0) {
-                if isOverflowing && animate {
-                    base
-                        .offset(x: -contentWidth)
-                        .onAppear {
-                            withAnimation(animation.delay(0)) {
-                                animate = false
-                            }
-                        }
+            HStack(spacing: spacing) {
+                measuredContent
+                if isOverflowing {
+                    content
+                        .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityHidden(true)
                 }
-                base
             }
-            .offset(x: animate ? contentWidth : 0)
+            .offset(x: isOverflowing && animate ? -(contentWidth + spacing) : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .onAppear {
-                containerWidth = proxy.size.width
-                guard isOverflowing else { return }
-                withAnimation(animation) {
-                    animate = true
-                }
+                updateContainerWidth(proxy.size.width)
+            }
+            .onChange(of: proxy.size.width) { _, width in
+                updateContainerWidth(width)
             }
         }
         .clipped()
+        .onPreferenceChange(MarqueeContentWidthPreferenceKey.self) { width in
+            guard abs(contentWidth - width) > 0.5 else { return }
+            contentWidth = width
+            restartAnimation()
+        }
+        .onAppear {
+            isVisible = true
+            restartAnimation()
+        }
+        .onDisappear {
+            isVisible = false
+            animationTask?.cancel()
+            animationTask = nil
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { animate = false }
+        }
+    }
+
+    private var measuredContent: some View {
+        content
+            .fixedSize(horizontal: true, vertical: false)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: MarqueeContentWidthPreferenceKey.self,
+                        value: proxy.size.width
+                    )
+                }
+            }
+    }
+
+    private func updateContainerWidth(_ width: CGFloat) {
+        guard abs(containerWidth - width) > 0.5 else { return }
+        containerWidth = width
+        restartAnimation()
+    }
+
+    private func restartAnimation() {
+        animationTask?.cancel()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { animate = false }
+
+        guard isVisible, isOverflowing else { return }
+        animationTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, isVisible, isOverflowing else { return }
+            withAnimation(animation) { animate = true }
+        }
     }
 }
 
@@ -2876,7 +2897,7 @@ fileprivate struct AppleMusicDeviceRow: View {
                 if device.isSelected { Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.blue).transition(.opacity.combined(with: .scale(scale: 0.8))) }
             }
             if device.isSelected {
-                BoldPillSlider(label: "Volume", value: $volume, range: 0...100, specifier: "%.0f %%", onCommit: sendVolumeUpdate)
+                BoldPillSlider(label: "Volume", value: $volume, range: 0...100, specifier: "%.0f %%", style: .large, onCommit: sendVolumeUpdate)
                     .padding(.leading, 45)
                     .transition(.opacity.combined(with: .offset(y: 5)))
             }
@@ -2908,7 +2929,7 @@ fileprivate struct SpotifyDeviceRow: View {
                 if device.isActive { Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(.green).transition(.opacity.combined(with: .scale(scale: 0.8))) }
             }
             if device.isActive && device.volumePercent != nil {
-                BoldPillSlider(label: "Volume", value: $volume, range: 0...100, specifier: "%.0f %%", onCommit: onCommit)
+                BoldPillSlider(label: "Volume", value: $volume, range: 0...100, specifier: "%.0f %%", style: .large, onCommit: onCommit)
                     .padding(.leading, 45)
                     .transition(.opacity.combined(with: .offset(y: 5)))
             }
@@ -2966,7 +2987,7 @@ fileprivate struct SpotifyNativeDeviceRow: View {
                 }
             }
             if isActive && (device.capabilities.volumeSteps ?? 0) > 0 {
-                BoldPillSlider(label: "Volume", value: $volume, range: 0...100, specifier: "%.0f %%", onCommit: onCommit)
+                BoldPillSlider(label: "Volume", value: $volume, range: 0...100, specifier: "%.0f %%", style: .large, onCommit: onCommit)
                     .padding(.leading, 45)
                     .transition(.opacity.combined(with: .offset(y: 5)))
             }
@@ -3001,39 +3022,6 @@ fileprivate struct FreeUserNoticeView: View {
             Image(systemName: "exclamationmark.lock.fill").font(.title3).foregroundColor(.yellow)
             Text("Switching devices requires a Spotify Premium account or a private api login.").font(.subheadline).foregroundColor(.secondary)
         }.padding().background(Color.yellow.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-fileprivate struct BoldPillSlider: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let specifier: String
-    var onCommit: (() -> Void)? = nil
-
-    private var displayValue: String { String(format: specifier, value) }
-
-    var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let progress = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
-            let progressWidth = width * progress
-            let textView = HStack { Text(label).fontWeight(.bold); Spacer(); Text(displayValue).font(.system(.body, design: .monospaced)).fontWeight(.bold) }.font(.system(size: 16)).padding(.horizontal, 20)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.gray.opacity(0.25))
-                textView.foregroundColor(.primary.opacity(0.8))
-                ZStack { Capsule().fill(Color.accentColor); textView.foregroundColor(.white) }.mask(Rectangle().frame(width: progressWidth).frame(maxWidth: .infinity, alignment: .leading))
-            }
-            .clipShape(Capsule()).contentShape(Capsule())
-            .gesture(DragGesture(minimumDistance: 0)
-                .onChanged { gesture in
-                    let percentage = (gesture.location.x / width).clamped(to: 0...1)
-                    let newValue = (range.upperBound - range.lowerBound) * percentage + range.lowerBound
-                    self.value = newValue.clamped(to: range)
-                }
-                .onEnded { _ in onCommit?() }
-            )
-        }.frame(height: 44)
     }
 }
 
@@ -3702,12 +3690,16 @@ private struct PlaylistTrackRow: View {
     }
 }
 
+fileprivate let musicRelativeDateFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .abbreviated
+    return formatter
+}()
+
 extension TimeInterval {
     fileprivate func timeAgoDisplay() -> String {
         let date = Date(timeIntervalSince1970: self)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return musicRelativeDateFormatter.localizedString(for: date, relativeTo: Date())
     }
 }
 

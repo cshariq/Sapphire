@@ -31,13 +31,10 @@ class BatteryMonitor: ObservableObject {
 
     private func startPeriodicLogging() {
         periodicLogTimer?.invalidate()
-        periodicLogTimer = Timer.scheduledTimer(withTimeInterval: periodicLogInterval, repeats: true) { [weak self] _ in
+        periodicLogTimer = Timer.scheduledCoalescing(withTimeInterval: periodicLogInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.logPeriodicSnapshot()
             }
-        }
-        if let periodicLogTimer {
-            RunLoop.main.add(periodicLogTimer, forMode: .common)
         }
     }
 
@@ -89,7 +86,7 @@ class BatteryMonitor: ObservableObject {
             }
         }
 
-        let context = Unmanaged.passRetained(self).toOpaque()
+        let context = Unmanaged.passUnretained(self).toOpaque()
 
         if let source = IOPSNotificationCreateRunLoopSource(callback, context)?.takeRetainedValue() {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)

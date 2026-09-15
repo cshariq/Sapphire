@@ -22,6 +22,12 @@ struct EyeBreakSession: Identifiable, Codable {
 }
 
 struct EyeBreakDailySummary: Identifiable {
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
     let id = UUID()
     let date: Date
     var workDuration: TimeInterval = 0
@@ -44,9 +50,7 @@ struct EyeBreakDailySummary: Identifiable {
     }
 
     var dayName: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE"
-        return formatter.string(from: date)
+        Self.weekdayFormatter.string(from: date)
     }
 
     var formattedWorkTime: String {
@@ -90,7 +94,12 @@ class EyeBreakManager: ObservableObject {
     @Published var currentStreak: Int = 0
 
     private var timer: Timer?
+    private var autoAdvanceTimer: Timer?
     private var currentWorkSessionStartDate: Date?
+    private var workDeadline: Date?
+    private var breakDeadline: Date?
+
+    private let autoAdvanceGracePeriod: TimeInterval = 45
 
     init() {
         self.timeUntilNextBreak = TimeInterval(settingsModel.settings.eyeBreakWorkInterval * 60)
@@ -107,6 +116,7 @@ class EyeBreakManager: ObservableObject {
 
     deinit {
         timer?.invalidate()
+        autoAdvanceTimer?.invalidate()
         DistributedNotificationCenter.default().removeObserver(self)
     }
 
@@ -114,17 +124,22 @@ class EyeBreakManager: ObservableObject {
         isBreakTime = false
         isDoneButtonEnabled = false
         timeRemainingInBreak = 0
-        currentWorkSessionStartDate = Date()
+        currentWorkSessionStartDate = nil
+        workDeadline = nil
+        breakDeadline = nil
         timer?.invalidate()
+        autoAdvanceTimer?.invalidate()
+        autoAdvanceTimer = nil
         if settingsModel.settings.eyeBreakLiveActivityEnabled {
             timeUntilNextBreak = workInterval
+            currentWorkSessionStartDate = Date()
+            workDeadline = Date().addingTimeInterval(workInterval)
 
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
+                guard let self, let deadline = self.workDeadline else { return }
 
-                if self.timeUntilNextBreak > 0 {
-                    self.timeUntilNextBreak -= 1
-                } else {
+                self.timeUntilNextBreak = max(0, deadline.timeIntervalSinceNow)
+                if self.timeUntilNextBreak <= 0 {
                     self.recordWorkSession()
                     self.startBreakTimer()
                 }
@@ -134,6 +149,8 @@ class EyeBreakManager: ObservableObject {
 
     private func startBreakTimer() {
         timer?.invalidate()
+        autoAdvanceTimer?.invalidate()
+        autoAdvanceTimer = nil
 
         if soundAlertsEnabled {
             NSSound(named: "Blow")?.play()
@@ -142,28 +159,48 @@ class EyeBreakManager: ObservableObject {
         isBreakTime = true
         isDoneButtonEnabled = false
         timeRemainingInBreak = breakInterval
+        workDeadline = nil
+        breakDeadline = Date().addingTimeInterval(breakInterval)
 
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+            guard let self, let deadline = self.breakDeadline else { return }
 
-            if self.timeRemainingInBreak > 0 {
-                self.timeRemainingInBreak -= 1
-            } else {
+            self.timeRemainingInBreak = max(0, deadline.timeIntervalSinceNow)
+            if self.timeRemainingInBreak <= 0 {
                 self.isDoneButtonEnabled = true
                 if soundAlertsEnabled {
                     NSSound(named: "Glass")?.play()
                 }
                 self.timer?.invalidate()
+                self.scheduleAutoAdvance()
             }
         }
     }
 
+    private func scheduleAutoAdvance() {
+        autoAdvanceTimer?.invalidate()
+        autoAdvanceTimer = Timer.scheduledTimer(withTimeInterval: autoAdvanceGracePeriod, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            self.autoAdvanceTimer = nil
+            guard self.isBreakTime else { return }
+            self.completeBreak()
+        }
+    }
+
     func dismissBreak() {
+        guard isBreakTime else {
+            resetAndStartWork()
+            return
+        }
         recordBreakSession(completed: false)
         resetAndStartWork()
     }
 
     func completeBreak() {
+        guard isBreakTime else {
+            resetAndStartWork()
+            return
+        }
         recordBreakSession(completed: true)
         resetAndStartWork()
     }
@@ -174,6 +211,7 @@ class EyeBreakManager: ObservableObject {
 
     private func recordWorkSession() {
         guard let startDate = currentWorkSessionStartDate else { return }
+        currentWorkSessionStartDate = nil
         let duration = Date().timeIntervalSince(startDate)
         let session = EyeBreakSession(type: .work, duration: duration, date: Date(), completed: true)
         history.append(session)
@@ -184,7 +222,7 @@ class EyeBreakManager: ObservableObject {
     private func recordBreakSession(completed: Bool) {
         let session = EyeBreakSession(
             type: .break,
-            duration: completed ? breakInterval : timeRemainingInBreak,
+            duration: completed ? breakInterval : max(0, breakInterval - timeRemainingInBreak),
             date: Date(),
             completed: completed
         )
@@ -208,6 +246,10 @@ class EyeBreakManager: ObservableObject {
         }
         timer?.invalidate()
         timer = nil
+        autoAdvanceTimer?.invalidate()
+        autoAdvanceTimer = nil
+        workDeadline = nil
+        breakDeadline = nil
     }
 
     @objc private func handleScreenUnlocked() {

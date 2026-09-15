@@ -21,6 +21,7 @@ class MusicManager: ObservableObject {
     lazy var airPlay = AirPlayManager.shared
     lazy var spotifyAppleScript = SpotifyAppleScriptManager.shared
     lazy var spotifyOfficialAPI = SpotifyOfficialAPIManager.shared
+    lazy var tidalAPI = TidalAPIManager.shared
     lazy var spotifyPrivateAPI = SpotifyPrivateAPIManager.shared
     lazy var appleMusicPrivateAPI = AppleMusicPrivateAPIManager.shared
     lazy var browserAppleScript = BrowserAppleScriptManager.shared
@@ -28,6 +29,7 @@ class MusicManager: ObservableObject {
     // MARK: - Proxied Authentication States
     @Published var officialAPIHasKeys: Bool = false
     @Published var isOfficialAPIAuthenticated: Bool = false
+    @Published var isTidalAPIAuthenticated: Bool = false
     @Published var isPrivateAPIAuthenticated: Bool = false
     @Published var isAppleMusicPrivateAPIAuthenticated: Bool = false
     @Published var isPremiumUser: Bool = false
@@ -134,23 +136,21 @@ class MusicManager: ObservableObject {
     }
 
     func setLyricsDetailOpen(_ isOpen: Bool) async {
-        guard isLyricsDetailOpen != isOpen else { return }
-        isLyricsDetailOpen = isOpen
-        print("[MusicManager:Timing] Lyrics View open state changed to: \(isOpen)")
-        refreshTimers()
-        if isOpen {
-            publishPlaybackTime(force: true, includeProgressUI: true)
-        }
-        refreshLyricsLoadingState()
-        if isOpen {
-            await backfillSpotifyMetadataIfNeeded()
-        }
+        await setLyricsSurfaceOpen(isOpen, at: \.isLyricsDetailOpen, named: "Lyrics View")
     }
 
     func setDetachedLyricsOpen(_ isOpen: Bool) async {
-        guard isDetachedLyricsOpen != isOpen else { return }
-        isDetachedLyricsOpen = isOpen
-        print("[MusicManager:Timing] Detached Lyrics Window state changed to: \(isOpen)")
+        await setLyricsSurfaceOpen(isOpen, at: \.isDetachedLyricsOpen, named: "Detached Lyrics Window")
+    }
+
+    private func setLyricsSurfaceOpen(
+        _ isOpen: Bool,
+        at keyPath: ReferenceWritableKeyPath<MusicManager, Bool>,
+        named name: String
+    ) async {
+        guard self[keyPath: keyPath] != isOpen else { return }
+        self[keyPath: keyPath] = isOpen
+        print("[MusicManager:Timing] \(name) open state changed to: \(isOpen)")
         refreshTimers()
         if isOpen {
             publishPlaybackTime(force: true, includeProgressUI: true)
@@ -164,6 +164,7 @@ class MusicManager: ObservableObject {
     func setMusicLiveActivityActive(_ isActive: Bool) async {
         guard isMusicLiveActivityActive != isActive else { return }
         isMusicLiveActivityActive = isActive
+        LyricsLog.info("Music live activity \(isActive ? "active" : "inactive")")
         refreshTimers()
         refreshLyricsLoadingState()
         refreshArtworkColorExtractionIfNeeded()
@@ -173,21 +174,26 @@ class MusicManager: ObservableObject {
     }
 
     @Published var totalDuration: TimeInterval = 0
-    @Published var lyrics: [LyricLine] = []
-
-    var hasDisplayableLyrics: Bool {
-        lyrics.contains { line in
-            let text = (line.translatedText ?? line.text)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return !text.isEmpty
+    @Published var lyrics: [LyricLine] = [] {
+        didSet {
+            let displayable = lyrics.contains(where: Self.isDisplayable)
+            if hasDisplayableLyrics != displayable { hasDisplayableLyrics = displayable }
+            if oldValue.isEmpty != lyrics.isEmpty {
+                LyricsLog.info(lyrics.isEmpty
+                    ? "Lyrics cleared"
+                    : "Lyrics loaded: \(lyrics.count) lines (\(lyrics.filter(\.hasWordTiming).count) word-synced)")
+                refreshTimers()
+            }
         }
     }
 
-    var hasCurrentDisplayableLyric: Bool {
-        guard let line = currentLyric else { return false }
-        let text = (line.translatedText ?? line.text)
+    @Published private(set) var hasDisplayableLyrics: Bool = false
+    @Published private(set) var hasCurrentDisplayableLyric: Bool = false
+
+    private static func isDisplayable(_ line: LyricLine) -> Bool {
+        !(line.translatedText ?? line.text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return !text.isEmpty
+            .isEmpty
     }
 
     @Published var accentColor: Color = .white
@@ -218,7 +224,7 @@ class MusicManager: ObservableObject {
     @Published var currentSourceKey: String?
     private var sourcePinnedByUser = false
     private let spotifyLiveSourceKey = "com.spotify.client:spotify-live"
-    private var lastPublishedSourceSignature: String = ""
+    private var lastPublishedSourceSignature: Int = 0
     private var lastExtractedArtworkToken: String?
 
     @Published var nativeQueue: [PlayerState.Track] = []
@@ -226,7 +232,17 @@ class MusicManager: ObservableObject {
 
     @Published private(set) var appleMusicNextTrack: AppleMusicManager.QueueTrack?
 
-    @Published private(set) var currentLyric: LyricLine?
+    @Published private(set) var currentLyric: LyricLine? {
+        didSet {
+            let displayable = currentLyric.map(Self.isDisplayable) ?? false
+            if hasCurrentDisplayableLyric != displayable { hasCurrentDisplayableLyric = displayable }
+            if oldValue?.id != currentLyric?.id {
+                LyricsLog.info(currentLyric.map {
+                    "Current line → \($0.id.uuidString.prefix(8)) at \(String(format: "%.2f", $0.timestamp))s (\($0.words.count) words)"
+                } ?? "Current line → none")
+            }
+        }
+    }
     @Published private(set) var isDetailPlayerOpen: Bool = false
     @Published private(set) var isMusicHubOpen: Bool = false
     @Published private(set) var isLyricsDetailOpen: Bool = false
@@ -250,10 +266,10 @@ class MusicManager: ObservableObject {
     private var quickPeekTimer: Timer?
     private var airplayDeviceUpdateTimer: Timer?
     private var transientIconTimer: Timer?
-    private var lastLyricLookupSecond: Int = -1
     private var currentLyricIndex: Int? = nil
 
     private var liveActivityTimer: Timer?
+    private var liveActivityTimerInterval: TimeInterval = 0
     private var latestTrackPayload: TrackInfo.Payload?
     private var playbackTimingAnchor: PlaybackTimingAnchor?
     private var lastTrackIdentity: String?
@@ -299,6 +315,7 @@ class MusicManager: ObservableObject {
     private init() {
         spotifyOfficialAPI.$hasApiKeys.assign(to: &$officialAPIHasKeys)
         spotifyOfficialAPI.$isAuthenticated.assign(to: &$isOfficialAPIAuthenticated)
+        tidalAPI.$isAuthenticated.assign(to: &$isTidalAPIAuthenticated)
         spotifyPrivateAPI.$isLoggedIn.assign(to: &$isPrivateAPIAuthenticated)
         appleMusicPrivateAPI.$isLoggedIn.assign(to: &$isAppleMusicPrivateAPIAuthenticated)
         spotifyOfficialAPI.$isPremiumUser.assign(to: &$isPremiumUser)
@@ -351,86 +368,7 @@ class MusicManager: ObservableObject {
         spotifyPrivateAPI.$playerState
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
-                guard let self else { return }
-                guard let state else {
-                    self.refreshSpotifyLiveSource()
-                    return
-                }
-
-                guard self.isSpotifySourceSelected else { return }
-
-                let incomingURI = state.track?.uri
-                let trackChanged = incomingURI != nil && incomingURI != self.lastConnectTrackURI
-                let playChanged: Bool = {
-                    if let previous = self.activeMediaSources[self.spotifyLiveSourceKey]?.payload.isPlaying {
-                        return previous != state.isActivelyPlaying
-                    }
-                    return self.isSpotifySourceSelected && state.isActivelyPlaying != self.isPlaying
-                }()
-
-                if trackChanged || playChanged || self.activeMediaSources[self.spotifyLiveSourceKey] == nil {
-                    self.refreshSpotifyLiveSource()
-                }
-
-                if self.spotifyPrivateAPI.isLoggedIn {
-                    self.applyPlayingState(state.isActivelyPlaying, fromConnect: true)
-                    self.applySpotifyPlayerTiming(state)
-                }
-
-                guard self.shouldSurfaceSpotifyConnectPlayback else { return }
-
-                if !trackChanged {
-                    if playChanged {
-                        self.shuffleState = state.options?.shufflingContext ?? false
-                        let rC = state.options?.repeatingContext ?? false
-                        let rT = state.options?.repeatingTrack ?? false
-                        if rT { self.repeatState = .track }
-                        else if rC { self.repeatState = .context }
-                        else { self.repeatState = .off }
-                        if !(state.options?.shufflingContext ?? false) {
-                            self.spotifyPrivateAPI.isSmartShuffleActive = false
-                        }
-                    }
-                    self.applyPlayingState(state.isActivelyPlaying, fromConnect: true)
-                    self.applySpotifyPlayerTiming(state)
-                    if self.isDetailPlayerOpen {
-                        Task { await self.ensureNextSongAvailableIfNeeded() }
-                    }
-                    return
-                }
-
-                self.shuffleState = state.options?.shufflingContext ?? false
-                let rC = state.options?.repeatingContext ?? false
-                let rT = state.options?.repeatingTrack ?? false
-                if rT { self.repeatState = .track }
-                else if rC { self.repeatState = .context }
-                else { self.repeatState = .off }
-
-                self.beginPlayStateHold(preferPlaying: state.isActivelyPlaying, duration: 0.55)
-                self.applyPlayingState(state.isActivelyPlaying, fromConnect: true)
-
-                if let incomingURI {
-                    self.lastConnectTrackURI = incomingURI
-                }
-
-                if self.currentSourceKey == self.spotifyLiveSourceKey {
-                    self.applySpotifyLiveUIFromPlayerState(forceArtwork: true)
-                } else if let track = state.track {
-                    self.publishSpotifyMediaIdentity(from: track, forceArtwork: true)
-                    self.applyPlayingState(state.isActivelyPlaying, fromConnect: true)
-                    self.applySpotifyPlayerTiming(state)
-                }
-                if !(state.options?.shufflingContext ?? false) {
-                    self.spotifyPrivateAPI.isSmartShuffleActive = false
-                }
-
-                self.lastNextSongFetchAttempt = .distantPast
-                self.handleSpotifyTrackAdvanced(to: state.track)
-                self.objectWillChange.send()
-
-                if self.isDetailPlayerOpen || self.isMusicHubOpen {
-                    Task { await self.ensureNextSongAvailableIfNeeded() }
-                }
+                self?.handleSpotifyPlayerState(state)
             }
             .store(in: &cancellables)
 
@@ -447,6 +385,83 @@ class MusicManager: ObservableObject {
 
     private func scheduleDeferredSpotifyBootstrap() {
         spotifyPrivateAPI.bootstrapIfNeeded(policy: .automatic, delay: 3.0)
+    }
+
+    // MARK: - Spotify Connect State
+
+    private func handleSpotifyPlayerState(_ state: PlayerState?) {
+        guard let state else {
+            refreshSpotifyLiveSource()
+            return
+        }
+        guard isSpotifySourceSelected else { return }
+
+        let incomingURI = state.track?.uri
+        let trackChanged = incomingURI != nil && incomingURI != lastConnectTrackURI
+        let playChanged: Bool = {
+            if let previous = activeMediaSources[spotifyLiveSourceKey]?.payload.isPlaying {
+                return previous != state.isActivelyPlaying
+            }
+            return state.isActivelyPlaying != isPlaying
+        }()
+
+        let isLoggedIn = spotifyPrivateAPI.isLoggedIn
+        if trackChanged || playChanged || activeMediaSources[spotifyLiveSourceKey] == nil {
+            refreshSpotifyLiveSource()
+        }
+        if isLoggedIn {
+            applySpotifyConnectTransport(state)
+        }
+
+        guard shouldSurfaceSpotifyConnectPlayback else { return }
+
+        guard trackChanged else {
+            if playChanged { applySpotifyPlaybackOptions(state) }
+            if !isLoggedIn { applySpotifyConnectTransport(state) }
+            if isDetailPlayerOpen {
+                Task { await self.ensureNextSongAvailableIfNeeded() }
+            }
+            return
+        }
+
+        applySpotifyPlaybackOptions(state)
+        beginPlayStateHold(preferPlaying: state.isActivelyPlaying, duration: 0.55)
+        applyPlayingState(state.isActivelyPlaying, fromConnect: true)
+
+        if let incomingURI { lastConnectTrackURI = incomingURI }
+
+        if isSpotifyLiveSourceSelected {
+            applySpotifyLiveUIFromPlayerState(forceArtwork: true)
+        } else if let track = state.track {
+            publishSpotifyMediaIdentity(from: track, forceArtwork: true)
+            applySpotifyConnectTransport(state)
+        }
+
+        lastNextSongFetchAttempt = .distantPast
+        handleSpotifyTrackAdvanced(to: state.track)
+        objectWillChange.send()
+
+        if isDetailPlayerOpen || isMusicHubOpen {
+            Task { await self.ensureNextSongAvailableIfNeeded() }
+        }
+    }
+
+    private func applySpotifyConnectTransport(_ state: PlayerState) {
+        applyPlayingState(state.isActivelyPlaying, fromConnect: true)
+        applySpotifyPlayerTiming(state)
+    }
+
+    private func applySpotifyPlaybackOptions(_ state: PlayerState) {
+        let shuffling = state.options?.shufflingContext ?? false
+        shuffleState = shuffling
+        if state.options?.repeatingTrack ?? false {
+            repeatState = .track
+        } else if state.options?.repeatingContext ?? false {
+            repeatState = .context
+        } else {
+            repeatState = .off
+        }
+        if !shuffling { spotifyPrivateAPI.isSmartShuffleActive = false }
     }
 
     private func setupSpotifyBootstrapObserver() {
@@ -515,23 +530,17 @@ class MusicManager: ObservableObject {
             fetchAppIcon(for: "com.spotify.client")
         }
         var identityChanged = false
-        if let title = track.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            if title != self.title {
-                self.title = title
-                identityChanged = true
-            }
+        if let title = track.metadata?.title.trimmedOrNil, title != self.title {
+            self.title = title
+            identityChanged = true
         }
-        if let artist = track.metadata?.artistName?.trimmingCharacters(in: .whitespacesAndNewlines), !artist.isEmpty {
-            if artist != self.artist {
-                self.artist = artist
-                identityChanged = true
-            }
+        if let artist = track.metadata?.artistName.trimmedOrNil, artist != self.artist {
+            self.artist = artist
+            identityChanged = true
         }
-        if let album = track.metadata?.albumTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !album.isEmpty {
-            if album != self.album {
-                self.album = album
-                identityChanged = true
-            }
+        if let album = track.metadata?.albumTitle.trimmedOrNil, album != self.album {
+            self.album = album
+            identityChanged = true
         }
         if let imageURL = track.metadata?.imageURL, imageURL != self.artworkURL {
             self.artworkURL = imageURL
@@ -553,14 +562,10 @@ class MusicManager: ObservableObject {
 
     private func lockConnectMediaIdentity(from track: PlayerState.Track) {
         guard isSpotifySourceSelected else { return }
-        let fingerprint = [
-            track.metadata?.title,
-            track.metadata?.artistName
-        ]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "|")
-            .lowercased()
+        let fingerprint = Self.mediaFingerprint(
+            title: track.metadata?.title,
+            artist: track.metadata?.artistName
+        )
         if !fingerprint.isEmpty {
             lastMediaFingerprint = fingerprint
         }
@@ -571,16 +576,11 @@ class MusicManager: ObservableObject {
         guard isSpotifySourceSelected,
               shouldPreferSpotifyPrivateNowPlaying,
               let connect = spotifyPrivateAPI.playerState?.track else { return false }
-        let bundle = normalizeBundleID(payload.bundleIdentifier)
+        let bundle = MediaApplicationIdentity.canonicalBundleID(payload.bundleIdentifier)
         guard bundle == "com.spotify.client" else { return false }
 
-        let connectTitle = connect.metadata?.title?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
-        let remoteTitle = payload.title?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased() ?? ""
-        guard !connectTitle.isEmpty, !remoteTitle.isEmpty else { return false }
+        guard let connectTitle = connect.metadata?.title.trimmedOrNil?.lowercased(),
+              let remoteTitle = payload.title.trimmedOrNil?.lowercased() else { return false }
         if connectTitle != remoteTitle { return true }
 
         fillSpotifyIdentityGapsFromMediaRemote(payload)
@@ -589,14 +589,10 @@ class MusicManager: ObservableObject {
 
     private func fillSpotifyIdentityGapsFromMediaRemote(_ payload: TrackInfo.Payload) {
         guard isSpotifySourceSelected else { return }
-        if (artist?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
-           let remoteArtist = payload.artist?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !remoteArtist.isEmpty {
+        if artist.isBlank, let remoteArtist = payload.artist.trimmedOrNil {
             artist = remoteArtist
         }
-        if (album?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
-           let remoteAlbum = payload.album?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !remoteAlbum.isEmpty {
+        if album.isBlank, let remoteAlbum = payload.album.trimmedOrNil {
             album = remoteAlbum
         }
         if artwork == nil, let art = payload.artwork {
@@ -685,13 +681,15 @@ class MusicManager: ObservableObject {
     }
 
     deinit {
-        Task { @MainActor in self.removeVolumeListener() }
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         quickPeekTimer?.invalidate()
         airplayDeviceUpdateTimer?.invalidate()
         transientIconTimer?.invalidate()
-        Task { @MainActor in self.invalidateAllTimers() }
+        liveActivityTimer?.invalidate()
+        if let volumeListener {
+            Self.removeVolumeListener(volumeListener)
+        }
     }
 
     // MARK: - Core Playback Actions (Context-Aware)
@@ -700,55 +698,67 @@ class MusicManager: ObservableObject {
         beginPlayStateHold(preferPlaying: true, duration: 1.2)
         applyPlayingState(true)
 
-        if isSpotifySourceSelected {
-            spotifyPlayStateReconcileTarget = true
-            spotifyPlayStateReconcileUntil = Date().addingTimeInterval(3.0)
-            if spotifyPrivateAPI.isLoggedIn {
-                let ok = await spotifyPrivateAPI.connectResume()
-                if ok { return }
-                if spotifyAppleScript.isAppRunning() {
-                    _ = await spotifyAppleScript.play(uri: "")
-                    return
-                }
-                if spotifyOfficialAPI.isAuthenticated && isPremiumUser {
-                    _ = await spotifyOfficialAPI.playTrack(uri: "")
-                    return
-                }
-                return
-            } else if spotifyOfficialAPI.isAuthenticated && isPremiumUser {
-                _ = await spotifyOfficialAPI.playTrack(uri: "")
-                return
-            } else if spotifyAppleScript.isAppRunning() {
+        guard isSpotifySourceSelected else {
+            mediaController.play()
+            return
+        }
+        beginSpotifyPlayStateReconcile(target: true)
+
+        if spotifyPrivateAPI.isLoggedIn {
+            if await spotifyPrivateAPI.connectResume() { return }
+            if spotifyAppleScript.isAppRunning() {
                 _ = await spotifyAppleScript.play(uri: "")
-                return
+            } else if spotifyOfficialAPI.isAuthenticated, isPremiumUser {
+                _ = await spotifyOfficialAPI.playTrack(uri: "")
             }
+            return
         }
 
-        mediaController.play()
+        if spotifyOfficialAPI.isAuthenticated, isPremiumUser {
+            _ = await spotifyOfficialAPI.playTrack(uri: "")
+        } else if spotifyAppleScript.isAppRunning() {
+            _ = await spotifyAppleScript.play(uri: "")
+        } else {
+            mediaController.play()
+        }
     }
 
     func pause() async {
         beginPlayStateHold(preferPlaying: false, duration: 1.2)
         applyPlayingState(false)
 
-        if isSpotifySourceSelected {
-            spotifyPlayStateReconcileTarget = false
-            spotifyPlayStateReconcileUntil = Date().addingTimeInterval(3.0)
-            if spotifyPrivateAPI.isLoggedIn {
-                let ok = await spotifyPrivateAPI.connectPause()
-                if ok { return }
-                if spotifyAppleScript.isAppRunning() {
-                    _ = await spotifyAppleScript.pause()
-                    return
-                }
-                return
-            } else if spotifyAppleScript.isAppRunning() {
+        guard isSpotifySourceSelected else {
+            mediaController.pause()
+            return
+        }
+        beginSpotifyPlayStateReconcile(target: false)
+
+        if spotifyPrivateAPI.isLoggedIn {
+            if await spotifyPrivateAPI.connectPause() { return }
+            if spotifyAppleScript.isAppRunning() {
                 _ = await spotifyAppleScript.pause()
-                return
             }
+            return
         }
 
-        mediaController.pause()
+        if spotifyAppleScript.isAppRunning() {
+            _ = await spotifyAppleScript.pause()
+        } else {
+            mediaController.pause()
+        }
+    }
+
+    private func isCurrentTrack(_ generation: UInt64) -> Bool {
+        generation == trackMetadataGeneration
+    }
+
+    private func isCurrentSpotifyTrack(_ generation: UInt64) -> Bool {
+        isSpotifySourceSelected && generation == trackMetadataGeneration
+    }
+
+    private func beginSpotifyPlayStateReconcile(target: Bool, duration: TimeInterval = 3.0) {
+        spotifyPlayStateReconcileTarget = target
+        spotifyPlayStateReconcileUntil = Date().addingTimeInterval(duration)
     }
 
     func nextTrack() async {
@@ -835,6 +845,14 @@ class MusicManager: ObservableObject {
         isSpotifyDisplayedInUI && lastKnownBundleID != "com.apple.Music"
     }
 
+    var isSpotifyPausedWithNoSystemMediaPlaying: Bool {
+        guard isSpotifySourceActive || isSpotifyLiveSourceSelected else { return false }
+        guard !isPlaying else { return false }
+        return !activeMediaSources.values.contains {
+            resolvedIsPlaying(from: $0.payload) == true
+        }
+    }
+
     private func clearSpotifyTransientUIState() {
         nativeQueue = []
         nowPlayingTrack = nil
@@ -860,9 +878,7 @@ class MusicManager: ObservableObject {
     }
 
     private var privateNowPlayingHasIdentity: Bool {
-        guard let track = spotifyPrivateAPI.playerState?.track else { return false }
-        let title = track.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return !title.isEmpty
+        spotifyPrivateAPI.playerState?.track?.metadata?.title.isBlank == false
     }
 
     private var prefersNativeSpotifyMediaRemote: Bool {
@@ -974,23 +990,22 @@ class MusicManager: ObservableObject {
 
     private func fillMissingSpotifyIdentityIfNeeded(uri: String, generation: UInt64) async {
         guard isSpotifySourceSelected, spotifyPrivateAPI.isLoggedIn else { return }
-        guard generation == trackMetadataGeneration else { return }
+        guard isCurrentTrack(generation) else { return }
         guard missingSpotifyIdentityFields else { return }
         let id = uri.replacingOccurrences(of: "spotify:track:", with: "")
         guard !id.isEmpty, !id.contains(":") else { return }
 
         let details = await spotifyPrivateAPI.fetchTrackDetails(trackId: id)
-        guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
+        guard isCurrentSpotifyTrack(generation) else { return }
         guard let details else { return }
 
-        if (artist?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+        if artist.isBlank {
             let names = ((details.artists?.items ?? []) + (details.otherArtists?.items ?? []))
                 .map(\.profile.name)
                 .filter { !$0.isEmpty }
             if !names.isEmpty { artist = names.joined(separator: ", ") }
         }
-        if (album?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
-           let albumName = details.albumOfTrack?.name, !albumName.isEmpty {
+        if album.isBlank, let albumName = details.albumOfTrack?.name, !albumName.isEmpty {
             album = albumName
         }
         if artwork == nil,
@@ -1004,14 +1019,12 @@ class MusicManager: ObservableObject {
         }
 
         let liked = await spotifyPrivateAPI.isTrackLiked(uri: uri)
-        guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
+        guard isCurrentSpotifyTrack(generation) else { return }
         isLiked = liked
     }
 
     private var missingSpotifyIdentityFields: Bool {
-        let artistMissing = artist?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-        let albumMissing = album?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-        return artistMissing || albumMissing || artwork == nil
+        artist.isBlank || album.isBlank || artwork == nil
     }
 
     private func hasNativeSpotifyMediaSource(in clients: [String: TrackInfo] = [:]) -> Bool {
@@ -1048,15 +1061,15 @@ class MusicManager: ObservableObject {
 
         guard let bundle = bundleID(fromSourceKey: key), !bundle.isEmpty else { return false }
 
-        let isAppRunning = RunningApps.shared.containsBundleID { appBundle in
-            let normalizedApp = normalizeBundleID(appBundle) ?? appBundle
-            return normalizedApp == bundle || appBundle == bundle
+        if !RunningApps.shared.isRunning(bundle) {
+            let matchesHelper = RunningApps.shared.containsBundleID { appBundle in
+                MediaApplicationIdentity.canonicalBundleID(appBundle) == bundle
+            }
+            guard matchesHelper else { return false }
         }
-        guard isAppRunning else { return false }
 
         guard let payload = track?.payload else { return false }
-        let title = payload.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return !title.isEmpty
+        return !payload.title.isBlank
     }
 
     private func mergedSourcesWithSpotifyLive(_ clients: [String: TrackInfo]) -> [String: TrackInfo] {
@@ -1078,16 +1091,23 @@ class MusicManager: ObservableObject {
         return merged
     }
 
-    private func sourceSignature(for sources: [String: TrackInfo]) -> String {
-        sources.keys.sorted().map { key in
-            guard let payload = sources[key]?.payload else { return "\(key)#" }
-            return "\(key)#\(payload.title ?? "")#\(payload.artist ?? "")#\(payload.album ?? "")"
-        }.joined(separator: "|")
+    private func sourceSignature(for sources: [String: TrackInfo]) -> Int {
+        var combined = 0
+        for (key, track) in sources {
+            var hasher = Hasher()
+            hasher.combine(key)
+            hasher.combine(track.payload.title)
+            hasher.combine(track.payload.artist)
+            hasher.combine(track.payload.album)
+            combined ^= hasher.finalize()
+        }
+        return combined
     }
 
     private func publishMergedSources(_ merged: [String: TrackInfo], reselect: Bool) {
         let signature = sourceSignature(for: merged)
-        let keysChanged = Set(merged.keys) != Set(activeMediaSources.keys)
+        let keysChanged = merged.count != activeMediaSources.count
+            || merged.keys.contains { activeMediaSources[$0] == nil }
         if signature != lastPublishedSourceSignature || keysChanged {
             lastPublishedSourceSignature = signature
             activeMediaSources = merged
@@ -1115,26 +1135,26 @@ class MusicManager: ObservableObject {
             return current
         }
 
-        let playing = sources.filter { resolvedIsPlaying(from: $0.value.payload) == true }
-        let pool = playing.isEmpty ? sources : playing
+        let playingKeys = sources.compactMap { resolvedIsPlaying(from: $0.value.payload) == true ? $0.key : nil }
+        let pool = (playingKeys.isEmpty ? Array(sources.keys) : playingKeys).sorted()
 
         let preferredKey: String?
         switch settingsModel.settings.mediaSource {
         case .system:
-            preferredKey = pool.keys.sorted().first(where: { !isSpotifySourceKey($0) })
-                ?? pool.keys.sorted().first(where: { isSpotifySourceKey($0) })
+            preferredKey = pool.first(where: { !isSpotifySourceKey($0) })
+                ?? pool.first(where: isSpotifySourceKey)
         case .spotify:
-            preferredKey = pool.keys.sorted().first(where: { isSpotifySourceKey($0) })
-                ?? pool.keys.sorted().first(where: { !isSpotifySourceKey($0) })
+            preferredKey = pool.first(where: isSpotifySourceKey)
+                ?? pool.first(where: { !isSpotifySourceKey($0) })
         case .appleMusic:
-            preferredKey = pool.keys.sorted().first(where: { isAppleMusicSourceKey($0) })
-                ?? pool.keys.sorted().first(where: { !isSpotifySourceKey($0) })
-                ?? pool.keys.sorted().first(where: { isSpotifySourceKey($0) })
+            preferredKey = pool.first(where: isAppleMusicSourceKey)
+                ?? pool.first(where: { !isSpotifySourceKey($0) })
+                ?? pool.first(where: isSpotifySourceKey)
         }
 
         if let preferredKey { return preferredKey }
         if let current = currentSourceKey, sources[current] != nil { return current }
-        return sources.keys.sorted().first
+        return sources.keys.min()
     }
 
     private func evaluateAutoSourceSelection(in sources: [String: TrackInfo]) {
@@ -1355,9 +1375,27 @@ class MusicManager: ObservableObject {
 
     // MARK: - Multi-Source State Management
 
+    private var appURLCache: [String: URL?] = [:]
+    private var appIconCache: [String: NSImage] = [:]
+
+    private func appURL(for bundleID: String) -> URL? {
+        if let cached = appURLCache[bundleID] { return cached }
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        appURLCache[bundleID] = url
+        return url
+    }
+
+    private func cachedAppIcon(for bundleID: String) -> NSImage? {
+        if let cached = appIconCache[bundleID] { return cached }
+        guard let url = appURL(for: bundleID) else { return nil }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        appIconCache[bundleID] = icon
+        return icon
+    }
+
     func appName(for bundleID: String?) -> String {
         guard let bundleID = bundleID else { return "Unknown" }
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+        if let url = appURL(for: bundleID) {
             return url.deletingPathExtension().lastPathComponent
         }
         return bundleID.components(separatedBy: ".").last?.capitalized ?? bundleID
@@ -1371,15 +1409,7 @@ class MusicManager: ObservableObject {
         key.hasPrefix("com.apple.Music")
     }
 
-    private func clearPublishedSpotifyIdentityForSystemSource() {
-        clearSpotifyTransientUIState()
-        uri = nil
-        trackID = nil
-        lastConnectTrackURI = nil
-        lastHandledTrackKey = nil
-        trackMetadataGeneration &+= 1
-        resetLyricsState()
-
+    private func clearSpotifyTrackAccessories() {
         spotifyPrivateAPI.nowPlayingArtist = nil
         spotifyPrivateAPI.relatedTracks = []
         spotifyPrivateAPI.similarAlbums = []
@@ -1392,6 +1422,17 @@ class MusicManager: ObservableObject {
         popularity = nil
         playCount = nil
         playCountValue = nil
+    }
+
+    private func clearPublishedSpotifyIdentityForSystemSource() {
+        clearSpotifyTransientUIState()
+        uri = nil
+        trackID = nil
+        lastConnectTrackURI = nil
+        lastHandledTrackKey = nil
+        trackMetadataGeneration &+= 1
+        resetLyricsState()
+        clearSpotifyTrackAccessories()
     }
 
     func selectSource(key: String, userInitiated: Bool = false, payload: TrackInfo.Payload? = nil) {
@@ -1412,7 +1453,7 @@ class MusicManager: ObservableObject {
                 if !isNowSpotify {
                     clearPublishedSpotifyIdentityForSystemSource()
                     if let bundle = key.split(separator: ":").first.map(String.init) {
-                        lastKnownBundleID = normalizeBundleID(bundle) ?? bundle
+                        lastKnownBundleID = MediaApplicationIdentity.canonicalBundleID(bundle) ?? bundle
                         fetchAppIcon(for: lastKnownBundleID ?? bundle)
                     }
                 }
@@ -1494,14 +1535,13 @@ class MusicManager: ObservableObject {
                 if !connectNextUIDs.isEmpty,
                    localNextUIDs == connectNextUIDs,
                    let next = nativeQueue.first,
-                   !(next.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+                   next.metadata?.title.isBlank == false {
                     return false
                 }
                 return true
             }
             guard let next = nativeQueue.first else { return true }
-            let title = next.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if title.isEmpty { return true }
+            if next.metadata?.title.isBlank ?? true { return true }
             if !connectNextUIDs.isEmpty, localNextUIDs != connectNextUIDs { return true }
             return false
         }()
@@ -1524,7 +1564,7 @@ class MusicManager: ObservableObject {
 
         await MainActor.run {
             guard self.currentTrackArtworkToken == expectedToken || self.artworkURL == url else { return }
-            if self.artwork?.tiffRepresentation != image.tiffRepresentation {
+            if self.artwork !== image {
                 self.artwork = image
                 self.refreshArtworkColorExtractionIfNeeded()
             }
@@ -1563,7 +1603,7 @@ class MusicManager: ObservableObject {
         mediaController.onTrackInfoReceived = { [weak self] trackInfo in
             Task { @MainActor in
                 guard let self = self, let track = trackInfo else { return }
-                let bundle = self.normalizeBundleID(track.payload.bundleIdentifier) ?? track.payload.bundleIdentifier ?? "unknown"
+                let bundle = MediaApplicationIdentity.canonicalBundleID(track.payload.bundleIdentifier) ?? track.payload.bundleIdentifier ?? "unknown"
                 guard self.settingsModel.settings.isMediaAppVisible(bundleID: bundle) else { return }
                 let newKey = bundle
 
@@ -1622,133 +1662,75 @@ class MusicManager: ObservableObject {
     private func buildSpotifyLiveTrackInfo() -> TrackInfo? {
         guard spotifyPrivateAPI.isLoggedIn else { return nil }
 
-        if let state = spotifyPrivateAPI.playerState, let track = state.track {
-            let title = track.metadata?.title
-            let artist = track.metadata?.artistName
-            let album = track.metadata?.albumTitle
-            let elapsedSeconds: TimeInterval? = {
-                guard let ms = state.realtimePositionMilliseconds() else { return nil }
-                return TimeInterval(ms) / 1000.0
-            }()
-
-            let payload = TrackInfo.Payload(
-                processIdentifier: nil,
+        guard let state = spotifyPrivateAPI.playerState, let track = state.track else {
+            return TrackInfo(payload: TrackInfo.Payload(
                 bundleIdentifier: "com.spotify.client",
-                parentApplicationBundleIdentifier: nil,
-                title: title,
-                artist: artist,
-                album: album,
-                albumArtist: nil,
-                composer: nil,
-                genre: nil,
-                chapterNumber: nil,
-                totalChapterCount: nil,
-                trackNumber: nil,
-                discNumber: nil,
-                totalTrackCount: nil,
-                queueIndex: nil,
-                totalQueueCount: nil,
-                isPlaying: state.isActivelyPlaying,
-                durationMicros: state.duration.map { Int64($0) * 1000 },
-                currentElapsedTime: elapsedSeconds,
-                elapsedTimeMicros: nil,
-                playbackRate: state.isActivelyPlaying ? 1 : 0,
-                startTime: nil,
-                timestamp: nil,
-                timestampEpochMicros: state.timestamp.map { $0 * 1000 },
-                repeatMode: nil,
-                shuffleMode: nil,
-                isLiked: nil,
-                isBanned: nil,
-                isInWishList: nil,
-                isAdvertisement: nil,
+                title: "Spotify",
+                artist: "Not playing",
+                isPlaying: false,
+                playbackRate: 0,
                 isMusicApp: true,
                 supportsIsLiked: true,
-                supportsIsBanned: nil,
-                supportsFastForward15Seconds: nil,
-                supportsRewind15Seconds: nil,
-                prohibitsSkip: nil,
-                radioStationIdentifier: nil,
-                radioStationHash: nil,
-                contentItemIdentifier: track.uri,
-                uniqueIdentifier: track.uid,
-                mediaType: "music",
-                artwork: nil,
-                artworkMimeType: nil
-            )
-            return TrackInfo(payload: payload)
+                contentItemIdentifier: "spotify-live-idle",
+                uniqueIdentifier: "spotify-live-idle",
+                mediaType: "music"
+            ))
         }
 
-        let payload = TrackInfo.Payload(
-            processIdentifier: nil,
+        return TrackInfo(payload: TrackInfo.Payload(
             bundleIdentifier: "com.spotify.client",
-            parentApplicationBundleIdentifier: nil,
-            title: "Spotify",
-            artist: "Not playing",
-            album: nil,
-            albumArtist: nil,
-            composer: nil,
-            genre: nil,
-            chapterNumber: nil,
-            totalChapterCount: nil,
-            trackNumber: nil,
-            discNumber: nil,
-            totalTrackCount: nil,
-            queueIndex: nil,
-            totalQueueCount: nil,
-            isPlaying: false,
-            durationMicros: nil,
-            currentElapsedTime: nil,
-            elapsedTimeMicros: nil,
-            playbackRate: 0,
-            startTime: nil,
-            timestamp: nil,
-            timestampEpochMicros: nil,
-            repeatMode: nil,
-            shuffleMode: nil,
-            isLiked: nil,
-            isBanned: nil,
-            isInWishList: nil,
-            isAdvertisement: nil,
+            title: track.metadata?.title,
+            artist: track.metadata?.artistName,
+            album: track.metadata?.albumTitle,
+            isPlaying: state.isActivelyPlaying,
+            durationMicros: state.duration.map { Int64($0) * 1000 },
+            currentElapsedTime: state.realtimePositionMilliseconds().map { TimeInterval($0) / 1000.0 },
+            playbackRate: state.isActivelyPlaying ? 1 : 0,
+            timestampEpochMicros: state.timestamp.map { $0 * 1000 },
             isMusicApp: true,
             supportsIsLiked: true,
-            supportsIsBanned: nil,
-            supportsFastForward15Seconds: nil,
-            supportsRewind15Seconds: nil,
-            prohibitsSkip: nil,
-            radioStationIdentifier: nil,
-            radioStationHash: nil,
-            contentItemIdentifier: "spotify-live-idle",
-            uniqueIdentifier: "spotify-live-idle",
-            mediaType: "music",
-            artwork: nil,
-            artworkMimeType: nil
-        )
-        return TrackInfo(payload: payload)
+            contentItemIdentifier: track.uri,
+            uniqueIdentifier: track.uid,
+            mediaType: "music"
+        ))
     }
 
     private func applySpotifyPlayerTiming(_ state: PlayerState) {
         let playing = heldOrReportedPlaying(state.isActivelyPlaying)
+        let rate = playing ? 1.0 : 0.0
+
+        let newAnchor: PlaybackTimingAnchor?
         if let timestamp = state.timestamp, let ms = state.positionAsOfTimestamp {
-            let elapsedAtSample = TimeInterval(ms) / 1000.0
-            let sampleEpoch = TimeInterval(timestamp) / 1000.0
-            let rate = playing ? 1.0 : 0.0
-            playbackTimingAnchor = PlaybackTimingAnchor(
-                elapsedAtSample: elapsedAtSample,
-                sampleEpochTime: sampleEpoch,
+            newAnchor = PlaybackTimingAnchor(
+                elapsedAtSample: TimeInterval(ms) / 1000.0,
+                sampleEpochTime: TimeInterval(timestamp) / 1000.0,
                 rate: rate
             )
         } else if let ms = state.positionAsOfTimestamp ?? state.realtimePositionMilliseconds() {
-            playbackTimingAnchor = PlaybackTimingAnchor(
+            newAnchor = PlaybackTimingAnchor(
                 elapsedAtSample: TimeInterval(ms) / 1000.0,
                 sampleEpochTime: Date().timeIntervalSince1970,
-                rate: playing ? 1.0 : 0.0
+                rate: rate
             )
+        } else {
+            newAnchor = nil
+        }
+
+        var changed = false
+        if let newAnchor, newAnchor != playbackTimingAnchor {
+            playbackTimingAnchor = newAnchor
+            changed = true
         }
         if let durationMs = state.duration, durationMs > 0 {
-            currentTrackDuration = TimeInterval(durationMs) / 1000.0
-            totalDuration = currentTrackDuration
+            let duration = TimeInterval(durationMs) / 1000.0
+            if duration != currentTrackDuration || duration != totalDuration {
+                currentTrackDuration = duration
+                totalDuration = duration
+                changed = true
+            }
         }
+
+        guard changed else { return }
         refreshTimers()
         publishPlaybackTime(force: true, includeProgressUI: true)
     }
@@ -1759,18 +1741,8 @@ class MusicManager: ObservableObject {
         let generation = trackMetadataGeneration
 
         resetLyricsState()
-        popularity = nil
-        playCount = nil
-        playCountValue = nil
+        clearSpotifyTrackAccessories()
         isLiked = false
-        fetchedSpotifyPopularity = nil
-        spotifyPrivateAPI.currentCanvas = nil
-        spotifyPrivateAPI.relatedTracks = []
-        spotifyPrivateAPI.similarAlbums = []
-        spotifyPrivateAPI.trackArtistCredits = []
-        spotifyPrivateAPI.popularReleases = []
-        spotifyPrivateAPI.nowPlayingArtist = nil
-        spotifyPrivateAPI.artistConcerts = []
 
         if let track,
            let title = track.metadata?.title,
@@ -1816,7 +1788,7 @@ class MusicManager: ObservableObject {
             }
         }
 
-        if nativeQueue.isEmpty || (nativeQueue.first?.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+        if nativeQueue.first?.metadata?.title.isBlank ?? true {
             lastNextSongFetchAttempt = .distantPast
             Task { await ensureNextSongAvailableIfNeeded(force: true) }
         }
@@ -1854,7 +1826,7 @@ class MusicManager: ObservableObject {
             return
         }
 
-        let sourceBundleID = self.normalizeBundleID(payload.bundleIdentifier) ?? "N/A"
+        let sourceBundleID = MediaApplicationIdentity.canonicalBundleID(payload.bundleIdentifier) ?? "N/A"
         let isSpotify = isSpotifySourceKey(sourceKey) || sourceBundleID == "com.spotify.client"
         let switchingAwayFromSpotify = lastKnownBundleID == "com.spotify.client" && !isSpotify
 
@@ -1871,13 +1843,10 @@ class MusicManager: ObservableObject {
         let trackIdentity = self.trackIdentity(for: payload)
         let hasTrackChanged = hasMediaChanged(payload) || switchingAwayFromSpotify
 
-        let cleanTitle = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanArtist = payload.artist?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanAlbum = payload.album?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let resolvedTitle: String? = cleanTitle.isEmpty ? rawTitle : cleanTitle
-        let resolvedArtist: String? = (cleanArtist?.isEmpty == false) ? cleanArtist : nil
-        let resolvedAlbum: String? = (cleanAlbum?.isEmpty == false) ? cleanAlbum : nil
+        let trimmedTitle = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTitle: String? = trimmedTitle.isEmpty ? rawTitle : trimmedTitle
+        let resolvedArtist = payload.artist.trimmedOrNil
+        let resolvedAlbum = payload.album.trimmedOrNil
 
         if self.title != resolvedTitle { self.title = resolvedTitle }
         if self.artist != resolvedArtist { self.artist = resolvedArtist }
@@ -1892,11 +1861,7 @@ class MusicManager: ObservableObject {
             self.triggerQuickPeek()
             self.lastTrackChangeDate = Date()
 
-            if isSpotify, spotifyPrivateAPI.isLoggedIn {
-                Task { await self.ensureLyricsForCurrentTrack() }
-            } else {
-                Task { await self.fetchAndTranslateLyricsIfNeeded() }
-            }
+            Task { await self.ensureLyricsForCurrentTrack() }
             self.trackDidChange.send()
         }
 
@@ -1925,7 +1890,7 @@ class MusicManager: ObservableObject {
     private func applyPlaybackRefresh(_ payload: TrackInfo.Payload) {
         latestTrackPayload = payload
 
-        if normalizeBundleID(payload.bundleIdentifier) == "com.spotify.client", spotifyPrivateAPI.isLoggedIn {
+        if MediaApplicationIdentity.canonicalBundleID(payload.bundleIdentifier) == "com.spotify.client", spotifyPrivateAPI.isLoggedIn {
             syncSpotifyPlayState(mediaRemoteHint: resolvedIsPlaying(from: payload))
         } else if let newIsPlaying = resolvedIsPlaying(from: payload) {
             applyPlayingState(newIsPlaying)
@@ -1985,14 +1950,14 @@ class MusicManager: ObservableObject {
         self.applePlayCount = nil; self.applePopularity = nil; self.appleSuggestedTracks = []
 
         if self.lastKnownBundleID == "com.apple.Music" {
-            guard generation == self.trackMetadataGeneration else { return }
+            guard isCurrentTrack(generation) else { return }
             self.isLiked = appleMusic.isTrackLiked()
             self.shuffleState = appleMusic.getShuffleState()
             self.repeatState = appleMusic.getRepeatState()
             await enrichAppleMusicTrackStats(generation: generation)
-            guard generation == self.trackMetadataGeneration else { return }
+            guard isCurrentTrack(generation) else { return }
             if needsLyricsUpdates || isDetailPlayerOpen {
-                await fetchAndTranslateLyricsIfNeeded()
+                await ensureLyricsForCurrentTrack()
             }
         } else if isSpotifySourceSelected && self.lastKnownBundleID == "com.spotify.client" {
             if shouldPreferSpotifyPrivateNowPlaying,
@@ -2020,7 +1985,7 @@ class MusicManager: ObservableObject {
 
             if let currentArtist = self.artist, !currentArtist.isEmpty,
                let track = await searchForTrack(title: currentTitle, artist: currentArtist) {
-                guard isSpotifySourceSelected, generation == self.trackMetadataGeneration else { return }
+                guard isCurrentSpotifyTrack(generation) else { return }
                 self.uri = track.uri; self.trackID = track.id; self.popularity = track.popularity
                 if spotifyPrivateAPI.isLoggedIn, needsSpotifyPlayerEnrichment {
                     let artistURI = self.nowPlayingTrack?.metadata?.artistUri
@@ -2031,18 +1996,18 @@ class MusicManager: ObservableObject {
                         force: true
                     )
                 } else if spotifyOfficialAPI.isAuthenticated, let liked = await spotifyOfficialAPI.checkIfTrackIsLiked(id: track.id) {
-                    guard isSpotifySourceSelected, generation == self.trackMetadataGeneration else { return }
+                    guard isCurrentSpotifyTrack(generation) else { return }
                     self.isLiked = liked
                 }
                 if self.playCount == nil, let count = await PlayCountFetcher.shared.getPlayCountValue(for: track.id) {
-                    guard isSpotifySourceSelected, generation == self.trackMetadataGeneration else { return }
+                    guard isCurrentSpotifyTrack(generation) else { return }
                     self.playCountValue = count
                     self.playCount = PlayCountFetcher.formatPlayCount(count)
                 }
             } else {
-                guard generation == self.trackMetadataGeneration else { return }
+                guard isCurrentTrack(generation) else { return }
                 if needsLyricsUpdates || isDetailPlayerOpen {
-                    await fetchAndTranslateLyricsIfNeeded()
+                    await ensureLyricsForCurrentTrack()
                 }
             }
         }
@@ -2051,25 +2016,19 @@ class MusicManager: ObservableObject {
     private func enrichAppleMusicTrackStats(generation: UInt64) async {
         guard lastKnownBundleID == "com.apple.Music" else { return }
         guard appleMusic.isMusicKitAuthorized else { return }
-        guard generation == trackMetadataGeneration else { return }
-        let songID = trackID
-        guard let songID, !songID.isEmpty else { return }
-        let playCount: Int? = nil
-        let popularity: Int? = nil
-        guard generation == trackMetadataGeneration else { return }
-        if let playCount { applePlayCount = playCount }
-        if let popularity { applePopularity = popularity }
+        guard isCurrentTrack(generation) else { return }
+        guard let songID = trackID, !songID.isEmpty else { return }
 
         if let artistName = self.artist, !artistName.isEmpty {
             let suggested = await appleMusic.suggestedTracks(artistName: artistName)
-            guard generation == trackMetadataGeneration else { return }
+            guard isCurrentTrack(generation) else { return }
             self.appleSuggestedTracks = suggested
         }
     }
 
     private func hydrateSpotifyTrackAccessories(uri: String, trackId: String? = nil, generation: UInt64) async {
         guard isSpotifySourceSelected, spotifyPrivateAPI.isLoggedIn else { return }
-        guard generation == trackMetadataGeneration else { return }
+        guard isCurrentTrack(generation) else { return }
 
         let id = trackId ?? uri.replacingOccurrences(of: "spotify:track:", with: "")
         guard !id.isEmpty, !id.contains(":") else { return }
@@ -2079,23 +2038,23 @@ class MusicManager: ObservableObject {
 
         if let track = nowPlayingTrack, track.uri == uri {
             applyConnectArtworkIfNeeded(from: track, force: artwork == nil)
-            guard generation == trackMetadataGeneration else { return }
+            guard isCurrentTrack(generation) else { return }
         }
 
         if missingSpotifyIdentityFields {
             await fillMissingSpotifyIdentityIfNeeded(uri: uri, generation: generation)
-            guard generation == trackMetadataGeneration else { return }
+            guard isCurrentTrack(generation) else { return }
         }
 
         guard needsSpotifyHeavyMetadata else {
             let liked = await spotifyPrivateAPI.isTrackLiked(uri: uri)
-            guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
+            guard isCurrentSpotifyTrack(generation) else { return }
             self.isLiked = liked
             return
         }
 
         let details = await spotifyPrivateAPI.fetchTrackDetails(trackId: id)
-        guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
+        guard isCurrentSpotifyTrack(generation) else { return }
         if let details {
             if let count = details.playcountInt {
                 playCountValue = count
@@ -2109,16 +2068,16 @@ class MusicManager: ObservableObject {
                 let token = "hydrate-\(coverURL.absoluteString.hashValue)-\(UUID().uuidString.prefix(6))"
                 currentTrackArtworkToken = token
                 await loadRemoteArtwork(from: coverURL, expectedToken: token)
-                guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
+                guard isCurrentSpotifyTrack(generation) else { return }
             }
         }
 
         let liked = await spotifyPrivateAPI.isTrackLiked(uri: uri)
-        guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
+        guard isCurrentSpotifyTrack(generation) else { return }
         self.isLiked = liked
 
         if playCountValue == nil, let count = await PlayCountFetcher.shared.getPlayCountValue(for: id) {
-            guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
+            guard isCurrentSpotifyTrack(generation) else { return }
             playCountValue = count
             playCount = PlayCountFetcher.formatPlayCount(count)
         }
@@ -2127,7 +2086,7 @@ class MusicManager: ObservableObject {
            let currentTitle = title, let currentArtist = artist,
            !currentTitle.isEmpty, !currentArtist.isEmpty,
            let track = await searchForTrack(title: currentTitle, artist: currentArtist) {
-            guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
+            guard isCurrentSpotifyTrack(generation) else { return }
             popularity = track.popularity
             fetchedSpotifyPopularity = track.popularity
         }
@@ -2142,30 +2101,11 @@ class MusicManager: ObservableObject {
 
     private func ensureLyricsForCurrentTrackViaSpotify(trackId id: String, generation: UInt64) async {
         guard needsLyricsUpdates else { return }
-        guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
-
-        let imageURL = artworkURL?.absoluteString
-            ?? nowPlayingTrack?.metadata?.imageURL?.absoluteString
-            ?? ""
-        let hasSpotifyLyrics = await spotifyPrivateAPI.trackHasLyrics(trackId: id)
-        guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
-        if hasSpotifyLyrics != false {
-            let spotifyLyrics = await spotifyPrivateAPI.fetchColorLyrics(
-                trackId: id,
-                imageURL: imageURL
-            )
-            guard isSpotifySourceSelected, generation == trackMetadataGeneration else { return }
-            if !spotifyLyrics.isEmpty {
-                replaceLyrics(spotifyLyrics)
-                if let title = title {
-                    lyricsCache[lyricsCacheKey(title: title, artist: artist, album: album)] = spotifyLyrics
-                }
-                retranslateLyricsIfNeeded()
-                refreshTimers()
-                return
-            }
-        }
-        await fetchAndTranslateLyricsIfNeeded()
+        guard isCurrentSpotifyTrack(generation) else { return }
+        await ensureLyricsForCurrentTrack(
+            spotifyTrackID: id,
+            spotifyGeneration: generation
+        )
     }
 
     private func searchForTrack(title: String, artist: String) async -> SpotifyTrack? {
@@ -2173,6 +2113,8 @@ class MusicManager: ObservableObject {
             return await spotifyPrivateAPI.searchForTrack(title: title, artist: artist)
         } else if spotifyOfficialAPI.isAuthenticated {
             return await spotifyOfficialAPI.searchForTrack(title: title, artist: artist)
+        } else if tidalAPI.isAuthenticated {
+            return await tidalAPI.searchForTrack(title: title, artist: artist)
         }
         return nil
     }
@@ -2205,19 +2147,7 @@ class MusicManager: ObservableObject {
         }
         if spotifyPrivateAPI.isLoggedIn {
             try? await spotifyPrivateAPI.refreshPlayerAndDeviceState()
-            guard let activeDeviceID = spotifyPrivateAPI.activePlayerDeviceID else { return nil }
-
-            if let activeDevice = spotifyPrivateAPI.devices.first(where: { $0.deviceId == activeDeviceID }) {
-                let volumePercent = activeDevice.volume.map { Int((Double($0) / 65535.0) * 100.0) }
-                let canControlVolume = (activeDevice.capabilities.volumeSteps ?? 0) > 0
-                return ActiveSpotifyDeviceState(
-                    name: activeDevice.name,
-                    type: activeDevice.deviceType,
-                    volumePercent: volumePercent,
-                    iconName: iconName(for: activeDevice.deviceType),
-                    canControlVolume: canControlVolume
-                )
-            }
+            return getActiveCachedSpotifyDeviceState()
         } else if isOfficialAPIAuthenticated {
             if let state = await spotifyOfficialAPI.fetchPlaybackState() {
                 let canControlVolume = state.device.volumePercent != nil
@@ -2234,22 +2164,18 @@ class MusicManager: ObservableObject {
     }
 
     func getActiveCachedSpotifyDeviceState() -> ActiveSpotifyDeviceState? {
-        if spotifyPrivateAPI.isLoggedIn {
-            guard let activeDeviceID = spotifyPrivateAPI.activePlayerDeviceID else { return nil }
+        guard spotifyPrivateAPI.isLoggedIn,
+              let activeDeviceID = spotifyPrivateAPI.activePlayerDeviceID,
+              let device = spotifyPrivateAPI.devices.first(where: { $0.deviceId == activeDeviceID })
+        else { return nil }
 
-            if let activeDevice = spotifyPrivateAPI.devices.first(where: { $0.deviceId == activeDeviceID }) {
-                let volumePercent = activeDevice.volume.map { Int((Double($0) / 65535.0) * 100.0) }
-                let canControlVolume = (activeDevice.capabilities.volumeSteps ?? 0) > 0
-                return ActiveSpotifyDeviceState(
-                    name: activeDevice.name,
-                    type: activeDevice.deviceType,
-                    volumePercent: volumePercent,
-                    iconName: iconName(for: activeDevice.deviceType),
-                    canControlVolume: canControlVolume
-                )
-            }
-        }
-        return nil
+        return ActiveSpotifyDeviceState(
+            name: device.name,
+            type: device.deviceType,
+            volumePercent: device.volume.map { Int((Double($0) / 65535.0) * 100.0) },
+            iconName: iconName(for: device.deviceType),
+            canControlVolume: (device.capabilities.volumeSteps ?? 0) > 0
+        )
     }
 
     private func iconName(for type: String) -> String {
@@ -2267,16 +2193,27 @@ class MusicManager: ObservableObject {
         }
     }
 
+    private var cachedOutputDevice: (device: AudioDevice?, sampledAt: Date)?
+
+    private func currentOutputDevice() -> AudioDevice? {
+        if let cached = cachedOutputDevice, Date().timeIntervalSince(cached.sampledAt) < 1.0 {
+            return cached.device
+        }
+        let device = AudioDeviceManager.shared.getCurrentOutputDevice()
+        cachedOutputDevice = (device, Date())
+        return device
+    }
+
     func currentOutputDeviceSystemImage() -> String {
         if settingsModel.settings.preferAirPlayOverSpotify,
-           let device = AudioDeviceManager().getCurrentOutputDevice() {
+           let device = currentOutputDevice() {
             return IconMapper.icon(for: device)
         }
         if let activeID = spotifyPrivateAPI.activePlayerDeviceID,
            let device = spotifyPrivateAPI.devices.first(where: { $0.deviceId == activeID }) {
             return iconName(for: device.deviceType)
         }
-        if let device = AudioDeviceManager().getCurrentOutputDevice() {
+        if let device = currentOutputDevice() {
             return IconMapper.icon(for: device)
         }
         return MusicPlayerButtonType.devices.systemImage
@@ -2287,27 +2224,13 @@ class MusicManager: ObservableObject {
         if key.contains("spotify-live") || key.lowercased().contains("spotify") {
             bundleID = "com.spotify.client"
         } else if let track = activeMediaSources[key] {
-            bundleID = normalizeBundleID(track.payload.bundleIdentifier)
+            bundleID = MediaApplicationIdentity.canonicalBundleID(track.payload.bundleIdentifier)
         } else {
             bundleID = nil
         }
-        if let bundleID,
-           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return NSWorkspace.shared.icon(forFile: url.path)
-        }
+        if let bundleID, let icon = cachedAppIcon(for: bundleID) { return icon }
         return NSImage(systemSymbolName: "app.fill", accessibilityDescription: nil)
             ?? NSImage(size: NSSize(width: 16, height: 16))
-    }
-
-    private func normalizeBundleID(_ bundleID: String?) -> String? {
-        guard let bundleID else { return nil }
-        switch bundleID {
-        case "com.apple.WebKit.GPU", "com.apple.WebKit.WebContent": return "com.apple.Safari"
-        case let id where id.starts(with: "com.google.Chrome.helper"): return "com.google.Chrome"
-        case let id where id.starts(with: "com.microsoft.edgemac.helper"): return "com.microsoft.edgemac"
-        case "company.thebrowser.Browser.helper": return "company.thebrowser.Browser"
-        default: return bundleID
-        }
     }
 
     private func syncPlaybackTiming(from payload: TrackInfo.Payload, trackChanged: Bool, publishImmediately: Bool = true) {
@@ -2397,35 +2320,44 @@ class MusicManager: ObservableObject {
     }
 
     private func refreshTimers() {
-        let needsProgressUI = isDetailPlayerOpen || isLyricsDetailOpen || isDetachedLyricsOpen
-        let needsLyricLiveActivity = isMusicLiveActivityActive
-            && settingsModel.settings.showLyricsInLiveActivity
-            && settingsModel.settings.musicLiveActivityEnabled
-            && ActiveAppMonitor.shared.isLyricsAllowedForActiveApp
-            && !lyrics.isEmpty
-        let needsUpNextLiveActivity = isMusicLiveActivityActive
-            && settingsModel.settings.spotifyShowNextSong
-            && settingsModel.settings.musicLiveActivityEnabled
-            && (isSpotifySourceActive || isSpotifyLiveSourceSelected || lastKnownBundleID == "com.apple.Music")
+        let inputs = MusicPlaybackTickPolicy.Inputs(
+            isPlaying: isPlaying,
+            isDetailPlayerOpen: isDetailPlayerOpen,
+            isLyricsDetailOpen: isLyricsDetailOpen,
+            isDetachedLyricsOpen: isDetachedLyricsOpen,
+            isMusicLiveActivityActive: isMusicLiveActivityActive,
+            musicLiveActivityEnabled: settingsModel.settings.musicLiveActivityEnabled,
+            showLyricsInLiveActivity: settingsModel.settings.showLyricsInLiveActivity,
+            lyricsAllowedForActiveApp: ActiveAppMonitor.shared.isLyricsAllowedForActiveApp,
+            hasLyrics: !lyrics.isEmpty,
+            showNextSong: settingsModel.settings.spotifyShowNextSong,
+            upNextSourceSupported: isSpotifySourceActive || isSpotifyLiveSourceSelected || lastKnownBundleID == "com.apple.Music"
+        )
+        let tickInterval = MusicPlaybackTickPolicy.interval(for: inputs)
+        LyricsLog.infoOnChange(
+            "playbackTick",
+            "Playback tick \(tickInterval.map { "on (\($0)s)" } ?? "off"): playing=\(inputs.isPlaying) liveActivity=\(inputs.isMusicLiveActivityActive) liveActivityEnabled=\(inputs.musicLiveActivityEnabled) lyricsSetting=\(inputs.showLyricsInLiveActivity) appAllowed=\(inputs.lyricsAllowedForActiveApp) hasLyrics=\(inputs.hasLyrics) detailOpen=\(inputs.isDetailPlayerOpen || inputs.isLyricsDetailOpen || inputs.isDetachedLyricsOpen)"
+        )
 
-        let shouldTick = isPlaying && (needsProgressUI || needsLyricLiveActivity || needsUpNextLiveActivity)
-
-        if shouldTick {
-            if liveActivityTimer == nil {
-                let interval = needsProgressUI ? 0.2 : 0.5
-                let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-                    Task { @MainActor [weak self] in
-                        guard let self, self.isPlaying else { return }
-                        self.publishPlaybackTime(includeProgressUI: true)
-                    }
-                }
-                liveActivityTimer = timer
-                RunLoop.main.add(timer, forMode: .common)
-            }
-        } else if liveActivityTimer != nil {
+        guard let interval = tickInterval else {
             liveActivityTimer?.invalidate()
             liveActivityTimer = nil
+            liveActivityTimerInterval = 0
+            return
         }
+
+        guard liveActivityTimer == nil || liveActivityTimerInterval != interval else { return }
+
+        liveActivityTimer?.invalidate()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isPlaying else { return }
+                self.publishPlaybackTime(includeProgressUI: true)
+            }
+        }
+        liveActivityTimer = timer
+        liveActivityTimerInterval = interval
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     func elapsedTime(at date: Date = Date()) -> TimeInterval {
@@ -2440,6 +2372,10 @@ class MusicManager: ObservableObject {
         return totalDuration > 0 ? max(0.0, min(totalDuration, exact)) : max(0.0, exact)
     }
 
+    func lyricsElapsedTime(at date: Date = Date()) -> TimeInterval {
+        adjustedLyricsElapsedTime(elapsedTime(at: date))
+    }
+
     func progress(at date: Date = Date()) -> Double {
         guard totalDuration > 0 else { return 0 }
         return max(0.0, min(1.0, elapsedTime(at: date) / totalDuration))
@@ -2448,10 +2384,10 @@ class MusicManager: ObservableObject {
     private func invalidateAllTimers() {
         liveActivityTimer?.invalidate()
         liveActivityTimer = nil
+        liveActivityTimerInterval = 0
     }
 
     func trimExpandedUIMemory() {
-        trimArtworkCache()
         trimLyricsCache()
         mediaController.trimArtworkCache(keeping: lastTrackIdentity)
 
@@ -2459,9 +2395,6 @@ class MusicManager: ObservableObject {
             resetLyricsState()
         }
         appIcon = nil
-    }
-
-    func trimArtworkCache() {
     }
 
     func trimLyricsCache() {
@@ -2489,11 +2422,16 @@ class MusicManager: ObservableObject {
     }
 
     private func mediaFingerprint(for payload: TrackInfo.Payload) -> String {
-        [payload.title, payload.artist]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "|")
-            .lowercased()
+        Self.mediaFingerprint(title: payload.title, artist: payload.artist)
+    }
+
+    private static func mediaFingerprint(title: String?, artist: String?) -> String {
+        switch (title.trimmedOrNil, artist.trimmedOrNil) {
+        case let (title?, artist?): return "\(title)|\(artist)".lowercased()
+        case let (title?, nil): return title.lowercased()
+        case let (nil, artist?): return artist.lowercased()
+        case (nil, nil): return ""
+        }
     }
 
     private func trackIdentity(for payload: TrackInfo.Payload) -> String {
@@ -2510,9 +2448,7 @@ class MusicManager: ObservableObject {
             return
         }
 
-        if let current = self.artwork, current.tiffRepresentation == displayArtwork.tiffRepresentation {
-            return
-        }
+        if self.artwork === displayArtwork { return }
 
         self.artwork = displayArtwork
         if !isSpotifySourceSelected {
@@ -2564,7 +2500,7 @@ class MusicManager: ObservableObject {
         force: Bool = false
     ) async {
         guard isSpotifySourceSelected, spotifyPrivateAPI.isLoggedIn else { return }
-        if let generation, generation != trackMetadataGeneration { return }
+        if let generation, !isCurrentTrack(generation) { return }
         let settings = settingsModel.settings
 
         let wantCanvas = settings.spotifyCanvasLiveVideo && (force || needsSpotifyPlayerEnrichment || isDetailPlayerOpen)
@@ -2604,7 +2540,6 @@ class MusicManager: ObservableObject {
             _ = await (artistProfile, popular)
         }
         _ = await (canvas, related, similar)
-        _ = generation
     }
 
     private func refreshLyricsLoadingState() {
@@ -2616,57 +2551,131 @@ class MusicManager: ObservableObject {
         }
     }
 
-    private func ensureLyricsForCurrentTrack() async {
-        guard needsLyricsUpdates else { return }
-        guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return }
+    private func ensureLyricsForCurrentTrack(
+        spotifyTrackID requestedSpotifyTrackID: String? = nil,
+        spotifyGeneration requestedSpotifyGeneration: UInt64? = nil
+    ) async {
+        guard needsLyricsUpdates else {
+            LyricsLog.infoOnChange(
+                "ensure",
+                "Lyrics fetch skipped: not needed (detailOpen=\(isDetailPlayerOpen || isLyricsDetailOpen || isDetachedLyricsOpen) lyricsSetting=\(settingsModel.settings.showLyricsInLiveActivity) liveActivityEnabled=\(settingsModel.settings.musicLiveActivityEnabled) appAllowed=\(ActiveAppMonitor.shared.isLyricsAllowedForActiveApp))"
+            )
+            return
+        }
+        guard let title = self.title.trimmedOrNil, let artist = self.artist.trimmedOrNil else {
+            LyricsLog.infoOnChange("ensure", "Lyrics fetch skipped: track has no \(self.title.trimmedOrNil == nil ? "title" : "artist")")
+            return
+        }
+        let album = self.album.trimmedOrNil ?? ""
 
-        if isSpotifySourceSelected,
-           spotifyPrivateAPI.isLoggedIn,
-           let trackURI = uri ?? spotifyPrivateAPI.playerState?.track?.uri,
-           trackURI.contains("spotify:track:") {
-            let id = trackURI.replacingOccurrences(of: "spotify:track:", with: "")
-            guard !id.isEmpty else {
-                await fetchAndTranslateLyricsIfNeeded()
-                return
-            }
-
-            let cacheKey = lyricsCacheKey(title: title, artist: artist, album: album)
-            if let cached = lyricsCache[cacheKey], !cached.isEmpty {
-                replaceLyrics(cached)
-                retranslateLyricsIfNeeded()
-                return
-            }
-
-            let imageURL = artworkURL?.absoluteString
-                ?? nowPlayingTrack?.metadata?.imageURL?.absoluteString
-                ?? ""
-            let hasSpotifyLyrics = await spotifyPrivateAPI.trackHasLyrics(trackId: id)
-            if hasSpotifyLyrics != false {
-                let spotifyLyrics = await spotifyPrivateAPI.fetchColorLyrics(
-                    trackId: id,
-                    imageURL: imageURL
-                )
-                if !spotifyLyrics.isEmpty {
-                    replaceLyrics(spotifyLyrics)
-                    lyricsCache[cacheKey] = spotifyLyrics
-                    retranslateLyricsIfNeeded()
-                    refreshTimers()
-                    return
-                }
-            }
+        let cacheKey = lyricsCacheKey(title: title, artist: artist, album: album)
+        if let cachedLyrics = lyricsCache[cacheKey] {
+            LyricsLog.infoOnChange("ensure", "Lyrics cache hit for '\(title)' / '\(artist)': \(cachedLyrics.count) lines")
+            guard !cachedLyrics.isEmpty else { return }
+            replaceLyrics(cachedLyrics)
+            retranslateLyricsIfNeeded()
+            return
         }
 
-        await fetchAndTranslateLyricsIfNeeded()
+        let spotifyTrackID: String? = {
+            if let requestedSpotifyTrackID, !requestedSpotifyTrackID.isEmpty {
+                return requestedSpotifyTrackID
+            }
+            guard isSpotifySourceSelected, spotifyPrivateAPI.isLoggedIn,
+                  let trackURI = uri ?? spotifyPrivateAPI.playerState?.track?.uri,
+                  trackURI.contains("spotify:track:") else {
+                return nil
+            }
+            let id = trackURI.replacingOccurrences(of: "spotify:track:", with: "")
+            return id.isEmpty ? nil : id
+        }()
+
+        let attemptKey = "\(cacheKey)|spotify:\(spotifyTrackID ?? "none")"
+        if currentlyFetchingFingerprint == attemptKey || lastAttemptedLyricsFingerprint == attemptKey {
+            LyricsLog.infoOnChange(
+                "ensure",
+                "Lyrics fetch skipped: already \(currentlyFetchingFingerprint == attemptKey ? "in flight" : "attempted") for '\(title)' / '\(artist)' (spotify fallback: \(spotifyTrackID != nil))"
+            )
+            return
+        }
+
+        lastAttemptedLyricsFingerprint = attemptKey
+        lyricsFetchTask?.cancel()
+        lyricsTranslationTask?.cancel()
+        currentlyFetchingFingerprint = attemptKey
+        LyricsLog.infoOnChange("ensure", "Lyrics fetch started for '\(title)' / '\(artist)' / '\(album)' (spotify fallback: \(spotifyTrackID != nil))")
+
+        let fetchIdentity = lastTrackIdentity
+        let spotifyGeneration = requestedSpotifyGeneration ?? trackMetadataGeneration
+        let imageURL = artworkURL?.absoluteString
+            ?? nowPlayingTrack?.metadata?.imageURL?.absoluteString
+            ?? ""
+
+        lyricsFetchTask = Task {
+            defer {
+                if self.currentlyFetchingFingerprint == attemptKey {
+                    self.currentlyFetchingFingerprint = nil
+                }
+            }
+
+            let fetchedLRCLIB = await lyricsFetcher.fetchSyncedLyrics(
+                for: title,
+                artist: artist,
+                album: album
+            )
+            guard !Task.isCancelled, self.lastTrackIdentity == fetchIdentity else {
+                LyricsLog.info("LRCLIB result for '\(title)' dropped: fetch cancelled or track changed")
+                return
+            }
+
+            let selectedLyrics: [LyricLine]
+            let source: String
+            if let fetchedLRCLIB {
+                self.lyricsCache[cacheKey] = fetchedLRCLIB
+                guard !fetchedLRCLIB.isEmpty else {
+                    LyricsLog.info("LRCLIB has an empty (instrumental) document for '\(title)'; not falling back")
+                    return
+                }
+                selectedLyrics = fetchedLRCLIB
+                source = "LRCLIB"
+            } else {
+                let fetchedSpotify = await fetchSpotifyLyricsFallback(
+                    trackID: spotifyTrackID,
+                    imageURL: imageURL
+                )
+                guard !Task.isCancelled,
+                      self.lastTrackIdentity == fetchIdentity,
+                      spotifyTrackID != nil,
+                      self.isSpotifySourceSelected,
+                      self.trackMetadataGeneration == spotifyGeneration,
+                      !fetchedSpotify.isEmpty else {
+                    LyricsLog.info(
+                        "No lyrics for '\(title)': LRCLIB had none, Spotify fallback \(spotifyTrackID == nil ? "unavailable (not a Spotify track)" : "returned \(fetchedSpotify.count) lines or went stale")"
+                    )
+                    return
+                }
+                selectedLyrics = fetchedSpotify
+                source = "Spotify"
+            }
+
+            LyricsLog.info("Lyrics applied from \(source) for '\(title)': \(selectedLyrics.count) lines")
+            self.replaceLyrics(selectedLyrics)
+            self.lyricsCache[cacheKey] = selectedLyrics
+            self.retranslateLyricsIfNeeded()
+            self.refreshTimers()
+        }
+        await lyricsFetchTask?.value
+    }
+
+    private func fetchSpotifyLyricsFallback(trackID: String?, imageURL: String) async -> [LyricLine] {
+        guard let trackID, !trackID.isEmpty, spotifyPrivateAPI.isLoggedIn else { return [] }
+        let hasSpotifyLyrics = await spotifyPrivateAPI.trackHasLyrics(trackId: trackID)
+        guard !Task.isCancelled, hasSpotifyLyrics != false else { return [] }
+        return await spotifyPrivateAPI.fetchColorLyrics(trackId: trackID, imageURL: imageURL)
     }
 
     private func lyricsCacheKey(title: String, artist: String?, album: String?) -> String {
-        [
-            title,
-            artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            album?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        ]
-        .joined(separator: "|")
-        .lowercased()
+        "\(title)|\(artist.trimmedOrNil ?? "")|\(album.trimmedOrNil ?? "")".lowercased()
     }
 
     func openInSourceApp() {
@@ -2683,66 +2692,6 @@ class MusicManager: ObservableObject {
     }
 
     // MARK: - Lyrics & UI Helpers
-
-    private func fetchAndTranslateLyricsIfNeeded() async {
-        guard let title = self.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
-            return
-        }
-
-        let artist = self.artist?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let album = self.album?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let cacheKey = lyricsCacheKey(title: title, artist: artist, album: album)
-
-        guard !artist.isEmpty else {
-            return
-        }
-
-        if currentlyFetchingFingerprint == cacheKey {
-            return
-        }
-        if lastAttemptedLyricsFingerprint == cacheKey, !lyrics.isEmpty {
-            return
-        }
-        if lastAttemptedLyricsFingerprint == cacheKey, lyrics.isEmpty {
-            return
-        }
-
-        if let cachedLyrics = lyricsCache[cacheKey] {
-            self.replaceLyrics(cachedLyrics)
-            self.retranslateLyricsIfNeeded()
-            return
-        }
-
-        lastAttemptedLyricsFingerprint = cacheKey
-        lyricsFetchTask?.cancel()
-        lyricsTranslationTask?.cancel()
-        currentlyFetchingFingerprint = cacheKey
-
-        let fetchIdentity = lastTrackIdentity
-        lyricsFetchTask = Task {
-            defer {
-                Task { @MainActor in
-                    if self.currentlyFetchingFingerprint == cacheKey {
-                        self.currentlyFetchingFingerprint = nil
-                    }
-                }
-            }
-
-            guard let fL = await lyricsFetcher.fetchSyncedLyrics(for: title, artist: artist, album: album),
-                  !fL.isEmpty, !Task.isCancelled else {
-                return
-            }
-
-            await MainActor.run {
-                guard self.lastTrackIdentity == fetchIdentity else { return }
-                self.replaceLyrics(fL)
-                self.lyricsCache[cacheKey] = fL
-                self.retranslateLyricsIfNeeded()
-                self.refreshTimers()
-            }
-        }
-        await lyricsFetchTask?.value
-    }
 
     private func retranslateLyricsIfNeeded() {
         lyricsTranslationTask?.cancel()
@@ -2784,7 +2733,6 @@ class MusicManager: ObservableObject {
 
     private func replaceLyrics(_ newLyrics: [LyricLine], preservePosition: Bool = false) {
         lyrics = newLyrics
-        lastLyricLookupSecond = -1
         if preservePosition, let idx = currentLyricIndex, newLyrics.indices.contains(idx) {
             let line = newLyrics[idx]
             if currentLyric?.id != line.id || currentLyric?.translatedText != line.translatedText {
@@ -2804,15 +2752,17 @@ class MusicManager: ObservableObject {
     private func updateCurrentLyric(for elapsedTime: TimeInterval) {
         guard needsLyricsUpdates, !lyrics.isEmpty else { return }
 
-        let newIndex = binarySearchLyric(for: elapsedTime)
+        let adjustedElapsed = adjustedLyricsElapsedTime(elapsedTime)
+        let newIndex = LyricsTimeline.primaryIndex(
+            in: lyrics,
+            at: adjustedElapsed,
+            trackDuration: totalDuration > 0 ? totalDuration : nil
+        )
         let newLyric = newIndex.map { lyrics[$0] }
 
         guard newIndex != currentLyricIndex || currentLyric?.id != newLyric?.id else { return }
 
         currentLyricIndex = newIndex
-        lastLyricLookupSecond = (elapsedTime.isFinite && elapsedTime >= 0 && elapsedTime < Double(Int.max))
-            ? Int(elapsedTime)
-            : 0
         if currentLyric?.id != newLyric?.id {
             currentLyric = newLyric
             currentLyricPublisher.send(newLyric)
@@ -2821,33 +2771,37 @@ class MusicManager: ObservableObject {
 
     func lyricLine(at date: Date = Date()) -> LyricLine? {
         guard !lyrics.isEmpty else { return nil }
-        let elapsed = elapsedTime(at: date)
-        guard let index = binarySearchLyric(for: elapsed) else { return nil }
+        guard let index = lyricIndex(at: date) else { return nil }
         return lyrics[index]
     }
 
     func lyricIndex(at date: Date = Date()) -> Int? {
         guard !lyrics.isEmpty else { return nil }
-        return binarySearchLyric(for: elapsedTime(at: date))
+        return LyricsTimeline.primaryIndex(
+            in: lyrics,
+            at: lyricsElapsedTime(at: date),
+            trackDuration: totalDuration > 0 ? totalDuration : nil
+        )
     }
 
-    private func binarySearchLyric(for elapsedTime: TimeInterval) -> Int? {
-        guard !lyrics.isEmpty else { return nil }
-        var low = 0, high = lyrics.count - 1, result: Int? = nil
-        while low <= high {
-            let mid = (low + high) / 2
-            if lyrics[mid].timestamp <= elapsedTime {
-                result = mid
-                low = mid + 1
-            } else {
-                high = mid - 1
-            }
-        }
-        return result
+    func activeLyricIndices(at date: Date = Date()) -> [Int] {
+        guard !lyrics.isEmpty else { return [] }
+        return LyricsTimeline.activeIndices(
+            in: lyrics,
+            at: lyricsElapsedTime(at: date),
+            trackDuration: totalDuration > 0 ? totalDuration : nil
+        )
+    }
+
+    private func adjustedLyricsElapsedTime(_ elapsedTime: TimeInterval) -> TimeInterval {
+        elapsedTime - settingsModel.settings.lyricOffset
     }
 
     private func setupDerivedStatePublisher() {
-        $title.map { $0 != nil && !$0!.isEmpty }.removeDuplicates().assign(to: \.shouldShowLiveActivity, on: self).store(in: &cancellables)
+        $title
+            .map { $0?.isEmpty == false }
+            .removeDuplicates()
+            .assign(to: &$shouldShowLiveActivity)
     }
 
     private func setupNotificationObservers() {
@@ -2857,7 +2811,7 @@ class MusicManager: ObservableObject {
     @objc private func handleAppTermination(notification: NSNotification) {
         guard let tApp = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication, let bID = tApp.bundleIdentifier else { return }
         Task { @MainActor in
-            let normalized = self.normalizeBundleID(bID) ?? bID
+            let normalized = MediaApplicationIdentity.canonicalBundleID(bID) ?? bID
             let prefixes = Set([bID, normalized])
             let keysToRemove = Set(
                 self.activeMediaSources.keys.filter { key in
@@ -2868,7 +2822,7 @@ class MusicManager: ObservableObject {
             for key in keysToRemove {
                 self.activeMediaSources.removeValue(forKey: key)
             }
-            self.lastPublishedSourceSignature = ""
+            self.lastPublishedSourceSignature = 0
             if let current = self.currentSourceKey, keysToRemove.contains(current) {
                 self.sourcePinnedByUser = false
                 self.evaluateAutoSourceSelection(in: self.activeMediaSources)
@@ -2876,29 +2830,44 @@ class MusicManager: ObservableObject {
         }
     }
 
-    private func setupVolumeListener() {
-        self.systemVolume = SystemControl.getVolume()
-        guard let deviceID = getDefaultOutputDeviceID() else { return }
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
-        self.volumeListener = { _, _ in DispatchQueue.main.async { let nV = SystemControl.getVolume(); self.systemVolume = nV; self.volumePublisher.send(nV) } }
-        AudioObjectAddPropertyListenerBlock(deviceID, &address, nil, self.volumeListener!)
+    nonisolated private static var volumeScalarAddress: AudioObjectPropertyAddress {
+        AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: kAudioObjectPropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
     }
 
-    private func removeVolumeListener() {
-        guard let deviceID = getDefaultOutputDeviceID(), let listener = self.volumeListener else { return }
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+    private func setupVolumeListener() {
+        self.systemVolume = SystemControl.getVolume()
+        guard let deviceID = Self.defaultOutputDeviceID() else { return }
+        var address = Self.volumeScalarAddress
+        let listener: AudioObjectPropertyListenerBlock = { _, _ in
+            let volume = SystemControl.getVolume()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.systemVolume = volume
+                self.volumePublisher.send(volume)
+            }
+        }
+        self.volumeListener = listener
+        AudioObjectAddPropertyListenerBlock(deviceID, &address, nil, listener)
+    }
+
+    nonisolated private static func removeVolumeListener(_ listener: @escaping AudioObjectPropertyListenerBlock) {
+        guard let deviceID = defaultOutputDeviceID() else { return }
+        var address = volumeScalarAddress
         AudioObjectRemovePropertyListenerBlock(deviceID, &address, nil, listener)
     }
 
-    private func getDefaultOutputDeviceID() -> AudioDeviceID? {
+    nonisolated private static func defaultOutputDeviceID() -> AudioDeviceID? {
         var dID: AudioDeviceID = kAudioObjectUnknown, size = UInt32(MemoryLayout<AudioDeviceID>.size)
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &dID) == noErr ? dID : nil
     }
 
     private func fetchAppIcon(for bundleIdentifier: String?) {
-        guard let bId = bundleIdentifier, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bId) else { self.appIcon = nil; return }
-        self.appIcon = NSWorkspace.shared.icon(forFile: url.path)
+        self.appIcon = bundleIdentifier.flatMap { cachedAppIcon(for: $0) }
     }
 
     private func resetColorsToDefault() {
@@ -2912,7 +2881,6 @@ class MusicManager: ObservableObject {
         lyrics = []
         currentLyric = nil
         currentLyricIndex = nil
-        lastLyricLookupSecond = -1
         currentlyFetchingFingerprint = nil
         lastAttemptedLyricsFingerprint = nil
         currentLyricPublisher.send(nil)
@@ -2920,7 +2888,12 @@ class MusicManager: ObservableObject {
 
     private func setupSettingsObserver() {
         settingsModel.$settings
-            .map { ($0.enableLyricTranslation, $0.lyricTranslationLanguage, $0.showLyricsInLiveActivity, $0.musicLiveActivityEnabled) }
+            .map {
+                (
+                    $0.enableLyricTranslation,
+                    $0.lyricTranslationLanguage
+                )
+            }
             .removeDuplicates { $0 == $1 }
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -2929,6 +2902,28 @@ class MusicManager: ObservableObject {
                 if self.needsLyricsUpdates {
                     self.retranslateLyricsIfNeeded()
                 }
+            }
+            .store(in: &cancellables)
+
+        settingsModel.$settings
+            .map { ($0.showLyricsInLiveActivity, $0.musicLiveActivityEnabled) }
+            .removeDuplicates { $0 == $1 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.refreshTimers()
+                self.refreshLyricsLoadingState()
+            }
+            .store(in: &cancellables)
+
+        settingsModel.$settings
+            .map(\.lyricOffset)
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateCurrentLyric(for: self.currentElapsedTime)
+                self.objectWillChange.send()
             }
             .store(in: &cancellables)
 
@@ -2954,20 +2949,28 @@ class MusicManager: ObservableObject {
     func showTransientIcon(for icon: WaveformView.TransientIcon, duration: TimeInterval = 2.0) {
         transientIconTimer?.invalidate()
         transientIcon = icon
-        transientIconTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in if self?.transientIcon == icon { self?.transientIcon = nil } }
+        transientIconTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.transientIcon == icon else { return }
+                self.transientIcon = nil
+            }
+        }
     }
 
     private func triggerQuickPeek() {
         guard settingsModel.settings.showQuickPeekOnTrackChange else { return }
-        quickPeekTimer?.invalidate(); self.showQuickPeek = true
-        quickPeekTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in self?.showQuickPeek = false }
+        quickPeekTimer?.invalidate()
+        self.showQuickPeek = true
+        quickPeekTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showQuickPeek = false }
+        }
     }
 
     private func updateDevicePolling() {
         airPlay.startDiscovery()
         airplayDeviceUpdateTimer?.invalidate()
         if lastKnownBundleID == "com.apple.Music" {
-            airplayDeviceUpdateTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in Task { await self?.updateAirPlayDevices() } }
+            airplayDeviceUpdateTimer = Timer.scheduledCoalescing(withTimeInterval: 10.0, repeats: true) { [weak self] _ in Task { await self?.updateAirPlayDevices() } }
             airplayDeviceUpdateTimer?.fire()
         }
     }
@@ -2990,4 +2993,14 @@ class MusicManager: ObservableObject {
     func setAirPlayDeviceVolume(deviceName: String, volume: Int) async {
         airPlay.setVolume(volume, forDeviceNamed: deviceName)
     }
+}
+
+private extension Optional where Wrapped == String {
+    var trimmedOrNil: String? {
+        guard let trimmed = self?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+
+    var isBlank: Bool { trimmedOrNil == nil }
 }

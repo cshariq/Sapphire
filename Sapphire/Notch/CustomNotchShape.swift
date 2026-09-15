@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-struct CustomNotchShape: Shape {
+struct CustomNotchShape: Shape, Hashable {
     static let screenWidthAdjustment: CGFloat =
         (NSScreen.main?.frame.size.width ?? 1728) / 1728
     static let screenHeightAdjustment: CGFloat =

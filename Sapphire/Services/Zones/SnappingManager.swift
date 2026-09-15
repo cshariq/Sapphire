@@ -7,9 +7,49 @@
 
 import AppKit
 import ApplicationServices
+import QuartzCore
+
+enum SnapZoneHitTesting {
+    static let tolerance: CGFloat = 18
+
+    static func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return hypot(dx, dy)
+    }
+
+    static func nearest<Region>(
+        _ regions: [Region],
+        to point: CGPoint,
+        frame: (Region) -> CGRect
+    ) -> Region? {
+        var best: (region: Region, distance: CGFloat)?
+        for region in regions {
+            let distance = distance(from: point, to: frame(region))
+            if distance == 0 { return region }
+            if distance <= tolerance, distance < (best?.distance ?? .infinity) {
+                best = (region, distance)
+            }
+        }
+        return best?.region
+    }
+}
 
 @MainActor
 final class SnappingManager {
+    private struct Display: Sendable {
+        let frame: CGRect
+        let visibleFrame: CGRect
+    }
+
+    private nonisolated static let queue = DispatchQueue(label: "com.sapphire.snapping", qos: .userInteractive)
+
+    private nonisolated static let generationLock = NSLock()
+    private nonisolated(unsafe) static var generations: [pid_t: UInt64] = [:]
+
+    private nonisolated static let smoothDuration: CFTimeInterval = 0.25
+    private nonisolated static let smoothFrameInterval: CFTimeInterval = 1.0 / 60.0
+
     static func snap(layoutID: UUID, zoneID: UUID) {
         let layouts = LayoutTemplate.allTemplates + SettingsModel.shared.settings.customSnapLayouts
         guard let layout = layouts.first(where: { $0.id == layoutID }),
@@ -30,15 +70,8 @@ final class SnappingManager {
     }
 
     static func snap(app: NSRunningApplication, to zone: SnapZone) {
-        guard app.bundleIdentifier != Bundle.main.bundleIdentifier,
-              let windowElement = getMostLikelyMainWindow(for: app),
-              let accessibilityFrame = accessibilityFrame(of: windowElement),
-              let screen = screen(for: accessibilityFrame) else {
-            print("[SnappingManager] Could not find a usable window or display for \(app.bundleIdentifier ?? "unknown app")")
-            return
-        }
+        guard app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
 
-        let visibleFrame = screen.visibleFrame
         let normalizedX = max(0, min(1, zone.x))
         let normalizedY = max(0, min(1, zone.y))
         let normalizedWidth = max(0, min(1 - normalizedX, zone.width))
@@ -48,32 +81,117 @@ final class SnappingManager {
             return
         }
 
-        let targetFrame = CGRect(
-            x: visibleFrame.origin.x + visibleFrame.width * normalizedX,
-            y: visibleFrame.origin.y + visibleFrame.height * (1 - normalizedY - normalizedHeight),
-            width: visibleFrame.width * normalizedWidth,
-            height: visibleFrame.height * normalizedHeight
-        )
+        let displays = NSScreen.screens.map { Display(frame: $0.frame, visibleFrame: $0.visibleFrame) }
+        let fallbackDisplay = NSScreen.main.map { Display(frame: $0.frame, visibleFrame: $0.visibleFrame) }
+        let mainDisplayFrame = self.mainDisplayFrame
+        let animation = SettingsModel.shared.settings.snapWindowAnimation
+        let pid = app.processIdentifier
+        let appName = app.bundleIdentifier ?? "unknown app"
+        let generation = nextGeneration(for: pid)
 
-        let mainDisplayMaxY = mainDisplayFrame?.maxY ?? screen.frame.maxY
-        let targetPosition = CGPoint(
-            x: targetFrame.minX,
-            y: mainDisplayMaxY - targetFrame.maxY
-        )
+        queue.async {
+            guard isCurrent(generation, for: pid) else { return }
+            guard let windowElement = mostLikelyMainWindow(pid: pid),
+                  let axFrame = AX.windowFrame(of: windowElement),
+                  axFrame.width > 0, axFrame.height > 0 else {
+                print("[SnappingManager] Could not find a usable window for \(appName)")
+                return
+            }
 
-        var targetSize = targetFrame.size
-        let sizeResult = AXValueCreate(AXValueType.cgSize, &targetSize)
-            .map { AXUIElementSetAttributeValue(windowElement, kAXSizeAttribute as CFString, $0) }
+            let cocoaFrame = CGRect(
+                x: axFrame.minX,
+                y: (mainDisplayFrame?.maxY ?? 0) - axFrame.minY - axFrame.height,
+                width: axFrame.width,
+                height: axFrame.height
+            )
+            guard let display = display(for: cocoaFrame, in: displays) ?? fallbackDisplay else {
+                print("[SnappingManager] Could not find a display for \(appName)")
+                return
+            }
 
-        var position = targetPosition
-        let positionResult = AXValueCreate(AXValueType.cgPoint, &position)
-            .map { AXUIElementSetAttributeValue(windowElement, kAXPositionAttribute as CFString, $0) }
+            let visibleFrame = display.visibleFrame
+            let targetFrame = CGRect(
+                x: visibleFrame.origin.x + visibleFrame.width * normalizedX,
+                y: visibleFrame.origin.y + visibleFrame.height * (1 - normalizedY - normalizedHeight),
+                width: visibleFrame.width * normalizedWidth,
+                height: visibleFrame.height * normalizedHeight
+            )
+            let mainDisplayMaxY = mainDisplayFrame?.maxY ?? display.frame.maxY
+            let targetAXFrame = CGRect(
+                x: targetFrame.minX,
+                y: mainDisplayMaxY - targetFrame.maxY,
+                width: targetFrame.width,
+                height: targetFrame.height
+            )
 
-        guard sizeResult == .success, positionResult == .success else {
-            print("[SnappingManager] Failed to move/resize \(app.bundleIdentifier ?? "unknown app"): size=\(String(describing: sizeResult)), position=\(String(describing: positionResult))")
-            return
+            if animation == .smooth {
+                animate(windowElement, from: axFrame, to: targetAXFrame, pid: pid, generation: generation)
+                guard isCurrent(generation, for: pid) else { return }
+            }
+
+            if !applyFrame(targetAXFrame, to: windowElement) {
+                print("[SnappingManager] Failed to move/resize \(appName)")
+            }
         }
     }
+
+    // MARK: - Moving the window (snapping queue)
+
+    @discardableResult
+    private nonisolated static func applyFrame(_ frame: CGRect, to window: AXUIElement) -> Bool {
+        let sized = AX.set(kAXSizeAttribute as String, toSize: frame.size, on: window)
+        let positioned = AX.set(kAXPositionAttribute as String, toPoint: frame.origin, on: window)
+        if positioned {
+            AX.set(kAXSizeAttribute as String, toSize: frame.size, on: window)
+        }
+        return sized && positioned
+    }
+
+    private nonisolated static func animate(
+        _ window: AXUIElement,
+        from start: CGRect,
+        to end: CGRect,
+        pid: pid_t,
+        generation: UInt64
+    ) {
+        let startTime = CACurrentMediaTime()
+        while isCurrent(generation, for: pid) {
+            let elapsed = CACurrentMediaTime() - startTime
+            let progress = elapsed / smoothDuration
+            guard progress < 1 else { return }
+
+            let eased = 1 - pow(1 - progress, 3)
+            let frame = CGRect(
+                x: (start.minX + (end.minX - start.minX) * eased).rounded(),
+                y: (start.minY + (end.minY - start.minY) * eased).rounded(),
+                width: (start.width + (end.width - start.width) * eased).rounded(),
+                height: (start.height + (end.height - start.height) * eased).rounded()
+            )
+            let sized = AX.set(kAXSizeAttribute as String, toSize: frame.size, on: window)
+            let positioned = AX.set(kAXPositionAttribute as String, toPoint: frame.origin, on: window)
+            guard sized || positioned else { return }
+
+            let nextFrameTime = startTime + (floor(elapsed / smoothFrameInterval) + 1) * smoothFrameInterval
+            let wait = nextFrameTime - CACurrentMediaTime()
+            if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+        }
+    }
+
+    private nonisolated static func nextGeneration(for pid: pid_t) -> UInt64 {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        let generation = (generations[pid] ?? 0) &+ 1
+        generations[pid] = generation
+        return generation
+    }
+
+    private nonisolated static func isCurrent(_ generation: UInt64, for pid: pid_t) -> Bool {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return generations[pid] == generation
+    }
+
+    // MARK: - Lookup
 
     private static func frontmostApplication() -> NSRunningApplication? {
         let ownBundleID = Bundle.main.bundleIdentifier
@@ -96,39 +214,24 @@ final class SnappingManager {
         return nil
     }
 
-    private static func getMostLikelyMainWindow(for app: NSRunningApplication) -> AXUIElement? {
-        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+    private nonisolated static func mostLikelyMainWindow(pid: pid_t) -> AXUIElement? {
+        let appElement = AX.application(pid: pid)
 
-        var focusedWindowRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWindowRef) == .success,
-           let focusedWindowRef,
-           !isMinimized(focusedWindowRef as! AXUIElement) {
-            return focusedWindowRef as! AXUIElement
+        if let focused = AX.focusedWindow(ofApplication: appElement), !isMinimized(focused) {
+            return focused
         }
 
-        var mainWindowRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef) == .success,
-           let mainWindowRef,
-           !isMinimized(mainWindowRef as! AXUIElement) {
-            return mainWindowRef as! AXUIElement
-        }
-
-        var windowListRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowListRef) == .success,
-              let windowList = windowListRef as? [AXUIElement] else {
-            return nil
+        if let main = AX.mainWindow(ofApplication: appElement), !isMinimized(main) {
+            return main
         }
 
         var fallbackWindow: AXUIElement?
-        for window in windowList where !isMinimized(window) {
+        for window in AX.elements(kAXWindowsAttribute as String, of: appElement) where !isMinimized(window) {
             if fallbackWindow == nil {
                 fallbackWindow = window
             }
 
-            var subroleRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &subroleRef) == .success,
-               let subrole = subroleRef as? String,
-               subrole == kAXStandardWindowSubrole as String {
+            if AX.subrole(of: window) == kAXStandardWindowSubrole as String {
                 return window
             }
         }
@@ -136,47 +239,14 @@ final class SnappingManager {
         return fallbackWindow
     }
 
-    private static func isMinimized(_ window: AXUIElement) -> Bool {
-        var minimizedRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimizedRef) == .success else {
-            return false
-        }
-        return (minimizedRef as? NSNumber)?.boolValue == true
+    private nonisolated static func isMinimized(_ window: AXUIElement) -> Bool {
+        AX.bool(kAXMinimizedAttribute as String, of: window) == true
     }
 
-    private static func accessibilityFrame(of window: AXUIElement) -> CGRect? {
-        var positionRef: CFTypeRef?
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionRef) == .success,
-              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let positionRef,
-              let sizeRef else {
-            return nil
-        }
-
-        var origin = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(positionRef as! AXValue, .cgPoint, &origin),
-              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size),
-              size.width > 0,
-              size.height > 0 else {
-            return nil
-        }
-
-        let mainDisplayMaxY = mainDisplayFrame?.maxY ?? 0
-        return CGRect(
-            x: origin.x,
-            y: mainDisplayMaxY - origin.y - size.height,
-            width: size.width,
-            height: size.height
-        )
-    }
-
-    private static func screen(for accessibilityFrame: CGRect) -> NSScreen? {
-        let center = CGPoint(x: accessibilityFrame.midX, y: accessibilityFrame.midY)
-        return NSScreen.screens.first(where: { $0.frame.contains(center) })
-            ?? NSScreen.screens.first(where: { $0.frame.intersects(accessibilityFrame) })
-            ?? NSScreen.main
+    private nonisolated static func display(for cocoaFrame: CGRect, in displays: [Display]) -> Display? {
+        let center = CGPoint(x: cocoaFrame.midX, y: cocoaFrame.midY)
+        return displays.first(where: { $0.frame.contains(center) })
+            ?? displays.first(where: { $0.frame.intersects(cocoaFrame) })
     }
 
     private static var mainDisplayFrame: CGRect? {

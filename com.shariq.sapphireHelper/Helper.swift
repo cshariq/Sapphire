@@ -12,6 +12,123 @@ import IOKit
 import IOKit.ps
 import CoreGraphics
 import AppKit
+import Security
+import Darwin
+
+private enum HelperSapphireVersionOrdering {
+    static func compare(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let left = ParsedVersion(lhs)
+        let right = ParsedVersion(rhs)
+
+        let major = compareInteger(left.core.first ?? "0", right.core.first ?? "0")
+        if major != .orderedSame { return major }
+
+        let minor = compareFraction(
+            left.core.count > 1 ? left.core[1] : "0",
+            right.core.count > 1 ? right.core[1] : "0"
+        )
+        if minor != .orderedSame { return minor }
+
+        let coreCount = max(left.core.count, right.core.count)
+        if coreCount > 2 {
+            for index in 2..<coreCount {
+                let component = compareInteger(
+                    index < left.core.count ? left.core[index] : "0",
+                    index < right.core.count ? right.core[index] : "0"
+                )
+                if component != .orderedSame { return component }
+            }
+        }
+
+        return comparePrerelease(left.prerelease, right.prerelease)
+    }
+
+    static func compareBuild(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let left = lhs.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        let right = rhs.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+        for index in 0..<max(left.count, right.count) {
+            let component = compareInteger(
+                index < left.count ? left[index] : "0",
+                index < right.count ? right[index] : "0"
+            )
+            if component != .orderedSame { return component }
+        }
+        return .orderedSame
+    }
+
+    private static func comparePrerelease(_ lhs: [String]?, _ rhs: [String]?) -> ComparisonResult {
+        switch (lhs, rhs) {
+        case (nil, nil): return .orderedSame
+        case (nil, _): return .orderedDescending
+        case (_, nil): return .orderedAscending
+        case let (left?, right?):
+            for index in 0..<max(left.count, right.count) {
+                guard index < left.count else { return .orderedAscending }
+                guard index < right.count else { return .orderedDescending }
+                let leftToken = left[index]
+                let rightToken = right[index]
+                if leftToken == rightToken { continue }
+                let leftIsNumeric = leftToken.allSatisfy(\.isNumber)
+                let rightIsNumeric = rightToken.allSatisfy(\.isNumber)
+                if leftIsNumeric, rightIsNumeric {
+                    return compareInteger(leftToken, rightToken)
+                }
+                if leftIsNumeric { return .orderedAscending }
+                if rightIsNumeric { return .orderedDescending }
+                return leftToken.compare(rightToken, options: [.caseInsensitive, .numeric])
+            }
+            return .orderedSame
+        }
+    }
+
+    private static func compareInteger(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let left = normalizedDigits(lhs)
+        let right = normalizedDigits(rhs)
+        if left.count != right.count {
+            return left.count > right.count ? .orderedDescending : .orderedAscending
+        }
+        return left.compare(right)
+    }
+
+    private static func compareFraction(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let count = max(lhs.count, rhs.count)
+        return lhs.padding(toLength: count, withPad: "0", startingAt: 0)
+            .compare(rhs.padding(toLength: count, withPad: "0", startingAt: 0))
+    }
+
+    private static func normalizedDigits(_ value: String) -> String {
+        let digits = value.prefix(while: \.isNumber)
+        let trimmed = digits.drop(while: { $0 == "0" })
+        return trimmed.isEmpty ? "0" : String(trimmed)
+    }
+
+    private struct ParsedVersion {
+        let core: [String]
+        let prerelease: [String]?
+
+        init(_ raw: String) {
+            var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if (value.hasPrefix("v") || value.hasPrefix("V")),
+               value.dropFirst().first?.isNumber == true {
+                value.removeFirst()
+            }
+            if let firstDigit = value.firstIndex(where: \.isNumber), firstDigit != value.startIndex {
+                value = String(value[firstDigit...])
+            }
+            value = String(value.split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false)[0])
+            let pieces = value.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+            core = pieces[0].split(separator: ".", omittingEmptySubsequences: false).map {
+                let digits = $0.prefix(while: \.isNumber)
+                return digits.isEmpty ? "0" : String(digits)
+            }
+            let tokens = pieces.count > 1
+                ? pieces[1].split(whereSeparator: { $0 == "." || $0 == "-" || $0 == "_" })
+                    .map { String($0).lowercased() }
+                : []
+            prerelease = tokens.isEmpty ? nil : tokens
+        }
+    }
+}
 
 fileprivate enum IOPMPrivate {
     static let kIOPMSleepDisabledKey = "SleepDisabled" as CFString
@@ -44,6 +161,7 @@ fileprivate enum IOPMPrivate {
 class Helper: NSObject, HelperProtocol {
 
     private let logger = Logger(subsystem: "com.shariq.sapphireHelper", category: "Helper")
+    private let updateInstallLock = NSLock()
     var client: InstallationClient?
     private let smc: SMC?
     private let sensorCacheLock = NSLock()
@@ -73,6 +191,12 @@ class Helper: NSObject, HelperProtocol {
     private var pendingFirmwareUpper: Int = 80
     private let firmwareHysteresis = 5
 
+    private let dischargeWatchdogLock = NSLock()
+    private var dischargeWatchdogTimer: Timer?
+    private var dischargeWatchdogFloor: Int = 0
+    private var dischargeWatchdogRechargeOnFloor: Bool = false
+    private var dischargeWatchdogBypass: Bool = false
+
     override init() {
         self.smc = SMC()
         super.init()
@@ -86,6 +210,7 @@ class Helper: NSObject, HelperProtocol {
     }
 
     deinit {
+        stopDischargeWatchdog()
         logger.log("Helper deinitializing and closing SMC connection.")
         if let smc = smc, let fanCount = smc.getValue("FNum") {
             for i in 0..<Int(fanCount) {
@@ -111,13 +236,24 @@ class Helper: NSObject, HelperProtocol {
             keyChargeControl = "CHCS"
         }
 
-        if has("CH0I") {
-            keyDischargeControl = "CH0I"
-        } else if has("CH0J") || has("CH0K") {
-            keyDischargeControl = has("CH0J") ? "CH0J" : "CH0K"
+        #if arch(arm64)
+        let primaryDischargeKey = "CH0I"
+        let secondaryDischargeKey = "CH0K"
+        #else
+        let primaryDischargeKey = "CH0K"
+        let secondaryDischargeKey = "CH0I"
+        #endif
+
+        if has(primaryDischargeKey) {
+            keyDischargeControl = primaryDischargeKey
+            if has("CHIE") { keyDischargeControlSecondary = "CHIE" }
+        } else if has("CH0J") {
+            keyDischargeControl = "CH0J"
             if has("CHIE") { keyDischargeControlSecondary = "CHIE" }
         } else if has("CHIE") {
             keyDischargeControl = "CHIE"
+        } else if has(secondaryDischargeKey) {
+            keyDischargeControl = secondaryDischargeKey
         }
 
         if has("ACLC") { keyMagsafeLED = "ACLC" }
@@ -198,8 +334,13 @@ class Helper: NSObject, HelperProtocol {
         guard let key = keyFirmwareChargeLimitActivation else {
             return makeError(code: .smcWriteFailed, description: "Firmware charge-limit activation key not found.")
         }
-        let result = smc?.writeData(key, data: Data([active ? 0x02 : 0x00]))
-        return result == kIOReturnSuccess ? nil : makeError(code: .smcWriteFailed, description: "Failed to write \(key).")
+        let value: UInt8 = active ? 0x02 : 0x00
+        for attempt in 1...3 {
+            _ = smc?.writeData(key, data: Data([value]))
+            if readFirmwareActivation() == value { return nil }
+            if attempt < 3 { usleep(20_000) }
+        }
+        return makeError(code: .smcWriteFailed, description: "Failed to write and verify \(key).")
     }
 
     private func writeFirmwareLimitValue(_ key: String, _ value: UInt32) -> Error? {
@@ -209,8 +350,12 @@ class Helper: NSObject, HelperProtocol {
             UInt8(truncatingIfNeeded: value >> 16),
             UInt8(truncatingIfNeeded: value >> 24)
         ])
-        let result = smc?.writeData(key, data: data)
-        return result == kIOReturnSuccess ? nil : makeError(code: .smcWriteFailed, description: "Failed to write \(key).")
+        for attempt in 1...3 {
+            _ = smc?.writeData(key, data: data)
+            if readFirmwareLimitValue(key) == value { return nil }
+            if attempt < 3 { usleep(20_000) }
+        }
+        return makeError(code: .smcWriteFailed, description: "Failed to write and verify \(key).")
     }
 
     func deactivateFirmwareChargeLimit() -> Error? {
@@ -298,9 +443,7 @@ class Helper: NSObject, HelperProtocol {
         reply(succeeded ? nil : makeError(code: .smcWriteFailed, description: "Failed to write charge key '\(chargeKey)'."))
     }
 
-    func setDischarge(_ discharging: Bool, reply: @escaping (Error?) -> Void) {
-        logger.debug("[SapphireHelper] Received command: setDischarge(\(discharging))")
-
+    private func writeDischargeControlDirect(_ discharging: Bool) -> Error? {
         if let dischargeKey = keyDischargeControl {
             let writes: [(String, Data)]
             switch dischargeKey {
@@ -314,8 +457,7 @@ class Helper: NSObject, HelperProtocol {
                 writes = [(dischargeKey, Data(discharging ? [0x08] : [0x00]))]
             default:
                 logger.error("[SapphireHelper] ERROR: Unknown discharge key '\(dischargeKey)'.")
-                reply(makeError(code: .smcWriteFailed, description: "Unknown discharge key."))
-                return
+                return makeError(code: .smcWriteFailed, description: "Unknown discharge key.")
             }
 
             var succeeded = false
@@ -332,8 +474,7 @@ class Helper: NSObject, HelperProtocol {
                 }
             }
 
-            reply(succeeded ? nil : makeError(code: .smcWriteFailed, description: "Failed to write discharge key '\(dischargeKey)'."))
-            return
+            return succeeded ? nil : makeError(code: .smcWriteFailed, description: "Failed to write discharge key '\(dischargeKey)'.")
         }
 
         if let adapterKey = keyAdapterEnable {
@@ -351,12 +492,69 @@ class Helper: NSObject, HelperProtocol {
                 logger.error("[SapphireHelper] SMC Write FAILED for key '\(adapterKey)' with error code: \(String(describing: result)).")
             }
 
-            reply(result == kIOReturnSuccess ? nil : makeError(code: .smcWriteFailed, description: "Failed to write discharge key '\(adapterKey)'."))
-            return
+            return result == kIOReturnSuccess ? nil : makeError(code: .smcWriteFailed, description: "Failed to write discharge key '\(adapterKey)'.")
         }
 
         logger.error("[SapphireHelper] ERROR: No discharge control key found. Cannot execute setDischarge.")
-        reply(discharging ? makeError(code: .smcWriteFailed, description: "No discharge control key found.") : nil)
+        return discharging ? makeError(code: .smcWriteFailed, description: "No discharge control key found.") : nil
+    }
+
+    private func startDischargeWatchdog(safetyFloor: Int, rechargeOnFloor: Bool, bypassSafetyFloor: Bool) {
+        dischargeWatchdogLock.lock()
+        defer { dischargeWatchdogLock.unlock() }
+
+        dischargeWatchdogFloor = safetyFloor
+        dischargeWatchdogRechargeOnFloor = rechargeOnFloor
+        dischargeWatchdogBypass = bypassSafetyFloor
+        guard dischargeWatchdogTimer == nil else { return }
+
+        dischargeWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            self?.checkDischargeWatchdog()
+        }
+    }
+
+    private func checkDischargeWatchdog() {
+        let batteryPercent = readCurrentBatteryPercentage()
+        guard batteryPercent >= 0 else { return }
+
+        let (currentFloor, rechargeOnFloor, bypass) = dischargeWatchdogLock.withLock {
+            (dischargeWatchdogFloor, dischargeWatchdogRechargeOnFloor, dischargeWatchdogBypass)
+        }
+
+        if !bypass && batteryPercent <= currentFloor {
+            logger.log("[SapphireHelper] Discharge watchdog: battery at \(batteryPercent)% <= floor \(currentFloor)%, forcing discharge off.")
+            _ = writeDischargeControlDirect(false)
+
+            if rechargeOnFloor {
+                logger.log("[SapphireHelper] Discharge watchdog: re-enabling charging at \(batteryPercent)%.")
+                _ = enableCharging(true) { _ in }
+            }
+
+            stopDischargeWatchdog()
+        }
+    }
+
+    private func stopDischargeWatchdog() {
+        dischargeWatchdogLock.lock()
+        defer { dischargeWatchdogLock.unlock() }
+
+        dischargeWatchdogTimer?.invalidate()
+        dischargeWatchdogTimer = nil
+        dischargeWatchdogFloor = 0
+    }
+
+    func setDischarge(_ discharging: Bool, safetyFloor: Int, rechargeOnFloor: Bool, bypassSafetyFloor: Bool, reply: @escaping (Error?) -> Void) {
+        logger.debug("[SapphireHelper] Received command: setDischarge(\(discharging), safetyFloor: \(safetyFloor), rechargeOnFloor: \(rechargeOnFloor), bypassSafetyFloor: \(bypassSafetyFloor))")
+
+        let error = writeDischargeControlDirect(discharging)
+
+        if discharging && safetyFloor > 0 {
+            startDischargeWatchdog(safetyFloor: safetyFloor, rechargeOnFloor: rechargeOnFloor, bypassSafetyFloor: bypassSafetyFloor)
+        } else {
+            stopDischargeWatchdog()
+        }
+
+        reply(error)
     }
 
     func setMagSafeLED(color: Int, reply: @escaping (Error?) -> Void) {
@@ -387,7 +585,8 @@ class Helper: NSObject, HelperProtocol {
         var lastError: Error?
 
         group.enter()
-        setDischarge(false) { error in
+        DispatchQueue.global(qos: .default).async {
+            let error = self.writeDischargeControlDirect(false)
             if let error = error {
                 self.logger.error("Calibration failed at step 1 (enable adapter): \(error.localizedDescription)")
                 lastError = error
@@ -433,6 +632,17 @@ class Helper: NSObject, HelperProtocol {
     }
 
     // MARK: - Sensor & Generic Functions
+
+    private func readCurrentBatteryPercentage() -> Int {
+        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef],
+              let powerSource = sources.first,
+              let info = IOPSGetPowerSourceDescription(snapshot, powerSource)?.takeUnretainedValue() as? [String: AnyObject] else {
+            return -1
+        }
+        return info[kIOPSCurrentCapacityKey] as? Int ?? -1
+    }
+
     func getAllTemperatureSensors(reply: @escaping ([String]) -> Void) {
         let allKeys = smc?.getAllKeys() ?? []
         reply(allKeys.filter { $0.hasPrefix("T") && $0.count == 4 })
@@ -488,8 +698,19 @@ class Helper: NSObject, HelperProtocol {
         reply(SapphireHelperProtocolVersion)
     }
 
-    func installUpdate(newAppPath: String, currentAppPath: String, completion: @escaping (Bool, String?) -> Void) {
+    func installUpdate(
+        newAppPath: String,
+        currentAppPath: String,
+        expectedVersion: String,
+        completion: @escaping (Bool, String?) -> Void
+    ) {
         logger.info("[Helper] installUpdate requested (new=\(newAppPath) current=\(currentAppPath))")
+
+        guard updateInstallLock.try() else {
+            completion(false, "Another Sapphire update is already being installed.")
+            return
+        }
+        defer { updateInstallLock.unlock() }
 
         func fail(_ message: String) {
             logger.error("[Helper] installUpdate failed: \(message)")
@@ -497,31 +718,222 @@ class Helper: NSObject, HelperProtocol {
         }
 
         let fileManager = FileManager.default
-        guard !newAppPath.isEmpty, (newAppPath as NSString).pathExtension == "app",
-              fileManager.fileExists(atPath: newAppPath),
-              !currentAppPath.isEmpty, currentAppPath != "/",
-              fileManager.fileExists(atPath: currentAppPath) else {
+        let newURL = URL(fileURLWithPath: newAppPath).standardizedFileURL
+        let currentURL = URL(fileURLWithPath: currentAppPath).standardizedFileURL
+        let applicationsURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        let currentComponents = currentURL.pathComponents
+        let applicationsComponents = applicationsURL.pathComponents
+        let newValues = try? newURL.resourceValues(forKeys: [.isSymbolicLinkKey])
+        let currentValues = try? currentURL.resourceValues(forKeys: [.isSymbolicLinkKey])
+        guard !newAppPath.isEmpty,
+              newURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame,
+              fileManager.fileExists(atPath: newURL.path),
+              newValues?.isSymbolicLink != true,
+              !currentAppPath.isEmpty,
+              currentURL.path != "/",
+              newURL != currentURL,
+              fileManager.fileExists(atPath: currentURL.path),
+              currentValues?.isSymbolicLink != true,
+              !expectedVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              currentComponents.count == applicationsComponents.count + 1,
+              currentComponents.prefix(applicationsComponents.count).elementsEqual(applicationsComponents),
+              Bundle(url: currentURL)?.bundleIdentifier == "com.cshariq.sapphire",
+              Bundle(url: newURL)?.bundleIdentifier == "com.cshariq.sapphire" else {
             fail("Invalid app paths for the update.")
             return
         }
 
+        var currentCode: SecStaticCode?
+        var requirement: SecRequirement?
+        let validationFlags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode)
+        guard SecStaticCodeCreateWithPath(currentURL as CFURL, [], &currentCode) == errSecSuccess,
+              let currentCode,
+              SecStaticCodeCheckValidity(currentCode, validationFlags, nil) == errSecSuccess,
+              SecCodeCopyDesignatedRequirement(currentCode, [], &requirement) == errSecSuccess,
+              let requirement else {
+            fail("The installed Sapphire signature could not be validated.")
+            return
+        }
+
+        let currentBundle = Bundle(url: currentURL)
+        guard let currentVersion = currentBundle?
+                .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              !currentVersion.isEmpty else {
+            fail("The installed Sapphire version could not be read.")
+            return
+        }
+        let currentBuild = currentBundle?
+            .object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+
+        let parent = currentURL.deletingLastPathComponent()
+        let transactionID = UUID().uuidString
+        let stagingURL = parent.appendingPathComponent(".Sapphire-update-\(transactionID).app")
         do {
-            try fileManager.removeItem(atPath: currentAppPath)
+            try fileManager.copyItem(at: newURL, to: stagingURL)
         } catch {
-            fail("Could not remove the existing app: \(error.localizedDescription)")
+            try? fileManager.removeItem(at: stagingURL)
+            fail("Could not stage the update: \(error.localizedDescription)")
+            return
+        }
+
+        var stagedCode: SecStaticCode?
+        let stagedBundle = Bundle(url: stagingURL)
+        let stagedVersion = stagedBundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let stagedBuild = stagedBundle?.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+        let marketingComparison = stagedVersion.map {
+            HelperSapphireVersionOrdering.compare($0, currentVersion)
+        }
+        let isMonotonicUpgrade = marketingComparison == .orderedDescending
+            || (marketingComparison == .orderedSame
+                && HelperSapphireVersionOrdering.compareBuild(stagedBuild, currentBuild) == .orderedDescending)
+        guard stagedBundle?.bundleIdentifier == "com.cshariq.sapphire",
+              stagedVersion == expectedVersion,
+              isMonotonicUpgrade,
+              SecStaticCodeCreateWithPath(stagingURL as CFURL, [], &stagedCode) == errSecSuccess,
+              let stagedCode,
+              SecStaticCodeCheckValidity(stagedCode, validationFlags, requirement) == errSecSuccess else {
+            try? fileManager.removeItem(at: stagingURL)
+            fail("The staged update must be newer than the installed signed release and match its verified version and signature.")
+            return
+        }
+
+        let assessment = Process()
+        assessment.executableURL = URL(fileURLWithPath: "/usr/sbin/spctl")
+        assessment.arguments = ["--assess", "--type", "execute", "--verbose=2", stagingURL.path]
+        assessment.standardOutput = FileHandle.nullDevice
+        assessment.standardError = FileHandle.nullDevice
+        do {
+            try assessment.run()
+            assessment.waitUntilExit()
+        } catch {
+            try? fileManager.removeItem(at: stagingURL)
+            fail("Gatekeeper could not assess the staged update: \(error.localizedDescription)")
+            return
+        }
+        guard assessment.terminationStatus == 0 else {
+            try? fileManager.removeItem(at: stagingURL)
+            fail("Gatekeeper rejected the staged update.")
+            return
+        }
+
+        let swapResult = currentURL.path.withCString { currentPath in
+            stagingURL.path.withCString { stagingPath in
+                renameatx_np(
+                    AT_FDCWD,
+                    currentPath,
+                    AT_FDCWD,
+                    stagingPath,
+                    UInt32(RENAME_SWAP)
+                )
+            }
+        }
+        guard swapResult == 0 else {
+            let code = errno
+            try? fileManager.removeItem(at: stagingURL)
+            fail("The filesystem could not atomically install the update: \(String(cString: strerror(code))).")
             return
         }
 
         do {
-            try fileManager.moveItem(atPath: newAppPath, toPath: currentAppPath)
+            try fileManager.removeItem(at: stagingURL)
         } catch {
-            fail("Could not move the new app into place: \(error.localizedDescription)")
-            return
+            logger.warning("[Helper] Installed update but could not remove previous hidden bundle at \(stagingURL.path): \(error.localizedDescription)")
         }
 
         logger.log("[Helper] installUpdate succeeded; new app is in place at \(currentAppPath)")
         completion(true, nil)
     }
+    // MARK: - Continuity Microphone driver
+
+    private static let halPluginDirectory = "/Library/Audio/Plug-Ins/HAL"
+    private static let micDriverName = "SapphireAudioDriver.driver"
+    private static let micRingDirectory = "/Library/Application Support/Sapphire"
+    private static let micRingPath = "/Library/Application Support/Sapphire/ContinuityMic.ring"
+    private static let micRingByteSize = 80 + 48000 * 2 * 1 * 4
+
+    func installAudioDriver(driverBundlePath: String, reply: @escaping (Bool, String?) -> Void) {
+        logger.info("[Helper] installAudioDriver requested (\(driverBundlePath))")
+        let fileManager = FileManager.default
+
+        func fail(_ message: String) {
+            logger.error("[Helper] installAudioDriver failed: \(message)")
+            reply(false, message)
+        }
+
+        guard !driverBundlePath.isEmpty,
+              (driverBundlePath as NSString).lastPathComponent == Self.micDriverName,
+              driverBundlePath.hasPrefix("/"),
+              !driverBundlePath.contains(".."),
+              fileManager.fileExists(atPath: driverBundlePath) else {
+            fail("The audio driver path is not valid.")
+            return
+        }
+
+        let destination = (Self.halPluginDirectory as NSString).appendingPathComponent(Self.micDriverName)
+
+        do {
+            if !fileManager.fileExists(atPath: Self.halPluginDirectory) {
+                try fileManager.createDirectory(atPath: Self.halPluginDirectory,
+                                                withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o755])
+            }
+            if fileManager.fileExists(atPath: destination) {
+                try fileManager.removeItem(atPath: destination)
+            }
+            try fileManager.copyItem(atPath: driverBundlePath, toPath: destination)
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination)
+        } catch {
+            fail("Could not install the driver: \(error.localizedDescription)")
+            return
+        }
+
+        do {
+            if !fileManager.fileExists(atPath: Self.micRingDirectory) {
+                try fileManager.createDirectory(atPath: Self.micRingDirectory,
+                                                withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o755])
+            }
+            if !fileManager.fileExists(atPath: Self.micRingPath) {
+                fileManager.createFile(atPath: Self.micRingPath, contents: nil,
+                                       attributes: [.posixPermissions: 0o666])
+            }
+            let handle = FileHandle(forWritingAtPath: Self.micRingPath)
+            try handle?.truncate(atOffset: UInt64(Self.micRingByteSize))
+            try handle?.close()
+            try fileManager.setAttributes([.posixPermissions: 0o666], ofItemAtPath: Self.micRingPath)
+        } catch {
+            fail("Could not prepare the microphone buffer: \(error.localizedDescription)")
+            return
+        }
+
+        let status = runPrivilegedCommand("/bin/launchctl", args: ["kickstart", "-k", "system/com.apple.audio.coreaudiod"])
+        if status != 0 {
+            logger.warning("[Helper] coreaudiod restart returned \(status); the device may need a reboot")
+        }
+
+        logger.log("[Helper] installAudioDriver succeeded")
+        reply(true, nil)
+    }
+
+    func uninstallAudioDriver(reply: @escaping (Bool, String?) -> Void) {
+        let destination = (Self.halPluginDirectory as NSString).appendingPathComponent(Self.micDriverName)
+        let fileManager = FileManager.default
+        do {
+            if fileManager.fileExists(atPath: destination) {
+                try fileManager.removeItem(atPath: destination)
+            }
+            if fileManager.fileExists(atPath: Self.micRingPath) {
+                try fileManager.removeItem(atPath: Self.micRingPath)
+            }
+        } catch {
+            reply(false, "Could not remove the driver: \(error.localizedDescription)")
+            return
+        }
+        _ = runPrivilegedCommand("/bin/launchctl", args: ["kickstart", "-k", "system/com.apple.audio.coreaudiod"])
+        logger.log("[Helper] uninstallAudioDriver succeeded")
+        reply(true, nil)
+    }
+
     func getChargeControlMode(reply: @escaping (Int) -> Void) {
         reply(chargeControlMode.rawValue)
     }

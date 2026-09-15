@@ -6,6 +6,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 import UniformTypeIdentifiers
 
 extension UTType {
@@ -300,6 +301,33 @@ enum SnapZoneViewMode: String, Codable, CaseIterable, Identifiable {
     var displayName: String { self.rawValue.capitalized }
 }
 
+enum SnapWindowAnimation: String, Codable, CaseIterable, Identifiable {
+    case fast, smooth
+    var id: String { rawValue }
+    var displayName: String { rawValue.capitalized }
+
+    var summary: String {
+        switch self {
+        case .fast: return "Windows jump straight to their zone."
+        case .smooth: return "Windows glide into their zone with a short eased animation."
+        }
+    }
+}
+
+enum FaceIDLocationPolicy: String, Codable, CaseIterable, Identifiable {
+    case everywhere
+    case selectedWiFiNetworks
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .everywhere: return "Everywhere"
+        case .selectedWiFiNetworks: return "Selected Wi-Fi Networks"
+        }
+    }
+}
+
 enum AppSnapLayoutConfiguration: Codable, Equatable {
     case useGlobalDefault
     case single(layoutID: UUID)
@@ -446,8 +474,6 @@ enum MediaSource: String, Codable, CaseIterable, Identifiable {
 }
 
 extension Settings {
-    /// Widgets that are switched on, in the user's order. Shared by the Widgets
-    /// pane rows and per-widget settings pages so they apply the same guards.
     var enabledWidgetTypes: [WidgetType] {
         widgetOrder.filter { widget in
             switch widget {
@@ -462,7 +488,9 @@ extension Settings {
             case .clipboard: return clipboardWidgetEnabled
             case .mirror: return mirrorWidgetEnabled
             case .battery: return batteryWidgetEnabled
+            case .timer: return timerWidgetEnabled
             case .focusSession: return focusSessionWidgetEnabled
+            case .storage: return storageWidgetEnabled
             case .agent: return false
             }
         }
@@ -715,6 +743,79 @@ struct SwipeActionSettings: Codable, Equatable {
     var fileDropTrailing: FileDropSwipeAction = .delete
 }
 
+// MARK: - DMG Installer
+
+enum DMGInstallLocation: String, Codable, CaseIterable, Identifiable {
+    case systemApplications
+    case homeApplications
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .systemApplications: "/Applications"
+        case .homeApplications: "~/Applications"
+        }
+    }
+
+    var url: URL {
+        switch self {
+        case .systemApplications: URL(fileURLWithPath: "/Applications", isDirectory: true)
+        case .homeApplications: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)
+        }
+    }
+}
+
+enum DMGPostInstallAction: String, Codable, CaseIterable, Identifiable {
+    case open
+    case revealInFinder
+    case none
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .open: "Open the app"
+        case .revealInFinder: "Reveal in Finder"
+        case .none: "Do nothing"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .open: "play.fill"
+        case .revealInFinder: "magnifyingglass"
+        case .none: "square.dashed"
+        }
+    }
+}
+
+enum FileOperationProgressDisplay: String, Codable, CaseIterable, Identifiable {
+    case liveActivity
+    case popup
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .liveActivity: "Live Activity"
+        case .popup: "Popup Window"
+        }
+    }
+}
+
+enum ShortcutIdentifier {
+    static let circleToSearch = "circleToSearch"
+    static let clipboardPicker = "clipboardPicker"
+    static let emojiPicker = "emojiPicker"
+    static let focusStart = "focusStart"
+    static let ocrScreenshot = "ocrScreenshot"
+
+    static func snapZone(layoutID: UUID, zoneID: UUID) -> String { "snapZone:\(layoutID.uuidString):\(zoneID.uuidString)" }
+    static func plane(_ planeID: UUID) -> String { "plane:\(planeID.uuidString)" }
+    static func dockLayouts(_ presetID: UUID) -> String { "dockLayouts:\(presetID.uuidString)" }
+}
+
 // MARK: - Main Settings Struct
 struct Settings: Codable, Equatable {
     var animationProfile: AnimationProfile = .snappy
@@ -762,6 +863,88 @@ struct Settings: Codable, Equatable {
     var lockScreenWeatherInfo: [WeatherInfoType] = [.temperature]
     var lockScreenBatteryInfo: [BatteryInfoType] = [.batteryIcon, .percentage, .statusText]
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
+    var systemEnhanceDockPreviewsEnabled: Bool = true
+    var systemEnhanceAltTabEnabled: Bool = true
+    var systemEnhanceSwitcherActivationRaw: String = "both"
+    var systemEnhanceSwitcherIncludeOtherSpaces: Bool = false
+    var systemEnhanceCalendarIntegrationEnabled: Bool = true
+    var systemEnhanceCompactPreviewEnabled: Bool = true
+    var systemEnhanceEnhancedPreviewsEnabled: Bool = true
+    var systemEnhanceDockLocked: Bool = false
+    var systemEnhanceLockedDisplayID: String? = nil
+    var systemEnhancePreviewLayoutRaw: String = "grid"
+    var systemEnhanceWindowSwitcherLayoutRaw: String = "grid"
+    var systemEnhancePreviewTriggerRaw: String = "hover"
+    var systemEnhancePreviewDelay: Double = 0.25
+    var systemEnhanceLivePreviewKeepAlive: Int = 2
+    var systemEnhancePasteAsPlainTextEnabled: Bool = true
+    var systemEnhancePasteAsPlainStripLinks: Bool = false
+    var systemEnhancePasteAsPlainStripEmojis: Bool = false
+    var systemEnhancePasteAsPlainStripListMarkers: Bool = false
+
+    // MARK: - Hinge-driven desktop animation
+
+    var systemEnhanceHingeAnimationEnabled: Bool = false
+    var systemEnhanceHingeAnimationActivationAngle: Double = 90
+    var systemEnhanceHingeAnimationIntensity: Double = 1
+    var systemEnhanceHingeAnimationBlur: Double = 135
+
+    var systemEnhancePasteAsPlainNeedsSanitization: Bool {
+        systemEnhancePasteAsPlainStripLinks
+            || systemEnhancePasteAsPlainStripEmojis
+            || systemEnhancePasteAsPlainStripListMarkers
+    }
+
+    // MARK: - Dock clicks (Vorssaint-style)
+
+    var systemEnhanceDockClicksEnabled: Bool = false
+    var systemEnhanceDockClickActionRaw: String = "minimize"
+    var systemEnhanceDockClicksAllAppsEnabled: Bool = true
+    var systemEnhanceDockClicksSelectedApps: [String] = []
+    var systemEnhanceDockClicksExcludedApps: [String] = []
+
+    func isDockClickEnabled(for bundleIdentifier: String) -> Bool {
+        if systemEnhanceDockClicksAllAppsEnabled {
+            return !systemEnhanceDockClicksExcludedApps.contains(bundleIdentifier)
+        }
+        return systemEnhanceDockClicksSelectedApps.contains(bundleIdentifier)
+    }
+
+    // MARK: - DockLayouts (Dock layout presets)
+
+    var dockLayoutsEnabled: Bool = false
+    var dockLayoutsPresets: [DockLayout] = []
+
+    // MARK: - Media Optimizer (image/video/audio compression & OCR)
+
+    var mediaToolsAutoOptimizeClipboard: Bool = false
+    var mediaToolsImageQuality: Double = 0.75
+    var mediaToolsMaxImageDimension: Double = 2048
+    var mediaToolsShowShelfActions: Bool = false
+    var mediaToolsOCRLanguage: String = "en-US"
+    var mediaToolsOCRShortcutEnabled: Bool = false
+    var mediaToolsOCRShortcut: KeyboardShortcut = KeyboardShortcut(key: "T", modifiers: [.control, .shift])
+
+    // MARK: - Quit on close (Vorssaint-style)
+
+    var systemEnhanceAutoQuitEnabled: Bool = true
+    var systemEnhanceAutoQuitExcludedApps: [String] = []
+
+    // MARK: - Quit & close protection (Vorssaint-style)
+
+    var systemEnhanceQuitProtectionEnabled: Bool = true
+    var systemEnhanceQuitProtectionModeRaw: String = "hold"
+    var systemEnhanceQuitProtectionExtraModifierRaw: String = "option"
+    var systemEnhanceQuitProtectionProtectQuit: Bool = true
+    var systemEnhanceQuitProtectionProtectClose: Bool = true
+    var systemEnhanceQuitProtectionHoldInterval: Double = 1.2
+    var systemEnhanceQuitProtectionDoublePressInterval: Double = 0.5
+    var systemEnhanceQuitProtectionExcludedApps: [String] = []
+
+    // MARK: - Green button maximize (Vorssaint-style)
+
+    var systemEnhanceGreenMaximizeEnabled: Bool = false
+
     var notchLiveActivityAppearance: NotchAppearanceSettings = .init()
     var launchAtLogin: Bool = true
     var appLanguage: String = "en"
@@ -794,6 +977,14 @@ struct Settings: Codable, Equatable {
     var swipeToHideNotch: Bool = false
     var preventNotchExpandWhenLocked: Bool = false
     var releaseChannel: ReleaseChannel = .stable
+    var automaticUpdateChecksEnabled: Bool = true
+    var automaticallyDownloadSapphireUpdates: Bool = true
+    var updateAvailableNotificationsEnabled: Bool = true
+
+    // MARK: - Installed app updates (Latest-style)
+
+    var installedAppUpdatesEnabled: Bool = true
+    var installedAppUpdateNotificationsEnabled: Bool = true
     var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .focusSession, .spacer, .battery, .multiAudio, .caffeine, .pin]
     var circleToSearchEnabled: Bool = true
     var circleToSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "C", modifiers: [.control, .shift])
@@ -844,7 +1035,7 @@ struct Settings: Codable, Equatable {
     var rememberLastMenu: Bool = false
     var lastNotchNavigationStack: [RestorableNotchMenu]? = nil
     var showDividersBetweenWidgets: Bool = false
-    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .focusSession, .battery, .shortcuts, .notes, .clipboard, .mirror]
+    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .focusSession, .battery, .timer, .shortcuts, .notes, .clipboard, .mirror]
     var musicWidgetEnabled: Bool = true
     var weatherWidgetEnabled: Bool = true
     var sportsWidgetEnabled: Bool = false
@@ -864,9 +1055,100 @@ struct Settings: Codable, Equatable {
     var clipboardMonitoringEnabled: Bool = true
     var clipboardHistoryUnlimited: Bool = true
     var clipboardIgnoreConcealedItems: Bool = true
+    var clipboardPickerEnabled: Bool = true
+    var clipboardPickerShortcut: KeyboardShortcut = KeyboardShortcut(key: "V", modifiers: [.command, .shift])
+
+    // MARK: - Auto-clear clipboard (Vorssaint-style)
+
+    var clipboardAutoClearEnabled: Bool = false
+    var clipboardAutoClearInterval: Double = 30
+    var clipboardAutoClearOnSleep: Bool = true
+    var clipboardAutoClearOnLock: Bool = true
+
+    // MARK: - Clean URL (Vorssaint-style)
+
+    var clipboardCleanURLEnabled: Bool = false
+    var clipboardCleanURLAutoClean: Bool = true
+    var clipboardCleanURLCustomParams: [String] = []
+
+    // MARK: - Finder cut & paste (Vorssaint-style)
+
+    var clipboardFinderCutPasteEnabled: Bool = false
+    var clipboardFinderPasteImagesAsPNG: Bool = true
+    var clipboardFinderF2RenameEnabled: Bool = true
+
+    // MARK: - Text snippets (Vorssaint-style)
+
+    var snippetsEnabled: Bool = false
+    var snippetsExpandAfterSpace: Bool = true
+    var snippetsList: [SnippetEntry] = []
+
+    var emojiEnabled: Bool = true
+    var emojiSuggestOnColon: Bool = true
+    var emojiDisabledAppBundleIDs: Set<String> = []
+    var emojiSkinTone: EmojiSkinTone = .none
+    var emojiPickerShortcut: KeyboardShortcut = KeyboardShortcut(key: "Space", modifiers: [.control, .command])
+    var mouseControlEnabled: Bool = false
+    var mouseInvertScroll: Bool = false
+    var mouseInvertHorizontalScroll: Bool = false
+    var mouseScrollSpeed: Double = 1.0
+    var mouseDisableAcceleration: Bool = false
+    var mouseAccelerationStrength: Double = 1.0
+    var mouseMiddleButtonAction: MouseButtonAction = .none
+    var mouseButton4Action: MouseButtonAction = .back
+    var mouseButton5Action: MouseButtonAction = .forward
+    var mouseMiddleModifiedAction: MouseButtonAction = .none
+    var mouseButton4ModifiedAction: MouseButtonAction = .none
+    var mouseButton5ModifiedAction: MouseButtonAction = .none
+    var mouseModifierButtonEnabled: Bool = false
+    var mouseModifierButtonNumber: Int = 3
+    var mouseModifierSelection: MouseModifierSelection = .default
+
+    // MARK: - Vorssaint-style mouse & keyboard additions
+
+    var mouseFocusFollowsEnabled: Bool = false
+    var mouseFocusFollowsDelay: Double = 0.5
+    var mouseExtraClickFilterEnabled: Bool = false
+    var mouseExtraClickFilterInterval: Double = 0.08
+    var keyboardDebounceEnabled: Bool = false
+    var keyboardDebounceInterval: Double = 0.045
+    var superKeyEnabled: Bool = false
+    var superKeyKeyRaw: String = "rightCommand"
+    var superKeyComboRaw: String = "hyper"
+    var superKeyTapActionRaw: String = "none"
+    var mouseExcludedAppBundleIDs: [String] = []
+
+    // MARK: - Monitoring (Vorssaint-style)
+
+    var monitoringMenuBarReadoutsEnabled: Bool = false
+    var monitoringReadoutShowCPU: Bool = true
+    var monitoringReadoutShowMemory: Bool = true
+    var monitoringReadoutShowNetwork: Bool = true
+    var monitoringAlertsEnabled: Bool = false
+    var monitoringAlertSustainedCPUEnabled: Bool = true
+    var monitoringAlertCPUThreshold: Double = 90
+    var monitoringAlertMemoryPressureEnabled: Bool = true
+    var monitoringAlertLowDiskEnabled: Bool = true
+    var monitoringAlertDiskThresholdGB: Double = 10
+
+    var archiveExtractorEnabled: Bool = true
+    var archiveExtractionMode: ArchiveExtractionMode = .smart
+    var archivePostExtractAction: ArchivePostExtractAction = .reveal
+    var archiveDeleteAfterExtract: Bool = false
+    var archivePromptForPasswords: Bool = true
+    var archiveProgressDisplay: FileOperationProgressDisplay = .liveActivity
+    var dmgInstallerEnabled: Bool = true
+    var dmgInstallerTrashAfterInstall: Bool = true
+    var dmgInstallerPostInstallAction: DMGPostInstallAction = .open
+    var dmgInstallerInstallLocation: DMGInstallLocation = .systemApplications
+    var dmgInstallerReplaceNewerVersions: Bool = true
+    var dmgInstallerReplaceWithoutPrompting: Bool = false
+    var dmgInstallerProgressDisplay: FileOperationProgressDisplay = .liveActivity
     var timerWidgetEnabled: Bool = true
     var batteryWidgetEnabled: Bool = true
     var focusSessionWidgetEnabled: Bool = true
+    var storageWidgetEnabled: Bool = true
+    var storageOpenOnClick: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
     var liveActivityOrder: [LiveActivityType] = LiveActivityType.allCases
     var musicLiveActivityEnabled: Bool = true
@@ -966,22 +1248,52 @@ struct Settings: Codable, Equatable {
         financeFavoriteSymbolIndex = max(0, min(financeFavoriteSymbolIndex, financeFavoriteSymbols.count - 1))
     }
 
-    mutating func disableUnavailablePremiumFeatures() {
-        if !SubscriptionAccess.hasAccess(to: .sportsWidget) {
-            sportsWidgetEnabled = false
+    func isShortcutEnabled(_ identifier: String) -> Bool {
+        !disabledShortcutIDs.contains(identifier)
+    }
+
+    mutating func setSnapZoneShortcut(_ shortcut: KeyboardShortcut?, for layoutID: UUID, zoneID: UUID) {
+        snapZoneShortcuts.removeAll { mapping in
+            mapping.layoutID == layoutID && mapping.zoneID == zoneID
+                || (shortcut != nil && mapping.shortcut.matches(shortcut!))
         }
-        if !SubscriptionAccess.hasAccess(to: .financeWidget) {
-            financeWidgetEnabled = false
-        }
-        if !SubscriptionAccess.hasAccess(to: .liveSports) {
-            sportsLiveActivityEnabled = false
-        }
-        if !SubscriptionAccess.hasAccess(to: .financeLiveActivity) {
-            financeLiveActivityEnabled = false
+        if let shortcut {
+            snapZoneShortcuts.append(SnapZoneShortcut(layoutID: layoutID, zoneID: zoneID, shortcut: shortcut))
         }
     }
 
+    func hasSameNormalizedCollections(as other: Settings) -> Bool {
+        snapZoneShortcuts == other.snapZoneShortcuts
+            && liveActivityOrder == other.liveActivityOrder
+            && widgetOrder == other.widgetOrder
+            && notchButtonOrder == other.notchButtonOrder
+    }
+
+    func hasSameNormalizationInputs(as other: Settings) -> Bool {
+        hasSameNormalizedCollections(as: other) && customSnapLayouts == other.customSnapLayouts
+    }
+
     mutating func normalizeCollectionOrders() {
+        let availableLayouts = LayoutTemplate.allTemplates + customSnapLayouts
+        let validLayoutIDs = Set(availableLayouts.map(\.id))
+        var seenTargets = Set<String>()
+        var seenShortcuts = Set<KeyboardShortcut>()
+        snapZoneShortcuts = snapZoneShortcuts.filter { mapping in
+            guard validLayoutIDs.contains(mapping.layoutID),
+                  let layout = availableLayouts.first(where: { $0.id == mapping.layoutID }),
+                  layout.zones.contains(where: { $0.id == mapping.zoneID }),
+                  !mapping.shortcut.key.isEmpty else {
+                return false
+            }
+
+            let targetKey = "\(mapping.layoutID.uuidString):\(mapping.zoneID.uuidString)"
+            guard seenTargets.insert(targetKey).inserted,
+                  seenShortcuts.insert(mapping.shortcut).inserted else {
+                return false
+            }
+            return true
+        }
+
         let allActivities = LiveActivityType.allCases
         liveActivityOrder = liveActivityOrder.filter { allActivities.contains($0) }.deduplicated()
         let missingActivities = allActivities.filter { !liveActivityOrder.contains($0) }
@@ -1086,6 +1398,7 @@ struct Settings: Codable, Equatable {
     var musicDevicesButtonEnabled: Bool = true
     var showPopularityInMusicPlayer: Bool = true
     var hideMusicWidgetWhenNotPlaying: Bool = false
+    var hideMusicWidgetWhenSpotifyPausedAndIdle: Bool = false
     var persistMusicWidgetWhenPaused: Bool = true
     var preferAirPlayOverSpotify: Bool = true
     var spotifyCanvasLiveVideo: Bool = true
@@ -1129,11 +1442,17 @@ struct Settings: Codable, Equatable {
     var snapDragEnabled: Bool = true
     var snapOnWindowDragEnabled: Bool = true
     var snapActivationDelay: Double = 0.45
+    var snapWindowAnimation: SnapWindowAnimation = .fast
     var defaultSnapLayout: SnapLayout = LayoutTemplate.columns
     var appSpecificLayoutConfigurations: [String: AppSnapLayoutConfiguration] = [:]
     var customSnapLayouts: [SnapLayout] = []
     var snapZoneLayoutOptions: [UUID] = [LayoutTemplate.fancy.id, LayoutTemplate.quarters.id, LayoutTemplate.splitscreen.id, LayoutTemplate.focus.id, LayoutTemplate.fullscreen.id]
+    var snapZoneShortcuts: [SnapZoneShortcut] = []
     var planes: [Plane] = []
+
+    // MARK: - Per-shortcut disabling (Keyboard Shortcuts page)
+
+    var disabledShortcutIDs: Set<String> = []
     var batteryChargeLimit: Int = 100
     var lowBatteryNotificationPercentage: Int = 20
     var lowBatteryNotificationSoundEnabled: Bool = true
@@ -1178,6 +1497,8 @@ struct Settings: Codable, Equatable {
     var bluetoothUnlockMinScanRSSI: Int = -80
     var bluetoothUnlockPassiveMode: Bool = false
     var faceIDUnlockEnabled: Bool = false
+    var faceIDLocationPolicy: FaceIDLocationPolicy = .everywhere
+    var faceIDAllowedWiFiNetworks: [String] = []
     var faceIDAntiSpoofEnabled: Bool = true
     var hasRegisteredFaceID: Bool = false
     var faceIDSpoofLockDuration: Double = 3.0
@@ -1206,9 +1527,58 @@ struct Settings: Codable, Equatable {
     var neardropDeviceDisplayName: String = Host.current().localizedName ?? "My Mac"
     var neardropDownloadLocationPath: String = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.path
     var neardropOpenOnClick: Bool = true
+
+    // MARK: Android ⇄ Mac Continuity (see Sapphire/Services/Continuity)
+    var continuityEnabled: Bool = false
+    var continuityClipboardSync: Bool = true
+    var continuityClipboardImages: Bool = true
+    var continuityClipboardFiles: Bool = true
+    var continuityNotifications: Bool = true
+    var continuityNotificationsAsBanners: Bool = false
+    var continuityNotificationsGeneral: Bool = false
+    var continuityNotificationsSystem: Bool = false
+    var continuityExternalLiveActivities: Bool = true
+    var continuityPhoneMediaInMusicPlayer: Bool = true
+    var continuityHandoffToPhone: Bool = true
+    var continuityCameraSystemDevice: Bool = true
+    var continuityMic: Bool = true
+    var continuityHandoffDiagnostics: Bool = false
+    var continuityHandoffExperimentalApps: Bool = false
+    var continuityBlockIPhoneMirroring: Bool = false
+    var continuitySyncNotificationMode: Bool = true
+    var continuitySyncFocusSessionStatus: Bool = false
+    var continuitySyncFocusSessionSettings: Bool = false
+    var continuitySyncFocus: Bool = true
+    var continuityMediaControls: Bool = true
+    var continuityShowPhoneBattery: Bool = true
+    var continuityStatusLiveActivityEnabled: Bool = true
+    var continuityHotspot: Bool = true
+    var continuityFiles: Bool = true
+    var continuityHandoff: Bool = true
+    var continuityCamera: Bool = true
+    var continuityScan: Bool = true
+    var continuitySketch: Bool = true
+    var continuityMirroring: Bool = true
+    var continuitySidecar: Bool = false
+    var continuityUniversalControl: Bool = false
+    var continuityUniversalControlEdge: String = "right"
+    var continuityAudioCast: Bool = true
+    var continuityWidgets: Bool = true
+    var continuitySMS: Bool = false
+    var continuityHotspotDataLink: Bool = false
+    var continuityPhotoAutoSync: Bool = false
+    var continuityPhotoAutoAlbumId: String = ""
+    var continuityFinderPhotoAlbum: Bool = false
+    var continuityFinderDisk: Bool = false
+    var continuityEarbudHandoff: Bool = true
+    var continuityCloudflareRelay: Bool = true
+    var continuityRemoteAccess: Bool = false
+
     var clickToOpenFileShelf: Bool = true
     var hoverToOpenFileShelf: Bool = true
     var removeFileFromShelfAfterDrag: Bool = false
+    var fileShelfAirDropDestinationEnabled: Bool = true
+    var fileShelfDeviceDestinationsEnabled: Bool = false
     var launchpadLayout: [[LaunchpadPageItem]] = []
     var weatherUseCelsius: Bool = false
     var weatherUseMetricSystem: Bool = false
@@ -1226,6 +1596,17 @@ struct Settings: Codable, Equatable {
     var caffeinateTimeoutMinutes: Double = 0
     var caffeinateTurnOffScreenUsingLidAngle: Bool = false
     var caffeinateLidAngleTrigger: Double = 15.0
+    var caffeinateAutoDuringTasks: Bool = false
+    var caffeinateAutoTaskGrace: Double = 120
+    var caffeinateAutoTaskKinds: Set<String> = ["ai", "build"]
+
+    // MARK: - Developer Activity
+
+    var devActivityEnabled: Bool = true
+    var devActivityKinds: Set<String> = ["ai", "build", "command"]
+    var devActivityDetectIDEAgents: Bool = true
+    var devActivitySensitivity: Double = 1.0
+    var devActivityHighPriority: Bool = false
     var lidAnglePauseMediaEnabled: Bool = false
     var lidAnglePauseMediaTrigger: Double = 18.0
     var lidAngleMuteAudioEnabled: Bool = false
@@ -1236,6 +1617,11 @@ struct Settings: Codable, Equatable {
     var lidAngleLowPowerModeTrigger: Double = 35.0
 
     var menuBarEnabled: Bool = false
+    var menuBarProfilesEnabled: Bool = false
+    var menuBarProfiles: [MenuBarProfile] = []
+
+    var showOnlyRunningAppsInDock: Bool = false
+
     var showOnClick: Bool = true
     var showOnHover: Bool = true
     var showOnHoverDelay: TimeInterval = 0.4
@@ -1406,11 +1792,11 @@ enum ControlItemIconStyle: String, Codable, CaseIterable, Identifiable {
 
 private enum SettingsPersistence {
     static let payloadKey = "sapphire.settings.payload"
-    static let encoder: JSONEncoder = {
+    static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return encoder
-    }()
+    }
     static let decoder = JSONDecoder()
 
     static let legacyAPIKeyUserDefaultsKeys: Set<String> = [
@@ -1480,39 +1866,60 @@ private enum SettingsPersistence {
     // MARK: - Tolerant decoding
 
     private static func decodeDictionaryTolerantly(_ dictionary: [String: Any]) -> Settings? {
+        var dictionary = dictionary
+        if dictionary["systemEnhanceDockClicksAllAppsEnabled"] == nil,
+           dictionary["systemEnhanceDockClicksSelectedApps"] != nil {
+            dictionary["systemEnhanceDockClicksAllAppsEnabled"] = false
+        }
         if let settings = decodeFromJSONDictionary(dictionary) {
             return settings
         }
         guard let defaults = encodeToDictionary(Settings()) else { return nil }
 
-        var merged = deepMergedDictionary(defaults: defaults, incoming: dictionary)
-        if let settings = decodeFromJSONDictionary(merged) {
-            return settings
-        }
-
+        var merged = defaults
         var droppedKeys: [String] = []
-        while decodeFromJSONDictionary(merged) == nil {
-            var repaired = false
-            for key in dictionary.keys {
-                var candidate = merged
-                if let defaultValue = defaults[key] {
-                    candidate[key] = defaultValue
-                } else {
-                    candidate.removeValue(forKey: key)
-                }
-                if decodeFromJSONDictionary(candidate) != nil {
-                    merged = candidate
-                    droppedKeys.append(key)
-                    repaired = true
-                    break
-                }
+        let entries: [(key: String, value: Any)] = dictionary.keys.sorted().compactMap { key in
+            guard let incomingValue = dictionary[key] else { return nil }
+            let value: Any
+            if let incomingDict = incomingValue as? [String: Any],
+               let defaultDict = defaults[key] as? [String: Any] {
+                value = deepMergedDictionary(defaults: defaultDict, incoming: incomingDict)
+            } else {
+                value = incomingValue
             }
-            if !repaired { return nil }
+            return (key, value)
         }
+        applyCompatibleEntries(entries[...], to: &merged, droppedKeys: &droppedKeys)
         if !droppedKeys.isEmpty {
             print("[SettingsModel] Settings import: reverted incompatible keys to defaults: \(droppedKeys.sorted())")
         }
         return decodeFromJSONDictionary(merged)
+    }
+
+    private static func applyCompatibleEntries(
+        _ entries: ArraySlice<(key: String, value: Any)>,
+        to merged: inout [String: Any],
+        droppedKeys: inout [String]
+    ) {
+        guard !entries.isEmpty else { return }
+
+        var candidate = merged
+        for entry in entries {
+            candidate[entry.key] = entry.value
+        }
+        if decodeFromJSONDictionary(candidate) != nil {
+            merged = candidate
+            return
+        }
+
+        guard entries.count > 1 else {
+            if let entry = entries.first { droppedKeys.append(entry.key) }
+            return
+        }
+
+        let midpoint = entries.index(entries.startIndex, offsetBy: entries.count / 2)
+        applyCompatibleEntries(entries[..<midpoint], to: &merged, droppedKeys: &droppedKeys)
+        applyCompatibleEntries(entries[midpoint...], to: &merged, droppedKeys: &droppedKeys)
     }
 
     private static func decodeFromJSONDictionary(_ dictionary: [String: Any]) -> Settings? {
@@ -1541,7 +1948,7 @@ private enum SettingsPersistence {
     static func isJSONCompatible(_ value: Any) -> Bool {
         if value is String || value is Bool || value is NSNull { return true }
         if value is Int || value is Double || value is Float { return true }
-        if let number = value as? NSNumber { return true }
+        if value is NSNumber { return true }
         if let array = value as? [Any] { return array.allSatisfy(isJSONCompatible) }
         if let dictionary = value as? [String: Any] { return dictionary.values.allSatisfy(isJSONCompatible) }
         if let array = value as? NSArray { return array.allSatisfy { isJSONCompatible($0) } }
@@ -1569,19 +1976,225 @@ private enum SettingsPersistence {
     }
 }
 
+struct EventHandlingSettingsSnapshot {
+    let clipboardFinderCutPasteEnabled: Bool
+    let clipboardFinderPasteImagesAsPNG: Bool
+    let clipboardFinderF2RenameEnabled: Bool
+    let snippetsEnabled: Bool
+    let snippetsExpandAfterSpace: Bool
+    let snippetByTrigger: [String: SnippetEntry]
+
+    let enableVolumeHUD: Bool
+    let enableBrightnessHUD: Bool
+
+    let mouseControlEnabled: Bool
+    let mouseInvertScroll: Bool
+    let mouseInvertHorizontalScroll: Bool
+    let mouseScrollSpeed: Double
+    let mouseMiddleButtonAction: MouseButtonAction
+    let mouseButton4Action: MouseButtonAction
+    let mouseButton5Action: MouseButtonAction
+    let mouseMiddleModifiedAction: MouseButtonAction
+    let mouseButton4ModifiedAction: MouseButtonAction
+    let mouseButton5ModifiedAction: MouseButtonAction
+    let mouseModifierButtonEnabled: Bool
+    let mouseModifierButtonNumber: Int
+    let mouseModifierSelection: MouseModifierSelection
+    let mouseExtraClickFilterEnabled: Bool
+    let mouseExtraClickFilterInterval: Double
+    let mouseExcludedAppBundleIDs: Set<String>
+
+    let systemEnhanceGreenMaximizeEnabled: Bool
+    let systemEnhanceQuitProtectionEnabled: Bool
+    let systemEnhanceQuitProtectionProtectQuit: Bool
+    let systemEnhanceQuitProtectionProtectClose: Bool
+    let systemEnhanceQuitProtectionHoldInterval: Double
+    let systemEnhanceQuitProtectionDoublePressInterval: Double
+    let systemEnhanceQuitProtectionExcludedApps: Set<String>
+    let systemEnhanceQuitProtectionMode: SEQuitProtectionMode
+    let systemEnhanceQuitProtectionExtraModifier: SEQuitProtectionExtraModifier
+    let systemEnhanceDockClicksEnabled: Bool
+    let systemEnhanceDockClicksAllAppsEnabled: Bool
+    let systemEnhanceDockClicksSelectedApps: Set<String>
+    let systemEnhanceDockClicksExcludedApps: Set<String>
+    let systemEnhanceDockClickAction: SEDockClickAction
+
+    func isDockClickEnabled(for bundleIdentifier: String) -> Bool {
+        if systemEnhanceDockClicksAllAppsEnabled {
+            return !systemEnhanceDockClicksExcludedApps.contains(bundleIdentifier)
+        }
+        return systemEnhanceDockClicksSelectedApps.contains(bundleIdentifier)
+    }
+
+    let keyboardDebounceEnabled: Bool
+    let keyboardDebounceInterval: TimeInterval
+    let superKeyEnabled: Bool
+    let superKeyKey: SESuperKeyKey
+    let superKeyCombo: SESuperKeyCombo
+    let superKeyTapAction: SESuperKeyTapAction
+
+    static func hasSameInputs(_ lhs: Settings, _ rhs: Settings) -> Bool {
+        hasSameClipboardInputs(lhs, rhs)
+            && hasSameMouseInputs(lhs, rhs)
+            && hasSameSystemEnhanceInputs(lhs, rhs)
+            && hasSameKeyboardInputs(lhs, rhs)
+            && lhs.enableVolumeHUD == rhs.enableVolumeHUD
+            && lhs.enableBrightnessHUD == rhs.enableBrightnessHUD
+    }
+
+    private static func hasSameClipboardInputs(_ lhs: Settings, _ rhs: Settings) -> Bool {
+        lhs.clipboardFinderCutPasteEnabled == rhs.clipboardFinderCutPasteEnabled
+            && lhs.clipboardFinderPasteImagesAsPNG == rhs.clipboardFinderPasteImagesAsPNG
+            && lhs.clipboardFinderF2RenameEnabled == rhs.clipboardFinderF2RenameEnabled
+            && lhs.snippetsEnabled == rhs.snippetsEnabled
+            && lhs.snippetsExpandAfterSpace == rhs.snippetsExpandAfterSpace
+            && lhs.snippetsList == rhs.snippetsList
+    }
+
+    private static func hasSameMouseInputs(_ lhs: Settings, _ rhs: Settings) -> Bool {
+        lhs.mouseControlEnabled == rhs.mouseControlEnabled
+            && lhs.mouseInvertScroll == rhs.mouseInvertScroll
+            && lhs.mouseInvertHorizontalScroll == rhs.mouseInvertHorizontalScroll
+            && lhs.mouseScrollSpeed == rhs.mouseScrollSpeed
+            && lhs.mouseMiddleButtonAction == rhs.mouseMiddleButtonAction
+            && lhs.mouseButton4Action == rhs.mouseButton4Action
+            && lhs.mouseButton5Action == rhs.mouseButton5Action
+            && lhs.mouseMiddleModifiedAction == rhs.mouseMiddleModifiedAction
+            && lhs.mouseButton4ModifiedAction == rhs.mouseButton4ModifiedAction
+            && lhs.mouseButton5ModifiedAction == rhs.mouseButton5ModifiedAction
+            && lhs.mouseModifierButtonEnabled == rhs.mouseModifierButtonEnabled
+            && lhs.mouseModifierButtonNumber == rhs.mouseModifierButtonNumber
+            && lhs.mouseModifierSelection == rhs.mouseModifierSelection
+            && lhs.mouseExtraClickFilterEnabled == rhs.mouseExtraClickFilterEnabled
+            && lhs.mouseExtraClickFilterInterval == rhs.mouseExtraClickFilterInterval
+            && lhs.mouseExcludedAppBundleIDs == rhs.mouseExcludedAppBundleIDs
+    }
+
+    private static func hasSameSystemEnhanceInputs(_ lhs: Settings, _ rhs: Settings) -> Bool {
+        lhs.systemEnhanceGreenMaximizeEnabled == rhs.systemEnhanceGreenMaximizeEnabled
+            && lhs.systemEnhanceQuitProtectionEnabled == rhs.systemEnhanceQuitProtectionEnabled
+            && lhs.systemEnhanceQuitProtectionProtectQuit == rhs.systemEnhanceQuitProtectionProtectQuit
+            && lhs.systemEnhanceQuitProtectionProtectClose == rhs.systemEnhanceQuitProtectionProtectClose
+            && lhs.systemEnhanceQuitProtectionHoldInterval == rhs.systemEnhanceQuitProtectionHoldInterval
+            && lhs.systemEnhanceQuitProtectionDoublePressInterval == rhs.systemEnhanceQuitProtectionDoublePressInterval
+            && lhs.systemEnhanceQuitProtectionExcludedApps == rhs.systemEnhanceQuitProtectionExcludedApps
+            && lhs.systemEnhanceQuitProtectionMode == rhs.systemEnhanceQuitProtectionMode
+            && lhs.systemEnhanceQuitProtectionExtraModifier == rhs.systemEnhanceQuitProtectionExtraModifier
+            && lhs.systemEnhanceDockClicksEnabled == rhs.systemEnhanceDockClicksEnabled
+            && lhs.systemEnhanceDockClicksAllAppsEnabled == rhs.systemEnhanceDockClicksAllAppsEnabled
+            && lhs.systemEnhanceDockClicksSelectedApps == rhs.systemEnhanceDockClicksSelectedApps
+            && lhs.systemEnhanceDockClicksExcludedApps == rhs.systemEnhanceDockClicksExcludedApps
+            && lhs.systemEnhanceDockClickAction == rhs.systemEnhanceDockClickAction
+    }
+
+    private static func hasSameKeyboardInputs(_ lhs: Settings, _ rhs: Settings) -> Bool {
+        lhs.keyboardDebounceEnabled == rhs.keyboardDebounceEnabled
+            && lhs.keyboardDebounceInterval == rhs.keyboardDebounceInterval
+            && lhs.superKeyEnabled == rhs.superKeyEnabled
+            && lhs.superKeyKey == rhs.superKeyKey
+            && lhs.superKeyCombo == rhs.superKeyCombo
+            && lhs.superKeyTapAction == rhs.superKeyTapAction
+    }
+
+    init(settings: Settings) {
+        clipboardFinderCutPasteEnabled = settings.clipboardFinderCutPasteEnabled
+        clipboardFinderPasteImagesAsPNG = settings.clipboardFinderPasteImagesAsPNG
+        clipboardFinderF2RenameEnabled = settings.clipboardFinderF2RenameEnabled
+        snippetsEnabled = settings.snippetsEnabled
+        snippetsExpandAfterSpace = settings.snippetsExpandAfterSpace
+        var snippets = [String: SnippetEntry](minimumCapacity: settings.snippetsList.count)
+        for entry in settings.snippetsList
+            where entry.isEnabled && !entry.trigger.isEmpty && snippets[entry.trigger] == nil {
+            snippets[entry.trigger] = entry
+        }
+        snippetByTrigger = snippets
+
+        enableVolumeHUD = settings.enableVolumeHUD
+        enableBrightnessHUD = settings.enableBrightnessHUD
+
+        mouseControlEnabled = settings.mouseControlEnabled
+        mouseInvertScroll = settings.mouseInvertScroll
+        mouseInvertHorizontalScroll = settings.mouseInvertHorizontalScroll
+        mouseScrollSpeed = settings.mouseScrollSpeed
+        mouseMiddleButtonAction = settings.mouseMiddleButtonAction
+        mouseButton4Action = settings.mouseButton4Action
+        mouseButton5Action = settings.mouseButton5Action
+        mouseMiddleModifiedAction = settings.mouseMiddleModifiedAction
+        mouseButton4ModifiedAction = settings.mouseButton4ModifiedAction
+        mouseButton5ModifiedAction = settings.mouseButton5ModifiedAction
+        mouseModifierButtonEnabled = settings.mouseModifierButtonEnabled
+        mouseModifierButtonNumber = settings.mouseModifierButtonNumber
+        mouseModifierSelection = settings.mouseModifierSelection
+        mouseExtraClickFilterEnabled = settings.mouseExtraClickFilterEnabled
+        mouseExtraClickFilterInterval = settings.mouseExtraClickFilterInterval
+        mouseExcludedAppBundleIDs = Set(settings.mouseExcludedAppBundleIDs)
+
+        systemEnhanceGreenMaximizeEnabled = settings.systemEnhanceGreenMaximizeEnabled
+        systemEnhanceQuitProtectionEnabled = settings.systemEnhanceQuitProtectionEnabled
+        systemEnhanceQuitProtectionProtectQuit = settings.systemEnhanceQuitProtectionProtectQuit
+        systemEnhanceQuitProtectionProtectClose = settings.systemEnhanceQuitProtectionProtectClose
+        systemEnhanceQuitProtectionHoldInterval = settings.systemEnhanceQuitProtectionHoldInterval
+        systemEnhanceQuitProtectionDoublePressInterval = settings.systemEnhanceQuitProtectionDoublePressInterval
+        systemEnhanceQuitProtectionExcludedApps = Set(settings.systemEnhanceQuitProtectionExcludedApps)
+        systemEnhanceQuitProtectionMode = settings.systemEnhanceQuitProtectionMode
+        systemEnhanceQuitProtectionExtraModifier = settings.systemEnhanceQuitProtectionExtraModifier
+        systemEnhanceDockClicksEnabled = settings.systemEnhanceDockClicksEnabled
+        systemEnhanceDockClicksAllAppsEnabled = settings.systemEnhanceDockClicksAllAppsEnabled
+        systemEnhanceDockClicksSelectedApps = Set(settings.systemEnhanceDockClicksSelectedApps)
+        systemEnhanceDockClicksExcludedApps = Set(settings.systemEnhanceDockClicksExcludedApps)
+        systemEnhanceDockClickAction = settings.systemEnhanceDockClickAction
+
+        keyboardDebounceEnabled = settings.keyboardDebounceEnabled
+        keyboardDebounceInterval = settings.keyboardDebounceInterval
+        superKeyEnabled = settings.superKeyEnabled
+        superKeyKey = settings.superKeyKey
+        superKeyCombo = settings.superKeyCombo
+        superKeyTapAction = settings.superKeyTapAction
+    }
+}
+
 // MARK: - SettingsModel Class
 class SettingsModel: ObservableObject {
     static let shared = SettingsModel()
 
+    @Published private(set) var revision: UInt64 = 0
+
+    private let snapshotLock = NSLock()
+    private var eventHandlingSnapshot = EventHandlingSettingsSnapshot(settings: Settings())
+
+    var eventHandlingSettings: EventHandlingSettingsSnapshot {
+        snapshotLock.lock()
+        defer { snapshotLock.unlock() }
+        return eventHandlingSnapshot
+    }
+
+    private func publishSnapshot(_ value: Settings) {
+        let snapshot = EventHandlingSettingsSnapshot(settings: value)
+        snapshotLock.lock()
+        eventHandlingSnapshot = snapshot
+        snapshotLock.unlock()
+    }
+
     @Published var settings: Settings = Settings() {
         didSet {
+            if !EventHandlingSettingsSnapshot.hasSameInputs(oldValue, settings) {
+                publishSnapshot(settings)
+            }
+            revision &+= 1
             guard !isApplyingLoadedSettings else { return }
             if settings.volumeHUDSoundEnabled != oldValue.volumeHUDSoundEnabled {
                 SystemSoundFeedback.isVolumeChangeFeedbackEnabled = settings.volumeHUDSoundEnabled
             }
+            if Self.intelligenceRuntimePreferencesChanged(from: oldValue, to: settings) {
+                applyIntelligenceRuntimePreferences(from: settings)
+            }
+            guard !settings.hasSameNormalizationInputs(as: oldValue) else {
+                scheduleSaveSettings()
+                return
+            }
             var sanitized = settings
             sanitized.normalizeCollectionOrders()
-            if sanitized != settings {
+            if !sanitized.hasSameNormalizedCollections(as: settings) {
                 isApplyingLoadedSettings = true
                 settings = sanitized
                 isApplyingLoadedSettings = false
@@ -1592,27 +2205,67 @@ class SettingsModel: ObservableObject {
         }
     }
 
+    // MARK: High-frequency runtime state
+    private static let brightnessKey = "runtime.brightness"
+    private static let notchNavigationStackKey = "runtime.lastNotchNavigationStack"
+
+    private let brightnessChanges = PassthroughSubject<Float, Never>()
+    var brightnessPublisher: AnyPublisher<Float, Never> {
+        brightnessChanges.eraseToAnyPublisher()
+    }
+
+    var brightness: Float = 1.0 {
+        didSet {
+            guard brightness != oldValue else { return }
+            brightnessChanges.send(brightness)
+            defaults.set(brightness, forKey: Self.brightnessKey)
+        }
+    }
+
+    var lastNotchNavigationStack: [RestorableNotchMenu]? {
+        didSet {
+            guard lastNotchNavigationStack != oldValue else { return }
+            if let stack = lastNotchNavigationStack, let data = try? JSONEncoder().encode(stack) {
+                defaults.set(data, forKey: Self.notchNavigationStackKey)
+            } else {
+                defaults.removeObject(forKey: Self.notchNavigationStackKey)
+            }
+        }
+    }
+
     private let defaults = UserDefaults.standard
     private let settingsAccessQueue = DispatchQueue(label: "com.cshariq.sapphire.settings.sync.queue")
+    private let settingsAccessQueueKey = DispatchSpecificKey<UInt8>()
+    private let persistenceStateLock = NSLock()
     private var isApplyingLoadedSettings = false
     private var pendingSaveWorkItem: DispatchWorkItem?
+    private var pendingSaveGeneration: UInt64 = 0
 
-    private var lastPersistedSettings: Settings?
-    private var isPersisting = false
+    private var lastPersistedRevision: UInt64?
 
     private init() {
+        settingsAccessQueue.setSpecific(key: settingsAccessQueueKey, value: 1)
         _ = APIKeyManager.shared
-        let loaded = Self.readSettingsFromStorage()
+        var loaded = Self.readSettingsFromStorage()
+        loaded.normalizeCollectionOrders()
+        loaded.volumeHUDSoundEnabled = SystemSoundFeedback.isVolumeChangeFeedbackEnabled
         isApplyingLoadedSettings = true
         settings = loaded
         isApplyingLoadedSettings = false
-
-        settings.volumeHUDSoundEnabled = SystemSoundFeedback.isVolumeChangeFeedbackEnabled
-
         applyIntelligenceRuntimePreferences(from: loaded)
-        lastPersistedSettings = settings
-        persistSettingsUnlocked(settings)
-        SettingsPersistence.removeImportedSettingsSnapshots()
+        brightness = (defaults.object(forKey: Self.brightnessKey) as? NSNumber)?.floatValue ?? loaded.brightness
+        lastNotchNavigationStack = defaults.data(forKey: Self.notchNavigationStackKey)
+            .flatMap { try? JSONDecoder().decode([RestorableNotchMenu].self, from: $0) }
+            ?? loaded.lastNotchNavigationStack
+
+        let initialSettings = settings
+        let initialRevision = revision
+        settingsAccessQueue.async { [weak self] in
+            guard let self else { return }
+            if self.persistSettingsUnlocked(initialSettings, revision: initialRevision) {
+                SettingsPersistence.removeImportedSettingsSnapshots()
+            }
+        }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.willResignActiveNotification,
@@ -1674,7 +2327,16 @@ class SettingsModel: ObservableObject {
             defaults.set(true, forKey: "focusDefaultsAppliedV1")
         }
 
-        loaded.disableUnavailablePremiumFeatures()
+        if defaults.object(forKey: "hingeAnimationDuoTuningV2") == nil {
+            if loaded.systemEnhanceHingeAnimationActivationAngle == 105 {
+                loaded.systemEnhanceHingeAnimationActivationAngle = 90
+            }
+            if loaded.systemEnhanceHingeAnimationBlur == 18 {
+                loaded.systemEnhanceHingeAnimationBlur = 135
+            }
+            defaults.set(true, forKey: "hingeAnimationDuoTuningV2")
+        }
+
         return loaded
     }
 
@@ -1698,6 +2360,11 @@ class SettingsModel: ObservableObject {
             }
         }
 
+        if defaults.object(forKey: "systemEnhanceDockClicksSelectedApps") != nil,
+           defaults.object(forKey: "systemEnhanceDockClicksAllAppsEnabled") == nil {
+            dictionary["systemEnhanceDockClicksAllAppsEnabled"] = false
+        }
+
         return SettingsPersistence.decodeFromDictionary(dictionary)
     }
 
@@ -1712,13 +2379,30 @@ class SettingsModel: ObservableObject {
         BlipModelPreferences.nvidiaModel = loadedSettings.intelligenceNVIDIAModel.rawValue
     }
 
+    private static func intelligenceRuntimePreferencesChanged(from old: Settings, to new: Settings) -> Bool {
+        old.intelligenceGeminiModel != new.intelligenceGeminiModel
+            || old.intelligenceGeminiSpeedMode != new.intelligenceGeminiSpeedMode
+            || old.intelligenceBackend != new.intelligenceBackend
+            || old.intelligenceOpenAIModel != new.intelligenceOpenAIModel
+            || old.intelligenceAnthropicModel != new.intelligenceAnthropicModel
+            || old.intelligenceOpenRouterModel != new.intelligenceOpenRouterModel
+            || old.intelligenceXAIModel != new.intelligenceXAIModel
+            || old.intelligenceNVIDIAModel != new.intelligenceNVIDIAModel
+    }
+
     private func scheduleSaveSettings() {
-        guard settings != lastPersistedSettings || pendingSaveWorkItem != nil else { return }
+        guard revision != persistedRevision() else { return }
         pendingSaveWorkItem?.cancel()
-        var snapshot = settings
-        snapshot.normalizeCollectionOrders()
+        let snapshot = settings
+        let snapshotRevision = revision
+        let generation = advanceSaveGeneration()
         let work = DispatchWorkItem { [weak self] in
-            self?.persistSettingsUnlocked(snapshot)
+            guard let self, self.isCurrentSaveGeneration(generation) else { return }
+            self.persistSettingsUnlocked(snapshot, revision: snapshotRevision)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isCurrentSaveGeneration(generation) else { return }
+                self.pendingSaveWorkItem = nil
+            }
         }
         pendingSaveWorkItem = work
         settingsAccessQueue.asyncAfter(deadline: .now() + .milliseconds(150), execute: work)
@@ -1727,34 +2411,66 @@ class SettingsModel: ObservableObject {
     func flushPendingSave() {
         pendingSaveWorkItem?.cancel()
         pendingSaveWorkItem = nil
-        guard settings != lastPersistedSettings else { return }
-        persistSettingsUnlocked(settings)
+        _ = advanceSaveGeneration()
+
+        let snapshot = settings
+        let snapshotRevision = revision
+        guard snapshotRevision != persistedRevision() else { return }
+
+        let write: () -> Void = { [self] in
+            _ = persistSettingsUnlocked(snapshot, revision: snapshotRevision)
+        }
+        if DispatchQueue.getSpecific(key: settingsAccessQueueKey) != nil {
+            write()
+        } else {
+            settingsAccessQueue.sync(execute: write)
+        }
     }
 
-    private func persistSettingsUnlocked(_ settingsToPersist: Settings? = nil) {
-        var settingsToSave = settingsToPersist ?? settings
+    @discardableResult
+    private func persistSettingsUnlocked(_ settingsToPersist: Settings, revision persistedRevision: UInt64) -> Bool {
+        var settingsToSave = settingsToPersist
         if Thread.isMainThread {
             settingsToSave.normalizeCollectionOrders()
         }
-        applyIntelligenceRuntimePreferences(from: settingsToSave)
 
         guard let payload = try? SettingsPersistence.encoder.encode(settingsToSave) else {
             print("[SettingsModel] Failed to encode settings payload.")
-            return
+            return false
         }
         defaults.set(payload, forKey: SettingsPersistence.payloadKey)
 
-        if let dictionary = SettingsPersistence.encodeToDictionary(settingsToSave) {
-            for (key, value) in dictionary {
-                defaults.set(value, forKey: key)
-            }
-        }
+        persistenceStateLock.lock()
+        lastPersistedRevision = persistedRevision
+        persistenceStateLock.unlock()
+        return true
+    }
 
-        lastPersistedSettings = settingsToSave
+    private func persistedRevision() -> UInt64? {
+        persistenceStateLock.lock()
+        defer { persistenceStateLock.unlock() }
+        return lastPersistedRevision
+    }
+
+    private func advanceSaveGeneration() -> UInt64 {
+        persistenceStateLock.lock()
+        pendingSaveGeneration &+= 1
+        let generation = pendingSaveGeneration
+        persistenceStateLock.unlock()
+        return generation
+    }
+
+    private func isCurrentSaveGeneration(_ generation: UInt64) -> Bool {
+        persistenceStateLock.lock()
+        defer { persistenceStateLock.unlock() }
+        return pendingSaveGeneration == generation
     }
 
     func makeBackupDocument() -> SettingsBackupDocument {
-        SettingsBackupDocument(settings: settings)
+        var snapshot = settings
+        snapshot.brightness = brightness
+        snapshot.lastNotchNavigationStack = lastNotchNavigationStack
+        return SettingsBackupDocument(settings: snapshot)
     }
 
     func volumeSliderStep(forDeviceUID uid: String?) -> Int {
@@ -1767,20 +2483,35 @@ class SettingsModel: ObservableObject {
         let importedPayload = try SettingsBackupDocument.decodePayload(from: data)
         var importedSettings = importedPayload.settings
         importedSettings.normalizeCollectionOrders()
-        importedSettings.disableUnavailablePremiumFeatures()
         settings = importedSettings
+        lastNotchNavigationStack = importedSettings.lastNotchNavigationStack
     }
 
     func resetAllSettings() {
         settings = Settings()
+        lastNotchNavigationStack = nil
     }
 
-    func sanitizePremiumFeatureSettings() {
-        var sanitized = settings
-        sanitized.disableUnavailablePremiumFeatures()
-        ReleaseChannelPolicy.reconcileStoredPreference(&sanitized)
-        if sanitized != settings {
-            settings = sanitized
+    func removeReferences(toApplication bundleIdentifier: String) {
+        guard AppSecurityValidator.isSafeIdentifier(bundleIdentifier) else { return }
+        var updated = settings
+        updated.systemEnhanceDockClicksSelectedApps.removeAll { $0 == bundleIdentifier }
+        updated.systemEnhanceDockClicksExcludedApps.removeAll { $0 == bundleIdentifier }
+        updated.systemEnhanceAutoQuitExcludedApps.removeAll { $0 == bundleIdentifier }
+        updated.systemEnhanceQuitProtectionExcludedApps.removeAll { $0 == bundleIdentifier }
+        updated.capsLockHorizontalLockAppStates.removeValue(forKey: bundleIdentifier)
+        updated.emojiDisabledAppBundleIDs.remove(bundleIdentifier)
+        updated.mouseExcludedAppBundleIDs.removeAll { $0 == bundleIdentifier }
+        updated.focusBlockedApps.remove(bundleIdentifier)
+        updated.focusAllowedApps.remove(bundleIdentifier)
+        updated.appLockProtectedApps.remove(bundleIdentifier)
+        updated.mediaAppVisibility.removeValue(forKey: bundleIdentifier)
+        updated.musicAppStates.removeValue(forKey: bundleIdentifier)
+        updated.appSpecificLayoutConfigurations.removeValue(forKey: bundleIdentifier)
+        updated.appNotificationStates.removeValue(forKey: bundleIdentifier)
+        if updated != settings {
+            settings = updated
+            flushPendingSave()
         }
     }
 }
@@ -1824,7 +2555,7 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, battery, focusSession, agent
+    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, battery, timer, focusSession, storage, agent
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
@@ -1839,7 +2570,9 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
         case .clipboard: return "Clipboard"
         case .mirror: return "Mirror"
         case .battery: return "Battery"
+        case .timer: return "Timer"
         case .focusSession: return "Focus"
+        case .storage: return "Storage"
         case .agent: return "Agent"
         }
     }
@@ -2120,7 +2853,7 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
     }
 }
 
-struct SystemApp: Identifiable, Equatable {
+struct SystemApp: Identifiable, Equatable, Sendable {
     let id: String, name: String, isBrowser: Bool, url: URL
 }
 
@@ -2133,12 +2866,13 @@ enum AppIconLoader {
     }()
 
     static func icon(for url: URL, maxDimension: CGFloat = 32) -> NSImage {
-        let key = url.path as NSString
+        let dimension = normalizedDimension(maxDimension)
+        let key = "\(url.standardizedFileURL.path)#\(Int(dimension))" as NSString
         if let cached = cache.object(forKey: key) {
             return cached
         }
-        let image = downsample(NSWorkspace.shared.icon(forFile: url.path), maxDimension: maxDimension)
-        cache.setObject(image, forKey: key, cost: Int(maxDimension * maxDimension * 4))
+        let image = downsample(NSWorkspace.shared.icon(forFile: url.path), maxDimension: dimension)
+        cache.setObject(image, forKey: key, cost: Int(dimension * dimension * 4))
         return image
     }
 
@@ -2147,6 +2881,7 @@ enum AppIconLoader {
     }
 
     nonisolated static func downsample(_ image: NSImage, maxDimension: CGFloat) -> NSImage {
+        let maxDimension = normalizedDimension(maxDimension)
         let size = image.size
         guard size.width > maxDimension || size.height > maxDimension else { return image }
         let scale = min(maxDimension / max(size.width, size.height), 1.0)
@@ -2156,6 +2891,11 @@ enum AppIconLoader {
         image.draw(in: NSRect(origin: .zero, size: newSize), from: .zero, operation: .copy, fraction: 1.0)
         newImage.unlockFocus()
         return newImage
+    }
+
+    nonisolated private static func normalizedDimension(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return 32 }
+        return min(max(value.rounded(.up), 1), 4_096)
     }
 }
 
@@ -2240,7 +2980,7 @@ enum HUDStyle: String, Codable, CaseIterable, Identifiable {
 }
 
 enum PillHUDPosition: String, Codable, CaseIterable, Identifiable {
-    case left, right, bottom
+    case left, right, top, bottom
     var id: String { self.rawValue.capitalized }
 }
 
@@ -2288,7 +3028,7 @@ extension UTType {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, apps, storage, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, fileShelf, notes, clipboard, mirror, caffeine, music, weather, calendar, eyeBreak, focusSession, appLock, intelligence, sports, finance, about
+    case general, systemEnhance, apps, storage, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, keyboardShortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, continuity, fileShelf, notes, clipboard, emoji, mouse, monitoring, devActivity, archives, mirror, caffeine, music, weather, calendar, eyeBreak, focusSession, appLock, intelligence, sports, finance, dockLayouts, mediaOptimizer, about
 
     var id: String { self.rawValue }
 
@@ -2317,15 +3057,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         return !SubscriptionAccess.hasAccess(to: requiredPremiumFeature)
     }
 
-    func isPremiumLocked(for tier: SubscriptionTier, features: Set<AppFeature>) -> Bool {
-        guard let requiredPremiumFeature else { return false }
-        if features.contains(requiredPremiumFeature) { return false }
-        return !SubscriptionFeatureCatalog.features(for: tier).contains(requiredPremiumFeature)
-    }
-
     var shortDescription: String {
         switch self {
         case .general: "Core app behavior, launch options, animations, and notch controls."
+        case .systemEnhance: "Window previews, app switching, dock controls, and display behavior."
         case .apps: "Review installed applications, inspect bundle details, and safely move unwanted apps to Trash."
         case .storage: "Find large folders and reclaim space with transparent, user-approved cleanup."
         case .widgets: "Choose which widgets appear in the notch and how they are ordered."
@@ -2334,6 +3069,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .lockScreen: "Configure Sapphire content and behavior while your Mac is locked."
         case .bluetoothUnlock: "Set up proximity-based authentication and trusted device behavior."
         case .shortcuts: "Manage quick actions and shortcut surfaces shown in Sapphire."
+        case .keyboardShortcuts: "Reference page listing every keyboard shortcut in Sapphire — global hotkeys, snap zones, and in-app shortcuts."
         case .snapZones: "Configure window snapping behavior, layouts, and zone actions."
         case .audio: "Audio adjustments, EQ, and per-app volume adjustments."
         case .battery: "Battery widgets, history, charging preferences, and power-related controls."
@@ -2341,9 +3077,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .hud: "Heads-up display overlays for volume, brightness, keyboard, and media feedback."
         case .notifications: "Choose which system notifications Sapphire mirrors or enhances."
         case .neardrop: "Nearby sharing preferences, transfers, and device discovery options."
+        case .continuity: "Pair an Android phone for clipboard, notifications, media, battery, and Instant Hotspot."
         case .fileShelf: "Manage temporary file storage, drag targets, and shelf behavior."
         case .notes: "Quick notes widget, click-to-expand behavior, and notch bar access."
         case .clipboard: "Clipboard history, monitoring, and notch clipboard shortcuts."
+        case .emoji: "Slack-style emoji typing with :shortcode: suggestions and a full search picker."
+        case .mouse: "Mouse and trackpad scroll, acceleration, and button customization."
+        case .monitoring: "Menu bar readouts and notifications for CPU, memory, disk, and network."
+        case .devActivity: "Track AI agents, builds, and terminal commands, and keep the Mac awake while they run."
+        case .archives: "Extract ZIP, RAR, 7-Zip, TAR, and other archives — or auto-mount and install disk images (DMGs) — from anywhere."
         case .mirror: "Mirror widget showing live camera feed, with expandable fullscreen view."
         case .caffeine: "Keep your Mac awake, clamshell sleep behavior, and lid-angle display controls."
         case .music: "Music widget sources, playback controls, and media integrations."
@@ -2355,14 +3097,18 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .intelligence: "Sapphire Blip — Mac agent with memory, skills, tools, and computer use."
         case .sports: "Sports widget settings, favorite teams selection, and scoreboard configurations."
         case .finance: "Stock market ticker configurations, favorite stocks, and trendline visualizations."
-        case .about: "App version details, credits, links, and project information."
+        case .dockLayouts: "Save Dock layouts as presets and switch between them with a click or hotkey."
+        case .mediaOptimizer: "Automatically shrink images, compress media, and extract text with OCR."
+
+        case .about: "App version details, Sapphire updates, release channels, credits, links, and project information."
         }
     }
 
     var searchTokens: [String] {
         switch self {
         case .general: ["startup", "login", "animation", "notch", "system", "behavior", "analytics", "google", "privacy", "tracking", "telemetry", "swipe", "hide", "lock"]
-        case .apps: ["apps", "applications", "uninstall", "cleaner", "appcleaner", "bundle", "extensions", "startup"]
+        case .systemEnhance: ["dock", "preview", "previews", "alt tab", "cmd tab", "window", "switcher", "calendar", "compact", "layout", "lock dock", "monitor", "paste", "plain text", "formatting", "running apps", "hide apps", "static only", "hinge", "lid", "angle", "fold", "folding", "animation", "iphone duo"]
+        case .apps: ["apps", "applications", "uninstall", "cleaner", "appcleaner", "bundle", "extensions", "startup", "update", "updates", "check for updates", "upgrade", "version", "new version", "auto update", "release"]
         case .storage: ["storage", "disk", "space", "large files", "cache", "cleanup", "daisy disk", "scanner"]
         case .widgets: ["widget", "widgets", "reorder", "layout"]
         case .liveActivities: ["live", "activity", "activities", "dynamic", "focus"]
@@ -2370,16 +3116,23 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .lockScreen: ["lock", "screen", "locked"]
         case .bluetoothUnlock: ["authentication", "unlock", "proximity", "trusted", "device"]
         case .shortcuts: ["shortcut", "action", "launcher"]
-        case .snapZones: ["snap", "zones", "window", "tiling", "layout"]
+        case .keyboardShortcuts: ["shortcut", "keyboard", "hotkey", "key", "keys", "reference", "cheat sheet", "list", "global", "command", "modifier"]
+        case .snapZones: ["snap", "zones", "window", "tiling", "layout", "shortcut", "keyboard", "hotkey"]
         case .audio: ["audio", "EQ", "volume", "app", "devices"]
         case .battery: ["battery", "charging", "power", "history"]
         case .bluetooth: ["bluetooth", "devices", "connections"]
         case .hud: ["hud", "overlay", "volume", "brightness", "media", "pill", "position", "edge", "side"]
         case .notifications: ["notifications", "alerts", "imessage", "facetime", "airdrop"]
         case .neardrop: ["nearby", "share", "drop", "transfer"]
+        case .continuity: ["android", "continuity", "phone", "kde connect", "handoff", "universal clipboard", "instant hotspot", "notification mirroring", "phone link"]
         case .fileShelf: ["file", "shelf", "drag", "drop", "storage", "remove"]
         case .notes: ["notes", "note", "memo", "quick note"]
         case .clipboard: ["clipboard", "pasteboard", "history", "copy", "paste"]
+        case .emoji: ["emoji", "emoticon", "shortcut", "shortcode", "slack", "rocket", "smiley", "smile", "gif", "picker", "skin tone", "colon", "symbols", "kaomoji"]
+        case .mouse: ["mouse", "trackpad", "scroll", "scrolling", "acceleration", "pointer", "cursor", "buttons", "remap", "remapping", "linearmouse", "linear mouse", "natural scrolling", "wheel", "sensitivity", "speed", "invert", "modifier", "back", "forward"]
+        case .monitoring: ["monitor", "readout", "menu bar", "cpu", "ram", "memory", "network", "speed", "alerts", "notifications", "disk", "space", "pressure", "usage", "stats"]
+        case .devActivity: ["dev", "developer", "ai", "agent", "agents", "build", "builds", "compile", "compiling", "terminal", "command", "task", "tasks", "progress", "claude", "codex", "cursor", "antigravity", "copilot", "devin", "windsurf", "gemini", "aider", "xcode", "android studio", "gradle", "npm", "cargo", "make", "iterm", "warp", "ghostty", "caffeinate", "awake"]
+        case .archives: ["archive", "unarchive", "extract", "extractor", "unarchiver", "zip", "unzip", "rar", "7z", "7-zip", "tar", "gzip", "bzip2", "xz", "compressed", "password", "encrypted", "iso", "cpio", "uncompress", "dmg", "disk image", "install", "mount", "unmount", "eject", "trash", "cleanup", "easy dmg", "easydmg"]
         case .mirror: ["mirror", "camera", "camera feed", "selfie", "webcam"]
         case .caffeine: ["caffeinate", "caffeine", "sleep", "awake", "clamshell", "lid", "timeout", "timer"]
         case .music: ["music", "media", "spotify", "playback"]
@@ -2391,19 +3144,26 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .intelligence: ["intelligence", "blip", "facet", "nova", "octo", "claw", "connected", "accounts", "gmail", "github", "outlook", "findmy", "gemini", "ai", "assistant", "agent", "automation", "task", "voice", "live", "computer", "control", "accessibility", "memory", "skills", "personalization", "profiling", "monitoring", "privacy", "learning", "behavior", "screenshots", "calendar", "notes", "spotify", "clipboard", "settings", "data", "tracking", "circle", "search", "lasso"]
         case .sports: ["sports", "score", "game", "nfl", "nba", "mlb", "nhl", "team"]
         case .finance: ["finance", "stocks", "market", "ticker", "portfolio", "aapl"]
-        case .about: ["about", "version", "credits", "support"]
+        case .dockLayouts: ["dock", "layout", "preset", "preset switch", "hotkey", "apps"]
+        case .mediaOptimizer: ["image", "video", "audio", "compress", "shrink", "optimize", "ocr", "clipboard", "file shelf"]
+
+        case .about: ["about", "version", "credits", "support", "sapphire update", "check for updates", "release channel", "beta", "automatic updates"]
         }
     }
 
     var requiredPermissions: [PermissionType] {
         switch self {
-        case .hud, .music, .snapZones, .appearance: return [.accessibility]
+        case .systemEnhance, .hud, .music, .snapZones, .appearance, .dockLayouts, .mediaOptimizer: return [.accessibility]
         case .notifications: return [.notifications]
         case .weather: return [.location]
         case .calendar: return [.calendar, .reminders]
         case .bluetooth, .bluetoothUnlock: return [.bluetooth, .accessibility]
+        case .continuity: return [.bluetooth]
         case .liveActivities: return [.focusStatus]
         case .audio: return [.screenRecording]
+        case .clipboard: return [.accessibility]
+        case .emoji: return [.accessibility]
+        case .mouse: return [.accessibility]
         case .intelligence: return [.accessibility, .fullDiskAccess, .screenRecording]
         default: return []
         }
@@ -2411,27 +3171,65 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .general: "General"; case .apps: "Apps"; case .storage: "Storage"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"; case .mirror: "Mirror"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather";        case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .focusSession: "Focus Sessions"; case .appLock: "App Lock"; case .intelligence: "Blip"; case .sports: "Sports"; case .finance: "Finance"; case .about: "About"
+        case .general: "General"; case .systemEnhance: "System Enhance"; case .apps: "Apps"; case .storage: "Storage"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .keyboardShortcuts: "Keyboard Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .continuity: "Android Continuity"; case .fileShelf: "File Shelf"; case .notes: "Notes";        case .clipboard: "Clipboard"; case .emoji: "Emoji"; case .mouse: "Mouse"; case .monitoring: "Monitoring"; case .devActivity: "Dev Activity"; case .archives: "Archives & DMG"; case .mirror: "Mirror"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather";        case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .focusSession: "Focus Sessions"; case .appLock: "App Lock"; case .intelligence: "Blip"; case .sports: "Sports"; case .finance: "Finance"; case .dockLayouts: "Dock"; case .mediaOptimizer: "Media Optimizer"; case .about: "About"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .general: "gear"; case .apps: "square.stack.3d.up.fill"; case .storage: "internaldrive.fill"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .snapZones: "uiwindow.split.2x1"; case .audio: "speaker.circle.fill"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .fileShelf: "tray.full.fill"; case .notes: "note.text"; case .clipboard: "list.clipboard"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill";        case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .focusSession: "moon.fill"; case .appLock: "lock.shield.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .about: "info.circle"
+        case .general: "gear"; case .systemEnhance: "macwindow.on.rectangle"; case .apps: "square.stack.3d.up.fill"; case .storage: "internaldrive.fill"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .keyboardShortcuts: "keyboard"; case .snapZones: "uiwindow.split.2x1"; case .audio: "waveform"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .continuity: "iphone.gen3.radiowaves.left.and.right"; case .fileShelf: "tray.full.fill"; case .notes: "note.text";        case .clipboard: "list.clipboard"; case .emoji: "face.smiling"; case .mouse: "computermouse.fill"; case .monitoring: "gauge.with.dots.needle.50percent"; case .devActivity: "hammer.circle.fill"; case .archives: "archivebox.fill"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill";        case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .focusSession: "moon.fill"; case .appLock: "lock.shield.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .dockLayouts: "dock.rectangle"; case .mediaOptimizer: "photo"; case .about: "info.circle"
         }
     }
 
     var iconBackgroundColor: Color {
         switch self {
-        case .general: .black; case .apps: .purple; case .storage: .orange; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .fileShelf: .orange; case .notes: .yellow; case .clipboard: .mint; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue;        case .calendar: .red; case .eyeBreak: .teal; case .focusSession: .purple; case .appLock: .red; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .about: .blue
+        case .general: .black; case .systemEnhance: .blue; case .apps: .purple; case .storage: .orange; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .keyboardShortcuts: .purple; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .continuity: .green; case .fileShelf: .orange; case .notes: .yellow;        case .clipboard: .mint; case .emoji: .indigo; case .mouse: .teal; case .monitoring: .green; case .devActivity: .purple; case .archives: .brown; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue;        case .calendar: .red; case .eyeBreak: .teal; case .focusSession: .purple; case .appLock: .red; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .dockLayouts: .cyan; case .mediaOptimizer: .orange; case .about: .blue
         }
     }
 
-    var iconGradientColors: [Color]? {
+    var iconGradientColors: [Color] {
         switch self {
-        case .focusSession: return [.purple, .indigo]
-        case .appLock: return [.red, .orange]
-        default: return nil
+        case .general: return [.black, .gray]
+        case .systemEnhance: return [Color(hue: 0.52, saturation: 0.34, brightness: 0.82), Color(hue: 0.52, saturation: 0.48, brightness: 0.56)]
+        case .apps: return [Color(hue: 0.58, saturation: 0.38, brightness: 0.88), Color(hue: 0.58, saturation: 0.52, brightness: 0.64)]
+        case .storage: return [Color(hue: 0.09, saturation: 0.42, brightness: 0.82), Color(hue: 0.09, saturation: 0.54, brightness: 0.57)]
+        case .widgets: return [.gray, .blue]
+        case .liveActivities: return [.cyan, .green]
+        case .appearance: return [Color(hue: 0.70, saturation: 0.38, brightness: 0.86), Color(hue: 0.70, saturation: 0.52, brightness: 0.60)]
+        case .lockScreen: return [Color(hue: 0.98, saturation: 0.48, brightness: 0.88), Color(hue: 0.98, saturation: 0.60, brightness: 0.62)]
+        case .bluetoothUnlock: return [.indigo, .teal]
+        case .shortcuts: return [Color(hue: 0.75, saturation: 0.36, brightness: 0.86), Color(hue: 0.75, saturation: 0.50, brightness: 0.60)]
+        case .keyboardShortcuts: return [Color(hue: 0.78, saturation: 0.40, brightness: 0.86), Color(hue: 0.78, saturation: 0.54, brightness: 0.60)]
+        case .snapZones: return [Color(hue: 0.60, saturation: 0.46, brightness: 0.88), Color(hue: 0.60, saturation: 0.60, brightness: 0.63)]
+        case .audio: return [Color(hue: 0.57, saturation: 0.40, brightness: 0.87), Color(hue: 0.57, saturation: 0.54, brightness: 0.61)]
+        case .battery: return [Color(hue: 0.36, saturation: 0.44, brightness: 0.84), Color(hue: 0.36, saturation: 0.58, brightness: 0.58)]
+        case .bluetooth: return [.blue, .cyan]
+        case .hud: return [.indigo, .cyan]
+        case .notifications: return [.red, .pink]
+        case .neardrop: return [Color(hue: 0.56, saturation: 0.44, brightness: 0.88), Color(hue: 0.56, saturation: 0.58, brightness: 0.62)]
+        case .continuity: return [Color(hue: 0.38, saturation: 0.42, brightness: 0.84), Color(hue: 0.38, saturation: 0.56, brightness: 0.58)]
+        case .fileShelf: return [.orange, .brown]
+        case .notes: return [Color(hue: 0.13, saturation: 0.48, brightness: 0.93), Color(hue: 0.13, saturation: 0.60, brightness: 0.69)]
+        case .clipboard: return [Color(hue: 0.46, saturation: 0.38, brightness: 0.86), Color(hue: 0.46, saturation: 0.52, brightness: 0.59)]
+        case .emoji: return [Color(hue: 0.13, saturation: 0.44, brightness: 0.94), Color(hue: 0.13, saturation: 0.56, brightness: 0.70)]
+        case .mouse: return [Color(hue: 0.61, saturation: 0.08, brightness: 0.70), Color(hue: 0.61, saturation: 0.14, brightness: 0.43)]
+        case .monitoring: return [Color(hue: 0.47, saturation: 0.40, brightness: 0.82), Color(hue: 0.47, saturation: 0.54, brightness: 0.56)]
+        case .devActivity: return [Color(hue: 0.64, saturation: 0.40, brightness: 0.84), Color(hue: 0.64, saturation: 0.54, brightness: 0.58)]
+        case .archives: return [.brown, .gray]
+        case .mirror: return [Color(hue: 0.52, saturation: 0.40, brightness: 0.88), Color(hue: 0.52, saturation: 0.54, brightness: 0.60)]
+        case .caffeine: return [Color(hue: 0.07, saturation: 0.38, brightness: 0.72), Color(hue: 0.07, saturation: 0.50, brightness: 0.48)]
+        case .music: return [Color(hue: 0.91, saturation: 0.42, brightness: 0.88), Color(hue: 0.91, saturation: 0.56, brightness: 0.61)]
+        case .weather: return [.blue, .mint]
+        case .calendar: return [Color(hue: 0.01, saturation: 0.44, brightness: 0.89), Color(hue: 0.01, saturation: 0.58, brightness: 0.63)]
+        case .eyeBreak: return [Color(hue: 0.48, saturation: 0.34, brightness: 0.84), Color(hue: 0.48, saturation: 0.48, brightness: 0.57)]
+        case .focusSession: return [Color(hue: 0.74, saturation: 0.38, brightness: 0.84), Color(hue: 0.74, saturation: 0.52, brightness: 0.58)]
+        case .appLock: return [Color(hue: 0.98, saturation: 0.48, brightness: 0.84), Color(hue: 0.98, saturation: 0.62, brightness: 0.54)]
+        case .intelligence: return [Color(hue: 0.45, saturation: 0.42, brightness: 0.86), Color(hue: 0.78, saturation: 0.46, brightness: 0.78)]
+        case .sports: return [Color(hue: 0.61, saturation: 0.42, brightness: 0.86), Color(hue: 0.61, saturation: 0.56, brightness: 0.59)]
+        case .finance: return [Color(hue: 0.43, saturation: 0.42, brightness: 0.80), Color(hue: 0.43, saturation: 0.56, brightness: 0.53)]
+        case .dockLayouts: return [Color(hue: 0.52, saturation: 0.40, brightness: 0.87), Color(hue: 0.52, saturation: 0.54, brightness: 0.60)]
+        case .mediaOptimizer: return [Color(hue: 0.76, saturation: 0.38, brightness: 0.86), Color(hue: 0.76, saturation: 0.52, brightness: 0.60)]
+        case .about: return [Color(hue: 0.60, saturation: 0.12, brightness: 0.76), Color(hue: 0.60, saturation: 0.24, brightness: 0.50)]
         }
     }
 }
@@ -2457,50 +3255,58 @@ class SystemAppFetcher: ObservableObject {
         guard apps.isEmpty, fetchTask == nil else { return }
         shouldDiscardFetch = false
 
-        fetchTask = Task(priority: .utility) {
-            var fetchedApps: [SystemApp] = []
-            var seenBundleIDs = Set<String>()
-
-            let fileManager = FileManager.default
-            let searchPaths = [
-                "/System/Applications",
-                "/Applications"
-            ] + NSSearchPathForDirectoriesInDomains(.applicationDirectory, .userDomainMask, true)
-
-            for path in searchPaths.compactMap({ $0 }) {
-                guard !Task.isCancelled else { return }
-                guard let enumerator = fileManager.enumerator(
-                    at: URL(fileURLWithPath: path),
-                    includingPropertiesForKeys: [.isApplicationKey, .nameKey],
-                    options: [.skipsHiddenFiles, .skipsPackageDescendants],
-                    errorHandler: nil
-                ) else { continue }
-
-                for case let url as URL in enumerator {
-                    if Task.isCancelled { return }
-                    guard url.pathExtension == "app",
-                          let bundle = Bundle(url: url),
-                          let bundleId = bundle.bundleIdentifier,
-                          !seenBundleIDs.contains(bundleId) else { continue }
-
-                    let name = fileManager.displayName(atPath: url.path)
-                    let isBrowser = Self.isBrowser(bundle: bundle)
-                    let app = SystemApp(id: bundleId, name: name, isBrowser: isBrowser, url: url)
-
-                    fetchedApps.append(app)
-                    seenBundleIDs.insert(bundleId)
-                }
+        fetchTask = Task { @MainActor [weak self] in
+            let worker = Task.detached(priority: .utility) {
+                Self.scanInstalledApps()
+            }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
             }
 
-            let sortedApps = fetchedApps.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            guard let self else { return }
+            defer { self.fetchTask = nil }
+            guard !self.shouldDiscardFetch, !Task.isCancelled, let result else { return }
+            self.apps = result.apps
+            self.foundBundleIDs = result.bundleIDs
+        }
+    }
 
-            await MainActor.run {
-                defer { self.fetchTask = nil }
-                guard !self.shouldDiscardFetch, !Task.isCancelled else { return }
-                self.apps = sortedApps
-                self.foundBundleIDs = seenBundleIDs
+    nonisolated private static func scanInstalledApps() -> (apps: [SystemApp], bundleIDs: Set<String>)? {
+        var fetchedApps: [SystemApp] = []
+        var seenBundleIDs = Set<String>()
+        let fileManager = FileManager.default
+        let searchPaths = ["/System/Applications", "/Applications"]
+            + NSSearchPathForDirectoriesInDomains(.applicationDirectory, .userDomainMask, true)
+
+        for path in searchPaths {
+            guard !Task.isCancelled else { return nil }
+            guard let enumerator = fileManager.enumerator(
+                at: URL(fileURLWithPath: path),
+                includingPropertiesForKeys: [.isApplicationKey, .nameKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                errorHandler: nil
+            ) else { continue }
+
+            while let url = enumerator.nextObject() as? URL {
+                guard !Task.isCancelled else { return nil }
+                guard url.pathExtension == "app",
+                      let bundle = Bundle(url: url),
+                      let bundleID = bundle.bundleIdentifier,
+                      seenBundleIDs.insert(bundleID).inserted else { continue }
+
+                fetchedApps.append(SystemApp(
+                    id: bundleID,
+                    name: fileManager.displayName(atPath: url.path),
+                    isBrowser: isBrowser(bundle: bundle),
+                    url: url
+                ))
             }
         }
+
+        fetchedApps.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return (fetchedApps, seenBundleIDs)
     }
 
     func releaseCachedApps() {

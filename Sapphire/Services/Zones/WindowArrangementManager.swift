@@ -92,14 +92,10 @@ class WindowArrangementManager {
     private func waitForWindow(for app: NSRunningApplication, timeout: TimeInterval) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            let appElement = AXUIElementCreateApplication(app.processIdentifier)
-            var windowListRef: CFTypeRef?
-
-            if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowListRef) == .success {
-                if let windowList = windowListRef as? [AXUIElement], !windowList.isEmpty {
-                    try? await Task.sleep(for: .milliseconds(150))
-                    return true
-                }
+            let appElement = AX.application(pid: app.processIdentifier)
+            if !AX.elements(kAXWindowsAttribute as String, of: appElement).isEmpty {
+                try? await Task.sleep(for: .milliseconds(150))
+                return true
             }
 
             try? await Task.sleep(for: .milliseconds(200))

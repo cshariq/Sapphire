@@ -10,32 +10,28 @@ import UniformTypeIdentifiers
 import QuickLookThumbnailing
 import AppKit
 
-// MARK: - ShelfItem Presentation Metadata
-
-private extension ShelfItem {
-    var contentType: UTType? {
-        (try? storedAt.resourceValues(forKeys: [.contentTypeKey]).contentType) ?? nil
-    }
-
-    var typeDescription: String {
-        contentType?.localizedDescription ?? "Unknown Type"
-    }
-
-    var sizeString: String {
-        guard let values = try? storedAt.resourceValues(forKeys: [.fileSizeKey]),
-              let bytes = values.fileSize else { return "—" }
-        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
-    }
-
-    var typeIconName: String {
-        IconGenerator.symbolName(for: self)
-    }
-}
-
-private struct FileMetadata {
+private struct FileMetadata: Sendable {
     let type: String
     let size: String
     let added: String
+    let iconName: String
+
+    static func load(from url: URL, dateAdded: Date) -> FileMetadata {
+        let values = try? url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey])
+        let contentType = values?.contentType
+        let size = values?.fileSize.map {
+            ByteFormatter.string(Int64($0))
+        } ?? "—"
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return FileMetadata(
+            type: contentType?.localizedDescription ?? "Unknown Type",
+            size: size,
+            added: formatter.string(from: dateAdded),
+            iconName: contentType?.sapphireFileSymbolName ?? "doc.fill"
+        )
+    }
 }
 
 // MARK: - Main Detail View
@@ -52,9 +48,11 @@ struct FileActionView: View {
     @State private var isRenaming = false
     @State private var renameText = ""
     @State private var isConfirmingDelete = false
+    @State private var fileMetadata: FileMetadata?
+    @State private var availableFormats: [ConversionFormat] = []
     @FocusState private var renameFocused: Bool
 
-    private let dateFormatter: DateFormatter = {
+    private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
@@ -62,10 +60,11 @@ struct FileActionView: View {
     }()
 
     private var metadata: FileMetadata {
-        FileMetadata(
-            type: liveItem.typeDescription,
-            size: liveItem.sizeString,
-            added: dateFormatter.string(from: liveItem.dateAdded)
+        fileMetadata ?? FileMetadata(
+            type: "Unknown Type",
+            size: "—",
+            added: Self.dateFormatter.string(from: liveItem.dateAdded),
+            iconName: "doc.fill"
         )
     }
 
@@ -87,6 +86,16 @@ struct FileActionView: View {
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .onAppear {
             renameText = liveItem.fileName
+        }
+        .task(id: liveItem.storedAt) {
+            let url = liveItem.storedAt
+            let dateAdded = liveItem.dateAdded
+            let loaded = await Task.detached(priority: .utility) {
+                FileMetadata.load(from: url, dateAdded: dateAdded)
+            }.value
+            guard !Task.isCancelled else { return }
+            fileMetadata = loaded
+            availableFormats = FileConversionManager.shared.availableFormats(for: url)
         }
     }
 
@@ -126,7 +135,7 @@ struct FileActionView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.accentColor.opacity(0.22))
-                Image(systemName: liveItem.typeIconName)
+                Image(systemName: metadata.iconName)
                     .font(.system(size: 26, weight: .semibold))
                     .foregroundColor(.white)
             }
@@ -164,7 +173,7 @@ struct FileActionView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .lineLimit(2)
                         .truncationMode(.middle)
-                    Text("\(liveItem.typeDescription) · \(liveItem.sizeString)")
+                    Text("\(metadata.type) · \(metadata.size)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -214,9 +223,7 @@ struct FileActionView: View {
 
     @ViewBuilder
     private var convertSection: some View {
-        let formats = FileConversionManager.shared.availableFormats(for: liveItem.storedAt)
-
-        if !formats.isEmpty {
+        if !availableFormats.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Convert To")
                     .font(.caption)
@@ -226,7 +233,7 @@ struct FileActionView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(formats) { format in
+                        ForEach(availableFormats) { format in
                             ConversionButton(format: format) {
                                 fileDropManager.addConversion(sourceURL: liveItem.storedAt, targetFormat: format)
                                 onDismiss()
@@ -278,9 +285,7 @@ struct FileActionView: View {
     // MARK: Actions
 
     private func copyPath() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(liveItem.storedAt.path, forType: .string)
+        NSPasteboard.general.copyString(liveItem.storedAt.path)
     }
 
     private func beginRename() {
@@ -474,33 +479,5 @@ private struct QuickLookView: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let imageView = nsView as? NSImageView else { return }
         context.coordinator.load(url, into: imageView)
-    }
-}
-
-private struct IconGenerator {
-    static func symbolName(for url: URL) -> String {
-        guard let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType else {
-            return "doc.fill"
-        }
-        return symbolName(for: type)
-    }
-
-    static func symbolName(for item: ShelfItem) -> String {
-        guard let type = try? item.storedAt.resourceValues(forKeys: [.contentTypeKey]).contentType else {
-            return "doc.fill"
-        }
-        return symbolName(for: type)
-    }
-
-    static func symbolName(for type: UTType) -> String {
-        if type.conforms(to: .image) { return "photo.fill" }
-        if type.conforms(to: .movie) { return "video.fill" }
-        if type.conforms(to: .audio) { return "music.note" }
-        if type.conforms(to: .pdf) { return "doc.richtext.fill" }
-        if type.conforms(to: .text) { return "doc.text.fill" }
-        if type.conforms(to: .folder) { return "folder.fill" }
-        if type.conforms(to: .archive) { return "archivebox.fill" }
-
-        return "doc.fill"
     }
 }

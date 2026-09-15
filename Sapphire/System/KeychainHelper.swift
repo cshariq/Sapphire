@@ -10,6 +10,39 @@ import Security
 
 enum KeychainStore {
 
+    static func setItem(
+        service: String,
+        account: String,
+        data: Data,
+        accessible: CFString? = nil,
+        synchronizable: Bool? = nil
+    ) -> OSStatus {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        if let synchronizable { query[kSecAttrSynchronizable as String] = synchronizable }
+
+        var attributes: [String: Any] = [kSecValueData as String: data]
+        if let accessible { attributes[kSecAttrAccessible as String] = accessible }
+
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        guard updateStatus == errSecItemNotFound else { return updateStatus }
+
+        let addStatus = addItem(
+            service: service,
+            account: account,
+            data: data,
+            accessible: accessible,
+            synchronizable: synchronizable
+        )
+        if addStatus == errSecDuplicateItem {
+            return SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        }
+        return addStatus
+    }
+
     static func addItem(
         service: String,
         account: String,
@@ -80,10 +113,7 @@ class KeychainHelper {
 
     func save(_ value: String, forKey account: String) {
         guard let data = value.data(using: .utf8) else { return }
-
-        delete(forKey: account)
-
-        KeychainStore.addItem(service: service, account: account, data: data)
+        _ = KeychainStore.setItem(service: service, account: account, data: data)
     }
 
     func load(forKey account: String) -> String? {

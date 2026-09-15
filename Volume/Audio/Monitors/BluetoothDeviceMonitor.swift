@@ -55,6 +55,11 @@ final class BluetoothDeviceMonitor {
     }
 
     func start() {
+        guard powerOnObserver == nil, powerOffObserver == nil else {
+            refresh()
+            return
+        }
+
         powerOnObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("IOBluetoothHostControllerPoweredOnNotification"),
             object: nil,
@@ -72,6 +77,24 @@ final class BluetoothDeviceMonitor {
         }
 
         refresh()
+    }
+
+    func stop() {
+        if let powerOnObserver {
+            NotificationCenter.default.removeObserver(powerOnObserver)
+            self.powerOnObserver = nil
+        }
+        if let powerOffObserver {
+            NotificationCenter.default.removeObserver(powerOffObserver)
+            self.powerOffObserver = nil
+        }
+        refreshTask?.cancel()
+        refreshTask = nil
+        timeoutTasks.values.forEach { $0.cancel() }
+        timeoutTasks.removeAll()
+        errorClearTasks.values.forEach { $0.cancel() }
+        errorClearTasks.removeAll()
+        connectingIDs.removeAll()
     }
 
     // MARK: - Refresh

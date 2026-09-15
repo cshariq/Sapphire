@@ -55,17 +55,6 @@
                ReferencedContainer = "container:Sapphire.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DA46CF902DCBCA0100F00EC5"
-               BuildableName = "SapphireUITests.xctest"
-               BlueprintName = "SapphireUITests"
-               ReferencedContainer = "container:Sapphire.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

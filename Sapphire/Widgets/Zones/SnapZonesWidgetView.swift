@@ -6,8 +6,12 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 import AppKit
+
+struct SnapZoneHitRegion: Equatable {
+    let frame: CGRect
+    let zone: SnapZone
+}
 
 fileprivate struct LayoutFramePreferenceKey: PreferenceKey {
     typealias Value = [UUID: CGRect]
@@ -22,117 +26,133 @@ fileprivate struct HoverState: Equatable {
     let zoneID: UUID
 }
 
-fileprivate struct HandleItemDropKey: EnvironmentKey {
-    static let defaultValue: ([NSItemProvider]) -> Bool = { _ in false }
+fileprivate struct SnapZoneViewConfiguration: Equatable {
+    let layouts: [SnapLayout]
+    let isSingleMode: Bool
 }
 
-extension EnvironmentValues {
-    var handleItemDrop: ([NSItemProvider]) -> Bool {
-        get { self[HandleItemDropKey.self] }
-        set { self[HandleItemDropKey.self] = newValue }
+fileprivate struct SnapZoneViewMetrics {
+    let itemWidth: CGFloat
+    let itemHeight: CGFloat
+    let spacing: CGFloat
+    let labelHeight: CGFloat = 20
+
+    init(isSingleMode: Bool) {
+        itemWidth = isSingleMode ? 220 : 120
+        itemHeight = itemWidth * (9 / 16)
+        spacing = isSingleMode ? 0 : 12
     }
+
+    func totalWidth(itemCount: Int) -> CGFloat {
+        let count = CGFloat(itemCount)
+        return (itemWidth * count) + (spacing * max(0, count - 1)) + 40
+    }
+
+    var totalHeight: CGFloat { itemHeight + labelHeight }
 }
 
 struct SnapZonesWidgetView: View {
-    let onDragEnd: () -> Void
+    let onActiveZoneChange: (SnapZone?) -> Void
+    let onHitRegionsChange: ([SnapZoneHitRegion]) -> Void
     @EnvironmentObject var settings: SettingsModel
-    @Environment(\.handleItemDrop) private var handleItemDrop: ([NSItemProvider]) -> Bool
+    @Environment(\.notchDragLocation) private var notchDragLocation
 
     @State private var activeHover: HoverState?
     @State private var layoutFrames: [UUID: CGRect] = [:]
-    @State private var pollingTimer: Timer?
-    @State private var mouseUpToken: UUID?
     @State private var previewUpdateTask: Task<Void, Never>?
-    @Environment(\.isFileDropTargeted) private var isFileDropTargeted: Binding<Bool>
 
-    private var viewConfiguration: (layouts: [SnapLayout], isSingleMode: Bool) {
-        let allAvailableLayouts = LayoutTemplate.allTemplates + settings.settings.customSnapLayouts
-        let frontmostApp = NSWorkspace.shared.runningApplications.first { $0.isActive && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
-        if let bundleID = frontmostApp?.bundleIdentifier,
-           let appConfig = settings.settings.appSpecificLayoutConfigurations[bundleID] {
+    private var viewConfiguration: SnapZoneViewConfiguration {
+        let current = settings.settings
+        let allAvailableLayouts = LayoutTemplate.allTemplates + current.customSnapLayouts
+        let layoutsByID = allAvailableLayouts.reduce(into: [UUID: SnapLayout]()) { result, layout in
+            result[layout.id] = layout
+        }
+        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        if let bundleID = frontmostBundleID,
+           bundleID != Bundle.main.bundleIdentifier,
+           let appConfig = current.appSpecificLayoutConfigurations[bundleID] {
             switch appConfig {
             case .useGlobalDefault:
                 break
             case .single(let layoutID):
-                if let layout = allAvailableLayouts.first(where: { $0.id == layoutID }) {
-                    return ([layout], true)
+                if let layout = layoutsByID[layoutID] {
+                    return SnapZoneViewConfiguration(layouts: [layout], isSingleMode: true)
                 }
             case .multi(let layoutIDs):
-                let layouts = layoutIDs.compactMap { id in allAvailableLayouts.first { $0.id == id } }
-                let finalLayouts = layouts.isEmpty ? [settings.settings.defaultSnapLayout] : layouts
-                return (finalLayouts, finalLayouts.count == 1)
+                let layouts = layoutIDs.compactMap { layoutsByID[$0] }
+                let finalLayouts = layouts.isEmpty ? [current.defaultSnapLayout] : layouts
+                return SnapZoneViewConfiguration(layouts: finalLayouts, isSingleMode: finalLayouts.count == 1)
             }
         }
 
-        switch settings.settings.snapZoneViewMode {
+        switch current.snapZoneViewMode {
         case .multi:
-            let multiLayouts = settings.settings.snapZoneLayoutOptions.compactMap { id in
-                allAvailableLayouts.first { $0.id == id }
-            }
-            let finalLayouts = multiLayouts.isEmpty ? [settings.settings.defaultSnapLayout] : multiLayouts
-            return (finalLayouts, finalLayouts.count == 1)
+            let multiLayouts = current.snapZoneLayoutOptions.compactMap { layoutsByID[$0] }
+            let finalLayouts = multiLayouts.isEmpty ? [current.defaultSnapLayout] : multiLayouts
+            return SnapZoneViewConfiguration(layouts: finalLayouts, isSingleMode: finalLayouts.count == 1)
         case .single:
-            return ([settings.settings.defaultSnapLayout], true)
+            return SnapZoneViewConfiguration(layouts: [current.defaultSnapLayout], isSingleMode: true)
         }
-    }
-
-    private var itemWidth: CGFloat { viewConfiguration.isSingleMode ? 220 : 120 }
-    private var itemHeight: CGFloat { viewConfiguration.isSingleMode ? 220 * (9 / 16) : 120 * (9 / 16) }
-    private var spacing: CGFloat { viewConfiguration.isSingleMode ? 0 : 12 }
-    private var verticalPadding: CGFloat { 0 }
-    private var labelHeight: CGFloat { 20 }
-
-    private var totalWidgetWidth: CGFloat {
-        let itemCount = CGFloat(viewConfiguration.layouts.count)
-        let horizontalPadding: CGFloat = 20
-        return (itemWidth * itemCount) + (spacing * max(0, itemCount - 1)) + (horizontalPadding * 2)
-    }
-
-    private var totalWidgetHeight: CGFloat {
-        itemHeight + labelHeight + (verticalPadding * 2)
     }
 
     var body: some View {
-        HStack(spacing: spacing) {
-            ForEach(viewConfiguration.layouts) { layout in
+        let configuration = viewConfiguration
+        let metrics = SnapZoneViewMetrics(isSingleMode: configuration.isSingleMode)
+
+        HStack(spacing: metrics.spacing) {
+            ForEach(configuration.layouts) { layout in
                 GeometryReader { geometry in
                     SnapLayoutItemView(
                         layout: layout,
                         activeZoneID: activeHover?.layoutID == layout.id ? activeHover?.zoneID : nil,
-                        itemWidth: self.itemWidth,
-                        itemHeight: self.itemHeight
+                        itemWidth: metrics.itemWidth,
+                        itemHeight: metrics.itemHeight
                     )
-                    .frame(width: itemWidth, height: itemHeight + labelHeight)
+                    .frame(width: metrics.itemWidth, height: metrics.itemHeight + metrics.labelHeight)
                     .preference(
                         key: LayoutFramePreferenceKey.self,
                         value: [layout.id: geometry.frame(in: .global)]
                     )
                 }
-                .frame(width: itemWidth, height: itemHeight + labelHeight)
+                .frame(width: metrics.itemWidth, height: metrics.itemHeight + metrics.labelHeight)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, verticalPadding)
-        .frame(width: totalWidgetWidth, height: totalWidgetHeight)
+        .frame(
+            width: metrics.totalWidth(itemCount: configuration.layouts.count),
+            height: metrics.totalHeight
+        )
         .background(Color.clear)
         .fixedSize(horizontal: true, vertical: true)
         .onPreferenceChange(LayoutFramePreferenceKey.self) { frames in
-            self.layoutFrames = frames
+            guard layoutFrames != frames else { return }
+            layoutFrames = frames
+            publishHitRegions(configuration: configuration, metrics: metrics)
+            updateActiveState(at: notchDragLocation, configuration: configuration)
         }
-        .onDrop(of: [UTType.fileURL, .plainText], isTargeted: isFileDropTargeted, perform: handleItemDrop)
-        .onAppear(perform: startMonitoring)
-        .onDisappear(perform: stopMonitoring)
+        .onAppear {
+            publishHitRegions(configuration: configuration, metrics: metrics)
+            updateActiveState(at: notchDragLocation, configuration: configuration)
+        }
+        .onDisappear(perform: resetInteractionState)
+        .onChange(of: notchDragLocation) { _, location in
+            updateActiveState(at: location, configuration: configuration)
+        }
         .onChange(of: activeHover) { _, newHover in
             previewUpdateTask?.cancel()
+            let zone = newHover.flatMap { hover in
+                configuration.layouts
+                    .first(where: { $0.id == hover.layoutID })?
+                    .zones.first(where: { $0.id == hover.zoneID })
+            }
+            onActiveZoneChange(zone)
             previewUpdateTask = Task {
                 do {
                     try await Task.sleep(for: .milliseconds(50))
 
                     guard !Task.isCancelled else { return }
 
-                    if let hover = newHover,
-                       let layout = viewConfiguration.layouts.first(where: { $0.id == hover.layoutID }),
-                       let zone = layout.zones.first(where: { $0.id == hover.zoneID }) {
+                    if let zone {
                         SnapPreviewManager.shared.showPreview(for: zone)
                     } else {
                         SnapPreviewManager.shared.hidePreview()
@@ -140,48 +160,54 @@ struct SnapZonesWidgetView: View {
                 } catch {}
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: viewConfiguration.layouts)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: viewConfiguration.isSingleMode)
+        .onChange(of: configuration) { _, _ in
+            publishHitRegions(configuration: configuration, metrics: metrics)
+            updateActiveState(at: notchDragLocation, configuration: configuration)
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: configuration.layouts)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: configuration.isSingleMode)
     }
 
-    private func startMonitoring() {
-        stopMonitoring()
-
-        mouseUpToken = GlobalInputMonitor.shared.onLeftMouseUp { [self] in
-            if let hover = self.activeHover,
-               let layout = self.viewConfiguration.layouts.first(where: { $0.id == hover.layoutID }),
-               let zone = layout.zones.first(where: { $0.id == hover.zoneID }) {
-                SnappingManager.snap(zone: zone)
-            }
-            self.onDragEnd()
-            self.stopMonitoring()
-        }
-
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { _ in
-            self.updateActiveState()
-        }
-    }
-
-    private func stopMonitoring() {
-        pollingTimer?.invalidate()
-        pollingTimer = nil
-
-        if let token = mouseUpToken {
-            GlobalInputMonitor.shared.remove(token)
-            mouseUpToken = nil
-        }
-
+    private func resetInteractionState() {
         previewUpdateTask?.cancel()
-
+        previewUpdateTask = nil
         SnapPreviewManager.shared.hidePreview()
-
+        onActiveZoneChange(nil)
+        onHitRegionsChange([])
         activeHover = nil
     }
 
-    private func updateActiveState() {
-        guard let globalMousePoint = (notchWindow ?? NSWindow.visibleNotchWindow)?.swiftUIGlobalMouseLocation else {
+    private func publishHitRegions(
+        configuration: SnapZoneViewConfiguration,
+        metrics: SnapZoneViewMetrics
+    ) {
+        let regions = configuration.layouts.flatMap { layout -> [SnapZoneHitRegion] in
+            guard let layoutFrame = layoutFrames[layout.id] else { return [] }
+            return layout.zones.map { zone in
+                SnapZoneHitRegion(
+                    frame: CGRect(
+                        x: layoutFrame.minX + metrics.itemWidth * zone.x,
+                        y: layoutFrame.minY + metrics.itemHeight * zone.y,
+                        width: metrics.itemWidth * zone.width,
+                        height: metrics.itemHeight * zone.height
+                    ),
+                    zone: zone
+                )
+            }
+        }
+        onHitRegionsChange(regions)
+    }
+
+    private func updateActiveState(
+        at globalMousePoint: CGPoint?,
+        configuration: SnapZoneViewConfiguration
+    ) {
+        guard let globalMousePoint else {
+            if activeHover != nil { activeHover = nil }
             return
         }
+
+        let metrics = SnapZoneViewMetrics(isSingleMode: configuration.isSingleMode)
 
         if !layoutFrames.isEmpty {
             let totalWidgetFrame = layoutFrames.values.reduce(CGRect.null) { $0.union($1) }
@@ -191,44 +217,26 @@ struct SnapZonesWidgetView: View {
             }
         }
 
-        var newHover: HoverState? = nil
-
+        var candidates: [(hover: HoverState, frame: CGRect)] = []
         for (layoutID, frame) in layoutFrames {
-            guard frame.contains(globalMousePoint) else { continue }
-
-            guard let layout = viewConfiguration.layouts.first(where: { $0.id == layoutID }) else { continue }
-
-            let localPoint = CGPoint(
-                x: globalMousePoint.x - frame.minX,
-                y: globalMousePoint.y - frame.minY
-            )
-
-            guard localPoint.y >= 0, localPoint.y <= itemHeight else { continue }
-
+            guard let layout = configuration.layouts.first(where: { $0.id == layoutID }) else { continue }
             for zone in layout.zones {
-                let zoneFrame = CGRect(
-                    x: itemWidth * zone.x,
-                    y: itemHeight * zone.y,
-                    width: itemWidth * zone.width,
-                    height: itemHeight * zone.height
-                )
-
-                if zoneFrame.contains(localPoint) {
-                    newHover = HoverState(layoutID: layoutID, zoneID: zone.id)
-                    break
-                }
+                candidates.append((
+                    hover: HoverState(layoutID: layoutID, zoneID: zone.id),
+                    frame: CGRect(
+                        x: frame.minX + metrics.itemWidth * zone.x,
+                        y: frame.minY + metrics.itemHeight * zone.y,
+                        width: metrics.itemWidth * zone.width,
+                        height: metrics.itemHeight * zone.height
+                    )
+                ))
             }
-
-            if newHover != nil { break }
         }
+        let newHover = SnapZoneHitTesting.nearest(candidates, to: globalMousePoint) { $0.frame }?.hover
 
         guard activeHover != newHover else { return }
 
         activeHover = newHover
-    }
-
-    private var notchWindow: NSWindow? {
-        NSWindow.visibleNotchWindow
     }
 }
 

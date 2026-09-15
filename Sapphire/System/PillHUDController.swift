@@ -75,7 +75,7 @@ final class PillHUDController: ObservableObject {
             panel.setFrame(frame, display: true)
         } else {
             let entranceFrame = frame.offsetBy(dx: position == .right ? 16 : position == .left ? -16 : 0,
-                                               dy: position == .bottom ? -16 : 0)
+                                               dy: position == .top ? 16 : position == .bottom ? -16 : 0)
             panel.setFrame(entranceFrame, display: false)
             hostingView?.frame = NSRect(origin: .zero, size: frame.size)
             panel.alphaValue = 0
@@ -105,7 +105,7 @@ final class PillHUDController: ObservableObject {
         panelAnimationID = animationID
         let position = settings.settings.hudPillPosition
         let exitFrame = panel.frame.offsetBy(dx: position == .right ? 16 : position == .left ? -16 : 0,
-                                             dy: position == .bottom ? -16 : 0)
+                                             dy: position == .top ? 16 : position == .bottom ? -16 : 0)
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.22
@@ -184,6 +184,13 @@ final class PillHUDController: ObservableObject {
                 width: thickness,
                 height: length
             )
+        case .top:
+            return CGRect(
+                x: s.midX - length / 2,
+                y: s.maxY - edgeMargin - thickness,
+                width: length,
+                height: thickness
+            )
         case .bottom:
             return CGRect(
                 x: s.midX - length / 2,
@@ -209,7 +216,7 @@ struct PillHUDView: View {
 
     var body: some View {
         if let type = hudManager.currentHUD {
-            let vertical = settings.settings.hudPillPosition != .bottom
+            let vertical = settings.settings.hudPillPosition == .left || settings.settings.hudPillPosition == .right
             Group {
                 if settings.settings.hudPillStyle == .bare {
                     barePill(vertical: vertical)
@@ -221,7 +228,6 @@ struct PillHUDView: View {
             .animation(.spring(response: 0.36, dampingFraction: 0.82), value: clampedLevel)
             .animation(.easeInOut(duration: 0.22), value: iconName)
             .animation(.easeInOut(duration: 0.2), value: fillColor)
-            .animation(.easeOut(duration: 0.18), value: hudManager.glowIntensity)
         }
     }
 
@@ -253,10 +259,6 @@ struct PillHUDView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Capsule().fill(Material.ultraThin))
         .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
-        .shadow(
-            color: fillColor.opacity(0.18 + hudManager.glowIntensity * 0.22),
-            radius: 5 + CGFloat(hudManager.glowIntensity * 8)
-        )
     }
 
     private func barePill(vertical: Bool) -> some View {
@@ -274,10 +276,6 @@ struct PillHUDView: View {
             }
             .clipShape(Capsule())
             .contentShape(Capsule())
-            .shadow(
-                color: fillColor.opacity(0.2 + hudManager.glowIntensity * 0.25),
-                radius: 4 + CGFloat(hudManager.glowIntensity * 8)
-            )
         }
         .overlay {
             Group {
@@ -328,14 +326,12 @@ struct PillHUDView: View {
 
     private var withinIcon: some View {
         icon(with: .white)
-            .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
     }
 
     private var withinPercent: some View {
         Text("\(displayedPercentage)%")
             .font(.system(size: 11, weight: .bold, design: .monospaced))
             .foregroundColor(.white)
-            .shadow(color: .black.opacity(0.5), radius: 1, y: 1)
     }
 
     private func icon(with color: Color) -> some View {

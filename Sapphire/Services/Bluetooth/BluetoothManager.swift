@@ -47,8 +47,9 @@ class BluetoothManager: NSObject, ObservableObject {
         ud.register(defaults: ["readBTDevice": true, "readBTHID": true, "readIDevice": true, "updateInterval": 1])
 
         SPBluetoothDataModel.shared.refeshData { [weak self] _ in
-            guard let self = self else { return }
-            self.checkForInitiallyConnectedDevices()
+            Task { @MainActor [weak self] in
+                self?.checkForInitiallyConnectedDevices()
+            }
         }
 
         Task {
@@ -76,6 +77,7 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     deinit {
+        periodicPollingTimer?.invalidate()
         connectionNotification?.unregister()
         disconnectionNotifications.values.forEach { $0.unregister() }
         NotificationCenter.default.removeObserver(self)
@@ -311,8 +313,10 @@ class BluetoothManager: NSObject, ObservableObject {
         let interval = TimeInterval(ud.integer(forKey: "updateInterval") * 60)
         let effectiveInterval = interval > 0 ? interval : 300.0
 
-        periodicPollingTimer = Timer.scheduledTimer(withTimeInterval: effectiveInterval, repeats: true) { [weak self] _ in
-            self?.pollForIDeviceUpdates()
+        periodicPollingTimer = Timer.scheduledCoalescing(withTimeInterval: effectiveInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.pollForIDeviceUpdates()
+            }
         }
     }
 

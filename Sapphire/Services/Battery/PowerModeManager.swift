@@ -45,6 +45,13 @@ class PowerModeManager: ObservableObject {
         setPowerMode(enabled: false)
     }
 
+    @discardableResult
+    func toggleLowPowerMode() -> Bool {
+        let enabled = !isLowPowerModeActive
+        setPowerMode(enabled: enabled)
+        return enabled
+    }
+
     private func setPowerMode(enabled: Bool) {
         print("[PowerModeManager] Setting Low Power Mode: \(enabled)")
 

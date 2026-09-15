@@ -298,7 +298,7 @@ final class MirrorCameraManager: ObservableObject {
     }
 
     private var currentMirrorSetting: Bool {
-        UserDefaults.standard.object(forKey: "mirrorFlipHorizontally") as? Bool ?? true
+        SettingsModel.shared.settings.mirrorFlipHorizontally
     }
 
     private func preferredDevice() -> AVCaptureDevice? {
@@ -329,8 +329,6 @@ final class MirrorCameraManager: ObservableObject {
     }
 
     func openSystemPrivacySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
-            NSWorkspace.shared.open(url)
-        }
+        SystemPreferencesPane.camera.open()
     }
 }

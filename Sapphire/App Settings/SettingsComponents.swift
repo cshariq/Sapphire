@@ -26,39 +26,120 @@ struct InfoContainer: View {
                 .lineSpacing(4)
         }
         .padding()
-        .background(color.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(color.opacity(0.5), lineWidth: 1)
+        .roundedCard(fill: color.opacity(0.15), cornerRadius: 16, stroke: color.opacity(0.5))
+    }
+}
+
+// MARK: - Row Building Blocks
+
+struct SettingsSwitch: View {
+    var title: String = ""
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(title, isOn: $isOn)
+            .labelsHidden()
+            .toggleStyle(.switch)
+    }
+}
+
+struct SettingsRowLabel: View {
+    let title: String
+    var description: String = ""
+    var titleFont: Font = .system(size: 14, weight: .medium)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(titleFont)
+            if !description.isEmpty {
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+struct SettingsIconBadge: View {
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 18, weight: .medium))
+            .foregroundColor(color)
+            .frame(width: 36, height: 36)
+            .background(color.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+struct ReorderHandle: View {
+    var body: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(.white.opacity(0.6))
+            .padding(.leading, 8)
+    }
+}
+
+struct PremiumLockBadge: View {
+    var body: some View {
+        Image(systemName: "lock.fill")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.secondary)
+    }
+}
+
+extension Binding where Value == Bool {
+    func lockedOff(when isLocked: Bool) -> Binding<Bool> {
+        Binding(
+            get: { isLocked ? false : wrappedValue },
+            set: { wrappedValue = isLocked ? false : $0 }
+        )
+    }
+
+    var negated: Binding<Bool> {
+        Binding(get: { !wrappedValue }, set: { wrappedValue = !$0 })
+    }
+}
+
+extension Binding {
+    func membership<Element: Equatable>(of element: Element) -> Binding<Bool> where Value == [Element] {
+        Binding<Bool>(
+            get: { wrappedValue.contains(element) },
+            set: { isMember in
+                if !isMember {
+                    wrappedValue.removeAll { $0 == element }
+                } else if !wrappedValue.contains(element) {
+                    wrappedValue.append(element)
+                }
+            }
         )
     }
 }
 
-struct GeneralSettingToggleRowView: View {
-    let setting: GeneralSettingType
-    @Binding var isEnabled: Bool
-    static func == (lhs: GeneralSettingToggleRowView, rhs: GeneralSettingToggleRowView) -> Bool {
-        lhs.setting == rhs.setting && lhs.isEnabled == rhs.isEnabled
-    }
+// MARK: - Rows
+
+struct IconToggleRow: View {
+    let systemImage: String
+    let color: Color
+    let title: String
+    @Binding var isOn: Bool
+
     var body: some View {
         HStack(spacing: 15) {
-            Image(systemName: setting.systemImage)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(setting.iconColor)
-                .frame(width: 36, height: 36)
-                .background(setting.iconColor.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            SettingsIconBadge(systemImage: systemImage, color: color)
 
-            Text(setting.displayName)
+            Text(title)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.white)
 
             Spacer()
 
-            Toggle("", isOn: $isEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
+            SettingsSwitch(isOn: $isOn)
         }
         .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
     }
@@ -88,21 +169,7 @@ struct WidgetRowView: View {
         )
     }
 
-    private var requiredFeature: AppFeature? {
-        switch widgetType {
-        case .sports:
-            return .sportsWidget
-        case .finance:
-            return .financeWidget
-        default:
-            return nil
-        }
-    }
-
-    private var isPremiumLocked: Bool {
-        guard let requiredFeature else { return false }
-        return !subscriptionManager.hasAccess(to: requiredFeature)
-    }
+    private var isPremiumLocked: Bool { widgetType.isPremiumLocked }
 
     private var baseEnabledBinding: Binding<Bool> {
         switch widgetType {
@@ -117,18 +184,15 @@ struct WidgetRowView: View {
         case .clipboard: return $settings.settings.clipboardWidgetEnabled
         case .mirror: return $settings.settings.mirrorWidgetEnabled
         case .battery: return $settings.settings.batteryWidgetEnabled
+        case .timer: return $settings.settings.timerWidgetEnabled
         case .focusSession: return $settings.settings.focusSessionWidgetEnabled
+        case .storage: return $settings.settings.storageWidgetEnabled
         case .agent: return .constant(false)
         }
     }
 
     private var isEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { isPremiumLocked ? false : baseEnabledBinding.wrappedValue },
-            set: { newValue in
-                baseEnabledBinding.wrappedValue = isPremiumLocked ? false : newValue
-            }
-        )
+        baseEnabledBinding.lockedOff(when: isPremiumLocked)
     }
 
     var body: some View {
@@ -149,21 +213,14 @@ struct WidgetRowView: View {
 
                 Spacer()
 
-                Toggle("", isOn: isEnabledBinding)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
+                SettingsSwitch(isOn: isEnabledBinding)
                     .disabled(isPremiumLocked || (isEnabledBinding.wrappedValue && enabledWidgetCount <= 1) || isAtCapacity)
 
                 if isPremiumLocked {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    PremiumLockBadge()
                 }
 
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .padding(.leading, 8)
+                ReorderHandle()
             }
             .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
         }
@@ -175,21 +232,7 @@ struct LiveActivityRowView: View {
     @EnvironmentObject var settings: SettingsModel
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
-    private var requiredFeature: AppFeature? {
-        switch activityType {
-        case .sports:
-            return .liveSports
-        case .finance:
-            return .financeLiveActivity
-        default:
-            return nil
-        }
-    }
-
-    private var isPremiumLocked: Bool {
-        guard let requiredFeature else { return false }
-        return !subscriptionManager.hasAccess(to: requiredFeature)
-    }
+    private var isPremiumLocked: Bool { activityType.isPremiumLocked }
 
     private var baseEnabledBinding: Binding<Bool> {
         switch activityType {
@@ -211,36 +254,20 @@ struct LiveActivityRowView: View {
         }
     }
 
-    private var isEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { isPremiumLocked ? false : baseEnabledBinding.wrappedValue },
-            set: { newValue in
-                baseEnabledBinding.wrappedValue = isPremiumLocked ? false : newValue
-            }
-        )
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text(activityType.displayName)
                     .font(.system(size: 14, weight: .medium))
                 Spacer()
-                Toggle("", isOn: isEnabledBinding)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
+                SettingsSwitch(isOn: baseEnabledBinding.lockedOff(when: isPremiumLocked))
                     .disabled(isPremiumLocked)
                 if isPremiumLocked {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                    PremiumLockBadge()
                 }
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .padding(.leading, 8)
+                ReorderHandle()
             }
-            .padding(EdgeInsets(top: 18, leading: 20, bottom: expandedOptionsPadding, trailing: 20))
+            .padding(EdgeInsets(top: 18, leading: 20, bottom: showsExpandedOptions ? 10 : 18, trailing: 20))
 
             if showsExpandedOptions {
                 expandedOptions
@@ -248,10 +275,6 @@ struct LiveActivityRowView: View {
                     .padding(.bottom, 16)
             }
         }
-    }
-
-    private var expandedOptionsPadding: CGFloat {
-        showsExpandedOptions ? 10 : 18
     }
 
     private var showsExpandedOptions: Bool {
@@ -262,76 +285,33 @@ struct LiveActivityRowView: View {
     private var expandedOptions: some View {
         switch activityType {
         case .sports:
-            Toggle(isOn: $settings.settings.sportsLiveActivityWhenLiveOnly) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Only when live")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Hide the sports activity when no favorite team has a live game.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .toggleStyle(.switch)
+            optionToggle(
+                "Only when live",
+                detail: "Hide the sports activity when no favorite team has a live game.",
+                isOn: $settings.settings.sportsLiveActivityWhenLiveOnly
+            )
         case .finance:
-            Toggle(isOn: $settings.settings.financeLiveActivityActiveHoursOnly) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Only during market hours")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Hide the finance activity outside regular US trading hours.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .toggleStyle(.switch)
+            optionToggle(
+                "Only during market hours",
+                detail: "Hide the finance activity outside regular US trading hours.",
+                isOn: $settings.settings.financeLiveActivityActiveHoursOnly
+            )
         default:
             EmptyView()
         }
     }
-}
 
-struct FavoriteEntriesEditor: View {
-    let title: String
-    let subtitle: String
-    let placeholder: String
-    let maxItems: Int
-    @Binding var entries: [String]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline)
-                Text(subtitle).font(.caption).foregroundColor(.secondary)
-            }
-
-            VStack(spacing: 8) {
-                ForEach(entries.indices, id: \.self) { index in
-                    HStack {
-                        TextField(placeholder, text: Binding(
-                            get: { entries[index] },
-                            set: { entries[index] = $0 }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-
-                        Button {
-                            entries.remove(at: index)
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(entries.count <= 1)
-                    }
-                }
-
-                if entries.count < maxItems {
-                    Button {
-                        entries.append("")
-                    } label: {
-                        Label("Add", systemImage: "plus.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                }
+    private func optionToggle(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
             }
         }
+        .toggleStyle(.switch)
     }
 }
 
@@ -348,25 +328,12 @@ struct NotificationToggleRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 15) {
-            Image(systemName: source.systemImage)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(source.iconColor)
-                .frame(width: 36, height: 36)
-                .background(source.iconColor.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            Text(source.displayName)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white)
-
-            Spacer()
-
-            Toggle("", isOn: isEnabledBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+        IconToggleRow(
+            systemImage: source.systemImage,
+            color: source.iconColor,
+            title: source.displayName,
+            isOn: isEnabledBinding
+        )
     }
 }
 
@@ -398,11 +365,106 @@ struct SystemAppRowView: View {
 
             Spacer()
 
-            Toggle("", isOn: $isEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
+            SettingsSwitch(isOn: $isEnabled)
         }
         .padding(EdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20))
+    }
+}
+
+struct ClearableSearchField: View {
+    let placeholder: LocalizedStringKey
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+struct AppTogglesListView: View {
+    @ObservedObject private var appFetcher = SystemAppFetcher.shared
+    let isEnabled: (SystemApp) -> Binding<Bool>
+    var maxHeight: CGFloat = 280
+    var showSearch: Bool = false
+    var browsersSectionTitle: String = "Browsers"
+    var onSelectAll: ((Bool) -> Void)?
+
+    @State private var query = ""
+
+    private var filteredApps: [SystemApp] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return appFetcher.apps }
+        return appFetcher.apps.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed) || $0.id.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if showSearch {
+                ClearableSearchField(placeholder: "Search installed apps", text: $query)
+                .padding(10)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal)
+            }
+
+            if let onSelectAll {
+                HStack(spacing: 12) {
+                    Button("Select All") { onSelectAll(true) }
+                    Button("Deselect All") { onSelectAll(false) }
+                }
+                .font(.caption)
+                .padding(.horizontal)
+            }
+
+            if appFetcher.apps.isEmpty {
+                ProgressView("Loading apps…")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            } else if filteredApps.isEmpty {
+                Text("No matching apps")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            } else {
+                let apps = filteredApps
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        appSection(browsersSectionTitle, apps: apps.filter { $0.isBrowser })
+                        appSection("Other Apps", apps: apps.filter { !$0.isBrowser })
+                    }
+                }
+                .frame(maxHeight: maxHeight)
+            }
+        }
+        .onAppear { appFetcher.fetchApps() }
+    }
+
+    @ViewBuilder
+    private func appSection(_ title: String, apps: [SystemApp]) -> some View {
+        if !apps.isEmpty {
+            Text(title).font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
+            ForEach(apps) { app in
+                SystemAppRowView(app: app, isEnabled: isEnabled(app))
+                if app.id != apps.last?.id {
+                    Divider().padding(.leading, 50)
+                }
+            }
+        }
     }
 }
 
@@ -471,57 +533,6 @@ struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
     }
 }
 
-struct CustomBatterySlider: View {
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-
-    private let horizontalPadding: CGFloat = 8
-
-    var body: some View {
-        GeometryReader { geometry in
-            let totalWidth = geometry.size.width
-            let thumbSize: CGFloat = 40
-
-            let trackUsableWidth = totalWidth - (2 * horizontalPadding)
-            let thumbUsableWidth = trackUsableWidth - thumbSize
-
-            let progress = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
-
-            let clampedProgress = max(0.0, min(1.0, progress))
-
-            let thumbX = (clampedProgress * thumbUsableWidth) + horizontalPadding + (thumbSize / 2)
-
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.black.opacity(0.4))
-                    .padding(.horizontal, horizontalPadding)
-
-                Circle()
-                    .fill(Color(white: 0.8))
-                    .frame(width: thumbSize, height: thumbSize)
-                    .overlay(
-                        Text("\(Int(value.rounded()))")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.black)
-                    )
-                    .position(x: thumbX, y: geometry.size.height / 2)
-            }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { gestureValue in
-                        let newX = min(max(gestureValue.location.x, horizontalPadding), totalWidth - horizontalPadding)
-                        let newProgress = (newX - horizontalPadding) / thumbUsableWidth
-                        var newValue = (range.upperBound - range.lowerBound) * Double(newProgress) + range.lowerBound
-
-                        newValue = max(range.lowerBound, min(range.upperBound, newValue))
-
-                        self.value = newValue
-                    }
-            )
-        }
-    }
-}
-
 struct CustomSliderRowView: View {
     let label: String
     @Binding var value: Double
@@ -575,32 +586,66 @@ struct CustomSliderRowView: View {
 struct SettingsContainerModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(Color.black.opacity(0.15))
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-            )
+            .roundedCard(fill: Color.black.opacity(0.15), cornerRadius: 24, stroke: Color.white.opacity(0.1))
     }
 }
 
-struct SettingsGroup<Content: View>: View {
-    let content: Content
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+struct SettingsSectionHeader: View {
+    let title: LocalizedStringKey
+    var description: LocalizedStringKey? = nil
 
     var body: some View {
-        VStack(spacing: 0) { content }
-            .padding(.horizontal)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(.background.opacity(0.15))
-            )
+        Text(title)
+            .font(.headline)
+            .padding([.top, .horizontal])
+            .frame(maxWidth: .infinity, alignment: .leading)
+        if let description {
+            Text(description)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+                .padding(.bottom, 5)
+        }
+    }
+}
+
+struct SettingsCard<Content: View>: View {
+    let title: LocalizedStringKey
+    var description: LocalizedStringKey? = nil
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSectionHeader(title: title, description: description)
+            content
+        }
+        .modifier(SettingsContainerModifier())
+    }
+}
+
+struct StatusCapsuleLabel: View {
+    let title: String
+    let color: Color
+    let icon: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .bold))
+            Text(title)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.14), in: Capsule())
     }
 }
 
 struct SettingsDetailRow<Content: View>: View {
     let title: String
     let content: Content
+
     init(title: String, @ViewBuilder content: () -> Content) {
         self.title = title
         self.content = content()
@@ -610,37 +655,80 @@ struct SettingsDetailRow<Content: View>: View {
         HStack {
             Text(title)
             Spacer()
-            HStack { content }.foregroundStyle(.secondary)
+            HStack { content }
+                .foregroundStyle(.secondary)
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
     }
 }
 
+struct SettingsMultiSelectList<Option: Identifiable & Equatable>: View {
+    let title: String
+    let options: [Option]
+    @Binding var selection: [Option]
+    let label: (Option) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundColor(.secondary)
+                .padding(.top, 8)
+
+            ForEach(options) { option in
+                Toggle(label(option), isOn: $selection.membership(of: option))
+            }
+        }
+        .padding(.horizontal)
+        .padding(.bottom)
+    }
+}
+
 struct ToggleRow: View {
+    enum Style {
+        case standard
+        case compact
+        case inset
+    }
+
+    let title: String
+    var description: String = ""
+    @Binding var isOn: Bool
+    var style: Style = .standard
+
+    var body: some View {
+        let row = HStack(spacing: style == .compact ? 12 : nil) {
+            SettingsRowLabel(title: title, description: description, titleFont: titleFont)
+            Spacer(minLength: style == .compact ? 8 : nil)
+            SettingsSwitch(title: title, isOn: $isOn)
+        }
+        switch style {
+        case .standard:
+            row.padding()
+        case .compact:
+            row.padding(.horizontal, 16).padding(.vertical, 9)
+        case .inset:
+            row.padding(.horizontal, 12).padding(.vertical, 7)
+        }
+    }
+
+    private var titleFont: Font {
+        switch style {
+        case .standard: return .system(size: 14, weight: .medium)
+        case .compact: return .system(size: 13, weight: .medium)
+        case .inset: return .system(size: 13)
+        }
+    }
+}
+
+struct CompactToggleRow: View {
     let title: String
     let description: String
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                if !description.isEmpty {
-                    Text(description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer()
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .accessibilityLabel(title)
-        }
-        .padding()
+        ToggleRow(title: title, description: description, isOn: $isOn, style: .compact)
     }
 }
 
@@ -653,16 +741,7 @@ struct SwipeActionPickerRow<Action: Hashable & Identifiable>: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                if !description.isEmpty {
-                    Text(description)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            SettingsRowLabel(title: title, description: description)
             Spacer()
             Picker("", selection: $selection) {
                 ForEach(options) { option in

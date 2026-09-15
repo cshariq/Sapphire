@@ -25,9 +25,6 @@ class LaunchpadGestureManager: ObservableObject {
     private var longPressTimer: Timer?
     private(set) var isDraggingItem: Bool = false
 
-    private var lastDragPosition: CGPoint = .zero
-    private var dragStartTime: Date?
-
     private let dragActivationThreshold: CGFloat = 5.0
 
     init() {}
@@ -43,10 +40,16 @@ class LaunchpadGestureManager: ObservableObject {
     func startMonitoring(for window: NSWindow) {
         guard eventMonitor == nil else { return }
         print("[GestureManager] Starting event monitoring.")
-//        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .leftMouseDragged, .scrollWheel, .flagsChanged]) { [weak self] event in
-//            guard let self = self else { return event }
-//            return self.handle(event: event, in: window) ? nil : event
-//        }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .leftMouseDragged, .scrollWheel, .flagsChanged]
+        ) { [weak self, weak window] event in
+            guard let self, let window else { return event }
+            _ = self.handle(event: event, in: window)
+            // Observation must not consume the event. Search, folder contents,
+            // buttons, and native SwiftUI gestures still need the same mouse
+            // event after Launchpad updates its custom paging/drag state.
+            return event
+        }
     }
 
     func stopMonitoring() {
@@ -59,6 +62,7 @@ class LaunchpadGestureManager: ObservableObject {
         dragOffset = 0
         isPageSwiping = false
         longPressTimer?.invalidate()
+        longPressTimer = nil
         mouseDownInfo = nil
         isDraggingItem = false
         dragEnded.send(mouseLocation)
@@ -67,18 +71,37 @@ class LaunchpadGestureManager: ObservableObject {
     private func activateDragMode(location: CGPoint) {
         guard !isDraggingItem else { return }
         isDraggingItem = true
+        longPressTimer = nil
         longPressOccurred.send(location)
         mouseDownInfo = nil
     }
 
+    func cancelItemDrag() {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+        mouseDownInfo = nil
+        isDraggingItem = false
+    }
+
     private func handle(event: NSEvent, in window: NSWindow) -> Bool {
-        let screenFrame = NSScreen.main?.frame ?? .zero
-        var locationInGlobal = event.locationInWindow
-        locationInGlobal.y = screenFrame.height - locationInGlobal.y
-        self.mouseLocation = locationInGlobal
+        let locationInWindow: CGPoint
+        if let contentView = window.contentView {
+            let converted = contentView.convert(event.locationInWindow, from: nil)
+            locationInWindow = contentView.isFlipped
+                ? converted
+                : CGPoint(x: converted.x, y: contentView.bounds.height - converted.y)
+        } else {
+            locationInWindow = event.locationInWindow
+        }
+        if mouseLocation != locationInWindow {
+            mouseLocation = locationInWindow
+        }
 
         if event.type == .flagsChanged {
-            self.isOptionKeyPressed = event.modifierFlags.contains(.option)
+            let optionIsPressed = event.modifierFlags.contains(.option)
+            if isOptionKeyPressed != optionIsPressed {
+                isOptionKeyPressed = optionIsPressed
+            }
             return true
         }
 
@@ -90,33 +113,33 @@ class LaunchpadGestureManager: ObservableObject {
             return true
 
         case .leftMouseDown:
-            mouseDownInfo = (location: locationInGlobal, timestamp: Date())
-            dragStartTime = Date()
-            lastDragPosition = locationInGlobal
-            longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            mouseDownInfo = (location: locationInWindow, timestamp: Date())
+            longPressTimer?.invalidate()
+            let timer = Timer(timeInterval: 0.35, repeats: false) { [weak self] _ in
                 guard let self = self, let info = self.mouseDownInfo else { return }
                 self.activateDragMode(location: info.location)
             }
+            timer.tolerance = 0.03
+            longPressTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
             return true
 
         case .leftMouseUp:
             longPressTimer?.invalidate()
+            longPressTimer = nil
             if let info = mouseDownInfo, Date().timeIntervalSince(info.timestamp) < 0.35 {
-                clickOccurred.send(locationInGlobal)
+                clickOccurred.send(locationInWindow)
             }
             if isDraggingItem {
-                dragEnded.send(locationInGlobal)
+                dragEnded.send(locationInWindow)
                 isDraggingItem = false
             }
             mouseDownInfo = nil
-            dragStartTime = nil
             return true
 
         case .leftMouseDragged:
-            if isDraggingItem {
-                lastDragPosition = locationInGlobal
-            } else if let info = mouseDownInfo {
-                let distance = locationInGlobal.distanceTo(info.location)
+            if !isDraggingItem, let info = mouseDownInfo {
+                let distance = locationInWindow.distanceTo(info.location)
                 if distance > dragActivationThreshold {
                     activateDragMode(location: info.location)
                 }

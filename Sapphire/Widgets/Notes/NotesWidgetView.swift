@@ -10,78 +10,30 @@ import AppKit
 struct NotesWidgetView: View {
     @ObservedObject private var notesManager = NotesManager.shared
 
-    private let maxHeight: CGFloat = 96
-
-    private var suggestions: [QuickNote] {
-        Array(notesManager.notes.sorted { $0.updatedAt > $1.updatedAt }.prefix(3))
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.yellow.opacity(0.35), Color.orange.opacity(0.18)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 26, height: 26)
-                    Image(systemName: "note.text")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.yellow)
-                }
-                Text("Notes")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 0)
-                Text("\(notesManager.notes.count)")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(MaterialChartPalette.surfaceVariant)
-                    .clipShape(Capsule())
-            }
-
-            if suggestions.isEmpty {
-                Text("No notes yet")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(suggestions) { note in
-                        suggestionRow(note)
-                    }
-                }
-            }
-        }
-        .frame(width: 176, height: maxHeight, alignment: .topLeading)
-        .clipped()
-    }
-
-    private func suggestionRow(_ note: QuickNote) -> some View {
-        let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = note.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        let label = title.isEmpty ? (body.isEmpty ? "Untitled" : body) : title
-
-        return HStack(spacing: 6) {
+        NotchMiniListWidget(
+            title: "Notes",
+            systemImage: "note.text",
+            tint: .yellow,
+            gradient: [Color.yellow.opacity(0.35), Color.orange.opacity(0.18)],
+            count: notesManager.notes.count,
+            items: Array(notesManager.notes.sorted { $0.updatedAt > $1.updatedAt }.prefix(3)),
+            emptyText: "No notes yet"
+        ) { note in
             Capsule()
                 .fill(Color.yellow.opacity(0.75))
                 .frame(width: 3, height: 14)
-            Text(label)
+            Text(Self.suggestionLabel(for: note))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(.primary.opacity(0.9))
                 .lineLimit(1)
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(MaterialChartPalette.surfaceContainer)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private static func suggestionLabel(for note: QuickNote) -> String {
+        let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = note.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? (body.isEmpty ? "Untitled" : body) : title
     }
 }
 
@@ -136,100 +88,32 @@ struct NotesPlayerView: View {
     }
 
     private var listView: some View {
-        VStack(spacing: 0) {
-            topBar
-
-            if showSearch {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    NotchSearchField(placeholder: "Search notes", text: $searchText, autofocus: true)
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(MaterialChartPalette.surfaceContainer)
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(MaterialChartPalette.cardGradient(for: .yellow))
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.yellow.opacity(0.22), lineWidth: 1)
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
-            }
-
-            if filteredNotes.isEmpty {
-                emptyState
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(filteredNotes) { note in
-                            NotchSwipeRow(
-                                leading: leadingAction(for: note),
-                                trailing: trailingAction(for: note)
-                            ) {
-                                noteRow(note)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
-                }
-            }
-        }
-        .padding(.top, 10)
-        .frame(width: 460, height: 270)
-        .clipped()
-    }
-
-    private var topBar: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Notes")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                Text("\(notesManager.notes.count) saved")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 8)
-
-            toolbarButton("magnifyingglass", active: showSearch) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    showSearch.toggle()
-                    if !showSearch { searchText = "" }
-                }
-            }
-            toolbarButton("square.and.pencil") {
+        NotchSwipeListPanel(
+            title: "Notes",
+            subtitle: "\(notesManager.notes.count) saved",
+            accent: .yellow,
+            searchPlaceholder: "Search notes",
+            searchText: $searchText,
+            showSearch: $showSearch,
+            width: 460,
+            items: filteredNotes,
+            leadingAction: { action(settings.settings.swipeActionSettings.notesLeading, for: $0) },
+            trailingAction: { action(settings.settings.swipeActionSettings.notesTrailing, for: $0) }
+        ) {
+            NotchCapsuleIconButton(systemName: "square.and.pencil", activeTint: .yellow) {
                 let note = notesManager.addNote()
                 editorGate.editingNoteID = note.id
             }
+        } row: { note in
+            noteRow(note)
+        } emptyState: {
+            NotchListEmptyState(
+                systemImage: "note.text",
+                tint: .yellow,
+                title: searchText.isEmpty ? "No notes yet" : "No matching notes",
+                message: searchText.isEmpty ? "Tap the pencil to create your first note." : "Try a different search."
+            )
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 10)
-    }
-
-    private func toolbarButton(_ systemName: String, active: Bool = false, action: @escaping () -> Void) -> some View {
-        NotchCapsuleIconButton(
-            systemName: systemName,
-            isActive: active,
-            activeTint: .yellow,
-            action: action
-        )
     }
 
     private func noteRow(_ note: QuickNote) -> some View {
@@ -273,18 +157,7 @@ struct NotesPlayerView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(12)
-            .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(MaterialChartPalette.surface)
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(MaterialChartPalette.cardGradient(for: note.isDone ? .green : .yellow))
-                }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(MaterialChartPalette.outline, lineWidth: 1)
-            )
+            .notchTintedCard(note.isDone ? .green : .yellow)
             .opacity(note.isDone ? 0.82 : 1)
         }
         .buttonStyle(.plain)
@@ -294,8 +167,7 @@ struct NotesPlayerView: View {
             }
             Button("Edit") { editorGate.editingNoteID = note.id }
             Button("Copy") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString("\(note.title)\n\(note.body)", forType: .string)
+                NSPasteboard.general.copyString("\(note.title)\n\(note.body)")
             }
             Divider()
             Button("Delete", role: .destructive) {
@@ -304,32 +176,8 @@ struct NotesPlayerView: View {
         }
     }
 
-    private func leadingAction(for note: QuickNote) -> NotchSwipeAction? {
-        switch settings.settings.swipeActionSettings.notesLeading {
-        case .none:
-            return nil
-        case .toggleDone:
-            return NotchSwipeAction(
-                systemImage: note.isDone ? "arrow.uturn.backward" : "checkmark",
-                tint: note.isDone ? .orange : .green
-            ) {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                    notesManager.toggleNoteDone(id: note.id)
-                }
-            }
-        case .copy:
-            return NotchSwipeAction(systemImage: "doc.on.doc", tint: .yellow) {
-                copyNote(note)
-            }
-        case .delete:
-            return NotchSwipeAction(systemImage: "trash.fill", tint: .red) {
-                deleteNote(note)
-            }
-        }
-    }
-
-    private func trailingAction(for note: QuickNote) -> NotchSwipeAction? {
-        switch settings.settings.swipeActionSettings.notesTrailing {
+    private func action(_ configuredAction: NotesSwipeAction, for note: QuickNote) -> NotchSwipeAction? {
+        switch configuredAction {
         case .none:
             return nil
         case .toggleDone:
@@ -360,23 +208,7 @@ struct NotesPlayerView: View {
     }
 
     private func copyNote(_ note: QuickNote) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("\(note.title)\n\(note.body)", forType: .string)
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "note.text")
-                .font(.system(size: 28, weight: .light))
-                .foregroundStyle(.yellow.opacity(0.8))
-            Text(searchText.isEmpty ? "No notes yet" : "No matching notes")
-                .font(.headline)
-            Text(searchText.isEmpty ? "Tap the pencil to create your first note." : "Try a different search.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.bottom, 20)
+        NSPasteboard.general.copyString("\(note.title)\n\(note.body)")
     }
 }
 

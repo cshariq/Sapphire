@@ -38,7 +38,7 @@ class UniversalDownloadManager {
 
         directoryMonitor?.start()
 
-        progressUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        progressUpdateTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateAllProgress()
         }
         if let progressUpdateTimer {

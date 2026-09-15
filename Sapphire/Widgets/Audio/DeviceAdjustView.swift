@@ -257,7 +257,9 @@ fileprivate final class AdjustViewPerAppStore: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshRunningApps()
+            Task { @MainActor [weak self] in
+                self?.refreshRunningApps()
+            }
         }
     }
 

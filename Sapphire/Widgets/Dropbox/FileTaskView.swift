@@ -38,7 +38,6 @@ private struct SwipeToDismissWrapper<Content: View>: View {
     private let leadingThreshold: CGFloat = 80
     private let trailingThreshold: CGFloat = -80
     private let releaseAnimation = Animation.spring(response: 0.4, dampingFraction: 0.7)
-    private let dragAnimation = Animation.interactiveSpring(response: 0.2, dampingFraction: 0.8, blendDuration: 0.1)
 
     private var dynamicCornerRadius: CGFloat {
         let startRadius: CGFloat = 30
@@ -99,9 +98,7 @@ private struct SwipeToDismissWrapper<Content: View>: View {
                             if leading == nil { newOffset = min(0, newOffset) }
                             if trailing == nil { newOffset = max(0, newOffset) }
 
-                            withAnimation(dragAnimation) {
-                                self.offset = newOffset
-                            }
+                            self.offset = newOffset
                         }
                         .onEnded { gesture in
                             defer { isSwipingHorizontally = false }
@@ -119,9 +116,7 @@ private struct SwipeToDismissWrapper<Content: View>: View {
                             var proposed = offset - dx
                             if leading == nil { proposed = min(0, proposed) }
                             if trailing == nil { proposed = max(0, proposed) }
-                            withAnimation(dragAnimation) {
-                                self.offset = proposed
-                            }
+                            self.offset = proposed
                         },
                         endHorizontal: {
                             settle()
@@ -440,21 +435,58 @@ private struct EmptyStateView: View {
 private struct UniversalTransferRowView: View {
     let task: FileTransferTask
 
+    private var verb: String {
+        switch task.sourceType {
+        case .finder: return "Copying"
+        case .archiveExtraction: return "Extracting"
+        case .dmgInstall: return "Installing"
+        case .browserDownload, .manual: return "Downloading"
+        }
+    }
+
+    private var icon: String {
+        switch task.sourceType {
+        case .finder: return "arrow.right.arrow.left.circle.fill"
+        case .archiveExtraction: return "archivebox.fill"
+        case .dmgInstall: return "externaldrive.fill.badge.plus"
+        case .browserDownload, .manual: return "arrow.down.circle.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch task.sourceType {
+        case .archiveExtraction: return .brown
+        case .dmgInstall: return .indigo
+        default: return .blue
+        }
+    }
+
     private var subtitle: String {
-        let sizeString = ByteCountFormatter.string(fromByteCount: task.currentSize, countStyle: .file)
-        if task.isComplete {
-            return "Complete (\(sizeString))"
-        }
-        if task.totalSize != nil {
-            return "Downloading... (\(sizeString))"
+        let sizeString = ByteFormatter.string(task.currentSize)
+        guard !task.isComplete else { return "Complete (\(sizeString))" }
+
+        var parts = ["\(verb)..."]
+        if let total = task.totalSize {
+            parts.append("\(sizeString) of \(ByteFormatter.string(total))")
         } else {
-            return "Copying... (\(sizeString))"
+            parts.append(sizeString)
         }
+        if task.speed > 0 {
+            parts.append(TransferMetricsFormatter.speed(task.speed))
+        }
+        if let eta = TransferMetricsFormatter.eta(
+            currentBytes: task.currentSize,
+            totalBytes: task.totalSize,
+            bytesPerSecond: task.speed
+        ) {
+            parts.append("\(eta) left")
+        }
+        return parts.joined(separator: " • ")
     }
 
     var body: some View {
         HStack(spacing: 12) {
-            TaskIconView(systemName: "arrow.down.circle.fill", color: .blue)
+            TaskIconView(systemName: icon, color: tint)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.fileName).font(.callout).fontWeight(.semibold).lineLimit(1)
@@ -465,7 +497,7 @@ private struct UniversalTransferRowView: View {
             if task.isComplete {
                 StatusIcon(systemName: "checkmark.circle.fill", color: .green)
             } else if let progress = task.progress {
-                ProgressIndicator(progress: progress, color: .blue)
+                ProgressIndicator(progress: progress, color: tint)
             } else {
                 ProgressView().progressViewStyle(.circular).controlSize(.small)
             }
@@ -474,6 +506,7 @@ private struct UniversalTransferRowView: View {
         .background(Color.black.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
+
 }
 
 private struct LocalFileRowView: View {
@@ -486,7 +519,7 @@ private struct LocalFileRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .topTrailing) {
-                TaskIconView(systemName: IconGenerator.symbolName(for: item), color: .secondary)
+                LocalFileIconView(url: item.storedAt)
 
                 if isHovering {
                     Button(action: { manager.removeFile(item) }) {
@@ -656,12 +689,12 @@ private struct ActionButtons: View {
             }) {
                 Image(systemName: "square.and.arrow.up")
             }
-            .buttonStyle(ModernIconActionButtonStyle(isProminent: false))
+            .buttonStyle(CircleIconButtonStyle(type: .normal, size: .small))
 
             Button(action: { onSelectDetails(item) }) {
                 Image(systemName: "ellipsis")
             }
-            .buttonStyle(ModernIconActionButtonStyle(isProminent: true))
+            .buttonStyle(CircleIconButtonStyle(type: .prominent, size: .small))
         }
         .transition(.opacity.combined(with: .scale(scale: 0.9)))
     }
@@ -679,9 +712,9 @@ private struct IntegratedActionIconButtonsView: View {
     var body: some View {
         HStack(spacing: 8) {
             Button { submitConsent(accept: false) } label: { Image(systemName: "xmark") }
-                .buttonStyle(ModernIconActionButtonStyle(isProminent: false))
+                .buttonStyle(CircleIconButtonStyle(type: .normal, size: .small))
             Button { submitConsent(accept: true, action: .save) } label: { Image(systemName: "checkmark") }
-                .buttonStyle(ModernIconActionButtonStyle(isProminent: true))
+                .buttonStyle(CircleIconButtonStyle(type: .prominent, size: .small))
         }
     }
 }
@@ -691,11 +724,13 @@ private struct ProgressIndicator: View {
     let color: Color
     var body: some View {
         ZStack {
-            Circle().stroke(lineWidth: 4.0).opacity(0.2).foregroundColor(color)
-            Circle().trim(from: 0.0, to: CGFloat(min(self.progress, 1.0)))
-                .stroke(style: StrokeStyle(lineWidth: 4.0, lineCap: .round, lineJoin: .round))
-                .foregroundColor(color)
-                .rotationEffect(Angle(degrees: 270.0))
+            ProgressRingView(
+                progress: progress,
+                lineWidth: 4.0,
+                track: AnyShapeStyle(color.opacity(0.2)),
+                active: color,
+                rotation: .degrees(270)
+            )
             Text("\(Int(progress * 100))%").font(.caption2).fontWeight(.bold).foregroundColor(.secondary)
         }
         .frame(width: 36, height: 36)
@@ -714,35 +749,18 @@ private struct StatusIcon: View {
     }
 }
 
-private struct ModernIconActionButtonStyle: ButtonStyle {
-    var isProminent: Bool
+private struct LocalFileIconView: View {
+    let url: URL
+    @State private var systemName = "doc.fill"
 
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(isProminent ? .white : .primary)
-            .frame(width: 32, height: 32)
-            .background(isProminent ? Color.accentColor : Color.secondary.opacity(0.25))
-            .clipShape(Circle())
-            .scaleEffect(configuration.isPressed ? 0.9 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
-    }
-}
-
-private struct IconGenerator {
-    static func symbolName(for item: ShelfItem) -> String {
-        guard let type = try? item.storedAt.resourceValues(forKeys: [.contentTypeKey]).contentType else {
-            return "doc.fill"
-        }
-
-        if type.conforms(to: .image) { return "photo.fill" }
-        if type.conforms(to: .movie) { return "video.fill" }
-        if type.conforms(to: .audio) { return "music.note" }
-        if type.conforms(to: .pdf) { return "doc.richtext.fill" }
-        if type.conforms(to: .text) { return "doc.text.fill" }
-        if type.conforms(to: .folder) { return "folder.fill" }
-        if type.conforms(to: .archive) { return "archivebox.fill" }
-
-        return "doc.fill"
+    var body: some View {
+        TaskIconView(systemName: systemName, color: .secondary)
+            .task(id: url) {
+                let loadedName = await Task.detached(priority: .utility) {
+                    url.sapphireFileSymbolName
+                }.value
+                guard !Task.isCancelled else { return }
+                systemName = loadedName
+            }
     }
 }

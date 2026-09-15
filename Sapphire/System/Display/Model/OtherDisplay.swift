@@ -54,10 +54,10 @@ class OtherDisplay: Display {
     return self.writeDDCValues(command: .brightness, value: ddcValue)
   }
 
-  override func stepBrightness(isUp: Bool, isSmallIncrement: Bool) {
+  override func stepBrightness(isUp: Bool, isSmallIncrement: Bool, step: Float = 0.0625) {
     let currentValue = self.getBrightness()
-    let step: Float = isSmallIncrement ? 0.01 : 0.0625
-    var nextValue = isUp ? currentValue + step : currentValue - step
+    let delta: Float = isSmallIncrement ? 0.01 : step
+    var nextValue = isUp ? currentValue + delta : currentValue - delta
     nextValue = max(0, min(1, nextValue))
     self.setBrightness(nextValue)
   }

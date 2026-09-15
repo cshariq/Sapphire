@@ -18,9 +18,17 @@ final class DebugMode: ObservableObject {
         }
     }
 
+    @Published var systemEnhanceLogging: Bool {
+        didSet {
+            UserDefaults.standard.set(systemEnhanceLogging, forKey: Self.seLoggingKey)
+        }
+    }
+
     private static let storageKey = "SapphireDebugModeEnabled"
+    private static let seLoggingKey = "SapphireSystemEnhanceLogging"
 
     private init() {
         isEnabled = UserDefaults.standard.bool(forKey: Self.storageKey)
+        systemEnhanceLogging = UserDefaults.standard.bool(forKey: Self.seLoggingKey)
     }
 }

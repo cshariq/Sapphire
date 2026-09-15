@@ -8,38 +8,42 @@
 import Foundation
 import CryptoKit
 
-class CryptoManager {
+final class CryptoManager: @unchecked Sendable {
     static let shared = CryptoManager()
     private let keyAccount = "SapphireEncryptionMasterKey"
+    private let fallbackKeyAccount = "SapphireEncryptionMasterKey.fallback"
+    private let keyLock = NSLock()
+    private var cachedKey: SymmetricKey?
 
     private init() {}
 
     private func getEncryptionKey() -> SymmetricKey? {
-        if let keyData = KeychainManager.shared.load(for: keyAccount) {
-            print(" Successfully loaded existing encryption key from keychain")
-            return SymmetricKey(data: keyData)
-        }
+        keyLock.lock()
+        defer { keyLock.unlock() }
 
-        print("️ No existing encryption key found in keychain, creating new key")
+        if let cachedKey { return cachedKey }
+
+        if let keyData = KeychainManager.shared.load(for: keyAccount) {
+            let key = SymmetricKey(data: keyData)
+            cachedKey = key
+            return key
+        }
+        if let keyData = KeychainManager.shared.load(for: fallbackKeyAccount) {
+            let key = SymmetricKey(data: keyData)
+            cachedKey = key
+            return key
+        }
 
         let newKey = SymmetricKey(size: .bits256)
         let newKeyData = newKey.withUnsafeBytes { Data($0) }
 
-        let saveSuccessful = KeychainManager.shared.save(key: newKeyData, for: keyAccount)
-        if saveSuccessful {
-            print(" New encryption key created and saved to Keychain.")
-            return newKey
-        } else {
-            print(" CRITICAL: Failed to save new encryption key to Keychain.")
-
-            let fallbackSaveSuccessful = KeychainManager.shared.save(key: newKeyData, for: keyAccount + ".fallback")
-            if fallbackSaveSuccessful {
-                print(" Fallback: New encryption key saved using alternate account name")
-                return newKey
-            }
-
+        guard KeychainManager.shared.save(key: newKeyData, for: keyAccount)
+                || KeychainManager.shared.save(key: newKeyData, for: fallbackKeyAccount) else {
+            print("[CryptoManager] Failed to persist a new encryption key.")
             return nil
         }
+        cachedKey = newKey
+        return newKey
     }
 
     func encrypt(data: Data) -> Data? {
@@ -82,7 +86,11 @@ class CryptoManager {
     }
 
     func deleteKey() {
+        keyLock.lock()
+        defer { keyLock.unlock() }
+        cachedKey = nil
         _ = KeychainManager.shared.delete(for: keyAccount)
+        _ = KeychainManager.shared.delete(for: fallbackKeyAccount)
         print(" Encryption key deleted from Keychain.")
     }
 }

@@ -27,9 +27,17 @@ final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
     private let locationFailureBackoff: TimeInterval = 3 * 60
 
     private var isFetchingLocation = false
+    private var isFetchingWeather = false
     private var locationTimeoutWorkItem: DispatchWorkItem?
 
     private var lastAuthorizationStatus: CLAuthorizationStatus = .notDetermined
+
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 15
+        return URLSession(configuration: config)
+    }()
 
     private var weatherAPIKey: String {
         if let envKey = ProcessInfo.processInfo.environment["WEATHER_API_KEY"], !envKey.isEmpty {
@@ -77,6 +85,10 @@ final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
            cachedData.isValid,
            Date().timeIntervalSince(lastFetch) < cacheDuration {
             finishPending(with: .success(cachedData))
+            return
+        }
+
+        if isFetchingWeather {
             return
         }
 
@@ -237,6 +249,9 @@ final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
     }
 
     private func fetchAPIs(for location: CLLocation) {
+        guard !isFetchingWeather else { return }
+        isFetchingWeather = true
+
         Task { @MainActor in
             let placemarks   = try? await CLGeocoder().reverseGeocodeLocation(location)
             let locationName = placemarks?.first?.locality ?? placemarks?.first?.name ?? "Unknown Location"
@@ -274,10 +289,7 @@ final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
         guard let url = URL(string: urlString) else { return nil }
 
         do {
-            let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest  = 10
-            config.timeoutIntervalForResource = 15
-            let (data, response) = try await URLSession(configuration: config).data(from: url)
+            let (data, response) = try await session.data(from: url)
 
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 return nil
@@ -295,6 +307,7 @@ final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
         locationTimeoutWorkItem = nil
         locationManager.stopUpdatingLocation()
         isFetchingLocation = false
+        isFetchingWeather = false
         let completions = pendingCompletions
         pendingCompletions.removeAll()
         completions.forEach { $0(result) }

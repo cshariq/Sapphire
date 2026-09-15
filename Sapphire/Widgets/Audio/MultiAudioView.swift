@@ -57,8 +57,7 @@ struct MultiAudioPermissionRequiredView: View {
 
             Button {
                 if permissionsManager.screenRecordingStatus == .denied {
-                    let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
-                    NSWorkspace.shared.open(url)
+                    SystemPreferencesPane.screenCapture.open()
                 } else {
                     permissionsManager.requestPermission(.screenRecording)
                 }
@@ -173,6 +172,7 @@ struct AppSectionView: View {
     @Binding var navigationStack: [NotchWidgetMode]
     var omitOuterPadding: Bool = false
     @StateObject private var store = MainMenuPerAppVolumeStore()
+    @ObservedObject private var audioManager = MultiAudioManager.shared
 
     var body: some View {
         VStack(spacing: 8) {
@@ -185,8 +185,10 @@ struct AppSectionView: View {
                     isMuted: store.mute(for: app.bundleID),
                     onReset: { store.reset(for: app.bundleID) },
                     navigationStack: $navigationStack,
-                    isRecentlyActive: store.isRecentlyActive(app.bundleID),
-                    isCurrentlyOutputting: store.isCurrentlyOutputting(app.bundleID)
+                    isRecentlyActive: app.isRecentlyActive,
+                    isCurrentlyOutputting: app.isCurrentlyOutputting,
+                    isEightDAudioEnabled: audioManager.eightDAudioSettings(for: app.bundleID).enabled,
+                    isSurroundAudioEnabled: audioManager.surroundAudioSettings(for: app.bundleID).enabled
                 )
             }
         }
@@ -194,7 +196,7 @@ struct AppSectionView: View {
         .padding(.bottom, omitOuterPadding ? 4 : 20)
         .padding(.top, omitOuterPadding ? 0 : 10)
         .onAppear { store.refreshRunningApps() }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+        .periodicTask(every: .seconds(30)) {
             store.refreshRunningApps()
         }
     }
@@ -210,6 +212,8 @@ fileprivate struct AppControlCard: View {
     @Binding var navigationStack: [NotchWidgetMode]
     var isRecentlyActive: Bool = false
     var isCurrentlyOutputting: Bool = false
+    var isEightDAudioEnabled: Bool = false
+    var isSurroundAudioEnabled: Bool = false
 
     private var statusText: String {
         if isMuted { return "Muted" }
@@ -239,6 +243,20 @@ fileprivate struct AppControlCard: View {
 
             SmallIconButton(icon: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill", active: isMuted) { onMute(isMuted) }
             SmallIconButton(icon: "slider.vertical.3", active: false) { navigationStack.append(.multiAudioAppEQ(bundleID: app.bundleID, appName: app.name)) }
+            SmallIconButton(icon: "rotate.3d", active: isEightDAudioEnabled) {
+                guard SubscriptionAccess.hasAccess(to: .audio8D) else {
+                    _ = FeatureGate.shared.require(.audio8D, message: premiumDefaultMessage(for: .audio8D))
+                    return
+                }
+                navigationStack.append(.multiAudioApp8D(bundleID: app.bundleID, appName: app.name))
+            }
+            SmallIconButton(icon: "hifispeaker.2.fill", active: isSurroundAudioEnabled) {
+                guard SubscriptionAccess.hasAccess(to: .surroundSound) else {
+                    _ = FeatureGate.shared.require(.surroundSound, message: premiumDefaultMessage(for: .surroundSound))
+                    return
+                }
+                navigationStack.append(.multiAudioAppSurround(bundleID: app.bundleID, appName: app.name))
+            }
             SmallIconButton(icon: "arrow.counterclockwise", active: false, destructive: true) { onReset() }
         }
         .padding(.vertical, 15).padding(.horizontal, 12)
@@ -392,97 +410,115 @@ fileprivate struct SmallIconButton: View {
     }
 }
 
-fileprivate struct BoldPillSlider: View {
-    let label: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let specifier: String
-    var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let progress = CGFloat((value - range.lowerBound) / (range.upperBound - range.lowerBound))
-            let textView = HStack {
-                Text(label).fontWeight(.bold)
-                Spacer()
-                Text(String(format: specifier, value)).font(.system(.body, design: .monospaced)).fontWeight(.bold)
-            }.font(.system(size: 13)).padding(.horizontal, 16)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.gray.opacity(0.25))
-                textView.foregroundColor(.primary.opacity(0.85))
-                ZStack {
-                    Capsule().fill(Color.accentColor)
-                    textView.foregroundColor(.white)
-                }.mask(Rectangle().frame(width: width * min(max(progress, 0), 1)).frame(maxWidth: .infinity, alignment: .leading))
-            }.clipShape(Capsule()).contentShape(Capsule())
-            .gesture(DragGesture(minimumDistance: 0).onChanged { v in
-                let percentage = Double(v.location.x / width)
-                value = min(max((range.upperBound - range.lowerBound) * percentage + range.lowerBound, range.lowerBound), range.upperBound)
-            })
-        }
-    }
-}
-
 // MARK: - Data Stores
 
-fileprivate struct MainMenuRunningAppItem: Identifiable {
-    let bundleID: String, name: String, icon: NSImage?
+fileprivate struct MainMenuRunningAppItem: Identifiable, Equatable {
+    let bundleID: String
+    let name: String
+    let icon: NSImage?
+    let isRecentlyActive: Bool
+    let isCurrentlyOutputting: Bool
+    let lastActivityDate: Date?
     var id: String { bundleID }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.bundleID == rhs.bundleID
+            && lhs.name == rhs.name
+            && lhs.icon === rhs.icon
+            && lhs.isRecentlyActive == rhs.isRecentlyActive
+            && lhs.isCurrentlyOutputting == rhs.isCurrentlyOutputting
+            && lhs.lastActivityDate == rhs.lastActivityDate
+    }
 }
 
 @MainActor
 fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
     @Published var runningApps: [MainMenuRunningAppItem] = []
-    private var observers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var appObservers: [NSObjectProtocol] = []
     private let recentWindow: TimeInterval = 180
 
     init() {
         refreshRunningApps()
-        let center = NSWorkspace.shared.notificationCenter
-        observers.append(center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] _ in self?.refreshRunningApps() })
-        observers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] _ in self?.refreshRunningApps() })
-        observers.append(NotificationCenter.default.addObserver(forName: .multiAudioActiveBundlesDidChange, object: nil, queue: .main) { [weak self] _ in self?.refreshRunningApps() })
-        observers.append(NotificationCenter.default.addObserver(forName: .perAppAudioSettingsDidChange, object: nil, queue: .main) { [weak self] _ in self?.objectWillChange.send() })
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(workspaceCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshRunningApps() }
+        })
+        workspaceObservers.append(workspaceCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshRunningApps() }
+        })
+
+        let appCenter = NotificationCenter.default
+        appObservers.append(appCenter.addObserver(forName: .multiAudioActiveBundlesDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshRunningApps() }
+        })
+        appObservers.append(appCenter.addObserver(forName: .perAppAudioSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        })
     }
 
-    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
-
-    func isCurrentlyOutputting(_ bundleID: String) -> Bool {
-        MultiAudioManager.shared.activeAudioBundleIDs().contains(bundleID)
-    }
-
-    func isRecentlyActive(_ bundleID: String) -> Bool {
-        MultiAudioManager.shared.isRecentlyOutputtingAudio(bundleID, within: recentWindow)
+    deinit {
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach(workspaceCenter.removeObserver)
+        let appCenter = NotificationCenter.default
+        appObservers.forEach(appCenter.removeObserver)
     }
 
     func refreshRunningApps() {
         let audio = MultiAudioManager.shared
         let activeAudio = audio.activeAudioBundleIDs()
         let now = Date()
+        let existingIcons = Dictionary(uniqueKeysWithValues: runningApps.map { ($0.bundleID, $0.icon) })
 
-        runningApps = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
-            .compactMap { MainMenuRunningAppItem(bundleID: $0.bundleIdentifier!, name: $0.localizedName ?? "Unknown App", icon: $0.icon) }
+        let refreshedApps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { application -> MainMenuRunningAppItem? in
+                guard let bundleID = application.bundleIdentifier,
+                      bundleID != Bundle.main.bundleIdentifier else { return nil }
+                let lastActivityDate = audio.lastAudioActivityDate(for: bundleID)
+                let isRecentlyActive = lastActivityDate.map {
+                    now.timeIntervalSince($0) <= recentWindow
+                } ?? false
+                return MainMenuRunningAppItem(
+                    bundleID: bundleID,
+                    name: application.localizedName ?? "Unknown App",
+                    icon: existingIcons[bundleID] ?? application.icon,
+                    isRecentlyActive: isRecentlyActive,
+                    isCurrentlyOutputting: activeAudio.contains(bundleID),
+                    lastActivityDate: lastActivityDate
+                )
+            }
             .sorted { lhs, rhs in
-                let lhsActive = activeAudio.contains(lhs.bundleID)
-                let rhsActive = activeAudio.contains(rhs.bundleID)
-                if lhsActive != rhsActive { return lhsActive && !rhsActive }
-
-                let lhsRecentDate = audio.lastAudioActivityDate(for: lhs.bundleID)
-                let rhsRecentDate = audio.lastAudioActivityDate(for: rhs.bundleID)
-                let lhsRecent = lhsRecentDate.map { now.timeIntervalSince($0) <= recentWindow } ?? false
-                let rhsRecent = rhsRecentDate.map { now.timeIntervalSince($0) <= recentWindow } ?? false
-                if lhsRecent != rhsRecent { return lhsRecent && !rhsRecent }
-                if lhsRecent, rhsRecent, let ld = lhsRecentDate, let rd = rhsRecentDate, ld != rd {
+                if lhs.isCurrentlyOutputting != rhs.isCurrentlyOutputting {
+                    return lhs.isCurrentlyOutputting && !rhs.isCurrentlyOutputting
+                }
+                if lhs.isRecentlyActive != rhs.isRecentlyActive {
+                    return lhs.isRecentlyActive && !rhs.isRecentlyActive
+                }
+                if lhs.isRecentlyActive,
+                   rhs.isRecentlyActive,
+                   let ld = lhs.lastActivityDate,
+                   let rd = rhs.lastActivityDate,
+                   ld != rd {
                     return ld > rd
                 }
 
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
+
+        if runningApps != refreshedApps {
+            runningApps = refreshedApps
+        }
     }
 
     func volume(for bID: String) -> Double { PerAppAudioController.shared.volume(for: bID) }
     func mute(for bID: String) -> Bool { PerAppAudioController.shared.mute(for: bID) }
     func setVolume(_ v: Double, for bID: String) { PerAppAudioController.shared.setVolume(v, for: bID) }
     func setMute(_ m: Bool, for bID: String) { PerAppAudioController.shared.setMute(m, for: bID) }
-    func reset(for bID: String) { PerAppAudioController.shared.reset(for: bID); objectWillChange.send() }
+    func reset(for bID: String) {
+        PerAppAudioController.shared.reset(for: bID)
+        MultiAudioManager.shared.resetEightDAudio(for: bID)
+        MultiAudioManager.shared.resetSurroundAudio(for: bID)
+        objectWillChange.send()
+    }
 }

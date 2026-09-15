@@ -46,6 +46,7 @@ final class MenuBarAppearanceManager {
 
     private func setupObservers() {
         SettingsModel.shared.$settings
+            .dropFirst()
             .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.scheduleRefresh() }
             .store(in: &cancellables)

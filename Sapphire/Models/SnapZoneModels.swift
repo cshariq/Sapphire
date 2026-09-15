@@ -96,6 +96,20 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
     }
 }
 
+struct SnapZoneShortcut: Codable, Equatable, Identifiable, Hashable {
+    let id: UUID
+    let layoutID: UUID
+    let zoneID: UUID
+    var shortcut: KeyboardShortcut
+
+    init(id: UUID = UUID(), layoutID: UUID, zoneID: UUID, shortcut: KeyboardShortcut) {
+        self.id = id
+        self.layoutID = layoutID
+        self.zoneID = zoneID
+        self.shortcut = shortcut
+    }
+}
+
 struct Plane: Codable, Equatable, Identifiable {
     var id = UUID()
     var name: String

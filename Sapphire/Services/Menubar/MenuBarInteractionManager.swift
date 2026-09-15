@@ -30,12 +30,19 @@ final class MenuBarInteractionManager {
         isMonitoring = true
         isSuspended = false
         if cancellables.isEmpty {
-            SettingsModel.shared.$settings.receive(on: DispatchQueue.main).sink { [weak self] settings in
-                guard let self = self, self.isMonitoring else { return }
-                self.updateMonitors(for: settings)
-            }.store(in: &cancellables)
+            SettingsModel.shared.$settings
+                .map { ($0.showOnClick, $0.showOnHover) }
+                .removeDuplicates { $0 == $1 }
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] configuration in
+                    guard let self, self.isMonitoring else { return }
+                    self.updateMonitors(showOnClick: configuration.0, showOnHover: configuration.1)
+                }
+                .store(in: &cancellables)
         }
-        updateMonitors(for: SettingsModel.shared.settings)
+        let settings = SettingsModel.shared.settings
+        updateMonitors(showOnClick: settings.showOnClick, showOnHover: settings.showOnHover)
     }
 
     func setSuspended(_ suspended: Bool) {
@@ -53,16 +60,16 @@ final class MenuBarInteractionManager {
         cancellables.removeAll()
     }
 
-    private func updateMonitors(for settings: Settings) {
-        if settings.showOnClick && clickToken == nil {
+    private func updateMonitors(showOnClick: Bool, showOnHover: Bool) {
+        if showOnClick && clickToken == nil {
             startClickMonitoring()
-        } else if !settings.showOnClick && clickToken != nil {
+        } else if !showOnClick && clickToken != nil {
             stopClickMonitoring()
         }
 
-        if settings.showOnHover && hoverProbe == nil {
+        if showOnHover && hoverProbe == nil {
             startHoverMonitoring()
-        } else if !settings.showOnHover && hoverProbe != nil {
+        } else if !showOnHover && hoverProbe != nil {
             stopHoverMonitoring()
         }
     }

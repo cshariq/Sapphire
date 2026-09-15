@@ -15,11 +15,13 @@ final class PerAppAudioController {
     private let volumeDefaultsKey = "SapphirePerAppVolumeMap"
     private let muteDefaultsKey = "SapphirePerAppMuteMap"
     private let eqDefaultsKey = "SapphirePerAppEQMap"
+    private let eqBassDefaultsKey = "SapphirePerAppEQBassMap"
     private let eqDeviceScopeDefaultsKey = "SapphirePerAppEQDeviceScopeMap"
 
     private var volumeMap: [String: Double] = [:]
     private var muteMap: [String: Bool] = [:]
     private var eqMap: [String: [Double]] = [:]
+    private var eqBassMap: [String: Double] = [:]
     private var eqDeviceScopeMap: [String: [String]] = [:]
 
     private init() {
@@ -30,6 +32,7 @@ final class PerAppAudioController {
         if volumeMap[bundleID] != nil && volumeMap[bundleID] != 1.0 { return true }
         if muteMap[bundleID] == true { return true }
         if let eq = eqMap[bundleID], !eq.allSatisfy({ $0 == 0.0 }) { return true }
+        if let bass = eqBassMap[bundleID], bass != 0.0 { return true }
         return false
     }
 
@@ -61,16 +64,35 @@ final class PerAppAudioController {
     }
 
     func eqGains(for bundleID: String) -> [Double] {
-        eqMap[bundleID] ?? Array(repeating: 0.0, count: 10)
+        AudioEQ.normalize(eqMap[bundleID] ?? AudioEQ.flat)
     }
 
     func setEQGains(_ gains: [Double], for bundleID: String) {
-        eqMap[bundleID] = gains
+        let normalized = AudioEQ.normalize(gains)
+        eqMap[bundleID] = normalized
         persistEQMap()
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
         MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
-        MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: gains)
+        MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: normalized, bassGain: eqBass(for: bundleID))
+    }
+
+    func eqBass(for bundleID: String) -> Double {
+        eqBassMap[bundleID] ?? 0.0
+    }
+
+    func setEQBass(_ value: Double, for bundleID: String) {
+        let clamped = min(max(value, AudioEQ.bassRange.lowerBound), AudioEQ.bassRange.upperBound)
+        if clamped == 0.0 {
+            eqBassMap.removeValue(forKey: bundleID)
+        } else {
+            eqBassMap[bundleID] = clamped
+        }
+        persistEQBassMap()
+
+        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
+        MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
+        MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: eqGains(for: bundleID), bassGain: clamped)
     }
 
     func targetDeviceUIDs(for bundleID: String) -> Set<String>? {
@@ -93,13 +115,16 @@ final class PerAppAudioController {
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
         MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
-        MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: eqGains(for: bundleID))
+        MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: eqGains(for: bundleID), bassGain: eqBass(for: bundleID))
     }
 
     func appEQScopeEntries() -> [(bundleID: String, targetDeviceUIDs: Set<String>?)] {
-        eqMap.keys.compactMap { bundleID in
+        let bundleIDs = Set(eqMap.keys).union(eqBassMap.keys)
+        return bundleIDs.compactMap { bundleID in
             let gains = eqMap[bundleID] ?? []
-            guard !gains.allSatisfy({ $0 == 0.0 }) else { return nil }
+            let hasBands = !gains.allSatisfy({ $0 == 0.0 }) && !gains.isEmpty
+            let hasBass = (eqBassMap[bundleID] ?? 0.0) != 0.0
+            guard hasBands || hasBass else { return nil }
             return (bundleID: bundleID, targetDeviceUIDs: targetDeviceUIDs(for: bundleID))
         }
     }
@@ -108,11 +133,13 @@ final class PerAppAudioController {
         volumeMap.removeValue(forKey: bundleID)
         muteMap.removeValue(forKey: bundleID)
         eqMap.removeValue(forKey: bundleID)
+        eqBassMap.removeValue(forKey: bundleID)
         eqDeviceScopeMap.removeValue(forKey: bundleID)
 
         persistDoubleMap(volumeMap, forKey: volumeDefaultsKey)
         persistBoolMap(muteMap, forKey: muteDefaultsKey)
         persistEQMap()
+        persistEQBassMap()
         persistEQScopeMap()
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
@@ -123,12 +150,14 @@ final class PerAppAudioController {
         volumeMap.removeAll()
         muteMap.removeAll()
         eqMap.removeAll()
+        eqBassMap.removeAll()
         eqDeviceScopeMap.removeAll()
 
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: volumeDefaultsKey)
         defaults.removeObject(forKey: muteDefaultsKey)
         defaults.removeObject(forKey: eqDefaultsKey)
+        defaults.removeObject(forKey: eqBassDefaultsKey)
         defaults.removeObject(forKey: eqDeviceScopeDefaultsKey)
 
         NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self)
@@ -137,7 +166,8 @@ final class PerAppAudioController {
     private func loadPersistedState() {
         volumeMap = loadDoubleMap(forKey: volumeDefaultsKey)
         muteMap = loadBoolMap(forKey: muteDefaultsKey)
-        eqMap = loadEQMap(forKey: eqDefaultsKey)
+        eqMap = loadEQMap(forKey: eqDefaultsKey).mapValues { AudioEQ.normalize($0) }
+        eqBassMap = loadDoubleMap(forKey: eqBassDefaultsKey)
         eqDeviceScopeMap = loadStringArrayMap(forKey: eqDeviceScopeDefaultsKey)
     }
 
@@ -154,6 +184,12 @@ final class PerAppAudioController {
     private func persistEQMap() {
         if let data = try? JSONEncoder().encode(eqMap) {
             UserDefaults.standard.set(data, forKey: eqDefaultsKey)
+        }
+    }
+
+    private func persistEQBassMap() {
+        if let data = try? JSONEncoder().encode(eqBassMap) {
+            UserDefaults.standard.set(data, forKey: eqBassDefaultsKey)
         }
     }
 

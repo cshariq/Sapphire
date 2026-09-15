@@ -530,6 +530,7 @@ final class AudioEngine {
             processMonitor.start()
         }
         deviceMonitor.start()
+        bluetoothDeviceMonitor.start()
         applyPersistedSettings()
         if permission.status == .authorized {
             startHealthMonitor()
@@ -544,12 +545,34 @@ final class AudioEngine {
 
     func stop() {
         stopHealthMonitor()
+        staleCleanupTask?.cancel()
+        staleCleanupTask = nil
+        pendingCleanup.values.forEach { $0.cancel() }
+        pendingCleanup.removeAll()
+
+        if case .pendingAutoSwitch(_, let task) = outputPriorityState {
+            task.cancel()
+        }
+        outputPriorityState = .stable
+        if case .pendingAutoSwitch(_, let task) = inputPriorityState {
+            task.cancel()
+        }
+        inputPriorityState = .stable
+
+        for deviceID in Array(aliveWatchers.keys) {
+            removeAliveWatcher(deviceID)
+        }
+        outputEchoTracker.reset()
+        inputEchoTracker.reset()
+
         processMonitor.stop()
         deviceMonitor.stop()
+        bluetoothDeviceMonitor.stop()
         for tap in taps.values {
             tap.invalidate()
         }
         taps.removeAll()
+        tapRecoveryCooldownUntil.removeAll()
         logger.info("AudioEngine stopped")
     }
 

@@ -14,8 +14,9 @@ class DesktopManager: ObservableObject {
     @Published private(set) var perDisplayDesktopNumbers: [String: Int] = [:]
 
     init() {
-        self.currentDesktopNumber = CGSHelper.getActiveDesktopNumber()
-        self.perDisplayDesktopNumbers = CGSHelper.getActiveDesktopNumbersByDisplay()
+        let numbers = CGSHelper.getActiveDesktopNumbers()
+        self.currentDesktopNumber = numbers.main
+        self.perDisplayDesktopNumbers = numbers.byDisplay
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -27,8 +28,13 @@ class DesktopManager: ObservableObject {
 
     @objc private func activeSpaceDidChange() {
         DispatchQueue.main.async {
-            self.currentDesktopNumber = CGSHelper.getActiveDesktopNumber()
-            self.perDisplayDesktopNumbers = CGSHelper.getActiveDesktopNumbersByDisplay()
+            let numbers = CGSHelper.getActiveDesktopNumbers()
+            if self.currentDesktopNumber != numbers.main {
+                self.currentDesktopNumber = numbers.main
+            }
+            if self.perDisplayDesktopNumbers != numbers.byDisplay {
+                self.perDisplayDesktopNumbers = numbers.byDisplay
+            }
         }
     }
 

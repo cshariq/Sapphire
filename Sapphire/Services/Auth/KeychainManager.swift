@@ -15,9 +15,7 @@ class KeychainManager {
     private let service = "com.shariq.Sapphire.faceid.keychain"
 
     func save(key: Data, for account: String) -> Bool {
-        delete(for: account)
-
-        let status = KeychainStore.addItem(
+        let status = KeychainStore.setItem(
             service: service,
             account: account,
             data: key,

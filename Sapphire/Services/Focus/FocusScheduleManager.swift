@@ -71,7 +71,7 @@ final class FocusScheduleManager: ObservableObject {
     private var timer: Timer?
 
     private init() {
-        timer = Timer.scheduledTimer(withTimeInterval: Self.checkInterval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledCoalescing(withTimeInterval: Self.checkInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkSchedules()
             }

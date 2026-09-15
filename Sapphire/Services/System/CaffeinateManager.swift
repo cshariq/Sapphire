@@ -27,6 +27,9 @@ class CaffeineManager: ObservableObject {
     private var savedBrightnessBeforeScreenOff: Float?
     private var shouldRemainActive = false
     private var autoStartedByBatteryDischarge = false
+    private var autoStartedByDevTask = false
+    private var devTaskAutoSuppressed = false
+    private var devTaskReleaseTask: Task<Void, Never>?
     private var watchdogTimer: Timer?
     private var lastKnownClamshellClosed = false
     private var clamshellReleaseDebounceTask: Task<Void, Never>?
@@ -34,8 +37,7 @@ class CaffeineManager: ObservableObject {
     private var screenParameterDebounceTask: Task<Void, Never>?
     private var pendingClamshellOpen = false
 
-    private var consecutiveClamshellOpenReadings = 0
-    private let clamshellOpenReadingsRequired = 10
+    private var usingPolledClamshellFallback = false
     private var timeoutTask: Task<Void, Never>?
     @Published private(set) var timeoutEndsAt: Date?
 
@@ -43,18 +45,27 @@ class CaffeineManager: ObservableObject {
         lidAngleSensor.$angle
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                guard self?.shouldRemainActive == true else { return }
-                self?.handleClamshellOrLidChange()
+                guard let self, self.shouldRemainActive else { return }
+                self.evaluateLidAngleScreenOff()
+                guard self.usingPolledClamshellFallback else { return }
+                self.handleClamshellStateChanged(ClamshellDetector.isClosed)
             }
             .store(in: &cancellables)
 
         lidAngleSensor.$isAvailable
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                guard self?.shouldRemainActive == true else { return }
-                self?.handleClamshellOrLidChange()
+                guard let self, self.shouldRemainActive else { return }
+                self.evaluateLidAngleScreenOff()
             }
             .store(in: &cancellables)
+
+        if !ClamshellDetector.startObservingNativeEvents({ [weak self] isClosed in
+            self?.handleClamshellStateChanged(isClosed)
+        }) {
+            os_log("CaffeineManager: Native clamshell notifications unavailable, falling back to polling.")
+            usingPolledClamshellFallback = true
+        }
 
         settings.$settings
             .map {
@@ -77,12 +88,6 @@ class CaffeineManager: ObservableObject {
             .store(in: &cancellables)
 
         let workspaceCenter = NSWorkspace.shared.notificationCenter
-        workspaceCenter.publisher(for: NSWorkspace.willSleepNotification)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-            }
-            .store(in: &cancellables)
-
         workspaceCenter.publisher(for: NSWorkspace.didWakeNotification)
             .merge(with: workspaceCenter.publisher(for: NSWorkspace.screensDidWakeNotification))
             .receive(on: RunLoop.main)
@@ -95,6 +100,22 @@ class CaffeineManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.scheduleClamshellReevaluation()
+            }
+            .store(in: &cancellables)
+
+        settings.$settings
+            .map { ($0.caffeinateAutoDuringTasks, $0.caffeinateAutoTaskKinds, $0.caffeinateAutoTaskGrace) }
+            .removeDuplicates { $0 == $1 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.evaluateDevTaskCaffeinate()
+            }
+            .store(in: &cancellables)
+
+        DevActivityMonitor.shared.$tasks
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.evaluateDevTaskCaffeinate()
             }
             .store(in: &cancellables)
 
@@ -133,16 +154,20 @@ class CaffeineManager: ObservableObject {
     }
 
     func stop() {
+        if hasQualifyingDevTask() { devTaskAutoSuppressed = true }
+
         shouldRemainActive = false
         forceClamshellGuard = false
         autoStartedByBatteryDischarge = false
+        autoStartedByDevTask = false
+        devTaskReleaseTask?.cancel()
+        devTaskReleaseTask = nil
         cancelTimeout()
         stopWatchdog()
         clamshellReleaseDebounceTask?.cancel()
         powerGuardRefreshDebounceTask?.cancel()
         screenParameterDebounceTask?.cancel()
         pendingClamshellOpen = false
-        consecutiveClamshellOpenReadings = 0
 
         releaseIOPMAssertions()
         terminateCaffeinateProcess()
@@ -158,6 +183,7 @@ class CaffeineManager: ObservableObject {
         cancelTimeout()
         let minutes = settings.settings.caffeinateTimeoutMinutes
         guard shouldRemainActive, minutes > 0 else { return }
+        guard !autoStartedByDevTask else { return }
 
         let endsAt = Date().addingTimeInterval(minutes * 60)
         timeoutEndsAt = endsAt
@@ -183,6 +209,66 @@ class CaffeineManager: ObservableObject {
         timeoutEndsAt = nil
     }
 
+    // MARK: - Task-driven caffeinate
+
+    private func hasQualifyingDevTask() -> Bool {
+        guard settings.settings.caffeinateAutoDuringTasks else { return false }
+        let kinds = settings.settings.caffeinateAutoTaskKinds
+        guard !kinds.isEmpty else { return false }
+        return DevActivityMonitor.shared.tasks.contains { kinds.contains($0.kind.rawValue) }
+    }
+
+    private func evaluateDevTaskCaffeinate() {
+        guard settings.settings.caffeinateAutoDuringTasks else {
+            devTaskAutoSuppressed = false
+            releaseDevTaskCaffeinateNow()
+            return
+        }
+
+        guard hasQualifyingDevTask() else {
+            devTaskAutoSuppressed = false
+            scheduleDevTaskRelease()
+            return
+        }
+
+        devTaskReleaseTask?.cancel()
+        devTaskReleaseTask = nil
+
+        guard !devTaskAutoSuppressed else { return }
+        guard !isActive else { return }
+
+        autoStartedByDevTask = true
+        start()
+        os_log("CaffeineManager: Auto-started for a running task.")
+    }
+
+    private func scheduleDevTaskRelease() {
+        guard autoStartedByDevTask else { return }
+        guard devTaskReleaseTask == nil else { return }
+
+        let grace = max(0, settings.settings.caffeinateAutoTaskGrace)
+        devTaskReleaseTask = Task { @MainActor [weak self] in
+            if grace > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(grace * 1_000_000_000))
+            }
+            guard !Task.isCancelled, let self else { return }
+            guard !self.hasQualifyingDevTask() else {
+                self.devTaskReleaseTask = nil
+                return
+            }
+            self.releaseDevTaskCaffeinateNow()
+        }
+    }
+
+    private func releaseDevTaskCaffeinateNow() {
+        devTaskReleaseTask?.cancel()
+        devTaskReleaseTask = nil
+        guard autoStartedByDevTask else { return }
+        autoStartedByDevTask = false
+        stop()
+        os_log("CaffeineManager: Auto-stopped - no tasks running.")
+    }
+
     func stopIfAutoStartedByBatteryDischarge() {
         guard autoStartedByBatteryDischarge else { return }
         stop()
@@ -198,7 +284,6 @@ class CaffeineManager: ObservableObject {
 
         if shouldAcquireClamshellGuard() {
             pendingClamshellOpen = false
-            consecutiveClamshellOpenReadings = 0
             clamshellReleaseDebounceTask?.cancel()
             acquireClamshellGuardIfNeeded()
         }
@@ -213,7 +298,7 @@ class CaffeineManager: ObservableObject {
         screenParameterDebounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled, let self, self.shouldRemainActive else { return }
-            self.handleClamshellOrLidChange()
+            self.handleClamshellStateChanged(ClamshellDetector.isClosed)
         }
     }
 
@@ -300,42 +385,22 @@ class CaffeineManager: ObservableObject {
         evaluateLidAngleScreenOff()
     }
 
-    private func handleClamshellOrLidChange() {
-        os_log("CaffeineManager: handleClamshellOrLidChange called - shouldRemainActive: %{public}@",
-               shouldRemainActive ? "true" : "false")
-        evaluateLidAngleScreenOff()
+    private func handleClamshellStateChanged(_ isClosed: Bool) {
         guard shouldRemainActive else { return }
+        guard isClosed != lastKnownClamshellClosed else { return }
 
-        let clamshellClosed = ClamshellDetector.isClosed
-        os_log("CaffeineManager: ClamshellDetector.isClosed = %{public}@, lastKnownClamshellClosed = %{public}@",
-               clamshellClosed ? "true" : "false", lastKnownClamshellClosed ? "true" : "false")
-        os_log("CaffeineManager: Clamshell state changed - closed: %{public}@, consecutiveOpen: %{public}d",
-               clamshellClosed ? "true" : "false", consecutiveClamshellOpenReadings)
+        os_log("CaffeineManager: Clamshell state transition - lastKnown: %{public}@, current: %{public}@",
+               lastKnownClamshellClosed ? "true" : "false", isClosed ? "true" : "false")
+        lastKnownClamshellClosed = isClosed
 
-        if clamshellClosed {
-            consecutiveClamshellOpenReadings = 0
+        if isClosed {
             pendingClamshellOpen = false
             clamshellReleaseDebounceTask?.cancel()
-        } else {
-            consecutiveClamshellOpenReadings += 1
-        }
-
-        guard clamshellClosed != lastKnownClamshellClosed else { return }
-        os_log("CaffeineManager: Clamshell state transition - lastKnown: %{public}@, current: %{public}@",
-               lastKnownClamshellClosed ? "true" : "false", clamshellClosed ? "true" : "false")
-        lastKnownClamshellClosed = clamshellClosed
-
-        if clamshellClosed {
             os_log("CaffeineManager: Clamshell closed - refreshing power guards.")
             refreshAllPowerGuards()
             return
         }
 
-        guard consecutiveClamshellOpenReadings >= clamshellOpenReadingsRequired else {
-            os_log("CaffeineManager: Not enough consecutive open readings (%{public}d/%{public}d)",
-                   consecutiveClamshellOpenReadings, clamshellOpenReadingsRequired)
-            return
-        }
         scheduleClamshellReleaseIfNeeded()
     }
 
@@ -539,7 +604,7 @@ class CaffeineManager: ObservableObject {
     private func startWatchdogIfNeeded() {
         guard watchdogTimer == nil else { return }
 
-        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        watchdogTimer = Timer.scheduledCoalescing(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.runWatchdog()
             }
@@ -595,7 +660,7 @@ class CaffeineManager: ObservableObject {
     private func restoreBrightnessIfNeeded() {
         guard dimmedScreenForLidAngle else { return }
 
-        let targetBrightness = savedBrightnessBeforeScreenOff ?? max(0.2, settings.settings.brightness)
+        let targetBrightness = savedBrightnessBeforeScreenOff ?? max(0.2, settings.brightness)
         savedBrightnessBeforeScreenOff = nil
         dimmedScreenForLidAngle = false
         SystemControl.setBrightnessSmoothly(to: targetBrightness, duration: 0.15)

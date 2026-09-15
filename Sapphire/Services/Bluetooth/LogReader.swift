@@ -14,18 +14,8 @@ extension Notification.Name {
     static let didUpdateAirPodsBattery = Notification.Name("didUpdateAirPodsBattery")
 }
 
-let widgetInterval = ud.integer(forKey: "widgetInterval")
-let updateInterval = ud.integer(forKey: "updateInterval")
-
-let mainTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-let dockTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
-let alertTimer = Timer.publish(every: 300, on: .main, in: .common).autoconnect()
-let widgetDataTimer = Timer.publish(every: TimeInterval(24 * updateInterval), on: .main, in: .common).autoconnect()
-let nearCastTimer = Timer.publish(every: TimeInterval(60 * updateInterval + Int(arc4random_uniform(10)) - Int(arc4random_uniform(10))), on: .main, in: .common).autoconnect()
-let widgetViewTimer = Timer.publish(every: TimeInterval(60 * updateInterval), on: .main, in: .common).autoconnect()
 let macID = getMacModelIdentifier()
 let isoFormatter = ISO8601DateFormatter()
-var lowPowerNoteDelay = [String: Double]()
 
 let macBookList = ["MacBookPro1,1": "macbook.gen1", "MacBookPro1,2": "macbook.gen1", "MacBookPro2,1": "macbook.gen1", "MacBookPro2,2": "macbook.gen1", "MacBookPro3,1": "macbook.gen1", "MacBookPro4,1": "macbook.gen1", "MacBookPro5,1": "macbook.gen1", "MacBookPro5,2": "macbook.gen1", "MacBookPro5,3": "macbook.gen1", "MacBookPro5,4": "macbook.gen1", "MacBookPro5,5": "macbook.gen1", "MacBookPro6,1": "macbook.gen1", "MacBookPro6,2": "macbook.gen1", "MacBookPro7,1": "macbook.gen1", "MacBookPro8,1": "macbook.gen1", "MacBookPro8,2": "macbook.gen1", "MacBookPro8,3": "macbook.gen1", "MacBookPro9,1": "macbook.gen1", "MacBookPro9,2": "macbook.gen1", "MacBookPro10,1": "macbook.gen1", "MacBookPro10,2": "macbook.gen1", "MacBookPro11,1": "macbook.gen1", "MacBookPro11,2": "macbook.gen1", "MacBookPro11,3": "macbook.gen1", "MacBookPro11,4": "macbook.gen1", "MacBookPro11,5": "macbook.gen1", "MacBookPro12,1": "macbook.gen1", "MacBookPro13,1": "macbook.gen1", "MacBookPro13,2": "macbook.gen1", "MacBookPro13,3": "macbook.gen1", "MacBookPro14,1": "macbook.gen1", "MacBookPro14,2": "macbook.gen1", "MacBookPro14,3": "macbook.gen1", "MacBookPro15,1": "macbook.gen1", "MacBookPro15,2": "macbook.gen1", "MacBookPro15,3": "macbook.gen1", "MacBookPro15,4": "macbook.gen1", "MacBookPro16,1": "macbook.gen1", "MacBookPro16,2": "macbook.gen1", "MacBookPro16,3": "macbook.gen1", "MacBookPro16,4": "macbook.gen1", "MacBookPro17,1": "macbook.gen1", "MacBookPro18,1": "macbook", "MacBookPro18,2": "macbook", "MacBookPro18,3": "macbook", "MacBookPro18,4": "macbook", "Mac14,5": "macbook", "Mac14,6": "macbook", "Mac14,7": "macbook.gen1", "Mac14,9": "macbook", "Mac14,10": "macbook", "Mac15,3": "macbook", "Mac15,6": "macbook", "Mac15,7": "macbook", "Mac15,8": "macbook", "Mac15,9": "macbook", "Mac15,10": "macbook", "Mac15,11": "macbook", "MacBookAir1,1": "macbook.gen1", "MacBookAir2,1": "macbook.gen1", "MacBookAir3,1": "macbook.gen1", "MacBookAir3,2": "macbook.gen1", "MacBookAir4,1": "macbook.gen1", "MacBookAir4,2": "macbook.gen1", "MacBookAir5,1": "macbook.gen1", "MacBookAir5,2": "macbook.gen1", "MacBookAir6,1": "macbook.gen1", "MacBookAir6,2": "macbook.gen1", "MacBookAir7,1": "macbook.gen1", "MacBookAir7,2": "macbook.gen1", "MacBookAir8,1": "macbook.gen1", "MacBookAir8,2": "macbook.gen1", "MacBookAir9,1": "macbook.gen1", "MacBookAir10,1": "macbook.gen1", "Mac14,2": "macbook", "Mac14,15": "macbook", "Mac15,12": "macbook", "Mac15,13": "macbook", "MacBook1,1": "macbook.gen1", "MacBook2,1": "macbook.gen1", "MacBook3,1": "macbook.gen1", "MacBook4,1": "macbook.gen1", "MacBook5,1": "macbook.gen1", "MacBook5,2": "macbook.gen1", "MacBook6,1": "macbook.gen1", "MacBook7,1": "macbook.gen1", "MacBook8,1": "macbook.gen1", "MacBook9,1": "macbook.gen1", "MacBook10,1": "macbook.gen1"]
 let macProList = ["MacPro1,1": "macpro.gen1.fill", "MacPro2,1": "macpro.gen1.fill", "MacPro3,1": "macpro.gen1.fill", "MacPro4,1": "macpro.gen1.fill", "MacPro5,1": "macpro.gen1.fill", "MacPro6,1": "macpro.gen2.fill", "MacPro7,1": "macpro.gen3.fill", "Mac14,8": "macpro.gen3.fill"]
@@ -33,8 +23,14 @@ let macProList = ["MacPro1,1": "macpro.gen1.fill", "MacPro2,1": "macpro.gen1.fil
 class LogReader {
     static let shared = LogReader()
 
-    @AppStorage("readBTHID") var readBTHID = true
-    @AppStorage("logReaderLastTS") var lastTS: String = ""
+    private var readBTHID: Bool {
+        ud.object(forKey: "readBTHID") as? Bool ?? true
+    }
+
+    private var lastTS: String {
+        get { ud.string(forKey: "logReaderLastTS") ?? "" }
+        set { ud.set(newValue, forKey: "logReaderLastTS") }
+    }
 
     private var isRunning = false
     private var queued = false
@@ -55,14 +51,22 @@ class LogReader {
         isRunning = true
         lock.unlock()
 
+        guard let scriptPath = Bundle.main.path(forResource: "logReader", ofType: "sh") else {
+            lock.lock()
+            isRunning = false
+            lock.unlock()
+            print("[LogReader] Missing bundled logReader.sh; skipping Bluetooth HID scan.")
+            return
+        }
+
         let args: [String]
         if let start = computeStart(trigger) {
             setenv("START_TS", start, 1)
-            args = ["\(Bundle.main.resourcePath!)/logReader.sh", "mac", "10m"]
+            args = [scriptPath, "mac", "10m"]
         } else {
             unsetenv("START_TS")
             let win = (trigger == .bootstrap) ? "20m" : (trigger == .wake ? "3m" : "2m")
-            args = ["\(Bundle.main.resourcePath!)/logReader.sh", "mac", win]
+            args = [scriptPath, "mac", win]
         }
 
         let out = process(path: "/bin/bash", arguments: args, timeout: 5)
@@ -215,42 +219,13 @@ struct RoundedCornersShape: Shape {
 }
 
 public func process(path: String, arguments: [String], timeout: Int = 0) -> String? {
-    let task = Process()
-    task.launchPath = path
-    task.arguments = arguments
-    task.standardError = Pipe()
-
-    let outputPipe = Pipe()
-    defer { outputPipe.fileHandleForReading.closeFile() }
-    task.standardOutput = outputPipe
-
-    if timeout != 0 {
-        DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(timeout)) {
-            if task.isRunning {
-                task.terminate()
-                DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(400)) {
-                    if task.isRunning {
-                        let pid = task.processIdentifier
-                        _ = process(path: "/bin/kill", arguments: ["-9", String(pid)], timeout: 1)
-                    }
-                }
-            }
-        }
-    }
-
-    do {
-        try task.run()
-    } catch let error {
-        print("\(error.localizedDescription)")
-        return nil
-    }
-
-    let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-    let output = String(decoding: outputData, as: UTF8.self)
-
-    if output.isEmpty { return nil }
-
-    return output.trimmingCharacters(in: .newlines)
+    let result = ProcessRunner.runSync(
+        executablePath: path,
+        arguments: arguments,
+        timeout: timeout > 0 ? TimeInterval(timeout) : nil
+    )
+    let output = result?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return output.isEmpty ? nil : output
 }
 
 func getMenuBarHeight(for screen: NSScreen? = nil) -> CGFloat {
@@ -399,9 +374,7 @@ func sliceList(data: [BatteryDevice], length: Int, count: Int) -> [BatteryDevice
 }
 
 func copyToClipboard(_ text: String) {
-    let pasteboard = NSPasteboard.general
-    pasteboard.clearContents()
-    pasteboard.setString(text, forType: .string)
+    NSPasteboard.general.copyString(text)
 }
 
 func pasteFromClipboard() -> String? {

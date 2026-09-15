@@ -14,7 +14,7 @@ import AppKit
 import SwiftECC
 import BigInt
 
-protocol InboundNearbyConnectionDelegate {
+protocol InboundNearbyConnectionDelegate: AnyObject {
     func obtainUserConsent(for transfer: TransferMetadata, from device: RemoteDeviceInfo, fileURLs: [URL])
     func connection(_ connection: InboundNearbyConnection, didUpdateProgress progress: Double)
     func connectionWasTerminated(connection: InboundNearbyConnection, error: Error?)
@@ -22,10 +22,12 @@ protocol InboundNearbyConnectionDelegate {
 
 class InboundNearbyConnection: NearbyConnection {
     private var currentState: State = .initial
-    public var delegate: InboundNearbyConnectionDelegate?
+    public weak var delegate: InboundNearbyConnectionDelegate?
     private var cipherCommitment: Data?
     private var textPayloadID: Int64 = 0
     private var userAction: NearDropUserAction = .save
+    private var totalBytesExpected: Int64 = 0
+    private var totalBytesReceived: Int64 = 0
 
     enum State {
         case initial, receivedConnectionRequest, sentUkeyServerInit, receivedUkeyClientFinish, sentConnectionResponse, sentPairedKeyResult, receivedPairedKeyResult, waitingForUserConsent, receivingFiles, disconnecting, disconnected
@@ -78,23 +80,53 @@ class InboundNearbyConnection: NearbyConnection {
     override func isServer() -> Bool { return true }
 
     override func processFileChunk(frame: Location_Nearby_Connections_PayloadTransferFrame) throws {
-        let id=frame.payloadHeader.id; guard let fileInfo=transferredFiles[id] else { throw NearbyError.protocolError("File payload ID \(id) not known") }
-        let currentOffset=fileInfo.bytesTransferred; guard frame.payloadChunk.offset==currentOffset else { throw NearbyError.protocolError("Invalid offset") }
+        let id=frame.payloadHeader.id
+        guard var fileInfo=transferredFiles[id] else { throw NearbyError.protocolError("File payload ID \(id) not known") }
+        guard frame.payloadHeader.hasTotalSize,
+              frame.payloadHeader.totalSize == fileInfo.meta.size else {
+            throw NearbyError.protocolError("File metadata size changed during transfer")
+        }
+        let currentOffset=fileInfo.bytesTransferred
+        guard frame.payloadChunk.offset==currentOffset else { throw NearbyError.protocolError("Invalid offset") }
         guard currentOffset+Int64(frame.payloadChunk.body.count)<=fileInfo.meta.size else { throw NearbyError.protocolError("File size mismatch") }
 
         if !frame.payloadChunk.body.isEmpty {
-            fileInfo.fileHandle?.write(frame.payloadChunk.body); transferredFiles[id]!.bytesTransferred+=Int64(frame.payloadChunk.body.count); fileInfo.progress?.completedUnitCount=transferredFiles[id]!.bytesTransferred
-            let progress = Double(transferredFiles[id]!.bytesTransferred) / Double(fileInfo.meta.size)
+            guard let handle = fileInfo.fileHandle else { throw NearbyError.inputOutput }
+            try handle.write(contentsOf: frame.payloadChunk.body)
+            let receivedCount = Int64(frame.payloadChunk.body.count)
+            fileInfo.bytesTransferred += receivedCount
+            totalBytesReceived += receivedCount
+            fileInfo.progress?.completedUnitCount=fileInfo.bytesTransferred
+            transferredFiles[id] = fileInfo
+            let progress = totalBytesExpected == 0 ? 1 : Double(totalBytesReceived) / Double(totalBytesExpected)
             DispatchQueue.main.async { self.delegate?.connection(self, didUpdateProgress: progress) }
         }
 
         if (frame.payloadChunk.flags & 1) == 1 {
-            try fileInfo.fileHandle?.close(); transferredFiles[id]!.fileHandle = nil; fileInfo.progress?.unpublish()
+            guard fileInfo.bytesTransferred == fileInfo.meta.size else {
+                throw NearbyError.protocolError("File ended before its declared size")
+            }
+            try fileInfo.fileHandle?.close()
+            fileInfo.fileHandle = nil
+            fileInfo.progress?.unpublish()
+            if totalBytesExpected == 0 {
+                DispatchQueue.main.async { self.delegate?.connection(self, didUpdateProgress: 1) }
+            }
             if userAction == .copy {
-                if let fileContents = try? String(contentsOf: fileInfo.destinationURL, encoding: .utf8) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(fileContents, forType: .string) }
+                let fileContents = try? String(contentsOf: fileInfo.destinationURL, encoding: .utf8)
+                if let fileContents {
+                    DispatchQueue.main.async {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(fileContents, forType: .string)
+                    }
+                }
                 try? FileManager.default.removeItem(at: fileInfo.destinationURL)
             } else if userAction == .save {
-                NotificationCenter.default.post(name: .sapphireNearbyFileDownloaded, object: nil, userInfo: ["url": fileInfo.destinationURL])
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .sapphireNearbyFileDownloaded, object: nil, userInfo: ["url": fileInfo.destinationURL])
+                }
+            } else if userAction == .open {
+                DispatchQueue.main.async { NSWorkspace.shared.open(fileInfo.destinationURL) }
             }
             transferredFiles.removeValue(forKey: id)
             if transferredFiles.isEmpty { currentState = .disconnecting; try sendDisconnectionAndDisconnect() }
@@ -181,17 +213,35 @@ class InboundNearbyConnection: NearbyConnection {
         if !frame.v1.introduction.fileMetadata.isEmpty {
             let files = frame.v1.introduction.fileMetadata
             for file in files {
-                let dest = makeFileDestinationURL(downloadsDir.appendingPathComponent(file.name)); destinationURLs.append(dest)
+                guard file.hasPayloadID,
+                      file.hasSize,
+                      file.size >= 0,
+                      transferredFiles[file.payloadID] == nil else {
+                    throw NearbyError.protocolError("Invalid or duplicate file metadata")
+                }
+                let safeName = sanitizeIncomingFileName(file.name)
+                let dest = makeFileDestinationURL(downloadsDir.appendingPathComponent(safeName)); destinationURLs.append(dest)
                 transferredFiles[file.payloadID] = .init(meta: .init(name: file.name, size: file.size, mimeType: file.mimeType), payloadID: file.payloadID, destinationURL: dest)
+                let (newTotal, overflow) = totalBytesExpected.addingReportingOverflow(file.size)
+                guard !overflow else { throw NearbyError.protocolError("Transfer size overflow") }
+                totalBytesExpected = newTotal
             }
             if files.count==1, let first=files.first, first.mimeType=="text/plain" || first.name.lowercased().hasSuffix(".txt") { textDesc=first.name }
             let metadata=TransferMetadata(files: transferredFiles.values.map{$0.meta}, id: id, pinCode: pinCode, textDescription: textDesc)
-            DispatchQueue.main.async { self.delegate?.obtainUserConsent(for: metadata, from: self.remoteDeviceInfo!, fileURLs: destinationURLs) }
+            guard let remoteDeviceInfo else { throw NearbyError.requiredFieldMissing("remoteDeviceInfo") }
+            DispatchQueue.main.async { self.delegate?.obtainUserConsent(for: metadata, from: remoteDeviceInfo, fileURLs: destinationURLs) }
         } else if let meta = frame.v1.introduction.textMetadata.first {
             textPayloadID = meta.payloadID
             let metadata = TransferMetadata(files: [], id: id, pinCode: pinCode, textDescription: meta.textTitle)
-            DispatchQueue.main.async { self.delegate?.obtainUserConsent(for: metadata, from: self.remoteDeviceInfo!, fileURLs: []) }
+            guard let remoteDeviceInfo else { throw NearbyError.requiredFieldMissing("remoteDeviceInfo") }
+            DispatchQueue.main.async { self.delegate?.obtainUserConsent(for: metadata, from: remoteDeviceInfo, fileURLs: []) }
         } else { rejectTransfer(with: .unsupportedAttachmentType) }
+    }
+
+    private func sanitizeIncomingFileName(_ name: String) -> String {
+        let leafName = URL(fileURLWithPath: name).lastPathComponent
+        let sanitized = leafName.replacingOccurrences(of: "[\\/\\\\?%\\*:\\|\"<>=]", with: "_", options: .regularExpression)
+        return sanitized.isEmpty || sanitized == "." ? "Nearby File" : sanitized
     }
 
     private func makeFileDestinationURL(_ initial: URL) -> URL {
@@ -204,7 +254,7 @@ class InboundNearbyConnection: NearbyConnection {
     }
 
     func submitUserConsent(accepted: Bool, action: NearDropUserAction) {
-        DispatchQueue.global(qos: .utility).async {
+        connectionQueue.async {
             if accepted { self.userAction = action; self.acceptTransfer() }
             else { self.rejectTransfer() }
         }
@@ -215,9 +265,13 @@ class InboundNearbyConnection: NearbyConnection {
         do {
             if !transferredFiles.isEmpty {
                 for (id, file) in transferredFiles {
-                    FileManager.default.createFile(atPath: file.destinationURL.path, contents: nil)
-                    let handle = try FileHandle(forWritingTo: file.destinationURL); transferredFiles[id]!.fileHandle = handle
-                    let progress = Progress(); progress.fileURL = file.destinationURL; progress.totalUnitCount = file.meta.size; progress.kind = .file; progress.publish(); transferredFiles[id]!.progress = progress
+                    guard FileManager.default.createFile(atPath: file.destinationURL.path, contents: nil) else {
+                        throw NearbyError.inputOutput
+                    }
+                    let handle = try FileHandle(forWritingTo: file.destinationURL)
+                    transferredFiles[id]?.fileHandle = handle
+                    transferredFiles[id]?.created = true
+                    let progress = Progress(); progress.fileURL = file.destinationURL; progress.totalUnitCount = file.meta.size; progress.kind = .file; progress.publish(); transferredFiles[id]?.progress = progress
                 }
             }
             var frame=Sharing_Nearby_Frame(); frame.version = .v1; frame.v1.type = .response; frame.v1.connectionResponse.status = .accept; currentState = .receivingFiles; try sendTransferSetupFrame(frame)
@@ -253,6 +307,12 @@ class InboundNearbyConnection: NearbyConnection {
     }
 
     private func deletePartiallyReceivedFiles() throws {
-        for (_, file) in transferredFiles where file.created { try FileManager.default.removeItem(at: file.destinationURL) }
+        for (_, file) in transferredFiles where file.created {
+            try? file.fileHandle?.close()
+            file.progress?.unpublish()
+            if FileManager.default.fileExists(atPath: file.destinationURL.path) {
+                try FileManager.default.removeItem(at: file.destinationURL)
+            }
+        }
     }
 }

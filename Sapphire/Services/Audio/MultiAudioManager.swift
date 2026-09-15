@@ -7,10 +7,12 @@
 
 import Foundation
 import AppKit
+import Combine
 import CoreAudio
 import AudioToolbox
 import Accelerate
 import Darwin
+import os.lock
 
 struct AudioDevice: Identifiable, Hashable {
     let id: AudioDeviceID
@@ -24,7 +26,110 @@ struct AudioDeviceSettings: Equatable, Codable {
     var volume: Double = 1.0
     var balance: Double = 0.5
     var delay: TimeInterval = 0.0
-    var customEQGains: [Double] = Array(repeating: 0.0, count: 10)
+    var customEQGains: [Double] = AudioEQ.flat
+    var bassGain: Double = 0.0
+
+    private enum CodingKeys: String, CodingKey {
+        case volume, balance, delay, customEQGains, bassGain
+    }
+
+    init(volume: Double = 1.0, balance: Double = 0.5, delay: TimeInterval = 0.0,
+         customEQGains: [Double] = AudioEQ.flat, bassGain: Double = 0.0) {
+        self.volume = volume
+        self.balance = balance
+        self.delay = delay
+        self.customEQGains = AudioEQ.normalize(customEQGains)
+        self.bassGain = bassGain
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        volume = try values.decodeIfPresent(Double.self, forKey: .volume) ?? 1.0
+        balance = try values.decodeIfPresent(Double.self, forKey: .balance) ?? 0.5
+        delay = try values.decodeIfPresent(TimeInterval.self, forKey: .delay) ?? 0.0
+        let storedGains = try values.decodeIfPresent([Double].self, forKey: .customEQGains) ?? AudioEQ.flat
+        customEQGains = AudioEQ.normalize(storedGains)
+        bassGain = try values.decodeIfPresent(Double.self, forKey: .bassGain) ?? 0.0
+    }
+}
+
+struct EightDAudioSettings: Equatable, Codable {
+    var enabled: Bool = false
+    var rotationSpeed: Double = 0.12
+    var depth: Double = 0.85
+    var distance: Double = 0.15
+    var elevationMotion: Double = 0.9
+    var frontBackMotion: Double = 0.95
+    var roomSize: Double = 0.82
+    var roomSpread: Double = 0.88
+    var bassBoost: Double = 0.0
+    var intensity: Double = 0.9
+    var centerFocus: Double = 0.35
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, rotationSpeed, depth, distance, elevationMotion, frontBackMotion, roomSize, roomSpread, bassBoost, intensity, centerFocus
+    }
+
+    init(enabled: Bool = false, rotationSpeed: Double = 0.10, depth: Double = 0.88, distance: Double = 0.18, elevationMotion: Double = 0.85, frontBackMotion: Double = 0.92, roomSize: Double = 0.78, roomSpread: Double = 0.85, bassBoost: Double = 0.0, intensity: Double = 0.9, centerFocus: Double = 0.35) {
+        self.enabled = enabled
+        self.rotationSpeed = rotationSpeed
+        self.depth = depth
+        self.distance = distance
+        self.elevationMotion = elevationMotion
+        self.frontBackMotion = frontBackMotion
+        self.roomSize = roomSize
+        self.roomSpread = roomSpread
+        self.bassBoost = bassBoost
+        self.intensity = intensity
+        self.centerFocus = centerFocus
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        rotationSpeed = try values.decodeIfPresent(Double.self, forKey: .rotationSpeed) ?? 0.10
+        depth = try values.decodeIfPresent(Double.self, forKey: .depth) ?? 0.88
+        distance = try values.decodeIfPresent(Double.self, forKey: .distance) ?? 0.18
+        elevationMotion = try values.decodeIfPresent(Double.self, forKey: .elevationMotion) ?? 0.85
+        frontBackMotion = try values.decodeIfPresent(Double.self, forKey: .frontBackMotion) ?? 0.92
+        roomSize = try values.decodeIfPresent(Double.self, forKey: .roomSize) ?? 0.78
+        roomSpread = try values.decodeIfPresent(Double.self, forKey: .roomSpread) ?? 0.85
+        bassBoost = try values.decodeIfPresent(Double.self, forKey: .bassBoost) ?? 0.0
+        intensity = try values.decodeIfPresent(Double.self, forKey: .intensity) ?? 0.9
+        centerFocus = try values.decodeIfPresent(Double.self, forKey: .centerFocus) ?? 0.35
+    }
+}
+
+struct SurroundAudioSettings: Equatable, Codable {
+    var enabled: Bool = false
+    var width: Double = 1.7
+    var crossfeed: Double = 0.12
+    var ambience: Double = 0.4
+    var depth: Double = 0.55
+    var centerFocus: Double = 0.45
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, width, crossfeed, ambience, depth, centerFocus
+    }
+
+    init(enabled: Bool = false, width: Double = 1.7, crossfeed: Double = 0.12, ambience: Double = 0.4, depth: Double = 0.55, centerFocus: Double = 0.45) {
+        self.enabled = enabled
+        self.width = width
+        self.crossfeed = crossfeed
+        self.ambience = ambience
+        self.depth = depth
+        self.centerFocus = centerFocus
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        width = try values.decodeIfPresent(Double.self, forKey: .width) ?? 1.7
+        crossfeed = try values.decodeIfPresent(Double.self, forKey: .crossfeed) ?? 0.12
+        ambience = try values.decodeIfPresent(Double.self, forKey: .ambience) ?? 0.4
+        depth = try values.decodeIfPresent(Double.self, forKey: .depth) ?? 0.55
+        centerFocus = try values.decodeIfPresent(Double.self, forKey: .centerFocus) ?? 0.45
+    }
 }
 
 @MainActor
@@ -33,6 +138,8 @@ class MultiAudioManager: ObservableObject {
 
     private let deviceSettingsDefaultsKey = "SapphireDeviceAudioSettingsByUID"
     private let selectedOutputUIDsDefaultsKey = "SapphireSelectedOutputDeviceUIDs"
+    private let eightDAudioDefaultsKey = "SapphireEightDAudioSettingsByBundleID"
+    private let surroundAudioDefaultsKey = "SapphireSurroundAudioSettingsByBundleID"
 
     @Published var availableOutputDevices: [AudioDevice] = []
     @Published var availableInputDevices: [AudioDevice] = []
@@ -56,12 +163,16 @@ class MultiAudioManager: ObservableObject {
     private var processListListenerBlock: AudioObjectPropertyListenerBlock?
     private var processRunningListenerBlocks: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
     private var monitoredProcessObjectIDs: Set<AudioObjectID> = []
+    private var processPIDByObjectID: [AudioObjectID: pid_t] = [:]
+    private var processBundleIDByObjectID: [AudioObjectID: String] = [:]
     private var reconcileTask: Task<Void, Never>?
     private var latestActiveBundleIDs: Set<String> = []
     private var lastAudioActivityByBundleID: [String: Date] = [:]
     private let recentAudioPriorityWindow: TimeInterval = 180
     private var isAuthorized = false
     private var settingsByUID: [String: AudioDeviceSettings] = [:]
+    private var eightDAudioSettingsByBundleID: [String: EightDAudioSettings] = [:]
+    private var surroundAudioSettingsByBundleID: [String: SurroundAudioSettings] = [:]
     private var isRestoringPersistedSelection = false
 
     private init() {
@@ -72,6 +183,9 @@ class MultiAudioManager: ObservableObject {
         setupDeviceListeners()
         configureProcessMonitor()
         if isAuthorized { startProcessMonitorIfNeeded() }
+
+        premiumAccessCancellable = PremiumGate.accessChanges
+            .sink { [weak self] in self?.applyPremiumDSPAccess() }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
@@ -107,37 +221,128 @@ class MultiAudioManager: ObservableObject {
     func setAppVolume(bundleID: String, volume: Float) {
         guard let taps = activeTaps[bundleID]?.values else { return }
         for tap in taps {
-            tap.appVolume = volume
+            tap.updateAppVolume(volume)
         }
     }
 
     func setAppMute(bundleID: String, isMuted: Bool) {
         guard let taps = activeTaps[bundleID]?.values else { return }
         for tap in taps {
-            tap.isAppMuted = isMuted
+            tap.updateAppMute(isMuted)
         }
     }
 
-    func setAppEQ(bundleID: String, gains: [Double]) {
+    func setAppEQ(bundleID: String, gains: [Double], bassGain: Double = 0.0) {
         guard let taps = activeTaps[bundleID]?.values else { return }
+        let normalized = AudioEQ.normalize(gains)
         for tap in taps {
             let shouldApply = PerAppAudioController.shared.appliesEQ(for: bundleID, toDeviceUID: tap.targetDeviceUID)
-            tap.updateAppEQ(gains: shouldApply ? gains : Array(repeating: 0.0, count: 10))
+            tap.updateAppEQ(gains: shouldApply ? normalized : AudioEQ.flat,
+                            bassGain: shouldApply ? bassGain : 0.0)
         }
+    }
+
+    private var premiumAccessCancellable: AnyCancellable?
+
+    func eightDAudioSettings(for bundleID: String) -> EightDAudioSettings {
+        guard PremiumGate.hasAccess(.audio8D) else { return EightDAudioSettings() }
+        return eightDAudioSettingsByBundleID[bundleID] ?? EightDAudioSettings()
+    }
+
+    private func applyPremiumDSPAccess() {
+        for (bundleID, taps) in activeTaps {
+            let eightD = eightDAudioSettings(for: bundleID)
+            let surround = surroundAudioSettings(for: bundleID)
+            for tap in taps.values {
+                tap.updateEightDAudio(settings: eightD)
+                tap.updateSurroundAudio(settings: surround)
+            }
+        }
+        objectWillChange.send()
+        reconcileRunningApps()
+    }
+
+    func setEightDAudioSettings(_ settings: EightDAudioSettings, for bundleID: String) {
+        guard SubscriptionAccess.hasAccess(to: .audio8D) else { return }
+        var clamped = settings
+        clamped.rotationSpeed = min(max(clamped.rotationSpeed, 0.01), 1.0)
+        clamped.depth = min(max(clamped.depth, 0.0), 1.0)
+        clamped.distance = min(max(clamped.distance, 0.0), 1.0)
+        clamped.elevationMotion = min(max(clamped.elevationMotion, 0.0), 1.0)
+        clamped.frontBackMotion = min(max(clamped.frontBackMotion, 0.0), 1.0)
+        clamped.roomSize = min(max(clamped.roomSize, 0.0), 1.0)
+        clamped.roomSpread = min(max(clamped.roomSpread, 0.0), 1.0)
+        clamped.bassBoost = min(max(clamped.bassBoost, 0.0), 12.0)
+        clamped.intensity = min(max(clamped.intensity, 0.0), 1.0)
+        clamped.centerFocus = min(max(clamped.centerFocus, 0.0), 1.0)
+        eightDAudioSettingsByBundleID[bundleID] = clamped
+        persistEightDAudioSettings()
+
+        activeTaps[bundleID]?.values.forEach { $0.updateEightDAudio(settings: clamped) }
+        objectWillChange.send()
+        reconcileRunningApps()
+    }
+
+    func surroundAudioSettings(for bundleID: String) -> SurroundAudioSettings {
+        guard PremiumGate.hasAccess(.surroundSound) else { return SurroundAudioSettings() }
+        return surroundAudioSettingsByBundleID[bundleID] ?? SurroundAudioSettings()
+    }
+
+    func setSurroundAudioSettings(_ settings: SurroundAudioSettings, for bundleID: String) {
+        guard SubscriptionAccess.hasAccess(to: .surroundSound) else { return }
+        var clamped = settings
+        clamped.width = min(max(clamped.width, 1.0), 2.5)
+        clamped.crossfeed = min(max(clamped.crossfeed, 0.0), 0.5)
+        clamped.ambience = min(max(clamped.ambience, 0.0), 1.0)
+        clamped.depth = min(max(clamped.depth, 0.0), 1.0)
+        clamped.centerFocus = min(max(clamped.centerFocus, 0.0), 1.0)
+        surroundAudioSettingsByBundleID[bundleID] = clamped
+        persistSurroundAudioSettings()
+
+        activeTaps[bundleID]?.values.forEach { $0.updateSurroundAudio(settings: clamped) }
+        objectWillChange.send()
+        reconcileRunningApps()
+    }
+
+    func resetEightDAudio(for bundleID: String) {
+        eightDAudioSettingsByBundleID.removeValue(forKey: bundleID)
+        persistEightDAudioSettings()
+        activeTaps[bundleID]?.values.forEach { $0.updateEightDAudio(settings: EightDAudioSettings()) }
+        objectWillChange.send()
+        reconcileRunningApps()
+    }
+
+    func resetSurroundAudio(for bundleID: String) {
+        surroundAudioSettingsByBundleID.removeValue(forKey: bundleID)
+        persistSurroundAudioSettings()
+        activeTaps[bundleID]?.values.forEach { $0.updateSurroundAudio(settings: SurroundAudioSettings()) }
+        objectWillChange.send()
+        reconcileRunningApps()
+    }
+
+    func clearAllEightDAudioSettings() {
+        eightDAudioSettingsByBundleID.removeAll()
+        surroundAudioSettingsByBundleID.removeAll()
+        persistEightDAudioSettings()
+        persistSurroundAudioSettings()
+        activeTaps.values.flatMap(\.values).forEach {
+            $0.updateEightDAudio(settings: EightDAudioSettings())
+            $0.updateSurroundAudio(settings: SurroundAudioSettings())
+        }
+        objectWillChange.send()
+        reconcileRunningApps()
     }
 
     func updateSettings(for deviceID: AudioDeviceID, settings: AudioDeviceSettings) {
         self.deviceSettings[deviceID] = settings
-        guard let uid = getDeviceUID(for: deviceID) else { return }
+        guard let uid = CoreAudioDevices.uid(of: deviceID) else { return }
         settingsByUID[uid] = settings
         persistDeviceSettingsArchive()
 
         for tapMap in activeTaps.values {
             for tap in tapMap.values where tap.targetDeviceUID == uid {
-                tap.deviceVolume = Float(settings.volume)
-                tap.deviceBalance = Float(settings.balance)
-                tap.deviceDelay = Float(settings.delay)
-                tap.updateDeviceEQ(gains: settings.customEQGains)
+                tap.updateDeviceControls(volume: Float(settings.volume), balance: Float(settings.balance), delay: Float(settings.delay))
+                tap.updateDeviceEQ(gains: settings.customEQGains, bassGain: settings.bassGain)
             }
         }
         reconcileRunningApps()
@@ -237,40 +442,7 @@ class MultiAudioManager: ObservableObject {
     }
 
     private static func allHardwareInputDeviceIDs() -> [AudioDeviceID] {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var dataSize: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &dataSize) == noErr,
-              dataSize > 0 else { return [] }
-
-        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
-        var deviceIDs = [AudioDeviceID](repeating: 0, count: count)
-        guard AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            &dataSize,
-            &deviceIDs
-        ) == noErr else { return [] }
-
-        return deviceIDs.filter { id in
-            var streamAddr = AudioObjectPropertyAddress(
-                mSelector: kAudioDevicePropertyStreamConfiguration,
-                mScope: kAudioObjectPropertyScopeInput,
-                mElement: kAudioObjectPropertyElementMain
-            )
-            var size: UInt32 = 0
-            guard AudioObjectGetPropertyDataSize(id, &streamAddr, 0, nil, &size) == noErr, size > 0 else { return false }
-            let ptr = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: Int(size))
-            defer { ptr.deallocate() }
-            var mutable = size
-            guard AudioObjectGetPropertyData(id, &streamAddr, 0, nil, &mutable, ptr) == noErr else { return false }
-            return UnsafeMutableAudioBufferListPointer(ptr).contains { $0.mNumberChannels > 0 }
-        }
+        (CoreAudioDevices.all() ?? []).filter { CoreAudioDevices.hasChannels($0, scope: kAudioObjectPropertyScopeInput) }
     }
 
     func getInputVolume(for deviceID: AudioDeviceID) -> Float {
@@ -348,7 +520,7 @@ class MultiAudioManager: ObservableObject {
     }
 
     private func appNeedsTap(bundleID: String, outputDeviceIDs: [AudioDeviceID]) -> Bool {
-        if PerAppAudioController.shared.hasAdjustments(for: bundleID) { return true }
+        if PerAppAudioController.shared.hasAdjustments(for: bundleID) || eightDAudioSettings(for: bundleID).enabled || surroundAudioSettings(for: bundleID).enabled { return true }
         if selectedOutputDeviceIDs.count > 1 { return true }
         if selectedOutputDeviceIDs.count == 1 {
             if let selectedID = selectedOutputDeviceIDs.first,
@@ -362,6 +534,7 @@ class MultiAudioManager: ObservableObject {
                 if settings.volume != 1.0 { return true }
                 if settings.balance != 0.5 { return true }
                 if settings.delay > 0.0 { return true }
+                if settings.bassGain != 0.0 { return true }
                 if !settings.customEQGains.allSatisfy({ $0 == 0.0 }) { return true }
             }
         }
@@ -400,7 +573,7 @@ class MultiAudioManager: ObservableObject {
         guard !outputDeviceIDs.isEmpty else { return }
 
         let outputUIDByDeviceID: [AudioDeviceID: String] = Dictionary(uniqueKeysWithValues: outputDeviceIDs.compactMap { deviceID -> (AudioDeviceID, String)? in
-            guard let uid = getDeviceUID(for: deviceID) else { return nil }
+            guard let uid = CoreAudioDevices.uid(of: deviceID) else { return nil }
             return (deviceID, uid)
         })
         guard !outputUIDByDeviceID.isEmpty else { return }
@@ -417,17 +590,27 @@ class MultiAudioManager: ObservableObject {
         var newBundleGroups: [String: [AudioObjectID]] = [:]
 
         for objID in objectIDs {
-            var pid: pid_t = 0
-            var pidSize = UInt32(MemoryLayout<pid_t>.size)
-            var pidAddr = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyPID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-            guard AudioObjectGetPropertyData(objID, &pidAddr, 0, nil, &pidSize, &pid) == noErr else { continue }
-
             var isRunning: UInt32 = 0
             var runSize = UInt32(MemoryLayout<UInt32>.size)
             var runAddr = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunning, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
             if AudioObjectGetPropertyData(objID, &runAddr, 0, nil, &runSize, &isRunning) == noErr, isRunning == 0 { continue }
 
-            let bundleID = runningAppsByPID[pid]?.bundleID ?? getResponsibleAppBundleID(for: pid, runningApps: runningAppsByPID)
+            let pid: pid_t
+            if let cachedPID = processPIDByObjectID[objID] {
+                pid = cachedPID
+            } else {
+                var readPID: pid_t = 0
+                var pidSize = UInt32(MemoryLayout<pid_t>.size)
+                var pidAddr = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyPID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+                guard AudioObjectGetPropertyData(objID, &pidAddr, 0, nil, &pidSize, &readPID) == noErr else { continue }
+                pid = readPID
+                processPIDByObjectID[objID] = readPID
+            }
+
+            let bundleID = processBundleIDByObjectID[objID]
+                ?? runningAppsByPID[pid]?.bundleID
+                ?? getResponsibleAppBundleID(for: pid, runningApps: runningAppsByPID)
+            if let bundleID { processBundleIDByObjectID[objID] = bundleID }
             if let bID = bundleID, !bID.hasPrefix("com.apple.audio") && bID != Bundle.main.bundleIdentifier {
                 newBundleGroups[bID, default: []].append(objID)
             }
@@ -485,19 +668,22 @@ class MultiAudioManager: ObservableObject {
 
                         let tap = try AppTapController(bundleID: bundleID, processObjectIDs: sortedIDs, targetDeviceUID: outputUID, sampleRate: hwSampleRate)
 
-                        tap.appVolume = Float(perAppCtrl.volume(for: bundleID))
-                        tap.isAppMuted = perAppCtrl.mute(for: bundleID)
+                        tap.updateAppVolume(Float(perAppCtrl.volume(for: bundleID)))
+                        tap.updateAppMute(perAppCtrl.mute(for: bundleID))
+
+                        tap.updateEightDAudio(settings: eightDAudioSettings(for: bundleID))
+                        tap.updateSurroundAudio(settings: surroundAudioSettings(for: bundleID))
 
                         let appEQGains = perAppCtrl.eqGains(for: bundleID)
+                        let appEQBass = perAppCtrl.eqBass(for: bundleID)
                         let shouldApplyAppEQ = perAppCtrl.appliesEQ(for: bundleID, toDeviceUID: outputUID)
 
-                        tap.appEqSetup = BiquadMath.createSetup(gains: shouldApplyAppEQ ? appEQGains : Array(repeating: 0.0, count: 10), sampleRate: hwSampleRate, oldSetup: nil)
+                        tap.updateAppEQ(gains: shouldApplyAppEQ ? appEQGains : AudioEQ.flat,
+                                        bassGain: shouldApplyAppEQ ? appEQBass : 0.0)
 
                         if let devSettings = deviceSettings[outputDeviceID] {
-                            tap.deviceVolume = Float(devSettings.volume)
-                            tap.deviceBalance = Float(devSettings.balance)
-                            tap.deviceDelay = Float(devSettings.delay)
-                            tap.deviceEqSetup = BiquadMath.createSetup(gains: devSettings.customEQGains, sampleRate: hwSampleRate, oldSetup: nil)
+                            tap.updateDeviceControls(volume: Float(devSettings.volume), balance: Float(devSettings.balance), delay: Float(devSettings.delay))
+                            tap.updateDeviceEQ(gains: devSettings.customEQGains, bassGain: devSettings.bassGain)
                         }
 
                         try tap.activate()
@@ -531,18 +717,14 @@ class MultiAudioManager: ObservableObject {
         )
 
         var outputs: [AudioDevice] = []; var inputs: [AudioDevice] = []
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return }
-        var deviceIDs = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceIDs) == noErr else { return }
+        guard let deviceIDs = CoreAudioDevices.all() else { return }
 
         for deviceID in deviceIDs {
-            guard let name = name(for: deviceID), let uid = getDeviceUID(for: deviceID), !name.hasPrefix("Sapphire-") else { continue }
+            guard let name = CoreAudioDevices.name(of: deviceID), let uid = CoreAudioDevices.uid(of: deviceID), !name.hasPrefix("Sapphire-") else { continue }
             if shouldHideVirtualDevice(name: name, uid: uid) { continue }
 
-            let isInput = hasChannels(for: deviceID, scope: kAudioObjectPropertyScopeInput)
-            let isOutput = hasChannels(for: deviceID, scope: kAudioObjectPropertyScopeOutput)
+            let isInput = CoreAudioDevices.hasStreams(deviceID, scope: kAudioObjectPropertyScopeInput)
+            let isOutput = CoreAudioDevices.hasStreams(deviceID, scope: kAudioObjectPropertyScopeOutput)
 
             if isOutput { outputs.append(AudioDevice(id: deviceID, uid: uid, name: name, isInput: isInput, isOutput: isOutput)) }
             if isInput { inputs.append(AudioDevice(id: deviceID, uid: uid, name: name, isInput: isInput, isOutput: isOutput)) }
@@ -558,6 +740,14 @@ class MultiAudioManager: ObservableObject {
            let decoded = try? JSONDecoder().decode([String: AudioDeviceSettings].self, from: data) {
             settingsByUID = decoded
         }
+        if let data = UserDefaults.standard.data(forKey: eightDAudioDefaultsKey),
+           let decoded = try? JSONDecoder().decode([String: EightDAudioSettings].self, from: data) {
+            eightDAudioSettingsByBundleID = decoded
+        }
+        if let data = UserDefaults.standard.data(forKey: surroundAudioDefaultsKey),
+           let decoded = try? JSONDecoder().decode([String: SurroundAudioSettings].self, from: data) {
+            surroundAudioSettingsByBundleID = decoded
+        }
 
         let savedUIDs = Set(UserDefaults.standard.stringArray(forKey: selectedOutputUIDsDefaultsKey) ?? [])
         rematchSelectedDevices(to: savedUIDs)
@@ -566,6 +756,18 @@ class MultiAudioManager: ObservableObject {
     private func persistDeviceSettingsArchive() {
         if let data = try? JSONEncoder().encode(settingsByUID) {
             UserDefaults.standard.set(data, forKey: deviceSettingsDefaultsKey)
+        }
+    }
+
+    private func persistEightDAudioSettings() {
+        if let data = try? JSONEncoder().encode(eightDAudioSettingsByBundleID) {
+            UserDefaults.standard.set(data, forKey: eightDAudioDefaultsKey)
+        }
+    }
+
+    private func persistSurroundAudioSettings() {
+        if let data = try? JSONEncoder().encode(surroundAudioSettingsByBundleID) {
+            UserDefaults.standard.set(data, forKey: surroundAudioDefaultsKey)
         }
     }
 
@@ -618,23 +820,6 @@ class MultiAudioManager: ObservableObject {
         }
     }
 
-    private func name(for deviceID: AudioDeviceID) -> String? {
-        var name: CFString = "" as CFString; var size = UInt32(MemoryLayout<CFString>.size); var addr = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        return AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &size, &name) == noErr ? name as String : nil
-    }
-
-    private func getDeviceUID(for deviceID: AudioDeviceID) -> String? {
-        var uid: CFString = "" as CFString; var size = UInt32(MemoryLayout<CFString>.size); var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        return AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &size, &uid) == noErr ? uid as String : nil
-    }
-
-    private func hasChannels(for deviceID: AudioDeviceID, scope: AudioObjectPropertyScope) -> Bool {
-        var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: scope, mElement: kAudioObjectPropertyElementMain)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(deviceID, &addr, 0, nil, &size) == noErr else { return false }
-        return size > 0
-    }
-
     private func shouldHideVirtualDevice(name: String, uid: String) -> Bool {
         let loweredName = name.lowercased()
         let loweredUID = uid.lowercased()
@@ -651,6 +836,8 @@ class MultiAudioManager: ObservableObject {
         let newSet = Set(processObjectIDs)
         let removed = monitoredProcessObjectIDs.subtracting(newSet)
         for objectID in removed {
+            processPIDByObjectID[objectID] = nil
+            processBundleIDByObjectID[objectID] = nil
             guard let block = processRunningListenerBlocks.removeValue(forKey: objectID) else { continue }
             var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunning, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
             _ = AudioObjectRemovePropertyListenerBlock(objectID, &address, .main, block)
@@ -743,10 +930,57 @@ class AppTapController {
 
     nonisolated(unsafe) var appVolume: Float = 1.0, isAppMuted: Bool = false, appEqSetup: vDSP_biquad_Setup?
     nonisolated(unsafe) var deviceVolume: Float = 1.0, deviceBalance: Float = 0.5, deviceDelay: Float = 0.0, deviceEqSetup: vDSP_biquad_Setup?
+    private var parameterLock = os_unfair_lock_s()
+    private var pendingEightDSettings = EightDAudioSettings()
+    private var pendingSurroundSettings = SurroundAudioSettings()
+    private var renderAppVolume: Float = 1.0
+    private var renderAppMuted = false
+    private var renderDeviceVolume: Float = 1.0
+    private var renderDeviceBalance: Float = 0.5
+    private var renderDeviceDelay: Float = 0.0
+    private var renderAppEQ: vDSP_biquad_Setup?
+    private var renderDeviceEQ: vDSP_biquad_Setup?
+    private var renderEightDSettings = EightDAudioSettings()
+    private var renderSurroundSettings = SurroundAudioSettings()
+    private var retiredEQSetups: [vDSP_biquad_Setup] = []
 
     private let appBufferL, appBufferR, devBufferL, devBufferR: UnsafeMutablePointer<Float>
-    private let bufferSize = 22
+    private let bufferSize = 2 * BiquadMath.sectionCount + 2
     private let maxDelaySamples = 96000
+    private static let eightDDelaySamples = 4096
+    private static let roomBufferSamples = 32768
+    private static let surroundDelaySamples = 8192
+    private var eightDDelayL, eightDDelayR: UnsafeMutablePointer<Float>
+    private var eightDWriteIndex = 0
+    private var eightDPhase = 0.0
+    private var eightDReverbL, eightDReverbR: UnsafeMutablePointer<Float>
+    private var eightDReverbIndex = 0
+    private var surroundDelayL, surroundDelayR: UnsafeMutablePointer<Float>
+    private var surroundWriteIndex = 0
+    private var eightDLowpassL: Float = 0
+    private var eightDLowpassR: Float = 0
+    private var eightDShadowL: Float = 0
+    private var eightDShadowR: Float = 0
+    private var eightDBassL: Float = 0
+    private var eightDBassR: Float = 0
+    private var eightDRoomDampL: Float = 0
+    private var eightDRoomDampR: Float = 0
+    private var eightDPanLSm: Float = 0.707
+    private var eightDPanRSm: Float = 0.707
+    private var eightDDelayLSm: Float = 0
+    private var eightDDelayRSm: Float = 0
+    private var eightDShadowAmtLSm: Float = 0
+    private var eightDShadowAmtRSm: Float = 0
+    private var eightDDirectGainSm: Float = 1
+    private var eightDAirGainSm: Float = 1
+    private var eightDCrossfeedSm: Float = 0
+    private var eightDWetSm: Float = 0
+    private var surroundSideLowL: Float = 0
+    private var surroundRearDampL: Float = 0
+    private var surroundRearDampR: Float = 0
+    private static let roomTapTimes: [Double] = [0.0111, 0.0193, 0.0331, 0.0518, 0.0773, 0.1129, 0.1663, 0.2411]
+    private static let roomTapGains: [Float] = [0.32, 0.26, 0.21, 0.16, 0.12, 0.088, 0.06, 0.038]
+    private var roomTapOffsets: [Int] = []
     private var delayBufferL, delayBufferR: UnsafeMutablePointer<Float>
     private var delayWriteIndex = 0
     private var fadeInSamplesRemaining = 2048
@@ -756,6 +990,7 @@ class AppTapController {
     init(bundleID: String, processObjectIDs: [AudioObjectID], targetDeviceUID: String, sampleRate: Double) throws {
         self.bundleID = bundleID; self.processObjectIDs = processObjectIDs; self.targetDeviceUID = targetDeviceUID
         self.currentSampleRate = sampleRate
+        self.roomTapOffsets = Self.roomTapTimes.map { min(Int($0 * sampleRate), Self.roomBufferSamples - 1) }
 
         appBufferL = .allocate(capacity: bufferSize); appBufferR = .allocate(capacity: bufferSize)
         devBufferL = .allocate(capacity: bufferSize); devBufferR = .allocate(capacity: bufferSize)
@@ -767,6 +1002,12 @@ class AppTapController {
 
         delayBufferL = .allocate(capacity: maxDelaySamples); delayBufferR = .allocate(capacity: maxDelaySamples)
         delayBufferL.initialize(repeating: 0, count: maxDelaySamples); delayBufferR.initialize(repeating: 0, count: maxDelaySamples)
+        eightDDelayL = .allocate(capacity: Self.eightDDelaySamples); eightDDelayR = .allocate(capacity: Self.eightDDelaySamples)
+        eightDDelayL.initialize(repeating: 0, count: Self.eightDDelaySamples); eightDDelayR.initialize(repeating: 0, count: Self.eightDDelaySamples)
+        eightDReverbL = .allocate(capacity: Self.roomBufferSamples); eightDReverbR = .allocate(capacity: Self.roomBufferSamples)
+        eightDReverbL.initialize(repeating: 0, count: Self.roomBufferSamples); eightDReverbR.initialize(repeating: 0, count: Self.roomBufferSamples)
+        surroundDelayL = .allocate(capacity: Self.surroundDelaySamples); surroundDelayR = .allocate(capacity: Self.surroundDelaySamples)
+        surroundDelayL.initialize(repeating: 0, count: Self.surroundDelaySamples); surroundDelayR.initialize(repeating: 0, count: Self.surroundDelaySamples)
 
         let objectIDNumbers = processObjectIDs.map { NSNumber(value: $0) }
         let tapDesc = CATapDescription(stereoMixdownOfProcesses: objectIDNumbers as! [AudioObjectID])
@@ -805,20 +1046,90 @@ class AppTapController {
         if let pID = procID { AudioDeviceStop(aggregateDeviceID, pID); AudioDeviceDestroyIOProcID(aggregateDeviceID, pID) }
         if aggregateDeviceID != 0 { CrashGuard.untrackDevice(aggregateDeviceID); AudioHardwareDestroyAggregateDevice(aggregateDeviceID) }
         if tapID != 0 { AudioHardwareDestroyProcessTap(tapID) }
+        os_unfair_lock_lock(&parameterLock)
         if let setup = appEqSetup { vDSP_biquad_DestroySetup(setup) }
         if let setup = deviceEqSetup { vDSP_biquad_DestroySetup(setup) }
+        retiredEQSetups.forEach { vDSP_biquad_DestroySetup($0) }
+        retiredEQSetups.removeAll()
+        appEqSetup = nil
+        deviceEqSetup = nil
+        os_unfair_lock_unlock(&parameterLock)
         appBufferL.deallocate(); appBufferR.deallocate(); devBufferL.deallocate(); devBufferR.deallocate()
         delayBufferL.deallocate(); delayBufferR.deallocate()
+        eightDDelayL.deallocate(); eightDDelayR.deallocate()
+        eightDReverbL.deallocate(); eightDReverbR.deallocate()
+        surroundDelayL.deallocate(); surroundDelayR.deallocate()
     }
 
-    func updateAppEQ(gains: [Double]) { appEqSetup = BiquadMath.createSetup(gains: gains, sampleRate: currentSampleRate, oldSetup: appEqSetup) }
-    func updateDeviceEQ(gains: [Double]) { deviceEqSetup = BiquadMath.createSetup(gains: gains, sampleRate: currentSampleRate, oldSetup: deviceEqSetup) }
+    func updateAppVolume(_ volume: Float) {
+        os_unfair_lock_lock(&parameterLock)
+        appVolume = volume
+        os_unfair_lock_unlock(&parameterLock)
+    }
 
+    func updateAppMute(_ muted: Bool) {
+        os_unfair_lock_lock(&parameterLock)
+        isAppMuted = muted
+        os_unfair_lock_unlock(&parameterLock)
+    }
+
+    func updateDeviceControls(volume: Float, balance: Float, delay: Float) {
+        os_unfair_lock_lock(&parameterLock)
+        deviceVolume = volume
+        deviceBalance = balance
+        deviceDelay = delay
+        os_unfair_lock_unlock(&parameterLock)
+    }
+
+    func updateEightDAudio(settings: EightDAudioSettings) {
+        os_unfair_lock_lock(&parameterLock)
+        pendingEightDSettings = settings
+        os_unfair_lock_unlock(&parameterLock)
+    }
+
+    func updateSurroundAudio(settings: SurroundAudioSettings) {
+        os_unfair_lock_lock(&parameterLock)
+        pendingSurroundSettings = settings
+        os_unfair_lock_unlock(&parameterLock)
+    }
+
+    func updateAppEQ(gains: [Double], bassGain: Double = 0.0) {
+        let newSetup = BiquadMath.createSetup(gains: gains, bassGain: bassGain, sampleRate: currentSampleRate, oldSetup: nil)
+        os_unfair_lock_lock(&parameterLock)
+        if let oldSetup = appEqSetup { retiredEQSetups.append(oldSetup) }
+        appEqSetup = newSetup
+        os_unfair_lock_unlock(&parameterLock)
+    }
+
+    func updateDeviceEQ(gains: [Double], bassGain: Double = 0.0) {
+        let newSetup = BiquadMath.createSetup(gains: gains, bassGain: bassGain, sampleRate: currentSampleRate, oldSetup: nil)
+        os_unfair_lock_lock(&parameterLock)
+        if let oldSetup = deviceEqSetup { retiredEQSetups.append(oldSetup) }
+        deviceEqSetup = newSetup
+        os_unfair_lock_unlock(&parameterLock)
+    }
+
+    @_optimize(speed)
     private func process(_ inData: UnsafePointer<AudioBufferList>, _ outData: UnsafeMutablePointer<AudioBufferList>) {
         let inBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inData))
         let outBuffers = UnsafeMutableAudioBufferListPointer(outData)
-        let finalVol = isAppMuted ? 0.0 : (appVolume * deviceVolume)
-        let needsProcessing = finalVol != 1.0 || appEqSetup != nil || deviceEqSetup != nil || deviceBalance != 0.5 || deviceDelay > 0.0 || fadeInSamplesRemaining > 0
+
+        if os_unfair_lock_trylock(&parameterLock) {
+            renderAppVolume = appVolume
+            renderAppMuted = isAppMuted
+            renderDeviceVolume = deviceVolume
+            renderDeviceBalance = deviceBalance
+            renderDeviceDelay = deviceDelay
+            renderAppEQ = appEqSetup
+            renderDeviceEQ = deviceEqSetup
+            renderEightDSettings = pendingEightDSettings
+            renderSurroundSettings = pendingSurroundSettings
+            os_unfair_lock_unlock(&parameterLock)
+        }
+        let finalVol = renderAppMuted ? 0.0 : (renderAppVolume * renderDeviceVolume)
+        let needs8D = renderEightDSettings.enabled
+        let needsSurround = renderSurroundSettings.enabled
+        let needsProcessing = finalVol != 1.0 || renderAppEQ != nil || renderDeviceEQ != nil || renderDeviceBalance != 0.5 || renderDeviceDelay > 0.0 || fadeInSamplesRemaining > 0 || needs8D || needsSurround
 
         for i in 0..<outBuffers.count {
             guard let outBytes = outBuffers[i].mData, let inBytes = inBuffers[i].mData else { continue }
@@ -835,16 +1146,24 @@ class AppTapController {
             else { var v = finalVol; vDSP_vsmul(inPtr, 1, &v, outPtr, 1, vDSP_Length(totalSamples)) }
 
             let frameCount = totalSamples / channels
-            if let eq = appEqSetup, channels == 2 { vDSP_biquad(eq, appBufferL, outPtr, 2, outPtr, 2, vDSP_Length(frameCount)); vDSP_biquad(eq, appBufferR, outPtr.advanced(by: 1), 2, outPtr.advanced(by: 1), 2, vDSP_Length(frameCount)) }
-            if let eq = deviceEqSetup, channels == 2 { vDSP_biquad(eq, devBufferL, outPtr, 2, outPtr, 2, vDSP_Length(frameCount)); vDSP_biquad(eq, devBufferR, outPtr.advanced(by: 1), 2, outPtr.advanced(by: 1), 2, vDSP_Length(frameCount)) }
+            if let eq = renderAppEQ, channels == 2 { vDSP_biquad(eq, appBufferL, outPtr, 2, outPtr, 2, vDSP_Length(frameCount)); vDSP_biquad(eq, appBufferR, outPtr.advanced(by: 1), 2, outPtr.advanced(by: 1), 2, vDSP_Length(frameCount)) }
+            if let eq = renderDeviceEQ, channels == 2 { vDSP_biquad(eq, devBufferL, outPtr, 2, outPtr, 2, vDSP_Length(frameCount)); vDSP_biquad(eq, devBufferR, outPtr.advanced(by: 1), 2, outPtr.advanced(by: 1), 2, vDSP_Length(frameCount)) }
 
-            if (deviceBalance != 0.5 || deviceDelay > 0.0) && channels == 2 {
-                let leftG = min(1.0, (1.0 - deviceBalance) * 2.0); let rightG = min(1.0, deviceBalance * 2.0)
-                let delayFrames = min(Int(deviceDelay * Float(currentSampleRate)), maxDelaySamples - 1)
+            if needsSurround && channels == 2 {
+                applySurround(outPtr, frameCount: frameCount, settings: renderSurroundSettings)
+            }
+
+            if needs8D && channels == 2 {
+                applyEightD(outPtr, frameCount: frameCount, settings: renderEightDSettings)
+            }
+
+            if (renderDeviceBalance != 0.5 || renderDeviceDelay > 0.0) && channels == 2 {
+                let leftG = min(1.0, (1.0 - renderDeviceBalance) * 2.0); let rightG = min(1.0, renderDeviceBalance * 2.0)
+                let delayFrames = min(Int(renderDeviceDelay * Float(currentSampleRate)), maxDelaySamples - 1)
                 var ptr = outPtr
                 for _ in 0..<frameCount {
                     var l = ptr[0] * leftG, r = ptr[1] * rightG
-                    if deviceDelay > 0.0 {
+                    if renderDeviceDelay > 0.0 {
                         delayBufferL[delayWriteIndex] = l; delayBufferR[delayWriteIndex] = r
                         let readIdx = (delayWriteIndex - delayFrames + maxDelaySamples) % maxDelaySamples
                         l = delayBufferL[readIdx]; r = delayBufferR[readIdx]
@@ -861,53 +1180,341 @@ class AppTapController {
             SoftLimiter.processBuffer(outPtr, sampleCount: totalSamples)
         }
     }
+
+    @_optimize(speed)
+    @inline(__always)
+    private func fractionalRead(_ buffer: UnsafeMutablePointer<Float>, writeIndex: Int, delaySamples: Float, count: Int) -> Float {
+        let clamped = min(max(delaySamples, 0), Float(count - 2))
+        let whole = Int(clamped)
+        let frac = clamped - Float(whole)
+        var i0 = writeIndex - whole
+        if i0 < 0 { i0 += count }
+        var i1 = i0 - 1
+        if i1 < 0 { i1 += count }
+        return buffer[i0] * (1 - frac) + buffer[i1] * frac
+    }
+
+    @_optimize(speed)
+    private func applySurround(_ samples: UnsafeMutablePointer<Float>, frameCount: Int, settings: SurroundAudioSettings) {
+        let sampleRate = Float(max(currentSampleRate, 8000.0))
+        let width = Float(settings.width)
+        let crossfeed = Float(settings.crossfeed)
+        let ambience = Float(settings.ambience)
+        let depth = Float(settings.depth)
+        let centerFocus = Float(settings.centerFocus)
+
+        let lowAlpha = 1 - expf(-2 * .pi * 220 / sampleRate)
+
+        let rearBase = 0.0085 + 0.017 * depth
+        let leftRearDelay = min(sampleRate * rearBase, Float(Self.surroundDelaySamples - 2))
+        let rightRearDelay = min(sampleRate * (rearBase * 1.63 + 0.0037), Float(Self.surroundDelaySamples - 2))
+        let feedback = 0.22 + 0.3 * depth
+        let dampAlpha: Float = 0.32
+        let rearMix = ambience * 0.5
+        let focus = centerFocus * 0.5
+        let norm = 1 / (1 + (width - 1) * 0.32 + rearMix * 0.6)
+
+        for frame in 0..<frameCount {
+            let index = frame * 2
+            let inputL = samples[index]
+            let inputR = samples[index + 1]
+            let mid = (inputL + inputR) * 0.5
+            let sideRaw = (inputL - inputR) * 0.5
+
+            surroundSideLowL += lowAlpha * (sideRaw - surroundSideLowL)
+            let sideLow = surroundSideLowL
+            let sideHigh = sideRaw - sideLow
+            let side = sideLow + sideHigh * width
+
+            var left = mid + side
+            var right = mid - side
+
+            let fedL = left * (1 - crossfeed) + right * crossfeed
+            let fedR = right * (1 - crossfeed) + left * crossfeed
+            left = fedL
+            right = fedR
+
+            surroundDelayL[surroundWriteIndex] = inputL + surroundRearDampL * feedback
+            surroundDelayR[surroundWriteIndex] = inputR + surroundRearDampR * feedback
+            let delayedL = fractionalRead(surroundDelayL, writeIndex: surroundWriteIndex, delaySamples: leftRearDelay, count: Self.surroundDelaySamples)
+            let delayedR = fractionalRead(surroundDelayR, writeIndex: surroundWriteIndex, delaySamples: rightRearDelay, count: Self.surroundDelaySamples)
+            surroundRearDampL += dampAlpha * (delayedL - surroundRearDampL)
+            surroundRearDampR += dampAlpha * (delayedR - surroundRearDampR)
+
+            left += delayedR * rearMix
+            right += delayedL * rearMix
+
+            left = left * (1 - focus) + mid * focus
+            right = right * (1 - focus) + mid * focus
+
+            samples[index] = left * norm
+            samples[index + 1] = right * norm
+            surroundWriteIndex += 1
+            if surroundWriteIndex == Self.surroundDelaySamples { surroundWriteIndex = 0 }
+        }
+    }
+
+    @_optimize(speed)
+    private func applyEightD(_ samples: UnsafeMutablePointer<Float>, frameCount: Int, settings: EightDAudioSettings) {
+        let speed = settings.rotationSpeed
+        let depthF = Float(settings.depth)
+        let distance = Float(settings.distance)
+        let elevationMotion = Float(settings.elevationMotion)
+        let frontBackMotion = Float(settings.frontBackMotion)
+        let room = Float(settings.roomSize)
+        let spread = Float(settings.roomSpread)
+        let bassBoost = settings.bassBoost
+        let bassGain = Float(pow(10.0, bassBoost / 20.0) - 1.0)
+        let intensity = Float(min(max(settings.intensity, 0.0), 1.0))
+        let centerFocus = Float(settings.centerFocus)
+        let sampleRate = max(currentSampleRate, 8000.0)
+        let sampleRateF = Float(sampleRate)
+        let phaseStep = 2.0 * .pi * speed / sampleRate
+        let stepSin = sin(phaseStep)
+        let stepCos = cos(phaseStep)
+        var sinPhase = sin(eightDPhase)
+        var cosPhase = cos(eightDPhase)
+
+        let shadowAlpha = 1 - expf(-2 * .pi * 2600 / sampleRateF)
+        let airAlpha = 1 - expf(-2 * .pi * 1800 / sampleRateF)
+        let bassAlpha = 1 - expf(-2 * .pi * 260 / sampleRateF)
+        let slew: Float = 1 - expf(-1 / (0.008 * sampleRateF))
+
+        var panLTarget: Float = 0.707
+        var panRTarget: Float = 0.707
+        var delayLTarget: Float = 0
+        var delayRTarget: Float = 0
+        var shadowLTarget: Float = 0
+        var shadowRTarget: Float = 0
+        var directGainTarget: Float = 1
+        var airGainTarget: Float = 1
+        var crossfeedTarget: Float = 0
+        var wetTarget: Float = 0
+
+        func refreshTargets() {
+            let orbit = Float(sinPhase)
+            let frontBack = Float(cosPhase) * frontBackMotion
+            let elevation = Float(cosPhase * cosPhase - sinPhase * sinPhase) * elevationMotion
+            let panPosition = (orbit * depthF + 1) * 0.5
+            panLTarget = sqrtf(max(0, 1 - panPosition))
+            panRTarget = sqrtf(max(0, panPosition))
+            let rear = 1 - ((frontBack + 1) * 0.5)
+            directGainTarget = (1 - distance * 0.3) * (1 - rear * 0.25)
+            let itd = abs(orbit) * depthF * 0.00072 * sampleRateF
+            delayLTarget = orbit > 0 ? itd : 0
+            delayRTarget = orbit < 0 ? itd : 0
+            let shadow = (0.5 + distance * 0.3)
+            shadowLTarget = max(0, orbit) * shadow
+            shadowRTarget = max(0, -orbit) * shadow
+            airGainTarget = max(0.25, 0.82 + elevation * 0.32 - rear * 0.22)
+            crossfeedTarget = 0.05 + rear * 0.28
+            wetTarget = min(room * (0.55 + rear * 0.4 + abs(elevation) * 0.18), 1)
+        }
+        refreshTargets()
+
+        for frame in 0..<frameCount {
+            if frame & 31 == 0 { refreshTargets() }
+
+            eightDPanLSm += slew * (panLTarget - eightDPanLSm)
+            eightDPanRSm += slew * (panRTarget - eightDPanRSm)
+            eightDDelayLSm += slew * (delayLTarget - eightDDelayLSm)
+            eightDDelayRSm += slew * (delayRTarget - eightDDelayRSm)
+            eightDShadowAmtLSm += slew * (shadowLTarget - eightDShadowAmtLSm)
+            eightDShadowAmtRSm += slew * (shadowRTarget - eightDShadowAmtRSm)
+            eightDDirectGainSm += slew * (directGainTarget - eightDDirectGainSm)
+            eightDAirGainSm += slew * (airGainTarget - eightDAirGainSm)
+            eightDCrossfeedSm += slew * (crossfeedTarget - eightDCrossfeedSm)
+            eightDWetSm += slew * (wetTarget - eightDWetSm)
+
+            let index = frame * 2
+            let inputL = samples[index]
+            let inputR = samples[index + 1]
+            let mid = (inputL + inputR) * 0.5
+            let sideRaw = (inputL - inputR) * 0.5
+            let retainedSide = sideRaw * (1 - depthF * 0.55)
+
+            let pannedL = mid * eightDPanLSm + retainedSide
+            let pannedR = mid * eightDPanRSm - retainedSide
+            eightDDelayL[eightDWriteIndex] = pannedL
+            eightDDelayR[eightDWriteIndex] = pannedR
+
+            var left = fractionalRead(eightDDelayL, writeIndex: eightDWriteIndex, delaySamples: eightDDelayLSm, count: Self.eightDDelaySamples) * eightDDirectGainSm
+            var right = fractionalRead(eightDDelayR, writeIndex: eightDWriteIndex, delaySamples: eightDDelayRSm, count: Self.eightDDelaySamples) * eightDDirectGainSm
+
+            eightDShadowL += shadowAlpha * (left - eightDShadowL)
+            eightDShadowR += shadowAlpha * (right - eightDShadowR)
+            left = left * (1 - eightDShadowAmtLSm) + eightDShadowL * eightDShadowAmtLSm * 0.88
+            right = right * (1 - eightDShadowAmtRSm) + eightDShadowR * eightDShadowAmtRSm * 0.88
+
+            if bassBoost > 0 {
+                eightDBassL += bassAlpha * (left - eightDBassL)
+                eightDBassR += bassAlpha * (right - eightDBassR)
+                left += eightDBassL * bassGain
+                right += eightDBassR * bassGain
+            }
+
+            eightDLowpassL += airAlpha * (left - eightDLowpassL)
+            eightDLowpassR += airAlpha * (right - eightDLowpassR)
+            left = eightDLowpassL + (left - eightDLowpassL) * eightDAirGainSm
+            right = eightDLowpassR + (right - eightDLowpassR) * eightDAirGainSm
+
+            let cf = eightDCrossfeedSm
+            let crossedL = left * (1 - cf) + right * cf
+            let crossedR = right * (1 - cf) + left * cf
+            left = crossedL
+            right = crossedR
+
+            if room > 0 {
+                let roomIndex = eightDReverbIndex
+                var wetL: Float = 0
+                var wetR: Float = 0
+                for tap in 0..<self.roomTapOffsets.count {
+                    var tapIndex = roomIndex - roomTapOffsets[tap]
+                    if tapIndex < 0 { tapIndex += Self.roomBufferSamples }
+                    wetL += eightDReverbL[tapIndex] * Self.roomTapGains[tap]
+                    wetR += eightDReverbR[tapIndex] * Self.roomTapGains[tap]
+                }
+                let crossL = wetL * (1 - spread) + wetR * spread
+                let crossR = wetR * (1 - spread) + wetL * spread
+                eightDRoomDampL += 0.3 * (crossL - eightDRoomDampL)
+                eightDRoomDampR += 0.3 * (crossR - eightDRoomDampR)
+                let roomMix = eightDWetSm * 0.38
+                let feedbackMix = eightDWetSm * 0.3
+                eightDReverbL[roomIndex] = left + eightDRoomDampR * feedbackMix
+                eightDReverbR[roomIndex] = right + eightDRoomDampL * feedbackMix
+                left += crossL * roomMix
+                right += crossR * roomMix
+                eightDReverbIndex += 1
+                if eightDReverbIndex == Self.roomBufferSamples { eightDReverbIndex = 0 }
+            }
+
+            left = inputL * (1 - intensity) + left * intensity
+            right = inputR * (1 - intensity) + right * intensity
+            let focus = centerFocus * 0.45
+            left = left * (1 - focus) + mid * focus
+            right = right * (1 - focus) + mid * focus
+
+            samples[index] = left * 1.08
+            samples[index + 1] = right * 1.08
+            eightDWriteIndex += 1
+            if eightDWriteIndex == Self.eightDDelaySamples { eightDWriteIndex = 0 }
+
+            let nextSin = sinPhase * stepCos + cosPhase * stepSin
+            cosPhase = cosPhase * stepCos - sinPhase * stepSin
+            sinPhase = nextSin
+        }
+        eightDPhase += phaseStep * Double(frameCount)
+        eightDPhase.formTruncatingRemainder(dividingBy: 2.0 * .pi)
+        if eightDPhase < 0 { eightDPhase += 2.0 * .pi }
+    }
 }
 
 // MARK: - Sharp DSP Utilities
+
 enum BiquadMath {
-    static func createSetup(gains: [Double], sampleRate: Double, oldSetup: vDSP_biquad_Setup?) -> vDSP_biquad_Setup? {
+    static let sectionCount = AudioEQ.bandCount + 2
+
+    private static func rbjPeaking(freq: Double, gainDB: Double, q: Double, sampleRate: Double) -> [Double] {
+        let A = pow(10.0, gainDB / 40.0)
+        let w0 = 2.0 * .pi * freq / sampleRate
+        let cs = cos(w0)
+        let alpha = sin(w0) / (2.0 * q)
+        let b0 = 1.0 + alpha * A
+        let b1 = -2.0 * cs
+        let b2 = 1.0 - alpha * A
+        let a0 = 1.0 + alpha / A
+        let a1 = -2.0 * cs
+        let a2 = 1.0 - alpha / A
+        return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0]
+    }
+
+    private static func rbjLowShelf(freq: Double, gainDB: Double, sampleRate: Double) -> [Double] {
+        let A = pow(10.0, gainDB / 40.0)
+        let w0 = 2.0 * .pi * freq / sampleRate
+        let cs = cos(w0)
+        let sn = sin(w0)
+        let alpha = sn / 2.0 * sqrt((A + 1.0 / A) * (1.0 / 0.9 - 1.0) + 2.0)
+        let twoSqrtAAlpha = 2.0 * sqrt(A) * alpha
+        let b0 = A * ((A + 1.0) - (A - 1.0) * cs + twoSqrtAAlpha)
+        let b1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * cs)
+        let b2 = A * ((A + 1.0) - (A - 1.0) * cs - twoSqrtAAlpha)
+        let a0 = (A + 1.0) + (A - 1.0) * cs + twoSqrtAAlpha
+        let a1 = -2.0 * ((A - 1.0) + (A + 1.0) * cs)
+        let a2 = (A + 1.0) + (A - 1.0) * cs - twoSqrtAAlpha
+        return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0]
+    }
+
+    private static func rbjHighShelf(freq: Double, gainDB: Double, sampleRate: Double) -> [Double] {
+        let A = pow(10.0, gainDB / 40.0)
+        let w0 = 2.0 * .pi * freq / sampleRate
+        let cs = cos(w0)
+        let sn = sin(w0)
+        let alpha = sn / 2.0 * sqrt((A + 1.0 / A) * (1.0 / 0.9 - 1.0) + 2.0)
+        let twoSqrtAAlpha = 2.0 * sqrt(A) * alpha
+        let b0 = A * ((A + 1.0) + (A - 1.0) * cs + twoSqrtAAlpha)
+        let b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cs)
+        let b2 = A * ((A + 1.0) + (A - 1.0) * cs - twoSqrtAAlpha)
+        let a0 = (A + 1.0) - (A - 1.0) * cs + twoSqrtAAlpha
+        let a1 = 2.0 * ((A - 1.0) - (A + 1.0) * cs)
+        let a2 = (A + 1.0) - (A - 1.0) * cs - twoSqrtAAlpha
+        return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0]
+    }
+
+    private static let passthrough: [Double] = [1, 0, 0, 0, 0]
+
+    static func createSetup(gains rawGains: [Double], bassGain: Double, sampleRate: Double, oldSetup: vDSP_biquad_Setup?) -> vDSP_biquad_Setup? {
         if let old = oldSetup { DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { vDSP_biquad_DestroySetup(old) } }
-        if gains.allSatisfy({ $0 == 0.0 }) { return nil }
 
-        let freqs: [Double] = [31.25, 62.5, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-        let Q = 1.5
+        let gains = AudioEQ.normalize(rawGains)
+        if bassGain == 0.0 && gains.allSatisfy({ $0 == 0.0 }) { return nil }
+
+        let bandQ = 4.318
+        let sr = max(sampleRate, 8000.0)
         var coeffs: [Double] = []
+        coeffs.reserveCapacity(sectionCount * 5)
 
-        let maxBoost = gains.max() ?? 0.0
-        let compensation = maxBoost > 0 ? pow(10.0, -(maxBoost * 0.6) / 20.0) : 1.0
+        coeffs += bassGain == 0.0 ? passthrough
+            : rbjLowShelf(freq: AudioEQ.bassShelfFrequency, gainDB: bassGain, sampleRate: sr)
 
-        for i in 0..<10 {
-            let gain = gains[i]
-            let A = pow(10.0, gain / 40.0)
-            let omega = 2.0 * .pi * freqs[i] / sampleRate
-            let sn = sin(omega)
-            let cs = cos(omega)
-            let alpha = sn / (2.0 * Q)
-
-            var b0 = 1.0 + alpha * A
-            var b1 = -2.0 * cs
-            var b2 = 1.0 - alpha * A
-            let a0 = 1.0 + alpha / A
-            let a1 = -2.0 * cs
-            let a2 = 1.0 - alpha / A
-
-            if i == 0 {
-                b0 *= compensation
-                b1 *= compensation
-                b2 *= compensation
+        for i in 0..<AudioEQ.bandCount {
+            let g = gains[i]
+            let f = min(AudioEQ.frequencies[i], sr * 0.45)
+            if g == 0.0 {
+                coeffs += passthrough
+            } else if i == 0 {
+                coeffs += rbjLowShelf(freq: f, gainDB: g, sampleRate: sr)
+            } else if i == AudioEQ.bandCount - 1 {
+                coeffs += rbjHighShelf(freq: f, gainDB: g, sampleRate: sr)
+            } else {
+                coeffs += rbjPeaking(freq: f, gainDB: g, q: bandQ, sampleRate: sr)
             }
-
-            coeffs.append(contentsOf:[b0/a0, b1/a0, b2/a0, a1/a0, a2/a0])
         }
-        return coeffs.withUnsafeBufferPointer { vDSP_biquad_CreateSetup($0.baseAddress!, vDSP_Length(10)) }
+
+        let positiveSum = gains.filter { $0 > 0 }.reduce(0, +) + max(0, bassGain)
+        let peakBoost = (gains.max() ?? 0) + max(0, bassGain) * 0.5
+        let makeupDB = -min(peakBoost * 0.5 + positiveSum * 0.06, 9.0)
+        let makeup = pow(10.0, makeupDB / 20.0)
+        coeffs += [makeup, 0, 0, 0, 0]
+
+        return coeffs.withUnsafeBufferPointer { vDSP_biquad_CreateSetup($0.baseAddress!, vDSP_Length(sectionCount)) }
     }
 }
 
 enum SoftLimiter {
     @inline(__always) static func processBuffer(_ buffer: UnsafeMutablePointer<Float>, sampleCount: Int) {
-        var low: Float = -1.0
-        var high: Float = 1.0
-        vDSP_vclip(buffer, 1, &low, &high, buffer, 1, vDSP_Length(sampleCount))
+        guard sampleCount > 0 else { return }
+
+        let threshold: Float = 0.88
+        let remainingHeadroom: Float = 1.0 - threshold
+        for index in 0..<sampleCount {
+            let sample = buffer[index]
+            let magnitude = abs(sample)
+            guard magnitude > threshold else { continue }
+
+            let excess = magnitude - threshold
+            let compressed = threshold + remainingHeadroom * excess / (remainingHeadroom + excess)
+            buffer[index] = sample < 0 ? -compressed : compressed
+        }
     }
 }
 

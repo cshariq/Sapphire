@@ -96,7 +96,7 @@ class AudioDeviceManager: ObservableObject {
             return nil
         }
 
-        guard let name = getDeviceName(for: deviceID), let uid = getDeviceUID(for: deviceID) else {
+        guard let name = CoreAudioDevices.name(of: deviceID), let uid = CoreAudioDevices.uid(of: deviceID) else {
             return nil
         }
 
@@ -116,30 +116,7 @@ class AudioDeviceManager: ObservableObject {
             return nil
         }
 
-        return getDeviceName(for: deviceID)
+        return CoreAudioDevices.name(of: deviceID)
     }
 
-    private func getDeviceName(for deviceID: AudioDeviceID) -> String? {
-        var name: CFString = "" as CFString
-        var propertySize = UInt32(MemoryLayout<CFString>.size)
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceNameCFString,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        guard AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &propertySize, &name) == noErr else {
-            return nil
-        }
-
-        return name as String
-    }
-
-    private func getDeviceUID(for deviceID: AudioDeviceID) -> String? {
-        var uid: CFString = "" as CFString
-        var propertySize = UInt32(MemoryLayout<CFString>.size)
-        var propertyAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        guard AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &propertySize, &uid) == noErr else { return nil }
-        return uid as String
-    }
 }

@@ -4,11 +4,12 @@
 //
 //  Created by Shariq Charolia on 2026-08-10
 
-import Firebase
+import FirebaseCore
 import FirebaseAnalytics
+import FirebaseCrashlytics
 
+@MainActor
 enum SapphireAnalytics {
-    private static let lock = NSLock()
     private static var isConfigured = false
 
     static var isEnabled: Bool {
@@ -16,19 +17,17 @@ enum SapphireAnalytics {
     }
 
     static func bootstrap() {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if !isConfigured {
-            FirebaseApp.configure()
-            isConfigured = true
-        }
+        guard isEnabled else { return }
         applyCollectionPreference()
     }
 
     static func applyCollectionPreference() {
+        if isEnabled {
+            configureIfNeeded()
+        }
         guard isConfigured else { return }
         Analytics.setAnalyticsCollectionEnabled(isEnabled)
+        Crashlytics.crashlytics().setCrashlyticsCollectionEnabled(isEnabled)
     }
 
     static func logEvent(_ name: String, parameters: [String: Any]? = nil) {
@@ -38,5 +37,11 @@ enum SapphireAnalytics {
             bootstrap()
         }
         Analytics.logEvent(name, parameters: parameters)
+    }
+
+    private static func configureIfNeeded() {
+        guard !isConfigured else { return }
+        FirebaseApp.configure()
+        isConfigured = true
     }
 }

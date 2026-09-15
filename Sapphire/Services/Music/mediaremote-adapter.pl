@@ -9,6 +9,34 @@ use warnings;
 use DynaLoader;
 use File::Spec;
 use File::Basename;
+use POSIX ();
+
+# Sapphire: `stream` runs for the life of the host app, and a host that is
+# SIGKILLed (crash, Xcode stop) never gets to terminate it, so it was reparented
+# to launchd and kept streaming forever. When asked, stay behind as a watchdog
+# blocked on stdin: the host holds the pipe's write end, so EOF means it is gone.
+# The child execs a fresh perl at once - system perl has already touched the
+# ObjC runtime, and running any more of it in a forked child aborts.
+if ($ENV{SAPPHIRE_WATCH_PARENT_STDIN} && grep { $_ eq 'stream' } @ARGV) {
+  delete $ENV{SAPPHIRE_WATCH_PARENT_STDIN};
+  my $child = fork();
+  die "fork failed: $!\n" unless defined $child;
+  if ($child == 0) {
+    open(STDIN, '<', '/dev/null');
+    exec($^X, $0, @ARGV) or POSIX::_exit(127);
+  }
+  my $finish = sub { kill 'TERM', $child; waitpid($child, 0); exit 0; };
+  $SIG{TERM} = $SIG{INT} = $SIG{HUP} = $finish;
+  $SIG{CHLD} = sub {
+    exit(($? >> 8) || 0) if waitpid($child, POSIX::WNOHANG()) == $child;
+  };
+  while (1) {
+    my $read = sysread(STDIN, my $buf, 1024);
+    last if defined $read && $read == 0;
+    last if !defined $read && !$!{EINTR};
+  }
+  $finish->();
+}
 
 sub print_help() {
   print <<'HELP';

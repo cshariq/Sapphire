@@ -16,7 +16,7 @@ extension Notification.Name {
 fileprivate extension NSImage {
     func blurred(radius: CGFloat) -> NSImage? {
         guard let tiffData = self.tiffRepresentation, let ciImage = CIImage(data: tiffData) else { return nil }
-        let filter = CIFilter.gaussianBlur(); filter.inputImage = ciImage; filter.radius = Float(radius)
+        let filter = CIFilter.gaussianBlur(); filter.inputImage = ciImage.clampedToExtent(); filter.radius = Float(radius)
         guard let outputCIImage = filter.outputImage else { return nil }
         let croppedCIImage = outputCIImage.cropped(to: ciImage.extent)
         let rep = NSCIImageRep(ciImage: croppedCIImage)
@@ -54,9 +54,17 @@ class LaunchpadGestureMonitor {
 
 class LaunchpadWindowController: NSWindowController {
 
+    private struct WallpaperCacheKey: Equatable {
+        let url: URL
+        let modificationDate: Date?
+    }
+
     private let inputInterceptor = LaunchpadInputInterceptor()
     private let gestureManager = LaunchpadGestureManager()
+    private let presentation = LaunchpadPresentationModel()
     private var closeObserver: NSObjectProtocol?
+    private var wallpaperCacheKey: WallpaperCacheKey?
+    private var cachedBlurredWallpaper: NSImage?
 
     private var isVisible: Bool = false {
         didSet {
@@ -104,9 +112,8 @@ class LaunchpadWindowController: NSWindowController {
         }
 
         let launchpadView = LaunchpadView(
-            interceptor: self.inputInterceptor,
-            backgroundImage: nil,
-            bottomPadding: 0
+            presentation: presentation,
+            interceptor: self.inputInterceptor
         ).environmentObject(gestureManager)
 
         window.contentView = NSHostingView(rootView: launchpadView)
@@ -167,22 +174,17 @@ class LaunchpadWindowController: NSWindowController {
     func showLaunchpad() {
         guard !isVisible else { return }
 
-        var blurredWallpaper: NSImage?
-        if let url = NSWorkspace.shared.desktopImageURL(for: .main!), let image = NSImage(contentsOf: url) {
-            blurredWallpaper = image.blurred(radius: 25)
-        }
+        let screen = NSScreen.main
+        let blurredWallpaper = blurredWallpaper(for: screen)
 
         var bottomPadding: CGFloat = 20
         let dockHeight = getDockHeightForPadding()
         if dockHeight > 0 { bottomPadding = dockHeight + 10 }
 
-        let launchpadView = LaunchpadView(
-            interceptor: self.inputInterceptor,
-            backgroundImage: blurredWallpaper,
-            bottomPadding: bottomPadding
-        ).environmentObject(gestureManager)
-
-        self.window?.contentView = NSHostingView(rootView: launchpadView)
+        // Keep the hosting tree alive between presentations. Replacing it here
+        // recreated the view model, rescanned layout state, and decoded every
+        // app icon each time Launchpad opened.
+        presentation.update(backgroundImage: blurredWallpaper, bottomPadding: bottomPadding)
 
         isVisible = true
 
@@ -195,5 +197,22 @@ class LaunchpadWindowController: NSWindowController {
 
     func hideLaunchpad() {
         isVisible = false
+    }
+
+    private func blurredWallpaper(for screen: NSScreen?) -> NSImage? {
+        guard let screen,
+              let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return nil }
+
+        let modificationDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let cacheKey = WallpaperCacheKey(url: url, modificationDate: modificationDate)
+        if wallpaperCacheKey == cacheKey {
+            return cachedBlurredWallpaper
+        }
+
+        guard let image = NSImage(contentsOf: url),
+              let blurred = image.blurred(radius: 25) else { return nil }
+        wallpaperCacheKey = cacheKey
+        cachedBlurredWallpaper = blurred
+        return blurred
     }
 }

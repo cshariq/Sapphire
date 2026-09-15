@@ -9,18 +9,127 @@ import SwiftUI
 import AppKit
 import Combine
 import ScreenCaptureKit
+import UniformTypeIdentifiers
+
+extension UTType {
+    var sapphireFileSymbolName: String {
+        if conforms(to: .image) { return "photo.fill" }
+        if conforms(to: .movie) { return "video.fill" }
+        if conforms(to: .audio) { return "music.note" }
+        if conforms(to: .pdf) { return "doc.richtext.fill" }
+        if conforms(to: .text) { return "doc.text.fill" }
+        if conforms(to: .folder) { return "folder.fill" }
+        if conforms(to: .archive) { return "archivebox.fill" }
+        return "doc.fill"
+    }
+}
+
+extension URL {
+    var sapphireFileSymbolName: String {
+        (try? resourceValues(forKeys: [.contentTypeKey]).contentType)?.sapphireFileSymbolName ?? "doc.fill"
+    }
+}
+
+extension NSPanel {
+    func configureAsSapphireOverlay(acceptsMouseMovedEvents: Bool = false) {
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        isMovable = false
+        isReleasedWhenClosed = false
+        hidesOnDeactivate = false
+        self.acceptsMouseMovedEvents = acceptsMouseMovedEvents
+    }
+}
+
+extension NSPasteboard {
+    func copyString(_ string: String) {
+        clearContents()
+        setString(string, forType: .string)
+    }
+}
+
+enum SystemPreferencesPane {
+    case privacyRoot
+    case accessibility
+    case camera
+    case screenCapture
+    case bluetooth
+    case allFiles
+
+    var url: URL {
+        let suffix: String
+        switch self {
+        case .privacyRoot: suffix = "Privacy"
+        case .accessibility: suffix = "Privacy_Accessibility"
+        case .camera: suffix = "Privacy_Camera"
+        case .screenCapture: suffix = "Privacy_ScreenCapture"
+        case .bluetooth: suffix = "Privacy_Bluetooth"
+        case .allFiles: suffix = "Privacy_AllFiles"
+        }
+        return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(suffix)")!
+    }
+
+    func open() {
+        NSWorkspace.shared.open(url)
+    }
+}
+
+private enum DateFormatterCache {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var formatters: [String: DateFormatter] = [:]
+    nonisolated(unsafe) private static var environmentObservers: [NSObjectProtocol] = []
+
+    static func formatter(for format: String) -> DateFormatter {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let cached = formatters[format] { return cached }
+
+        if environmentObservers.isEmpty {
+            let center = NotificationCenter.default
+            for name in [NSLocale.currentLocaleDidChangeNotification, .NSSystemTimeZoneDidChange] {
+                environmentObservers.append(center.addObserver(forName: name, object: nil, queue: nil) { _ in
+                    lock.lock()
+                    formatters.removeAll()
+                    lock.unlock()
+                })
+            }
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        formatters[format] = formatter
+        return formatter
+    }
+}
 
 extension Date {
     func format(as format: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = format
-        return formatter.string(from: self)
+        DateFormatterCache.formatter(for: format).string(from: self)
     }
     func isSameDay(as otherDate: Date) -> Bool {
         return Calendar.current.isDate(self, inSameDayAs: otherDate)
     }
     var isWeekend: Bool {
         return Calendar.current.isDateInWeekend(self)
+    }
+}
+
+extension Timer {
+    @discardableResult
+    static func scheduledCoalescing(
+        withTimeInterval interval: TimeInterval,
+        repeats: Bool = true,
+        toleranceFraction: Double = 0.1,
+        block: @escaping (Timer) -> Void
+    ) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: repeats, block: block)
+        timer.tolerance = interval * toleranceFraction
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
     }
 }
 
@@ -38,28 +147,24 @@ extension Color {
     func ensuringMinimumBrightness(_ minBrightness: CGFloat = 0.48) -> Color {
         let ns = NSColor(self)
         guard let rgb = ns.usingColorSpace(.sRGB) else { return self }
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        rgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        guard brightness < minBrightness else { return self }
-        let liftedSat = min(saturation, 0.85)
-        let lifted = NSColor(hue: hue, saturation: liftedSat, brightness: minBrightness, alpha: alpha)
-        return Color(lifted)
+        let c = rgb.hsba
+        guard c.brightness < minBrightness else { return self }
+        return Color(NSColor(hue: c.hue, saturation: min(c.saturation, 0.85), brightness: minBrightness, alpha: c.alpha))
     }
 }
 
 private enum ImageEdgeColorCache {
-    private static let cache: NSCache<NSData, NSArray> = {
-        let cache = NSCache<NSData, NSArray>()
+    private static let cache: NSCache<NSImage, NSArray> = {
+        let cache = NSCache<NSImage, NSArray>()
         cache.countLimit = 15
-        cache.totalCostLimit = 2 * 1024 * 1024
         return cache
     }()
 
-    static func object(forKey key: NSData) -> NSArray? {
+    static func object(forKey key: NSImage) -> NSArray? {
         cache.object(forKey: key)
     }
 
-    static func setObject(_ object: NSArray, forKey key: NSData) {
+    static func setObject(_ object: NSArray, forKey key: NSImage) {
         cache.setObject(object, forKey: key)
     }
 
@@ -71,9 +176,7 @@ private let ciContext = CIContext(options: [.workingColorSpace: NSNull()])
 
 extension NSImage {
     func getEdgeColors() -> (left: Color, right: Color, accent: Color)? {
-        guard let tiffData = self.tiffRepresentation as NSData? else { return nil }
-
-        if let cachedColors = ImageEdgeColorCache.object(forKey: tiffData) as? [CGFloat], cachedColors.count == 9 {
+        if let cachedColors = ImageEdgeColorCache.object(forKey: self) as? [CGFloat], cachedColors.count == 9 {
             return (Color(red: cachedColors[0], green: cachedColors[1], blue: cachedColors[2]),
                     Color(red: cachedColors[3], green: cachedColors[4], blue: cachedColors[5]),
                     Color(red: cachedColors[6], green: cachedColors[7], blue: cachedColors[8]))
@@ -96,7 +199,7 @@ extension NSImage {
         let leftRect = CGRect(x: extent.origin.x, y: extent.origin.y, width: edgeWidth, height: extent.height)
         let rightRect = CGRect(x: extent.maxX - edgeWidth, y: extent.origin.y, width: edgeWidth, height: extent.height)
 
-        guard var leftNSColor = getRawAverageNSColor(from: leftRect),
+        guard let leftNSColor = getRawAverageNSColor(from: leftRect),
               var rightNSColor = getRawAverageNSColor(from: rightRect) else { return nil }
 
         if leftNSColor.isSimilar(to: rightNSColor, threshold: 0.05) {
@@ -109,7 +212,7 @@ extension NSImage {
         let (rA, gA, bA) = accentNSColor.saturated(by: 0.3).withMinimumBrightness(0.75).rgb
 
         let colorsToCache: NSArray = [rL, gL, bL, rR, gR, bR, rA, gA, bA]
-        ImageEdgeColorCache.setObject(colorsToCache, forKey: tiffData)
+        ImageEdgeColorCache.setObject(colorsToCache, forKey: self)
 
         return (Color(red: rL, green: gL, blue: bL),
                 Color(red: rR, green: gR, blue: bR),
@@ -129,45 +232,36 @@ private extension NSColor {
 }
 
 extension NSColor {
-    func withBrightness(increasedBy amount: CGFloat) -> NSColor {
+    var hsba: (hue: CGFloat, saturation: CGFloat, brightness: CGFloat, alpha: CGFloat) {
         var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        self.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        let newBrightness = min(brightness + amount, 1.0)
-        return NSColor(hue: hue, saturation: saturation, brightness: newBrightness, alpha: alpha)
+        getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        return (hue, saturation, brightness, alpha)
+    }
+
+    func withBrightness(increasedBy amount: CGFloat) -> NSColor {
+        let c = hsba
+        return NSColor(hue: c.hue, saturation: c.saturation, brightness: min(c.brightness + amount, 1.0), alpha: c.alpha)
     }
 
     func isSimilar(to otherColor: NSColor, threshold: CGFloat) -> Bool {
-        var h1: CGFloat = 0, s1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
-        var h2: CGFloat = 0, s2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
-        self.getHue(&h1, saturation: &s1, brightness: &b1, alpha: &a1)
-        otherColor.getHue(&h2, saturation: &s2, brightness: &b2, alpha: &a2)
-        let brightnessDiff = abs(b1 - b2)
-        let hueDiff = abs(h1 - h2)
-        return brightnessDiff < threshold && hueDiff < threshold
+        let a = hsba, b = otherColor.hsba
+        return abs(a.brightness - b.brightness) < threshold && abs(a.hue - b.hue) < threshold
     }
 
     func madeDistinct() -> NSColor {
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        self.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        let newBrightness = min(brightness + 0.15, 1.0)
-        let newSaturation = max(saturation - 0.15, 0.0)
-        return NSColor(hue: hue, saturation: newSaturation, brightness: newBrightness, alpha: alpha)
+        let c = hsba
+        return NSColor(hue: c.hue, saturation: max(c.saturation - 0.15, 0.0), brightness: min(c.brightness + 0.15, 1.0), alpha: c.alpha)
     }
 
     func saturated(by percentage: CGFloat) -> NSColor {
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        self.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        let newSaturation = min(saturation + percentage, 1.0)
-        return NSColor(hue: hue, saturation: newSaturation, brightness: brightness, alpha: alpha)
+        let c = hsba
+        return NSColor(hue: c.hue, saturation: min(c.saturation + percentage, 1.0), brightness: c.brightness, alpha: c.alpha)
     }
 
     func withMinimumBrightness(_ minBrightness: CGFloat) -> NSColor {
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        self.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        if brightness < minBrightness {
-            return NSColor(hue: hue, saturation: saturation, brightness: minBrightness, alpha: alpha)
-        }
-        return self
+        let c = hsba
+        guard c.brightness < minBrightness else { return self }
+        return NSColor(hue: c.hue, saturation: c.saturation, brightness: minBrightness, alpha: c.alpha)
     }
 }
 
@@ -191,13 +285,7 @@ class ContentPickerHelper: NSObject, ObservableObject, SCContentSharingPickerObs
     func showPicker() {
         picker.add(self)
         picker.isActive = true
-        Task {
-            do {
-                try await picker.present()
-            } catch {
-                self.pickerResultPublisher.send(.failure(error))
-            }
-        }
+        picker.present()
     }
 
     func contentSharingPicker(_ picker: SCContentSharingPicker, didUpdateWith filter: SCContentFilter, for stream: SCStream?) {
@@ -216,6 +304,18 @@ class ContentPickerHelper: NSObject, ObservableObject, SCContentSharingPickerObs
         picker.remove(self)
         picker.isActive = false
         self.pickerResultPublisher.send(.failure(error))
+    }
+}
+
+extension View {
+    func periodicTask(every interval: Duration, perform action: @escaping @MainActor () -> Void) -> some View {
+        task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled else { return }
+                action()
+            }
+        }
     }
 }
 

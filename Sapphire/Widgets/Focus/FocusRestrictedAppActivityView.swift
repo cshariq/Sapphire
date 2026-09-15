@@ -16,13 +16,9 @@ struct FocusRestrictedAppActivityView: View {
     let onUnlocked: () -> Void
 
     @State private var requested = false
+    @State private var appIcon: NSImage?
 
     private static let unlockWindow: TimeInterval = 15 * 60
-
-    private var appIcon: NSImage? {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
-        return NSWorkspace.shared.icon(forFile: url.path)
-    }
 
     private var hasPendingRequest: Bool {
         requested || FocusSessionManager.shared.hasPendingUnlockRequest(bundleID: bundleID)
@@ -60,6 +56,13 @@ struct FocusRestrictedAppActivityView: View {
             .frame(minWidth: 360, maxWidth: 440)
             .frame(minHeight: 120)
         }
+        .task(id: bundleID) {
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+                appIcon = nil
+                return
+            }
+            appIcon = AppIconLoader.icon(for: url, maxDimension: 128)
+        }
     }
 
     // MARK: - Content
@@ -72,7 +75,7 @@ struct FocusRestrictedAppActivityView: View {
                     FocusSessionManager.shared.remainingUnlockTime(bundleID: bundleID) ?? Self.unlockWindow,
                     FocusSessionManager.shared.remainingSeconds
                 )
-                Text("Unlocked in \(Self.format(remaining)) — or when your session ends, whichever comes first.")
+                Text("Unlocked in \(remaining.asMinuteSecondClock) — or when your session ends, whichever comes first.")
                     .contentTransition(.numericText(countsDown: true))
                     .onChange(of: context.date) { _, _ in
                         if remaining <= 0 { onUnlocked() }
@@ -93,12 +96,12 @@ struct FocusRestrictedAppActivityView: View {
             Spacer()
 
             if hasPendingRequest {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
                     let remaining = FocusSessionManager.shared.remainingUnlockTime(bundleID: bundleID) ?? Self.unlockWindow
                     HStack(spacing: 6) {
                         Image(systemName: "hourglass")
                             .font(.system(size: 12, weight: .semibold))
-                        Text(Self.format(remaining))
+                        Text(remaining.asMinuteSecondClock)
                             .font(.system(size: 13, weight: .bold, design: .monospaced))
                             .contentTransition(.numericText(countsDown: true))
                     }
@@ -106,9 +109,6 @@ struct FocusRestrictedAppActivityView: View {
                     .background(Color.orange.opacity(0.22))
                     .foregroundStyle(.orange)
                     .clipShape(Capsule())
-                    .onChange(of: context.date) { _, _ in
-                        if remaining <= 0 { onUnlocked() }
-                    }
                 }
             } else {
                 actionButton(title: "Unlock", systemName: "lock.open.fill", isPrimary: true) {
@@ -160,10 +160,4 @@ struct FocusRestrictedAppActivityView: View {
         .frame(width: 50, height: 50)
     }
 
-    private static func format(_ time: TimeInterval) -> String {
-        let total = Int(max(0, time.rounded()))
-        let minutes = total / 60
-        let seconds = total % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
 }

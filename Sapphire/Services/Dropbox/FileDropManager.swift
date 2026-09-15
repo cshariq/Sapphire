@@ -111,10 +111,7 @@ class FileDropManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        SettingsModel.shared.$settings
-            .map(\.fileProgressLiveActivityEnabled)
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
+        SettingsModel.shared.changes(of: \.fileProgressLiveActivityEnabled)
             .sink { [weak self] isEnabled in
                 if isEnabled {
                     DownloadMonitor.shared.startMonitoring()
@@ -199,6 +196,10 @@ class FileDropManager: ObservableObject {
         let finderTasks = newTasks.filter { $0.sourceType == .finder }
         print("[FDM] Processing \(finderTasks.count) Finder transfers from UFTM.")
         syncUniversalTasks(newTasks: finderTasks, sourceType: .finder, keepDuration: 30.0)
+    }
+
+    func updateExternalTask(_ task: FileTransferTask?, sourceType: FileTransferTask.FileTransferSource) {
+        syncUniversalTasks(newTasks: task.map { [$0] } ?? [], sourceType: sourceType, keepDuration: 5.0)
     }
 
     private func syncUniversalTasks(newTasks: [FileTransferTask], sourceType: FileTransferTask.FileTransferSource, keepDuration: TimeInterval) {

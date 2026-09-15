@@ -92,15 +92,11 @@ struct FocusWidgetView: View {
 
     private var ring: some View {
         ZStack {
-            Circle()
-                .stroke(Color.white.opacity(0.18), lineWidth: 4)
-            Circle()
-                .trim(from: 0, to: focusManager.progress)
-                .stroke(
-                    AngularGradient(colors: accentColors, center: .center),
-                    style: StrokeStyle(lineWidth: 4, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
+            ProgressRingView(
+                progress: focusManager.progress,
+                lineWidth: 4,
+                active: AngularGradient(colors: accentColors, center: .center)
+            )
             Image(systemName: focusManager.isFocusBlock ? "figure.mind.and.body" : "cup.and.saucer.fill")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(accent)

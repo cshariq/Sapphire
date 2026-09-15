@@ -12,15 +12,9 @@ extension Notification.Name {
     static let userStartedTypingInLaunchpad = Notification.Name("userStartedTypingInLaunchpad")
 }
 
-private func launchpadEventTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent, refcon: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    guard let refcon = refcon else { return Unmanaged.passUnretained(event) }
-    let interceptor = Unmanaged<LaunchpadInputInterceptor>.fromOpaque(refcon).takeUnretainedValue()
-    return interceptor.handle(event: event, type: type)
-}
-
 class LaunchpadInputInterceptor {
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var tapToken: GlobalEventTap.Token?
+    private let stateLock = NSLock()
     private var isMonitoring = false
     private var isAwaitingFirstTypingKey = false
 
@@ -39,7 +33,7 @@ class LaunchpadInputInterceptor {
     func start() {
         guard !isMonitoring else { return }
         isMonitoring = true
-        isAwaitingFirstTypingKey = true
+        stateLock.withLock { isAwaitingFirstTypingKey = true }
         registerTrustAwareness()
 
         guard AccessibilityTrustMonitor.isCurrentlyTrusted() else {
@@ -50,23 +44,24 @@ class LaunchpadInputInterceptor {
     }
 
     private func installTap() {
+        // Idempotent: `start()` and the trust-monitor reinstall can both land
+        // here. Keep exactly one shared-pipeline registration.
+        guard tapToken == nil else { return }
+
         let eventTypes: [CGEventType] = [
             .keyDown, .flagsChanged
         ]
         let eventsToMonitor = eventTypes.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
-        let selfAsUnsafeMutableRawPointer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-
-        eventTap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly, eventsOfInterest: eventsToMonitor, callback: launchpadEventTapCallback, userInfo: selfAsUnsafeMutableRawPointer)
-
-        guard let eventTap = eventTap else {
-            print("[LaunchpadInputInterceptor] FATAL ERROR: Failed to create event tap.")
-            return
+        tapToken = GlobalEventTap.shared.register(
+            name: "LaunchpadInputInterceptor",
+            mask: eventsToMonitor,
+            // This used to be a listen-only tap, so observe before any shared
+            // handler can swallow the first typing event.
+            priority: EventTapPriority.filter - 1
+        ) { [weak self] type, event in
+            self?.handle(event: event, type: type)
+            return .pass
         }
-
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-        runLoopSource = source
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
-        CGEvent.tapEnable(tap: eventTap, enable: true)
         print("[LaunchpadInputInterceptor] Smart event filter enabled.")
     }
 
@@ -84,39 +79,32 @@ class LaunchpadInputInterceptor {
 
     func stop() {
         guard isMonitoring else { return }
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            CFMachPortInvalidate(tap)
+        if let tapToken {
+            GlobalEventTap.shared.unregister(tapToken)
         }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
-        }
-        eventTap = nil
-        runLoopSource = nil
+        tapToken = nil
         isMonitoring = false
-        isAwaitingFirstTypingKey = false
+        stateLock.withLock { isAwaitingFirstTypingKey = false }
         folderFrame = .zero
         AccessibilityTrustMonitor.shared.unregister(name: "LaunchpadInputInterceptor")
         print("[LaunchpadInputInterceptor] Smart event filter disabled.")
     }
 
-    fileprivate func handle(event: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
+    private nonisolated func handle(event: CGEvent, type: CGEventType) {
         switch type {
         case .keyDown:
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if isAwaitingFirstTypingKey && !nonTypingKeyCodes.contains(keyCode) {
-                self.isAwaitingFirstTypingKey = false
+            let shouldNotify = stateLock.withLock { () -> Bool in
+                guard isAwaitingFirstTypingKey, !nonTypingKeyCodes.contains(keyCode) else { return false }
+                isAwaitingFirstTypingKey = false
+                return true
+            }
+            if shouldNotify {
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .userStartedTypingInLaunchpad, object: nil)
                 }
             }
-            return Unmanaged.passUnretained(event)
-
-        case .flagsChanged:
-            return Unmanaged.passUnretained(event)
-
-        default:
-            return Unmanaged.passUnretained(event)
+        default: break
         }
     }
 }

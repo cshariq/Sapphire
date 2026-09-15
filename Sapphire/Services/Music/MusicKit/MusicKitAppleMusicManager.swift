@@ -179,7 +179,8 @@ final class MusicKitAppleMusicManager: ObservableObject {
     func currentRepeatState() -> RepeatMode {
         if isAuthorized, isConfigured,
            applicationPlayer.state.playbackStatus == .playing || applicationPlayer.state.playbackStatus == .paused {
-            switch applicationPlayer.state.repeatMode {
+            guard let playerRepeatMode = applicationPlayer.state.repeatMode else { return .off }
+            switch playerRepeatMode {
             case .one: return .track
             case .all: return .context
             case .none: return .off
@@ -283,7 +284,7 @@ final class MusicKitAppleMusicManager: ObservableObject {
     func setRepeat(mode: RepeatMode) {
         if isAuthorized, isConfigured {
             switch mode {
-            case .off: applicationPlayer.state.repeatMode = .none
+            case .off: applicationPlayer.state.repeatMode = MusicPlayer.RepeatMode.none
             case .context: applicationPlayer.state.repeatMode = .all
             case .track: applicationPlayer.state.repeatMode = .one
             }
@@ -478,7 +479,7 @@ final class MusicKitAppleMusicManager: ObservableObject {
     }
 }
 
-final class SapphireMusicTokenProvider: MusicUserTokenProvider, MusicDeveloperTokenProvider {
+final class SapphireMusicTokenProvider: MusicUserTokenProvider, MusicDeveloperTokenProvider, @unchecked Sendable {
     let developerToken: String
 
     init(developerToken: String) {

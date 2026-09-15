@@ -60,35 +60,15 @@ struct WindowInfo {
     }
 
     static func getApplicationMenuFrame(for displayID: CGDirectDisplayID) -> CGRect? {
-        let systemWideElement = AXUIElementCreateSystemWide()
         let displayBounds = CGDisplayBounds(displayID)
-        var menuBar: AXUIElement?
-
-        let result = AXUIElementCopyElementAtPosition(systemWideElement, Float(displayBounds.origin.x), Float(displayBounds.origin.y), &menuBar)
-        guard result == .success, let menuBar = menuBar else { return nil }
-
-        var children: AnyObject?
-        guard AXUIElementCopyAttributeValue(menuBar, kAXChildrenAttribute as CFString, &children) == .success,
-              let elements = children as? [AXUIElement] else {
-            return nil
-        }
+        guard let menuBar = AX.element(atAXPoint: displayBounds.origin) else { return nil }
 
         var applicationMenuFrame = CGRect.null
 
-        for element in elements {
-            var role: AnyObject?
-            guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success,
-                  (role as? String) == kAXMenuBarItemRole as String else {
-                break
-            }
-
-            var frameValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(element, "AXFrame" as CFString, &frameValue) == .success else { continue }
-
-            var frame = CGRect.zero
-            if AXValueGetValue(frameValue as! AXValue, .cgRect, &frame) {
-                applicationMenuFrame = applicationMenuFrame.union(frame)
-            }
+        for element in AX.children(of: menuBar) {
+            guard AX.role(of: element) == kAXMenuBarItemRole as String else { break }
+            guard let frame = AX.frame(of: element) else { continue }
+            applicationMenuFrame = applicationMenuFrame.union(frame)
         }
 
         guard applicationMenuFrame.width > 0 else { return nil }

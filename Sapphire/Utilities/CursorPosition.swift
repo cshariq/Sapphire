@@ -97,30 +97,13 @@ enum CursorPosition {
             return nil
         }
 
-        let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
-        var windowRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &windowRef) == .success,
-              let windowElement = windowRef else {
+        let appElement = AX.application(pid: frontApp.processIdentifier)
+        guard let windowElement = AX.focusedWindow(ofApplication: appElement),
+              let frame = AX.windowFrame(of: windowElement) else {
             return nil
         }
 
-        var positionRef: CFTypeRef?
-        var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(windowElement as! AXUIElement, kAXPositionAttribute as CFString, &positionRef) == .success,
-              AXUIElementCopyAttributeValue(windowElement as! AXUIElement, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let positionValue = positionRef,
-              let sizeValue = sizeRef else {
-            return nil
-        }
-
-        var origin = CGPoint.zero
-        var size = CGSize.zero
-        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin),
-              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else {
-            return nil
-        }
-
-        let center = NSPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+        let center = NSPoint(x: frame.midX, y: frame.midY)
         return screen(containing: center)
     }
 }

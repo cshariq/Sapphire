@@ -48,12 +48,17 @@ enum NotchWidgetMode: Hashable {
     case multiAudioDeviceAdjust(AudioDevice)
     case multiAudioEQ(AudioDevice)
     case multiAudioAppEQ(bundleID: String, appName: String)
+    case multiAudioApp8D(bundleID: String, appName: String)
+    case multiAudioAppSurround(bundleID: String, appName: String)
     case musicApiKeysMissing
     case geminiApiKeysMissing
     case musicLoginPrompt
     case timerDetailView
     case focusSessionDetailView
     case batteryDetailView
+    case storageDetailView
+    case continuityDetail
+    case continuityActivityDetail
     case agentS
     case blipHub
     case circleToSearch
@@ -129,8 +134,22 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(32)
         case .batteryDetailView:
             hasher.combine(34)
+        case .storageDetailView:
+            hasher.combine(39)
+        case .continuityDetail:
+            hasher.combine(37)
+        case .continuityActivityDetail:
+            hasher.combine(38)
         case .multiAudioAppEQ:
             hasher.combine(21)
+        case .multiAudioApp8D(let bundleID, let appName):
+            hasher.combine(35)
+            hasher.combine(bundleID)
+            hasher.combine(appName)
+        case .multiAudioAppSurround(let bundleID, let appName):
+            hasher.combine(36)
+            hasher.combine(bundleID)
+            hasher.combine(appName)
         case .agentS:
             hasher.combine(22)
         case .blipHub:
@@ -204,7 +223,7 @@ enum LiveActivityLayoutKind: Equatable {
 enum MusicBottomContentType: Equatable {
     case none
     case peek(title: String, artist: String?)
-    case lyrics(text: String, id: UUID)
+    case lyrics(line: LyricLine)
     case upNext(title: String, artist: String?, artworkURL: URL?)
 }
 
@@ -257,6 +276,7 @@ public struct StatsPayload: Equatable, Hashable {
 enum StandardActivityData: Equatable {
     case music(bottom: MusicBottomContentType)
     case intelligenceAgent(status: String, stepTitle: String, current: Int, total: Int)
+    case devActivity(task: DevTask, additionalCount: Int)
     case weather(data: ProcessedWeatherData)
     case calendar(event: EKEvent)
     case battery(state: BatteryState, style: BatteryNotificationStyle, timeRemaining: String?, systemState: BatterySystemState)
@@ -267,6 +287,9 @@ enum StandardActivityData: Equatable {
     case fileShelf(count: Int)
     case fileProgress(task: FileTask)
     case bluetooth(device: BluetoothDeviceState)
+    case continuity(snapshot: ContinuityConnectivitySnapshot)
+    case continuityExternal(activity: ContinuityLiveExternalActivity)
+    case continuityMedia(state: ContinuityMediaState, artwork: NSImage?, deviceName: String)
     case audioSwitch(event: AudioSwitchEvent)
     case geminiLive(payload: GeminiPayload)
     case microphone(payload: MicrophonePayload)
@@ -295,6 +318,9 @@ enum StandardActivityData: Equatable {
         case let (.fileShelf(a), .fileShelf(b)): return a == b
         case let (.fileProgress(a), .fileProgress(b)): return a == b
         case let (.bluetooth(a), .bluetooth(b)): return a == b
+        case let (.continuity(a), .continuity(b)): return a == b
+        case let (.continuityExternal(a), .continuityExternal(b)): return a == b
+        case let (.continuityMedia(s1, a1, d1), .continuityMedia(s2, a2, d2)): return s1 == s2 && a1 === a2 && d1 == d2
         case let (.audioSwitch(a), .audioSwitch(b)): return a == b
         case let (.geminiLive(a), .geminiLive(b)): return a == b
         case let (.microphone(a), .microphone(b)): return a == b
@@ -308,6 +334,7 @@ enum StandardActivityData: Equatable {
         case let (.finance(a), .finance(b)): return a == b
         case let (.intelligenceAgent(s1, t1, c1, tot1), .intelligenceAgent(s2, t2, c2, tot2)):
             return s1 == s2 && t1 == t2 && c1 == c2 && tot1 == tot2
+        case let (.devActivity(t1, c1), .devActivity(t2, c2)): return t1 == t2 && c1 == c2
         default: return false
         }
     }
@@ -338,8 +365,135 @@ struct MicrophonePayload: Identifiable, Equatable, Hashable {
     var audioLevel: Float
 }
 
+struct LyricWord: Identifiable, Hashable {
+    let id: UUID
+    let text: String
+    let timestamp: TimeInterval
+    let endTimestamp: TimeInterval?
+
+    init(
+        id: UUID = UUID(),
+        text: String,
+        timestamp: TimeInterval,
+        endTimestamp: TimeInterval? = nil
+    ) {
+        self.id = id
+        self.text = text
+        self.timestamp = timestamp
+        self.endTimestamp = endTimestamp
+    }
+}
+
 struct LyricLine: Identifiable, Hashable {
-    let id = UUID(); let text: String; let timestamp: TimeInterval; var translatedText: String?
+    let id: UUID
+    let text: String
+    let timestamp: TimeInterval
+    let endTimestamp: TimeInterval?
+    let words: [LyricWord]
+    var translatedText: String?
+
+    var hasWordTiming: Bool { !words.isEmpty }
+
+    var hasReconstructibleWordTiming: Bool {
+        hasWordTiming && words.map(\.text).joined() == text
+    }
+
+    func wordFillEndTimestamp(at index: Int) -> TimeInterval? {
+        guard words.indices.contains(index) else { return nil }
+        if let end = words[index].endTimestamp { return end }
+        if words.indices.contains(index + 1) { return words[index + 1].timestamp }
+        return endTimestamp
+    }
+
+    init(
+        id: UUID = UUID(),
+        text: String,
+        timestamp: TimeInterval,
+        endTimestamp: TimeInterval? = nil,
+        words: [LyricWord] = [],
+        translatedText: String? = nil
+    ) {
+        self.id = id
+        self.text = text
+        self.timestamp = timestamp
+        self.endTimestamp = endTimestamp
+        self.words = words
+        self.translatedText = translatedText
+    }
+}
+
+enum LyricsTimeline {
+    static func activeIndices(
+        in lyrics: [LyricLine],
+        at time: TimeInterval,
+        trackDuration: TimeInterval? = nil
+    ) -> [Int] {
+        var activeIndices: [Int] = []
+        activeIndices.reserveCapacity(2)
+        forEachActiveIndex(in: lyrics, at: time, trackDuration: trackDuration) {
+            activeIndices.append($0)
+        }
+        activeIndices.reverse()
+        return activeIndices
+    }
+
+    private static func forEachActiveIndex(
+        in lyrics: [LyricLine],
+        at time: TimeInterval,
+        trackDuration: TimeInterval?,
+        body: (Int) -> Void
+    ) {
+        guard time.isFinite, time >= 0 else { return }
+        if let trackDuration, trackDuration.isFinite, trackDuration >= 0, time >= trackDuration { return }
+
+        var latestFollowingStartAtOrBeforeTime: TimeInterval?
+
+        for index in lyrics.indices.reversed() {
+            let line = lyrics[index]
+            let start = line.timestamp
+            guard start.isFinite, start <= time else { continue }
+
+            let isActive: Bool
+            if let end = line.endTimestamp, end.isFinite, end >= start {
+                isActive = time < end
+            } else if let followingStart = latestFollowingStartAtOrBeforeTime,
+                      followingStart > start {
+                isActive = false
+            } else if let trackDuration, trackDuration.isFinite, trackDuration >= start {
+                isActive = time < trackDuration
+            } else {
+                isActive = true
+            }
+
+            if isActive { body(index) }
+
+            latestFollowingStartAtOrBeforeTime = max(
+                latestFollowingStartAtOrBeforeTime ?? start,
+                start
+            )
+        }
+    }
+
+    static func primaryIndex(
+        in lyrics: [LyricLine],
+        at time: TimeInterval,
+        trackDuration: TimeInterval? = nil
+    ) -> Int? {
+        var best: Int?
+        forEachActiveIndex(in: lyrics, at: time, trackDuration: trackDuration) { index in
+            guard let current = best else {
+                best = index
+                return
+            }
+            let candidate = lyrics[index].timestamp
+            let incumbent = lyrics[current].timestamp
+            if candidate > incumbent || (candidate == incumbent && index > current) {
+                best = index
+            }
+        }
+        return best
+    }
+
 }
 
 struct BatteryState: Equatable, Hashable {

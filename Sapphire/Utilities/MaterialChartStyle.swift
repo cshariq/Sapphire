@@ -119,6 +119,52 @@ struct MaterialStatChip: View {
     }
 }
 
+struct MaterialMetricChip: View {
+    let icon: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(color)
+            Text(text)
+                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.92))
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 20)
+        .background(Color.white.opacity(0.08), in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+    }
+}
+
+struct MaterialMetricHeader: View {
+    let title: String
+    let status: String
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.72))
+            Spacer()
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 5, height: 5)
+                Text(status)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundColor(color)
+            }
+        }
+    }
+}
+
 extension View {
     func materialChartCard(height: CGFloat? = nil, minHeight: CGFloat? = nil, accent: Color? = nil) -> some View {
         modifier(MaterialChartCardModifier(height: height, minHeight: minHeight, accent: accent))

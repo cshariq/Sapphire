@@ -10,10 +10,10 @@ import Cocoa
 
 class AppleDisplay: Display {
 
-  override func stepBrightness(isUp: Bool, isSmallIncrement: Bool) {
+  override func stepBrightness(isUp: Bool, isSmallIncrement: Bool, step: Float = 0.0625) {
     let currentValue = self.getBrightness()
-    let step: Float = isSmallIncrement ? 0.01 : 0.0625
-    let nextValue = isUp ? min(1, currentValue + step) : max(0, currentValue - step)
+    let delta: Float = isSmallIncrement ? 0.01 : step
+    let nextValue = isUp ? min(1, currentValue + delta) : max(0, currentValue - delta)
     self.setBrightness(nextValue)
   }
 

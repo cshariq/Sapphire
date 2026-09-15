@@ -12,12 +12,21 @@ struct DeviceEQView: View {
     let device: AudioDevice
     @StateObject private var audioManager = MultiAudioManager.shared
     @StateObject private var perAppStore = PerAppEQScopeStore()
+    @AppStorage(AudioEQ.displayedBandCountDefaultsKey) private var displayedBandCount = AudioEQBandLayout.thirtyOne.rawValue
+
+    private var bandLayout: AudioEQBandLayout {
+        AudioEQBandLayout.resolved(from: displayedBandCount)
+    }
+
+    private var currentGains: [Double] {
+        AudioEQ.normalize(audioManager.deviceSettings[device.id]?.customEQGains ?? AudioEQ.flat)
+    }
 
     private var eqPresetBinding: Binding<EQPreset?> {
         Binding(
             get: {
-                let currentGains = audioManager.deviceSettings[device.id]?.customEQGains ?? Array(repeating: 0.0, count: 10)
-                return EQPreset.allCases.filter { $0 != .custom }.first { $0.gainValues == currentGains }
+                let gains = currentGains
+                return EQPreset.allCases.filter { $0 != .custom }.first { $0.gainValues == gains }
             },
             set: { newPreset in
                 guard let preset = newPreset else { return }
@@ -30,16 +39,25 @@ struct DeviceEQView: View {
 
     private var customEQGainsBinding: Binding<[Double]> {
         Binding(
-            get: { audioManager.deviceSettings[device.id]?.customEQGains ?? Array(repeating: 0.0, count: 10) },
+            get: { AudioEQ.displayedGains(from: currentGains, layout: bandLayout) },
             set: { newGains in
                 var settings = audioManager.deviceSettings[device.id] ?? AudioDeviceSettings()
-                settings.customEQGains = newGains
+                settings.customEQGains = AudioEQ.canonicalGains(from: newGains, layout: bandLayout)
                 audioManager.updateSettings(for: device.id, settings: settings)
             }
         )
     }
 
-    private let eqFrequencies = ["32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
+    private var bassGainBinding: Binding<Double> {
+        Binding(
+            get: { audioManager.deviceSettings[device.id]?.bassGain ?? 0.0 },
+            set: { newValue in
+                var settings = audioManager.deviceSettings[device.id] ?? AudioDeviceSettings()
+                settings.bassGain = newValue
+                audioManager.updateSettings(for: device.id, settings: settings)
+            }
+        )
+    }
 
     private var applicableAppEQs: [PerAppEQScopeStore.AppEQScopeItem] {
         perAppStore.items(for: device.uid)
@@ -56,8 +74,7 @@ struct DeviceEQView: View {
                         .font(.system(size: 20, weight: .bold))
                 }
                 Spacer()
-                Image(systemName: "slider.vertical.3")
-                    .font(.title)
+                EQBandCountPicker(selection: $displayedBandCount)
             }
             .padding(.horizontal, 24)
             .padding(.top, 0)
@@ -75,7 +92,8 @@ struct DeviceEQView: View {
                 }
                 .padding(.horizontal, 24)
             }
-            .padding(.vertical, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -91,34 +109,49 @@ struct DeviceEQView: View {
                 }
                 .padding(.horizontal, 24)
             }
-            .padding(.bottom, 14)
+            .padding(.bottom, 10)
 
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 WaveformEQView(
                     gains: customEQGainsBinding,
-                    range: -18.0...18.0
+                    range: AudioEQ.gainRange
                 )
-                .frame(height: 180)
+                .frame(height: 132)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(.black.opacity(0.2))
                         .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.1), lineWidth: 1))
                 )
 
-                HStack {
-                    ForEach(eqFrequencies, id: \.self) { freq in
-                        Text(freq)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
+                EQFrequencyAxis(frequencies: bandLayout.frequencies)
+
+                EQBassControl(bassGain: bassGainBinding, bandGains: currentGains)
+                    .padding(.top, 2)
             }
             .padding(.horizontal, 24)
+
+            Spacer(minLength: 0)
         }
-        .frame(width: 600, height: 400)
+        .frame(width: 600, height: 446)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: customEQGainsBinding.wrappedValue)
         .animation(.spring(response: 0.25, dampingFraction: 0.85), value: applicableAppEQs.count)
+    }
+}
+
+struct EQBandCountPicker: View {
+    @Binding var selection: Int
+
+    var body: some View {
+        Picker("EQ Bands", selection: $selection) {
+            ForEach(AudioEQBandLayout.allCases) { layout in
+                Text(layout.displayName).tag(layout.rawValue)
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .fixedSize()
+        .help("Choose how many equalizer frequency bands to adjust")
+        .accessibilityLabel("Equalizer bands")
     }
 }
 
@@ -215,10 +248,13 @@ struct WaveformEQView: View {
 
     @State private var activeIndex: Int? = nil
 
+    private var nodeDiameter: CGFloat { gains.count > 16 ? 8 : 16 }
+
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
             let points = gainsToPoints(size: size)
+            let node = nodeDiameter
 
             ZStack {
                 drawGrid(size: size, points: points)
@@ -236,8 +272,8 @@ struct WaveformEQView: View {
                 ForEach(points.indices, id: \.self) { index in
                     Circle()
                         .fill(activeIndex == index ? Color.white : Color.accentColor)
-                        .frame(width: 16, height: 16)
-                        .scaleEffect(activeIndex == index ? 1.2 : 1.0)
+                        .frame(width: node, height: node)
+                        .scaleEffect(activeIndex == index ? 1.35 : 1.0)
                         .shadow(color: .black.opacity(0.2), radius: 3, y: 2)
                         .overlay(
                              Circle().stroke(Color.accentColor, lineWidth: activeIndex == index ? 3 : 0)
@@ -249,10 +285,11 @@ struct WaveformEQView: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        let (index, _) = closestPoint(to: value.location, in: points)
-                        let newGain = gainValue(for: value.location.y, in: size)
-
-                        gains[index] = newGain
+                        let count = gains.count
+                        guard count > 1, size.width > 0 else { return }
+                        let fraction = max(0, min(value.location.x / size.width, 1))
+                        let index = Int((fraction * CGFloat(count - 1)).rounded())
+                        gains[index] = gainValue(for: value.location.y, in: size)
                         activeIndex = index
                     }
                     .onEnded { _ in activeIndex = nil }
@@ -324,11 +361,75 @@ struct WaveformEQView: View {
         return gain
     }
 
-    private func closestPoint(to location: CGPoint, in points: [CGPoint]) -> (Int, CGFloat) {
-        points.enumerated().map { (index, point) in
-            (index, point.distance(to: location))
+}
+
+// MARK: - Shared EQ chrome
+
+struct EQFrequencyAxis: View {
+    let frequencies: [Double]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(frequencies.enumerated()), id: \.offset) { index, freq in
+                Text(shouldLabel(index) ? AudioEQ.label(for: freq) : " ")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .frame(maxWidth: .infinity)
+            }
         }
-        .min(by: { $0.1 < $1.1 }) ?? (0, .infinity)
+    }
+
+    private func shouldLabel(_ index: Int) -> Bool {
+        frequencies.count <= 15 || index.isMultiple(of: 4) || index == frequencies.count - 1
+    }
+}
+
+struct EQBassControl: View {
+    @Binding var bassGain: Double
+    var bandGains: [Double]
+
+    private var lowBandsBoosted: Bool {
+        bandGains.prefix(9).contains { $0 > 3.0 }
+    }
+
+    private var cautionActive: Bool {
+        bassGain > 0 || lowBandsBoosted
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Label("Clear Bass", systemImage: "dial.low.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text(bassGain == 0 ? "0 dB" : String(format: "%+.0f dB", bassGain))
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(bassGain == 0 ? Color.secondary : Color.accentColor)
+                if bassGain != 0 {
+                    Button {
+                        bassGain = 0
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+            }
+
+            Slider(value: $bassGain, in: AudioEQ.bassRange, step: 1)
+                .tint(.accentColor)
+
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                Text("Raising the Clear Bass slider or the low EQ bands adds level below ~150 Hz and can clip into audible distortion. Ease off if it sounds crunchy.")
+                    .font(.system(size: 10))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(Color.orange.opacity(cautionActive ? 1.0 : 0.6))
+        }
     }
 }
 
@@ -342,31 +443,5 @@ fileprivate extension Double {
 fileprivate extension CGFloat {
     func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
         return Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
-    }
-}
-
-fileprivate extension CGPoint {
-    func distance(to point: CGPoint) -> CGFloat {
-        return sqrt(pow(x - point.x, 2) + pow(y - point.y, 2))
-    }
-}
-
-struct PresetButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .fontWeight(isSelected ? .bold : .regular)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(isSelected ? Color.accentColor : Color.gray.opacity(0.15))
-                .foregroundColor(isSelected ? .white : .primary)
-                .cornerRadius(10)
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(isSelected ? 1.05 : 1.0)
     }
 }

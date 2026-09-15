@@ -27,6 +27,7 @@ final class StatusBarController {
     // MARK: - Sub-Managers
     private var appearanceManager: MenuBarAppearanceManager?
     private var screenCornerManager: ScreenCornerManager?
+    private var profileEngine: MenuBarProfileEngine?
 
     // MARK: - State
     private var isCollapsed: Bool {
@@ -37,6 +38,7 @@ final class StatusBarController {
 
     private var isAlwaysHiddenExpanded = false
     private var isEditing = false
+    private var isConditionRevealed = false
 
     private var autoCollapseTimer: Timer?
     private var smartRehideTimer: Timer?
@@ -64,6 +66,39 @@ final class StatusBarController {
         setupObservers()
         self.appearanceManager = MenuBarAppearanceManager()
         self.screenCornerManager = ScreenCornerManager()
+        self.profileEngine = MenuBarProfileEngine.shared
+        self.profileEngine?.start()
+
+        NotificationCenter.default.addObserver(self, selector: #selector(profilesDidChange), name: .menuBarProfilesDidChange, object: nil)
+    }
+
+    @objc private func profilesDidChange() {
+        guard SettingsModel.shared.settings.menuBarProfilesEnabled else { return }
+        let engine = MenuBarProfileEngine.shared
+        if engine.isRevealRequested {
+            if isCollapsed {
+                isConditionRevealed = true
+                expand()
+            }
+        } else if isConditionRevealed {
+            isConditionRevealed = false
+            if !SettingsModel.shared.settings.autoRehide, !isEditing, isCollapsed == false {
+                let mouseInMenuBar = NSScreen.screens.contains { screen in
+                    let menuBarHeight = max(24, screen.frame.height - screen.visibleFrame.height)
+                    let rect = CGRect(x: screen.frame.origin.x, y: screen.frame.maxY - menuBarHeight, width: screen.frame.width, height: menuBarHeight)
+                    return rect.contains(NSEvent.mouseLocation)
+                }
+                if !mouseInMenuBar {
+                    collapse()
+                }
+            } else {
+                configureAutoRehide()
+            }
+        }
+    }
+
+    var isRevealRequestedByProfile: Bool {
+        SettingsModel.shared.settings.menuBarProfilesEnabled && MenuBarProfileEngine.shared.isRevealRequested
     }
 
     deinit {
@@ -72,6 +107,9 @@ final class StatusBarController {
     func shutdown() {
         stopAutoRehide()
         cancellables.removeAll()
+        NotificationCenter.default.removeObserver(self)
+        profileEngine?.stop()
+        profileEngine = nil
         if let item = alwaysHiddenItem {
             NSStatusBar.system.removeStatusItem(item)
             alwaysHiddenItem = nil
@@ -90,13 +128,14 @@ final class StatusBarController {
             button.action = #selector(statusBarButtonAction(sender:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        separatorItem.menu = createAppContextMenu()
-        updateAlwaysHiddenItem()
+        updateAlwaysHiddenItem(refreshItems: false)
         updateAllItemVisuals()
+        configureAutoRehide()
     }
 
     private func setupObservers() {
         SettingsModel.shared.$settings
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] settings in self?.handleSettingsChange(settings) }
             .store(in: &cancellables)
@@ -113,7 +152,7 @@ final class StatusBarController {
         updateItems()
     }
 
-    private func updateAlwaysHiddenItem() {
+    private func updateAlwaysHiddenItem(refreshItems: Bool = true) {
         if SettingsModel.shared.settings.enableAlwaysHiddenSection {
             guard alwaysHiddenItem == nil else { return }
             alwaysHiddenItem = NSStatusBar.system.statusItem(withLength: Lengths.collapsed)
@@ -123,7 +162,7 @@ final class StatusBarController {
             NSStatusBar.system.removeStatusItem(item)
             alwaysHiddenItem = nil
         }
-        updateItems()
+        if refreshItems { updateItems() }
     }
 
     // MARK: - Core Logic
@@ -248,8 +287,8 @@ final class StatusBarController {
             startSmartRehideMonitoring()
 
         case "focusedApp":
-            appFocusObserver = NotificationCenter.default.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.collapse()
+            appFocusObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.collapse() }
             }
 
         default:
@@ -284,7 +323,7 @@ final class StatusBarController {
         smartRehideTimer = nil
 
         if let observer = appFocusObserver {
-            NotificationCenter.default.removeObserver(observer)
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
             appFocusObserver = nil
         }
     }

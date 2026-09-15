@@ -12,6 +12,9 @@ struct AudioSettingsView: View {
     @ObservedObject private var permissionsManager = PermissionsManager.shared
     @State private var showResetAppConfirmation = false
     @State private var showResetDeviceConfirmation = false
+    @State private var mixerNavigationStack: [NotchWidgetMode] = []
+    @State private var selectedAdjustment: AudioSettingsAdjustment?
+    @AppStorage(AudioEQ.displayedBandCountDefaultsKey) private var displayedBandCount = AudioEQBandLayout.thirtyOne.rawValue
 
     var body: some View {
         ScrollView {
@@ -25,7 +28,7 @@ struct AudioSettingsView: View {
                         .font(.headline)
                         .padding([.top, .horizontal])
 
-                    AudioCompactToggleRow(
+                    CompactToggleRow(
                         title: "Multi-Audio in Notch",
                         description: "Show the per-app mixer in the expanded notch.",
                         isOn: Binding(
@@ -41,32 +44,52 @@ struct AudioSettingsView: View {
                     )
                     .disabled(permissionsManager.screenRecordingStatus != .granted)
                     Divider().padding(.leading, 20)
-                    AudioCompactToggleRow(
+                    CompactToggleRow(
                         title: "Haptic Feedback",
                         description: "Subtle vibration when adjusting audio controls.",
                         isOn: $settings.settings.hapticFeedbackEnabled
                     )
+                    Divider().padding(.leading, 20)
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Equalizer Bands")
+                            Text("Choose the number of frequency controls shown in app and device equalizers.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("Equalizer Bands", selection: $displayedBandCount) {
+                            ForEach(AudioEQBandLayout.allCases) { layout in
+                                Text(layout.displayName).tag(layout.rawValue)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 110)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
                 }
                 .modifier(SettingsContainerModifier())
 
                 MicrophoneAmplifierSettingsView()
                     .modifier(SettingsContainerModifier())
 
-                if !audioManager.availableOutputDevices.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Output Devices")
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("App & Device Mixer")
                             .font(.headline)
-                            .padding([.top, .horizontal])
-
-                        ForEach(audioManager.availableOutputDevices, id: \.id) { device in
-                            AudioDeviceRow(device: device)
-                            if device.id != audioManager.availableOutputDevices.last?.id {
-                                Divider().padding(.leading, 56)
-                            }
-                        }
+                        Text("The same volume, routing, EQ, 8D, surround, balance, and delay controls available in the notch.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .modifier(SettingsContainerModifier())
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+
+                    SystemAudioPanel(navigationStack: $mixerNavigationStack)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 430)
                 }
+                .modifier(SettingsContainerModifier())
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Reset")
@@ -75,7 +98,7 @@ struct AudioSettingsView: View {
 
                     AudioResetRow(
                         title: "Reset Per-App Adjustments",
-                        subtitle: "Clears custom volumes, mutes, and EQ for all apps.",
+                        subtitle: "Clears custom volumes, mutes, EQ, and 8D spatial audio for all apps.",
                         buttonTitle: "Reset Apps",
                         buttonColor: .red
                     ) {
@@ -85,7 +108,7 @@ struct AudioSettingsView: View {
                         Button("Cancel", role: .cancel) { }
                         Button("Reset", role: .destructive) { resetAllAppSettings() }
                     } message: {
-                        Text("This restores default volume and flat EQ for every application.")
+                        Text("This restores default volume, flat EQ, surround, and 8D audio for every application.")
                     }
 
                     Divider().padding(.leading, 20)
@@ -117,11 +140,38 @@ struct AudioSettingsView: View {
                 settings.settings.notchButtonOrder.append(.multiAudio)
             }
         }
+        .onChange(of: mixerNavigationStack.count) { _, _ in
+            presentLatestMixerAdjustment()
+        }
+        .sheet(item: $selectedAdjustment) { adjustment in
+            AudioSettingsAdjustmentSheet(adjustment: adjustment)
+        }
+    }
+
+    private func presentLatestMixerAdjustment() {
+        guard let destination = mixerNavigationStack.last else { return }
+        mixerNavigationStack.removeAll()
+
+        switch destination {
+        case .multiAudioDeviceAdjust(let device):
+            selectedAdjustment = .deviceAdjust(device)
+        case .multiAudioEQ(let device):
+            selectedAdjustment = .deviceEQ(device)
+        case .multiAudioAppEQ(let bundleID, let appName):
+            selectedAdjustment = .appEQ(bundleID: bundleID, appName: appName)
+        case .multiAudioApp8D(let bundleID, let appName):
+            selectedAdjustment = .app8D(bundleID: bundleID, appName: appName)
+        case .multiAudioAppSurround(let bundleID, let appName):
+            selectedAdjustment = .appSurround(bundleID: bundleID, appName: appName)
+        default:
+            break
+        }
     }
 
     private func resetAllAppSettings() {
         Task { @MainActor in
             PerAppAudioController.shared.clearAllPersistedState()
+            MultiAudioManager.shared.clearAllEightDAudioSettings()
             MultiAudioManager.shared.activeTaps.values.forEach { tapMap in
                 tapMap.values.forEach { $0.invalidate() }
             }
@@ -136,20 +186,84 @@ struct AudioSettingsView: View {
     }
 }
 
-// MARK: - Microphone amplifier
+private enum AudioSettingsAdjustment: Identifiable {
+    case deviceAdjust(AudioDevice)
+    case deviceEQ(AudioDevice)
+    case appEQ(bundleID: String, appName: String)
+    case app8D(bundleID: String, appName: String)
+    case appSurround(bundleID: String, appName: String)
+
+    var id: String {
+        switch self {
+        case .deviceAdjust(let device):
+            return "device-adjust-\(device.id)"
+        case .deviceEQ(let device):
+            return "device-eq-\(device.id)"
+        case .appEQ(let bundleID, _):
+            return "app-eq-\(bundleID)"
+        case .app8D(let bundleID, _):
+            return "app-8d-\(bundleID)"
+        case .appSurround(let bundleID, _):
+            return "app-surround-\(bundleID)"
+        }
+    }
+}
+
+private struct AudioSettingsAdjustmentSheet: View {
+    let adjustment: AudioSettingsAdjustment
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Audio Adjustment")
+                    .font(.headline)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 20)
+            .frame(height: 48)
+
+            Divider()
+
+            adjustmentView
+        }
+        .background(Color.black)
+        .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private var adjustmentView: some View {
+        switch adjustment {
+        case .deviceAdjust(let device):
+            DeviceAdjustView(device: device)
+        case .deviceEQ(let device):
+            DeviceEQView(device: device)
+        case .appEQ(let bundleID, let appName):
+            AppEQView(bundleID: bundleID, appName: appName)
+        case .app8D(let bundleID, let appName):
+            EightDAudioView(bundleID: bundleID, appName: appName)
+        case .appSurround(let bundleID, let appName):
+            SurroundAudioView(bundleID: bundleID, appName: appName)
+        }
+    }
+}
+
+// MARK: - Microphone gain preview
 
 private struct MicrophoneAmplifierSettingsView: View {
     @ObservedObject private var mic = MicrophoneUsageManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Microphone Amplifier")
+            Text("Microphone Gain Preview")
                 .font(.headline)
                 .padding([.top, .horizontal])
 
-            AudioCompactToggleRow(
-                title: "Enable amplifier",
-                description: "Amplifies the live microphone monitor and shows clipping risk. It does not replace macOS input routing.",
+            CompactToggleRow(
+                title: "Preview gain",
+                description: "Applies gain to Sapphire's live level meter so you can check clipping. Other apps still receive the original microphone signal.",
                 isOn: $mic.amplifierEnabled
             )
 
@@ -157,7 +271,7 @@ private struct MicrophoneAmplifierSettingsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Gain")
+                    Text("Preview gain")
                     Spacer()
                     Text("×\(mic.amplifierGain, specifier: "%.1f")")
                         .font(.caption.monospacedDigit())
@@ -204,72 +318,6 @@ private struct MicrophoneAmplifierSettingsView: View {
 }
 
 // MARK: - Rows
-
-private struct AudioCompactToggleRow: View {
-    let title: String
-    let description: String
-    @Binding var isOn: Bool
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                if !description.isEmpty {
-                    Text(description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 8)
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 9)
-    }
-}
-
-fileprivate struct AudioDeviceRow: View {
-    let device: AudioDevice
-    @ObservedObject private var audioManager = MultiAudioManager.shared
-
-    private var deviceSettings: AudioDeviceSettings {
-        audioManager.deviceSettings[device.id] ?? AudioDeviceSettings()
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: deviceIconName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 28)
-
-            Text(device.name)
-                .font(.system(size: 13, weight: .medium))
-
-            Spacer()
-
-            Text("\(Int(deviceSettings.volume * 100))%")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-
-    private var deviceIconName: String {
-        let name = device.name.lowercased()
-        if name.contains("airpods") { return "airpodspro" }
-        if name.contains("headphone") || name.contains("headset") { return "headphones" }
-        if name.contains("speaker") { return "hifispeaker.fill" }
-        if name.contains("display") || name.contains("monitor") { return "display" }
-        return "speaker.wave.2.fill"
-    }
-}
 
 private struct AudioResetRow: View {
     let title: String

@@ -20,6 +20,7 @@ final class FocusSessionShortcutMonitor {
 
     private init() {
         SettingsModel.shared.$settings
+            .dropFirst()
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updateRegistration()
@@ -38,13 +39,15 @@ final class FocusSessionShortcutMonitor {
     // MARK: - Registration
 
     private func updateRegistration() {
-        let shortcut = SettingsModel.shared.settings.focusStartShortcut
+        let settings = SettingsModel.shared.settings
+        let shortcut = settings.focusStartShortcut
         let hasValidShortcut = !shortcut.key.isEmpty
             && shortcut.significantModifiers.rawValue != 0
 
         unregister()
 
         guard hasValidShortcut else { return }
+        guard settings.isShortcutEnabled(ShortcutIdentifier.focusStart) else { return }
         guard let keyCode = KeyCodeTranslator.shared.keyCode(for: shortcut.key) else { return }
 
         var modifiers = UInt32(0)
@@ -101,6 +104,7 @@ final class FocusSessionShortcutMonitor {
     }
 
     private func handleHotKey() {
+        guard SettingsModel.shared.settings.isShortcutEnabled(ShortcutIdentifier.focusStart) else { return }
         let manager = FocusSessionManager.shared
         if manager.isSessionActive {
             manager.togglePause()

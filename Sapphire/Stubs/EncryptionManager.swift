@@ -8,7 +8,7 @@
 import Foundation
 import CryptoKit
 
-final class EncryptionManager {
+final class EncryptionManager: @unchecked Sendable {
     static let shared = EncryptionManager()
 
     private let key: SymmetricKey

@@ -102,7 +102,8 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         let isForAppLock = pendingAppLockFaceIDCompletion != nil
         guard !isUnlockInProgress, !isFaceIDAuthenticating,
               (isForAppLock || settings.settings.faceIDUnlockEnabled),
-              settings.settings.hasRegisteredFaceID else { return }
+              settings.settings.hasRegisteredFaceID,
+              isFaceIDAllowedAtCurrentLocation() else { return }
 
         isFaceIDSessionForAppLock = isForAppLock
 
@@ -178,6 +179,41 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     var isFaceIDSessionActive: Bool { isFaceIDAuthenticating || cameraController != nil }
+
+    var faceIDLocationDescription: String {
+        let settings = settings.settings
+        guard settings.faceIDLocationPolicy == .selectedWiFiNetworks else { return "Everywhere" }
+        guard let networkName = WiFiStatusMonitor.shared.state.networkName else { return "No Wi-Fi network" }
+        return settings.faceIDAllowedWiFiNetworks.contains(networkName) ? networkName : "\(networkName) is not allowed"
+    }
+
+    func isFaceIDAllowedAtCurrentLocation() -> Bool {
+        let settings = settings.settings
+        guard settings.faceIDLocationPolicy == .selectedWiFiNetworks else { return true }
+        guard let networkName = WiFiStatusMonitor.shared.state.networkName else { return false }
+        return settings.faceIDAllowedWiFiNetworks.contains(networkName)
+    }
+
+    func refreshFaceIDLocation(completion: (() -> Void)? = nil) {
+        WiFiStatusMonitor.shared.refresh(completion: completion)
+    }
+
+    private func handleFaceIDLocationChange() {
+        guard settings.settings.faceIDLocationPolicy == .selectedWiFiNetworks else { return }
+        if !isFaceIDAllowedAtCurrentLocation(), isFaceIDAuthenticating {
+            tearDownFaceID()
+            setStatusThrottled("Face ID unavailable at this location.")
+        }
+        (NSApp.delegate as? AppDelegate)?.refreshFaceIDLocationAvailability()
+    }
+
+    func handleSystemWakeFaceID() {
+        guard isScreenLocked else { return }
+        refreshFaceIDLocation { [weak self] in
+            guard let self, self.isScreenLocked else { return }
+            self.startFaceIDAuthentication()
+        }
+    }
 
     func purgeFaceIDAfterUnlock() {
         if isFaceIDAuthenticating {
@@ -414,7 +450,13 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             self.ble.proximityTimeout = newSettings.bluetoothUnlockTimeout
             self.ble.signalTimeout = newSettings.bluetoothUnlockNoSignalTimeout
             self.ble.setPassiveMode(newSettings.bluetoothUnlockPassiveMode)
+            self.handleFaceIDLocationChange()
         }.store(in: &cancellables)
+
+        WiFiStatusMonitor.shared.$state
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.handleFaceIDLocationChange() }
+            .store(in: &cancellables)
     }
 
     func handleDisplayWillSleep() {
@@ -433,8 +475,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         guard isFaceIDAuthenticating else { return }
         tearDownFaceID()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, self.isScreenLocked else { return }
-            self.startFaceIDAuthentication()
+            self?.handleSystemWakeFaceID()
         }
     }
 
@@ -517,9 +558,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private func hasAccessibilityPermission(promptIfNeeded: Bool) -> Bool {
         let trusted = AccessibilityTrustMonitor.shared.isTrusted
         if !trusted && promptIfNeeded {
-            let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-            let options = [promptKey: true] as CFDictionary
-            _ = AXIsProcessTrustedWithOptions(options)
+            AccessibilityPermission.prompt()
         }
         return trusted
     }

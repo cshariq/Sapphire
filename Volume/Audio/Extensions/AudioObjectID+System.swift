@@ -5,7 +5,6 @@
 //  Created by Shariq Charolia on 2026-08-21
 
 import AudioToolbox
-import Foundation
 
 // MARK: - Device List
 
@@ -36,20 +35,7 @@ extension AudioDeviceID {
     }
 
     static func setDefaultOutputDevice(_ deviceID: AudioDeviceID) throws {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var deviceIDValue = deviceID
-        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let err = AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address, 0, nil, size, &deviceIDValue
-        )
-        guard err == noErr else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(err))
-        }
+        try AudioObjectID.system.write(deviceID, to: kAudioHardwarePropertyDefaultOutputDevice)
     }
 }
 
@@ -64,20 +50,7 @@ extension AudioDeviceID {
     }
 
     static func setSystemOutputDevice(_ deviceID: AudioDeviceID) throws {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultSystemOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var deviceIDValue = deviceID
-        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let err = AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address, 0, nil, size, &deviceIDValue
-        )
-        guard err == noErr else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(err))
-        }
+        try AudioObjectID.system.write(deviceID, to: kAudioHardwarePropertyDefaultSystemOutputDevice)
     }
 }
 
@@ -92,19 +65,6 @@ extension AudioDeviceID {
     }
 
     static func setDefaultInputDevice(_ deviceID: AudioDeviceID) throws {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var deviceIDValue = deviceID
-        let size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let err = AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address, 0, nil, size, &deviceIDValue
-        )
-        guard err == noErr else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(err))
-        }
+        try AudioObjectID.system.write(deviceID, to: kAudioHardwarePropertyDefaultInputDevice)
     }
 }

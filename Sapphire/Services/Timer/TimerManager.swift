@@ -7,11 +7,56 @@
 
 import Foundation
 import Combine
+import AppKit
+import UserNotifications
 
 // MARK: - Main TimerManager Class
 
 enum ActiveTimerType {
     case none, stopwatch, system
+}
+
+struct SapphireTimer: Equatable, Identifiable {
+    let id: String
+    var label: String
+    var state: ActiveTimerType
+    var remainingTimeOnLastUpdate: TimeInterval
+    var fireDate: Date?
+
+    var remainingTime: TimeInterval {
+        guard state == .system, let fireDate else {
+            return max(0, remainingTimeOnLastUpdate)
+        }
+        return max(0, fireDate.timeIntervalSinceNow)
+    }
+
+    var isRunning: Bool { state == .system }
+}
+
+private struct StoredSapphireTimer: Codable {
+    var id: String
+    var label: String
+    var stateRaw: Int
+    var remaining: TimeInterval
+    var fireDate: Date?
+
+    init(_ timer: SapphireTimer) {
+        id = timer.id
+        label = timer.label
+        stateRaw = timer.isRunning ? 3 : 2
+        remaining = timer.remainingTimeOnLastUpdate
+        fireDate = timer.fireDate
+    }
+
+    var asSapphireTimer: SapphireTimer {
+        SapphireTimer(
+            id: id,
+            label: label,
+            state: stateRaw == 3 ? .system : .none,
+            remainingTimeOnLastUpdate: remaining,
+            fireDate: fireDate
+        )
+    }
 }
 
 struct SystemTimerInfo: Equatable, Identifiable {
@@ -52,6 +97,7 @@ private struct LogEntry: Decodable {
 class TimerManager: ObservableObject {
     @Published private(set) var activeTimers: [SystemTimerInfo] = []
     @Published private(set) var activeStopwatches: [SystemStopwatchInfo] = []
+    @Published private(set) var sapphireTimers: [SapphireTimer] = []
     @Published var isRunning: Bool = false
     @Published private(set) var displayTime: TimeInterval = 0
     @Published private(set) var activeTimer: ActiveTimerType = .none
@@ -64,32 +110,129 @@ class TimerManager: ObservableObject {
     private var displayedTimerID: String?
     private var syncGeneration = 0
     private var plistSyncWorkItem: DispatchWorkItem?
+    private var logReadBuffer = Data()
+    private let maxLogRecordBytes = 1_048_576
     private var logSyncPending = false
+    private var sapphireTimerSaveURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Sapphire", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base.appendingPathComponent("sapphire-timers.json")
+    }
 
     init() {
-        Publishers.CombineLatest($activeTimers, $activeStopwatches)
-            .map { !$0.filter { $0.state == .system }.isEmpty || !$1.filter { $0.state == .stopwatch }.isEmpty }
+        Publishers.CombineLatest3($activeTimers, $activeStopwatches, $sapphireTimers)
+            .map { timers, stopwatches, sapphire in
+                !timers.filter { $0.state == .system }.isEmpty
+                    || !stopwatches.filter { $0.state == .stopwatch }.isEmpty
+                    || !sapphire.filter { $0.state == .system }.isEmpty
+            }
             .receive(on: DispatchQueue.main)
             .assign(to: &$isRunning)
+
+        loadSapphireTimers()
         syncStateWithPlist()
         startSystemTimerMonitoring()
     }
 
     deinit {
+        plistSyncWorkItem?.cancel()
         stopSystemTimerMonitoring()
         internalTimer?.invalidate()
     }
 
+    // MARK: - Sapphire-Owned Timers
+
+    @discardableResult
+    func startSapphireTimer(duration: TimeInterval, label: String? = nil) -> String? {
+        guard duration > 0 else { return nil }
+        let timer = SapphireTimer(
+            id: UUID().uuidString,
+            label: label ?? "Timer",
+            state: .system,
+            remainingTimeOnLastUpdate: duration,
+            fireDate: Date().addingTimeInterval(duration)
+        )
+        sapphireTimers.append(timer)
+        persistSapphireTimers()
+        selectTimerToDisplay()
+        return timer.id
+    }
+
+    func pauseSapphireTimer(id: String) {
+        guard let index = sapphireTimers.firstIndex(where: { $0.id == id }) else { return }
+        let remaining = sapphireTimers[index].remainingTime
+        sapphireTimers[index].state = .none
+        sapphireTimers[index].remainingTimeOnLastUpdate = remaining
+        sapphireTimers[index].fireDate = nil
+        persistSapphireTimers()
+        selectTimerToDisplay()
+    }
+
+    func resumeSapphireTimer(id: String) {
+        guard let index = sapphireTimers.firstIndex(where: { $0.id == id }) else { return }
+        guard sapphireTimers[index].remainingTimeOnLastUpdate > 0 else {
+            removeSapphireTimer(id: id)
+            return
+        }
+        sapphireTimers[index].state = .system
+        sapphireTimers[index].fireDate = Date().addingTimeInterval(sapphireTimers[index].remainingTimeOnLastUpdate)
+        persistSapphireTimers()
+        selectTimerToDisplay()
+    }
+
+    func addOneMinuteToSapphireTimer(id: String) {
+        guard let index = sapphireTimers.firstIndex(where: { $0.id == id }) else { return }
+        let extendedRemaining = sapphireTimers[index].remainingTime + 60
+        sapphireTimers[index].remainingTimeOnLastUpdate = extendedRemaining
+        if sapphireTimers[index].state == .system {
+            sapphireTimers[index].fireDate = Date().addingTimeInterval(extendedRemaining)
+        }
+        persistSapphireTimers()
+        selectTimerToDisplay()
+    }
+
+    func removeSapphireTimer(id: String) {
+        sapphireTimers.removeAll { $0.id == id }
+        persistSapphireTimers()
+        selectTimerToDisplay()
+    }
+
+    func clearFinishedSapphireTimers() {
+        let hadFinished = sapphireTimers.contains { $0.remainingTime <= 0 }
+        sapphireTimers.removeAll { $0.remainingTime <= 0 }
+        if hadFinished {
+            persistSapphireTimers()
+            selectTimerToDisplay()
+        }
+    }
+
+    private func persistSapphireTimers() {
+        let stored = sapphireTimers.map(StoredSapphireTimer.init)
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        try? data.write(to: sapphireTimerSaveURL, options: .atomic)
+    }
+
+    private func loadSapphireTimers() {
+        guard let data = try? Data(contentsOf: sapphireTimerSaveURL),
+              let stored = try? JSONDecoder().decode([StoredSapphireTimer].self, from: data) else {
+            return
+        }
+        sapphireTimers = stored
+            .map(\.asSapphireTimer)
+            .filter { $0.remainingTime > 0 }
+    }
+
     func pauseTimer(id: String) {
-        print("[TimerManager] Timer control is temporarily disabled for stability.")
+        pauseSapphireTimer(id: id)
     }
 
     func resumeTimer(id: String) {
-        print("[TimerManager] Timer control is temporarily disabled for stability.")
+        resumeSapphireTimer(id: id)
     }
 
     func stopTimer(id: String) {
-        print("[TimerManager] Timer control is temporarily disabled for stability.")
+        removeSapphireTimer(id: id)
     }
 
     private struct PlistTimerEvent {
@@ -99,18 +242,15 @@ class TimerManager: ObservableObject {
     }
 
     private func syncStateWithPlist() {
-        plistSyncWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.performPlistSync()
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.syncStateWithPlist() }
+            return
         }
-        plistSyncWorkItem = work
-        DispatchQueue.global(qos: .utility).async(execute: work)
-    }
 
-    private func performPlistSync() {
-        syncGeneration += 1
+        plistSyncWorkItem?.cancel()
+        syncGeneration &+= 1
         let generation = syncGeneration
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        let work = DispatchWorkItem { [weak self] in
             guard let result = ProcessRunner.runSync(
                 executablePath: "/usr/bin/defaults",
                 arguments: ["export", "com.apple.mobiletimerd", "-"],
@@ -128,6 +268,8 @@ class TimerManager: ObservableObject {
                 self.applyPlistTimerEvents(validIDs: parsed.validIDs, entries: parsed.entries)
             }
         }
+        plistSyncWorkItem = work
+        DispatchQueue.global(qos: .utility).async(execute: work)
     }
 
     private static func parseTimerEvents(from plist: [String: Any]) -> (validIDs: Set<String>, entries: [PlistTimerEvent])? {
@@ -176,35 +318,93 @@ class TimerManager: ObservableObject {
     }
 
     private func startSystemTimerMonitoring() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.startSystemTimerMonitoring() }
+            return
+        }
         guard logStreamProcess == nil else { return }
-        pipe = Pipe()
-        logStreamProcess = Process()
-        logStreamProcess?.executableURL = URL(fileURLWithPath: "/usr/bin/log")
-        logStreamProcess?.arguments = ["stream", "--predicate", "subsystem == \"com.apple.mobiletimer.logging\" AND (process == \"Clock\" OR process == \"timed\")", "--style", "ndjson"]
-        logStreamProcess?.standardOutput = pipe
-        pipe?.fileHandleForReading.readabilityHandler = { [weak self] fileHandle in
-            self?.parseLogOutput(from: fileHandle.availableData)
+        logReadBuffer.removeAll(keepingCapacity: true)
+
+        let newPipe = Pipe()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/log")
+        process.arguments = ["stream", "--predicate", "subsystem == \"com.apple.mobiletimer.logging\" AND (process == \"Clock\" OR process == \"timed\")", "--style", "ndjson"]
+        process.standardOutput = newPipe
+        newPipe.fileHandleForReading.readabilityHandler = { [weak self, weak process] fileHandle in
+            let data = fileHandle.availableData
+            guard !data.isEmpty else { return }
+            DispatchQueue.main.async {
+                guard let self, let process, self.logStreamProcess === process else { return }
+                self.parseLogOutput(from: data)
+            }
         }
-        logStreamProcess?.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self?.startSystemTimerMonitoring() }
+        process.terminationHandler = { [weak self] terminatedProcess in
+            DispatchQueue.main.async {
+                self?.handleLogStreamExit(terminatedProcess)
+            }
         }
-        DispatchQueue.global(qos: .utility).async {
-            do { try self.logStreamProcess?.run() } catch { print("[TimerManager] Failed to start log stream: \(error)") }
+
+        pipe = newPipe
+        logStreamProcess = process
+
+        DispatchQueue.global(qos: .utility).async { [weak self, weak process] in
+            guard let process else { return }
+            do {
+                try process.run()
+            } catch {
+                DispatchQueue.main.async {
+                    guard let self, self.logStreamProcess === process else { return }
+                    print("[TimerManager] Failed to start log stream: \(error)")
+                    self.handleLogStreamExit(process)
+                }
+            }
         }
     }
 
     private func stopSystemTimerMonitoring() {
-        logStreamProcess?.terminationHandler = nil
-        logStreamProcess?.terminate()
+        let process = logStreamProcess
+        process?.terminationHandler = nil
         pipe?.fileHandleForReading.readabilityHandler = nil
         logStreamProcess = nil
         pipe = nil
+        logReadBuffer.removeAll(keepingCapacity: false)
+        if process?.isRunning == true {
+            process?.terminate()
+        }
+    }
+
+    private func handleLogStreamExit(_ process: Process) {
+        guard logStreamProcess === process else { return }
+        pipe?.fileHandleForReading.readabilityHandler = nil
+        logStreamProcess = nil
+        pipe = nil
+        logReadBuffer.removeAll(keepingCapacity: true)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.startSystemTimerMonitoring()
+        }
     }
 
     private func parseLogOutput(from data: Data) {
-        data.split(separator: UInt8(ascii: "\n")).forEach { lineData in
-            guard let entry = try? JSONDecoder().decode(LogEntry.self, from: Data(lineData)), let message = entry.eventMessage else { return }
-            DispatchQueue.main.async { self.handleLogMessage(message) }
+        logReadBuffer.append(data)
+
+        let records = logReadBuffer.split(
+            separator: UInt8(ascii: "\n"),
+            omittingEmptySubsequences: false
+        )
+        guard records.count > 1 else {
+            if logReadBuffer.count > maxLogRecordBytes {
+                print("[TimerManager] Discarding oversized unterminated log record")
+                logReadBuffer.removeAll(keepingCapacity: true)
+            }
+            return
+        }
+
+        logReadBuffer = Data(records.last ?? Data.SubSequence())
+        for lineData in records.dropLast() where !lineData.isEmpty {
+            guard let entry = try? JSONDecoder().decode(LogEntry.self, from: Data(lineData)),
+                  let message = entry.eventMessage else { continue }
+            handleLogMessage(message)
         }
     }
 
@@ -272,10 +472,14 @@ class TimerManager: ObservableObject {
     }
 
     private func selectTimerToDisplay() {
+        let runningSapphireTimers = sapphireTimers.filter { $0.state == .system }
         let runningSystemTimers = activeTimers.filter { $0.state == .system }
         var newTimerID: String? = nil
         var newActiveTimerType: ActiveTimerType = .none
-        if let timerWithLeastTime = runningSystemTimers.min(by: { $0.remainingTime < $1.remainingTime }) {
+        if let timerWithLeastTime = runningSapphireTimers.min(by: { $0.remainingTime < $1.remainingTime }) {
+            newTimerID = timerWithLeastTime.id
+            newActiveTimerType = .system
+        } else if let timerWithLeastTime = runningSystemTimers.min(by: { $0.remainingTime < $1.remainingTime }) {
             newTimerID = timerWithLeastTime.id
             newActiveTimerType = .system
         } else if let runningStopwatch = activeStopwatches.first(where: { $0.state == .stopwatch }) {
@@ -283,7 +487,7 @@ class TimerManager: ObservableObject {
             newActiveTimerType = .stopwatch
         }
         self.displayedTimerID = newTimerID
-        self.activeTimer = newActiveTimerType
+        self.activeTimer = newTimerID != nil ? newActiveTimerType : .none
         updateDisplayedTime()
         stopInternalTimer()
         if newTimerID != nil { startInternalTimer() }
@@ -296,6 +500,11 @@ class TimerManager: ObservableObject {
             return
         }
         if activeTimer == .system {
+            if let sapphire = sapphireTimers.first(where: { $0.id == currentID }) {
+                self.displayTime = sapphire.remainingTime
+                checkSapphireTimerCompletion()
+                return
+            }
             guard let timer = activeTimers.first(where: { $0.id == currentID }), timer.state == .system else {
                 selectTimerToDisplay()
                 return
@@ -310,10 +519,50 @@ class TimerManager: ObservableObject {
         }
     }
 
+    // MARK: - Sapphire Timer Completion
+
+    private func checkSapphireTimerCompletion() {
+        var didFinishTimer = false
+        for index in sapphireTimers.indices {
+            guard sapphireTimers[index].state == .system,
+                  sapphireTimers[index].remainingTime <= 0 else { continue }
+            sapphireTimers[index].state = .none
+            sapphireTimers[index].remainingTimeOnLastUpdate = 0
+            sapphireTimers[index].fireDate = nil
+            didFinishTimer = true
+            notifySapphireTimerFinished(sapphireTimers[index])
+        }
+        if didFinishTimer {
+            persistSapphireTimers()
+            selectTimerToDisplay()
+        }
+    }
+
+    private func notifySapphireTimerFinished(_ timer: SapphireTimer) {
+        NSSound(named: "Glass")?.play()
+
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            case .authorized, .provisional:
+                let content = UNMutableNotificationContent()
+                content.title = "Timer Done"
+                content.body = "\(timer.label) finished."
+                content.sound = .default
+                let request = UNNotificationRequest(identifier: "sapphire-timer-\(timer.id)", content: content, trigger: nil)
+                center.add(request)
+            default:
+                break
+            }
+        }
+    }
+
     private func startInternalTimer() {
         guard internalTimer == nil || !(internalTimer!.isValid) else { return }
         let interval: TimeInterval = activeTimer == .stopwatch ? 0.25 : 1.0
-        internalTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        internalTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.updateDisplayedTime()
         }
         if let internalTimer {

@@ -14,9 +14,32 @@ extension Notification.Name {
     static let sapphireShortcutRecordingDidEnd = Notification.Name("com.sapphire.shortcutRecordingDidEnd")
 }
 
-private class ShortcutRecorderWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+final class ShortcutRecordingObserver: @unchecked Sendable {
+    private let center: NotificationCenter
+    private var tokens: [NSObjectProtocol] = []
+
+    init(
+        center: NotificationCenter = .default,
+        onChange: @escaping @Sendable (_ isRecording: Bool) -> Void
+    ) {
+        self.center = center
+        tokens = [
+            center.addObserver(
+                forName: .sapphireShortcutRecordingDidStart,
+                object: nil,
+                queue: .main
+            ) { _ in onChange(true) },
+            center.addObserver(
+                forName: .sapphireShortcutRecordingDidEnd,
+                object: nil,
+                queue: .main
+            ) { _ in onChange(false) },
+        ]
+    }
+
+    deinit {
+        tokens.forEach(center.removeObserver)
+    }
 }
 
 @MainActor
@@ -41,7 +64,7 @@ class GlobalShortcutRecorder: ObservableObject {
 
         guard let mainScreen = NSScreen.main else { stopRecording(); return }
 
-        let window = ShortcutRecorderWindow(
+        let window = KeyableWindow(
             contentRect: mainScreen.frame, styleMask: [.borderless],
             backing: .buffered, defer: false
         )

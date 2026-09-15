@@ -56,7 +56,7 @@ final class MenuBarHoverProbe {
             )
             let tracker = HoverTrackingView(frame: .zero)
             tracker.autoresizingMask = [.width, .height]
-            tracker.onPointerEvent = { [weak self, weak tracker] in
+            tracker.onPointerEvent = { [weak self, weak tracker] _, _ in
                 guard let self, let tracker else { return }
                 self.handleCrossing(for: tracker)
             }

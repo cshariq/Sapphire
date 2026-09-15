@@ -9,6 +9,7 @@ import Security
 
 extension Notification.Name {
     static let apiKeyManagerSpotifyCredentialsChanged = Notification.Name("apiKeyManagerSpotifyCredentialsChanged")
+    static let apiKeyManagerTidalCredentialsChanged = Notification.Name("apiKeyManagerTidalCredentialsChanged")
 }
 
 final class APIKeyManager {
@@ -26,6 +27,8 @@ final class APIKeyManager {
     private let nvidiaKeychainKey = "nvidia_api_key"
     private let spotifyClientIdKeychainKey = "spotify_client_id"
     private let spotifyClientSecretKeychainKey = "spotify_client_secret"
+    private let tidalClientIdKeychainKey = "tidal_client_id"
+    private let tidalClientSecretKeychainKey = "tidal_client_secret"
     private let shopifyStoreDomainKeychainKey = "shopify_store_domain"
     private let shopifyAdminTokenKeychainKey = "shopify_admin_token"
 
@@ -168,6 +171,17 @@ final class APIKeyManager {
         set { saveKey(newValue, keychainKey: spotifyClientSecretKeychainKey) }
     }
 
+    // MARK: - TIDAL
+    var tidalClientId: String {
+        get { loadKey(keychainKey: tidalClientIdKeychainKey) }
+        set { saveKey(newValue, keychainKey: tidalClientIdKeychainKey) }
+    }
+
+    var tidalClientSecret: String {
+        get { loadKey(keychainKey: tidalClientSecretKeychainKey) }
+        set { saveKey(newValue, keychainKey: tidalClientSecretKeychainKey) }
+    }
+
     private func loadKey(keychainKey: String) -> String {
         keychain.load(forKey: keychainKey) ?? ""
     }
@@ -182,6 +196,9 @@ final class APIKeyManager {
         if keychainKey == spotifyClientIdKeychainKey || keychainKey == spotifyClientSecretKeychainKey {
             NotificationCenter.default.post(name: .apiKeyManagerSpotifyCredentialsChanged, object: nil)
         }
+        if keychainKey == tidalClientIdKeychainKey || keychainKey == tidalClientSecretKeychainKey {
+            NotificationCenter.default.post(name: .apiKeyManagerTidalCredentialsChanged, object: nil)
+        }
     }
 
     var hasGeminiKey: Bool { !googleGeminiAPIKey.isEmpty }
@@ -191,4 +208,5 @@ final class APIKeyManager {
     var hasOpenRouterKey: Bool { !openRouterAPIKey.isEmpty }
     var hasXAIKey: Bool { !xaiAPIKey.isEmpty }
     var hasSpotifyCredentials: Bool { !spotifyClientId.isEmpty && !spotifyClientSecret.isEmpty }
+    var hasTidalCredentials: Bool { !tidalClientId.isEmpty && !tidalClientSecret.isEmpty }
 }

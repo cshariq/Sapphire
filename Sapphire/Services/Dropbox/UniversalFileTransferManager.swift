@@ -28,6 +28,8 @@ struct FileTransferTask: Identifiable, Equatable {
         case manual
         case browserDownload
         case finder
+        case archiveExtraction
+        case dmgInstall
     }
 
     var progress: Double? {
@@ -75,8 +77,10 @@ class UniversalFileTransferManager {
             directoryMonitors.append(monitor)
         }
 
-        progressUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.updateTasks()
+        progressUpdateTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateTasks()
+            }
         }
         if let progressUpdateTimer {
             RunLoop.main.add(progressUpdateTimer, forMode: .common)

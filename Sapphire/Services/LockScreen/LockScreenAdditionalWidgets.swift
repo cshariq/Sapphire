@@ -388,12 +388,12 @@ struct LockScreenSystemMiniWidget: View {
     private func systemMeter(title: String, value: Int, color: Color) -> some View {
         VStack(spacing: 6) {
             ZStack {
-                Circle()
-                    .stroke(Color.white.opacity(0.12), lineWidth: 5)
-                Circle()
-                    .trim(from: 0, to: CGFloat(min(max(value, 0), 100)) / 100)
-                    .stroke(color, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+                ProgressRingView(
+                    progress: Double(value) / 100,
+                    lineWidth: 5,
+                    track: AnyShapeStyle(Color.white.opacity(0.12)),
+                    active: color
+                )
                 Text("\(value)")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .monospacedDigit()

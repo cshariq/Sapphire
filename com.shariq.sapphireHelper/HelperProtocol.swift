@@ -7,7 +7,7 @@
 
 import Foundation
 
-let SapphireHelperProtocolVersion: Int = 6
+let SapphireHelperProtocolVersion: Int = 10
 
 public enum ChargeControlMode: Int {
     case unsupported = 0
@@ -44,7 +44,7 @@ public class FanInfo: NSObject, NSSecureCoding, Identifiable {
 @objc protocol HelperProtocol {
     func setChargeLimit(_ limit: Int, reply: @escaping (Error?) -> Void)
     func enableCharging(_ enabled: Bool, reply: @escaping (Error?) -> Void)
-    func setDischarge(_ discharging: Bool, reply: @escaping (Error?) -> Void)
+    func setDischarge(_ discharging: Bool, safetyFloor: Int, rechargeOnFloor: Bool, bypassSafetyFloor: Bool, reply: @escaping (Error?) -> Void)
     func setMagSafeLED(color: Int, reply: @escaping (Error?) -> Void)
     func startCalibration(reply: @escaping (Error?) -> Void)
     func getFanCount(reply: @escaping (Int) -> Void)
@@ -79,6 +79,14 @@ public class FanInfo: NSObject, NSSecureCoding, Identifiable {
     func writeHostsEntries(_ lines: [String], reply: @escaping (Bool) -> Void)
     func removeHostsEntries(reply: @escaping (Bool) -> Void)
 
-    func installUpdate(newAppPath: String, currentAppPath: String, completion: @escaping (Bool, String?) -> Void)
+    func installUpdate(
+        newAppPath: String,
+        currentAppPath: String,
+        expectedVersion: String,
+        completion: @escaping (Bool, String?) -> Void
+    )
+
+    func installAudioDriver(driverBundlePath: String, reply: @escaping (Bool, String?) -> Void)
+    func uninstallAudioDriver(reply: @escaping (Bool, String?) -> Void)
 
 }
