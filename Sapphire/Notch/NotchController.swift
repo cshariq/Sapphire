@@ -282,6 +282,10 @@ struct NotchController: View {
             && ((NSApp.delegate as? AppDelegate)?.isScreenLocked == true)
     }
 
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
     private var activeScaleFactor: CGFloat {
         guard let config = config, notchState == .hoverExpanded && !isFullViewActivity else { return 1.0 }
         return config.scaleFactor
@@ -1035,12 +1039,17 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             activitySwitchBlurWindowEnd = Date().addingTimeInterval(Self.activitySwitchBlurWindow)
             blurRemovalTask?.cancel()
             blurRemovalTask = nil
-            activityBlurRadius = config.activityBlurRadiusMax
-            activityContentScale = 0.9
-            DispatchQueue.main.async {
-                withAnimation(config.focusPullAnimation) {
-                    self.activityBlurRadius = 0
-                    self.activityContentScale = 1.0
+            if reduceMotion {
+                activityBlurRadius = 0
+                activityContentScale = 1.0
+            } else {
+                activityBlurRadius = config.activityBlurRadiusMax
+                activityContentScale = 0.9
+                DispatchQueue.main.async {
+                    withAnimation(config.focusPullAnimation) {
+                        self.activityBlurRadius = 0
+                        self.activityContentScale = 1.0
+                    }
                 }
             }
         }
@@ -1128,7 +1137,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
 
             withAnimation(idleMorphAnimation) {
                 shadowOpacity = 0
-                if wasShowingActivity { activityBlurRadius = 20; activityContentScale = 0.9; autoContentOpacity = 0 }
+                if wasShowingActivity {
+                    autoContentOpacity = 0
+                    if !reduceMotion { activityBlurRadius = 20; activityContentScale = 0.9 }
+                }
                 animatedWidth = config.initialSize.width; animatedHeight = config.initialSize.height
                 animatedContentScale = 1.0
                 isPinned = false
@@ -1163,7 +1175,10 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             shadowOpacity = 0
 
             if isLiveActivityActive && (oldState == .autoExpanded || oldState == .hoverExpanded) {
-                withAnimation(config.activityBlurAnimation) { activityBlurRadius = config.activityBlurRadiusMax; autoContentOpacity = 0; activityContentScale = 1.05 }
+                withAnimation(config.activityBlurAnimation) {
+                    autoContentOpacity = 0
+                    if !reduceMotion { activityBlurRadius = config.activityBlurRadiusMax; activityContentScale = 1.05 }
+                }
             }
 
             withAnimation(self.expansionAnimation) {
@@ -1191,7 +1206,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             if isCollapsingFromClick {
                 cancelWidgetSwitchProtection()
                 self.canRenderAutoContent = false
-                withAnimation(config.blurAnimation) { activityContentScale = 0.92; activityBlurRadius = config.activityBlurRadiusMax * 1.5 }
+                if !reduceMotion {
+                    withAnimation(config.blurAnimation) { activityContentScale = 0.92; activityBlurRadius = config.activityBlurRadiusMax * 1.5 }
+                }
             } else {
                 self.canRenderAutoContent = true; self.autoContentOpacity = 1
             }
@@ -2181,7 +2198,8 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
               (abs(targetWidth - animatedWidth) > epsilon || abs(targetHeight - animatedHeight) > epsilon) else { return }
 
         let currentActivityType = liveActivityManager.currentActivity
-        let isExemptFromBlur = (currentActivityType == .music || currentActivityType == .systemHUD)
+        let isExemptFromBlur = reduceMotion
+            || currentActivityType == .music || currentActivityType == .systemHUD
             || Date() < activitySwitchBlurWindowEnd
 
         if !isExemptFromBlur {
