@@ -213,7 +213,86 @@ final class CustomTLSClient: @unchecked Sendable {
         queryItems: [URLQueryItem]? = nil,
         body: Data? = nil,
         contentType: String? = nil,
-        acceptType: String = "**"
+        acceptType: String = "*/*",
+        additionalHeaders: [String: String]? = nil,
+        authenticate: Bool = true,
+        allowAuthRetry: Bool = true
+    ) async throws -> HTTPResponse {
+        if await SpotifyRateLimitTracker.shared.isThrottled(host: hostName) {
+            throw SpotAPIError.rateLimited("Suppressing request to \(hostName) while rate-limited.")
+        }
+
+        guard var components = URLComponents(url: baseURL(path: path)!, resolvingAgainstBaseURL: false) else {
+            throw URLError(.badURL)
+        }
+        if let queryItems, !queryItems.isEmpty {
+            components.queryItems = (components.queryItems ?? []) + queryItems
+        }
+        guard let url = components.url else { throw URLError(.badURL) }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method.uppercased()
+        request.httpBody = body
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+
+        var headers = await webPlayerHeaders(authenticate: authenticate, contentType: contentType, acceptType: acceptType)
+        additionalHeaders?.forEach { headers[$0.key] = $0.value }
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        await ingestResponseCookies(http)
+
+        var responseHeaders: [String: String] = [:]
+        for (key, value) in http.allHeaderFields {
+            if let k = key as? String, let v = value as? String {
+                responseHeaders[k] = v
+            }
+        }
+        if http.statusCode == 429 {
+            let retryAfter = responseHeaders.first(where: { $0.key.caseInsensitiveCompare("Retry-After") == .orderedSame })
+                .flatMap { Double($0.value.trimmingCharacters(in: .whitespaces)) }
+            await SpotifyRateLimitTracker.shared.record(host: hostName, retryAfter: retryAfter)
+        }
+        if allowAuthRetry,
+           authenticate,
+           (http.statusCode == 401 || http.statusCode == 403),
+           let onUnauthorized,
+           await onUnauthorized() {
+            return try await performRequest(
+                method: method,
+                path: path,
+                queryItems: queryItems,
+                body: body,
+                contentType: contentType,
+                acceptType: acceptType,
+                additionalHeaders: additionalHeaders,
+                authenticate: authenticate,
+                allowAuthRetry: false
+            )
+        }
+
+        let cookies = await cookieManager.cookies(for: hostName)
+        return HTTPResponse(statusCode: http.statusCode, headers: responseHeaders, body: data, cookies: cookies)
+    }
+
+    internal func get(path: String, queryItems: [URLQueryItem]? = nil, additionalHeaders: [String: String]? = nil, authenticate: Bool = true) async throws -> HTTPResponse {
+        try await performRequest(method: "GET", path: path, queryItems: queryItems, additionalHeaders: additionalHeaders, authenticate: authenticate)
+    }
+
+    internal func post(path: String, bodyData: Data, additionalHeaders: [String: String]? = nil) async throws -> HTTPResponse {
+        let contentType = additionalHeaders?["Content-Type"] ?? "application/octet-stream"
+        return try await performRequest(method: "POST", path: path, body: bodyData, contentType: contentType, additionalHeaders: additionalHeaders)
+    }
+
+    internal func post(path: String, queryItems: [URLQueryItem]? = nil, jsonBody: [String: Any]? = nil, urlEncodedBody: [String: String]? = nil, additionalHeaders: [String: String]? = nil, authenticate: Bool = true) async throws -> HTTPResponse {
+        var bodyData: Data?
+        var contentType: String?
+        var acceptType = "*/*"
         if let json = jsonBody {
             bodyData = try? JSONSerialization.data(withJSONObject: json)
             contentType = "application/json"
