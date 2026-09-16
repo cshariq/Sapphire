@@ -8,7 +8,7 @@
       Official Website
     </div>
   </a>
-  <a href="https://github.com/cshariq/Sapphire/releases/tag/Latest" style="text-decoration: none;">
+  <a href="https://github.com/cshariq/Sapphire/releases/latest" style="text-decoration: none;">
     <div style="background-color: #007aff; color: white; padding: 10px 20px; border-radius: 8px; display: inline-block; font-weight: bold;">
       Download Latest Release
     </div>
@@ -26,7 +26,7 @@ Sapphire is a sleek notch app that displays current activities neatly around the
 
 ## Installation
 
-1.  **Download:** Download the latest package release from the [releases page](https://github.com/cshariq/Sapphire/releases/tag/Latest).
+1.  **Download:** Download the latest package release from the [releases page](https://github.com/cshariq/Sapphire/releases/latest).
 2.  **Install:** Open the downloaded package and follow the installation process.
 3.  **Permissions:** On first launch, you may need to grant accessibility and other permissions in `System Settings` for all features to work correctly.
 
