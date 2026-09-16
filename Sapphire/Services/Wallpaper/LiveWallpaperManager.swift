@@ -12,6 +12,7 @@ struct LiveWallpaperConfiguration: Equatable {
     var desktopPath: String?
     var lockScreenPath: String?
     var scaling: WallpaperScaling = .fill
+    var playbackMode: LiveWallpaperPlaybackMode = .adaptive
     var pauseOnLowPower = false
     var pauseOnBattery = false
 
@@ -28,6 +29,7 @@ struct LiveWallpaperConfiguration: Equatable {
         lockScreenPath = lockPath
         desktopPath = customDesktopPath ?? (settings.lockScreenKeepWallpaperAfterUnlock ? lockPath : nil)
         scaling = settings.liveWallpaperScaling
+        playbackMode = settings.liveWallpaperPlaybackMode
         pauseOnLowPower = settings.liveWallpaperPauseOnLowPower
         pauseOnBattery = settings.liveWallpaperPauseOnBattery
     }
@@ -43,11 +45,17 @@ struct LiveWallpaperPlan: Equatable {
     var lockScreenVideo: WallpaperMedia?
     var systemWallpaper: WallpaperMedia?
 
-    static func resolve(desktop: WallpaperMedia?, lockScreen: WallpaperMedia?, isLocked: Bool) -> LiveWallpaperPlan {
+    static func resolve(
+        desktop: WallpaperMedia?,
+        lockScreen: WallpaperMedia?,
+        isLocked: Bool,
+        playbackMode: LiveWallpaperPlaybackMode = .adaptive
+    ) -> LiveWallpaperPlan {
         let lockSurface = lockScreen ?? desktop
+        let playsVideo = playbackMode != .never
         return LiveWallpaperPlan(
-            desktopVideo: desktop?.isVideo == true ? desktop : nil,
-            lockScreenVideo: isLocked && lockSurface?.isVideo == true ? lockSurface : nil,
+            desktopVideo: playsVideo && desktop?.isVideo == true ? desktop : nil,
+            lockScreenVideo: playsVideo && isLocked && lockSurface?.isVideo == true ? lockSurface : nil,
             systemWallpaper: isLocked ? lockSurface : desktop
         )
     }
@@ -65,6 +73,7 @@ final class LiveWallpaperManager {
     private let policy = LiveWallpaperPlaybackPolicy()
     private let desktop = DesktopLiveWallpaperController()
     private let lockScreen = LockScreenLiveWallpaperController()
+    private let nativeLockScreen = NativeLockScreenWallpaperController()
 
     private var configuration = LiveWallpaperConfiguration()
     private var settingsCancellable: AnyCancellable?
@@ -77,6 +86,9 @@ final class LiveWallpaperManager {
     private init() {
         policy.onChange = { [weak self] reasons in
             self?.handlePolicyChange(reasons)
+        }
+        nativeLockScreen.onChange = { [weak self] in
+            self?.refresh()
         }
     }
 
@@ -104,8 +116,8 @@ final class LiveWallpaperManager {
             }
         }
 
-        policy.pauseOnLowPower = configuration.pauseOnLowPower
-        policy.pauseOnBattery = configuration.pauseOnBattery
+        policy.pauseOnLowPower = configuration.playbackMode == .adaptive && configuration.pauseOnLowPower
+        policy.pauseOnBattery = configuration.playbackMode == .adaptive && configuration.pauseOnBattery
         policy.start()
         refresh()
     }
@@ -113,6 +125,7 @@ final class LiveWallpaperManager {
     func screenDidLock() {
         guard isStarted, !isLocked else { return }
         isLocked = true
+        nativeLockScreen.screenDidLock()
         refresh()
         applyPlaybackPolicy()
     }
@@ -135,6 +148,7 @@ final class LiveWallpaperManager {
         requestedStill = nil
         desktop.tearDown()
         lockScreen.hide(animated: false)
+        nativeLockScreen.shutdown()
         policy.stop()
         LiveWallpaperVideoSource.setSuspended(false)
         SystemWallpaperOverride.shared.restore()
@@ -146,23 +160,44 @@ final class LiveWallpaperManager {
         guard isStarted else { return }
         let desktopMedia = WallpaperMedia(path: configuration.desktopPath)
         let lockMedia = WallpaperMedia(path: configuration.lockScreenPath)
-        let plan = LiveWallpaperPlan.resolve(desktop: desktopMedia, lockScreen: lockMedia, isLocked: isLocked)
+        let plan = LiveWallpaperPlan.resolve(
+            desktop: desktopMedia,
+            lockScreen: lockMedia,
+            isLocked: isLocked,
+            playbackMode: configuration.playbackMode
+        )
+        let lockSurface = lockMedia ?? desktopMedia
+        let nativeLockMedia = configuration.playbackMode != .never && lockSurface?.isVideo == true
+            ? lockSurface
+            : nil
+        nativeLockScreen.configure(media: nativeLockMedia)
 
-        policy.pauseOnLowPower = configuration.pauseOnLowPower
-        policy.pauseOnBattery = configuration.pauseOnBattery
+        policy.pauseOnLowPower = configuration.playbackMode == .adaptive && configuration.pauseOnLowPower
+        policy.pauseOnBattery = configuration.playbackMode == .adaptive && configuration.pauseOnBattery
 
         applySystemWallpaper(plan.systemWallpaper, configured: [desktopMedia, lockMedia].compactMap { $0 })
 
-        desktop.setSessionLocked(isLocked)
-        desktop.show(plan.desktopVideo, scaling: configuration.scaling)
-
-        if let lockVideo = plan.lockScreenVideo {
-            lockScreen.show(lockVideo, options: .init(
-                scaling: configuration.scaling
-            ))
+        if isLocked {
+            lockScreen.hide(animated: false)
+            desktop.setSessionLocked(true)
+            desktop.show(
+                plan.desktopVideo,
+                scaling: configuration.scaling,
+                playbackMode: configuration.playbackMode
+            )
         } else {
-            lockScreen.hide(animated: true)
+            desktop.setSessionLocked(false)
+            desktop.show(
+                plan.desktopVideo,
+                scaling: configuration.scaling,
+                playbackMode: configuration.playbackMode
+            )
+            if lockScreen.isShowing {
+                lockScreen.hide(animated: true)
+            }
+            lockScreen.prepare(nil)
         }
+        applyPlaybackPolicy()
     }
 
     private func applySystemWallpaper(_ media: WallpaperMedia?, configured: [WallpaperMedia]) {
@@ -209,7 +244,8 @@ final class LiveWallpaperManager {
     ) {
         let suspended = Self.shouldSuspendPlayback(
             for: reasons ?? policy.reasons,
-            isLocked: isLocked
+            isLocked: isLocked,
+            mode: configuration.playbackMode
         )
         LiveWallpaperVideoSource.setSuspended(suspended)
         lockScreen.setSuspended(suspended)
@@ -217,9 +253,21 @@ final class LiveWallpaperManager {
 
     nonisolated static func shouldSuspendPlayback(
         for reasons: Set<LiveWallpaperPlaybackPolicy.Reason>,
-        isLocked: Bool
+        isLocked: Bool,
+        mode: LiveWallpaperPlaybackMode = .adaptive
     ) -> Bool {
-        reasons.contains { $0 != .sessionInactive || !isLocked }
+        if mode == .never { return true }
+
+        return reasons.contains { reason in
+            switch reason {
+            case .sessionInactive:
+                return !isLocked
+            case .lowPowerMode, .onBattery:
+                return mode == .adaptive
+            case .displaysAsleep, .systemSleeping, .thermalPressure:
+                return true
+            }
+        }
     }
 
     private static var isSessionLocked: Bool {

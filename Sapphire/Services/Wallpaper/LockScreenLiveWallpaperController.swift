@@ -13,7 +13,7 @@ final class LockScreenLiveWallpaperController {
         var scaling: WallpaperScaling = .fill
     }
 
-    private static let windowLevel = NSWindow.Level.normal
+    private static let windowLevel = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
 
     private var media: WallpaperMedia?
     private var options = Options()
@@ -26,6 +26,32 @@ final class LockScreenLiveWallpaperController {
     private var generation = 0
 
     var isShowing: Bool { !windows.isEmpty }
+
+    func prepare(_ newMedia: WallpaperMedia?) {
+        guard windows.isEmpty else { return }
+        generation &+= 1
+        let newMedia = newMedia?.isVideo == true ? newMedia : nil
+        let mediaChanged = newMedia != media
+
+        if mediaChanged {
+            releaseSource()
+            playbackFailed = false
+            media = newMedia
+        }
+
+        guard let newMedia, !playbackFailed else {
+            if newMedia == nil {
+                releaseSource()
+            }
+            return
+        }
+        if source == nil {
+            source = LiveWallpaperVideoSource.acquire(newMedia.url, client: self) { [weak self] in
+                self?.handlePlaybackFailure()
+            }
+        }
+        source?.setWantsPlayback(false, client: self)
+    }
 
     func show(_ newMedia: WallpaperMedia, options newOptions: Options) {
         let mediaChanged = newMedia != media

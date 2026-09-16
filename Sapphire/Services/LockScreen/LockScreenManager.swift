@@ -129,7 +129,7 @@ public enum LockScreenSpaceLevel: Int32 {
     case kCGSSpaceAbsoluteLevelBootProgress = 500
     case kCGSSpaceAbsoluteLevelVoiceOver = 600
 
-    static let lockScreenWallpaper = kCGSSpaceAbsoluteLevelScreenLock.rawValue - 1
+    static let lockScreenWallpaper = kCGSSpaceAbsoluteLevelScreenLock.rawValue
 }
 
 public class LockScreenManager {

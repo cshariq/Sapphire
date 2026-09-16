@@ -19,7 +19,7 @@ final class FileDragPasteboardTests: XCTestCase {
 
         XCTAssertTrue(FileDragPasteboard.containsFiles(pasteboard))
         XCTAssertTrue(
-            FileDragPasteboard.containsFiles(
+            FileDragPasteboard.containsDroppableContent(
                 pasteboard,
                 newerThan: baselineChangeCount
             )
@@ -33,7 +33,7 @@ final class FileDragPasteboardTests: XCTestCase {
         pasteboard.writeObjects([URL(fileURLWithPath: "/tmp/stale-file.txt") as NSURL])
 
         XCTAssertFalse(
-            FileDragPasteboard.containsFiles(
+            FileDragPasteboard.containsDroppableContent(
                 pasteboard,
                 newerThan: pasteboard.changeCount
             )

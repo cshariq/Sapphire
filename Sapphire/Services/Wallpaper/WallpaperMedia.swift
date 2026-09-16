@@ -96,6 +96,33 @@ enum WallpaperScaling: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum LiveWallpaperPlaybackMode: String, Codable, CaseIterable, Identifiable {
+    case always
+    case adaptive
+    case never
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .always: return "Always Playing"
+        case .adaptive: return "Adaptive"
+        case .never: return "Never Playing"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .always:
+            return "Keep live wallpapers running whenever the display is awake."
+        case .adaptive:
+            return "Pause video when it is covered or power and thermal conditions call for it."
+        case .never:
+            return "Show a still frame without starting the video decoder."
+        }
+    }
+}
+
 enum WallpaperAssetStore {
     static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first

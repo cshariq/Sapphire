@@ -1215,6 +1215,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let url = URL(string: urlString),
             url.scheme == "sapphire"
         else { return }
+        if url.host == "android-widgets" {
+            continuityManager.openWidgets()
+            return
+        }
         musicManager.spotifyOfficialAPI.handleRedirect(url: url)
         musicManager.tidalAPI.handleRedirect(url: url)
     }
@@ -1363,7 +1367,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }) {
                 return [target]
             }
-            return []
+            let mainDisplayID = CGMainDisplayID()
+            return NSScreen.screens.filter { displayID(for: $0) == mainDisplayID }
         case .mainDisplay:
             let mainDisplayID = CGMainDisplayID()
             return NSScreen.screens.filter { displayID(for: $0) == mainDisplayID }
@@ -1376,7 +1381,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let screenFrame = screen.frame
         let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings, screen: screen)
         let paddedWidth = ceil(screenFrame.width)
-        let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
+        let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topInset + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
         let targetRect = NSRect(
             x: screenFrame.minX,
             y: screenFrame.maxY - paddedHeight,
@@ -1400,7 +1405,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let screenFrame = screen.frame
         let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings, screen: screen)
         let paddedWidth = ceil(screenFrame.width)
-        let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
+        let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topInset + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
         let rect = NSRect(
             x: screenFrame.minX,
             y: screenFrame.maxY - paddedHeight,
@@ -1504,7 +1509,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 previouslyFrontmostApp = currentFrontmost
             }
         }
-        window.setMouseEventHandlingEnabled(true)
         window.isFocusable = true
         if !NSApp.isActive { didActivateForNotchFocus = true }
         NSApp.activate(ignoringOtherApps: true)
@@ -1542,10 +1546,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
             let config = ResolvedNotchConfiguration(from: settingsModel.settings, screen: targetScreen)
             let baselineHeight = max(
-                config.initialSize.height + config.topBuffer + 24,
+                config.initialSize.height + config.topInset + config.topBuffer + 24,
                 targetScreen.frame.height * 0.42
             )
-            let desiredHeight = max(baselineHeight, requiredContentHeight + config.topBuffer + 36)
+            let desiredHeight = max(baselineHeight, requiredContentHeight + config.topInset + config.topBuffer + 36)
             let paddedHeight = min(ceil(desiredHeight), targetScreen.visibleFrame.height)
             var frame = window.frame
             let newY = targetScreen.frame.maxY - paddedHeight

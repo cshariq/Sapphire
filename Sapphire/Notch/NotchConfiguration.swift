@@ -15,6 +15,28 @@ struct NotchConfiguration {
     private static let fallbackClosedNotchSize = (width: CGFloat(185), height: CGFloat(32))
     private static let externalMonitorNotchWidth: CGFloat = 150
 
+    static func hasHardwareNotch(on screen: NSScreen?) -> Bool {
+        guard let screen else { return false }
+        return hasHardwareNotch(
+            safeAreaTop: screen.safeAreaInsets.top,
+            leftArea: screen.auxiliaryTopLeftArea,
+            rightArea: screen.auxiliaryTopRightArea
+        )
+    }
+
+    static func hasHardwareNotch(
+        safeAreaTop: CGFloat,
+        leftArea: CGRect?,
+        rightArea: CGRect?
+    ) -> Bool {
+        guard safeAreaTop > 0,
+              let leftArea,
+              let rightArea else { return false }
+
+        let cutoutWidth = rightArea.minX - leftArea.maxX
+        return cutoutWidth.isFinite && cutoutWidth > 0
+    }
+
     // MARK: - Screen Size Adjustments
     static func screenWidthAdjustment(for screen: NSScreen?) -> CGFloat {
         let currentWidth = (screen ?? NSScreen.main)?.frame.size.width ?? designReferenceResolution.width
@@ -54,7 +76,7 @@ struct NotchConfiguration {
         var width = fallbackClosedNotchSize.width
         var height = fallbackClosedNotchSize.height
 
-        if screen.safeAreaInsets.top > 0,
+        if hasHardwareNotch(on: screen),
            let leftArea = screen.auxiliaryTopLeftArea,
            let rightArea = screen.auxiliaryTopRightArea {
             let notchMinX = leftArea.maxX
@@ -235,6 +257,8 @@ struct ResolvedNotchConfiguration: Equatable {
     var initialSize: CGSize { CGSize(width: universalWidth, height: universalHeight) }
     let initialCornerRadius: CGFloat
     let topBuffer: CGFloat
+    let isFloatingIsland: Bool
+    let topInset: CGFloat
 
     // MARK: - Hover State
     let scaleFactor: CGFloat
@@ -301,6 +325,9 @@ struct ResolvedNotchConfiguration: Equatable {
         let targetScreen = screen ?? CursorPosition.targetNotchScreen() ?? NSScreen.main
         let screenWidthAdj = NotchConfiguration.screenWidthAdjustment(for: targetScreen)
         let screenHeightAdj = NotchConfiguration.screenHeightAdjustment(for: targetScreen)
+        self.isFloatingIsland = settings.floatingIslandOnNotchlessDisplays
+            && !NotchConfiguration.hasHardwareNotch(on: targetScreen)
+        self.topInset = isFloatingIsland ? max(0, settings.floatingIslandTopOffset) : 0
 
         self.activityContentHorizontalPadding = 15 * screenHeightAdj
         self.activityDefaultHorizontalPadding = 13 * screenHeightAdj

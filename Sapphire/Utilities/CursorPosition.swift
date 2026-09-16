@@ -42,6 +42,8 @@ enum CursorPosition {
                     return CGDisplayIsBuiltin(displayID) != 0
                 }
                 return false
+            } ?? NSScreen.screens.first { screen in
+                screen.displayID == CGMainDisplayID()
             }
         case .mainDisplay, .allDisplays:
             return NSScreen.main

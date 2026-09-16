@@ -9,8 +9,10 @@ import AppKit
 
 @MainActor
 final class DesktopLiveWallpaperController {
+    private final class PlaybackClient {}
+
     static var windowLevel: NSWindow.Level {
-        NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
+        NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) - 1)
     }
 
     nonisolated static let coveredThreshold = 0.97
@@ -18,7 +20,9 @@ final class DesktopLiveWallpaperController {
 
     private var media: WallpaperMedia?
     private var scaling: WallpaperScaling = .fill
-    private var source: LiveWallpaperVideoSource?
+    private var playbackMode: LiveWallpaperPlaybackMode = .adaptive
+    private var sources: [CGDirectDisplayID: LiveWallpaperVideoSource] = [:]
+    private var playbackClients: [CGDirectDisplayID: PlaybackClient] = [:]
     private var windows: [CGDirectDisplayID: LiveWallpaperWindow] = [:]
     private var occlusionObservers: [CGDirectDisplayID: NSObjectProtocol] = [:]
     private var screenObserver: NSObjectProtocol?
@@ -32,32 +36,30 @@ final class DesktopLiveWallpaperController {
 
     var isShowing: Bool { !windows.isEmpty }
 
-    func show(_ newMedia: WallpaperMedia?, scaling newScaling: WallpaperScaling) {
+    func show(
+        _ newMedia: WallpaperMedia?,
+        scaling newScaling: WallpaperScaling,
+        playbackMode newPlaybackMode: LiveWallpaperPlaybackMode
+    ) {
         let newMedia = newMedia?.isVideo == true ? newMedia : nil
         let mediaChanged = newMedia != media
-        guard mediaChanged || newScaling != scaling else { return }
+        guard mediaChanged || newScaling != scaling || newPlaybackMode != playbackMode else { return }
 
         media = newMedia
         scaling = newScaling
+        playbackMode = newPlaybackMode
 
         if mediaChanged {
             playbackFailed = false
             tearDownWindows()
-            releaseSource()
         }
 
-        guard let newMedia, !playbackFailed else {
+        guard newMedia != nil, !playbackFailed else {
             tearDownWindows()
-            releaseSource()
             stopObservingScreens()
             return
         }
 
-        if source == nil {
-            source = LiveWallpaperVideoSource.acquire(newMedia.url, client: self) { [weak self] in
-                self?.handlePlaybackFailure()
-            }
-        }
         startObservingScreens()
         reconcileWindows()
     }
@@ -79,14 +81,13 @@ final class DesktopLiveWallpaperController {
         media = nil
         playbackFailed = false
         tearDownWindows()
-        releaseSource()
         stopObservingScreens()
     }
 
     // MARK: - Windows
 
     private func reconcileWindows() {
-        guard let source else { return }
+        guard media != nil else { return }
         guard !isSessionLocked else {
             updatePlayback()
             return
@@ -101,7 +102,7 @@ final class DesktopLiveWallpaperController {
             if window.frame != screen.frame {
                 window.setFrame(screen.frame, display: false)
             }
-            window.wallpaperView.attach(player: source.player, scaling: scaling)
+            window.wallpaperView.attach(player: sources[displayID]?.player, scaling: scaling)
             if !window.isVisible {
                 window.orderFrontRegardless()
             }
@@ -115,6 +116,13 @@ final class DesktopLiveWallpaperController {
 
     private func makeWindow(for screen: NSScreen, displayID: CGDirectDisplayID) -> LiveWallpaperWindow {
         let window = LiveWallpaperWindow(frame: screen.frame, level: Self.windowLevel)
+        if let media {
+            let client = PlaybackClient()
+            playbackClients[displayID] = client
+            sources[displayID] = LiveWallpaperVideoSource.acquire(media.url, client: client) { [weak self] in
+                self?.handlePlaybackFailure(on: displayID)
+            }
+        }
         occlusionObservers[displayID] = NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification,
             object: window,
@@ -135,6 +143,10 @@ final class DesktopLiveWallpaperController {
         guard let window = windows.removeValue(forKey: displayID) else { return }
         window.wallpaperView.detachPlayer()
         window.orderOut(nil)
+        if let source = sources.removeValue(forKey: displayID),
+           let client = playbackClients.removeValue(forKey: displayID) {
+            source.release(client: client)
+        }
     }
 
     private func tearDownWindows() {
@@ -143,19 +155,20 @@ final class DesktopLiveWallpaperController {
         }
     }
 
-    private func releaseSource() {
-        source?.release(client: self)
-        source = nil
-    }
-
     private var isEligibleToPlay: Bool {
-        source != nil
-            && !isSessionLocked
-            && windows.values.contains { $0.occlusionState.contains(.visible) }
+        guard !sources.isEmpty, !isSessionLocked, !windows.isEmpty else { return false }
+        switch playbackMode {
+        case .always:
+            return true
+        case .adaptive:
+            return windows.values.contains { $0.occlusionState.contains(.visible) }
+        case .never:
+            return false
+        }
     }
 
     private func updatePlayback() {
-        if isEligibleToPlay {
+        if playbackMode == .adaptive, isEligibleToPlay {
             if coverageTimer == nil {
                 startCoverageMonitoring()
                 isDesktopCovered = Self.desktopIsCovered(on: NSScreen.screens)
@@ -164,7 +177,15 @@ final class DesktopLiveWallpaperController {
             stopCoverageMonitoring()
             isDesktopCovered = false
         }
-        source?.setWantsPlayback(isEligibleToPlay && !isDesktopCovered, client: self)
+        for (displayID, source) in sources {
+            guard let client = playbackClients[displayID] else { continue }
+            let windowVisible = windows[displayID]?.occlusionState.contains(.visible) == true
+            let shouldPlay = !isSessionLocked
+                && playbackMode != .never
+                && (playbackMode == .always || windowVisible)
+                && (playbackMode != .adaptive || !isDesktopCovered)
+            source.setWantsPlayback(shouldPlay, client: client)
+        }
     }
 
     // MARK: - Coverage
@@ -220,7 +241,7 @@ final class DesktopLiveWallpaperController {
         let covered = Self.desktopIsCovered(on: NSScreen.screens)
         guard covered != isDesktopCovered else { return }
         isDesktopCovered = covered
-        source?.setWantsPlayback(!covered, client: self)
+        updatePlayback()
     }
 
     private static func desktopIsCovered(on screens: [NSScreen]) -> Bool {
@@ -261,11 +282,12 @@ final class DesktopLiveWallpaperController {
         return Double(covered) / Double(rows * columns)
     }
 
-    private func handlePlaybackFailure() {
-        playbackFailed = true
-        tearDownWindows()
-        releaseSource()
-        stopObservingScreens()
+    private func handlePlaybackFailure(on displayID: CGDirectDisplayID) {
+        removeWindow(for: displayID)
+        if sources.isEmpty {
+            playbackFailed = true
+            stopObservingScreens()
+        }
     }
 
     // MARK: - Screens

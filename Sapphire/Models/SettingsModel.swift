@@ -854,6 +854,7 @@ struct Settings: Codable, Equatable {
     var desktopWallpaperEnabled: Bool = false
     var desktopWallpaperPath: String? = nil
     var liveWallpaperScaling: WallpaperScaling = .fill
+    var liveWallpaperPlaybackMode: LiveWallpaperPlaybackMode = .adaptive
     var liveWallpaperPauseOnLowPower: Bool = false
     var liveWallpaperPauseOnBattery: Bool = false
     var lockScreenLiveWallpaperShowsClock: Bool = false
@@ -956,6 +957,8 @@ struct Settings: Codable, Equatable {
     var googleAnalyticsEnabled: Bool = true
     var hideFromScreenSharing: Bool = false
     var notchDisplayTarget: NotchDisplayTarget = .macbookDisplay
+    var floatingIslandOnNotchlessDisplays: Bool = false
+    var floatingIslandTopOffset: CGFloat = 8
     var expandOnHover: Bool = false
     var expandOnHoverDelay: TimeInterval = 0.0
     var capsLockHorizontalLockEnabled: Bool = false
@@ -1547,6 +1550,7 @@ struct Settings: Codable, Equatable {
     var continuityNotificationsSystem: Bool = false
     var continuityExternalLiveActivities: Bool = true
     var continuityPhoneMediaInMusicPlayer: Bool = true
+    var continuityPhoneMediaLiveActivityEnabled: Bool = true
     var continuityHandoffToPhone: Bool = true
     var continuityCameraSystemDevice: Bool = true
     var continuityMic: Bool = true

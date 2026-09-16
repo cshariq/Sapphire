@@ -874,12 +874,6 @@ class LiveActivityManager: ObservableObject {
         }
 
         if winningCandidate == nil,
-           snoozedActivities[.continuityMedia] == nil,
-           let candidate = checkForContinuityMedia() {
-            winningCandidate = candidate
-        }
-
-        if winningCandidate == nil,
            snoozedActivities[.continuity] == nil,
            let candidate = checkForContinuity(issuesOnly: true) {
             winningCandidate = candidate
@@ -1349,16 +1343,6 @@ class LiveActivityManager: ObservableObject {
                 dismissAfter)
     }
 
-    private func checkForContinuityMedia() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
-        let bridge = ContinuityManager.shared.mediaBridge
-        guard bridge.shouldSurfacePhoneMedia, let media = bridge.phoneMedia else { return nil }
-        let device = bridge.phoneDeviceName ?? "Phone"
-        let id = "continuity-media-\(media.sessionId)-\(media.title)-\(media.artist ?? "")-\(media.isPlaying)"
-        return (.continuityMedia,
-                .standard(data: .continuityMedia(state: media, artwork: bridge.phoneArtwork, deviceName: device), id: id),
-                nil)
-    }
-
     private func checkForContinuityExternalActivity() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
         guard settingsModel.settings.continuityEnabled,
               settingsModel.settings.continuityExternalLiveActivities else { return nil }
@@ -1422,6 +1406,11 @@ class LiveActivityManager: ObservableObject {
 
     private func checkForMusic() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
         guard musicWidget.shouldShowLiveActivity, settingsModel.settings.musicLiveActivityEnabled else {
+            self.isDismissingPausedMusic = false
+            return nil
+        }
+        guard !musicWidget.isPhoneMediaSourceSelected
+                || settingsModel.settings.continuityPhoneMediaLiveActivityEnabled else {
             self.isDismissingPausedMusic = false
             return nil
         }
@@ -2105,6 +2094,54 @@ class LiveActivityManager: ObservableObject {
 
         setActivity(type: .none, content: .none)
         evaluateAndDisplayActivity()
+    }
+
+    func dismissCalendarNotification() {
+        guard currentActivity == .calendar || currentActivity == .reminder else { return }
+        if settingsModel.settings.hapticFeedbackEnabled { haptic() }
+
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.revertNotchWindowFocus()
+        }
+
+        handleActivityDismissal(for: currentActivity)
+        setActivity(type: .none, content: .none)
+        lastEvalTime = 0
+        evaluateAndDisplayActivity()
+    }
+
+    func snoozeCalendarNotification(
+        eventIDs: [String] = [],
+        reminderIDs: [String] = [],
+        for duration: TimeInterval = 5 * 60
+    ) {
+        guard currentActivity == .calendar || currentActivity == .reminder else { return }
+        if settingsModel.settings.hapticFeedbackEnabled { haptic() }
+
+        eventIDs.filter { !$0.isEmpty }.forEach {
+            notifiedEventMilestones[$0] = nil
+        }
+        reminderIDs.filter { !$0.isEmpty }.forEach {
+            notifiedReminderMilestones[$0] = nil
+        }
+
+        let activity = currentActivity
+        snoozedActivities[activity] = Date().addingTimeInterval(duration)
+
+        if let appDelegate = NSApp.delegate as? AppDelegate {
+            appDelegate.revertNotchWindowFocus()
+        }
+
+        setActivity(type: .none, content: .none)
+        lastEvalTime = 0
+        evaluateAndDisplayActivity()
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled, let self else { return }
+            self.lastEvalTime = 0
+            self.evaluateAndDisplayActivity()
+        }
     }
 
     private func clearNotificationState() {

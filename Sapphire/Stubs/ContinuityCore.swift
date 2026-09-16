@@ -99,6 +99,27 @@ struct ContinuityMediaState: Codable, Equatable {
     var canPrev: Bool
     var canSeek: Bool
     var artwork: String?
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        appId = try values.decodeIfPresent(String.self, forKey: .appId) ?? ""
+        sessionId = try values.decodeIfPresent(String.self, forKey: .sessionId) ?? appId
+        appName = try values.decodeIfPresent(String.self, forKey: .appName) ?? appId
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? ""
+        artist = try values.decodeIfPresent(String.self, forKey: .artist)
+        album = try values.decodeIfPresent(String.self, forKey: .album)
+        isPlaying = try values.decodeIfPresent(Bool.self, forKey: .isPlaying) ?? false
+        positionMs = try values.decodeIfPresent(Int.self, forKey: .positionMs) ?? 0
+        durationMs = try values.decodeIfPresent(Int.self, forKey: .durationMs) ?? 0
+        canNext = try values.decodeIfPresent(Bool.self, forKey: .canNext) ?? false
+        canPrev = try values.decodeIfPresent(Bool.self, forKey: .canPrev) ?? false
+        canSeek = try values.decodeIfPresent(Bool.self, forKey: .canSeek) ?? false
+        artwork = try values.decodeIfPresent(String.self, forKey: .artwork)
+    }
+}
+
+enum ContinuityMediaAction: String, Codable {
+    case play, pause, toggle, next, previous, seek, stop
 }
 
 enum ContinuityActivitySlotKind: String, Codable {
@@ -192,6 +213,7 @@ final class ContinuityManager: ObservableObject {
 
     func startIfEnabled() {}
     func stop() {}
+    func sendMediaCommand(_ action: ContinuityMediaAction, seekMs: Int? = nil) {}
     func sendFiles(_ urls: [URL], toPeerID peerID: String) {}
     func dismissNotificationOnPhone(peerID: String, key: String) {}
     func invokeNotificationAction(peerID: String, key: String, actionId: String, replyText: String?) {}

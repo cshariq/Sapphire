@@ -97,4 +97,20 @@ final class MusicWidgetVisibilityTests: XCTestCase {
     func testSpaceLimitBypassIsDisabledByDefault() {
         XCTAssertFalse(Settings().bypassWidgetSpaceLimit)
     }
+
+    func testPhoneMediaLiveActivityIsEnabledByDefault() {
+        XCTAssertTrue(Settings().continuityPhoneMediaLiveActivityEnabled)
+    }
+
+    func testAndroidMediaStateAcceptsMissingOptionalCapabilities() throws {
+        let data = Data(#"{"sessionId":"android-session","title":"Night Drive","isPlaying":true}"#.utf8)
+        let state = try JSONDecoder().decode(ContinuityMediaState.self, from: data)
+
+        XCTAssertEqual(state.sessionId, "android-session")
+        XCTAssertEqual(state.title, "Night Drive")
+        XCTAssertTrue(state.isPlaying)
+        XCTAssertEqual(state.positionMs, 0)
+        XCTAssertEqual(state.durationMs, 0)
+        XCTAssertFalse(state.canSeek)
+    }
 }

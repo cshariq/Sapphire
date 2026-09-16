@@ -146,7 +146,8 @@ struct MusicPlayerView: View {
     }
 
     private var enabledButtons: [MusicPlayerButtonType] {
-        settings.settings.musicPlayerButtonOrder.filter { type in
+        if musicManager.isPhoneMediaSourceSelected { return [] }
+        return settings.settings.musicPlayerButtonOrder.filter { type in
             switch type {
             case .like: return isSpotifyOrAppleMusic && settings.settings.musicLikeButtonEnabled
             case .shuffle: return isSpotifyOrAppleMusic && (settings.settings.musicShuffleButtonEnabled ?? true)
@@ -856,6 +857,8 @@ struct NotchMediaSourceSwitcher: View {
 
     private var keys: [String] {
         musicManager.activeMediaSources.keys.sorted { a, b in
+            if musicManager.isPhoneMediaSource(a) { return false }
+            if musicManager.isPhoneMediaSource(b) { return true }
             if a.contains("spotify-live") { return false }
             if b.contains("spotify-live") { return true }
             return a < b
@@ -900,6 +903,11 @@ struct NotchMediaSourceSwitcher: View {
     }
 
     private func label(for key: String) -> String {
+        if musicManager.isPhoneMediaSource(key) {
+            let device = musicManager.phoneMediaDeviceName ?? "Phone"
+            guard let app = musicManager.phoneMediaAppName, !app.isEmpty else { return device }
+            return "\(device) · \(app)"
+        }
         if key.contains("spotify-live") || key.lowercased().contains("spotify") { return "Spotify" }
         if let track = musicManager.activeMediaSources[key] {
             return musicManager.appName(for: track.payload.bundleIdentifier)

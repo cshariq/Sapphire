@@ -24,10 +24,12 @@ struct LiveWallpaperTests {
         #expect(!settings.desktopWallpaperEnabled)
         #expect(!settings.liveWallpaperPauseOnLowPower)
         #expect(!settings.liveWallpaperPauseOnBattery)
+        #expect(settings.liveWallpaperPlaybackMode == .adaptive)
         #expect(configuration.desktopPath == nil)
         #expect(configuration.lockScreenPath == nil)
         #expect(!configuration.pauseOnLowPower)
         #expect(!configuration.pauseOnBattery)
+        #expect(configuration.playbackMode == .adaptive)
     }
 
     @Test("Classifies movies as video and everything else as a still")
@@ -72,6 +74,19 @@ struct LiveWallpaperTests {
 
         let unlocked = LiveWallpaperPlan.resolve(desktop: image, lockScreen: video, isLocked: false)
         #expect(unlocked == LiveWallpaperPlan(desktopVideo: nil, lockScreenVideo: nil, systemWallpaper: image))
+    }
+
+    @Test("Never-playing mode resolves videos to still wallpapers")
+    func neverPlayingPlan() {
+        let plan = LiveWallpaperPlan.resolve(
+            desktop: video,
+            lockScreen: otherVideo,
+            isLocked: true,
+            playbackMode: .never
+        )
+        #expect(plan.desktopVideo == nil)
+        #expect(plan.lockScreenVideo == nil)
+        #expect(plan.systemWallpaper == otherVideo)
     }
 
     @Test("Settings normalise into desktop and lock screen paths")
@@ -153,6 +168,31 @@ struct LiveWallpaperTests {
         #expect(coverage(screen, [CGRect(x: 1600, y: 0, width: 1600, height: 1000)], 32, 20) == 0)
     }
 
+    @Test("Desktop video is above the system wallpaper and below desktop icons")
+    @MainActor
+    func desktopWindowLevel() {
+        let wallpaper = Int(CGWindowLevelForKey(.desktopWindow))
+        let icons = Int(CGWindowLevelForKey(.desktopIconWindow))
+        #expect(DesktopLiveWallpaperController.windowLevel.rawValue > wallpaper)
+        #expect(DesktopLiveWallpaperController.windowLevel.rawValue < icons)
+    }
+
+    @Test("Each display gets an independent AVPlayer render pipeline")
+    @MainActor
+    func independentDisplayPlayers() {
+        let firstClient = NSObject()
+        let secondClient = NSObject()
+        let first = LiveWallpaperVideoSource.acquire(video.url, client: firstClient) {}
+        let second = LiveWallpaperVideoSource.acquire(video.url, client: secondClient) {}
+        defer {
+            first.release(client: firstClient)
+            second.release(client: secondClient)
+        }
+
+        #expect(first !== second)
+        #expect(first.player !== second.player)
+    }
+
     @Test("Scaling maps onto video gravity")
     func scalingGravity() {
         #expect(WallpaperScaling.fill.videoGravity == .resizeAspectFill)
@@ -160,12 +200,12 @@ struct LiveWallpaperTests {
         #expect(WallpaperScaling.stretch.videoGravity == .resize)
     }
 
-    @Test("Lock screen video stays behind the login UI space")
+    @Test("Lock screen video shares loginUI's space at wallpaper window depth")
     func lockScreenSpaceLayering() {
         let wallpaper = LockScreenSpaceLevel.lockScreenWallpaper
         let loginUI = LockScreenSpaceLevel.kCGSSpaceAbsoluteLevelScreenLock.rawValue
 
-        #expect(wallpaper == loginUI - 1)
+        #expect(wallpaper == loginUI)
         #expect(loginUI < LockScreenSpaceLevel.kSLSSpaceAbsoluteLevelNotificationCenterAtScreenLock.rawValue)
     }
 
@@ -178,6 +218,20 @@ struct LiveWallpaperTests {
             LiveWallpaperManager.shouldSuspendPlayback(
                 for: [.sessionInactive, .thermalPressure],
                 isLocked: true
+            )
+        )
+        #expect(
+            !LiveWallpaperManager.shouldSuspendPlayback(
+                for: [.onBattery, .lowPowerMode],
+                isLocked: false,
+                mode: .always
+            )
+        )
+        #expect(
+            LiveWallpaperManager.shouldSuspendPlayback(
+                for: [],
+                isLocked: false,
+                mode: .never
             )
         )
     }

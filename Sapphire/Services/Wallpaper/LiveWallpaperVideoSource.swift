@@ -15,7 +15,7 @@ final class LiveWallpaperVideoSource {
         let onFailure: @MainActor () -> Void
     }
 
-    private static var sources: [URL: LiveWallpaperVideoSource] = [:]
+    private static var sources: [ObjectIdentifier: LiveWallpaperVideoSource] = [:]
     private static var isSuspended = false
 
     static func acquire(
@@ -23,14 +23,8 @@ final class LiveWallpaperVideoSource {
         client: AnyObject,
         onFailure: @escaping @MainActor () -> Void
     ) -> LiveWallpaperVideoSource {
-        let url = url.standardizedFileURL
-        let source: LiveWallpaperVideoSource
-        if let existing = sources[url] {
-            source = existing
-        } else {
-            source = LiveWallpaperVideoSource(url: url)
-            sources[url] = source
-        }
+        let source = LiveWallpaperVideoSource(url: url.standardizedFileURL)
+        sources[ObjectIdentifier(source)] = source
         source.clients[ObjectIdentifier(client)] = Client(wantsPlayback: false, onFailure: onFailure)
         if source.hasFailed {
             DispatchQueue.main.async { onFailure() }
@@ -62,7 +56,8 @@ final class LiveWallpaperVideoSource {
         player.isMuted = true
         player.volume = 0
         player.preventsDisplaySleepDuringVideoPlayback = false
-        player.automaticallyWaitsToMinimizeStalling = false
+        player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+        player.automaticallyWaitsToMinimizeStalling = true
         player.allowsExternalPlayback = false
         player.appliesMediaSelectionCriteriaAutomatically = false
         loadTask = Task { [weak self] in
@@ -90,9 +85,7 @@ final class LiveWallpaperVideoSource {
         looper = nil
         player.pause()
         player.removeAllItems()
-        if Self.sources[url] === self {
-            Self.sources.removeValue(forKey: url)
-        }
+        Self.sources.removeValue(forKey: ObjectIdentifier(self))
     }
 
     private func load() async {
@@ -144,8 +137,9 @@ final class LiveWallpaperVideoSource {
         hasFailed = true
         NSLog("[LiveWallpaper] Can't play \(url.lastPathComponent): \(error?.localizedDescription ?? "unknown error")")
         player.pause()
-        for client in clients.values {
-            client.onFailure()
+        let callbacks = clients.values.map(\.onFailure)
+        for callback in callbacks {
+            callback()
         }
     }
 

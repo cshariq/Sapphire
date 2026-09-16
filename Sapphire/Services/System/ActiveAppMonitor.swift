@@ -20,8 +20,24 @@ extension Notification.Name {
 @MainActor
 final class WindowDragState: ObservableObject {
     static let shared = WindowDragState()
-    @Published fileprivate(set) var isDragging = false
+    @Published private(set) var isDragging = false
+    @Published private(set) var isSnapZoneDismissedForCurrentDrag = false
     private init() {}
+
+    func beginDrag() {
+        isSnapZoneDismissedForCurrentDrag = false
+        isDragging = true
+    }
+
+    func dismissSnapZonesForCurrentDrag() {
+        guard isDragging else { return }
+        isSnapZoneDismissedForCurrentDrag = true
+    }
+
+    func endDrag() {
+        isDragging = false
+        isSnapZoneDismissedForCurrentDrag = false
+    }
 }
 
 @MainActor
@@ -236,7 +252,7 @@ class ActiveAppMonitor: ObservableObject {
         }
 
         if windowDrag.isDragging {
-            windowDrag.isDragging = false
+            windowDrag.endDrag()
         }
     }
 
@@ -249,7 +265,7 @@ class ActiveAppMonitor: ObservableObject {
             guard NSEvent.pressedMouseButtons & 1 != 0 else { return }
 
             if !self.windowDrag.isDragging {
-                self.windowDrag.isDragging = true
+                self.windowDrag.beginDrag()
                 self.startMouseUpMonitoring()
             }
         }
@@ -261,7 +277,7 @@ class ActiveAppMonitor: ObservableObject {
         mouseUpToken = EventMonitorHub.shared.register(for: .leftMouseUp) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.windowDrag.isDragging = false
+                self.windowDrag.endDrag()
                 if let token = self.mouseUpToken {
                     EventMonitorHub.shared.unregister(token: token, for: .leftMouseUp)
                     self.mouseUpToken = nil

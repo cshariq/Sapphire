@@ -10,6 +10,7 @@ import Combine
 import ScreenCaptureKit
 import NearbyShare
 import AppKit
+import Carbon.HIToolbox
 import os.log
 
 private let notchLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "NotchController")
@@ -107,6 +108,7 @@ struct NotchController: View {
     @State private var lastActivityShapeSignature: NotchShapeSignature = .none
     @State private var isCalendarHovered: Bool = false
     @State private var fileDropFlowObserver: NSObjectProtocol?
+    @State private var snapZoneEscapeMonitorToken: UUID?
     @State private var completeHideReason: NotchCompleteHideReason? = nil
     @State private var lastInactiveVisibilityEvaluation: (hideWhenInactive: Bool, hideReason: NotchCompleteHideReason?)?
     @State private var inactiveHideUserOverride: Bool = false
@@ -128,7 +130,8 @@ struct NotchController: View {
     private var isLiveActivityActive: Bool { effectiveActivity != .none }
 
     private var shouldSuppressSnapZoneActivation: Bool {
-        notchState == .clickExpanded && navigationStack.last != .snapZones
+        (notchState == .clickExpanded && navigationStack.last != .snapZones)
+            || (windowDrag.isDragging && windowDrag.isSnapZoneDismissedForCurrentDrag)
     }
 
     private var notchDisplayID: CGDirectDisplayID? {
@@ -270,6 +273,16 @@ struct NotchController: View {
         !isManuallyHidden && (notchState == .clickExpanded || isHovered || dragManager.isDraggingInActivationZone || windowDrag.isDragging)
     }
 
+    private var isPointerInteractionActive: Bool {
+        !isManuallyHidden && (isHovered || dragManager.isDraggingInActivationZone || windowDrag.isDragging)
+    }
+
+    private var isPointerCaptureActive: Bool {
+        dragManager.isDraggingInActivationZone
+            || windowDrag.isDragging
+            || (isHovered && NSEvent.pressedMouseButtons != 0)
+    }
+
     private var cursorIsOnMyScreen: Bool {
         guard let notchScreen = notchWindow?.screen else {
             return CursorPosition.targetNotchScreen() == nil
@@ -333,7 +346,8 @@ struct NotchController: View {
         CustomNotchShape(
             cornerRadius: animatedCornerRadius,
             bottomCornerRadius: animatedBottomCornerRadius,
-            isMusicActivity: isDisplayingMusicLiveActivity
+            isMusicActivity: isDisplayingMusicLiveActivity,
+            isFloatingIsland: config?.isFloatingIsland ?? false
         )
     }
 
@@ -528,7 +542,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         return view
             .frame(width: animatedWidth, height: animatedHeight)
             .contentShape(activeShape)
-            .padding(.top, -config.topBuffer)
+            .padding(.top, config.topInset - config.topBuffer)
             .frame(maxWidth: .infinity, alignment: .top)
             .preferredColorScheme(.dark)
     }
@@ -551,6 +565,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             .onChange(of: navigationStack, handleNavigationStackChange)
             .onChange(of: dragManager.isDraggingInActivationZone, perform: handleDragActivationZoneChange)
             .onChange(of: windowDrag.isDragging, perform: handleActiveWindowDragChange)
+            .onChange(of: windowDrag.isSnapZoneDismissedForCurrentDrag, perform: handleSnapZoneDismissalChange)
             .onChange(of: isFileDropTargeted, perform: handleFileDropTargetChange)
             .onChange(of: measuredClickContentSize, perform: handleMeasuredClickSizeChange)
             .onChange(of: measuredAutoContentSize, perform: handleMeasuredAutoSizeChange)
@@ -649,6 +664,42 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         isHandlingActiveWindowDrag = true
         hoverMonitor?.setExternalMouseDragActive(true)
         handleWindowDragChange(isDragging: true)
+    }
+
+    private func handleSnapZoneDismissalChange(_ isDismissed: Bool) {
+        guard isDismissed,
+              windowDrag.isDragging,
+              navigationStack.last == .snapZones else { return }
+        dismissActiveSnapZones()
+    }
+
+    private func startSnapZoneEscapeMonitoring() {
+        guard snapZoneEscapeMonitorToken == nil else { return }
+        snapZoneEscapeMonitorToken = EventMonitorHub.shared.register(for: .keyDown) { event in
+            guard event.keyCode == CGKeyCode(kVK_Escape),
+                  windowDrag.isDragging,
+                  navigationStack.last == .snapZones else { return }
+            windowDrag.dismissSnapZonesForCurrentDrag()
+            dismissActiveSnapZones()
+        }
+    }
+
+    private func stopSnapZoneEscapeMonitoring() {
+        guard let snapZoneEscapeMonitorToken else { return }
+        EventMonitorHub.shared.unregister(token: snapZoneEscapeMonitorToken, for: .keyDown)
+        self.snapZoneEscapeMonitorToken = nil
+    }
+
+    private func dismissActiveSnapZones() {
+        dragEndCollapseTask?.cancel()
+        dragEndCollapseTask = nil
+        dragManager.cancelActivation()
+        SnapPreviewManager.shared.hidePreview()
+        activeSnapZone = nil
+        snapZoneHitRegions = []
+        notchDragLocation = nil
+        navigationStack = []
+        notchState = isLiveActivityActive ? .autoExpanded : .initial
     }
 
     private func handleMeasuredClickSizeChange(_ newSize: CGSize) {
@@ -858,6 +909,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         }
 
         startNotchInteractionMonitoring()
+        startSnapZoneEscapeMonitoring()
         updateMouseEventHandling(isInteractive: isInteractive)
         updateWindowSharingBehavior(shouldBeHidden: shouldHideWindowForSharing)
         lastActivityShapeSignature = liveActivityManager.notchShapeSignature
@@ -881,6 +933,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         dropZoneResolutionTask?.cancel()
         dropZoneResolutionTask = nil
         cancelWidgetSwitchProtection()
+        stopSnapZoneEscapeMonitoring()
         stopNotchInteractionMonitoring()
         MenuBarInteractionManager.shared.setSuspended(false)
     }
@@ -890,7 +943,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard !isManuallyHidden else { return }
         guard !shouldBlockNotchExpansionWhileLocked else { return }
         guard let config = config else { return }
-        (notchWindow as? DynamicFocusWindow)?.setMouseEventHandlingEnabled(true)
         if notchState == .clickExpanded { return }
 
         let flags = NSEvent.modifierFlags
@@ -950,9 +1002,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         guard !isManuallyHidden else { return }
         guard let config = config else { return }
         self.isHovered = hovering
-        if hovering {
-            (notchWindow as? DynamicFocusWindow)?.setMouseEventHandlingEnabled(true)
-        }
 
         if hovering {
             TrackpadGestureHandler.shared.startMonitoring()
@@ -2002,7 +2051,9 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
         let finalLocation = updateNotchDragLocation(from: screenLocation)
         let wasShowingSnapZones = navigationStack.last == .snapZones
         let finalSnapZone: SnapZone?
-        if let finalLocation, !snapZoneHitRegions.isEmpty {
+        if !wasShowingSnapZones {
+            finalSnapZone = nil
+        } else if let finalLocation, !snapZoneHitRegions.isEmpty {
             finalSnapZone = SnapZoneHitTesting.nearest(snapZoneHitRegions, to: finalLocation) { $0.frame }?.zone
         } else {
             finalSnapZone = activeSnapZone
@@ -2162,7 +2213,7 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             notchHeight = animatedHeight
         }
 
-        let topInset = config.topBuffer
+        let topInset = config.topInset - config.topBuffer
         let frame = CGRect(
             x: contentBounds.midX - (notchWidth / 2),
             y: contentBounds.maxY - notchHeight - topInset,
@@ -2284,10 +2335,21 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
             return
         }
 
+        let pointerIsInInteractionBounds: Bool
+        if let config {
+            let frame = interactiveFrame(for: window, config: config)
+                .insetBy(dx: -Self.hoverDetectionMargin, dy: -Self.hoverDetectionMargin)
+            pointerIsInInteractionBounds = frame.contains(window.mouseLocationOutsideOfEventStream)
+        } else {
+            pointerIsInInteractionBounds = false
+        }
+        let shouldReceiveMouseEvents = isInteractive
+            && isPointerInteractionActive
+            && (pointerIsInInteractionBounds || isPointerCaptureActive)
         if let dynamicWindow = window as? DynamicFocusWindow {
-            dynamicWindow.setMouseEventHandlingEnabled(isInteractive)
+            dynamicWindow.setMouseEventHandlingEnabled(shouldReceiveMouseEvents)
         } else if window.contentView != nil {
-            window.ignoresMouseEvents = !isInteractive
+            window.ignoresMouseEvents = !shouldReceiveMouseEvents
         }
 
         if let config {

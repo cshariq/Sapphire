@@ -11,6 +11,32 @@ import XCTest
 @testable import Sapphire
 
 final class InfrastructureUtilitiesTests: XCTestCase {
+    func testHardwareNotchDetectionRequiresSafeAreaAndCentralCutout() {
+        let leftArea = CGRect(x: 0, y: 0, width: 700, height: 32)
+        let rightArea = CGRect(x: 900, y: 0, width: 700, height: 32)
+
+        XCTAssertTrue(NotchConfiguration.hasHardwareNotch(
+            safeAreaTop: 32,
+            leftArea: leftArea,
+            rightArea: rightArea
+        ))
+        XCTAssertFalse(NotchConfiguration.hasHardwareNotch(
+            safeAreaTop: 0,
+            leftArea: leftArea,
+            rightArea: rightArea
+        ))
+        XCTAssertFalse(NotchConfiguration.hasHardwareNotch(
+            safeAreaTop: 32,
+            leftArea: nil,
+            rightArea: nil
+        ))
+        XCTAssertFalse(NotchConfiguration.hasHardwareNotch(
+            safeAreaTop: 32,
+            leftArea: leftArea,
+            rightArea: CGRect(x: leftArea.maxX, y: 0, width: 700, height: 32)
+        ))
+    }
+
     func testDevActivityParticipatesInLiveActivityOrdering() {
         XCTAssertTrue(LiveActivityType.allCases.contains(.devActivity))
         XCTAssertEqual(ActivityType(from: .devActivity), .devActivity)

@@ -1616,6 +1616,38 @@ struct GeneralSettingsView: View {
                         .padding(.horizontal)
                         .padding(.bottom)
 
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Floating Island on Notchless Displays",
+                        description: "Use a rounded island separated from the top edge on Macs and displays without a hardware notch.",
+                        isOn: $settings.settings.floatingIslandOnNotchlessDisplays
+                    )
+
+                    if settings.settings.floatingIslandOnNotchlessDisplays {
+                        Divider().padding(.leading, 20)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Island Top Offset")
+                                Text("Distance from the top edge on notchless displays.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Slider(
+                                value: $settings.settings.floatingIslandTopOffset,
+                                in: 0...40,
+                                step: 1
+                            )
+                            .frame(width: 150)
+                            .accessibilityLabel("Island Top Offset")
+                            Text("\(Int(settings.settings.floatingIslandTopOffset)) pt")
+                                .monospacedDigit()
+                                .frame(width: 42, alignment: .trailing)
+                        }
+                        .padding()
+                    }
+
                 }
 
                 SettingsCard(title: "Widget Transitions", description: "Control the visual effects when switching between widgets inside the expanded notch.") {
@@ -3750,19 +3782,40 @@ struct LockScreenSettingsView: View {
                     if hasVideoWallpaper {
                         Divider().padding(.leading, 20)
 
-                        ToggleRow(
-                            title: "Pause in Low Power Mode",
-                            description: "Show the first frame instead of playing the video while Low Power Mode is on.",
-                            isOn: $settings.settings.liveWallpaperPauseOnLowPower
-                        )
+                        HStack {
+                            SettingsRowLabel(
+                                title: "Video Playback",
+                                description: settings.settings.liveWallpaperPlaybackMode.description,
+                                titleFont: .system(size: 14, weight: .medium)
+                            )
+                            Spacer()
+                            Picker("Video Playback", selection: $settings.settings.liveWallpaperPlaybackMode) {
+                                ForEach(LiveWallpaperPlaybackMode.allCases) { mode in
+                                    Text(mode.displayName).tag(mode)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 165)
+                        }
+                        .padding()
 
-                        Divider().padding(.leading, 20)
+                        if settings.settings.liveWallpaperPlaybackMode == .adaptive {
+                            Divider().padding(.leading, 20)
 
-                        ToggleRow(
-                            title: "Pause on Battery Power",
-                            description: "Only play video wallpapers while your Mac is plugged in.",
-                            isOn: $settings.settings.liveWallpaperPauseOnBattery
-                        )
+                            ToggleRow(
+                                title: "Pause in Low Power Mode",
+                                description: "Show the first frame instead of playing the video while Low Power Mode is on.",
+                                isOn: $settings.settings.liveWallpaperPauseOnLowPower
+                            )
+
+                            Divider().padding(.leading, 20)
+
+                            ToggleRow(
+                                title: "Pause on Battery Power",
+                                description: "Only play video wallpapers while your Mac is plugged in.",
+                                isOn: $settings.settings.liveWallpaperPauseOnBattery
+                            )
+                        }
                     }
 
                 }
@@ -3770,6 +3823,7 @@ struct LockScreenSettingsView: View {
                 .animation(.default, value: settings.settings.lockScreenCustomWallpaperEnabled)
                 .animation(.default, value: settings.settings.desktopWallpaperEnabled)
                 .animation(.default, value: hasVideoWallpaper)
+                .animation(.default, value: settings.settings.liveWallpaperPlaybackMode)
 
                 ToggleRow(
                     title: "Show Music When Paused",

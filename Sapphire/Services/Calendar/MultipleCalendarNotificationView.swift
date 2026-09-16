@@ -12,21 +12,33 @@ struct MultipleCalendarNotificationView: View {
     let events: [EKEvent]
     let timeUntil: String
 
+    @EnvironmentObject private var liveActivityManager: LiveActivityManager
+
     var body: some View {
-        CalendarNotificationLayout(color: .accentColor, systemImage: "calendar.badge.clock") {
-            VStack(alignment: .leading, spacing: 4) {
+        CalendarNotificationLayout(
+            color: .red,
+            systemImage: "calendar.badge.clock",
+            category: "Calendar",
+            onDismiss: { liveActivityManager.dismissCalendarNotification() },
+            onSnooze: {
+                liveActivityManager.snoozeCalendarNotification(
+                    eventIDs: events.compactMap(\.eventIdentifier)
+                )
+            }
+        ) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("\(events.count) Events")
-                    .font(.headline)
-                    .fontWeight(.bold)
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.96))
 
                 Text("Starting \(timeUntil)")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
 
                 if let firstEvent = events.first {
                     Text("Next: \(firstEvent.title)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.48))
                         .lineLimit(1)
                 }
             }
