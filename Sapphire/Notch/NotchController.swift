@@ -392,111 +392,19 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     @ViewBuilder
     private func notchSurface(config: ResolvedNotchConfiguration) -> some View {
         let appearance = resolvedAppearanceSettings
-        return notchBackground(appearance: appearance, config: config)
+        return NotchSurfaceBackground(
+            appearance: appearance,
+            config: config,
+            shape: activeShape,
+            notchState: notchState,
+            isGeminiActive: isGeminiActive,
+            isManuallyHidden: isManuallyHidden,
+            surfaceShadowOpacity: surfaceShadowOpacity,
+            radialEndRadius: appearance.backgroundStyle == .radial ? animatedWidth / 2 : 0
+        )
+            .equatable()
             .overlay(alignment: .top) { notchContent(config: config) }
             .onTapGesture(perform: handleTap)
-    }
-
-    @ViewBuilder
-    private func notchBackground(
-        appearance: NotchAppearanceSettings,
-        config: ResolvedNotchConfiguration
-    ) -> some View {
-        let isOpaqueSolid = appearance.backgroundStyle == .solid && appearance.opacity >= 1
-        let fillStyle = notchFillMaterial(appearance: appearance).opacity(appearance.opacity)
-
-        if #available(macOS 26.0, *), appearance.usesLiquidGlass, !isOpaqueSolid {
-            ZStack {
-                LiquidGlassShapeView(
-                    backend: .automatic,
-                    material: appearance.liquidGlassStyle,
-                    shape: activeShape,
-                    tintColor: resolvedGlassTint(appearance: appearance),
-                    blendingMode: .behindWindow,
-                    appearance: .dark,
-                    interaction: .normal,
-                    shadow: nativeSurfaceShadow(config: config)
-                )
-                .allowsHitTesting(false)
-
-                if appearance.backgroundStyle != .solid {
-                    activeShape.fill(fillStyle)
-                }
-            }
-        } else if !isOpaqueSolid, appearance.enableTransparencyBlur {
-            ZStack {
-                LiquidGlassShapeView(
-                    backend: .visualEffect,
-                    material: .hud,
-                    shape: activeShape,
-                    tintColor: resolvedGlassTint(appearance: appearance),
-                    blendingMode: .behindWindow,
-                    appearance: .dark,
-                    interaction: .normal,
-                    shadow: nativeSurfaceShadow(config: config)
-                )
-                .allowsHitTesting(false)
-
-                if appearance.backgroundStyle != .solid {
-                    activeShape.fill(fillStyle)
-                }
-            }
-        } else {
-            directlyPaintedSurface(fillStyle: fillStyle, config: config)
-        }
-    }
-
-    private func nativeSurfaceShadow(config: ResolvedNotchConfiguration) -> LiquidGlassShadow {
-        let radius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
-        let yOffset = notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
-
-        if isGeminiActive {
-            let color = NSColor.systemPurple.blended(withFraction: 0.5, of: .systemIndigo)
-                ?? .systemPurple
-            return LiquidGlassShadow(
-                color: color,
-                opacity: notchState == .initial || isManuallyHidden ? 0 : 0.56,
-                radius: radius,
-                offset: CGSize(width: 0, height: yOffset)
-            )
-        }
-
-        return LiquidGlassShadow(
-            color: NSColor(config.expandedShadowColor),
-            opacity: surfaceShadowOpacity,
-            radius: radius,
-            offset: CGSize(width: 0, height: yOffset)
-        )
-    }
-
-    @ViewBuilder
-    private func directlyPaintedSurface(
-        fillStyle: some ShapeStyle,
-        config: ResolvedNotchConfiguration
-    ) -> some View {
-        let radius = notchState == .clickExpanded ? config.expandedShadowRadius : 12
-        let yOffset = notchState == .clickExpanded ? config.expandedShadowOffsetY : 6
-
-        if isGeminiActive {
-            let opacity = notchState == .initial || isManuallyHidden ? 0.0 : 0.75
-            activeShape
-                .fill(fillStyle)
-                .shadow(color: .purple.opacity(opacity * 0.7), radius: radius, x: -2, y: yOffset)
-                .shadow(color: .indigo.opacity(opacity * 0.8), radius: radius, x: 2, y: yOffset)
-        } else {
-            activeShape
-                .fill(fillStyle)
-                .shadow(
-                    color: config.expandedShadowColor.opacity(surfaceShadowOpacity),
-                    radius: radius,
-                    y: yOffset
-                )
-        }
-    }
-
-    private func resolvedGlassTint(appearance: NotchAppearanceSettings) -> NSColor? {
-        guard appearance.backgroundStyle == .solid, appearance.opacity > 0 else { return nil }
-        return NSColor(appearance.solidColor.color).withAlphaComponent(appearance.opacity)
     }
 
     @ViewBuilder
@@ -762,36 +670,6 @@ self.notchWidget = NotchWidgetView(calendarViewModel: calendarViewModel)
     }
 
     // MARK: - Subviews
-    private func notchFillMaterial(appearance: NotchAppearanceSettings) -> AnyShapeStyle {
-        let style = appearance.backgroundStyle
-        switch style {
-        case .solid:
-            return AnyShapeStyle(appearance.solidColor.color)
-        case .gradient:
-            let stops = appearance.gradientColors
-                .map { Gradient.Stop(color: $0.color, location: $0.location) }
-                .sorted { $0.location < $1.location }
-            let angle = appearance.gradientAngle * .pi / 180
-            let startPoint = UnitPoint(x: 0.5 - cos(angle) * 0.5, y: 0.5 - sin(angle) * 0.5)
-            let endPoint = UnitPoint(x: 0.5 + cos(angle) * 0.5, y: 0.5 + sin(angle) * 0.5)
-            return AnyShapeStyle(LinearGradient(
-                gradient: Gradient(stops: stops.isEmpty ? [Gradient.Stop(color: .black, location: 0)] : stops),
-                startPoint: startPoint,
-                endPoint: endPoint
-            ))
-        case .radial:
-            let stops = appearance.gradientColors
-                .map { Gradient.Stop(color: $0.color, location: $0.location) }
-                .sorted { $0.location < $1.location }
-            return AnyShapeStyle(RadialGradient(
-                gradient: Gradient(stops: stops.isEmpty ? [Gradient.Stop(color: .black, location: 0)] : stops),
-                center: .center,
-                startRadius: 0,
-                endRadius: animatedWidth / 2
-            ))
-        }
-    }
-
     @ViewBuilder
     private var contentView: some View {
         if let config = config, notchState == .clickExpanded {
