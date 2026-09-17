@@ -158,7 +158,6 @@ struct ShelfItem: Identifiable, Codable, Equatable, Hashable {
     let dateAdded: Date
 
     var fileName: String { storedAt.lastPathComponent }
-    var icon: NSImage { NSWorkspace.shared.icon(forFile: storedAt.path) }
 
     init(id: UUID, storedAt: URL, dateAdded: Date) {
         self.id = id

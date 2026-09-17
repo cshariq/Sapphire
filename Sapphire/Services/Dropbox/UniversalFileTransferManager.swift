@@ -45,7 +45,8 @@ class UniversalFileTransferManager {
     let tasksPublisher = PassthroughSubject<[FileTransferTask], Never>()
 
     private var directoryMonitors: [DirectoryMonitor] = []
-    private var progressUpdateTimer: Timer?
+    private var fileWatchers: [URL: DispatchSourceFileSystemObject] = [:]
+    private var completionTasks: [URL: Task<Void, Never>] = [:]
     private var activeTasks: [URL: FileTransferTask] = [:]
     private var cancellables = Set<AnyCancellable>()
 
@@ -56,7 +57,7 @@ class UniversalFileTransferManager {
     private init() {}
 
     func startMonitoring() {
-        guard directoryMonitors.isEmpty, progressUpdateTimer == nil,
+        guard directoryMonitors.isEmpty,
               let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first,
               let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
         else {
@@ -71,19 +72,11 @@ class UniversalFileTransferManager {
                 .debounce(for: .seconds(0.2), scheduler: DispatchQueue.main)
                 .sink { [weak self] in
                     self?.scanForFileChanges()
+                    self?.updateTasks()
                 }
                 .store(in: &cancellables)
             monitor.start()
             directoryMonitors.append(monitor)
-        }
-
-        progressUpdateTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.updateTasks()
-            }
-        }
-        if let progressUpdateTimer {
-            RunLoop.main.add(progressUpdateTimer, forMode: .common)
         }
 
         scanForFileChanges()
@@ -92,8 +85,10 @@ class UniversalFileTransferManager {
     func stopMonitoring() {
         directoryMonitors.forEach { $0.stop() }
         directoryMonitors.removeAll()
-        progressUpdateTimer?.invalidate()
-        progressUpdateTimer = nil
+        fileWatchers.values.forEach { $0.cancel() }
+        fileWatchers.removeAll()
+        completionTasks.values.forEach { $0.cancel() }
+        completionTasks.removeAll()
         cancellables.removeAll()
     }
 
@@ -127,6 +122,8 @@ class UniversalFileTransferManager {
                         )
                         updateMetadata(for: &newTask)
                         activeTasks[url] = newTask
+                        installFileWatcher(for: url)
+                        scheduleCompletionCheck(for: url, expectedSize: newTask.currentSize)
                         hasChanges = true
                     } else {
                     }
@@ -161,15 +158,11 @@ class UniversalFileTransferManager {
                             updatedTask.speed = Double(fileSize - oldSize) / timeDiff
                         }
                         updatedTask.lastChangeDate = now
+                        scheduleCompletionCheck(for: url, expectedSize: fileSize)
                         hasChanges = true
                     } else {
-                        let timeSinceLastChange = Date().timeIntervalSince(updatedTask.lastChangeDate)
-
-                        if timeSinceLastChange > completionDelay {
-                            updatedTask.status = .finished
-                            updatedTask.isComplete = true
-                            tasksToRemove.append(url)
-                            hasChanges = true
+                        if completionTasks[url] == nil {
+                            scheduleCompletionCheck(for: url, expectedSize: fileSize)
                         }
                     }
                 }
@@ -182,15 +175,56 @@ class UniversalFileTransferManager {
         }
 
         for url in tasksToRemove {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
-                self?.activeTasks.removeValue(forKey: url)
-                self?.publishTasks()
-            }
+            removeTask(for: url)
         }
 
         if hasChanges {
             publishTasks()
         }
+    }
+
+    private func installFileWatcher(for url: URL) {
+        guard fileWatchers[url] == nil else { return }
+        let fileDescriptor = open(url.path, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .extend, .attrib, .delete, .rename, .revoke],
+            queue: .main
+        )
+        source.setEventHandler { [weak self, weak source] in
+            guard let source else { return }
+            let wasReplaced = !source.data.isDisjoint(with: [.delete, .rename, .revoke])
+            self?.updateTasks()
+            if wasReplaced { self?.scanForFileChanges() }
+        }
+        source.setCancelHandler { close(fileDescriptor) }
+        source.resume()
+        fileWatchers[url] = source
+    }
+
+    private func scheduleCompletionCheck(for url: URL, expectedSize: Int64) {
+        completionTasks[url]?.cancel()
+        completionTasks[url] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(self?.completionDelay ?? 5))
+            guard !Task.isCancelled, let self,
+                  let task = self.activeTasks[url], task.status == .inProgress else { return }
+            self.completionTasks[url] = nil
+            let size = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.int64Value
+            guard size == expectedSize else {
+                self.updateTasks()
+                return
+            }
+            self.removeTask(for: url)
+            self.publishTasks()
+        }
+    }
+
+    private func removeTask(for url: URL) {
+        activeTasks.removeValue(forKey: url)
+        completionTasks.removeValue(forKey: url)?.cancel()
+        fileWatchers.removeValue(forKey: url)?.cancel()
     }
 
     private func updateMetadata(for task: inout FileTransferTask) {

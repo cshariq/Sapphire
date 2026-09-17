@@ -26,8 +26,6 @@ struct NotchSwipeRow<Content: View>: View {
     private let leadingThreshold: CGFloat = 72
     private let trailingThreshold: CGFloat = -72
     private let releaseAnimation = Animation.spring(response: 0.38, dampingFraction: 0.78)
-    private let dragAnimation = Animation.interactiveSpring(response: 0.2, dampingFraction: 0.82, blendDuration: 0.08)
-
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
@@ -72,7 +70,7 @@ struct NotchSwipeRow<Content: View>: View {
                             var proposed = gesture.translation.width
                             if leading == nil { proposed = min(0, proposed) }
                             if trailing == nil { proposed = max(0, proposed) }
-                            withAnimation(dragAnimation) { offset = proposed }
+                            offset = proposed
                         }
                         .onEnded { _ in
                             settle()
@@ -89,7 +87,7 @@ struct NotchSwipeRow<Content: View>: View {
                             var proposed = offset - dx
                             if leading == nil { proposed = min(0, proposed) }
                             if trailing == nil { proposed = max(0, proposed) }
-                            withAnimation(dragAnimation) { offset = proposed }
+                            offset = proposed
                         },
                         endHorizontal: {
                             settle()
@@ -124,85 +122,146 @@ private struct NotchTrackpadSwipeCapture: NSViewRepresentable {
     let changeHorizontal: (CGFloat) -> Void
     let endHorizontal: () -> Void
 
-    func makeNSView(context: Context) -> NSView {
-        CaptureView(
+    func makeNSView(context: Context) -> NotchTrackpadSwipeCaptureView {
+        NotchTrackpadSwipeCaptureView(
             beginHorizontal: beginHorizontal,
             changeHorizontal: changeHorizontal,
             endHorizontal: endHorizontal
         )
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? 10, height: proposal.height ?? 10)
+    func updateNSView(_ nsView: NotchTrackpadSwipeCaptureView, context: Context) {
+        nsView.updateHandlers(
+            beginHorizontal: beginHorizontal,
+            changeHorizontal: changeHorizontal,
+            endHorizontal: endHorizontal
+        )
     }
 
-    private final class CaptureView: NSView {
-        let beginHorizontal: () -> Void
-        let changeHorizontal: (CGFloat) -> Void
-        let endHorizontal: () -> Void
-        private var horizontalActive = false
-        private var eventMonitor: Any?
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: NotchTrackpadSwipeCaptureView,
+        context: Context
+    ) -> CGSize? {
+        CGSize(width: proposal.width ?? 10, height: proposal.height ?? 10)
+    }
+}
 
-        init(
-            beginHorizontal: @escaping () -> Void,
-            changeHorizontal: @escaping (CGFloat) -> Void,
-            endHorizontal: @escaping () -> Void
-        ) {
-            self.beginHorizontal = beginHorizontal
-            self.changeHorizontal = changeHorizontal
-            self.endHorizontal = endHorizontal
-            super.init(frame: .zero)
-            wantsLayer = true
-            layer?.backgroundColor = NSColor.clear.cgColor
+private final class NotchTrackpadSwipeMonitorHub {
+    static let shared = NotchTrackpadSwipeMonitorHub()
+
+    private let captures = NSHashTable<NotchTrackpadSwipeCaptureView>.weakObjects()
+    private weak var activeCapture: NotchTrackpadSwipeCaptureView?
+    private var eventMonitor: Any?
+
+    func register(_ capture: NotchTrackpadSwipeCaptureView) {
+        captures.add(capture)
+        guard eventMonitor == nil else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            self?.handle(event) ?? event
         }
+    }
 
-        required init?(coder: NSCoder) { nil }
-
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            removeMonitor()
-            guard window != nil else { return }
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
-                self?.handleScroll(event) ?? event
-            }
+    func unregister(_ capture: NotchTrackpadSwipeCaptureView) {
+        captures.remove(capture)
+        if activeCapture === capture {
+            activeCapture = nil
         }
+        guard captures.allObjects.isEmpty, let eventMonitor else { return }
+        NSEvent.removeMonitor(eventMonitor)
+        self.eventMonitor = nil
+    }
 
-        deinit {
-            removeMonitor()
-        }
-
-        private func removeMonitor() {
-            if let eventMonitor {
-                NSEvent.removeMonitor(eventMonitor)
-                self.eventMonitor = nil
+    private func handle(_ event: NSEvent) -> NSEvent? {
+        if let activeCapture {
+            if activeCapture.consumeActive(event) {
+                self.activeCapture = nil
             }
-        }
-
-        private func handleScroll(_ event: NSEvent) -> NSEvent? {
-            guard let window, event.window == nil || event.window === window else { return event }
-            let point = convert(event.locationInWindow, from: nil)
-
-            if !horizontalActive {
-                guard bounds.contains(point) else { return event }
-                let dx = event.scrollingDeltaX
-                let dy = event.scrollingDeltaY
-                guard abs(dx) > abs(dy), abs(dx) > 0.5 else { return event }
-                horizontalActive = true
-                beginHorizontal()
-            }
-
-            if event.phase == .ended || event.momentumPhase == .ended || event.phase == .cancelled {
-                horizontalActive = false
-                endHorizontal()
-                return nil
-            }
-            changeHorizontal(event.scrollingDeltaX)
             return nil
         }
+
+        let dx = event.scrollingDeltaX
+        let dy = event.scrollingDeltaY
+        guard abs(dx) > abs(dy), abs(dx) > 0.5 else { return event }
+
+        guard let capture = captures.allObjects.reversed().first(where: { $0.contains(event) }) else {
+            return event
+        }
+        activeCapture = capture
+        capture.begin(with: event)
+        return nil
+    }
+}
+
+private final class NotchTrackpadSwipeCaptureView: NSView {
+    private var beginHorizontal: () -> Void
+    private var changeHorizontal: (CGFloat) -> Void
+    private var endHorizontal: () -> Void
+    private var isRegistered = false
+
+    init(
+        beginHorizontal: @escaping () -> Void,
+        changeHorizontal: @escaping (CGFloat) -> Void,
+        endHorizontal: @escaping () -> Void
+    ) {
+        self.beginHorizontal = beginHorizontal
+        self.changeHorizontal = changeHorizontal
+        self.endHorizontal = endHorizontal
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if isRegistered {
+            NotchTrackpadSwipeMonitorHub.shared.unregister(self)
+            isRegistered = false
+        }
+        if window != nil {
+            NotchTrackpadSwipeMonitorHub.shared.register(self)
+            isRegistered = true
+        }
+    }
+
+    deinit {
+        if isRegistered {
+            NotchTrackpadSwipeMonitorHub.shared.unregister(self)
+        }
+    }
+
+    func updateHandlers(
+        beginHorizontal: @escaping () -> Void,
+        changeHorizontal: @escaping (CGFloat) -> Void,
+        endHorizontal: @escaping () -> Void
+    ) {
+        self.beginHorizontal = beginHorizontal
+        self.changeHorizontal = changeHorizontal
+        self.endHorizontal = endHorizontal
+    }
+
+    func contains(_ event: NSEvent) -> Bool {
+        guard let window, event.window == nil || event.window === window else { return false }
+        let windowPoint = event.window === window
+            ? event.locationInWindow
+            : window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        return bounds.contains(convert(windowPoint, from: nil))
+    }
+
+    func begin(with event: NSEvent) {
+        beginHorizontal()
+        _ = consumeActive(event)
+    }
+
+    func consumeActive(_ event: NSEvent) -> Bool {
+        if event.phase == .ended || event.momentumPhase == .ended || event.phase == .cancelled {
+            endHorizontal()
+            return true
+        }
+        changeHorizontal(event.scrollingDeltaX)
+        return false
     }
 }
 #endif

@@ -125,7 +125,7 @@ public class IntelDDC {
 
   private static func supportedTransactionType() -> IOOptionBits? {
     var ioIterator = io_iterator_t()
-    guard IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceNameMatching("IOFramebufferI2CInterface"), &ioIterator) == KERN_SUCCESS else {
+    guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceNameMatching("IOFramebufferI2CInterface"), &ioIterator) == KERN_SUCCESS else {
       return nil
     }
     defer {
@@ -187,7 +187,7 @@ public class IntelDDC {
 
   static func servicePortUsingDisplayPropertiesMatching(from displayId: CGDirectDisplayID) -> io_object_t? {
     var portIterator = io_iterator_t()
-    let status: kern_return_t = IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching(IOFRAMEBUFFER_CONFORMSTO), &portIterator)
+    let status: kern_return_t = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching(IOFRAMEBUFFER_CONFORMSTO), &portIterator)
     guard status == KERN_SUCCESS else {
       os_log("No matching services found for display with ID %u.", type: .error, displayId)
       return nil

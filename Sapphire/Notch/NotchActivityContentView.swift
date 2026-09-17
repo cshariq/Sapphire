@@ -67,14 +67,6 @@ struct NotchActivityContentView: View {
     var blurRadius: CGFloat = 0
 
     @EnvironmentObject private var settings: SettingsModel
-    @EnvironmentObject private var musicWidget: MusicManager
-    @EnvironmentObject private var timerManager: TimerManager
-    @EnvironmentObject private var geminiLiveManager: GeminiLiveManager
-    @EnvironmentObject private var desktopManager: DesktopManager
-
-    private var desktopNumber: Int {
-        desktopManager.desktopNumber(for: screen) ?? 1
-    }
 
     var body: some View {
         Group {
@@ -137,17 +129,11 @@ struct NotchActivityContentView: View {
             case .peek(let title, let artist):
                 return AnyView(QuickPeekView(title: title, artist: artist))
             case .lyrics(let line):
-                let view = KaraokeLyricTicker(
+                let view = MusicKaraokeActivityTicker(
                     lyric: line,
-                    containerWidth: config.lyricsMaxWidth,
-                    font: .system(size: config.lyricsFontSize, weight: .semibold, design: .rounded),
-                    highlightColor: musicWidget.accentColor.opacity(0.9),
-                    inactiveColor: musicWidget.accentColor
+                    config: config,
+                    showLyrics: $showLyrics
                 )
-                    .frame(maxWidth: config.lyricsMaxWidth)
-                    .transition(.opacity.animation(.easeInOut(duration: 0.3)))
-                    .id("lyric-\(line.id.uuidString)")
-                    .onTapGesture { showLyrics = true }
                 return AnyView(view)
             case .upNext(let title, let artist, let artworkURL):
                 return AnyView(MusicUpNextView(title: title, artist: artist, artworkURL: artworkURL))
@@ -166,14 +152,14 @@ struct NotchActivityContentView: View {
         case .weather(let data): WeatherActivityView.left(for: data)
         case .calendar: CalendarProximityActivityView.left()
         case .reminder: ReminderProximityActivityView.left()
-        case .timer: TimerActivityView.left(timerManager: timerManager)
+        case .timer: TimerActivityLeftView()
         case .battery(let state, let style, let timeRemaining, let systemState):
             switch style {
             case .persistent: PersistentBatteryActivityView.left(for: state, timeRemaining: timeRemaining, systemState: systemState)
             case .default: DefaultBatteryActivityView.left(for: state, systemState: systemState)
             case .compact: CompactBatteryActivityView.left(for: state, systemState: systemState)
             }
-        case .desktop: DesktopActivityView.left(for: desktopNumber)
+        case .desktop: DesktopActivityLeftView(screen: screen)
         case .focus(let mode): FocusModeActivityView.left(for: mode)
         case .fileShelf: FileShelfActivityView.left()
         case .fileProgress(let task): FileProgressLiveActivityView.left(for: task)
@@ -213,14 +199,14 @@ struct NotchActivityContentView: View {
         case .weather(let data): WeatherActivityView.right(for: data)
         case .calendar(let event): CalendarProximityActivityView.right(event: event)
         case .reminder(let reminder): ReminderProximityActivityView.right(reminder: reminder)
-        case .timer: TimerActivityView.right(timerManager: timerManager)
+        case .timer: TimerActivityRightView()
         case .battery(let state, let style, let timeRemaining, let systemState):
             switch style {
             case .persistent: PersistentBatteryActivityView.right(for: state, systemState: systemState)
             case .default: DefaultBatteryActivityView.right(for: state, timeRemaining: timeRemaining, systemState: systemState)
             case .compact: CompactBatteryActivityView.right(for: state)
             }
-        case .desktop: DesktopActivityView.right(for: desktopNumber)
+        case .desktop: DesktopActivityRightView(screen: screen)
         case .focus(let mode): FocusModeActivityView.right(for: mode, displayMode: settings.settings.focusDisplayMode)
         case .fileShelf(let count): FileShelfActivityView.right(count: count)
         case .fileProgress(let task): FileProgressLiveActivityView.right(for: task)
@@ -236,7 +222,7 @@ struct NotchActivityContentView: View {
         case .continuity(let snapshot): ContinuityNotchActivityView.right(for: snapshot)
         case .continuityExternal(let activity): ContinuityExternalActivityView.right(for: activity)
         case .continuityMedia(let state, _, let device): ContinuityMediaActivityView.right(state: state, deviceName: device)
-        case .geminiLive(let payload): GeminiActiveActivityView.right(isMuted: payload.isMicMuted) { geminiLiveManager.toggleMicrophone() }
+        case .geminiLive(let payload): GeminiActivityRightView(payload: payload)
         case .sports(let payload, _):
             SportsLiveActivityView.right(for: payload, preferLogo: settings.settings.sportsPreferLogo)
         case .finance(let payload):
@@ -247,9 +233,78 @@ struct NotchActivityContentView: View {
         case .lockScreen: LockScreenLiveActivityView.right()
         case .updateAvailable(let version): UpdateAvailableActivityView.right(version: version)
         case .focusSession: FocusSessionActivityView.right()
-        case .battery: EmptyView()
         case .unlocked: LockScreenLiveActivityView.right()
         case .stats(let payload): statsLiveActivityView.right(for: payload, selectedStats: settings.settings.selectedStats, selectedSensorKeys: settings.settings.selectedSensorKeys)
         }
+    }
+}
+
+private struct DesktopActivityLeftView: View {
+    @EnvironmentObject private var desktopManager: DesktopManager
+
+    let screen: NSScreen?
+
+    var body: some View {
+        DesktopActivityView.left(for: desktopManager.desktopNumber(for: screen) ?? 1)
+    }
+}
+
+private struct DesktopActivityRightView: View {
+    @EnvironmentObject private var desktopManager: DesktopManager
+
+    let screen: NSScreen?
+
+    var body: some View {
+        DesktopActivityView.right(for: desktopManager.desktopNumber(for: screen) ?? 1)
+    }
+}
+
+private struct MusicKaraokeActivityTicker: View {
+    @EnvironmentObject private var musicManager: MusicManager
+
+    let lyric: LyricLine
+    let config: ResolvedNotchConfiguration
+    @Binding var showLyrics: Bool
+
+    var body: some View {
+        KaraokeLyricTicker(
+            lyric: lyric,
+            containerWidth: config.lyricsMaxWidth,
+            font: .system(size: config.lyricsFontSize, weight: .semibold, design: .rounded),
+            highlightColor: musicManager.accentColor.opacity(0.9),
+            inactiveColor: musicManager.accentColor
+        )
+        .frame(maxWidth: config.lyricsMaxWidth)
+        .transition(.opacity.animation(.easeInOut(duration: 0.3)))
+        .id("lyric-\(lyric.id.uuidString)")
+        .onTapGesture { showLyrics = true }
+    }
+}
+
+private struct GeminiActivityRightView: View {
+    @EnvironmentObject private var geminiLiveManager: GeminiLiveManager
+
+    let payload: GeminiPayload
+
+    var body: some View {
+        GeminiActiveActivityView.right(isMuted: payload.isMicMuted) {
+            geminiLiveManager.toggleMicrophone()
+        }
+    }
+}
+
+private struct TimerActivityLeftView: View {
+    @EnvironmentObject private var timerManager: TimerManager
+
+    var body: some View {
+        TimerActivityView.left(timerManager: timerManager)
+    }
+}
+
+private struct TimerActivityRightView: View {
+    @EnvironmentObject private var timerManager: TimerManager
+
+    var body: some View {
+        TimerActivityView.right(timerManager: timerManager)
     }
 }

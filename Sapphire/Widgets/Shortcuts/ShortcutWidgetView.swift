@@ -55,17 +55,27 @@ fileprivate struct ShortcutIconView: View {
         Button(action: {
             ShortcutsManager.shared.runShortcut(id: shortcut.id)
         }) {
-            Image(nsImage: iconImage ?? ShortcutsManager.shared.getIcon(for: shortcut))
-                .resizable()
-                .scaledToFit()
-                .font(.system(size: 2, weight: .bold))
-                .frame(width: 22, height: 22)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .help(shortcut.name)
+            Group {
+                if let iconImage {
+                    Image(nsImage: iconImage)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    Image(systemName: "square.grid.3x1.folder.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .padding(3)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.system(size: 2, weight: .bold))
+            .frame(width: 22, height: 22)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .help(shortcut.name)
         }
         .buttonStyle(.plain)
-        .onAppear {
-            self.iconImage = ShortcutsManager.shared.getIcon(for: shortcut)
+        .task(id: shortcut) {
+            iconImage = ShortcutsManager.shared.getIcon(for: shortcut)
         }
     }
 }

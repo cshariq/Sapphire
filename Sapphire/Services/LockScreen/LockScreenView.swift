@@ -66,11 +66,11 @@ private extension EnvironmentValues {
     }
 }
 
-private struct LockScreenMiniWidgetHeightKey: EnvironmentKey {
+struct LockScreenMiniWidgetHeightKey: EnvironmentKey {
     static let defaultValue: CGFloat? = nil
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var lockScreenMiniWidgetHeight: CGFloat? {
         get { self[LockScreenMiniWidgetHeightKey.self] }
         set { self[LockScreenMiniWidgetHeightKey.self] = newValue }
@@ -80,13 +80,6 @@ private extension EnvironmentValues {
 // MARK: - Main View Container
 struct LockScreenMainWidgetContainerView: View {
     @EnvironmentObject var settings: SettingsModel
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var calendarService: CalendarService
-    @EnvironmentObject var batteryStatusManager: BatteryStatusManager
-    @EnvironmentObject var focusModeManager: FocusModeManager
-    @EnvironmentObject var timerManager: TimerManager
-    @EnvironmentObject var batteryMonitor: BatteryMonitor
-    @EnvironmentObject var bluetoothManager: BluetoothManager
     @StateObject private var navigationManager = LockScreenNavigationManager()
     @State private var maxMainWidgetHeight: CGFloat = 0
     @State private var dummyStack: [NotchWidgetMode] = []
@@ -100,31 +93,14 @@ struct LockScreenMainWidgetContainerView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: navigationManager.currentView)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: maxMainWidgetHeight)
         .fixedSize(horizontal: true, vertical: false)
-        .background(
-            VStack(spacing: 0) {
-                ForEach(settings.settings.lockScreenMainWidgets, id: \.self) { widgetType in
-                    measurementPreview(for: widgetType)
-                }
+        .onPreferenceChange(SizePreferenceKey.self) { sizes in
+            let maxHeight = sizes.map(\.height).max() ?? 0
+            if maxMainWidgetHeight != maxHeight {
+                maxMainWidgetHeight = maxHeight
             }
-            .onPreferenceChange(SizePreferenceKey.self) { sizes in
-                let maxHeight = sizes.map { $0.height }.max() ?? 0
-                if self.maxMainWidgetHeight != maxHeight {
-                    self.maxMainWidgetHeight = maxHeight
-                }
-            }
-            .opacity(0)
-            .allowsHitTesting(false)
-        )
+        }
         .environment(\.lockScreenWidgetHeight, maxMainWidgetHeight > 0 ? maxMainWidgetHeight : nil)
-        .environmentObject(settings)
-        .environmentObject(musicManager)
-        .environmentObject(calendarService)
         .environmentObject(navigationManager)
-        .environmentObject(focusModeManager)
-        .environmentObject(timerManager)
-        .environmentObject(batteryMonitor)
-        .environmentObject(bluetoothManager)
-        .environmentObject(batteryStatusManager)
         .id("main-widget-\(navigationManager.currentView)")
     }
 
@@ -132,14 +108,14 @@ struct LockScreenMainWidgetContainerView: View {
     private func widgetView(for widgetType: LockScreenMainWidgetType) -> some View {
         let fadeTransition = AnyTransition.opacity.animation(.easeInOut(duration: 0.2))
 
-        let showMusic = musicManager.isPlaying || (settings.settings.lockScreenShowMusicWhenPaused && musicManager.title != nil && !(musicManager.title?.isEmpty ?? true))
-
         switch widgetType {
         case .music:
-            if showMusic {
+            LockScreenConditionalMusicView(
+                showWhenPaused: settings.settings.lockScreenShowMusicWhenPaused
+            ) {
                 musicNavigationHostView
-                    .transition(fadeTransition)
             }
+            .transition(fadeTransition)
         case .weather:
             LockScreenWeatherView()
                 .transition(fadeTransition)
@@ -219,59 +195,30 @@ struct LockScreenMainWidgetContainerView: View {
         }
     }
 
-    @ViewBuilder
-    private func measurementPreview(for widgetType: LockScreenMainWidgetType) -> some View {
-        switch widgetType {
-        case .music:
-            if musicManager.isPlaying || (settings.settings.lockScreenShowMusicWhenPaused && musicManager.title != nil && !(musicManager.title?.isEmpty ?? true)) {
-                switch navigationManager.currentView {
-                case .player:
-                    LockScreenView().measureSize()
-                case .queueAndPlaylists:
-                    QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
-                        .padding(LockScreenConfiguration.backgroundPadding)
-                        .measureSize()
-                case .playlistDetail(let playlist):
-                    PlaylistView(playlist: playlist, isLockScreenMode: true)
-                        .padding(LockScreenConfiguration.backgroundPadding)
-                        .measureSize()
-                case .devices:
-                    QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
-                        .padding(LockScreenConfiguration.backgroundPadding)
-                        .measureSize()
-                case .lyrics:
-                    LyricsView()
-                        .padding(LockScreenConfiguration.backgroundPadding)
-                        .measureSize()
-                case .loginPrompt:
-                    LoginPromptView(navigationStack: $dummyStack)
-                        .padding(LockScreenConfiguration.backgroundPadding)
-                        .measureSize()
-                }
-            } else {
-                EmptyView().measureSize()
-            }
-        case .weather:
-            LockScreenWeatherView().measureSize()
-        case .calendar:
-            LockScreenCalendarView().measureSize()
-        case .battery:
-            LockScreenBatteryMainView().measureSize()
-        case .focus:
-            LockScreenFocusMainView().measureSize()
-        case .timer:
-            LockScreenTimerMainView().measureSize()
-        case .notes:
-            LockScreenNotesMainView().measureSize()
-        case .clipboard:
-            LockScreenClipboardMainView().measureSize()
+}
+
+private struct LockScreenConditionalMusicView<Content: View>: View {
+    @EnvironmentObject private var musicManager: MusicManager
+
+    let showWhenPaused: Bool
+    let content: Content
+
+    init(showWhenPaused: Bool, @ViewBuilder content: () -> Content) {
+        self.showWhenPaused = showWhenPaused
+        self.content = content()
+    }
+
+    var body: some View {
+        let hasTrack = !(musicManager.title?.isEmpty ?? true)
+        if musicManager.isPlaying || (showWhenPaused && hasTrack) {
+            content
+                .transition(.opacity.animation(.easeInOut(duration: 0.2)))
         }
     }
 }
 
 // MARK: - Reusable Background
 struct LockScreenPaddedBackground<Content: View>: View {
-    @EnvironmentObject var settings: SettingsModel
     @Environment(\.lockScreenWidgetHeight) private var _lockScreenWidgetHeight: CGFloat?
     let content: Content
 
@@ -282,6 +229,7 @@ struct LockScreenPaddedBackground<Content: View>: View {
     var body: some View {
         content
             .padding(LockScreenConfiguration.backgroundPadding)
+            .measureSize()
             .frame(minHeight: _lockScreenWidgetHeight, alignment: .top)
             .background(backgroundMaterial)
     }
@@ -297,39 +245,45 @@ struct LockScreenPaddedBackground<Content: View>: View {
 
 // MARK: - Specific Widget Views
 struct LockScreenView: View {
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
     @State private var dummyNavigationStack: [NotchWidgetMode] = [.musicPlayer]
 
     var body: some View {
         LockScreenPaddedBackground {
             MusicPlayerView(navigationStack: $dummyNavigationStack, isLockScreenMode: true)
-                .environmentObject(musicManager)
-                .environmentObject(settings)
         }
     }
 }
 
 struct LockScreenWeatherView: View {
-    @EnvironmentObject var settings: SettingsModel
     @Environment(\.lockScreenWidgetHeight) private var _lockScreenWidgetHeight: CGFloat?
 
     var body: some View {
         WeatherPlayerView()
             .padding(LockScreenConfiguration.backgroundPadding)
+            .measureSize()
             .frame(minHeight: _lockScreenWidgetHeight, alignment: .top)
-            .background(LockScreenPaddedBackground { EmptyView() })
+            .background(
+                LockScreenWidgetSurface(
+                    shape: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous),
+                    cornerRadius: LockScreenConfiguration.cornerRadius
+                )
+            )
     }
 }
 
 struct LockScreenCalendarView: View {
-    @EnvironmentObject var settings: SettingsModel
     @Environment(\.lockScreenWidgetHeight) private var _lockScreenWidgetHeight: CGFloat?
 
     var body: some View {
         CalendarDetailView()
             .padding(LockScreenConfiguration.backgroundPadding)
+            .measureSize()
             .frame(minHeight: _lockScreenWidgetHeight, alignment: .top)
-            .background(LockScreenPaddedBackground { EmptyView() })
+            .background(
+                LockScreenWidgetSurface(
+                    shape: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous),
+                    cornerRadius: LockScreenConfiguration.cornerRadius
+                )
+            )
     }
 }

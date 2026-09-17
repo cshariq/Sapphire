@@ -13,6 +13,22 @@ import Carbon.HIToolbox
 class KeyboardShortcutManager {
     static let shared = KeyboardShortcutManager()
 
+    private struct ShortcutRegistrationSettings: Equatable {
+        var planes: [Plane]
+        var snapZoneShortcuts: [SnapZoneShortcut]
+        var disabledShortcutIDs: Set<String>
+
+        init(_ settings: Settings) {
+            planes = settings.planes
+            snapZoneShortcuts = settings.snapZoneShortcuts
+            disabledShortcutIDs = settings.disabledShortcutIDs
+        }
+
+        func isEnabled(_ identifier: String) -> Bool {
+            !disabledShortcutIDs.contains(identifier)
+        }
+    }
+
     private enum ShortcutAction {
         case plane(Plane)
         case snapZone(SnapZoneShortcut)
@@ -46,10 +62,12 @@ class KeyboardShortcutManager {
             }
         }
 
-        SettingsModel.shared.$settings
+        let initialSettings = ShortcutRegistrationSettings(SettingsModel.shared.settings)
+        SettingsModel.shared.changes(of: ShortcutRegistrationSettings.init)
+            .prepend(initialSettings)
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.installTap()
+            .sink { [weak self] settings in
+                self?.installTap(using: settings)
             }
             .store(in: &cancellables)
 
@@ -69,16 +87,19 @@ class KeyboardShortcutManager {
     }
 
     private func installTap() {
+        installTap(using: ShortcutRegistrationSettings(SettingsModel.shared.settings))
+    }
+
+    private func installTap(using settings: ShortcutRegistrationSettings) {
         guard !isAccessibilitySuspended, !isShortcutRecording else { return }
         removeTap()
 
-        let settings = SettingsModel.shared.settings
         let planesWithShortcuts = settings.planes.filter {
-            $0.shortcut != nil && settings.isShortcutEnabled(ShortcutIdentifier.plane($0.id))
+            $0.shortcut != nil && settings.isEnabled(ShortcutIdentifier.plane($0.id))
         }
         let snapZoneShortcuts = PremiumGate.hasAccess(.snapZonesKeyboardShortcuts)
             ? settings.snapZoneShortcuts.filter {
-                settings.isShortcutEnabled(ShortcutIdentifier.snapZone(layoutID: $0.layoutID, zoneID: $0.zoneID))
+                settings.isEnabled(ShortcutIdentifier.snapZone(layoutID: $0.layoutID, zoneID: $0.zoneID))
             }
             : []
 

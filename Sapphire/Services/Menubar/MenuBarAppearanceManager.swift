@@ -10,6 +10,40 @@ import Combine
 import SwiftUI
 import QuartzCore
 
+fileprivate struct MenuBarAppearanceSettings: Equatable {
+    let menuBarTintStyle: String
+    let menuBarSolidColor: CodableColor
+    let menuBarGradientColors: [CodableColor]
+    let menuBarGradientAngle: Double
+    let menuBarOpacity: Double
+    let menuBarBlur: Bool
+    let menuBarLiquidGlass: Bool
+    let menuBarLiquidGlassStyle: LiquidGlassMaterial
+    let menuBarBorderWidth: CGFloat
+    let menuBarBorderColor: CodableColor
+    let menuBarShadowEnabled: Bool
+    let menuBarShapeStyle: String
+    let menuBarCornerRadius: CGFloat
+    let menuBarVerticalPadding: CGFloat
+
+    init(_ settings: Settings) {
+        menuBarTintStyle = settings.menuBarTintStyle
+        menuBarSolidColor = settings.menuBarSolidColor
+        menuBarGradientColors = settings.menuBarGradientColors
+        menuBarGradientAngle = settings.menuBarGradientAngle
+        menuBarOpacity = settings.menuBarOpacity
+        menuBarBlur = settings.menuBarBlur
+        menuBarLiquidGlass = settings.menuBarLiquidGlass
+        menuBarLiquidGlassStyle = settings.menuBarLiquidGlassStyle
+        menuBarBorderWidth = settings.menuBarBorderWidth
+        menuBarBorderColor = settings.menuBarBorderColor
+        menuBarShadowEnabled = settings.menuBarShadowEnabled
+        menuBarShapeStyle = settings.menuBarShapeStyle
+        menuBarCornerRadius = settings.menuBarCornerRadius
+        menuBarVerticalPadding = settings.menuBarVerticalPadding
+    }
+}
+
 @MainActor
 final class MenuBarAppearanceManager {
     private struct RefreshCoalescer {
@@ -45,8 +79,7 @@ final class MenuBarAppearanceManager {
     }
 
     private func setupObservers() {
-        SettingsModel.shared.$settings
-            .dropFirst()
+        SettingsModel.shared.changes(of: MenuBarAppearanceSettings.init)
             .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.scheduleRefresh() }
             .store(in: &cancellables)
@@ -72,12 +105,12 @@ final class MenuBarAppearanceManager {
     }
 
     private func refreshAppearanceImmediately() {
-        self.applyAppearance(from: SettingsModel.shared.settings)
+        self.applyAppearance(from: MenuBarAppearanceSettings(SettingsModel.shared.settings))
     }
 
     // MARK: - Appearance Logic
 
-    private func applyAppearance(from settings: Settings) {
+    private func applyAppearance(from settings: MenuBarAppearanceSettings) {
         let isAnyEffectEnabled = settings.menuBarTintStyle != "none" || settings.menuBarBorderWidth > 0 || settings.menuBarShadowEnabled || settings.menuBarShapeStyle != "none" || settings.menuBarBlur || settings.menuBarLiquidGlass
 
         if isMissionControlActive { return }
@@ -120,7 +153,7 @@ final class MenuBarAppearanceManager {
         }
     }
 
-    private func createOrUpdatePanel(for type: PanelType, frame: CGRect, settings: Settings, existingPanel: MenuBarOverlayPanel?) -> MenuBarOverlayPanel {
+    private func createOrUpdatePanel(for type: PanelType, frame: CGRect, settings: MenuBarAppearanceSettings, existingPanel: MenuBarOverlayPanel?) -> MenuBarOverlayPanel {
         if let panel = existingPanel {
             panel.updateAppearance(with: settings, frame: frame, type: type, isMissionControlActive: isMissionControlActive)
             return panel
@@ -131,7 +164,7 @@ final class MenuBarAppearanceManager {
         }
     }
 
-    private func framesForSplitMode(on screen: NSScreen, settings: Settings) -> (CGRect, CGRect) {
+    private func framesForSplitMode(on screen: NSScreen, settings: MenuBarAppearanceSettings) -> (CGRect, CGRect) {
         let vPadding = settings.menuBarVerticalPadding
         let hPadding = vPadding > 0 ? max(vPadding, 6.0) : 0
         let totalMenuBarHeight = screen.frame.height - screen.visibleFrame.height
@@ -156,7 +189,7 @@ final class MenuBarAppearanceManager {
         return (leftFrame, rightFrame)
     }
 
-    private func frameForFullMode(on screen: NSScreen, settings: Settings) -> CGRect {
+    private func frameForFullMode(on screen: NSScreen, settings: MenuBarAppearanceSettings) -> CGRect {
         let vPadding = settings.menuBarVerticalPadding
         let hPadding = vPadding > 0 ? 8.0 : 0
         let totalMenuBarHeight = screen.frame.height - screen.visibleFrame.height
@@ -179,10 +212,10 @@ fileprivate class MenuBarOverlayPanel: NSPanel {
     private var panelType: MenuBarAppearanceManager.PanelType
 
     final class AppearanceModel: ObservableObject {
-        @Published var settings: Settings
+        @Published var settings: MenuBarAppearanceSettings
         @Published var panelType: MenuBarAppearanceManager.PanelType
         @Published var isMissionControlActive: Bool
-        init(settings: Settings, panelType: MenuBarAppearanceManager.PanelType, isMissionControlActive: Bool) {
+        init(settings: MenuBarAppearanceSettings, panelType: MenuBarAppearanceManager.PanelType, isMissionControlActive: Bool) {
             self.settings = settings
             self.panelType = panelType
             self.isMissionControlActive = isMissionControlActive
@@ -191,7 +224,7 @@ fileprivate class MenuBarOverlayPanel: NSPanel {
     private let appearanceModel: AppearanceModel
     private let hostingView: NSHostingView<MenuBarAppearanceView>
 
-    init(settings: Settings, frame: CGRect, type: MenuBarAppearanceManager.PanelType, isMissionControlActive: Bool) {
+    init(settings: MenuBarAppearanceSettings, frame: CGRect, type: MenuBarAppearanceManager.PanelType, isMissionControlActive: Bool) {
         self.panelType = type
         let model = AppearanceModel(settings: settings, panelType: type, isMissionControlActive: isMissionControlActive)
         self.appearanceModel = model
@@ -210,7 +243,7 @@ fileprivate class MenuBarOverlayPanel: NSPanel {
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func updateAppearance(with settings: Settings, frame: CGRect, type: MenuBarAppearanceManager.PanelType, isMissionControlActive: Bool) {
+    func updateAppearance(with settings: MenuBarAppearanceSettings, frame: CGRect, type: MenuBarAppearanceManager.PanelType, isMissionControlActive: Bool) {
         self.panelType = type
         let needsFrameChange = self.frame != frame
         if needsFrameChange {
@@ -326,7 +359,10 @@ fileprivate struct MenuBarAppearanceView: View {
                 material: model.settings.menuBarLiquidGlassStyle,
                 shape: shape,
                 blendingMode: .behindWindow,
-                appearance: .auto
+                appearance: .auto,
+                shapePathCacheKey: AnyHashable(
+                    "menu-bar-\(model.settings.menuBarShapeStyle)-\(model.settings.menuBarCornerRadius)"
+                )
             )
             if model.settings.menuBarBlur {
                 VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow)

@@ -100,13 +100,26 @@ class TimerManager: ObservableObject {
     @Published private(set) var sapphireTimers: [SapphireTimer] = []
     @Published private(set) var ringingTimers: [SapphireTimer] = []
     @Published var isRunning: Bool = false
-    @Published private(set) var displayTime: TimeInterval = 0
     @Published private(set) var activeTimer: ActiveTimerType = .none
 
     var ringingTimer: SapphireTimer? { ringingTimers.first }
     var hasRingingTimer: Bool { !ringingTimers.isEmpty }
+    var displayTime: TimeInterval {
+        guard let currentID = displayedTimerID else { return 0 }
+        switch activeTimer {
+        case .system:
+            if let sapphire = sapphireTimers.first(where: { $0.id == currentID }) {
+                return sapphire.remainingTime
+            }
+            return activeTimers.first(where: { $0.id == currentID })?.remainingTime ?? 0
+        case .stopwatch:
+            return activeStopwatches.first(where: { $0.id == currentID })?.elapsedTime ?? 0
+        case .none:
+            return 0
+        }
+    }
 
-    private var internalTimer: Timer?
+    private var completionTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     private var logStreamProcess: Process?
     private var pipe: Pipe?
@@ -143,7 +156,7 @@ class TimerManager: ObservableObject {
     deinit {
         plistSyncWorkItem?.cancel()
         stopSystemTimerMonitoring()
-        internalTimer?.invalidate()
+        completionTimer?.invalidate()
         alarmSound?.stop()
         alarmSound?.loops = false
     }
@@ -534,35 +547,7 @@ class TimerManager: ObservableObject {
         }
         self.displayedTimerID = newTimerID
         self.activeTimer = newTimerID != nil ? newActiveTimerType : .none
-        updateDisplayedTime()
-        stopInternalTimer()
-        if newTimerID != nil { startInternalTimer() }
-    }
-
-    @objc private func updateDisplayedTime() {
-        guard let currentID = displayedTimerID else {
-            if activeTimer != .none { activeTimer = .none; displayTime = 0 }
-            stopInternalTimer()
-            return
-        }
-        if activeTimer == .system {
-            if let sapphire = sapphireTimers.first(where: { $0.id == currentID }) {
-                self.displayTime = sapphire.remainingTime
-                checkSapphireTimerCompletion()
-                return
-            }
-            guard let timer = activeTimers.first(where: { $0.id == currentID }), timer.state == .system else {
-                selectTimerToDisplay()
-                return
-            }
-            self.displayTime = timer.remainingTime
-        } else if activeTimer == .stopwatch {
-            guard let stopwatch = activeStopwatches.first(where: { $0.id == currentID }), stopwatch.state == .stopwatch else {
-                selectTimerToDisplay()
-                return
-            }
-            self.displayTime = stopwatch.elapsedTime
-        }
+        scheduleNextCompletionTimer()
     }
 
     // MARK: - Sapphire Timer Completion
@@ -660,20 +645,32 @@ class TimerManager: ObservableObject {
         center.removeDeliveredNotifications(withIdentifiers: [identifier])
     }
 
-    private func startInternalTimer() {
-        guard internalTimer == nil || !(internalTimer!.isValid) else { return }
-        let interval: TimeInterval = activeTimer == .stopwatch ? 0.25 : 1.0
-        internalTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            self?.updateDisplayedTime()
-        }
-        if let internalTimer {
-            RunLoop.main.add(internalTimer, forMode: .common)
-        }
-    }
+    private func scheduleNextCompletionTimer() {
+        completionTimer?.invalidate()
+        completionTimer = nil
 
-    private func stopInternalTimer() {
-        internalTimer?.invalidate()
-        internalTimer = nil
+        guard let fireDate = sapphireTimers.lazy
+            .filter({ $0.isRunning })
+            .compactMap(\.fireDate)
+            .min()
+        else { return }
+
+        let interval = fireDate.timeIntervalSinceNow
+        guard interval > 0 else {
+            checkSapphireTimerCompletion()
+            return
+        }
+
+        completionTimer = Timer.scheduledCoalescing(
+            withTimeInterval: interval,
+            repeats: false,
+            toleranceFraction: min(0.1, 0.25 / interval)
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.completionTimer = nil
+            self.checkSapphireTimerCompletion()
+            self.scheduleNextCompletionTimer()
+        }
     }
 
     private func extractID(from message: String, after keyword: String) -> String? {

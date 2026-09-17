@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct LockScreenWidgetBackground<Content: View>: View {
-    @EnvironmentObject var settings: SettingsModel
+    @Environment(\.lockScreenMiniWidgetHeight) private var equalizedHeight: CGFloat?
 
     let content: Content
 
@@ -19,6 +19,8 @@ struct LockScreenWidgetBackground<Content: View>: View {
     var body: some View {
         content
             .padding(LockScreenConfiguration.backgroundPadding)
+            .measureSize()
+            .frame(minHeight: equalizedHeight, alignment: .top)
             .background(backgroundMaterial)
     }
 
@@ -33,13 +35,6 @@ struct LockScreenWidgetBackground<Content: View>: View {
 
 struct LockScreenMiniWidgetView: View {
     @EnvironmentObject var settings: SettingsModel
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var calendarService: CalendarService
-    @EnvironmentObject var musicWidget: MusicManager
-    @EnvironmentObject var batteryMonitor: BatteryMonitor
-    @EnvironmentObject var bluetoothManager: BluetoothManager
-    @EnvironmentObject var focusModeManager: FocusModeManager
-    @EnvironmentObject var timerManager: TimerManager
 
     @StateObject private var batteryStatusManager = BatteryStatusManager.shared
 
@@ -50,7 +45,7 @@ struct LockScreenMiniWidgetView: View {
 
     private var animationToken: String {
         let widgets = settings.settings.lockScreenMiniWidgets.map(\.rawValue).joined(separator: ",")
-        return "\(musicWidget.isPlaying)-\(widgets)-\(Int(maxMiniWidgetHeight))-\(timerManager.isRunning)"
+        return "\(widgets)-\(Int(maxMiniWidgetHeight))"
     }
 
     var body: some View {
@@ -64,207 +59,116 @@ struct LockScreenMiniWidgetView: View {
                         WeatherWidgetView()
                             .environment(\.navigationStack, $dummyNavigationStack)
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .calendar:
                     LockScreenWidgetBackground {
                         CalendarWidgetView(viewModel: calendarViewModel)
-                            .environmentObject(calendarService)
                             .environment(\.navigationStack, $dummyNavigationStack)
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .music:
-                    if musicWidget.isPlaying {
-                        LockScreenWidgetBackground {
-                            MusicWidgetView(onExpand: {
-                                LockScreenMusicPaneController.shared.open()
-                            })
-                                .environmentObject(musicManager)
-                                .environmentObject(settings)
-                                .environment(\.navigationStack, $dummyNavigationStack)
-                        }
-                        .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                    LockScreenMusicMiniSlot()
+                        .environment(\.navigationStack, $dummyNavigationStack)
                         .transition(fadeTransition)
-                    }
                 case .battery:
                     LockScreenWidgetBackground {
                         BatteryMiniWidget()
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .focus:
                     LockScreenWidgetBackground {
                         LockScreenFocusMiniWidget()
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .caffeine:
                     LockScreenWidgetBackground {
                         LockScreenCaffeineMiniWidget()
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .timer:
-                    if timerManager.isRunning || !settings.settings.lockScreenHideInactiveInfoWidgets {
-                        LockScreenWidgetBackground {
-                            LockScreenTimerMiniWidget()
-                        }
-                        .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
+                    LockScreenTimerMiniSlot()
                         .transition(fadeTransition)
-                    }
 
                 case .bluetooth:
                     LockScreenWidgetBackground {
                         LockScreenBluetoothMiniWidget()
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .clipboard:
                     LockScreenWidgetBackground {
                         ClipboardWidgetView()
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .notes:
                     LockScreenWidgetBackground {
                         NotesWidgetView()
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .system:
                     LockScreenWidgetBackground {
                         LockScreenSystemMiniWidget()
                     }
-                    .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                     .transition(fadeTransition)
 
                 case .none:
                     EmptyView()
-                        .frame(minHeight: maxMiniWidgetHeight, alignment: .top)
                 }
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: animationToken)
         .fixedSize(horizontal: true, vertical: false)
-        .background(
-            VStack(spacing: 0) {
-                ForEach(settings.settings.lockScreenMiniWidgets, id: \.self) { widgetType in
-                    measurementPreview(for: widgetType)
-                }
+        .onPreferenceChange(SizePreferenceKey.self) { sizes in
+            let maxHeight = sizes.map(\.height).max() ?? 0
+            if maxMiniWidgetHeight != maxHeight {
+                maxMiniWidgetHeight = maxHeight
             }
-            .onPreferenceChange(SizePreferenceKey.self) { sizes in
-                let maxH = sizes.map { $0.height }.max() ?? 0
-                if maxMiniWidgetHeight != maxH {
-                    maxMiniWidgetHeight = maxH
-                    print("[Layout Debug - Mini] ---> UPDATING maxMiniWidgetHeight to \(Int(maxH))")
-                }
-            }
-            .opacity(0)
-            .allowsHitTesting(false)
-        )
-        .environmentObject(musicManager)
-        .environmentObject(calendarService)
-        .environmentObject(settings)
-        .environmentObject(batteryMonitor)
-        .environmentObject(bluetoothManager)
+        }
+        .environment(\.lockScreenMiniWidgetHeight, maxMiniWidgetHeight > 0 ? maxMiniWidgetHeight : nil)
         .environmentObject(batteryStatusManager)
-        .environmentObject(focusModeManager)
-        .environmentObject(timerManager)
     }
 
-    @ViewBuilder
-    private func measurementPreview(for widgetType: LockScreenMiniWidgetType) -> some View {
-        switch widgetType {
-        case .weather:
-            LockScreenWidgetBackground {
-                WeatherWidgetView()
-                    .environment(\.navigationStack, $dummyNavigationStack)
-            }
-            .measureSize()
+}
 
-        case .calendar:
-            LockScreenWidgetBackground {
-                CalendarWidgetView(viewModel: calendarViewModel)
-                    .environmentObject(calendarService)
-                    .environment(\.navigationStack, $dummyNavigationStack)
-            }
-            .measureSize()
+private struct LockScreenMusicMiniSlot: View {
+    @EnvironmentObject private var musicManager: MusicManager
 
-        case .music:
-            if musicWidget.isPlaying {
+    var body: some View {
+        Group {
+            if musicManager.isPlaying {
                 LockScreenWidgetBackground {
                     MusicWidgetView(onExpand: {
                         LockScreenMusicPaneController.shared.open()
                     })
-                        .environmentObject(musicManager)
-                        .environmentObject(settings)
-                        .environment(\.navigationStack, $dummyNavigationStack)
                 }
-                .measureSize()
-            } else {
-                EmptyView().measureSize()
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
-
-        case .battery:
-            LockScreenWidgetBackground {
-                BatteryMiniWidget()
-            }
-            .measureSize()
-
-        case .focus:
-            LockScreenWidgetBackground {
-                LockScreenFocusMiniWidget()
-            }
-            .measureSize()
-
-        case .caffeine:
-            LockScreenWidgetBackground {
-                LockScreenCaffeineMiniWidget()
-            }
-            .measureSize()
-
-        case .timer:
-            LockScreenWidgetBackground {
-                LockScreenTimerMiniWidget()
-            }
-            .measureSize()
-
-        case .bluetooth:
-            LockScreenWidgetBackground {
-                LockScreenBluetoothMiniWidget()
-            }
-            .measureSize()
-
-        case .clipboard:
-            LockScreenWidgetBackground {
-                ClipboardWidgetView()
-            }
-            .measureSize()
-
-        case .notes:
-            LockScreenWidgetBackground {
-                NotesWidgetView()
-            }
-            .measureSize()
-
-        case .system:
-            LockScreenWidgetBackground {
-                LockScreenSystemMiniWidget()
-            }
-            .measureSize()
-
-        case .none:
-            EmptyView().measureSize()
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: musicManager.isPlaying)
+    }
+}
+
+private struct LockScreenTimerMiniSlot: View {
+    @EnvironmentObject private var settings: SettingsModel
+    @EnvironmentObject private var timerManager: TimerManager
+
+    var body: some View {
+        Group {
+            if timerManager.isRunning || !settings.settings.lockScreenHideInactiveInfoWidgets {
+                LockScreenWidgetBackground {
+                    LockScreenTimerMiniWidget()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: timerManager.isRunning)
     }
 }
 

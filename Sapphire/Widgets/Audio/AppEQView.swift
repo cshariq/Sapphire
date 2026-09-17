@@ -51,13 +51,6 @@ struct AppEQView: View {
         )
     }
 
-    private var appVolumeBinding: Binding<Double> {
-        Binding(
-            get: { perAppCtrl.volume(for: bundleID) },
-            set: { perAppCtrl.setVolume($0, for: bundleID) }
-        )
-    }
-
     private var allDevices: [AudioDevice] {
         let merged = audioManager.availableOutputDevices + audioManager.availableInputDevices
         var seen = Set<String>()
@@ -89,11 +82,9 @@ struct AppEQView: View {
             .padding(.top, 0)
             .padding(.bottom, 12)
 
-            ModernGlassSlider(
-                label: "App Volume",
-                value: appVolumeBinding,
-                range: 0...1.0,
-                formatDisplay: { "\(Int($0 * 100))%" }
+            AppEQVolumeControl(
+                initialVolume: perAppCtrl.volume(for: bundleID),
+                onChange: { perAppCtrl.setVolume($0, for: bundleID) }
             )
             .padding(.horizontal, 24)
             .padding(.bottom, 12)
@@ -134,6 +125,7 @@ struct AppEQView: View {
                     gains: customEQGainsBinding,
                     range: AudioEQ.gainRange
                 )
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: customEQGainsBinding.wrappedValue)
                 .frame(height: 128)
 
                 EQFrequencyAxis(frequencies: bandLayout.frequencies)
@@ -146,8 +138,29 @@ struct AppEQView: View {
             Spacer(minLength: 0)
         }
         .frame(width: 600, height: 470)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: customEQGainsBinding.wrappedValue)
         .animation(.spring(response: 0.25, dampingFraction: 0.85), value: selectedUIDs?.sorted() ?? ["all"])
+    }
+}
+
+fileprivate struct AppEQVolumeControl: View {
+    let onChange: (Double) -> Void
+    @State private var volume: Double
+
+    init(initialVolume: Double, onChange: @escaping (Double) -> Void) {
+        self.onChange = onChange
+        _volume = State(initialValue: initialVolume)
+    }
+
+    var body: some View {
+        ModernGlassSlider(
+            label: "App Volume",
+            value: $volume,
+            range: 0...1.0,
+            formatDisplay: { "\(Int($0 * 100))%" }
+        )
+        .onChange(of: volume) { _, newValue in
+            onChange(newValue)
+        }
     }
 }
 
@@ -213,7 +226,6 @@ fileprivate final class PerAppVolumeStoreForEQ: ObservableObject {
     }
 
     func setVolume(_ vol: Double, for bundleID: String) {
-        objectWillChange.send()
         PerAppAudioController.shared.setVolume(vol, for: bundleID)
     }
 

@@ -322,10 +322,12 @@ public class StatsManager: ObservableObject {
     private let settingsModel = SettingsModel.shared
 
     private init() {
-        self.settingsCancellable = settingsModel.$settings
+        let initialRequiredStats = Self.requiredStats(from: settingsModel.settings)
+        self.settingsCancellable = settingsModel.changes(of: Self.requiredStats(from:))
+            .prepend(initialRequiredStats)
             .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updatePollingBasedOnSettings()
+            .sink { [weak self] requiredStats in
+                self?.setPolling(for: "LiveActivitySettings", requiredStats: requiredStats)
             }
 
         let workspace = NSWorkspace.shared.notificationCenter
@@ -350,8 +352,7 @@ public class StatsManager: ObservableObject {
         }
     }
 
-    private func updatePollingBasedOnSettings() {
-        let settings = self.settingsModel.settings
+    private static func requiredStats(from settings: Settings) -> Set<StatType> {
         var requiredStats: Set<StatType> = []
 
         if settings.statsLiveActivityEnabled {
@@ -366,7 +367,7 @@ public class StatsManager: ObservableObject {
             }
         }
 
-        self.setPolling(for: "LiveActivitySettings", requiredStats: requiredStats)
+        return requiredStats
     }
 
     private var pollingIntervals: [String: DispatchTimeInterval] = [:]

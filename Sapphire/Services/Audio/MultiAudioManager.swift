@@ -166,6 +166,7 @@ class MultiAudioManager: ObservableObject {
     private var processPIDByObjectID: [AudioObjectID: pid_t] = [:]
     private var processBundleIDByObjectID: [AudioObjectID: String] = [:]
     private var reconcileTask: Task<Void, Never>?
+    private var settingsPersistenceTask: Task<Void, Never>?
     private var latestActiveBundleIDs: Set<String> = []
     private var lastAudioActivityByBundleID: [String: Date] = [:]
     private let recentAudioPriorityWindow: TimeInterval = 180
@@ -275,12 +276,16 @@ class MultiAudioManager: ObservableObject {
         clamped.bassBoost = min(max(clamped.bassBoost, 0.0), 12.0)
         clamped.intensity = min(max(clamped.intensity, 0.0), 1.0)
         clamped.centerFocus = min(max(clamped.centerFocus, 0.0), 1.0)
+        let previous = eightDAudioSettingsByBundleID[bundleID] ?? EightDAudioSettings()
+        guard previous != clamped else { return }
         eightDAudioSettingsByBundleID[bundleID] = clamped
-        persistEightDAudioSettings()
+        scheduleSettingsPersistence()
 
         activeTaps[bundleID]?.values.forEach { $0.updateEightDAudio(settings: clamped) }
-        objectWillChange.send()
-        reconcileRunningApps()
+        if previous.enabled != clamped.enabled {
+            objectWillChange.send()
+            reconcileRunningApps()
+        }
     }
 
     func surroundAudioSettings(for bundleID: String) -> SurroundAudioSettings {
@@ -296,12 +301,16 @@ class MultiAudioManager: ObservableObject {
         clamped.ambience = min(max(clamped.ambience, 0.0), 1.0)
         clamped.depth = min(max(clamped.depth, 0.0), 1.0)
         clamped.centerFocus = min(max(clamped.centerFocus, 0.0), 1.0)
+        let previous = surroundAudioSettingsByBundleID[bundleID] ?? SurroundAudioSettings()
+        guard previous != clamped else { return }
         surroundAudioSettingsByBundleID[bundleID] = clamped
-        persistSurroundAudioSettings()
+        scheduleSettingsPersistence()
 
         activeTaps[bundleID]?.values.forEach { $0.updateSurroundAudio(settings: clamped) }
-        objectWillChange.send()
-        reconcileRunningApps()
+        if previous.enabled != clamped.enabled {
+            objectWillChange.send()
+            reconcileRunningApps()
+        }
     }
 
     func resetEightDAudio(for bundleID: String) {
@@ -334,10 +343,12 @@ class MultiAudioManager: ObservableObject {
     }
 
     func updateSettings(for deviceID: AudioDeviceID, settings: AudioDeviceSettings) {
+        let previous = deviceSettings[deviceID] ?? AudioDeviceSettings()
+        guard previous != settings else { return }
         self.deviceSettings[deviceID] = settings
         guard let uid = CoreAudioDevices.uid(of: deviceID) else { return }
         settingsByUID[uid] = settings
-        persistDeviceSettingsArchive()
+        scheduleSettingsPersistence()
 
         for tapMap in activeTaps.values {
             for tap in tapMap.values where tap.targetDeviceUID == uid {
@@ -345,7 +356,9 @@ class MultiAudioManager: ObservableObject {
                 tap.updateDeviceEQ(gains: settings.customEQGains, bassGain: settings.bassGain)
             }
         }
-        reconcileRunningApps()
+        if Self.requiresProcessing(previous) != Self.requiresProcessing(settings) {
+            reconcileRunningApps()
+        }
     }
 
     func clearAllDeviceSettings() {
@@ -776,6 +789,26 @@ class MultiAudioManager: ObservableObject {
             .filter { selectedOutputDeviceIDs.contains($0.id) }
             .map(\.uid)
         UserDefaults.standard.set(uids, forKey: selectedOutputUIDsDefaultsKey)
+    }
+
+    private func scheduleSettingsPersistence() {
+        settingsPersistenceTask?.cancel()
+        settingsPersistenceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            self.settingsPersistenceTask = nil
+            self.persistDeviceSettingsArchive()
+            self.persistEightDAudioSettings()
+            self.persistSurroundAudioSettings()
+        }
+    }
+
+    private static func requiresProcessing(_ settings: AudioDeviceSettings) -> Bool {
+        settings.volume != 1.0 ||
+            settings.balance != 0.5 ||
+            settings.delay > 0.0 ||
+            settings.bassGain != 0.0 ||
+            !settings.customEQGains.allSatisfy { $0 == 0.0 }
     }
 
     private func rebuildLiveDeviceSettingsFromArchive() {

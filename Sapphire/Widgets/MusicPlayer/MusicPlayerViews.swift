@@ -150,8 +150,8 @@ struct MusicPlayerView: View {
         return settings.settings.musicPlayerButtonOrder.filter { type in
             switch type {
             case .like: return isSpotifyOrAppleMusic && settings.settings.musicLikeButtonEnabled
-            case .shuffle: return isSpotifyOrAppleMusic && (settings.settings.musicShuffleButtonEnabled ?? true)
-            case .repeat: return isSpotifyOrAppleMusic && (settings.settings.musicRepeatButtonEnabled ?? true)
+            case .shuffle: return isSpotifyOrAppleMusic && settings.settings.musicShuffleButtonEnabled
+            case .repeat: return isSpotifyOrAppleMusic && settings.settings.musicRepeatButtonEnabled
             case .playlists: return settings.settings.musicPlaylistsButtonEnabled
             case .devices: return settings.settings.musicDevicesButtonEnabled
             }
@@ -1379,7 +1379,6 @@ struct WaveformView: View {
             }
         }
         .frame(width: 18, height: 22)
-        .drawingGroup()
         .transition(.opacity)
     }
 

@@ -6,6 +6,56 @@
 
 import Foundation
 
+final class CrossfadeCompletionSignal: @unchecked Sendable {
+    private struct State {
+        var isSignaled = false
+        var waiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    func reset() {
+        let continuations = state.withLock { state in
+            state.isSignaled = false
+            let continuations = Array(state.waiters.values)
+            state.waiters.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume(returning: false) }
+    }
+
+    func signal() {
+        let continuations = state.withLock { state in
+            guard !state.isSignaled else { return [CheckedContinuation<Bool, Never>]() }
+            state.isSignaled = true
+            let continuations = Array(state.waiters.values)
+            state.waiters.removeAll()
+            return continuations
+        }
+        continuations.forEach { $0.resume(returning: true) }
+    }
+
+    func wait() async -> Bool {
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let immediateResult = state.withLock { state -> Bool? in
+                    if state.isSignaled { return true }
+                    if Task.isCancelled { return false }
+                    state.waiters[id] = continuation
+                    return nil
+                }
+                if let immediateResult {
+                    continuation.resume(returning: immediateResult)
+                }
+            }
+        } onCancel: {
+            let continuation = state.withLock { $0.waiters.removeValue(forKey: id) }
+            continuation?.resume(returning: false)
+        }
+    }
+}
+
 enum CrossfadePhase: Int, Equatable {
     case idle = 0
     case warmingUp = 1

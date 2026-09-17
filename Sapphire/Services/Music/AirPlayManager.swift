@@ -111,6 +111,10 @@ final class AirPlayManager: NSObject, ObservableObject {
     private var airPlayServices: [String: NetService] = [:]
     private var raopServices: [String: NetService] = [:]
     private var isBrowsing = false
+    private var defaultOutputListener: AudioObjectPropertyListenerBlock?
+    private var volumeListener: AudioObjectPropertyListenerBlock?
+    private var volumeListenerDeviceID: AudioDeviceID?
+    private var volumeListenerAddress: AudioObjectPropertyAddress?
 
     override private init() {
         super.init()
@@ -125,6 +129,7 @@ final class AirPlayManager: NSObject, ObservableObject {
         isBrowsing = true
         airPlayBrowser.searchForServices(ofType: "_airplay._tcp.", inDomain: "local.")
         raopBrowser.searchForServices(ofType: "_raop._tcp.", inDomain: "local.")
+        installCoreAudioObservers()
     }
 
     func stopDiscovery() {
@@ -134,11 +139,85 @@ final class AirPlayManager: NSObject, ObservableObject {
         raopBrowser.stop()
         airPlayServices.removeAll()
         raopServices.removeAll()
+        removeCoreAudioObservers()
         rebuildDevices()
     }
 
     func refresh() {
         rebuildDevices()
+    }
+
+    private func installCoreAudioObservers() {
+        guard defaultOutputListener == nil else { return }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.installVolumeObserver()
+                self?.rebuildDevices()
+            }
+        }
+        if AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            .main,
+            listener
+        ) == noErr {
+            defaultOutputListener = listener
+        }
+        installVolumeObserver()
+    }
+
+    private func installVolumeObserver() {
+        removeVolumeObserver()
+        guard let deviceID = Self.defaultOutputDeviceID() else { return }
+
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        if !AudioObjectHasProperty(deviceID, &address) {
+            address.mElement = 1
+        }
+        guard AudioObjectHasProperty(deviceID, &address) else { return }
+
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.rebuildDevices() }
+        }
+        guard AudioObjectAddPropertyListenerBlock(deviceID, &address, .main, listener) == noErr else { return }
+        volumeListener = listener
+        volumeListenerDeviceID = deviceID
+        volumeListenerAddress = address
+    }
+
+    private func removeCoreAudioObservers() {
+        removeVolumeObserver()
+        guard let defaultOutputListener else { return }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            .main,
+            defaultOutputListener
+        )
+        self.defaultOutputListener = nil
+    }
+
+    private func removeVolumeObserver() {
+        guard let volumeListener, let deviceID = volumeListenerDeviceID,
+              var address = volumeListenerAddress else { return }
+        AudioObjectRemovePropertyListenerBlock(deviceID, &address, .main, volumeListener)
+        self.volumeListener = nil
+        volumeListenerDeviceID = nil
+        volumeListenerAddress = nil
     }
 
     // MARK: - Switching (Control Center UI scripting)
@@ -226,6 +305,11 @@ final class AirPlayManager: NSObject, ObservableObject {
     // MARK: - Core Audio Helpers
 
     private static func defaultOutputDeviceName() -> String? {
+        guard let deviceID = defaultOutputDeviceID() else { return nil }
+        return CoreAudioDevices.name(of: deviceID)
+    }
+
+    private static func defaultOutputDeviceID() -> AudioDeviceID? {
         var deviceID = kAudioObjectUnknown
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
         var address = AudioObjectPropertyAddress(
@@ -235,8 +319,7 @@ final class AirPlayManager: NSObject, ObservableObject {
         )
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID) == noErr,
               deviceID != kAudioObjectUnknown else { return nil }
-
-        return CoreAudioDevices.name(of: deviceID)
+        return deviceID
     }
 
     private static func outputDeviceID(named name: String) -> AudioDeviceID? {

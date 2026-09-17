@@ -62,42 +62,62 @@ private struct FocusSessionActivitySideView: View {
 
     @ViewBuilder
     private var rightContent: some View {
-        if showsTimeInsteadOfRing {
-            timeContent
-        } else {
-            ringContent
-        }
-    }
-
-    private var ringContent: some View {
-        ProgressRingView(
-            progress: max(0.001, focusManager.progress),
-            lineWidth: 2.5,
-            trackLineWidth: 5,
-            track: AnyShapeStyle(Color.white.opacity(0.22)),
-            active: AngularGradient(colors: ringColors, center: .center),
-            clampsProgress: false
+        FocusSessionActivityClockView(
+            focusManager: focusManager,
+            showsTimeInsteadOfRing: showsTimeInsteadOfRing,
+            ringColors: ringColors,
+            mode: mode,
+            displayMode: settings.focusDisplayMode
         )
-        .animation(.linear(duration: 0.5), value: focusManager.progress)
-        .frame(width: 18, height: 18)
+    }
+}
+
+@MainActor
+private struct FocusSessionActivityClockView: View {
+    let focusManager: FocusSessionManager
+    let showsTimeInsteadOfRing: Bool
+    let ringColors: [Color]
+    let mode: FocusStatus
+    let displayMode: FocusDisplayMode
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            content(at: context.date)
+        }
     }
 
-    private var timeContent: some View {
-        VStack(alignment: .trailing, spacing: 0) {
-            Text(focusManager.remainingLabel)
-                .font(.system(size: 13, design: .monospaced).weight(.semibold))
-                .contentTransition(.numericText(countsDown: true))
-                .animation(.default, value: focusManager.remainingSeconds)
-            Text(subLabel)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(subLabelColor)
+    @ViewBuilder
+    private func content(at date: Date) -> some View {
+        let remaining = focusManager.remaining(at: date)
+        if showsTimeInsteadOfRing {
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(FocusSessionManager.format(remaining))
+                    .font(.system(size: 13, design: .monospaced).weight(.semibold))
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(.default, value: remaining)
+                Text(subLabel)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(subLabelColor)
+            }
+            .padding(.horizontal, 5)
+        } else {
+            let progress = max(0.001, focusManager.progress(at: date))
+            ProgressRingView(
+                progress: progress,
+                lineWidth: 2.5,
+                trackLineWidth: 5,
+                track: AnyShapeStyle(Color.white.opacity(0.22)),
+                active: AngularGradient(colors: ringColors, center: .center),
+                clampsProgress: false
+            )
+            .animation(.linear(duration: 0.5), value: progress)
+            .frame(width: 18, height: 18)
         }
-        .padding(.horizontal, 5)
     }
 
     private var subLabel: String {
         if mode.isActive {
-            if SettingsModel.shared.settings.focusDisplayMode == .compact { return "On" }
+            if displayMode == .compact { return "On" }
             return mode.name
         }
         return focusManager.isFocusBlock ? "Focus" : "Break"

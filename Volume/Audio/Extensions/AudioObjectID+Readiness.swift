@@ -5,7 +5,7 @@
 //  Created by Shariq Charolia on 2026-08-21
 
 import AudioToolbox
-import CoreFoundation
+import Dispatch
 
 // MARK: - Device Readiness
 
@@ -22,16 +22,27 @@ extension AudioObjectID {
         return status == noErr && isAlive != 0
     }
 
-    func waitUntilReady(timeout: TimeInterval = 1.0, pollInterval: TimeInterval = 0.01) -> Bool {
-        let deadline = CFAbsoluteTimeGetCurrent() + timeout
+    func waitUntilReady(timeout: TimeInterval = 1.0) -> Bool {
+        guard !isDeviceAlive() else { return true }
 
-        while CFAbsoluteTimeGetCurrent() < deadline {
-            if isDeviceAlive() {
-                return true
-            }
-            CFRunLoopRunInMode(.defaultMode, pollInterval, false)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsAlive,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let signal = DispatchSemaphore(value: 0)
+        let listenerQueue = DispatchQueue(label: "com.sapphire.audio-device-readiness")
+        let listener: AudioObjectPropertyListenerBlock = { _, _ in signal.signal() }
+
+        guard AudioObjectAddPropertyListenerBlock(self, &address, listenerQueue, listener) == noErr else {
+            return isDeviceAlive()
+        }
+        defer {
+            AudioObjectRemovePropertyListenerBlock(self, &address, listenerQueue, listener)
         }
 
-        return false
+        guard !isDeviceAlive() else { return true }
+        _ = signal.wait(timeout: .now() + timeout)
+        return isDeviceAlive()
     }
 }

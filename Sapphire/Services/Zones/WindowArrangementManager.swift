@@ -90,16 +90,93 @@ class WindowArrangementManager {
     }
 
     private func waitForWindow(for app: NSRunningApplication, timeout: TimeInterval) async -> Bool {
+        let appElement = AX.application(pid: app.processIdentifier)
+        if !AX.elements(kAXWindowsAttribute as String, of: appElement).isEmpty {
+            try? await Task.sleep(for: .milliseconds(150))
+            return true
+        }
+
+        let waiter = WindowCreatedWaiter(applicationElement: appElement, pid: app.processIdentifier)
+        let didCreateWindow: Bool
+        if let eventResult = await waiter.wait(timeout: timeout) {
+            didCreateWindow = eventResult
+        } else {
+            didCreateWindow = await waitForWindowByPolling(appElement, timeout: timeout)
+        }
+        guard didCreateWindow else { return false }
+        try? await Task.sleep(for: .milliseconds(150))
+        return !Task.isCancelled
+    }
+
+    private func waitForWindowByPolling(_ appElement: AXUIElement, timeout: TimeInterval) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let appElement = AX.application(pid: app.processIdentifier)
+        while Date() < deadline, !Task.isCancelled {
             if !AX.elements(kAXWindowsAttribute as String, of: appElement).isEmpty {
-                try? await Task.sleep(for: .milliseconds(150))
                 return true
             }
-
             try? await Task.sleep(for: .milliseconds(200))
         }
         return false
+    }
+}
+
+@MainActor
+private final class WindowCreatedWaiter {
+    private let applicationElement: AXUIElement
+    private let pid: pid_t
+    private var observer: AXObserverHandle?
+    private var timeoutWorkItem: DispatchWorkItem?
+    private var continuation: CheckedContinuation<Bool?, Never>?
+
+    init(applicationElement: AXUIElement, pid: pid_t) {
+        self.applicationElement = applicationElement
+        self.pid = pid
+    }
+
+    func wait(timeout: TimeInterval) async -> Bool? {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+
+            guard let observer = AXObserverHandle(pid: pid, handler: { [weak self] _, notification in
+                guard notification == kAXWindowCreatedNotification as String else { return }
+                MainActor.assumeIsolated {
+                    self?.finish(windowCreated: true)
+                }
+            }),
+                  observer.observe(kAXWindowCreatedNotification as String, on: applicationElement) else {
+                finish(windowCreated: nil)
+                return
+            }
+
+            observer.attach()
+            self.observer = observer
+
+            let timeoutWorkItem = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let hasWindow = !AX.elements(
+                        kAXWindowsAttribute as String,
+                        of: self.applicationElement
+                    ).isEmpty
+                    self.finish(windowCreated: hasWindow)
+                }
+            }
+            self.timeoutWorkItem = timeoutWorkItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
+
+            if !AX.elements(kAXWindowsAttribute as String, of: applicationElement).isEmpty {
+                finish(windowCreated: true)
+            }
+        }
+    }
+
+    private func finish(windowCreated: Bool?) {
+        guard let continuation else { return }
+        self.continuation = nil
+        timeoutWorkItem?.cancel()
+        timeoutWorkItem = nil
+        observer?.detach()
+        observer = nil
+        continuation.resume(returning: windowCreated)
     }
 }

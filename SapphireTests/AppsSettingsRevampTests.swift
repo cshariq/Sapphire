@@ -360,7 +360,6 @@ final class AppsSettingsRevampTests: XCTestCase {
             url: applicationURL,
             size: 0,
             isSystem: false,
-            icon: NSImage(size: NSSize(width: 1, height: 1)),
             resourceIdentifier: AppUninstaller.currentResourceIdentifier(at: applicationURL),
             version: "1"
         )
@@ -409,7 +408,6 @@ final class AppsSettingsRevampTests: XCTestCase {
             url: appURL,
             size: 0,
             isSystem: false,
-            icon: NSImage(size: NSSize(width: 1, height: 1)),
             resourceIdentifier: AppUninstaller.currentResourceIdentifier(at: appURL),
             version: "1"
         )

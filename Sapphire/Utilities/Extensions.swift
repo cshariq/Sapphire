@@ -308,11 +308,17 @@ class ContentPickerHelper: NSObject, ObservableObject, SCContentSharingPickerObs
 }
 
 extension View {
-    func periodicTask(every interval: Duration, perform action: @escaping @MainActor () -> Void) -> some View {
+    func periodicTask(
+        every interval: Duration,
+        perform action: @escaping @MainActor () -> Void
+    ) -> some View {
         task {
             while !Task.isCancelled {
-                try? await Task.sleep(for: interval)
-                guard !Task.isCancelled else { return }
+                do {
+                    try await Task.sleep(for: interval)
+                } catch {
+                    return
+                }
                 action()
             }
         }

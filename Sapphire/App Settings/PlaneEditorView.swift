@@ -75,7 +75,7 @@ struct PlaneEditorView: View {
 
             if let layout = selectedLayout {
                 ScrollView {
-                    VStack(spacing: 10) {
+                    LazyVStack(spacing: 10) {
                         ForEach(Array(layout.zones.enumerated()), id: \.element.id) { index, zone in
                             HStack {
                                 Text("Zone \(index + 1)")

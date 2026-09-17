@@ -62,7 +62,7 @@ class BatteryHistoryViewModel: ObservableObject {
 
     init() {}
 
-    func fetchHistory() {
+    func fetchHistory(filtering range: TimeRange? = nil) {
         fetchGeneration &+= 1
         let generation = fetchGeneration
         isLoading = true
@@ -72,6 +72,9 @@ class BatteryHistoryViewModel: ObservableObject {
             await MainActor.run {
                 guard generation == self.fetchGeneration else { return }
                 self.allLogEntries = logs
+                if let range {
+                    self.filterData(for: range)
+                }
                 self.isLoading = false
             }
         }

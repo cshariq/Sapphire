@@ -38,10 +38,9 @@ struct TimerDetailView: View {
         }
         .padding()
         .frame(minWidth: 350)
-        .animation(.default, value: timerManager.activeTimers)
-        .animation(.default, value: timerManager.activeStopwatches)
-        .animation(.default, value: timerManager.displayTime)
-        .animation(.default, value: timerManager.sapphireTimers)
+        .animation(.default, value: timerManager.activeTimers.map(\.id))
+        .animation(.default, value: timerManager.activeStopwatches.map(\.id))
+        .animation(.default, value: timerManager.sapphireTimers.map(\.id))
     }
 
     // MARK: - Quick Start (Sapphire-owned timers)
@@ -162,9 +161,7 @@ struct TimerDetailView: View {
                             Text(timer.label)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(.secondary)
-                            Text(timer.remainingTime.asStopwatchClock)
-                                .contentTransition(.numericText(countsDown: true))
-                                .font(.system(.title3, design: .monospaced).weight(.medium))
+                            SapphireTimerClockText(timer: timer)
                         }
 
                         Spacer()
@@ -240,8 +237,7 @@ struct TimerDetailView: View {
                 ForEach(timerManager.activeTimers) { timer in
                     HStack {
                         Image(systemName: "timer")
-                        Text(timer.remainingTime.asStopwatchClock)
-                            .contentTransition(.numericText(countsDown: true))
+                        SystemTimerClockText(timer: timer)
                         Spacer()
                         Text(timer.state == .system ? "Running" : "Paused")
                             .font(.caption)
@@ -266,8 +262,7 @@ struct TimerDetailView: View {
                     VStack(alignment: .leading) {
                         HStack {
                             Image(systemName: "stopwatch")
-                            Text(stopwatch.elapsedTime.asStopwatchClock)
-                                .contentTransition(.numericText())
+                            SystemStopwatchClockText(stopwatch: stopwatch)
                             Spacer()
                             Text(stopwatch.state == .stopwatch ? "Running" : "Paused")
                                 .font(.caption)
@@ -295,5 +290,66 @@ struct TimerDetailView: View {
                 }
             }
         }
+    }
+}
+
+private struct SapphireTimerClockText: View {
+    let timer: SapphireTimer
+
+    var body: some View {
+        if timer.isRunning {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                clock(timer.remainingTime)
+            }
+        } else {
+            clock(timer.remainingTime)
+        }
+    }
+
+    private func clock(_ value: TimeInterval) -> some View {
+        Text(value.asStopwatchClock)
+            .contentTransition(.numericText(countsDown: true))
+            .font(.system(.title3, design: .monospaced).weight(.medium))
+            .animation(.default, value: Int(value))
+    }
+}
+
+private struct SystemTimerClockText: View {
+    let timer: SystemTimerInfo
+
+    var body: some View {
+        if timer.state == .system {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                clock(timer.remainingTime)
+            }
+        } else {
+            clock(timer.remainingTime)
+        }
+    }
+
+    private func clock(_ value: TimeInterval) -> some View {
+        Text(value.asStopwatchClock)
+            .contentTransition(.numericText(countsDown: true))
+            .animation(.default, value: Int(value))
+    }
+}
+
+private struct SystemStopwatchClockText: View {
+    let stopwatch: SystemStopwatchInfo
+
+    var body: some View {
+        if stopwatch.state == .stopwatch {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                clock(stopwatch.elapsedTime)
+            }
+        } else {
+            clock(stopwatch.elapsedTime)
+        }
+    }
+
+    private func clock(_ value: TimeInterval) -> some View {
+        Text(value.asStopwatchClock)
+            .contentTransition(.numericText())
+            .animation(.default, value: Int(value))
     }
 }

@@ -67,15 +67,79 @@ enum FocusBlockCompletion {
     case sessionFinished
 }
 
+private struct FocusBlockingSettings: Equatable {
+    let blockDuringBreaks: Bool
+    let intensity: FocusIntensity
+    let strictUnblockCooldown: TimeInterval
+    let mode: FocusBlockingMode
+    let blockedApps: Set<String>
+    let allowedApps: Set<String>
+    let blockedWebsites: Set<String>
+
+    init(_ settings: Settings) {
+        blockDuringBreaks = settings.focusBlockingDuringBreaks
+        intensity = settings.focusIntensity
+        strictUnblockCooldown = settings.focusStrictUnblockCooldown
+        mode = settings.focusBlockingMode
+        blockedApps = settings.focusBlockedApps
+        allowedApps = settings.focusAllowedApps
+        blockedWebsites = settings.focusBlockedWebsites
+    }
+}
+
+private struct FocusEnvironmentSettings: Equatable {
+    let dimInactiveApps: Bool
+    let dimInactiveOpacity: Double
+    let disableDimInMissionControl: Bool
+    let hideWallpaper: Bool
+    let appLimitEnabled: Bool
+    let appLimit: Int
+
+    init(_ settings: Settings) {
+        dimInactiveApps = settings.focusDimInactiveApps
+        dimInactiveOpacity = settings.focusDimInactiveOpacity
+        disableDimInMissionControl = settings.focusDisableDimInMissionControl
+        hideWallpaper = settings.focusHideWallpaper
+        appLimitEnabled = settings.focusAppLimitEnabled
+        appLimit = settings.focusAppLimit
+    }
+}
+
+private struct FocusAmbientSettings: Equatable {
+    let enabled: Bool
+    let type: FocusAmbientSoundType
+    let volume: Double
+
+    init(_ settings: Settings) {
+        enabled = settings.focusAmbientSoundEnabled
+        type = settings.focusAmbientSoundType
+        volume = settings.focusAmbientSoundVolume
+    }
+}
+
 // MARK: - Main Manager
 
 @MainActor
 final class FocusSessionManager: ObservableObject {
     static let shared = FocusSessionManager()
 
+    private static let monthKeyFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy-MM"
+        return formatter
+    }()
+
+    private static let shortWeekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
     // MARK: Published state
     @Published private(set) var phase: FocusPhase = .idle
-    @Published private(set) var remainingSeconds: TimeInterval = 0
+    private(set) var remainingSeconds: TimeInterval = 0
     @Published private(set) var totalSeconds: TimeInterval = 0
     @Published private(set) var isPaused: Bool = false
     @Published private(set) var completedToday: TimeInterval = 0
@@ -115,12 +179,21 @@ final class FocusSessionManager: ObservableObject {
     var canEndSessionEarly: Bool { settingsModel.settings.focusIntensity.canEndSessionEarly }
 
     var progress: Double {
+        progress(at: Date())
+    }
+
+    func progress(at date: Date) -> Double {
         guard totalSeconds > 0 else { return 0 }
-        return min(1, max(0, 1 - (remainingSeconds / totalSeconds)))
+        return min(1, max(0, 1 - (remaining(at: date) / totalSeconds)))
+    }
+
+    func remaining(at date: Date = Date()) -> TimeInterval {
+        guard isRunning, let startedAt else { return remainingSeconds }
+        return max(0, accumulatedElapsed - date.timeIntervalSince(startedAt))
     }
 
     var remainingLabel: String {
-        Self.format(remainingSeconds)
+        Self.format(remaining())
     }
 
     var currentBlockEndDate: Date? {
@@ -135,22 +208,34 @@ final class FocusSessionManager: ObservableObject {
     }
 
     // MARK: Private state
-    private var ticker: Timer?
+    private var completionTimer: Timer?
 
-    private func startTickerIfNeeded() {
-        guard ticker == nil else { return }
-        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.tick()
-            }
+    private func scheduleCompletionTimer() {
+        completionTimer?.invalidate()
+        completionTimer = nil
+        guard isRunning, let endDate = currentBlockEndDate else { return }
+
+        let delay = endDate.timeIntervalSinceNow
+        guard delay > 0 else {
+            finishCurrentBlock(completion: isFocusBlock ? .focusFinished : .breakFinished)
+            return
         }
-        RunLoop.main.add(timer, forMode: .common)
-        ticker = timer
+
+        completionTimer = Timer.scheduledCoalescing(
+            withTimeInterval: delay,
+            repeats: false,
+            toleranceFraction: min(0.1, 0.25 / delay)
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.completionTimer = nil
+            self.remainingSeconds = 0
+            self.finishCurrentBlock(completion: self.isFocusBlock ? .focusFinished : .breakFinished)
+        }
     }
 
-    private func stopTicker() {
-        ticker?.invalidate()
-        ticker = nil
+    private func cancelCompletionTimer() {
+        completionTimer?.invalidate()
+        completionTimer = nil
     }
     private var startedAt: Date?
     private var accumulatedElapsed: TimeInterval = 0
@@ -189,16 +274,23 @@ final class FocusSessionManager: ObservableObject {
         loadDaily()
         loadStreaks()
 
-        settingsModel.$settings
-            .receive(on: DispatchQueue.main)
+        settingsModel.changes(of: FocusBlockingSettings.init)
             .sink { [weak self] _ in
                 self?.syncBlocking()
-                self?.syncEnvironment()
-                self?.syncAmbientFromSettings()
             }
             .store(in: &cancellables)
+
+        settingsModel.changes(of: FocusEnvironmentSettings.init)
+            .sink { [weak self] _ in self?.syncEnvironment() }
+            .store(in: &cancellables)
+
+        settingsModel.changes(of: FocusAmbientSettings.init)
+            .sink { [weak self] _ in self?.syncAmbientFromSettings() }
+            .store(in: &cancellables)
+
         syncBlocking()
         syncEnvironment()
+        syncAmbientFromSettings()
     }
 
     // MARK: - Control
@@ -228,33 +320,32 @@ final class FocusSessionManager: ObservableObject {
         remainingSeconds = totalSeconds
         startedAt = Date()
         accumulatedElapsed = totalSeconds
-        stopTicker()
-        startTickerIfNeeded()
+        cancelCompletionTimer()
+        scheduleCompletionTimer()
         syncBlocking()
         environmentManager.setEnabled(true)
         startAmbientIfEnabled()
         runStartAutomationShortcut()
         refreshShortcutTimerIfNeeded()
         ensureNotificationAuthorization()
-        objectWillChange.send()
     }
 
     func pauseSession() {
         guard isSessionActive, !isPaused else { return }
+        let pausedRemaining = remaining()
         isPaused = true
-        accumulatedElapsed = remainingSeconds
+        remainingSeconds = pausedRemaining
+        accumulatedElapsed = pausedRemaining
         startedAt = nil
-        stopTicker()
-        objectWillChange.send()
+        cancelCompletionTimer()
     }
 
     func resumeSession() {
         guard isSessionActive, isPaused else { return }
         isPaused = false
         startedAt = Date()
-        stopTicker()
-        startTickerIfNeeded()
-        objectWillChange.send()
+        cancelCompletionTimer()
+        scheduleCompletionTimer()
     }
 
     func togglePause() {
@@ -277,23 +368,23 @@ final class FocusSessionManager: ObservableObject {
         isFocusBlock = true
         isPaused = false
         currentBlockIndex = 0
-        stopTicker()
+        cancelCompletionTimer()
         startedAt = nil
         accumulatedElapsed = 0
         syncBlocking()
         teardownEnvironment()
         stopShortcutTimerIfNeeded()
-        objectWillChange.send()
     }
 
     func postponeBreak(by extra: TimeInterval = 5 * 60) {
         guard isSessionActive, isFocusBlock else { return }
         let added = max(0, extra)
-        remainingSeconds += added
-        accumulatedElapsed = remainingSeconds
-        totalSeconds = remainingSeconds
+        let updatedRemaining = remaining() + added
+        remainingSeconds = updatedRemaining
+        accumulatedElapsed = updatedRemaining
+        totalSeconds = updatedRemaining
         if !isPaused { startedAt = Date() }
-        objectWillChange.send()
+        scheduleCompletionTimer()
     }
 
     func skipBlock() {
@@ -301,23 +392,8 @@ final class FocusSessionManager: ObservableObject {
         finishCurrentBlock(completion: .breakFinished)
     }
 
-    // MARK: - Ticking
-
-    private func tick() {
-        guard isRunning, let startedAt else { return }
-        let elapsed = Date().timeIntervalSince(startedAt)
-        let newRemaining = max(0, accumulatedElapsed - elapsed)
-        if newRemaining != remainingSeconds {
-            remainingSeconds = newRemaining
-            objectWillChange.send()
-        }
-        if newRemaining <= 0 {
-            finishCurrentBlock(completion: isFocusBlock ? .focusFinished : .breakFinished)
-        }
-    }
-
     private func finishCurrentBlock(completion: FocusBlockCompletion) {
-        stopTicker()
+        cancelCompletionTimer()
         startedAt = nil
 
         switch completion {
@@ -334,7 +410,7 @@ final class FocusSessionManager: ObservableObject {
                 accumulatedElapsed = totalSeconds
                 isPaused = false
                 startedAt = Date()
-                startTickerIfNeeded()
+                scheduleCompletionTimer()
                 syncBlocking()
                 NotificationCenter.default.post(name: .focusSessionBlockCompleted, object: nil, userInfo: ["phase": "break"])
                 postCompletionNotification(
@@ -354,7 +430,7 @@ final class FocusSessionManager: ObservableObject {
             isPaused = false
             startedAt = Date()
             blockStartDate = Date()
-            startTickerIfNeeded()
+            scheduleCompletionTimer()
             syncBlocking()
             NotificationCenter.default.post(name: .focusSessionBlockCompleted, object: nil, userInfo: ["phase": "focus"])
             postCompletionNotification(
@@ -364,7 +440,6 @@ final class FocusSessionManager: ObservableObject {
         case .sessionFinished:
             finishSession()
         }
-        objectWillChange.send()
     }
 
     private func finishSession() {
@@ -372,7 +447,7 @@ final class FocusSessionManager: ObservableObject {
         isFocusBlock = true
         isPaused = false
         currentBlockIndex = 0
-        stopTicker()
+        cancelCompletionTimer()
         startedAt = nil
         accumulatedElapsed = 0
         syncBlocking()
@@ -432,7 +507,7 @@ final class FocusSessionManager: ObservableObject {
 
         var total = completedToday + actual
         var count = 1
-        if var today = dailyRecords.first(where: { $0.date == record.dateKey }) {
+        if let today = dailyRecords.first(where: { $0.date == record.dateKey }) {
             total = today.totalSeconds + actual
             count = today.sessionCount + 1
             dailyRecords.removeAll { $0.date == today.date }
@@ -585,9 +660,7 @@ final class FocusSessionManager: ObservableObject {
     }
 
     private var currentMonthKey: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM"
-        return f.string(from: Date())
+        Self.monthKeyFormatter.string(from: Date())
     }
 
     private var currentStreakMonth: FocusStreakMonth {
@@ -705,17 +778,17 @@ final class FocusSessionManager: ObservableObject {
     var weeklyData: [(label: String, seconds: TimeInterval)] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
+        let totals = dailyRecords.reduce(into: [DateComponents: TimeInterval]()) { result, record in
+            result[record.date, default: 0] += record.totalSeconds
+        }
         return (0..<7).reversed().map { daysAgo in
             let date = cal.date(byAdding: .day, value: -daysAgo, to: today)!
             let key = cal.dateComponents([.year, .month, .day], from: date)
-            let seconds = dailyRecords
-                .filter { $0.date == key }
-                .reduce(0) { $0 + $1.totalSeconds }
+            let seconds = totals[key, default: 0]
             let label: String = {
                 if daysAgo == 0 { return "Today" }
                 if daysAgo == 1 { return "Yest" }
-                let fmt = DateFormatter(); fmt.dateFormat = "EEE"
-                return fmt.string(from: date)
+                return Self.shortWeekdayFormatter.string(from: date)
             }()
             return (label, seconds)
         }

@@ -11,7 +11,7 @@ struct BatteryDetailView: View {
     @EnvironmentObject private var settings: SettingsModel
     @EnvironmentObject private var batteryEstimator: BatteryEstimator
     @StateObject private var stats = BatteryStatsViewModel()
-    @ObservedObject private var statsManager = StatsManager.shared
+    @State private var statsPollingRequester = "BatteryDetail-\(UUID().uuidString)"
     @State private var dragLimit: Double?
     @State private var chargeLimitMessage: String? = nil
     @State private var chargeLimitMessageTask: Task<Void, Never>?
@@ -53,8 +53,8 @@ struct BatteryDetailView: View {
 
     private var power: SystemPowerReading {
         SystemPowerReading(
-            systemLoad: statsManager.currentStats?.systemPower ?? stats.powerConsumption,
-            adapterPower: statsManager.adapterSensorPower,
+            systemLoad: stats.systemPower,
+            adapterPower: stats.adapterPower,
             adapterConnected: (stats.powerAdapterInfo?.maxPower ?? 0) > 0,
             isCharging: stats.isCharging
         )
@@ -79,11 +79,11 @@ struct BatteryDetailView: View {
         .frame(width: 680, height: 310)
         .onAppear {
             stats.start()
-            statsManager.setPolling(for: "BatteryDetail", requiredStats: [.systemPower, .batteryPower])
+            StatsManager.shared.setPolling(for: statsPollingRequester, requiredStats: [.systemPower, .batteryPower])
         }
         .onDisappear {
             stats.stop()
-            statsManager.setPolling(for: "BatteryDetail", requiredStats: [])
+            StatsManager.shared.setPolling(for: statsPollingRequester, requiredStats: [])
             chargeLimitMessageTask?.cancel()
         }
     }

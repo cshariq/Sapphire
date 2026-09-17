@@ -220,23 +220,11 @@ struct FileTaskView: View {
 
     private var allItems: [FileTask] {
         let liveTasks = fileDropManager.tasks
-        let shelfTasks = shelfManager.files.map { FileTask.local($0) }
+        let shelfTasks = shelfManager.files
+            .sorted { $0.dateAdded > $1.dateAdded }
+            .map(FileTask.local)
 
-        return (liveTasks + shelfTasks).sorted { item1, item2 in
-            let dateA: Date = {
-                switch item1 {
-                case .local(let item): return item.dateAdded
-                default: return Date()
-                }
-            }()
-            let dateB: Date = {
-                switch item2 {
-                case .local(let item): return item.dateAdded
-                default: return Date()
-                }
-            }()
-            return dateA > dateB
-        }
+        return liveTasks + shelfTasks
     }
 
     var body: some View {
@@ -262,22 +250,23 @@ struct FileTaskView: View {
 
     @ViewBuilder
     private var contentBody: some View {
+        let items = allItems
         Group {
-            if allItems.isEmpty {
+            if items.isEmpty {
                 EmptyStateView()
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(allItems) { item in
+                        ForEach(items) { item in
                             UnifiedRowView(item: item, onSelectDetails: { shelfItem in
                                 fileShelfState.selectedItemForPreview = shelfItem
                             })
-                            .animation(.spring(), value: allItems)
                             .transition(.opacity)
                         }
                     }
                     .padding(8)
+                    .animation(.spring(), value: items.map(\.id))
                 }
                 .scrollDisabled(isAnyRowSwiping)
                 .onPreferenceChange(HorizontalSwipeActivePreferenceKey.self) { value in
@@ -286,7 +275,7 @@ struct FileTaskView: View {
                 .transition(.opacity)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: allItems.isEmpty)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: items.isEmpty)
     }
 }
 

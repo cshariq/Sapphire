@@ -80,7 +80,7 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
     private var processListenerBlocks: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
     private var monitoredProcesses: Set<AudioObjectID> = []
     private var refreshDebounceTask: Task<Void, Never>?
-    private var periodicRefreshTask: Task<Void, Never>?
+    private var fallbackRefreshTask: Task<Void, Never>?
 
     private var processListAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyProcessObjectList,
@@ -155,18 +155,17 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
             processListListenerBlock = listener
         } else {
             logger.error("Failed to add process list listener: \(status)")
+            startFallbackRefresh()
         }
 
         refresh()
-
-        startPeriodicRefresh()
     }
 
     func stop() {
         logger.debug("Stopping audio process monitor")
 
-        periodicRefreshTask?.cancel()
-        periodicRefreshTask = nil
+        fallbackRefreshTask?.cancel()
+        fallbackRefreshTask = nil
         refreshDebounceTask?.cancel()
         refreshDebounceTask = nil
 
@@ -178,9 +177,9 @@ final class AudioProcessMonitor: AudioProcessMonitoring {
         removeAllProcessListeners()
     }
 
-    private func startPeriodicRefresh() {
-        periodicRefreshTask?.cancel()
-        periodicRefreshTask = Task { @MainActor [weak self] in
+    private func startFallbackRefresh() {
+        fallbackRefreshTask?.cancel()
+        fallbackRefreshTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled, let self else { return }

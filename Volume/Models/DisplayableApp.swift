@@ -8,6 +8,12 @@ import AppKit
 import UniformTypeIdentifiers
 
 enum DisplayableApp: Identifiable {
+    private static let iconCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 128
+        return cache
+    }()
+
     case active(AudioApp)
     case pinnedInactive(PinnedAppInfo)
 
@@ -57,10 +63,19 @@ enum DisplayableApp: Identifiable {
     }
 
     static func loadIcon(bundleID: String?) -> NSImage {
+        let cacheKey = (bundleID ?? "__generic_application_icon__") as NSString
+        if let cached = iconCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        let icon: NSImage
         if let bundleID,
            let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return NSWorkspace.shared.icon(forFile: appURL.path)
+            icon = NSWorkspace.shared.icon(forFile: appURL.path)
+        } else {
+            icon = NSWorkspace.shared.icon(for: .applicationBundle)
         }
-        return NSWorkspace.shared.icon(for: .applicationBundle)
+        iconCache.setObject(icon, forKey: cacheKey)
+        return icon
     }
 }

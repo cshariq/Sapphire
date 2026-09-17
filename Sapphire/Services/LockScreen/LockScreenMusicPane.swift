@@ -305,7 +305,7 @@ struct LockScreenFullScreenMusicPane: View {
         let queue = spotifyQueue?.queue ?? []
 
         return ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 28) {
+            LazyVStack(alignment: .leading, spacing: 28) {
                 VStack(spacing: 20) {
                     albumArtwork(size: 260, radius: 28)
                         .shadow(color: musicManager.accentColor.opacity(0.5), radius: 32, y: 16)
@@ -426,7 +426,7 @@ struct LockScreenFullScreenMusicPane: View {
                         if !similarAlbums.isEmpty {
                             overviewSection(title: "Similar Albums", icon: "square.stack.fill", accent: .purple) {
                                 ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 12) {
+                                    LazyHStack(spacing: 12) {
                                         ForEach(similarAlbums.prefix(6)) { album in
                                             VStack(alignment: .leading, spacing: 5) {
                                                 if let url = album.imageURL {
@@ -707,7 +707,7 @@ struct LockScreenFullScreenMusicPane: View {
                     .padding(.top, 4)
 
                     ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 28) {
+                        LazyVStack(alignment: .leading, spacing: 28) {
                             if !artist.biography.isEmpty {
                                 artistBiography(artist.biography)
                             }
@@ -788,7 +788,7 @@ struct LockScreenFullScreenMusicPane: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Top Cities", icon: "mappin.and.ellipse")
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                LazyHStack(spacing: 8) {
                     ForEach(cities, id: \.self) { city in
                         Label(city, systemImage: "location.fill")
                             .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -805,7 +805,7 @@ struct LockScreenFullScreenMusicPane: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Merchandise", icon: "tag.fill")
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
+                LazyHStack(spacing: 14) {
                     ForEach(merch) { item in
                         VStack(alignment: .leading, spacing: 8) {
                             if let url = item.imageURL {
@@ -869,7 +869,7 @@ struct LockScreenFullScreenMusicPane: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Similar Albums", icon: "square.stack.fill")
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
+                LazyHStack(spacing: 14) {
                     ForEach(albums.prefix(8)) { album in
                         VStack(alignment: .leading, spacing: 6) {
                             if let url = album.imageURL {
@@ -935,7 +935,6 @@ struct LockScreenFullScreenMusicPane: View {
     // MARK: - Playlists Tab
 
     private var playlistsTab: some View {
-        let isSpotify = musicManager.isSpotifyLiveSourceSelected || musicManager.isSpotifySourceActive
         let isAppleMusic = musicManager.lastKnownBundleID == "com.apple.Music"
         let playlists: [SpotifyPlaylist] = {
             if isAppleMusic { return musicManager.appleMusic.fetchPlaylists() }
@@ -1017,7 +1016,7 @@ struct LockScreenFullScreenMusicPane: View {
         return Group {
             if hasNative {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 0) {
+                    LazyVStack(spacing: 0) {
                         ForEach(Array(nativeQueue.enumerated()), id: \.offset) { index, track in
                             trackRow(
                                 index: index + 1,
@@ -1031,7 +1030,7 @@ struct LockScreenFullScreenMusicPane: View {
                 }
             } else if hasOfficial {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 0) {
+                    LazyVStack(spacing: 0) {
                         ForEach(Array(officialQueue.enumerated()), id: \.offset) { index, track in
                             trackRow(
                                 index: index + 1,
@@ -1055,7 +1054,7 @@ struct LockScreenFullScreenMusicPane: View {
                 emptyState("Queue is empty")
             } else {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 0) {
+                    LazyVStack(spacing: 0) {
                         ForEach(Array(appleMusicQueueTracks.enumerated()), id: \.offset) { index, track in
                             trackRow(
                                 index: index + 1,
@@ -1122,7 +1121,7 @@ struct LockScreenFullScreenMusicPane: View {
                 .padding(.horizontal, 40)
             } else {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 8) {
+                    LazyVStack(spacing: 8) {
                         sectionHeader("Spotify Connect", icon: "hifispeaker.2.fill")
                             .padding(.horizontal, 56)
 
@@ -1345,9 +1344,12 @@ private struct LockScreenMusicDock: View {
 private struct LockScreenMusicPaneLyrics: View {
     @EnvironmentObject var musicManager: MusicManager
     var body: some View {
-        TimelineView(.periodic(
-            from: .now,
-            by: musicManager.isPlaying ? 1.0 / 30.0 : 0.25
+        TimelineView(KaraokeFillSchedule(
+            referenceDate: Date(),
+            referenceElapsed: musicManager.lyricsElapsedTime(),
+            windows: musicManager.isPlaying
+                ? KaraokeFillSchedule.eventWindows(for: musicManager.lyrics)
+                : []
         )) { context in
             let activeLyricIDs = Set(
                 musicManager.activeLyricIndices(at: context.date).compactMap { index in

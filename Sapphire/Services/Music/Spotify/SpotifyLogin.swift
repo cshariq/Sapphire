@@ -83,24 +83,22 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
         return domain.contains("spotify.com") || domain.contains("spotify.net")
     }
 
-    final class Coordinator: AuthLoginCoordinator {
+    final class Coordinator: AuthLoginCoordinator, WKHTTPCookieStoreObserver {
         var parent: SpotifyLoginWebViewRepresentable
         private var isCompleting = false
         private var didPassLoginForm = false
-        private var cookiePollTimer: Timer?
+        private weak var observedWebView: WKWebView?
+        private weak var observedCookieStore: WKHTTPCookieStore?
 
         init(_ parent: SpotifyLoginWebViewRepresentable) {
             self.parent = parent
             super.init(serviceName: "Spotify", logPrefix: "SpotifyLogin")
         }
 
-        deinit {
-            cookiePollTimer?.invalidate()
-        }
-
         override func tearDown() {
-            cookiePollTimer?.invalidate()
-            cookiePollTimer = nil
+            observedCookieStore?.remove(self)
+            observedCookieStore = nil
+            observedWebView = nil
             super.tearDown()
         }
 
@@ -108,8 +106,8 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
             guard let url = URL(string: "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F") else { return }
             var request = URLRequest(url: url)
             request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            observeCookies(in: webView)
             webView.load(request)
-            startCookiePolling(for: webView)
         }
 
         // MARK: - WKNavigationDelegate
@@ -137,15 +135,17 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
 
         // MARK: - Cookie harvest
 
-        private func startCookiePolling(for webView: WKWebView) {
-            cookiePollTimer?.invalidate()
-            cookiePollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self, weak webView] _ in
-                guard let self, let webView else { return }
-                guard self.didPassLoginForm
-                        || Self.looksLikeAuthenticatedDestination(webView.url)
-                        || !self.popupWindows.isEmpty else { return }
-                self.checkForFreshSessionCookies(in: webView)
-            }
+        private func observeCookies(in webView: WKWebView) {
+            observedCookieStore?.remove(self)
+            let store = webView.configuration.websiteDataStore.httpCookieStore
+            observedWebView = webView
+            observedCookieStore = store
+            store.add(self)
+        }
+
+        func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+            guard let webView = observedWebView else { return }
+            checkForFreshSessionCookies(in: webView)
         }
 
         private func checkForFreshSessionCookies(in webView: WKWebView) {
@@ -168,7 +168,6 @@ private struct SpotifyLoginWebViewRepresentable: NSViewRepresentable {
                 }
 
                 self.isCompleting = true
-                self.cookiePollTimer?.invalidate()
                 print("[SpotifyLogin] SUCCESS: Fresh session cookies detected. Completing login.")
 
                 let cookieProperties = spotifyCookies.compactMap { cookie -> [String: Any]? in

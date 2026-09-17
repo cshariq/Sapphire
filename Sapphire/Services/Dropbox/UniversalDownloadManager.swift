@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import Darwin
 
 @MainActor
 class UniversalDownloadManager {
@@ -15,7 +16,7 @@ class UniversalDownloadManager {
     let tasksPublisher = PassthroughSubject<[DownloadTask], Never>()
 
     private var directoryMonitor: DirectoryMonitor?
-    private var progressUpdateTimer: Timer?
+    private var fileWatchers: [URL: DispatchSourceFileSystemObject] = [:]
     private var activeTasks: [URL: DownloadTask] = [:]
     private var cancellables = Set<AnyCancellable>()
 
@@ -24,7 +25,7 @@ class UniversalDownloadManager {
     private init() {}
 
     func startMonitoring() {
-        guard directoryMonitor == nil, progressUpdateTimer == nil,
+        guard directoryMonitor == nil,
               let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first,
               FileManager.default.fileExists(atPath: downloadsURL.path) else { return }
 
@@ -38,21 +39,14 @@ class UniversalDownloadManager {
 
         directoryMonitor?.start()
 
-        progressUpdateTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.updateAllProgress()
-        }
-        if let progressUpdateTimer {
-            RunLoop.main.add(progressUpdateTimer, forMode: .common)
-        }
-
         scanForDownloads()
     }
 
     func stopMonitoring() {
         directoryMonitor?.stop()
         directoryMonitor = nil
-        progressUpdateTimer?.invalidate()
-        progressUpdateTimer = nil
+        fileWatchers.values.forEach { $0.cancel() }
+        fileWatchers.removeAll()
         cancellables.removeAll()
     }
 
@@ -77,7 +71,15 @@ class UniversalDownloadManager {
                 }
             }
 
-            activeTasks = activeTasks.filter { foundTempFiles.contains($0.key) }
+            let removedURLs = Set(activeTasks.keys).subtracting(foundTempFiles)
+            for url in removedURLs {
+                activeTasks.removeValue(forKey: url)
+                fileWatchers.removeValue(forKey: url)?.cancel()
+            }
+
+            for url in foundTempFiles where fileWatchers[url] == nil {
+                installFileWatcher(for: url)
+            }
 
             publishTasks()
 
@@ -86,21 +88,34 @@ class UniversalDownloadManager {
         }
     }
 
-    private func updateAllProgress() {
-        guard !activeTasks.isEmpty else { return }
-        var hasChanges = false
+    private func installFileWatcher(for url: URL) {
+        let fileDescriptor = open(url.path, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return }
 
-        for (url, task) in activeTasks {
-            let newProgress = getProgress(for: task)
-            if activeTasks[url]?.progress != newProgress {
-                activeTasks[url]?.progress = newProgress
-                hasChanges = true
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .extend, .attrib, .delete, .rename, .revoke],
+            queue: .main
+        )
+        source.setEventHandler { [weak self, weak source] in
+            guard let self, let source else { return }
+            self.updateProgress(for: url)
+            if !source.data.isDisjoint(with: [.delete, .rename, .revoke]) {
+                self.scanForDownloads()
             }
         }
+        source.setCancelHandler { close(fileDescriptor) }
+        source.resume()
+        fileWatchers[url] = source
+        updateProgress(for: url)
+    }
 
-        if hasChanges {
-            publishTasks()
-        }
+    private func updateProgress(for url: URL) {
+        guard let task = activeTasks[url] else { return }
+        let newProgress = getProgress(for: task)
+        guard task.progress != newProgress else { return }
+        activeTasks[url]?.progress = newProgress
+        publishTasks()
     }
 
     private func getProgress(for task: DownloadTask) -> Double {

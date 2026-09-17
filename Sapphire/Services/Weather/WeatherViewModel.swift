@@ -9,6 +9,34 @@ import SwiftUI
 import CoreLocation
 import Combine
 
+private struct WeatherViewState {
+    var weatherData: ProcessedWeatherData?
+    var locationName = "Loading..."
+    var temperature = "—°"
+    var conditionDescription = "Fetching..."
+    var highLowTemp = "H: —° L: —°"
+    var feelsLike = "—°"
+    var windInfo = "— mph"
+    var humidity = "—%"
+    var uvIndex = "—"
+    var visibility = "—"
+    var pressure = "—"
+    var precipChance = "—%"
+    var iconName = "icloud"
+    var gradientColors: [Color] = [.blue.opacity(0.8), .purple.opacity(0.8)]
+    var hourlyForecasts: [HourlyForecastUIData] = []
+    var lastUpdated: Date?
+    var isFetching = false
+}
+
+private struct AutomaticWeatherRefreshSettings: Equatable {
+    let isEnabled: Bool
+
+    init(_ settings: Settings) {
+        isEnabled = settings.weatherWidgetEnabled || settings.weatherLiveActivityEnabled
+    }
+}
+
 @MainActor
 class WeatherViewModel: ObservableObject {
     static let shared = WeatherViewModel()
@@ -16,37 +44,53 @@ class WeatherViewModel: ObservableObject {
     private let weatherService = WeatherService.shared
     private let settingsModel = SettingsModel.shared
     private var cancellables = Set<AnyCancellable>()
+    private var refreshTimer: Timer?
+    private var automaticRefreshEnabled = false
 
-    @Published private(set) var weatherData: ProcessedWeatherData?
-    @Published var locationName: String = "Loading..."
-    @Published var temperature: String = "—°"
-    @Published var conditionDescription: String = "Fetching..."
-    @Published var highLowTemp: String = "H: —° L: —°"
-    @Published var feelsLike: String = "—°"
-    @Published var windInfo: String = "— mph"
-    @Published var humidity: String = "—%"
-    @Published var uvIndex: String = "—"
-    @Published var visibility: String = "—"
-    @Published var pressure: String = "—"
-    @Published var precipChance: String = "—%"
-    @Published var iconName: String = "icloud"
-    @Published var gradientColors: [Color] = [.blue.opacity(0.8), .purple.opacity(0.8)]
-    @Published var hourlyForecasts: [HourlyForecastUIData] = []
-    @Published var lastUpdated: Date? = nil
+    @Published private var state = WeatherViewState()
 
-    @Published var isFetching = false
+    var weatherData: ProcessedWeatherData? { state.weatherData }
+    var locationName: String { state.locationName }
+    var temperature: String { state.temperature }
+    var conditionDescription: String { state.conditionDescription }
+    var highLowTemp: String { state.highLowTemp }
+    var feelsLike: String { state.feelsLike }
+    var windInfo: String { state.windInfo }
+    var humidity: String { state.humidity }
+    var uvIndex: String { state.uvIndex }
+    var visibility: String { state.visibility }
+    var pressure: String { state.pressure }
+    var precipChance: String { state.precipChance }
+    var iconName: String { state.iconName }
+    var gradientColors: [Color] { state.gradientColors }
+    var hourlyForecasts: [HourlyForecastUIData] { state.hourlyForecasts }
+    var lastUpdated: Date? { state.lastUpdated }
+    var isFetching: Bool { state.isFetching }
 
     var hasValidWeather: Bool { weatherData?.isValid == true }
 
+    var weatherDataPublisher: AnyPublisher<ProcessedWeatherData?, Never> {
+        $state
+            .map(\.weatherData)
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+
     private init() {
-        fetch()
-        Timer.scheduledCoalescing(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.fetch() }
-        }
+        setAutomaticRefreshEnabled(
+            AutomaticWeatherRefreshSettings(settingsModel.settings).isEnabled
+        )
+
+        settingsModel.changes(of: AutomaticWeatherRefreshSettings.init)
+            .sink { [weak self] settings in
+                self?.setAutomaticRefreshEnabled(settings.isEnabled)
+            }
+            .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: .weatherLocationAuthorizationGranted)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                guard self?.automaticRefreshEnabled == true else { return }
                 self?.fetch()
             }
             .store(in: &cancellables)
@@ -54,23 +98,23 @@ class WeatherViewModel: ObservableObject {
 
     func fetch() {
         guard !isFetching else { return }
-        isFetching = true
-        if weatherData == nil {
-            locationName = "Loading..."
-            conditionDescription = "Locating…"
+        var fetchingState = state
+        fetchingState.isFetching = true
+        if fetchingState.weatherData == nil {
+            fetchingState.locationName = "Loading..."
+            fetchingState.conditionDescription = "Locating…"
         }
+        state = fetchingState
 
         weatherService.fetchWeather { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.isFetching = false
                 switch result {
                 case .success(let data):
                     guard data.isValid else {
                         self.handleError(WeatherServiceError.unavailableData)
                         return
                     }
-                    self.weatherData = data
                     self.updateUI(with: data)
                 case .failure(let error):
                     self.handleError(error)
@@ -83,25 +127,34 @@ class WeatherViewModel: ObservableObject {
         let useCelsius = settingsModel.settings.weatherUseCelsius
         let useMetricSystem = settingsModel.settings.weatherUseMetricSystem
 
-        self.locationName = data.locationName
-        self.temperature = useCelsius ? "\(data.temperatureMetric)°" : "\(data.temperature)°"
-        self.conditionDescription = data.conditionDescription
-        self.highLowTemp = useCelsius ? "H: \(data.highTempMetric)° L: \(data.lowTempMetric)°" : "H: \(data.highTemp)° L: \(data.lowTemp)°"
-        self.feelsLike = useCelsius ? "\(data.feelsLikeMetric)°" : "\(data.feelsLike)°"
-        self.windInfo = useMetricSystem ? data.windInfoMetric : data.windInfo
-        self.humidity = data.humidity
-        self.uvIndex = data.uvIndex
-        self.visibility = useMetricSystem ? data.visibilityMetric : data.visibility
-        self.pressure = useMetricSystem ? data.pressureMetric : data.pressure
-        self.precipChance = "\(data.precipChance)%"
-        self.iconName = WeatherIconMapper.map(from: data.iconCode)
-        self.hourlyForecasts = data.hourlyForecasts
-        self.gradientColors = gradientColors(for: data.iconCode)
-        self.lastUpdated = Date()
+        state = WeatherViewState(
+            weatherData: data,
+            locationName: data.locationName,
+            temperature: useCelsius ? "\(data.temperatureMetric)°" : "\(data.temperature)°",
+            conditionDescription: data.conditionDescription,
+            highLowTemp: useCelsius
+                ? "H: \(data.highTempMetric)° L: \(data.lowTempMetric)°"
+                : "H: \(data.highTemp)° L: \(data.lowTemp)°",
+            feelsLike: useCelsius ? "\(data.feelsLikeMetric)°" : "\(data.feelsLike)°",
+            windInfo: useMetricSystem ? data.windInfoMetric : data.windInfo,
+            humidity: data.humidity,
+            uvIndex: data.uvIndex,
+            visibility: useMetricSystem ? data.visibilityMetric : data.visibility,
+            pressure: useMetricSystem ? data.pressureMetric : data.pressure,
+            precipChance: "\(data.precipChance)%",
+            iconName: WeatherIconMapper.map(from: data.iconCode),
+            gradientColors: gradientColors(for: data.iconCode),
+            hourlyForecasts: data.hourlyForecasts,
+            lastUpdated: Date(),
+            isFetching: false
+        )
     }
 
     private func handleError(_ error: Error) {
         if let weatherData, weatherData.isValid {
+            var current = state
+            current.isFetching = false
+            state = current
             return
         }
 
@@ -115,21 +168,40 @@ class WeatherViewModel: ObservableObject {
             message = error.localizedDescription
         }
 
-        self.locationName = "Unavailable"
-        self.temperature = "—°"
-        self.conditionDescription = message
-        self.highLowTemp = "H: —° L: —°"
-        self.feelsLike = "—°"
-        self.windInfo = useMetricSystem ? "— km/h" : "— mph"
-        self.humidity = "—%"
-        self.uvIndex = "—"
-        self.visibility = "—"
-        self.pressure = "—"
-        self.precipChance = "—%"
-        self.iconName = "icloud"
-        self.gradientColors = [.gray.opacity(0.6), .black.opacity(0.8)]
-        self.hourlyForecasts = []
-        self.lastUpdated = nil
+        state = WeatherViewState(
+            weatherData: nil,
+            locationName: "Unavailable",
+            temperature: "—°",
+            conditionDescription: message,
+            highLowTemp: "H: —° L: —°",
+            feelsLike: "—°",
+            windInfo: useMetricSystem ? "— km/h" : "— mph",
+            humidity: "—%",
+            uvIndex: "—",
+            visibility: "—",
+            pressure: "—",
+            precipChance: "—%",
+            iconName: "icloud",
+            gradientColors: [.gray.opacity(0.6), .black.opacity(0.8)],
+            hourlyForecasts: [],
+            lastUpdated: nil,
+            isFetching: false
+        )
+    }
+
+    private func setAutomaticRefreshEnabled(_ isEnabled: Bool) {
+        guard automaticRefreshEnabled != isEnabled else { return }
+        automaticRefreshEnabled = isEnabled
+
+        if isEnabled {
+            if weatherData == nil { fetch() }
+            refreshTimer = Timer.scheduledCoalescing(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.fetch() }
+            }
+        } else {
+            refreshTimer?.invalidate()
+            refreshTimer = nil
+        }
     }
 
     private func gradientColors(for iconCode: Int) -> [Color] {

@@ -202,7 +202,8 @@ final class NotchHoverMonitor {
     private var isParked = true
     private var pointerIsInside = false
     private var stuckHoverWatchdog: Timer?
-    private var dragPollingTimer: Timer?
+    private var globalDragMonitor: Any?
+    private var dragPollingFallbackTimer: Timer?
     private var deferredDisarmTask: Task<Void, Never>?
     private var pendingPlainDragEndLocation: NSPoint?
     private var pendingProactiveFileDragEndLocation: NSPoint?
@@ -231,7 +232,7 @@ final class NotchHoverMonitor {
 
     var isRunning: Bool { notchWindow != nil }
     var hasActiveMouseEventMonitors: Bool {
-        localMouseMonitor != nil || mouseUpToken != nil
+        localMouseMonitor != nil || globalDragMonitor != nil || mouseUpToken != nil
     }
     var isHoverProbeListeningForPointer: Bool {
         probeWindow?.isHoverDetectionEnabled == true
@@ -286,7 +287,7 @@ final class NotchHoverMonitor {
     func stop() {
         stuckHoverWatchdog?.invalidate()
         stuckHoverWatchdog = nil
-        stopDragPolling()
+        stopDragMonitoring()
         deferredDisarmTask?.cancel()
         deferredDisarmTask = nil
         pendingPlainDragEndLocation = nil
@@ -532,13 +533,13 @@ final class NotchHoverMonitor {
 
         if isActive {
             lastExternalMouseDragLocation = nil
-            startDragPolling()
-            pollMouseDrag()
+            startDragMonitoring()
+            sampleMouseDragState()
         } else {
             let location = NSEvent.mouseLocation
             lastExternalMouseDragLocation = nil
             if probeWindow?.isArmedForMouseSequence != true {
-                stopDragPolling()
+                stopDragMonitoring()
             }
             handlers?.onMouseDrag(false, location)
             handlers?.onMouseDragEnded(location)
@@ -592,7 +593,7 @@ final class NotchHoverMonitor {
         isProactiveFileDragTargeted = false
         startGlobalMouseUpMonitoring()
         syncLocalMouseMonitor()
-        startDragPolling()
+        startDragMonitoring()
     }
 
     private func finishDeferredMouseSequenceBeforeNewPress(in probeWindow: HoverProbeWindow) {
@@ -642,7 +643,7 @@ final class NotchHoverMonitor {
         mouseDownLocation = mouseDownLocation ?? location
         hasObservedMouseDrag = true
         probeWindow.setArmedForMouseSequence(true)
-        startDragPolling()
+        startDragMonitoring()
 
         guard !probeWindow.isFileDragSessionActive else { return }
         if let isInside = knownContainment {
@@ -696,7 +697,7 @@ final class NotchHoverMonitor {
               let sequenceGeneration = activeMouseSequenceGeneration,
               mouseDownLocation != nil else { return }
         stopGlobalMouseUpMonitoring()
-        stopDragPolling()
+        stopDragMonitoring()
 
         if !didObserveFileDragInMouseSequence,
            let baseline = dragPasteboardChangeCountBeforeMouseSequence,
@@ -764,7 +765,7 @@ final class NotchHoverMonitor {
     }
 
     private func handleFileDragEnded(at location: NSPoint, dropWasAccepted: Bool) {
-        stopDragPolling()
+        stopDragMonitoring()
         stopGlobalMouseUpMonitoring()
         deferredDisarmTask?.cancel()
         deferredDisarmTask = nil
@@ -786,20 +787,42 @@ final class NotchHoverMonitor {
         handlers?.onFileDragEnded(location, dropWasAccepted)
     }
 
-    private func startDragPolling() {
-        guard dragPollingTimer == nil else { return }
-        let interval: TimeInterval = 1.0 / 30.0
+    private func startDragMonitoring() {
+        guard globalDragMonitor == nil, dragPollingFallbackTimer == nil else { return }
+        globalDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
+            MainActor.assumeIsolated { self?.handleGlobalMouseDragged(event) }
+        }
+        guard globalDragMonitor == nil else { return }
+
+        let interval: TimeInterval = 1 / 30
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.pollMouseDrag() }
+            MainActor.assumeIsolated { self?.sampleMouseDragState() }
         }
         timer.tolerance = interval * 0.2
         RunLoop.main.add(timer, forMode: .common)
-        dragPollingTimer = timer
+        dragPollingFallbackTimer = timer
     }
 
-    private func stopDragPolling() {
-        dragPollingTimer?.invalidate()
-        dragPollingTimer = nil
+    private func stopDragMonitoring() {
+        if let globalDragMonitor {
+            NSEvent.removeMonitor(globalDragMonitor)
+            self.globalDragMonitor = nil
+        }
+        dragPollingFallbackTimer?.invalidate()
+        dragPollingFallbackTimer = nil
+    }
+
+    private func handleGlobalMouseDragged(_ event: NSEvent) {
+        let location = screenLocation(for: event)
+        if isExternalMouseDragActive {
+            guard location != lastExternalMouseDragLocation else { return }
+            lastExternalMouseDragLocation = location
+            let isInside = probeWindow?.isVisible == true
+                && (probeWindow?.frame.contains(location) ?? false)
+            handlers?.onMouseDrag(isInside, location)
+        } else {
+            handleMouseDragged(at: location)
+        }
     }
 
     private func scheduleDeferredDisarm(
@@ -846,7 +869,7 @@ final class NotchHoverMonitor {
         }
     }
 
-    private func pollMouseDrag() {
+    private func sampleMouseDragState() {
         if isExternalMouseDragActive {
             let location = NSEvent.mouseLocation
             if location != lastExternalMouseDragLocation {
@@ -859,7 +882,7 @@ final class NotchHoverMonitor {
         }
 
         guard activeMouseSequenceGeneration != nil else {
-            stopDragPolling()
+            stopDragMonitoring()
             return
         }
         guard NSEvent.pressedMouseButtons & 1 != 0 else {

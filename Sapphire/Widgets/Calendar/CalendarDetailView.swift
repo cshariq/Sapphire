@@ -250,7 +250,7 @@ struct CalendarDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(scheduleItems) { item in
                             DetailedScheduleItemRow(item: item)
                         }

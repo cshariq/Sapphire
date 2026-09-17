@@ -231,7 +231,7 @@ class Arm64DDC: NSObject {
   static func getIoregServicesForMatching() -> [IOregService] {
     var serviceLocation = 0
     var ioregServicesForMatching: [IOregService] = []
-    let ioregRoot: io_registry_entry_t = IORegistryGetRootEntry(kIOMasterPortDefault)
+    let ioregRoot: io_registry_entry_t = IORegistryGetRootEntry(kIOMainPortDefault)
     defer {
       IOObjectRelease(ioregRoot)
     }

@@ -22,6 +22,32 @@ enum FaceIDAuthResult: Equatable {
     case cancelled
 }
 
+private struct BluetoothAuthenticationSettings: Equatable {
+    let lockRSSI: Int
+    let unlockRSSI: Int
+    let proximityTimeout: Double
+    let signalTimeout: Double
+    let passiveMode: Bool
+
+    init(_ settings: Settings) {
+        lockRSSI = settings.bluetoothUnlockLockRSSI
+        unlockRSSI = settings.bluetoothUnlockUnlockRSSI
+        proximityTimeout = settings.bluetoothUnlockTimeout
+        signalTimeout = settings.bluetoothUnlockNoSignalTimeout
+        passiveMode = settings.bluetoothUnlockPassiveMode
+    }
+}
+
+private struct FaceIDLocationSettings: Equatable {
+    let policy: FaceIDLocationPolicy
+    let allowedWiFiNetworks: [String]
+
+    init(_ settings: Settings) {
+        policy = settings.faceIDLocationPolicy
+        allowedWiFiNetworks = settings.faceIDAllowedWiFiNetworks
+    }
+}
+
 @MainActor
 class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     static let shared = AuthenticationManager()
@@ -437,21 +463,34 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     // MARK: - System Observers & Delegates
 
     private func setupBindings() {
-        settings.$settings.map(\.bluetoothUnlockEnabled).removeDuplicates().assign(to: \.isEnabled, on: self).store(in: &cancellables)
-        settings.$settings.map(\.bluetoothUnlockDeviceID).removeDuplicates().assign(to: \.selectedDeviceID, on: self).store(in: &cancellables)
+        settings.changes(of: { $0.bluetoothUnlockEnabled })
+            .prepend(settings.settings.bluetoothUnlockEnabled)
+            .assign(to: \.isEnabled, on: self)
+            .store(in: &cancellables)
+        settings.changes(of: { $0.bluetoothUnlockDeviceID })
+            .prepend(settings.settings.bluetoothUnlockDeviceID)
+            .assign(to: \.selectedDeviceID, on: self)
+            .store(in: &cancellables)
         $isEnabled.combineLatest($selectedDeviceID).sink { [weak self] (enabled, deviceID) in self?.updateMonitoringConfig(enabled: enabled, deviceID: deviceID) }.store(in: &cancellables)
     }
 
     private func setupSettingsObserver() {
-        settings.$settings.receive(on: DispatchQueue.main).sink { [weak self] newSettings in
-            guard let self = self else { return }
-            self.ble.lockRSSI = newSettings.bluetoothUnlockLockRSSI
-            self.ble.unlockRSSI = newSettings.bluetoothUnlockUnlockRSSI
-            self.ble.proximityTimeout = newSettings.bluetoothUnlockTimeout
-            self.ble.signalTimeout = newSettings.bluetoothUnlockNoSignalTimeout
-            self.ble.setPassiveMode(newSettings.bluetoothUnlockPassiveMode)
-            self.handleFaceIDLocationChange()
-        }.store(in: &cancellables)
+        settings.changes(of: BluetoothAuthenticationSettings.init)
+            .prepend(BluetoothAuthenticationSettings(settings.settings))
+            .sink { [weak self] configuration in
+                guard let self else { return }
+                self.ble.lockRSSI = configuration.lockRSSI
+                self.ble.unlockRSSI = configuration.unlockRSSI
+                self.ble.proximityTimeout = configuration.proximityTimeout
+                self.ble.signalTimeout = configuration.signalTimeout
+                self.ble.setPassiveMode(configuration.passiveMode)
+            }
+            .store(in: &cancellables)
+
+        settings.changes(of: FaceIDLocationSettings.init)
+            .prepend(FaceIDLocationSettings(settings.settings))
+            .sink { [weak self] _ in self?.handleFaceIDLocationChange() }
+            .store(in: &cancellables)
 
         WiFiStatusMonitor.shared.$state
             .receive(on: DispatchQueue.main)

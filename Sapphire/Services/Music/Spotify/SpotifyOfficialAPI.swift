@@ -25,22 +25,16 @@ class SpotifyOfficialAPIManager: ObservableObject {
     private var clientSecret = ""
     private let redirectURI = "sapphire://callback"
 
-    private let settingsModel = SettingsModel.shared
-    private var cancellables = Set<AnyCancellable>()
-
     private var refreshTask: Task<Bool, Never>?
 
     private init() {
         updateCredentials()
-        settingsModel.$settings.receive(on: DispatchQueue.main).sink { [weak self] _ in
-            self?.updateCredentials()
-        }.store(in: &cancellables)
         NotificationCenter.default.addObserver(
             forName: .apiKeyManagerSpotifyCredentialsChanged,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateCredentials()
+            Task { @MainActor in self?.updateCredentials() }
         }
 
         self.accessToken = UserDefaults.standard.string(forKey: "spotifyAccessToken")
@@ -143,7 +137,7 @@ class SpotifyOfficialAPIManager: ObservableObject {
     }
 
     private var isAccessTokenValid: Bool {
-        guard let accessToken, let expiresAt = accessTokenExpiresAt else { return false }
+        guard accessToken != nil, let expiresAt = accessTokenExpiresAt else { return false }
         return Date().addingTimeInterval(60) < expiresAt
     }
 
@@ -205,7 +199,7 @@ class SpotifyOfficialAPIManager: ObservableObject {
                 print("[SpotifyOfficialAPIManager] Refresh token error: \(errorResponse.error_description)")
                 let permanent = Self.isPermanentTokenError(errorResponse.error)
                 if permanent {
-                    await logout()
+                    logout()
                 } else {
                     print("[SpotifyOfficialAPIManager] Non-permanent refresh error — keeping session.")
                 }

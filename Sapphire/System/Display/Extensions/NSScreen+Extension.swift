@@ -63,7 +63,7 @@ public extension NSScreen {
   var displayName: String? {
     var servicePortIterator = io_iterator_t()
 
-    let status = IOServiceGetMatchingServices(kIOMasterPortDefault, IOServiceMatching("IODisplayConnect"), &servicePortIterator)
+    let status = IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IODisplayConnect"), &servicePortIterator)
     guard status == KERN_SUCCESS else {
       return nil
     }

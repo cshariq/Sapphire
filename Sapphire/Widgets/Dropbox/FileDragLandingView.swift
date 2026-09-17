@@ -41,9 +41,7 @@ struct FileDragLandingView: View {
     @Binding var activeZone: DropZone?
     let onZoneFramesChange: ([DropZone: CGRect]) -> Void
 
-    @Environment(\.notchDragLocation) private var notchDragLocation
     @ObservedObject private var settings = SettingsModel.shared
-    @ObservedObject private var continuity = ContinuityManager.shared
     @State private var zoneFrames: [DropZone: CGRect] = [:]
 
     var body: some View {
@@ -65,8 +63,7 @@ struct FileDragLandingView: View {
             }
 
             if settings.settings.fileShelfDeviceDestinationsEnabled {
-                DeviceDropZoneView(
-                    peers: shareablePeers,
+                ContinuityDeviceDropZone(
                     activeZone: activeZone,
                     cardWidth: Self.cardWidth,
                     cardHeight: Self.cardHeight
@@ -80,27 +77,26 @@ struct FileDragLandingView: View {
         }
         .padding(15)
         .frame(width: landingWidth, height: 150)
+        .background {
+            FileDropHitTestObserver(
+                zoneFrames: zoneFrames,
+                onActiveZoneChange: { zone in
+                    if activeZone != zone { activeZone = zone }
+                }
+            )
+        }
         .onPreferenceChange(DropZonePreferenceKey.self) { frames in
             guard zoneFrames != frames else { return }
             zoneFrames = frames
             onZoneFramesChange(frames)
-            updateActiveState(at: notchDragLocation)
         }
         .onAppear {
             onZoneFramesChange(zoneFrames)
-            updateActiveState(at: notchDragLocation)
         }
         .onDisappear {
             activeZone = nil
             onZoneFramesChange([:])
         }
-        .onChange(of: notchDragLocation) { _, location in
-            updateActiveState(at: location)
-        }
-    }
-
-    private var shareablePeers: [ContinuityPeer] {
-        continuity.peers.filter { $0.supports(.files) }
     }
 
     private var destinationCardCount: Int {
@@ -134,28 +130,65 @@ struct FileDragLandingView: View {
         .id(zone)
     }
 
-    private func updateActiveState(at globalMousePoint: CGPoint?) {
-        guard let globalMousePoint else {
-            if activeZone != nil { activeZone = nil }
+}
+
+private struct FileDropHitTestObserver: View {
+    @EnvironmentObject private var dragLocation: NotchDragLocationState
+
+    let zoneFrames: [DropZone: CGRect]
+    let onActiveZoneChange: (DropZone?) -> Void
+
+    @State private var lastZone: DropZone?
+
+    var body: some View {
+        Color.clear
+            .onAppear { updateActiveState(at: dragLocation.location) }
+            .onChange(of: dragLocation.location) { _, location in
+                updateActiveState(at: location)
+            }
+            .onChange(of: zoneFrames) { _, _ in
+                updateActiveState(at: dragLocation.location)
+            }
+            .onDisappear { publish(nil) }
+    }
+
+    private func updateActiveState(at point: CGPoint?) {
+        guard let point, !zoneFrames.isEmpty else {
+            publish(nil)
             return
         }
 
-        if !zoneFrames.isEmpty {
-            let totalWidgetFrame = zoneFrames.values.reduce(CGRect.null) { $0.union($1) }
-            if !totalWidgetFrame.insetBy(dx: -50, dy: -50).contains(globalMousePoint) {
-                if activeZone != nil { activeZone = nil }
-                return
-            }
+        let totalFrame = zoneFrames.values.reduce(CGRect.null) { $0.union($1) }
+        guard totalFrame.insetBy(dx: -50, dy: -50).contains(point) else {
+            publish(nil)
+            return
         }
 
         let candidates = zoneFrames.map { (zone: $0.key, frame: $0.value) }
-        let newHover = SnapZoneHitTesting.nearest(
-            candidates,
-            to: globalMousePoint
-        ) { $0.frame }?.zone
+        publish(SnapZoneHitTesting.nearest(candidates, to: point) { $0.frame }?.zone)
+    }
 
-        guard activeZone != newHover else { return }
-        activeZone = newHover
+    private func publish(_ zone: DropZone?) {
+        guard lastZone != zone else { return }
+        lastZone = zone
+        onActiveZoneChange(zone)
+    }
+}
+
+private struct ContinuityDeviceDropZone: View {
+    @ObservedObject private var continuity = ContinuityManager.shared
+
+    let activeZone: DropZone?
+    let cardWidth: CGFloat
+    let cardHeight: CGFloat
+
+    var body: some View {
+        DeviceDropZoneView(
+            peers: continuity.peers.filter { $0.supports(.files) },
+            activeZone: activeZone,
+            cardWidth: cardWidth,
+            cardHeight: cardHeight
+        )
     }
 }
 

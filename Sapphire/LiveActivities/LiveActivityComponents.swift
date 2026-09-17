@@ -1368,10 +1368,13 @@ struct TimerActivityView {
     }
 
     static func right(timerManager: TimerManager) -> some View {
-        Text(timerManager.displayTime.asStopwatchClock)
-            .font(.system(size: 13, design: .monospaced).weight(.semibold))
-            .contentTransition(.numericText(countsDown: timerManager.activeTimer == .system))
-            .animation(.default, value: timerManager.displayTime)
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let displayTime = timerManager.displayTime
+            Text(displayTime.asStopwatchClock)
+                .font(.system(size: 13, design: .monospaced).weight(.semibold))
+                .contentTransition(.numericText(countsDown: timerManager.activeTimer == .system))
+                .animation(.default, value: Int(displayTime))
+        }
     }
 }
 
@@ -1553,10 +1556,13 @@ struct NotificationLiveActivityView: View {
             } else if let attachment = attachment {
                 switch attachment.type {
                 case .image:
-                    if let image = NSImage(contentsOf: attachment.localURL) {
-                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-                            .frame(maxHeight: 200).clipShape(RoundedRectangle(cornerRadius: 12))
+                    CachedAsyncImage(url: attachment.localURL) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Color.clear
                     }
+                    .frame(maxHeight: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 case .audio:
                     AudioMessageView(attachment: attachment, playbackState: $audioPlaybackState)
                 case .other:

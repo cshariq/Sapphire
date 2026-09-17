@@ -165,6 +165,7 @@ final class PlainTextPasteManager: @unchecked Sendable {
 
     private func handle(event: CGEvent, type: CGEventType) -> EventTapDecision {
         guard type == .keyDown,
+              event.getIntegerValueField(.eventSourceUserData) != SapphireSyntheticEventMarker.plainTextPaste,
               event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else {
             return .pass
         }
@@ -182,12 +183,11 @@ final class PlainTextPasteManager: @unchecked Sendable {
             return .pass
         }
 
-        guard let payload = PlainTextPastePayload.capture(from: NSPasteboard.general) else {
-            return .pass
+        let flagsRawValue = flags.rawValue
+        DispatchQueue.main.async { [weak self] in
+            self?.performPlainTextPaste(flagsRawValue: flagsRawValue)
         }
-
-        rewritePasteboardForPlainTextPaste(payload)
-        return .pass
+        return .swallow
     }
 
     private func stateAllowsHandling() -> Bool {
@@ -196,31 +196,36 @@ final class PlainTextPasteManager: @unchecked Sendable {
         return isArmed && !isRecordingShortcut
     }
 
-    private func rewritePasteboardForPlainTextPaste(_ payload: PlainTextPastePayload) {
-        var temporaryChangeCount: Int?
-        DispatchQueue.main.sync {
-            let pasteboard = NSPasteboard.general
-            guard pasteboard.changeCount == payload.sourceChangeCount else { return }
-
-            let clipboardManager = ClipboardManager.shared
-            clipboardManager.beginIgnoringExternalPasteboardChanges()
-
-            let cleanedText = Self.sanitizedText(from: payload.text)
-            pasteboard.clearContents()
-            guard pasteboard.setString(cleanedText, forType: .string) else {
-                payload.restore(to: pasteboard)
-                clipboardManager.endIgnoringExternalPasteboardChanges(ownChangeCount: pasteboard.changeCount)
-                return
-            }
-
-            temporaryChangeCount = pasteboard.changeCount
+    @MainActor
+    private func performPlainTextPaste(flagsRawValue: UInt64) {
+        guard stateAllowsHandling(),
+              let payload = PlainTextPastePayload.capture(from: NSPasteboard.general) else {
+            postNativePaste(flagsRawValue: flagsRawValue)
+            return
         }
 
-        guard let temporaryChangeCount else { return }
+        let pasteboard = NSPasteboard.general
+        guard pasteboard.changeCount == payload.sourceChangeCount else {
+            postNativePaste(flagsRawValue: flagsRawValue)
+            return
+        }
+
+        let clipboardManager = ClipboardManager.shared
+        clipboardManager.beginIgnoringExternalPasteboardChanges()
+
+        let cleanedText = Self.sanitizedText(from: payload.text)
+        pasteboard.clearContents()
+        guard pasteboard.setString(cleanedText, forType: .string) else {
+            payload.restore(to: pasteboard)
+            clipboardManager.endIgnoringExternalPasteboardChanges(ownChangeCount: pasteboard.changeCount)
+            postNativePaste(flagsRawValue: flagsRawValue)
+            return
+        }
+
+        let temporaryChangeCount = pasteboard.changeCount
+        postNativePaste(flagsRawValue: flagsRawValue)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            let pasteboard = NSPasteboard.general
-            let clipboardManager = ClipboardManager.shared
             if pasteboard.changeCount == temporaryChangeCount {
                 payload.restore(to: pasteboard)
                 clipboardManager.endIgnoringExternalPasteboardChanges(ownChangeCount: pasteboard.changeCount)
@@ -291,5 +296,30 @@ final class PlainTextPasteManager: @unchecked Sendable {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
         let range = NSRange(text.startIndex..., in: text)
         return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+    }
+
+    private func postNativePaste(flagsRawValue: UInt64) {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let keyDown = CGEvent(
+                keyboardEventSource: source,
+                virtualKey: CGKeyCode(kVK_ANSI_V),
+                keyDown: true
+              ),
+              let keyUp = CGEvent(
+                keyboardEventSource: source,
+                virtualKey: CGKeyCode(kVK_ANSI_V),
+                keyDown: false
+              ) else {
+            return
+        }
+
+        let flags = CGEventFlags(rawValue: flagsRawValue)
+        keyDown.flags = flags
+        keyUp.flags = flags
+        keyDown.setIntegerValueField(.eventSourceUserData, value: SapphireSyntheticEventMarker.plainTextPaste)
+        keyUp.setIntegerValueField(.eventSourceUserData, value: SapphireSyntheticEventMarker.plainTextPaste)
+
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
     }
 }

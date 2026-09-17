@@ -30,6 +30,31 @@ final class LiquidGlassViewTests: XCTestCase {
     }
 
     @MainActor
+    func testStableShapeKeyAvoidsRebuildingTheGlassMask() {
+        let host = LiquidGlassHostView(
+            frame: NSRect(x: 0, y: 0, width: 200, height: 80),
+            backend: .visualEffect
+        )
+        var pathBuilds = 0
+
+        host.setShapePathProvider({ bounds in
+            pathBuilds += 1
+            return CGPath(
+                roundedRect: bounds,
+                cornerWidth: 18,
+                cornerHeight: 18,
+                transform: nil
+            )
+        }, cacheKey: "stable-rounded-rectangle")
+        host.setShapePathProvider({ bounds in
+            pathBuilds += 1
+            return CGPath(rect: bounds, transform: nil)
+        }, cacheKey: "stable-rounded-rectangle")
+
+        XCTAssertEqual(pathBuilds, 1)
+    }
+
+    @MainActor
     private func configure(
         _ host: LiquidGlassHostView,
         material: LiquidGlassMaterial

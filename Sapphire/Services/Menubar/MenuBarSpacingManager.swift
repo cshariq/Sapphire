@@ -148,14 +148,7 @@ class MenuBarSpacingManager {
             return
         }
 
-        app.terminate()
-
-        let timeout = Date().addingTimeInterval(forceTerminateDelay)
-        while !app.isTerminated && Date() < timeout {
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-
-        if !app.isTerminated {
+        if !(await app.sapphireTerminateAndWait(timeout: forceTerminateDelay)) {
             logger.warning("'\(app.localizedName ?? "")' did not quit gracefully. Force terminating.")
             app.forceTerminate()
         }

@@ -7,6 +7,104 @@
 import SwiftUI
 import AVFoundation
 
+private struct FaceIDPulseRing: NSViewRepresentable {
+    let color: NSColor
+    let lineWidth: CGFloat
+    let endScale: CGFloat
+    let duration: CFTimeInterval
+
+    func makeNSView(context: Context) -> FaceIDPulseRingView {
+        FaceIDPulseRingView()
+    }
+
+    func updateNSView(_ nsView: FaceIDPulseRingView, context: Context) {
+        nsView.configure(
+            color: color,
+            lineWidth: lineWidth,
+            endScale: endScale,
+            duration: duration
+        )
+    }
+}
+
+private final class FaceIDPulseRingView: NSView {
+    private static let animationKey = "faceIDPulse"
+    private let ringLayer = CAShapeLayer()
+    private var endScale: CGFloat = 1.05
+    private var duration: CFTimeInterval = 1.5
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        ringLayer.fillColor = NSColor.clear.cgColor
+        layer?.addSublayer(ringLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func configure(color: NSColor, lineWidth: CGFloat, endScale: CGFloat, duration: CFTimeInterval) {
+        let animationChanged = self.endScale != endScale || self.duration != duration
+        self.endScale = endScale
+        self.duration = duration
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ringLayer.strokeColor = color.cgColor
+        ringLayer.lineWidth = lineWidth
+        CATransaction.commit()
+
+        if animationChanged {
+            ringLayer.removeAnimation(forKey: Self.animationKey)
+        }
+        if window != nil { startAnimationIfNeeded() }
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ringLayer.frame = bounds
+        let inset = ringLayer.lineWidth / 2
+        ringLayer.path = CGPath(
+            ellipseIn: bounds.insetBy(dx: inset, dy: inset),
+            transform: nil
+        )
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            ringLayer.removeAnimation(forKey: Self.animationKey)
+        } else {
+            startAnimationIfNeeded()
+        }
+    }
+
+    private func startAnimationIfNeeded() {
+        guard ringLayer.animation(forKey: Self.animationKey) == nil else { return }
+
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 1
+        scale.toValue = endScale
+
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = 1
+        opacity.toValue = 0
+
+        let group = CAAnimationGroup()
+        group.animations = [scale, opacity]
+        group.duration = duration
+        group.repeatCount = .infinity
+        group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        group.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 60, preferred: 60)
+        ringLayer.add(group, forKey: Self.animationKey)
+    }
+}
+
 // MARK: - Camera Live View
 struct CameraView: NSViewRepresentable {
     var cameraController: CameraController
@@ -37,7 +135,6 @@ struct FaceIDRegistrationView: View {
     @Environment(\.presentationMode) var presentationMode
 
     let profileName: String
-    @State private var isPulsating = false
     @State private var displayedHoldProgress = 0.0
 
     private var isRegistered: Bool { cameraController.appState == .registeredAndIdle }
@@ -121,12 +218,13 @@ struct FaceIDRegistrationView: View {
                     }
 
                     if !isRegistered && !isAskExtended {
-                        Circle()
-                            .stroke(overlayColor.opacity(0.5), lineWidth: 8)
+                        FaceIDPulseRing(
+                            color: NSColor(overlayColor.opacity(0.5)),
+                            lineWidth: 8,
+                            endScale: 1.05,
+                            duration: 1.5
+                        )
                             .frame(width: 300, height: 300)
-                            .scaleEffect(isPulsating ? 1.05 : 1.0)
-                            .opacity(isPulsating ? 0 : 1)
-                            .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false), value: isPulsating)
                     }
 
                     if isAskExtended {
@@ -216,7 +314,6 @@ struct FaceIDRegistrationView: View {
         }
         .onAppear {
             cameraController.startRegistration(forProfile: profileName)
-            isPulsating = true
         }
         .onDisappear { cameraController.cancelCurrentOperation() }
         .onChange(of: cameraController.holdProgress) { progress in
@@ -252,19 +349,19 @@ struct FaceIDRegistrationView: View {
 // MARK: - FaceID Unlock View Animation
 struct FaceIDUnlockView: View {
     @State private var isUnlocked = false
-    @State private var animateRing = false
 
     var body: some View {
         ZStack {
             Color.black.edgesIgnoringSafeArea(.all)
             VStack {
                 ZStack {
-                    Circle()
-                        .stroke(lineWidth: 4)
-                        .foregroundColor(.green)
-                        .scaleEffect(animateRing ? 1.2 : 1)
-                        .opacity(animateRing ? 0 : 1)
-                        .animation(Animation.easeOut(duration: 1).repeatForever(autoreverses: false), value: animateRing)
+                    FaceIDPulseRing(
+                        color: .systemGreen,
+                        lineWidth: 4,
+                        endScale: 1.2,
+                        duration: 1
+                    )
+                    .frame(width: 96, height: 96)
 
                     Image(systemName: "faceid")
                         .font(.system(size: 80))
@@ -273,7 +370,6 @@ struct FaceIDUnlockView: View {
                         .rotationEffect(.degrees(isUnlocked ? 360 : 0))
                         .animation(.spring(response: 0.5, dampingFraction: 0.6, blendDuration: 0), value: isUnlocked)
                 }
-                .onAppear { animateRing = true }
 
                 if isUnlocked {
                     Text("Unlocked")

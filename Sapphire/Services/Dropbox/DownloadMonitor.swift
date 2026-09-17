@@ -254,7 +254,7 @@ class DownloadMonitor: ObservableObject {
     private let fileManager = FileManager.default
     private var downloadDirectory: URL?
     private var fileWatcher: DispatchSourceFileSystemObject?
-    private var updateTimer: Timer?
+    private var taskWatchers: [URL: DispatchSourceFileSystemObject] = [:]
     private var currentTasks: [URL: DownloadTask] = [:]
     private var taskLastSizes: [URL: Int64] = [:]
     private var taskLastUpdateTimes: [URL: Date] = [:]
@@ -279,10 +279,10 @@ class DownloadMonitor: ObservableObject {
 
     func stopMonitoring() {
         print("[DM] Stopping monitoring.")
-        updateTimer?.invalidate()
-        updateTimer = nil
         fileWatcher?.cancel()
         fileWatcher = nil
+        taskWatchers.values.forEach { $0.cancel() }
+        taskWatchers.removeAll()
         currentTasks.removeAll()
         taskLastSizes.removeAll()
         taskLastUpdateTimes.removeAll()
@@ -333,8 +333,7 @@ class DownloadMonitor: ObservableObject {
 
             for url in removedURLs {
                 print("[DM] Partial download file removed: \(url.lastPathComponent). Removing task.")
-                currentTasks.removeValue(forKey: url)
-                removeSamplingState(for: url)
+                removeTask(for: url)
             }
 
             for url in addedURLs {
@@ -347,17 +346,40 @@ class DownloadMonitor: ObservableObject {
                 )
                 currentTasks[url] = task
                 taskLastUpdateTimes[url] = Date()
+                installTaskWatcher(for: url)
             }
 
             if !removedURLs.isEmpty || !addedURLs.isEmpty {
                 updateTasksList()
             }
-            syncProgressTimer()
             checkDownloads()
 
         } catch {
             print("[DM] ERROR scanning downloads directory: \(error)")
         }
+    }
+
+    private func installTaskWatcher(for url: URL) {
+        guard taskWatchers[url] == nil else { return }
+        let fileDescriptor = open(url.path, O_EVTONLY)
+        guard fileDescriptor >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fileDescriptor,
+            eventMask: [.write, .extend, .attrib, .delete, .rename, .revoke],
+            queue: queue
+        )
+        source.setEventHandler { [weak self, weak source] in
+            guard let source else { return }
+            let wasReplaced = !source.data.isDisjoint(with: [.delete, .rename, .revoke])
+            Task { @MainActor [weak self] in
+                self?.checkDownloads()
+                if wasReplaced { self?.scanDownloadsDirectory() }
+            }
+        }
+        source.setCancelHandler { close(fileDescriptor) }
+        source.resume()
+        taskWatchers[url] = source
     }
 
     private func getOriginalFileName(from url: URL) -> String {
@@ -384,7 +406,6 @@ class DownloadMonitor: ObservableObject {
 
     private func checkDownloads() {
         guard !currentTasks.isEmpty else {
-            syncProgressTimer()
             return
         }
 
@@ -393,8 +414,7 @@ class DownloadMonitor: ObservableObject {
         for (url, var task) in currentTasks {
             guard fileManager.fileExists(atPath: url.path) else {
                 print("[DM] File for task \(task.fileName) no longer exists. Assuming completed or deleted.")
-                currentTasks.removeValue(forKey: url)
-                removeSamplingState(for: url)
+                removeTask(for: url)
                 tasksHaveChanged = true
                 continue
             }
@@ -450,12 +470,10 @@ class DownloadMonitor: ObservableObject {
         let completedTasks = currentTasks.filter { $0.value.progress >= 0.999 }
         for (url, _) in completedTasks {
             print("[DM] Task for \(url.lastPathComponent) is complete. Removing.")
-            currentTasks.removeValue(forKey: url)
-            removeSamplingState(for: url)
+            removeTask(for: url)
             tasksHaveChanged = true
         }
 
-        syncProgressTimer()
         if tasksHaveChanged || tasks.count != currentTasks.count {
             print("[DM] Download tasks changed. Publishing update.")
             updateTasksList()
@@ -471,18 +489,12 @@ class DownloadMonitor: ObservableObject {
         }
     }
 
-    private func syncProgressTimer() {
-        if currentTasks.isEmpty {
-            updateTimer?.invalidate()
-            updateTimer = nil
-            return
+    private func removeTask(for url: URL) {
+        currentTasks.removeValue(forKey: url)
+        if let watcher = taskWatchers.removeValue(forKey: url) {
+            watcher.cancel()
         }
-
-        guard updateTimer == nil else { return }
-        let timer = Timer.scheduledCoalescing(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.checkDownloads() }
-        }
-        updateTimer = timer
+        removeSamplingState(for: url)
     }
 
     private func removeSamplingState(for url: URL) {

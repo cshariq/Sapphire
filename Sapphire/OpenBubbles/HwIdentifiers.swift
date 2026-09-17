@@ -8,11 +8,7 @@
 import Foundation
 
 func getMainPort() -> mach_port_t {
-    if #available(macOS 12.0, *) {
-        return kIOMainPortDefault
-    } else {
-        return kIOMasterPortDefault
-    }
+    kIOMainPortDefault
 }
 
 func getMacAddress() -> Data {

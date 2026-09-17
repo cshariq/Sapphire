@@ -1944,8 +1944,8 @@ enum InstalledAppBundleVersionReader {
 
 // MARK: - Per-app check state
 
-struct InstalledAppUpdateEntry: Identifiable, @unchecked Sendable {
-    enum Status: Equatable {
+struct InstalledAppUpdateEntry: Identifiable, Sendable {
+    enum Status: Equatable, Sendable {
         case checking
         case upToDate(latestVersion: String)
         case updateAvailable(latestVersion: String, downloadURL: URL?, pageURL: URL?, releaseNotes: String?, releaseNotesURL: URL?)
@@ -1978,7 +1978,6 @@ struct InstalledAppUpdateEntry: Identifiable, @unchecked Sendable {
     let name: String
     let bundleIdentifier: String
     let url: URL
-    let icon: NSImage
     var currentVersion: String
     var currentBuildVersion: String
     let source: InstalledAppUpdateSource
@@ -1991,12 +1990,6 @@ struct InstalledAppUpdateEntry: Identifiable, @unchecked Sendable {
 final class InstalledAppUpdatesChecker: ObservableObject {
     static let shared = InstalledAppUpdatesChecker()
 
-    nonisolated(unsafe) private static let installedAppIconCache: NSCache<NSString, NSImage> = {
-        let cache = NSCache<NSString, NSImage>()
-        cache.countLimit = 512
-        return cache
-    }()
-
     @Published private(set) var entries: [InstalledAppUpdateEntry] = []
     @Published private(set) var isChecking = false
     @Published private(set) var checkProgress: Double = 0
@@ -2008,7 +2001,7 @@ final class InstalledAppUpdatesChecker: ObservableObject {
     struct ReleaseNotesEntry: Identifiable {
         let id: String
         let name: String
-        let icon: NSImage
+        let url: URL
         let latestVersion: String
         let releaseNotes: String?
         let releaseNotesURL: URL?
@@ -2016,7 +2009,7 @@ final class InstalledAppUpdatesChecker: ObservableObject {
         init(entry: InstalledAppUpdateEntry) {
             id = entry.id
             name = entry.name
-            icon = entry.icon
+            url = entry.url
             if case .updateAvailable(let latestVersion, _, _, let releaseNotes, let releaseNotesURL) = entry.status {
                 self.latestVersion = latestVersion
                 self.releaseNotes = releaseNotes
@@ -2047,6 +2040,14 @@ final class InstalledAppUpdatesChecker: ObservableObject {
     private var lastBackgroundCheck: Date = .distantPast
     private let minimumBackgroundCheckGap: TimeInterval = 30 * 60
     private let backgroundCheckInterval: TimeInterval = 3 * 60 * 60
+    private let resultPublicationInterval: TimeInterval = 0.2
+    private let resultPublicationBatchSize = 4
+
+    private struct CompletedCheck: Sendable {
+        let id: String
+        let status: InstalledAppUpdateEntry.Status
+        let installedVersions: InstalledAppBundleVersions?
+    }
 
     // MARK: Settings integration
 
@@ -2148,16 +2149,17 @@ final class InstalledAppUpdatesChecker: ObservableObject {
     }
 
     private func runFullCheck() async {
-        entries = await Task.detached(priority: .utility) {
+        var scannedEntries = await Task.detached(priority: .utility) {
             Self.scanInstalledApps()
         }.value
-        for index in entries.indices {
-            if entries[index].source == .none {
-                entries[index].status = .unsupported
-            } else if ignoredBundleIDs.contains(entries[index].id) {
-                entries[index].status = .ignored
+        for index in scannedEntries.indices {
+            if scannedEntries[index].source == .none {
+                scannedEntries[index].status = .unsupported
+            } else if ignoredBundleIDs.contains(scannedEntries[index].id) {
+                scannedEntries[index].status = .ignored
             }
         }
+        entries = scannedEntries
 
         let appsToCheck = entries.filter { $0.source != .none && !ignoredBundleIDs.contains($0.id) }
         let everyCheckFailed = await performChecks(for: appsToCheck)
@@ -2183,6 +2185,8 @@ final class InstalledAppUpdatesChecker: ObservableObject {
         let limit = 6
         var completed = 0
         var failures = 0
+        var pendingPublications: [CompletedCheck] = []
+        var lastPublicationAt = ProcessInfo.processInfo.systemUptime
 
         let brewRequests: [HomebrewClient.CheckRequest] = apps.compactMap { app in
             guard case .homebrew(let token) = app.source else { return nil }
@@ -2193,34 +2197,65 @@ final class InstalledAppUpdatesChecker: ObservableObject {
             return true
         }
 
-        await withTaskGroup(of: [HomebrewClient.CheckResult].self) { group in
+        let appURLs = Dictionary(uniqueKeysWithValues: apps.map { ($0.id, $0.url) })
+        await withTaskGroup(of: [CompletedCheck].self) { group in
             var iterator = individualApps.makeIterator()
             var primed = 0
             if !brewRequests.isEmpty {
-                group.addTask { await HomebrewClient.checkBatch(brewRequests) }
+                group.addTask {
+                    await HomebrewClient.checkBatch(brewRequests).map { result in
+                        CompletedCheck(
+                            id: result.id,
+                            status: result.status,
+                            installedVersions: appURLs[result.id].flatMap {
+                                InstalledAppBundleVersionReader.read(at: $0)
+                            }
+                        )
+                    }
+                }
                 primed = 1
             }
             while primed < limit, let app = iterator.next() {
-                group.addTask { [weak self] in
-                    let status = await self?.performCheck(for: app) ?? .error("Check failed")
-                    return [(app.id, status)]
+                group.addTask {
+                    let status = await Self.performCheck(for: app)
+                    return [CompletedCheck(
+                        id: app.id,
+                        status: status,
+                        installedVersions: InstalledAppBundleVersionReader.read(at: app.url)
+                    )]
                 }
                 primed += 1
             }
             while let results = await group.next() {
-                for (id, status) in results {
-                    apply(status, toEntryWithID: id)
+                for result in results {
+                    pendingPublications.append(result)
                     completed += 1
-                    if status.isError { failures += 1 }
+                    if result.status.isError { failures += 1 }
                 }
-                checkProgress = Double(completed) / Double(max(total, 1))
+                let now = ProcessInfo.processInfo.systemUptime
+                if pendingPublications.count >= resultPublicationBatchSize
+                    || now - lastPublicationAt >= resultPublicationInterval
+                    || completed == total {
+                    apply(pendingPublications)
+                    pendingPublications.removeAll(keepingCapacity: true)
+                    checkProgress = Double(completed) / Double(max(total, 1))
+                    lastPublicationAt = now
+                }
                 if let app = iterator.next() {
-                    group.addTask { [weak self] in
-                        let status = await self?.performCheck(for: app) ?? .error("Check failed")
-                        return [(app.id, status)]
+                    group.addTask {
+                        let status = await Self.performCheck(for: app)
+                        return [CompletedCheck(
+                            id: app.id,
+                            status: status,
+                            installedVersions: InstalledAppBundleVersionReader.read(at: app.url)
+                        )]
                     }
                 }
             }
+        }
+        if !pendingPublications.isEmpty {
+            apply(pendingPublications)
+            checkProgress = Double(completed) / Double(max(total, 1))
         }
         return completed > 0 && failures == completed
     }
@@ -2243,7 +2278,9 @@ final class InstalledAppUpdatesChecker: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 15 * 60, execute: work)
     }
 
-    private func performCheck(for app: InstalledAppUpdateEntry) async -> InstalledAppUpdateEntry.Status {
+    private nonisolated static func performCheck(
+        for app: InstalledAppUpdateEntry
+    ) async -> InstalledAppUpdateEntry.Status {
         switch app.source {
         case .none:
             return .unsupported
@@ -2408,18 +2445,31 @@ final class InstalledAppUpdatesChecker: ObservableObject {
         }
     }
 
-    private func apply(_ status: InstalledAppUpdateEntry.Status, toEntryWithID id: String) {
-        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
-        let checkedVersion = entries[index].currentVersion
-        let checkedBuildVersion = entries[index].currentBuildVersion
-        refreshInstalledVersions(at: index)
-        let installedVersionChanged = checkedVersion != entries[index].currentVersion
-            || checkedBuildVersion != entries[index].currentBuildVersion
-        entries[index].status = Self.validatedStatus(
-            status,
-            currentVersion: entries[index].currentVersion,
-            demoteEquivalentUpdate: installedVersionChanged
+    private func apply(_ results: [CompletedCheck]) {
+        guard !results.isEmpty else { return }
+        var updatedEntries = entries
+        let indicesByID = Dictionary(
+            uniqueKeysWithValues: updatedEntries.indices.map { (updatedEntries[$0].id, $0) }
         )
+        var changed = false
+        for result in results {
+            guard let index = indicesByID[result.id] else { continue }
+            let checkedVersion = updatedEntries[index].currentVersion
+            let checkedBuildVersion = updatedEntries[index].currentBuildVersion
+            if let installedVersions = result.installedVersions {
+                updatedEntries[index].currentVersion = installedVersions.currentVersion
+                updatedEntries[index].currentBuildVersion = installedVersions.currentBuildVersion
+            }
+            let installedVersionChanged = checkedVersion != updatedEntries[index].currentVersion
+                || checkedBuildVersion != updatedEntries[index].currentBuildVersion
+            updatedEntries[index].status = Self.validatedStatus(
+                result.status,
+                currentVersion: updatedEntries[index].currentVersion,
+                demoteEquivalentUpdate: installedVersionChanged
+            )
+            changed = true
+        }
+        if changed { entries = updatedEntries }
     }
 
     nonisolated static func validatedStatus(
@@ -2462,7 +2512,6 @@ final class InstalledAppUpdatesChecker: ObservableObject {
                     .isDirectoryKey,
                     .isSymbolicLinkKey,
                     .isPackageKey,
-                    .contentModificationDateKey,
                 ],
                 options: [.skipsHiddenFiles, .skipsPackageDescendants]
             ) else { continue }
@@ -2471,7 +2520,6 @@ final class InstalledAppUpdatesChecker: ObservableObject {
                       let values = try? url.resourceValues(forKeys: [
                           .isDirectoryKey,
                           .isSymbolicLinkKey,
-                          .contentModificationDateKey,
                       ]),
                       values.isDirectory == true || values.isSymbolicLink == true else { continue }
                 enumerator.skipDescendants()
@@ -2495,7 +2543,6 @@ final class InstalledAppUpdatesChecker: ObservableObject {
                     name: name,
                     bundleIdentifier: identifier,
                     url: url,
-                    icon: cachedIcon(for: url, modifiedAt: values.contentModificationDate),
                     currentVersion: version,
                     currentBuildVersion: buildVersion,
                     source: source,
@@ -2505,15 +2552,6 @@ final class InstalledAppUpdatesChecker: ObservableObject {
         }
 
         return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    nonisolated private static func cachedIcon(for url: URL, modifiedAt: Date?) -> NSImage {
-        let stamp = modifiedAt?.timeIntervalSinceReferenceDate ?? 0
-        let key = "\(url.path)|\(stamp)" as NSString
-        if let cached = installedAppIconCache.object(forKey: key) { return cached }
-        let icon = NSWorkspace.shared.icon(forFile: url.path)
-        installedAppIconCache.setObject(icon, forKey: key)
-        return icon
     }
 
     // MARK: Ignore list
@@ -2613,8 +2651,7 @@ final class InstalledAppUpdatesChecker: ObservableObject {
     }
 
     private func refreshAfterBrewUpgrade(entryID: String) {
-        guard let index = entries.firstIndex(where: { $0.id == entryID }) else { return }
-        refreshInstalledVersions(at: index)
+        guard entries.contains(where: { $0.id == entryID }) else { return }
         checkAgain(entryID: entryID)
     }
 
@@ -2747,25 +2784,30 @@ final class InstalledAppUpdatesChecker: ObservableObject {
               entries[index].status != .checking,
               updatingBundleID != entryID,
               !ignoredBundleIDs.contains(entryID) else { return }
-        refreshInstalledVersions(at: index)
         entries[index].status = .checking
         let app = entries[index]
         entryCheckTasks[entryID] = Task { @MainActor [weak self] in
             guard let self else { return }
-            let status = await performCheck(for: app)
+            let refreshed = await Task.detached(priority: .utility) {
+                let versions = InstalledAppBundleVersionReader.read(at: app.url)
+                var refreshedApp = app
+                if let versions {
+                    refreshedApp.currentVersion = versions.currentVersion
+                    refreshedApp.currentBuildVersion = versions.currentBuildVersion
+                }
+                return (refreshedApp, versions)
+            }.value
+            let status = await Self.performCheck(for: refreshed.0)
             guard !Task.isCancelled,
                   !self.isChecking,
                   self.entryCheckTasks[entryID] != nil else { return }
             self.entryCheckTasks[entryID] = nil
-            self.apply(status, toEntryWithID: entryID)
+            self.apply([CompletedCheck(
+                id: entryID,
+                status: status,
+                installedVersions: refreshed.1
+            )])
         }
-    }
-
-    private func refreshInstalledVersions(at index: Int) {
-        guard entries.indices.contains(index),
-              let versions = InstalledAppBundleVersionReader.read(at: entries[index].url) else { return }
-        entries[index].currentVersion = versions.currentVersion
-        entries[index].currentBuildVersion = versions.currentBuildVersion
     }
 
     func forgetApp(bundleIdentifier: String, url: URL, preserveBundlePreferences: Bool = false) {

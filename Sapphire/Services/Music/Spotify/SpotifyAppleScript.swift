@@ -70,20 +70,14 @@ class SpotifyAppleScriptManager {
             configuration.activates = false
             configuration.addsToRecentItems = false
             do {
-                _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+                let app = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+                _ = await waitUntilLaunched(app, timeout: 5)
             } catch {
                 NSWorkspace.shared.open(url)
+                guard await waitUntilSpotifyIsRunning(timeout: 5) else { return }
             }
-
-            for _ in 0..<10 {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if isAppRunning() {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    let script = "tell application \"Spotify\" to play"
-                    _ = await runAppleScriptInBackground(script)
-                    return
-                }
-            }
+            let script = "tell application \"Spotify\" to play"
+            _ = await runAppleScriptInBackground(script)
         }
     }
 
@@ -95,20 +89,11 @@ class SpotifyAppleScriptManager {
         }
 
         app.terminate()
-        let softDeadline = Date().addingTimeInterval(4.0)
-        while !app.isTerminated, Date() < softDeadline {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-        }
-        if !app.isTerminated {
+        if !(await waitUntilTerminated(app, timeout: 4)) {
             app.forceTerminate()
-            let forceDeadline = Date().addingTimeInterval(2.0)
-            while !app.isTerminated, Date() < forceDeadline {
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
+            _ = await waitUntilTerminated(app, timeout: 2)
         }
         guard app.isTerminated else { return false }
-
-        try? await Task.sleep(nanoseconds: 350_000_000)
 
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
@@ -116,17 +101,79 @@ class SpotifyAppleScriptManager {
         configuration.promptsUserIfNeeded = false
         configuration.addsToRecentItems = false
         do {
-            _ = try await NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration)
+            let relaunched = try await NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration)
+            return await waitUntilLaunched(relaunched, timeout: 4)
         } catch {
             print("[SpotifyAppleScript] Background relaunch failed: \(error.localizedDescription)")
             return false
         }
+    }
 
-        for _ in 0..<20 {
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            if isAppRunning() { return true }
+    private func waitUntilTerminated(_ app: NSRunningApplication, timeout: TimeInterval) async -> Bool {
+        guard !app.isTerminated else { return true }
+        return await waitForWorkspaceEvent(
+            NSWorkspace.didTerminateApplicationNotification,
+            processIdentifier: app.processIdentifier,
+            timeout: timeout,
+            stateCheck: { app.isTerminated }
+        )
+    }
+
+    private func waitUntilLaunched(_ app: NSRunningApplication, timeout: TimeInterval) async -> Bool {
+        guard !app.isFinishedLaunching else { return true }
+        return await waitForWorkspaceEvent(
+            NSWorkspace.didLaunchApplicationNotification,
+            processIdentifier: app.processIdentifier,
+            timeout: timeout,
+            stateCheck: { app.isFinishedLaunching }
+        )
+    }
+
+    private func waitUntilSpotifyIsRunning(timeout: TimeInterval) async -> Bool {
+        if isAppRunning() { return true }
+        return await waitForWorkspaceEvent(
+            NSWorkspace.didLaunchApplicationNotification,
+            bundleIdentifier: "com.spotify.client",
+            timeout: timeout,
+            stateCheck: { self.isAppRunning() }
+        )
+    }
+
+    private func waitForWorkspaceEvent(
+        _ name: Notification.Name,
+        processIdentifier: pid_t? = nil,
+        bundleIdentifier: String? = nil,
+        timeout: TimeInterval,
+        stateCheck: @escaping () -> Bool
+    ) async -> Bool {
+        if stateCheck() { return true }
+
+        let center = NSWorkspace.shared.notificationCenter
+        return await withCheckedContinuation { continuation in
+            var observer: NSObjectProtocol?
+            var didFinish = false
+
+            let finish: (Bool) -> Void = { result in
+                guard !didFinish else { return }
+                didFinish = true
+                if let observer { center.removeObserver(observer) }
+                continuation.resume(returning: result)
+            }
+
+            observer = center.addObserver(forName: name, object: nil, queue: .main) { notification in
+                let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                if let processIdentifier,
+                   application?.processIdentifier != processIdentifier { return }
+                if let bundleIdentifier,
+                   application?.bundleIdentifier != bundleIdentifier { return }
+                finish(true)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                finish(stateCheck())
+            }
+
+            if stateCheck() { finish(true) }
         }
-        return isAppRunning()
     }
 
     func setVolume(percent: Int) async -> PlaybackResult {

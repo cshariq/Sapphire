@@ -269,7 +269,6 @@ class MusicManager: ObservableObject {
     private var currentTrackDuration: TimeInterval = 0
     private var cancellables = Set<AnyCancellable>()
     private var quickPeekTimer: Timer?
-    private var airplayDeviceUpdateTimer: Timer?
     private var transientIconTimer: Timer?
     private var currentLyricIndex: Int? = nil
 
@@ -690,7 +689,6 @@ class MusicManager: ObservableObject {
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         quickPeekTimer?.invalidate()
-        airplayDeviceUpdateTimer?.invalidate()
         transientIconTimer?.invalidate()
         liveActivityTimer?.invalidate()
         if let volumeListener {
@@ -1973,7 +1971,7 @@ class MusicManager: ObservableObject {
         if sourceBundleID != self.lastKnownBundleID {
             self.lastKnownBundleID = sourceBundleID
             self.fetchAppIcon(for: sourceBundleID)
-            self.updateDevicePolling()
+            self.updateDeviceDiscovery()
         }
 
         if switchingAwayFromSpotify {
@@ -3289,12 +3287,10 @@ class MusicManager: ObservableObject {
         }
     }
 
-    private func updateDevicePolling() {
+    private func updateDeviceDiscovery() {
         airPlay.startDiscovery()
-        airplayDeviceUpdateTimer?.invalidate()
         if lastKnownBundleID == "com.apple.Music" {
-            airplayDeviceUpdateTimer = Timer.scheduledCoalescing(withTimeInterval: 10.0, repeats: true) { [weak self] _ in Task { await self?.updateAirPlayDevices() } }
-            airplayDeviceUpdateTimer?.fire()
+            Task { await updateAirPlayDevices() }
         }
     }
 

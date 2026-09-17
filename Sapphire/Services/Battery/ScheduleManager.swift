@@ -7,6 +7,7 @@
 
 import Foundation
 import Combine
+import AppKit
 
 enum TaskAction: String, Codable, CaseIterable, Identifiable {
     case setChargeLimit, topUp, dischargeTo, startCalibration
@@ -63,13 +64,49 @@ class ScheduleManager: ObservableObject {
 
     // MARK: - Properties
     private var timer: Timer?
+    private var cancellables = Set<AnyCancellable>()
+    private var notificationObservers: [(NotificationCenter, NSObjectProtocol)] = []
     private let lastCalibrationDateKey = "lastAutomaticCalibrationDate"
+
+    private struct Configuration: Equatable {
+        let tasks: [ScheduledTask]
+        let calibrationEnabled: Bool
+
+        init(_ settings: Settings) {
+            tasks = settings.scheduledTasks
+            calibrationEnabled = settings.enableBiweeklyCalibration
+        }
+    }
 
     @Published var taskHistory: [TaskHistoryEvent] = []
 
     private init() {
-        timer = Timer.scheduledCoalescing(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.checkScheduledTasks()
+        settings.changes(of: Configuration.init)
+            .sink { [weak self] _ in self?.checkScheduledTasks() }
+            .store(in: &cancellables)
+
+        observe(
+            [.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange,
+             NSApplication.didBecomeActiveNotification],
+            in: .default
+        )
+        observe([NSWorkspace.didWakeNotification], in: NSWorkspace.shared.notificationCenter)
+        checkScheduledTasks()
+    }
+
+    deinit {
+        timer?.invalidate()
+        for (center, observer) in notificationObservers {
+            center.removeObserver(observer)
+        }
+    }
+
+    private func observe(_ names: [Notification.Name], in center: NotificationCenter) {
+        for name in names {
+            let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkScheduledTasks() }
+            }
+            notificationObservers.append((center, observer))
         }
     }
 
@@ -123,6 +160,68 @@ class ScheduleManager: ObservableObject {
                 executeTask(task)
             }
         }
+
+        scheduleNextCheck(after: now)
+    }
+
+    private func scheduleNextCheck(after now: Date) {
+        timer?.invalidate()
+        timer = nil
+
+        var candidates = settings.settings.scheduledTasks
+            .filter(\.isActive)
+            .compactMap { nextFireDate(for: $0, after: now) }
+
+        if settings.settings.enableBiweeklyCalibration,
+           let lastCalibrationDate = UserDefaults.standard.object(forKey: lastCalibrationDateKey) as? Date,
+           let dueDate = Calendar.current.date(byAdding: .day, value: 14, to: lastCalibrationDate),
+           dueDate > now {
+            candidates.append(dueDate)
+        }
+
+        guard let nextDate = candidates.min() else { return }
+        let delay = max(0.05, nextDate.timeIntervalSinceNow)
+        let nextTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.timer = nil
+                self?.checkScheduledTasks()
+            }
+        }
+        nextTimer.tolerance = min(1, delay * 0.05)
+        timer = nextTimer
+    }
+
+    private func nextFireDate(for task: ScheduledTask, after now: Date) -> Date? {
+        let calendar = Calendar.current
+        let time = calendar.dateComponents([.hour, .minute], from: task.startTime)
+        guard let hour = time.hour, let minute = time.minute,
+              let today = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: now) else {
+            return nil
+        }
+
+        for dayOffset in 0..<800 {
+            guard let candidate = calendar.date(byAdding: .day, value: dayOffset, to: today),
+                  candidate > now else { continue }
+
+            let matches = switch task.repeatInterval {
+            case .never, .daily:
+                true
+            case .weekdays:
+                (2...6).contains(calendar.component(.weekday, from: candidate))
+            case .weekly:
+                calendar.component(.weekday, from: candidate)
+                    == calendar.component(.weekday, from: task.startTime)
+            case .biweekly:
+                (calendar.dateComponents([.weekOfYear], from: task.startTime, to: candidate).weekOfYear ?? 0) % 2 == 0
+                    && calendar.component(.weekday, from: candidate)
+                        == calendar.component(.weekday, from: task.startTime)
+            case .monthly:
+                calendar.component(.day, from: candidate)
+                    == calendar.component(.day, from: task.startTime)
+            }
+            if matches { return candidate }
+        }
+        return nil
     }
 
     private func executeTask(_ task: ScheduledTask) {

@@ -64,31 +64,46 @@ final class FocusScheduleManager: ObservableObject {
     static let shared = FocusScheduleManager()
 
     private static let graceWindow: TimeInterval = 4 * 60
-    private static let checkInterval: TimeInterval = 30
-
     private let settings = SettingsModel.shared
     private let sessionManager = FocusSessionManager.shared
     private var timer: Timer?
+    private var cancellables = Set<AnyCancellable>()
+    private var notificationObservers: [(NotificationCenter, NSObjectProtocol)] = []
 
     private init() {
-        timer = Timer.scheduledCoalescing(withTimeInterval: Self.checkInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkSchedules()
-            }
-        }
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(wokeUp),
-            name: NSWorkspace.didWakeNotification,
-            object: nil
+        settings.changes(of: \.scheduledFocusSessions)
+            .sink { [weak self] _ in self?.checkSchedules() }
+            .store(in: &cancellables)
+
+        sessionManager.$phase
+            .removeDuplicates()
+            .dropFirst()
+            .filter { $0 == .idle || $0 == .finished }
+            .sink { [weak self] _ in self?.checkSchedules() }
+            .store(in: &cancellables)
+
+        observe(
+            [.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange,
+             NSApplication.didBecomeActiveNotification],
+            in: .default
         )
+        observe([NSWorkspace.didWakeNotification], in: NSWorkspace.shared.notificationCenter)
+        checkSchedules()
     }
 
-    @objc private func wokeUp() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            Task { @MainActor in
-                self?.checkSchedules()
+    deinit {
+        timer?.invalidate()
+        for (center, observer) in notificationObservers {
+            center.removeObserver(observer)
+        }
+    }
+
+    private func observe(_ names: [Notification.Name], in center: NotificationCenter) {
+        for name in names {
+            let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkSchedules() }
             }
+            notificationObservers.append((center, observer))
         }
     }
 
@@ -110,6 +125,28 @@ final class FocusScheduleManager: ObservableObject {
         if changed {
             settings.settings.scheduledFocusSessions = schedules
         }
+        scheduleNextCheck()
+    }
+
+    private func scheduleNextCheck() {
+        timer?.invalidate()
+        timer = nil
+
+        let nextDate = settings.settings.scheduledFocusSessions
+            .filter(\.isActive)
+            .compactMap(nextFireDate(for:))
+            .min()
+        guard let nextDate else { return }
+
+        let delay = max(0.05, nextDate.timeIntervalSinceNow)
+        let nextTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.timer = nil
+                self?.checkSchedules()
+            }
+        }
+        nextTimer.tolerance = min(1, delay * 0.05)
+        timer = nextTimer
     }
 
     private func shouldFire(_ schedule: ScheduledFocusSession, now: Date) -> Bool {

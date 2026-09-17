@@ -145,14 +145,20 @@ public func haptic(strength: HapticFeedbackType = .strong) {
 func relativeTimeAbbreviated(from date: Date) -> String {
     let interval = Date().timeIntervalSince(date)
     guard interval >= 60 else { return "just now" }
-    let formatter = DateComponentsFormatter()
-    formatter.allowedUnits = [.year, .month, .weekOfMonth, .day, .hour, .minute]
-    formatter.maximumUnitCount = 1
-    formatter.unitsStyle = .short
-    formatter.includesTimeRemainingPhrase = false
-    formatter.includesApproximationPhrase = false
-    guard let formatted = formatter.string(from: interval) else { return "just now" }
+    guard let formatted = RelativeTimeFormatter.abbreviated.string(from: interval) else { return "just now" }
     return formatted + " ago"
+}
+
+private enum RelativeTimeFormatter {
+    static let abbreviated: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.year, .month, .weekOfMonth, .day, .hour, .minute]
+        formatter.maximumUnitCount = 1
+        formatter.unitsStyle = .short
+        formatter.includesTimeRemainingPhrase = false
+        formatter.includesApproximationPhrase = false
+        return formatter
+    }()
 }
 
 struct RelativeMinuteText: View {

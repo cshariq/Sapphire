@@ -13,20 +13,29 @@ import Combine
 final class FocusSessionShortcutMonitor {
     static let shared = FocusSessionShortcutMonitor()
 
+    private struct RegistrationSettings: Equatable {
+        var shortcut: KeyboardShortcut
+        var isEnabled: Bool
+
+        init(_ settings: Settings) {
+            shortcut = settings.focusStartShortcut
+            isEnabled = settings.isShortcutEnabled(ShortcutIdentifier.focusStart)
+        }
+    }
+
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyID = EventHotKeyID(signature: 0x53464F43, id: 1)
 
     private var cancellables = Set<AnyCancellable>()
 
     private init() {
-        SettingsModel.shared.$settings
-            .dropFirst()
+        SettingsModel.shared.changes(of: RegistrationSettings.init)
             .debounce(for: .seconds(0.5), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateRegistration()
+            .sink { [weak self] settings in
+                self?.updateRegistration(using: settings)
             }
             .store(in: &cancellables)
-        updateRegistration()
+        updateRegistration(using: RegistrationSettings(SettingsModel.shared.settings))
         installEventHandler()
     }
 
@@ -38,16 +47,15 @@ final class FocusSessionShortcutMonitor {
 
     // MARK: - Registration
 
-    private func updateRegistration() {
-        let settings = SettingsModel.shared.settings
-        let shortcut = settings.focusStartShortcut
+    private func updateRegistration(using settings: RegistrationSettings) {
+        let shortcut = settings.shortcut
         let hasValidShortcut = !shortcut.key.isEmpty
             && shortcut.significantModifiers.rawValue != 0
 
         unregister()
 
         guard hasValidShortcut else { return }
-        guard settings.isShortcutEnabled(ShortcutIdentifier.focusStart) else { return }
+        guard settings.isEnabled else { return }
         guard let keyCode = KeyCodeTranslator.shared.keyCode(for: shortcut.key) else { return }
 
         var modifiers = UInt32(0)
@@ -56,7 +64,7 @@ final class FocusSessionShortcutMonitor {
         if shortcut.significantModifiers.contains(.control) { modifiers |= UInt32(controlKey) }
         if shortcut.significantModifiers.contains(.shift)   { modifiers |= UInt32(shiftKey) }
 
-        var id = hotKeyID
+        let id = hotKeyID
         let status = RegisterEventHotKey(
             UInt32(keyCode),
             modifiers,

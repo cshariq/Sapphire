@@ -5,8 +5,9 @@
 //  Created by Shariq Charolia on 2025-08-14
 //
 
-import SwiftUI
 import AppKit
+import Combine
+import SwiftUI
 
 struct SnapZoneHitRegion: Equatable {
     let frame: CGRect
@@ -55,11 +56,10 @@ struct SnapZonesWidgetView: View {
     let onActiveZoneChange: (SnapZone?) -> Void
     let onHitRegionsChange: ([SnapZoneHitRegion]) -> Void
     @EnvironmentObject var settings: SettingsModel
-    @Environment(\.notchDragLocation) private var notchDragLocation
-
     @State private var activeHover: HoverState?
     @State private var layoutFrames: [UUID: CGRect] = [:]
     @State private var previewUpdateTask: Task<Void, Never>?
+    @State private var frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
 
     private var viewConfiguration: SnapZoneViewConfiguration {
         let current = settings.settings
@@ -67,7 +67,6 @@ struct SnapZonesWidgetView: View {
         let layoutsByID = allAvailableLayouts.reduce(into: [UUID: SnapLayout]()) { result, layout in
             result[layout.id] = layout
         }
-        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         if let bundleID = frontmostBundleID,
            bundleID != Bundle.main.bundleIdentifier,
            let appConfig = current.appSpecificLayoutConfigurations[bundleID] {
@@ -123,21 +122,25 @@ struct SnapZonesWidgetView: View {
             height: metrics.totalHeight
         )
         .background(Color.clear)
+        .background {
+            SnapZoneHitTestObserver(
+                configuration: configuration,
+                layoutFrames: layoutFrames,
+                onHoverChange: { hover in
+                    if activeHover != hover { activeHover = hover }
+                }
+            )
+        }
         .fixedSize(horizontal: true, vertical: true)
         .onPreferenceChange(LayoutFramePreferenceKey.self) { frames in
             guard layoutFrames != frames else { return }
             layoutFrames = frames
             publishHitRegions(configuration: configuration, metrics: metrics)
-            updateActiveState(at: notchDragLocation, configuration: configuration)
         }
         .onAppear {
             publishHitRegions(configuration: configuration, metrics: metrics)
-            updateActiveState(at: notchDragLocation, configuration: configuration)
         }
         .onDisappear(perform: resetInteractionState)
-        .onChange(of: notchDragLocation) { _, location in
-            updateActiveState(at: location, configuration: configuration)
-        }
         .onChange(of: activeHover) { _, newHover in
             previewUpdateTask?.cancel()
             let zone = newHover.flatMap { hover in
@@ -162,7 +165,17 @@ struct SnapZonesWidgetView: View {
         }
         .onChange(of: configuration) { _, _ in
             publishHitRegions(configuration: configuration, metrics: metrics)
-            updateActiveState(at: notchDragLocation, configuration: configuration)
+        }
+        .onReceive(
+            NSWorkspace.shared.notificationCenter
+                .publisher(for: NSWorkspace.didActivateApplicationNotification)
+                .compactMap { notification in
+                    (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+                        .bundleIdentifier
+                }
+                .removeDuplicates()
+        ) { bundleID in
+            if frontmostBundleID != bundleID { frontmostBundleID = bundleID }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: configuration.layouts)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: configuration.isSingleMode)
@@ -198,25 +211,45 @@ struct SnapZonesWidgetView: View {
         onHitRegionsChange(regions)
     }
 
-    private func updateActiveState(
-        at globalMousePoint: CGPoint?,
-        configuration: SnapZoneViewConfiguration
-    ) {
-        guard let globalMousePoint else {
-            if activeHover != nil { activeHover = nil }
+}
+
+private struct SnapZoneHitTestObserver: View {
+    @EnvironmentObject private var dragLocation: NotchDragLocationState
+
+    let configuration: SnapZoneViewConfiguration
+    let layoutFrames: [UUID: CGRect]
+    let onHoverChange: (HoverState?) -> Void
+
+    @State private var lastHover: HoverState?
+
+    var body: some View {
+        Color.clear
+            .onAppear { updateActiveState(at: dragLocation.location) }
+            .onChange(of: dragLocation.location) { _, location in
+                updateActiveState(at: location)
+            }
+            .onChange(of: layoutFrames) { _, _ in
+                updateActiveState(at: dragLocation.location)
+            }
+            .onChange(of: configuration) { _, _ in
+                updateActiveState(at: dragLocation.location)
+            }
+            .onDisappear { publish(nil) }
+    }
+
+    private func updateActiveState(at point: CGPoint?) {
+        guard let point, !layoutFrames.isEmpty else {
+            publish(nil)
+            return
+        }
+
+        let totalFrame = layoutFrames.values.reduce(CGRect.null) { $0.union($1) }
+        guard totalFrame.insetBy(dx: -50, dy: -50).contains(point) else {
+            publish(nil)
             return
         }
 
         let metrics = SnapZoneViewMetrics(isSingleMode: configuration.isSingleMode)
-
-        if !layoutFrames.isEmpty {
-            let totalWidgetFrame = layoutFrames.values.reduce(CGRect.null) { $0.union($1) }
-            if !totalWidgetFrame.insetBy(dx: -50, dy: -50).contains(globalMousePoint) {
-                if activeHover != nil { activeHover = nil }
-                return
-            }
-        }
-
         var candidates: [(hover: HoverState, frame: CGRect)] = []
         for (layoutID, frame) in layoutFrames {
             guard let layout = configuration.layouts.first(where: { $0.id == layoutID }) else { continue }
@@ -232,11 +265,13 @@ struct SnapZonesWidgetView: View {
                 ))
             }
         }
-        let newHover = SnapZoneHitTesting.nearest(candidates, to: globalMousePoint) { $0.frame }?.hover
+        publish(SnapZoneHitTesting.nearest(candidates, to: point) { $0.frame }?.hover)
+    }
 
-        guard activeHover != newHover else { return }
-
-        activeHover = newHover
+    private func publish(_ hover: HoverState?) {
+        guard lastHover != hover else { return }
+        lastHover = hover
+        onHoverChange(hover)
     }
 }
 

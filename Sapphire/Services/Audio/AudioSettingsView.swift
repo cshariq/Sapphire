@@ -7,7 +7,7 @@
 import SwiftUI
 
 struct AudioSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var audioManager = MultiAudioManager.shared
     @ObservedObject private var permissionsManager = PermissionsManager.shared
     @State private var showResetAppConfirmation = false
@@ -18,7 +18,7 @@ struct AudioSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Audio")
                     .font(.largeTitle.bold())
                     .padding(.bottom, 4)

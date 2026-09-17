@@ -793,28 +793,30 @@ class SpotifyPrivateAPIManager: ObservableObject {
             return
         }
 
-        for attempt in 0..<24 {
-            try? await Task.sleep(nanoseconds: 500_000_000)
+        let deadline = Date().addingTimeInterval(12)
+        var attempt = 0
+
+        while !Task.isCancelled, Date() < deadline {
+            if attempt > 0 {
+                let remaining = deadline.timeIntervalSinceNow
+                guard remaining > 0,
+                      await waitForPlayerStateEvent(timeout: remaining) else { break }
+            }
+            attempt += 1
+
             if await SpotifyRateLimitTracker.shared.isThrottled(host: "spclient.spotify.com") {
-                print("[SpotifyPrivateAPIManager] Spotify is rate limiting — aborting ad-skip polling.")
+                print("[SpotifyPrivateAPIManager] Spotify is rate limiting — aborting ad recovery.")
                 return
             }
-            guard SpotifyAppleScriptManager.shared.isAppRunning() else { continue }
+            guard SpotifyAppleScriptManager.shared.isAppRunning() else { break }
 
             try? await refreshPlayerAndDeviceState()
 
             if let currentURI = playerState?.track?.uri,
                currentURI.hasPrefix("spotify:ad:") || currentURI.contains(":ad:") {
-                print("[SpotifyPrivateAPIManager] Ad still playing after relaunch — skipping track (attempt \(attempt + 1)).")
+                print("[SpotifyPrivateAPIManager] Ad still playing after relaunch — skipping track (attempt \(attempt)).")
                 try? await skipNext()
-                try? await Task.sleep(nanoseconds: 400_000_000)
-                try? await refreshPlayerAndDeviceState()
-                if let uri = playerState?.track?.uri,
-                   !uri.hasPrefix("spotify:ad:"),
-                   !uri.contains(":ad:") {
-                    print("[SpotifyPrivateAPIManager] Skip cleared ad on attempt \(attempt + 1).")
-                    return
-                }
+                continue
             }
 
             let localID = devices.first(where: { $0.deviceId == preferredDeviceID })?.deviceId
@@ -829,7 +831,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
                     trackIndex: nil
                 )
                 if case .success = result {
-                    print("[SpotifyPrivateAPIManager] Post-ad Connect play succeeded on attempt \(attempt + 1).")
+                    print("[SpotifyPrivateAPIManager] Post-ad Connect play succeeded on attempt \(attempt).")
                     return
                 }
             }
@@ -841,15 +843,34 @@ class SpotifyPrivateAPIManager: ObservableObject {
                 }
                 activePlayerDeviceID = localID
                 if await sendConnectCommandReturning(endpoint: "resume") {
-                    print("[SpotifyPrivateAPIManager] Post-ad Connect resume succeeded on attempt \(attempt + 1).")
+                    print("[SpotifyPrivateAPIManager] Post-ad Connect resume succeeded on attempt \(attempt).")
                     return
                 }
             } catch {
-                print("[SpotifyPrivateAPIManager] Post-ad transfer/resume attempt \(attempt + 1) failed: \(error.localizedDescription)")
+                print("[SpotifyPrivateAPIManager] Post-ad transfer/resume attempt \(attempt) failed: \(error.localizedDescription)")
             }
         }
 
         print("[SpotifyPrivateAPIManager] Timed out waiting to Connect-resume after ad relaunch.")
+    }
+
+    private func waitForPlayerStateEvent(timeout: TimeInterval) async -> Bool {
+        guard let publisher = webSocketManager?.playerStatePublisher else { return false }
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask { @MainActor in
+                for await _ in publisher.values {
+                    return true
+                }
+                return false
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeout))
+                return false
+            }
+            let receivedEvent = await group.next() ?? false
+            group.cancelAll()
+            return receivedEvent
+        }
     }
 
     private func localSpotifyDesktopDeviceID() -> String? {
@@ -1389,7 +1410,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     func checkTrackInPlaylist(trackURI: String, playlist: SpotifyPlaylist) async -> Bool {
-        if playlist.uri.contains(":collection"), let username = userProfile?.profile.username {
+        if playlist.uri.contains(":collection"), userProfile?.profile.username != nil {
             return false
         }
         let normalizedTrack = normalizeSpotifyUri(trackURI)
@@ -4538,9 +4559,6 @@ extension SpotifyPrivateAPIManager {
                     if let n = followers["count"] as? Int { return n }
                     if let n = (followers["total"] as? NSNumber)?.intValue { return n }
                 }
-                if let n = json["total_public_playlists_count"] as? Int, json["followers_count"] == nil {
-                    return nil
-                }
                 return nil
             }()
 
@@ -5225,7 +5243,7 @@ extension SpotifyPrivateAPIManager {
         }
         request.append(SpotifyProtoWire.writeMessage(field: 2, entity))
 
-        var headers: [String: String] = [
+        let headers: [String: String] = [
             "Content-Type": "application/x-protobuf",
             "Accept": "application/x-protobuf",
             "app-platform": "Desktop"

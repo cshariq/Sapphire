@@ -196,9 +196,6 @@ struct AppSectionView: View {
         .padding(.bottom, omitOuterPadding ? 4 : 20)
         .padding(.top, omitOuterPadding ? 0 : 10)
         .onAppear { store.refreshRunningApps() }
-        .periodicTask(every: .seconds(30)) {
-            store.refreshRunningApps()
-        }
     }
 }
 
@@ -239,7 +236,8 @@ fileprivate struct AppControlCard: View {
                 Text(statusText).font(.system(size: 8, weight: .semibold)).foregroundStyle(statusColor)
             }.frame(width: 80, alignment: .leading)
 
-            BoldPillSlider(label: "Volume", value: Binding(get: { volume * 100.0 }, set: { onVolumeChange($0/100.0) }), range: 0...100, specifier: "%.0f%%").frame(height: 30)
+            AppVolumeSlider(volume: volume, onVolumeChange: onVolumeChange)
+                .frame(height: 30)
 
             SmallIconButton(icon: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill", active: isMuted) { onMute(isMuted) }
             SmallIconButton(icon: "slider.vertical.3", active: false) { navigationStack.append(.multiAudioAppEQ(bundleID: app.bundleID, appName: app.name)) }
@@ -268,6 +266,36 @@ fileprivate struct AppControlCard: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(isCurrentlyOutputting ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
         )
+    }
+}
+
+fileprivate struct AppVolumeSlider: View {
+    let volume: Double
+    let onVolumeChange: (Double) -> Void
+    @State private var localValue: Double
+
+    init(volume: Double, onVolumeChange: @escaping (Double) -> Void) {
+        self.volume = volume
+        self.onVolumeChange = onVolumeChange
+        _localValue = State(initialValue: volume * 100.0)
+    }
+
+    var body: some View {
+        BoldPillSlider(
+            label: "Volume",
+            value: $localValue,
+            range: 0...100,
+            specifier: "%.0f%%"
+        )
+        .onChange(of: localValue) { _, newValue in
+            onVolumeChange(newValue / 100.0)
+        }
+        .onChange(of: volume) { _, newValue in
+            let percentage = newValue * 100.0
+            if abs(localValue - percentage) > 0.01 {
+                localValue = percentage
+            }
+        }
     }
 }
 
@@ -436,6 +464,7 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
     @Published var runningApps: [MainMenuRunningAppItem] = []
     private var workspaceObservers: [NSObjectProtocol] = []
     private var appObservers: [NSObjectProtocol] = []
+    private var recentExpiryWorkItem: DispatchWorkItem?
     private let recentWindow: TimeInterval = 180
 
     init() {
@@ -452,12 +481,17 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
         appObservers.append(appCenter.addObserver(forName: .multiAudioActiveBundlesDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshRunningApps() }
         })
-        appObservers.append(appCenter.addObserver(forName: .perAppAudioSettingsDidChange, object: nil, queue: .main) { [weak self] _ in
+        appObservers.append(appCenter.addObserver(forName: .perAppAudioSettingsDidChange, object: nil, queue: .main) { [weak self] notification in
+            let kind = notification.userInfo?[PerAppAudioController.changeKindUserInfoKey] as? String
+            guard kind == nil || kind == PerAppAudioController.ChangeKind.mute.rawValue || kind == PerAppAudioController.ChangeKind.reset.rawValue else {
+                return
+            }
             MainActor.assumeIsolated { self?.objectWillChange.send() }
         })
     }
 
     deinit {
+        recentExpiryWorkItem?.cancel()
         let workspaceCenter = NSWorkspace.shared.notificationCenter
         workspaceObservers.forEach(workspaceCenter.removeObserver)
         let appCenter = NotificationCenter.default
@@ -477,7 +511,7 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
                       bundleID != Bundle.main.bundleIdentifier else { return nil }
                 let lastActivityDate = audio.lastAudioActivityDate(for: bundleID)
                 let isRecentlyActive = lastActivityDate.map {
-                    now.timeIntervalSince($0) <= recentWindow
+                    now.timeIntervalSince($0) <= self.recentWindow
                 } ?? false
                 return MainMenuRunningAppItem(
                     bundleID: bundleID,
@@ -509,6 +543,30 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
         if runningApps != refreshedApps {
             runningApps = refreshedApps
         }
+        scheduleNextRecentExpiry(from: refreshedApps)
+    }
+
+    private func scheduleNextRecentExpiry(from apps: [MainMenuRunningAppItem]) {
+        recentExpiryWorkItem?.cancel()
+        recentExpiryWorkItem = nil
+
+        guard let expiry = apps.lazy
+            .filter({ $0.isRecentlyActive && !$0.isCurrentlyOutputting })
+            .compactMap({ $0.lastActivityDate?.addingTimeInterval(self.recentWindow) })
+            .min()
+        else { return }
+
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.recentExpiryWorkItem = nil
+                self?.refreshRunningApps()
+            }
+        }
+        recentExpiryWorkItem = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + max(0.05, expiry.timeIntervalSinceNow),
+            execute: work
+        )
     }
 
     func volume(for bID: String) -> Double { PerAppAudioController.shared.volume(for: bID) }
@@ -519,6 +577,5 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
         PerAppAudioController.shared.reset(for: bID)
         MultiAudioManager.shared.resetEightDAudio(for: bID)
         MultiAudioManager.shared.resetSurroundAudio(for: bID)
-        objectWillChange.send()
     }
 }

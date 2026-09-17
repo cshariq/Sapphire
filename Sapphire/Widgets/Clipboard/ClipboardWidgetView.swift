@@ -137,10 +137,10 @@ struct ClipboardPlayerView: View {
         }
         .onAppear {
             clipboardManager.startMonitoring()
-            clipboardManager.beginHighPriorityPolling()
+            clipboardManager.beginHighPriorityMonitoring()
         }
         .onDisappear {
-            clipboardManager.endHighPriorityPolling()
+            clipboardManager.endHighPriorityMonitoring()
         }
     }
 

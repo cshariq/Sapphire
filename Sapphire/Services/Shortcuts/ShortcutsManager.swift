@@ -13,6 +13,9 @@ import SwiftUI
 class ShortcutsManager {
     static let shared = ShortcutsManager()
 
+    private var iconCache: [ShortcutInfo: NSImage] = [:]
+    private let iconCacheLimit = 128
+
     private init() {}
 
     func runShortcut(id: String) {
@@ -33,6 +36,10 @@ class ShortcutsManager {
     }
 
     func getIcon(for shortcutInfo: ShortcutInfo) -> NSImage {
+        if let cached = iconCache[shortcutInfo] {
+            return cached
+        }
+
         let image = NSImage(size: NSSize(width: 64, height: 64))
         image.lockFocus()
 
@@ -70,6 +77,10 @@ class ShortcutsManager {
         }
 
         image.unlockFocus()
+        if iconCache.count >= iconCacheLimit {
+            iconCache.removeAll(keepingCapacity: true)
+        }
+        iconCache[shortcutInfo] = image
         return image
     }
 

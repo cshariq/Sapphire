@@ -743,6 +743,7 @@ struct LiquidGlassShapeFill<S: Shape>: View {
     var blendingMode: LiquidGlassBlendingMode = .behindWindow
     var appearance: LiquidGlassAppearance = .auto
     var interaction: LiquidGlassInteraction = .normal
+    var shapePathCacheKey: AnyHashable? = nil
 
     var body: some View {
         let shape = self.shape
@@ -758,7 +759,8 @@ struct LiquidGlassShapeFill<S: Shape>: View {
                 guard rect.width > 0, rect.height > 0,
                       rect.width.isFinite, rect.height.isFinite else { return nil }
                 return shape.path(in: CGRect(origin: .zero, size: rect.size)).cgPath
-            }
+            },
+            shapePathCacheKey: shapePathCacheKey
         )
         .allowsHitTesting(false)
     }

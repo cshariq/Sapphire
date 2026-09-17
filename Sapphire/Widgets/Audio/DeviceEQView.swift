@@ -11,8 +11,13 @@ import AppKit
 struct DeviceEQView: View {
     let device: AudioDevice
     @StateObject private var audioManager = MultiAudioManager.shared
-    @StateObject private var perAppStore = PerAppEQScopeStore()
+    @StateObject private var perAppStore: PerAppEQScopeStore
     @AppStorage(AudioEQ.displayedBandCountDefaultsKey) private var displayedBandCount = AudioEQBandLayout.thirtyOne.rawValue
+
+    init(device: AudioDevice) {
+        self.device = device
+        _perAppStore = StateObject(wrappedValue: PerAppEQScopeStore(deviceUID: device.uid))
+    }
 
     private var bandLayout: AudioEQBandLayout {
         AudioEQBandLayout.resolved(from: displayedBandCount)
@@ -60,7 +65,7 @@ struct DeviceEQView: View {
     }
 
     private var applicableAppEQs: [PerAppEQScopeStore.AppEQScopeItem] {
-        perAppStore.items(for: device.uid)
+        perAppStore.items
     }
 
     var body: some View {
@@ -116,6 +121,7 @@ struct DeviceEQView: View {
                     gains: customEQGainsBinding,
                     range: AudioEQ.gainRange
                 )
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: customEQGainsBinding.wrappedValue)
                 .frame(height: 132)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -133,7 +139,6 @@ struct DeviceEQView: View {
             Spacer(minLength: 0)
         }
         .frame(width: 600, height: 446)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: customEQGainsBinding.wrappedValue)
         .animation(.spring(response: 0.25, dampingFraction: 0.85), value: applicableAppEQs.count)
     }
 }
@@ -157,7 +162,7 @@ struct EQBandCountPicker: View {
 
 @MainActor
 fileprivate final class PerAppEQScopeStore: ObservableObject {
-    struct AppEQScopeItem: Identifiable {
+    struct AppEQScopeItem: Identifiable, Equatable {
         let bundleID: String
         let appName: String
         let appliesToAllDevices: Bool
@@ -165,15 +170,34 @@ fileprivate final class PerAppEQScopeStore: ObservableObject {
         var id: String { bundleID }
     }
 
+    @Published private(set) var items: [AppEQScopeItem] = []
+
+    private let deviceUID: String
     private var observer: NSObjectProtocol?
 
-    init() {
+    init(deviceUID: String) {
+        self.deviceUID = deviceUID
+        refresh()
         observer = NotificationCenter.default.addObserver(
             forName: .perAppAudioSettingsDidChange,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.objectWillChange.send()
+        ) { [weak self] notification in
+            let rawKind = notification.userInfo?[PerAppAudioController.changeKindUserInfoKey] as? String
+            let changedBundleID = notification.userInfo?["bundleID"] as? String
+            if rawKind == PerAppAudioController.ChangeKind.volume.rawValue ||
+                rawKind == PerAppAudioController.ChangeKind.mute.rawValue {
+                return
+            }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if rawKind == PerAppAudioController.ChangeKind.equalizer.rawValue,
+                   let bundleID = changedBundleID,
+                   self.items.contains(where: { $0.bundleID == bundleID }) == PerAppAudioController.shared.hasEqualizerAdjustment(for: bundleID) {
+                    return
+                }
+                self.refresh()
+            }
         }
     }
 
@@ -183,7 +207,7 @@ fileprivate final class PerAppEQScopeStore: ObservableObject {
         }
     }
 
-    func items(for deviceUID: String) -> [AppEQScopeItem] {
+    private func refresh() {
         let scopeEntries = PerAppAudioController.shared.appEQScopeEntries()
         let appNameByBundleID: [String: String] = Dictionary(
             NSWorkspace.shared.runningApplications.compactMap {
@@ -193,7 +217,7 @@ fileprivate final class PerAppEQScopeStore: ObservableObject {
             uniquingKeysWith: { existing, _ in existing }
         )
 
-        return scopeEntries.compactMap { entry in
+        let updatedItems: [AppEQScopeItem] = scopeEntries.compactMap { entry -> AppEQScopeItem? in
             if let targets = entry.targetDeviceUIDs, !targets.contains(deviceUID) {
                 return nil
             }
@@ -204,6 +228,10 @@ fileprivate final class PerAppEQScopeStore: ObservableObject {
             )
         }
         .sorted { $0.appName.localizedCaseInsensitiveCompare($1.appName) == .orderedAscending }
+
+        if updatedItems != items {
+            items = updatedItems
+        }
     }
 }
 

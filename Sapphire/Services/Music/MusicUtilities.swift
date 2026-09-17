@@ -1274,6 +1274,18 @@ final class FileImageCache: @unchecked Sendable {
     }
 
     private func loadOrDownloadImage(for url: URL, key: String) async -> NSImage? {
+        if url.isFileURL {
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+                  !Task.isCancelled,
+                  let image = NSImage(data: data) else { return nil }
+            memoryCache.setObject(
+                image,
+                forKey: NSString(string: key),
+                cost: approximateCost(for: image)
+            )
+            return image
+        }
+
         let diskURL = cacheUrl(forKey: key)
         if fileManager.fileExists(atPath: diskURL.path),
            let data = try? Data(contentsOf: diskURL),

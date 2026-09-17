@@ -478,15 +478,16 @@ struct LaunchpadItemView: View {
 struct LaunchpadView: View {
     @StateObject private var viewModel = LaunchpadViewModel()
     @ObservedObject var presentation: LaunchpadPresentationModel
-    @EnvironmentObject private var gestureManager: LaunchpadGestureManager
 
     let interceptor: LaunchpadInputInterceptor
+    let gestureManager: LaunchpadGestureManager
 
     @FocusState private var searchFieldIsFocused: Bool
 
     @State private var hoveredItemID: String?
     @State private var itemFrames: [String: CGRect] = [:]
     @State private var pageFrames: [Int: CGRect] = [:]
+    @State private var pageDragOffset: CGFloat = 0
     private let gridMetrics = (
         columns: 6,
         rows: 5,
@@ -533,7 +534,7 @@ struct LaunchpadView: View {
                     }
                 }
                 if let draggedItem = viewModel.draggingItem {
-                    LaunchpadItemView(item: draggedItem, isHovered: false, isJiggling: false, isFolderTarget: false).position(gestureManager.mouseLocation)
+                    LaunchpadDraggedItemOverlay(item: draggedItem, gestureManager: gestureManager)
                 }
             }
             .blur(radius: openedFolder != nil ? 20 : 0)
@@ -560,6 +561,11 @@ struct LaunchpadView: View {
                 hoveredItemID = nil
             }
             handleDragChange(at: location)
+        }
+        .onReceive(gestureManager.$dragOffset.removeDuplicates()) { offset in
+            if pageDragOffset != offset {
+                pageDragOffset = offset
+            }
         }
         .onReceive(gestureManager.clickOccurred) { location in
             if !isJiggleMode, openedFolder == nil {
@@ -786,7 +792,18 @@ struct LaunchpadView: View {
         GeometryReader { geometry in
             HStack(spacing: 0) {
                 ForEach(Array(viewModel.pages.enumerated()), id: \.offset) { pageIndex, page in
-                    appGridView(for: page)
+                    Group {
+                        // Only the current page and its immediate neighbours can
+                        // become visible during an interactive swipe. Keeping
+                        // distant pages as lightweight placeholders prevents a
+                        // large app library from constructing and decoding every
+                        // icon when Launchpad opens.
+                        if abs(pageIndex - viewModel.currentPage) <= 1 {
+                            appGridView(for: page)
+                        } else {
+                            Color.clear
+                        }
+                    }
                         .padding(.horizontal, horizontalPadding)
                         .padding(.bottom, presentation.bottomPadding)
                         .frame(width: geometry.size.width)
@@ -801,7 +818,7 @@ struct LaunchpadView: View {
                         )
                 }
             }
-            .offset(x: (CGFloat(viewModel.currentPage) * -geometry.size.width) + gestureManager.dragOffset)
+            .offset(x: (CGFloat(viewModel.currentPage) * -geometry.size.width) + pageDragOffset)
             .onPreferenceChange(ItemFramePreferenceKey.self) { value in
                 if itemFrames != value {
                     itemFrames = value
@@ -812,11 +829,11 @@ struct LaunchpadView: View {
                     pageFrames = value
                 }
             }
-            .onChange(of: gestureManager.isPageSwiping) { _, isSwiping in
+            .onReceive(gestureManager.$isPageSwiping.removeDuplicates()) { isSwiping in
                 if !isSwiping {
                     let flickThreshold: CGFloat = 100; let dragThreshold = geometry.size.width / 4; var newPage = viewModel.currentPage
-                    if gestureManager.dragOffset > dragThreshold || gestureManager.dragOffset > flickThreshold { if viewModel.currentPage > 0 { newPage -= 1 } }
-                    else if gestureManager.dragOffset < -dragThreshold || gestureManager.dragOffset < -flickThreshold { if viewModel.currentPage < viewModel.pages.count - 1 { newPage += 1 } }
+                    if pageDragOffset > dragThreshold || pageDragOffset > flickThreshold { if viewModel.currentPage > 0 { newPage -= 1 } }
+                    else if pageDragOffset < -dragThreshold || pageDragOffset < -flickThreshold { if viewModel.currentPage < viewModel.pages.count - 1 { newPage += 1 } }
                     withAnimation(.spring()) { viewModel.currentPage = newPage; gestureManager.resetDragOffset() }
                 }
             }
@@ -883,6 +900,22 @@ struct LaunchpadView: View {
                     .onTapGesture { withAnimation(.spring()) { viewModel.currentPage = index } }
             }
         }
+    }
+}
+
+/// Mouse-location publications redraw only the icon being dragged.
+private struct LaunchpadDraggedItemOverlay: View {
+    let item: LaunchpadPageItem
+    @ObservedObject var gestureManager: LaunchpadGestureManager
+
+    var body: some View {
+        LaunchpadItemView(
+            item: item,
+            isHovered: false,
+            isJiggling: false,
+            isFolderTarget: false
+        )
+        .position(gestureManager.mouseLocation)
     }
 }
 

@@ -10,7 +10,7 @@ import AppKit
 
 struct DeviceAdjustView: View {
     let device: AudioDevice
-    @StateObject private var audioManager = MultiAudioManager.shared
+    private let audioManager = MultiAudioManager.shared
     @StateObject private var appStore = AdjustViewPerAppStore()
 
     @State private var settings: AudioDeviceSettings
@@ -58,7 +58,14 @@ struct DeviceAdjustView: View {
         .frame(width: 750, height: 380)
         .background(Color.black)
         .onAppear {
-            if device.isInput { refreshInputStats() }
+            if device.isInput {
+                refreshInputStats()
+            } else {
+                appStore.start()
+            }
+        }
+        .onDisappear {
+            appStore.stop()
         }
         .onChange(of: settings) { _, newSettings in
             if device.isOutput { audioManager.updateSettings(for: device.id, settings: newSettings) }
@@ -226,13 +233,37 @@ fileprivate struct ModernDarkSlider: View {
 
 fileprivate struct AppMixRow: View {
     let app: AdjustAppItem
-    let volume: Double
+    let initialVolume: Double
     let onVolumeChange: (Double) -> Void
+    @State private var volume: Double
+
+    init(app: AdjustAppItem, volume: Double, onVolumeChange: @escaping (Double) -> Void) {
+        self.app = app
+        self.initialVolume = volume
+        self.onVolumeChange = onVolumeChange
+        _volume = State(initialValue: volume)
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             if let icon = app.icon { Image(nsImage: icon).resizable().frame(width: 18, height: 18) }
             Text(app.name).font(.system(size: 11, weight: .medium)).lineLimit(1).frame(width: 70, alignment: .leading)
-            ModernDarkSlider(label: "", value: Binding(get: { volume }, set: { onVolumeChange($0) }), range: 0...1.0, formatDisplay: { "\(Int($0 * 100))%" })
+            ModernDarkSlider(
+                label: "",
+                value: Binding(
+                    get: { volume },
+                    set: {
+                        volume = $0
+                        onVolumeChange($0)
+                    }
+                ),
+                range: 0...1.0,
+                formatDisplay: { "\(Int($0 * 100))%" }
+            )
+        }
+        .onChange(of: initialVolume) { _, newValue in
+            guard abs(volume - newValue) > 0.001 else { return }
+            volume = newValue
         }
     }
 }
@@ -250,7 +281,8 @@ fileprivate final class AdjustViewPerAppStore: ObservableObject {
     @Published var runningApps: [AdjustAppItem] = []
     private var observer: NSObjectProtocol?
 
-    init() {
+    func start() {
+        guard observer == nil else { return }
         refreshRunningApps()
         observer = NotificationCenter.default.addObserver(
             forName: .multiAudioActiveBundlesDidChange,
@@ -261,6 +293,12 @@ fileprivate final class AdjustViewPerAppStore: ObservableObject {
                 self?.refreshRunningApps()
             }
         }
+    }
+
+    func stop() {
+        guard let observer else { return }
+        NotificationCenter.default.removeObserver(observer)
+        self.observer = nil
     }
 
     deinit {
@@ -282,6 +320,5 @@ fileprivate final class AdjustViewPerAppStore: ObservableObject {
 
     func setVolume(_ value: Double, for bundleID: String) {
         PerAppAudioController.shared.setVolume(value, for: bundleID)
-        objectWillChange.send()
     }
 }

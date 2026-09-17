@@ -145,8 +145,27 @@ struct KaraokeFillSchedule: TimelineSchedule {
     let referenceDate: Date
     let referenceElapsed: TimeInterval
     let windows: [ClosedRange<TimeInterval>]
+    private let boundaries: [TimeInterval]
 
     static let idleInterval: TimeInterval = 60
+
+    init(
+        referenceDate: Date,
+        referenceElapsed: TimeInterval,
+        windows: [ClosedRange<TimeInterval>]
+    ) {
+        self.referenceDate = referenceDate
+        self.referenceElapsed = referenceElapsed
+        self.windows = windows
+
+        let sorted = windows
+            .flatMap { [$0.lowerBound, $0.upperBound] }
+            .filter(\.isFinite)
+            .sorted()
+        self.boundaries = sorted.reduce(into: []) { result, value in
+            if result.last != value { result.append(value) }
+        }
+    }
 
     static func eventWindows(for lyrics: [LyricLine]) -> [ClosedRange<TimeInterval>] {
         lyrics.flatMap { line in
@@ -161,7 +180,14 @@ struct KaraokeFillSchedule: TimelineSchedule {
     }
 
     func entries(from startDate: Date, mode: TimelineScheduleMode) -> Entries {
-        Entries(schedule: self, cursor: startDate, lowFrequency: mode == .lowFrequency)
+        let elapsed = elapsed(at: startDate)
+        return Entries(
+            schedule: self,
+            cursor: startDate,
+            nextBoundaryIndex: boundaries.firstIndex { $0 > elapsed + Entries.epsilon }
+                ?? boundaries.endIndex,
+            lowFrequency: mode == .lowFrequency
+        )
     }
 
     fileprivate func elapsed(at date: Date) -> TimeInterval {
@@ -173,18 +199,18 @@ struct KaraokeFillSchedule: TimelineSchedule {
     }
 
     struct Entries: Sequence, IteratorProtocol {
+        fileprivate static let epsilon = 0.0005
+
         let schedule: KaraokeFillSchedule
         var cursor: Date
+        var nextBoundaryIndex: Int
         let lowFrequency: Bool
 
         mutating func next() -> Date? {
             let date = cursor
-            let elapsed = schedule.elapsed(at: date)
-            let epsilon = 0.0005
-
-            let boundaries = schedule.windows.flatMap { [$0.lowerBound, $0.upperBound] }
-            if !lowFrequency, let nextBoundary = boundaries.filter({ $0 > elapsed + epsilon }).min() {
-                cursor = schedule.date(atElapsed: nextBoundary)
+            if !lowFrequency, nextBoundaryIndex < schedule.boundaries.endIndex {
+                cursor = schedule.date(atElapsed: schedule.boundaries[nextBoundaryIndex])
+                nextBoundaryIndex += 1
             } else {
                 cursor = date.addingTimeInterval(KaraokeFillSchedule.idleInterval)
             }
@@ -227,11 +253,34 @@ struct KaraokeWordView: View, Equatable {
     }
 }
 
-struct LyricLineView: View {
+struct LyricLineView: View, Equatable {
     let lyric: LyricLine
     let isCurrent: Bool
     let accentColor: Color
     let elapsedTime: TimeInterval
+
+    static func == (lhs: LyricLineView, rhs: LyricLineView) -> Bool {
+        guard lhs.lyric == rhs.lyric,
+              lhs.isCurrent == rhs.isCurrent,
+              lhs.accentColor == rhs.accentColor else { return false }
+
+        return lhs.highlightedWordCount == rhs.highlightedWordCount
+    }
+
+    private var highlightedWordCount: Int {
+        guard isCurrent, lyric.hasReconstructibleWordTiming else { return 0 }
+        var lowerBound = 0
+        var upperBound = lyric.words.count
+        while lowerBound < upperBound {
+            let midpoint = lowerBound + (upperBound - lowerBound) / 2
+            if lyric.words[midpoint].timestamp <= elapsedTime {
+                lowerBound = midpoint + 1
+            } else {
+                upperBound = midpoint
+            }
+        }
+        return lowerBound
+    }
 
     var body: some View {
         VStack(alignment: .center, spacing: 6) {
@@ -260,6 +309,35 @@ struct LyricLineView: View {
     }
 }
 
+private struct LyricsPlaybackState {
+    let elapsed: TimeInterval
+    let activeIDs: Set<UUID>
+    let currentID: UUID?
+}
+
+private extension MusicManager {
+    func lyricsPlaybackState(for lyrics: [LyricLine], at date: Date) -> LyricsPlaybackState {
+        let elapsed = lyricsElapsedTime(at: date)
+        let activeIndices = LyricsTimeline.activeIndices(
+            in: lyrics,
+            at: elapsed,
+            trackDuration: totalDuration > 0 ? totalDuration : nil
+        )
+        let activeIDs = Set(activeIndices.compactMap { index in
+            lyrics.indices.contains(index) ? lyrics[index].id : nil
+        })
+        let currentID = activeIndices.max { lhs, rhs in
+            if lyrics[lhs].timestamp == lyrics[rhs].timestamp {
+                return lhs < rhs
+            }
+            return lyrics[lhs].timestamp < lyrics[rhs].timestamp
+        }.map { lyrics[$0].id }
+            ?? lyrics.last(where: { $0.timestamp <= elapsed })?.id
+
+        return LyricsPlaybackState(elapsed: elapsed, activeIDs: activeIDs, currentID: currentID)
+    }
+}
+
 struct LyricsView: View {
     @EnvironmentObject var musicManager: MusicManager
 
@@ -274,27 +352,13 @@ struct LyricsView: View {
             referenceElapsed: musicManager.lyricsElapsedTime(),
             windows: musicManager.isPlaying ? KaraokeFillSchedule.eventWindows(for: lyrics) : []
         )) { context in
-            let elapsed = musicManager.lyricsElapsedTime(at: context.date)
-            let activeLyricIndices = musicManager.activeLyricIndices(at: context.date)
-            let activeLyricIDs = Set(
-                activeLyricIndices.compactMap { index in
-                    lyrics.indices.contains(index) ? lyrics[index].id : nil
-                }
-            )
-            let activePrimaryLyricID = activeLyricIndices.max { lhs, rhs in
-                if lyrics[lhs].timestamp == lyrics[rhs].timestamp {
-                    return lhs < rhs
-                }
-                return lyrics[lhs].timestamp < lyrics[rhs].timestamp
-            }.map { lyrics[$0].id }
-            let currentLyricID = activePrimaryLyricID
-                ?? lyrics.last(where: { $0.timestamp <= elapsed })?.id
+            let playbackState = musicManager.lyricsPlaybackState(for: lyrics, at: context.date)
             let playbackElapsed = musicManager.elapsedTime(at: context.date)
 
             GeometryReader { geometry in
                 let computedOffset = calculateScrollOffset(
                     fullViewHeight: geometry.size.height,
-                    currentLyricID: currentLyricID
+                    currentLyricID: playbackState.currentID
                 )
 
                 ZStack(alignment: .topLeading) {
@@ -307,16 +371,17 @@ struct LyricsView: View {
                                 ForEach(lyrics) { lyric in
                                     LyricLineView(
                                         lyric: lyric,
-                                        isCurrent: activeLyricIDs.contains(lyric.id),
+                                        isCurrent: playbackState.activeIDs.contains(lyric.id),
                                         accentColor: accentColor,
-                                        elapsedTime: elapsed
+                                        elapsedTime: playbackState.elapsed
                                     )
+                                    .equatable()
                                     .frame(height: lineSpacing)
                                 }
                             }
                             .frame(width: geometry.size.width)
                             .offset(y: computedOffset)
-                            .animation(.spring(response: 0.8, dampingFraction: 0.8), value: currentLyricID)
+                            .animation(.spring(response: 0.8, dampingFraction: 0.8), value: playbackState.currentID)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -464,38 +529,13 @@ struct WindowAccessor: NSViewRepresentable {
 }
 
 struct LyricsDetachedWindowView: View {
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
     @State private var hostingWindow: NSWindow? = nil
+    private let musicManager = MusicManager.shared
 
     var body: some View {
         ZStack {
             // MARK: - Apple TV Ambient Background (Micro-Blur optimized)
-            GeometryReader { geo in
-                ZStack {
-                    if let image = musicManager.artwork ?? musicManager.appIcon {
-                        Image(nsImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: geo.size.width / 10, height: geo.size.height / 10)
-                            .blur(radius: 12, opaque: true)
-                            .saturation(1.2)
-                            .scaleEffect(10.5)
-                            .animation(.easeInOut(duration: 1.5), value: image)
-                    } else {
-                        musicManager.accentColor
-                            .opacity(0.4)
-                            .blur(radius: 100)
-                    }
-
-                    Color.black.opacity(0.65)
-
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .opacity(0.5)
-                }
-            }
-            .ignoresSafeArea()
+            LyricsDetachedAmbientBackground()
 
             VStack(spacing: 0) {
                 // MARK: - Top Window Controls (Invisible Drag Area)
@@ -559,6 +599,38 @@ struct LyricsDetachedWindowView: View {
         .onDisappear {
             Task { await musicManager.setDetachedLyricsOpen(false) }
         }
+    }
+}
+
+private struct LyricsDetachedAmbientBackground: View {
+    @EnvironmentObject private var musicManager: MusicManager
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                if let image = musicManager.artwork ?? musicManager.appIcon {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: geo.size.width / 10, height: geo.size.height / 10)
+                        .blur(radius: 12, opaque: true)
+                        .saturation(1.2)
+                        .scaleEffect(10.5)
+                        .animation(.easeInOut(duration: 1.5), value: image)
+                } else {
+                    musicManager.accentColor
+                        .opacity(0.4)
+                        .blur(radius: 100)
+                }
+
+                Color.black.opacity(0.65)
+
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.5)
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -637,21 +709,7 @@ private struct LyricsDetachedRightPane: View {
             referenceElapsed: musicManager.lyricsElapsedTime(),
             windows: musicManager.isPlaying ? KaraokeFillSchedule.eventWindows(for: lyrics) : []
         )) { context in
-            let elapsed = musicManager.lyricsElapsedTime(at: context.date)
-            let activeLyricIndices = musicManager.activeLyricIndices(at: context.date)
-            let activeLyricIDs = Set(
-                activeLyricIndices.compactMap { index in
-                    lyrics.indices.contains(index) ? lyrics[index].id : nil
-                }
-            )
-            let activePrimaryLyricID = activeLyricIndices.max { lhs, rhs in
-                if lyrics[lhs].timestamp == lyrics[rhs].timestamp {
-                    return lhs < rhs
-                }
-                return lyrics[lhs].timestamp < lyrics[rhs].timestamp
-            }.map { lyrics[$0].id }
-            let currentLyricID = activePrimaryLyricID
-                ?? lyrics.last(where: { $0.timestamp <= elapsed })?.id
+            let playbackState = musicManager.lyricsPlaybackState(for: lyrics, at: context.date)
 
             Group {
                 if lyrics.isEmpty {
@@ -668,14 +726,15 @@ private struct LyricsDetachedRightPane: View {
                                 Spacer().frame(height: 120)
 
                                 ForEach(lyrics) { lyric in
-                                    let isCurrent = activeLyricIDs.contains(lyric.id)
+                                    let isCurrent = playbackState.activeIDs.contains(lyric.id)
 
                                     LyricLineView(
                                         lyric: lyric,
                                         isCurrent: isCurrent,
                                         accentColor: .white,
-                                        elapsedTime: elapsed
+                                        elapsedTime: playbackState.elapsed
                                     )
+                                    .equatable()
                                     .id(lyric.id)
                                     .multilineTextAlignment(.leading)
                                     .font(.system(
@@ -706,12 +765,12 @@ private struct LyricsDetachedRightPane: View {
                                 endPoint: .bottom
                             )
                         )
-                        .onAppear { scrollToCurrentLyric(using: proxy, id: currentLyricID, animated: false) }
-                        .onChange(of: currentLyricID) { _, newID in
+                        .onAppear { scrollToCurrentLyric(using: proxy, id: playbackState.currentID, animated: false) }
+                        .onChange(of: playbackState.currentID) { _, newID in
                             scrollToCurrentLyric(using: proxy, id: newID, animated: true)
                         }
                         .onChange(of: lyrics.count) { _, _ in
-                            scrollToCurrentLyric(using: proxy, id: currentLyricID, animated: false)
+                            scrollToCurrentLyric(using: proxy, id: playbackState.currentID, animated: false)
                         }
                     }
                 }

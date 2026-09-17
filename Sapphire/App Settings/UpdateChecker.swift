@@ -796,6 +796,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         let date = Date().addingTimeInterval(max(interval, 60))
         nextScheduledCheckAt = date
         UserDefaults.standard.set(date, forKey: nextScheduledCheckKey)
+        scheduleTimerForNextCheck()
     }
 
     private func applyReleaseNotes(from releases: [GitHubRelease], offeredVersion: String?) {
@@ -862,12 +863,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         }
         initialCheckWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 4...12), execute: work)
-
-        timer = Timer.scheduledCoalescing(withTimeInterval: 15 * 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkInBackgroundIfNeeded()
-            }
-        }
+        scheduleTimerForNextCheck()
 
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
@@ -900,6 +896,24 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             }
         }
         monitor.start(queue: networkMonitorQueue)
+    }
+
+    private func scheduleTimerForNextCheck() {
+        timer?.invalidate()
+        timer = nil
+        guard SettingsModel.shared.settings.automaticUpdateChecksEnabled,
+              let nextScheduledCheckAt,
+              nextScheduledCheckAt > Date() else { return }
+
+        let delay = nextScheduledCheckAt.timeIntervalSinceNow
+        let nextTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.timer = nil
+                self?.checkInBackgroundIfNeeded()
+            }
+        }
+        nextTimer.tolerance = min(60, delay * 0.05)
+        timer = nextTimer
     }
 
     func stopPeriodicChecks() {

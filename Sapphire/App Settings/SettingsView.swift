@@ -8,14 +8,27 @@
 import SwiftUI
 
 struct SettingsView: View {
-    private let settings = SettingsModel.shared
+    private let settings: SettingsModel
+    @State private var editingSession: SettingsEditingSession
     @State private var selectedSection: SettingsSection? = .general
     @State private var showAccountPane = false
+
+    init(settings: SettingsModel = .shared) {
+        self.settings = settings
+        self._editingSession = State(initialValue: SettingsEditingSession(model: settings))
+    }
 
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-                SettingsSidebarView(selectedSection: $selectedSection, showAccountPane: $showAccountPane)
+                SettingsSidebarView(
+                    selectedSection: $selectedSection,
+                    showAccountPane: $showAccountPane,
+                    onQuit: {
+                        editingSession.flushPendingSave()
+                        NSApp.terminate(nil)
+                    }
+                )
                     .frame(width: 250)
 
                 if showAccountPane {
@@ -29,6 +42,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environmentObject(settings)
+        .environmentObject(editingSession)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: NotchConfiguration.settingsWindowCornerRadius, style: .continuous))
         .ignoresSafeArea(.container, edges: .top)
@@ -40,11 +54,12 @@ struct SettingsView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sapphireSettingsWillClose)) { _ in
-            settings.flushPendingSave()
+            editingSession.flushPendingSave()
             SystemAppFetcher.shared.releaseCachedApps()
             AppIconLoader.releaseCache()
         }
         .onDisappear {
+            editingSession.flushPendingSave()
             SystemAppFetcher.shared.releaseCachedApps()
             AppIconLoader.releaseCache()
         }

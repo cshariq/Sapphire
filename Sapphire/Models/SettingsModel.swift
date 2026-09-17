@@ -1802,7 +1802,7 @@ enum ControlItemIconStyle: String, Codable, CaseIterable, Identifiable {
 
 // MARK: - Settings Persistence Helpers
 
-private enum SettingsPersistence {
+enum SettingsPersistence {
     static let payloadKey = "sapphire.settings.payload"
     static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
@@ -2187,7 +2187,7 @@ struct EventHandlingSettingsSnapshot {
 class SettingsModel: ObservableObject {
     static let shared = SettingsModel()
 
-    @Published private(set) var revision: UInt64 = 0
+    private(set) var revision: UInt64 = 0
 
     private let snapshotLock = NSLock()
     private var eventHandlingSnapshot = EventHandlingSettingsSnapshot(settings: Settings())
@@ -2268,13 +2268,21 @@ class SettingsModel: ObservableObject {
     private let settingsAccessQueueKey = DispatchSpecificKey<UInt8>()
     private let persistenceStateLock = NSLock()
     private var isApplyingLoadedSettings = false
-    private var pendingSaveWorkItem: DispatchWorkItem?
-    private var pendingSaveGeneration: UInt64 = 0
+    private var saveTimer: DispatchSourceTimer?
+    private var pendingSave: (settings: Settings, revision: UInt64)?
 
     private var lastPersistedRevision: UInt64?
 
     private init() {
         settingsAccessQueue.setSpecific(key: settingsAccessQueueKey, value: 1)
+        let saveTimer = DispatchSource.makeTimerSource(queue: settingsAccessQueue)
+        saveTimer.setEventHandler { [weak self] in
+            self?.persistPendingSave()
+        }
+        saveTimer.schedule(deadline: .distantFuture)
+        saveTimer.resume()
+        self.saveTimer = saveTimer
+
         _ = APIKeyManager.shared
         var loaded = Self.readSettingsFromStorage()
         loaded.normalizeCollectionOrders()
@@ -2422,26 +2430,31 @@ class SettingsModel: ObservableObject {
 
     private func scheduleSaveSettings() {
         guard revision != persistedRevision() else { return }
-        pendingSaveWorkItem?.cancel()
-        let snapshot = settings
-        let snapshotRevision = revision
-        let generation = advanceSaveGeneration()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.isCurrentSaveGeneration(generation) else { return }
-            self.persistSettingsUnlocked(snapshot, revision: snapshotRevision)
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.isCurrentSaveGeneration(generation) else { return }
-                self.pendingSaveWorkItem = nil
-            }
-        }
-        pendingSaveWorkItem = work
-        settingsAccessQueue.asyncAfter(deadline: .now() + .milliseconds(150), execute: work)
+        persistenceStateLock.lock()
+        pendingSave = (settings, revision)
+        persistenceStateLock.unlock()
+
+        saveTimer?.schedule(
+            deadline: .now() + .milliseconds(250),
+            leeway: .milliseconds(50)
+        )
+    }
+
+    private func persistPendingSave() {
+        persistenceStateLock.lock()
+        let save = pendingSave
+        pendingSave = nil
+        persistenceStateLock.unlock()
+
+        guard let save, save.revision != persistedRevision() else { return }
+        _ = persistSettingsUnlocked(save.settings, revision: save.revision)
     }
 
     func flushPendingSave() {
-        pendingSaveWorkItem?.cancel()
-        pendingSaveWorkItem = nil
-        _ = advanceSaveGeneration()
+        persistenceStateLock.lock()
+        pendingSave = nil
+        persistenceStateLock.unlock()
+        saveTimer?.schedule(deadline: .distantFuture)
 
         let snapshot = settings
         let snapshotRevision = revision
@@ -2480,20 +2493,6 @@ class SettingsModel: ObservableObject {
         persistenceStateLock.lock()
         defer { persistenceStateLock.unlock() }
         return lastPersistedRevision
-    }
-
-    private func advanceSaveGeneration() -> UInt64 {
-        persistenceStateLock.lock()
-        pendingSaveGeneration &+= 1
-        let generation = pendingSaveGeneration
-        persistenceStateLock.unlock()
-        return generation
-    }
-
-    private func isCurrentSaveGeneration(_ generation: UInt64) -> Bool {
-        persistenceStateLock.lock()
-        defer { persistenceStateLock.unlock() }
-        return pendingSaveGeneration == generation
     }
 
     func makeBackupDocument() -> SettingsBackupDocument {
@@ -2888,44 +2887,16 @@ struct SystemApp: Identifiable, Equatable, Sendable {
 }
 
 enum AppIconLoader {
-    private static let cache: NSCache<NSString, NSImage> = {
-        let cache = NSCache<NSString, NSImage>()
-        cache.countLimit = 48
-        cache.totalCostLimit = 2 * 1024 * 1024
-        return cache
-    }()
-
     static func icon(for url: URL, maxDimension: CGFloat = 32) -> NSImage {
-        let dimension = normalizedDimension(maxDimension)
-        let key = "\(url.standardizedFileURL.path)#\(Int(dimension))" as NSString
-        if let cached = cache.object(forKey: key) {
-            return cached
-        }
-        let image = downsample(NSWorkspace.shared.icon(forFile: url.path), maxDimension: dimension)
-        cache.setObject(image, forKey: key, cost: Int(dimension * dimension * 4))
-        return image
+        InstalledAppIconRepository.shared.icon(
+            for: url,
+            modifiedAt: nil,
+            maxDimension: maxDimension
+        )
     }
 
     static func releaseCache() {
-        cache.removeAllObjects()
-    }
-
-    nonisolated static func downsample(_ image: NSImage, maxDimension: CGFloat) -> NSImage {
-        let maxDimension = normalizedDimension(maxDimension)
-        let size = image.size
-        guard size.width > maxDimension || size.height > maxDimension else { return image }
-        let scale = min(maxDimension / max(size.width, size.height), 1.0)
-        let newSize = NSSize(width: size.width * scale, height: size.height * scale)
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-        image.draw(in: NSRect(origin: .zero, size: newSize), from: .zero, operation: .copy, fraction: 1.0)
-        newImage.unlockFocus()
-        return newImage
-    }
-
-    nonisolated private static func normalizedDimension(_ value: CGFloat) -> CGFloat {
-        guard value.isFinite else { return 32 }
-        return min(max(value.rounded(.up), 1), 4_096)
+        InstalledAppIconRepository.shared.removeAll()
     }
 }
 

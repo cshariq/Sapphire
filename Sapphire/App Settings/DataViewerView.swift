@@ -113,7 +113,7 @@ struct DataViewerView: View {
 
     private func summaryView(_ summary: DataSummary) -> some View {
         ScrollView {
-            VStack(spacing: 20) {
+            LazyVStack(spacing: 20) {
                 overviewSection(summary)
 
                 if !summary.countsByMonitorType.isEmpty {

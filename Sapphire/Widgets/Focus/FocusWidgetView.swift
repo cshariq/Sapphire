@@ -48,7 +48,6 @@ struct FocusWidgetView: View {
         .foregroundColor(.white)
         .preferredColorScheme(.dark)
         .contentShape(Rectangle())
-        .animation(.default, value: focusManager.remainingSeconds)
         .animation(.default, value: focusManager.phase)
     }
 
@@ -58,7 +57,11 @@ struct FocusWidgetView: View {
     private var primaryInfo: some View {
         HStack(spacing: 8) {
             if focusManager.isSessionActive {
-                ring
+                FocusWidgetTimerRing(
+                    focusManager: focusManager,
+                    accent: accent,
+                    accentColors: accentColors
+                )
             } else {
                 Image(systemName: "moon.fill")
                     .font(.system(size: 40))
@@ -70,13 +73,17 @@ struct FocusWidgetView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(focusManager.isSessionActive ? focusManager.remainingLabel : "Focus")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                    .id(focusManager.isSessionActive ? focusManager.remainingLabel : "focus")
-                    .contentTransition(.numericText(countsDown: focusManager.isSessionActive))
-                    .animation(.easeInOut(duration: 0.4), value: focusManager.isSessionActive)
+                Group {
+                    if focusManager.isSessionActive {
+                        FocusWidgetCountdownText(focusManager: focusManager)
+                    } else {
+                        Text("Focus")
+                    }
+                }
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+                .animation(.easeInOut(duration: 0.4), value: focusManager.isSessionActive)
 
                 Text(focusManager.isSessionActive ? phaseLabel : "Ready to focus")
                     .font(.headline).fontWeight(.medium).lineLimit(1).minimumScaleFactor(0.7)
@@ -88,21 +95,6 @@ struct FocusWidgetView: View {
                     .font(.subheadline).opacity(0.8).lineLimit(1).minimumScaleFactor(0.7)
             }
         }
-    }
-
-    private var ring: some View {
-        ZStack {
-            ProgressRingView(
-                progress: focusManager.progress,
-                lineWidth: 4,
-                active: AngularGradient(colors: accentColors, center: .center)
-            )
-            Image(systemName: focusManager.isFocusBlock ? "figure.mind.and.body" : "cup.and.saucer.fill")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(accent)
-        }
-        .frame(width: 44, height: 44)
-        .shadow(color: accent.opacity(0.45), radius: 6)
     }
 
     // MARK: - Secondary stats (streak leads)
@@ -140,5 +132,46 @@ struct FocusWidgetView: View {
     private var streakText: String {
         let s = focusManager.currentStreak
         return s == 1 ? "1 day streak" : "\(s) day streak"
+    }
+}
+
+@MainActor
+private struct FocusWidgetTimerRing: View {
+    let focusManager: FocusSessionManager
+    let accent: Color
+    let accentColors: [Color]
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            ZStack {
+                ProgressRingView(
+                    progress: focusManager.progress(at: context.date),
+                    lineWidth: 4,
+                    active: AngularGradient(colors: accentColors, center: .center)
+                )
+                Image(systemName: focusManager.isFocusBlock ? "figure.mind.and.body" : "cup.and.saucer.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(accent)
+            }
+            .animation(.default, value: focusManager.remaining(at: context.date))
+        }
+        .frame(width: 44, height: 44)
+        .shadow(color: accent.opacity(0.45), radius: 6)
+    }
+}
+
+@MainActor
+private struct FocusWidgetCountdownText: View {
+    let focusManager: FocusSessionManager
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let remaining = focusManager.remaining(at: context.date)
+            let label = FocusSessionManager.format(remaining)
+            Text(label)
+                .id(label)
+                .contentTransition(.numericText(countsDown: true))
+                .animation(.default, value: remaining)
+        }
     }
 }

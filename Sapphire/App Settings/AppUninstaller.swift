@@ -534,12 +534,7 @@ enum AppUninstaller {
                   let runningURL = $0.bundleURL else { return false }
             return runningURL.standardizedFileURL.resolvingSymlinksInPath() == selectedAppPath
         }) {
-            running.terminate()
-            let deadline = Date().addingTimeInterval(6)
-            while !running.isTerminated && Date() < deadline {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-            }
-            guard running.isTerminated else {
+            guard await running.sapphireTerminateAndWait(timeout: 6) else {
                 return AppUninstallResult(
                     appName: app.name,
                     applicationURL: app.url,

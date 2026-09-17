@@ -38,11 +38,11 @@ final class APIKeyManager {
     }
 
     private func migrateMisplacedProviderKeysIfNeeded() {
-        let gemini = loadKey(keychainKey: geminiKeychainKey) ?? ""
+        let gemini = loadKey(keychainKey: geminiKeychainKey)
         guard !gemini.isEmpty else { return }
 
         if gemini.hasPrefix("sk-hc-") {
-            let hackClub = loadKey(keychainKey: hackClubKeychainKey) ?? ""
+            let hackClub = loadKey(keychainKey: hackClubKeychainKey)
             if hackClub.isEmpty {
                 saveKey(gemini, keychainKey: hackClubKeychainKey)
             }
@@ -51,7 +51,7 @@ final class APIKeyManager {
         }
 
         if gemini.hasPrefix("sk-or-") {
-            let openRouter = loadKey(keychainKey: openRouterKeychainKey) ?? ""
+            let openRouter = loadKey(keychainKey: openRouterKeychainKey)
             if openRouter.isEmpty {
                 saveKey(gemini, keychainKey: openRouterKeychainKey)
             }

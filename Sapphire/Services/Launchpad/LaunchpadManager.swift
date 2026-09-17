@@ -113,8 +113,9 @@ class LaunchpadWindowController: NSWindowController {
 
         let launchpadView = LaunchpadView(
             presentation: presentation,
-            interceptor: self.inputInterceptor
-        ).environmentObject(gestureManager)
+            interceptor: self.inputInterceptor,
+            gestureManager: gestureManager
+        )
 
         window.contentView = NSHostingView(rootView: launchpadView)
     }

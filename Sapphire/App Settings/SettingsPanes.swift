@@ -23,8 +23,8 @@ struct SettingsDetailView: View {
         VStack {
             if let selectedSection, isSelectedSectionLocked {
                 LockedSettingsSectionView(section: selectedSection)
-            } else {                    settingsPane(for: selectedSection)
-
+            } else {
+                settingsPane(for: selectedSection)
             }
         }
         .animation(.easeOut(duration: 0.15), value: selectedSection)
@@ -331,7 +331,7 @@ struct NotchAppearanceEditorView: View {
                     get: { appearance.opacity * 100 },
                     set: { appearance.opacity = min(max($0 / 100, 0), 1) }
                 )
-                CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%", commitsContinuously: true)
+                CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%")
             }
 
             if appearance.mode == .blur || (appearance.mode == .custom && !appearance.liquidGlassLook) {
@@ -379,12 +379,15 @@ struct NotchAppearanceEditorView: View {
                         .buttonStyle(.plain)
                         .disabled(appearance.gradientColors.count <= 1)
                     }
-                    Slider(value: $color.location, in: 0...1) {
-                        Text("Location")
-                    } minimumValueLabel: {
-                        Text("0%")
-                    } maximumValueLabel: {
-                        Text("100%")
+                    DeferredValueEditor(value: $color.location.asDouble) { draft, onEditingChanged in
+                        Slider(
+                            value: draft,
+                            in: 0...1,
+                            label: { Text("Location") },
+                            minimumValueLabel: { Text("0%") },
+                            maximumValueLabel: { Text("100%") },
+                            onEditingChanged: onEditingChanged
+                        )
                     }
                 }.padding(.horizontal)
             }
@@ -417,11 +420,11 @@ struct NotchAppearanceEditorView: View {
 }
 
 struct SystemEnhanceSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            LazyVStack(alignment: .leading, spacing: 18) {
                 Text("System").font(.largeTitle.bold())
                 Text("Desktop motion, input, and window enhancements that stay out of your way.")
                     .font(.subheadline).foregroundStyle(.secondary)
@@ -551,7 +554,7 @@ struct SystemEnhanceSettingsView: View {
 }
 
 private struct SystemEnhanceHingeAnimationSettingsCard: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @EnvironmentObject private var settings: SettingsEditingSession
     @ObservedObject private var lidAngleSensor = LidAngleSensor.shared
     @ObservedObject private var permissionsManager = PermissionsManager.shared
 
@@ -568,7 +571,7 @@ private struct SystemEnhanceHingeAnimationSettingsCard: View {
 }
 
 struct AppsSettingsView: View {
-    @EnvironmentObject private var settingsModel: SettingsModel
+    @EnvironmentObject private var settingsModel: SettingsEditingSession
     @ObservedObject private var installedUpdates = InstalledAppUpdatesChecker.shared
     @StateObject private var appModel = InstalledAppsViewModel()
     @State private var selectedTab: AppsTab = .updates
@@ -594,39 +597,56 @@ struct AppsSettingsView: View {
         var id: String { rawValue }
     }
 
-    private var filteredUpdateEntries: [InstalledAppUpdateEntry] {
-        installedUpdates.entries.filter { entry in
-            let matchesQuery = updatesQuery.isEmpty
-                || entry.name.localizedCaseInsensitiveContains(updatesQuery)
-                || entry.bundleIdentifier.localizedCaseInsensitiveContains(updatesQuery)
-            guard matchesQuery else { return false }
-            switch updateFilter {
-            case .updates: return entry.status.isUpdateAvailable && !installedUpdates.isIgnored(entry)
-            case .current: return entry.status.isUpToDate && !installedUpdates.isIgnored(entry)
-            case .attention: return (entry.status.isUnsupported || entry.status.isError) && !installedUpdates.isIgnored(entry)
-            case .ignored: return installedUpdates.isIgnored(entry)
-            case .all: return true
-            }
-        }
+    private struct UpdateSnapshot {
+        var filteredEntries: [InstalledAppUpdateEntry] = []
+        var availableCount = 0
+        var currentCount = 0
+        var unsupportedCount = 0
+        var checkingCount = 0
     }
 
-    private var filteredInstalledApps: [InstalledApp] {
-        appModel.apps.filter { app in
-            (showSystemApps || !app.isSystem)
-                && (uninstallQuery.isEmpty
-                    || app.name.localizedCaseInsensitiveContains(uninstallQuery)
-                    || app.bundleIdentifier.localizedCaseInsensitiveContains(uninstallQuery))
+    private var updateSnapshot: UpdateSnapshot {
+        let query = updatesQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ignoredIDs = installedUpdates.ignoredBundleIDs
+        var snapshot = UpdateSnapshot()
+
+        for entry in installedUpdates.entries {
+            let isIgnored = ignoredIDs.contains(entry.id)
+            if entry.status.isUpdateAvailable && !isIgnored { snapshot.availableCount += 1 }
+            if entry.status.isUpToDate && !isIgnored { snapshot.currentCount += 1 }
+            if entry.status.isUnsupported && !isIgnored { snapshot.unsupportedCount += 1 }
+            if entry.status == .checking { snapshot.checkingCount += 1 }
+
+            let matchesQuery = query.isEmpty
+                || entry.name.localizedCaseInsensitiveContains(query)
+                || entry.bundleIdentifier.localizedCaseInsensitiveContains(query)
+            guard matchesQuery else { continue }
+
+            let matchesFilter: Bool
+            switch updateFilter {
+            case .updates: matchesFilter = entry.status.isUpdateAvailable && !isIgnored
+            case .current: matchesFilter = entry.status.isUpToDate && !isIgnored
+            case .attention: matchesFilter = (entry.status.isUnsupported || entry.status.isError) && !isIgnored
+            case .ignored: matchesFilter = isIgnored
+            case .all: matchesFilter = true
+            }
+            if matchesFilter {
+                snapshot.filteredEntries.append(entry)
+            }
         }
+        return snapshot
     }
 
     var body: some View {
+        let snapshot = updateSnapshot
+
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
+            LazyVStack(alignment: .leading, spacing: 18) {
+                header(availableCount: snapshot.availableCount)
 
                 switch selectedTab {
                 case .updates:
-                    updatesPane
+                    updatesPane(snapshot: snapshot)
                 case .uninstall:
                     uninstallPane
                 }
@@ -659,7 +679,7 @@ struct AppsSettingsView: View {
         }
     }
 
-    private var header: some View {
+    private func header(availableCount: Int) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -670,8 +690,8 @@ struct AppsSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if installedUpdates.updatesAvailableCount > 0 {
-                    Label("\(installedUpdates.updatesAvailableCount) available", systemImage: "arrow.down.circle.fill")
+                if availableCount > 0 {
+                    Label("\(availableCount) available", systemImage: "arrow.down.circle.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.blue)
                         .padding(.horizontal, 10)
@@ -690,48 +710,48 @@ struct AppsSettingsView: View {
         }
     }
 
-    private var updatesPane: some View {
+    private func updatesPane(snapshot: UpdateSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) {
-                    updateMetricCards
+                    updateMetricCards(snapshot: snapshot)
                         .frame(minWidth: 170)
                 }
                 VStack(spacing: 10) {
-                    updateMetricCards
+                    updateMetricCards(snapshot: snapshot)
                 }
             }
 
-            installedAppsUpdateCard
+            installedAppsUpdateCard(snapshot: snapshot)
         }
     }
 
     @ViewBuilder
-    private var updateMetricCards: some View {
+    private func updateMetricCards(snapshot: UpdateSnapshot) -> some View {
         AppsMetricCard(
             title: "Updates",
-            value: "\(installedUpdates.updatesAvailableCount)",
-            detail: installedUpdates.updatesAvailableCount == 1 ? "app available" : "apps available",
+            value: "\(snapshot.availableCount)",
+            detail: snapshot.availableCount == 1 ? "app available" : "apps available",
             systemImage: "arrow.down.circle.fill",
             tint: .blue
         )
         AppsMetricCard(
             title: "Current",
-            value: "\(installedUpdates.upToDateCount)",
-            detail: installedUpdates.upToDateCount == 1 ? "app up to date" : "apps up to date",
+            value: "\(snapshot.currentCount)",
+            detail: snapshot.currentCount == 1 ? "app up to date" : "apps up to date",
             systemImage: "checkmark.circle.fill",
             tint: .green
         )
         AppsMetricCard(
             title: "Needs attention",
-            value: "\(installedUpdates.unsupportedCount)",
-            detail: installedUpdates.unsupportedCount == 1 ? "app unsupported" : "apps unsupported",
+            value: "\(snapshot.unsupportedCount)",
+            detail: snapshot.unsupportedCount == 1 ? "app unsupported" : "apps unsupported",
             systemImage: "exclamationmark.triangle.fill",
             tint: .orange
         )
     }
 
-    private var installedAppsUpdateCard: some View {
+    private func installedAppsUpdateCard(snapshot: UpdateSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label("Installed app updates", systemImage: "square.stack.3d.up.fill")
@@ -785,14 +805,14 @@ struct AppsSettingsView: View {
                 HStack(spacing: 10) {
                     ProgressView(value: installedUpdates.checkProgress)
                         .progressViewStyle(.linear)
-                    Text("\(installedUpdates.checkingCount) remaining")
+                    Text("\(snapshot.checkingCount) remaining")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
 
-            VStack(spacing: 0) {
-                if filteredUpdateEntries.isEmpty {
+            LazyVStack(spacing: 0) {
+                if snapshot.filteredEntries.isEmpty {
                     ContentUnavailableView(
                         "No matching apps",
                         systemImage: updateFilter == .updates ? "checkmark.circle" : "magnifyingglass",
@@ -800,9 +820,10 @@ struct AppsSettingsView: View {
                     )
                     .frame(minHeight: 150)
                 } else {
-                    ForEach(filteredUpdateEntries) { entry in
+                    let lastEntryID = snapshot.filteredEntries.last?.id
+                    ForEach(snapshot.filteredEntries) { entry in
                         InstalledAppUpdateRowView(entry: entry, checker: installedUpdates)
-                        if entry.id != filteredUpdateEntries.last?.id { Divider().padding(.leading, 60) }
+                        if entry.id != lastEntryID { Divider().padding(.leading, 60) }
                     }
                 }
             }
@@ -811,7 +832,15 @@ struct AppsSettingsView: View {
     }
 
     private var uninstallPane: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let query = uninstallQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apps = appModel.apps.filter { app in
+            (showSystemApps || !app.isSystem)
+                && (query.isEmpty
+                    || app.name.localizedCaseInsensitiveContains(query)
+                    || app.bundleIdentifier.localizedCaseInsensitiveContains(query))
+        }
+
+        return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Image(systemName: "trash.slash.fill")
                     .font(.system(size: 24))
@@ -880,16 +909,15 @@ struct AppsSettingsView: View {
                 .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
             }
 
-            VStack(spacing: 0) {
-                if !appModel.isLoading && filteredInstalledApps.isEmpty {
+            LazyVStack(spacing: 0) {
+                if !appModel.isLoading && apps.isEmpty {
                     ContentUnavailableView.search(text: uninstallQuery)
                         .frame(minHeight: 180)
                 } else {
-                    ForEach(filteredInstalledApps) { app in
+                    let lastAppID = apps.last?.id
+                    ForEach(apps) { app in
                         HStack(spacing: 12) {
-                            Image(nsImage: app.icon)
-                                .resizable()
-                                .frame(width: 40, height: 40)
+                            CachedAppIconView(url: app.url, size: 40, cornerRadius: 9)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(app.name).font(.headline)
                                 Text(app.isSystem
@@ -925,7 +953,7 @@ struct AppsSettingsView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 11)
-                        if app.id != filteredInstalledApps.last?.id { Divider().padding(.leading, 66) }
+                        if app.id != lastAppID { Divider().padding(.leading, 66) }
                     }
                 }
             }
@@ -1000,7 +1028,7 @@ private struct AppUninstallReviewSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Image(nsImage: app.icon).resizable().frame(width: 48, height: 48)
+                CachedAppIconView(url: app.url, size: 48, cornerRadius: 10)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Uninstall \(app.name)").font(.title2.bold())
                     Text("The app is selected. Identifier-linked, shared, and name-based data requires review unless ownership is verified.")
@@ -1159,13 +1187,11 @@ private struct AppUninstallReviewSheet: View {
 
 private struct InstalledAppUpdateRowView: View {
     let entry: InstalledAppUpdateEntry
-    @ObservedObject var checker: InstalledAppUpdatesChecker
+    let checker: InstalledAppUpdatesChecker
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(nsImage: entry.icon)
-                .resizable()
-                .frame(width: 36, height: 36)
+            CachedAppIconView(url: entry.url, size: 36, cornerRadius: 8)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
@@ -1301,9 +1327,7 @@ private struct InstalledAppReleaseNotesSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Image(nsImage: entry.icon)
-                    .resizable()
-                    .frame(width: 40, height: 40)
+                CachedAppIconView(url: entry.url, size: 40, cornerRadius: 9)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(entry.name) \(entry.latestVersion)")
                         .font(.headline)
@@ -1525,13 +1549,13 @@ private struct PieSlicePath: Shape {
 }
 
 struct GeneralSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @State private var showingCustomConfig = false
     @ObservedObject private var appFetcher = SystemAppFetcher.shared
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("General")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -1634,16 +1658,21 @@ struct GeneralSettingsView: View {
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            Slider(
-                                value: $settings.settings.floatingIslandTopOffset,
-                                in: 0...40,
-                                step: 1
-                            )
-                            .frame(width: 150)
-                            .accessibilityLabel("Island Top Offset")
-                            Text("\(Int(settings.settings.floatingIslandTopOffset)) pt")
-                                .monospacedDigit()
-                                .frame(width: 42, alignment: .trailing)
+                            DeferredValueEditor(value: $settings.settings.floatingIslandTopOffset.asDouble) { draft, onEditingChanged in
+                                HStack(spacing: 8) {
+                                    Slider(
+                                        value: draft,
+                                        in: 0...40,
+                                        step: 1,
+                                        onEditingChanged: onEditingChanged
+                                    )
+                                    .frame(width: 150)
+                                    .accessibilityLabel("Island Top Offset")
+                                    Text("\(Int(draft.wrappedValue)) pt")
+                                        .monospacedDigit()
+                                        .frame(width: 42, alignment: .trailing)
+                                }
+                            }
                         }
                         .padding()
                     }
@@ -1807,9 +1836,12 @@ struct GeneralSettingsView: View {
     }
 
     private func setAllApps(to enabled: Bool) {
+        var appStates = settings.settings.capsLockHorizontalLockAppStates
+        appStates.reserveCapacity(appFetcher.apps.count)
         for app in appFetcher.apps {
-            settings.settings.capsLockHorizontalLockAppStates[app.id] = enabled
+            appStates[app.id] = enabled
         }
+        settings.settings.capsLockHorizontalLockAppStates = appStates
     }
 
     private func descriptionForCurrentProfile() -> String {
@@ -1833,22 +1865,24 @@ fileprivate struct AnimationSliderRow: View {
     let range: ClosedRange<Double>
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text(title)
-                    if !description.isEmpty {
-                        Text(description)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+        DeferredValueEditor(value: $value) { draft, onEditingChanged in
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(title)
+                        if !description.isEmpty {
+                            Text(description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    Spacer()
+                    Text(String(format: "%.2f", draft.wrappedValue))
+                        .font(.body.monospacedDigit())
+                        .foregroundColor(.secondary)
                 }
-                Spacer()
-                Text(String(format: "%.2f", value))
-                    .font(.body.monospacedDigit())
-                    .foregroundColor(.secondary)
+                Slider(value: draft, in: range, onEditingChanged: onEditingChanged)
             }
-            Slider(value: $value, in: range)
         }
         .padding(.vertical, 8)
     }
@@ -1931,7 +1965,7 @@ struct CustomNotchConfigView: View {
             Divider()
 
             ScrollView {
-                VStack(spacing: 25) {
+                LazyVStack(spacing: 25) {
                     Section(header: Text("Sizing & Position").font(.headline)) {
                         CustomSliderRowView(label: "Auto-Expanded Height", value: $autoExpandedTallHeight, range: 50...150, specifier: "%.1f")
                         CustomSliderRowView(label: "Top Buffer", value: $topBuffer, range: 0...20, specifier: "%.1f")
@@ -2055,12 +2089,12 @@ struct CustomNotchConfigView: View {
 }
 
 struct FileShelfSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var continuity = ContinuityManager.shared
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("File Shelf")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -2124,11 +2158,11 @@ struct FileShelfSettingsView: View {
 }
 
 struct NotesSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Notes")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -2186,7 +2220,7 @@ struct NotesSettingsView: View {
 }
 
 struct ClipboardSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @State private var historyCount = 0
     @ObservedObject private var shortcutRecorder = GlobalShortcutRecorder.shared
     @ObservedObject private var clipboardPickerManager = ClipboardPickerManager.shared
@@ -2277,7 +2311,7 @@ struct ClipboardSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Clipboard")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -2315,6 +2349,7 @@ struct ClipboardSettingsView: View {
                         isOn: $settings.settings.clipboardMonitoringEnabled
                     )
                     .onChange(of: settings.settings.clipboardMonitoringEnabled) { _, enabled in
+                        settings.commitNow()
                         if enabled {
                             ClipboardManager.shared.startMonitoring()
                         } else {
@@ -2599,11 +2634,11 @@ struct ClipboardSettingsView: View {
 }
 
 struct MirrorSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Mirror")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -2661,11 +2696,11 @@ struct MirrorSettingsView: View {
 }
 
 struct CaffeineSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Caffeinate")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -2730,15 +2765,21 @@ struct CaffeineSettingsView: View {
 }
 
 struct WidgetsSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
     private var enabledWidgetCount: Int {
         settings.settings.enabledWidgetTypes.count
     }
 
     var body: some View {
+        let lockedWidgetTypes = Set(WidgetType.allCases.filter { type in
+            type.requiredPremiumFeature
+                .map { !subscriptionManager.hasAccess(to: $0) } ?? false
+        })
+
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Widgets").font(.largeTitle.bold()).padding(.bottom)
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -2783,7 +2824,11 @@ struct WidgetsSettingsView: View {
                         .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 5)
                     ReorderableVStack(items: $settings.settings.widgetOrder) { widget in
                         if widget != .agent {
-                            WidgetRowView(widgetType: widget, enabledWidgetCount: enabledWidgetCount)
+                            WidgetRowView(
+                                widgetType: widget,
+                                enabledWidgetCount: enabledWidgetCount,
+                                isPremiumLocked: lockedWidgetTypes.contains(widget)
+                            )
                         }
                     }
                     .modifier(SettingsContainerModifier())
@@ -2795,7 +2840,8 @@ struct WidgetsSettingsView: View {
 }
 
 struct LiveActivitiesSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var availableSensors: [any Sensor_p] = []
 
     private enum PersistentActivitySelection: String, CaseIterable, Identifiable {
@@ -2823,9 +2869,11 @@ struct LiveActivitiesSettingsView: View {
             get: { currentPersistentActivity },
             set: { newValue in
                 guard currentPersistentActivity != newValue else { return }
-                settings.settings.showPersistentStatsLiveActivity = (newValue == .stats)
-                settings.settings.showPersistentBatteryLiveActivity = (newValue == .battery)
-                settings.settings.showPersistentWeatherLiveActivity = (newValue == .weather)
+                var updated = settings.settings
+                updated.showPersistentStatsLiveActivity = (newValue == .stats)
+                updated.showPersistentBatteryLiveActivity = (newValue == .battery)
+                updated.showPersistentWeatherLiveActivity = (newValue == .weather)
+                settings.settings = updated
             }
         )
     }
@@ -2845,8 +2893,13 @@ struct LiveActivitiesSettingsView: View {
     }
 
     var body: some View {
+        let lockedActivityTypes = Set(LiveActivityType.allCases.filter { type in
+            type.requiredPremiumFeature
+                .map { !subscriptionManager.hasAccess(to: $0) } ?? false
+        })
+
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Live Activities").font(.largeTitle.bold()).padding(.bottom)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("General Behavior").font(.headline).padding([.top, .horizontal])
@@ -2980,7 +3033,10 @@ struct LiveActivitiesSettingsView: View {
                         InfoContainer(text: "Enabling stats will increase the app's cpu and power consumption.", iconName: "info.circle", color: .yellow)
                     }
                     ReorderableVStack(items: $settings.settings.liveActivityOrder) { activity in
-                        LiveActivityRowView(activityType: activity)
+                        LiveActivityRowView(
+                            activityType: activity,
+                            isPremiumLocked: lockedActivityTypes.contains(activity)
+                        )
                     }
                     .modifier(SettingsContainerModifier())
                 }
@@ -3114,7 +3170,7 @@ fileprivate struct SensorSelectionView: View {
 }
 
 struct ShortcutsSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @StateObject private var fetcher = ShortcutsFetcher()
     @State private var searchText: String = ""
 
@@ -3133,7 +3189,7 @@ struct ShortcutsSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Shortcuts Widget")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -3632,7 +3688,7 @@ fileprivate struct IconPickerView: View {
             }
 
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                     if filteredIconSections.isEmpty {
                         Text("No icons found for \"\(searchText)\"")
                             .foregroundColor(.gray)
@@ -3703,12 +3759,12 @@ struct BatteryInfoSettingsView: View {
 }
 
 struct LockScreenSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @State private var notchsettingsHaveChanged: Bool = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Lock Screen")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -4084,7 +4140,7 @@ private struct WallpaperFileRow: View {
 }
 
 struct SnapZonesSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var appFetcher = SystemAppFetcher.shared
 
     @State private var layoutToEdit: SnapLayout?
@@ -4121,7 +4177,7 @@ struct SnapZonesSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 25) {
+            LazyVStack(alignment: .leading, spacing: 25) {
                 Text("Snap Zones & Planes")
                     .font(.system(size: 32, weight: .bold))
                     .padding(.bottom, 5)
@@ -4134,25 +4190,27 @@ struct SnapZonesSettingsView: View {
                     )
                     ToggleRow(
                         title: "Activate on Window Drag",
-                        description: "Show Snap Zones when dragging a window.",
+                        description: "Show Snap Zones when dragging a window. Hold Command to temporarily hide them.",
                         isOn: $settings.settings.snapOnWindowDragEnabled
                     )
 
                     Divider().padding(.leading, 20)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Activation Delay")
-                                .font(.system(size: 14, weight: .medium))
-                            Spacer()
-                            Text(String(format: "%.2fs", settings.settings.snapActivationDelay))
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    DeferredValueEditor(value: $settings.settings.snapActivationDelay) { draft, onEditingChanged in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Activation Delay")
+                                    .font(.system(size: 14, weight: .medium))
+                                Spacer()
+                                Text(String(format: "%.2fs", draft.wrappedValue))
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Slider(value: draft, in: 0.1...1.0, step: 0.05, onEditingChanged: onEditingChanged)
+                            Text("Wait this long in the activation zone before opening Snap Zones. Helps avoid accidental triggers.")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        Slider(value: $settings.settings.snapActivationDelay, in: 0.1...1.0, step: 0.05)
-                        Text("Wait this long in the activation zone before opening Snap Zones. Helps avoid accidental triggers.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
                     .padding()
 
@@ -4932,12 +4990,11 @@ fileprivate struct AppPickerView: View {
 }
 
 struct NotificationsSettingsView: View {
-    @ObservedObject private var appFetcher = SystemAppFetcher.shared
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Notifications")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -5080,9 +5137,6 @@ struct NotificationsSettingsView: View {
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .onAppear {
-                appFetcher.fetchApps()
-            }
         }
     }
 
@@ -5095,7 +5149,7 @@ struct NotificationsSettingsView: View {
 }
 
 struct ProximityUnlockSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var authManager = AuthenticationManager.shared
 
     @State private var showPasswordPrompt = false
@@ -5184,7 +5238,7 @@ struct ProximityUnlockSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 header
                 InfoContainer(text: "WARNING: All these features are in development and may not work as expected. They might cause unexpected unlocks on your mac. Use at your own risk.", iconName: "exclamationmark.triangle.fill", color: .red)
                 if settings.settings.faceIDUnlockEnabled {
@@ -5271,8 +5325,10 @@ struct ProximityUnlockSettingsView: View {
                     Button("Change") { showPasswordPrompt = true }
                     Button("Remove", role: .destructive) {
                         authManager.removePassword()
-                        settings.settings.bluetoothUnlockEnabled = false
-                        settings.settings.faceIDUnlockEnabled = false
+                        var updated = settings.settings
+                        updated.bluetoothUnlockEnabled = false
+                        updated.faceIDUnlockEnabled = false
+                        settings.settings = updated
                     }
                 }.padding([.horizontal, .bottom])
             } else {
@@ -5802,7 +5858,7 @@ fileprivate struct FindDeviceByDistanceWizard: View {
 
 fileprivate struct CalibrateRSSIView: View {
     @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var authManager = AuthenticationManager.shared
 
     @State private var wizardStep = 1
@@ -5936,8 +5992,10 @@ fileprivate struct CalibrateRSSIView: View {
                 Spacer()
 
                 Button("Apply Settings") {
-                    settings.settings.bluetoothUnlockUnlockRSSI = suggestedUnlock
-                    settings.settings.bluetoothUnlockLockRSSI = suggestedLock
+                    var updated = settings.settings
+                    updated.bluetoothUnlockUnlockRSSI = suggestedUnlock
+                    updated.bluetoothUnlockLockRSSI = suggestedLock
+                    settings.settings = updated
                     dismiss()
                 }.buttonStyle(.borderedProminent)
             }
@@ -6358,7 +6416,7 @@ struct CalibrationView: View {
 }
 
 struct LidAngleCaffeineSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var lidAngleSensor = LidAngleSensor.shared
 
     private var caffeineTriggerAngleBinding: Binding<Double> {
@@ -6943,13 +7001,12 @@ struct ModernBatteryStatsView: View {
     @StateObject private var helperManager = HelperManager.shared
     @ObservedObject private var debugMode = DebugMode.shared
     @State private var selectedTimeRange: TimeRange = .last24Hours
-    @State private var historyRefreshTimer: AnyCancellable?
 
     private let mainGridLayout = [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 if debugMode.isEnabled {
                     BatteryDebugMenu()
                 }
@@ -6983,28 +7040,17 @@ struct ModernBatteryStatsView: View {
         .onAppear {
             viewModel.start(highFrequency: true)
             StatsManager.shared.setPolling(for: "BatterySettingsView", requiredStats: [.batteryPower], interval: .seconds(1))
-            historyViewModel.fetchHistory()
+            historyViewModel.fetchHistory(filtering: selectedTimeRange)
             energyViewModel.start()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                historyViewModel.filterData(for: selectedTimeRange)
-            }
-            historyRefreshTimer?.cancel()
-            historyRefreshTimer = Timer.publish(every: 120, on: .main, in: .common)
-                .autoconnect()
-                .sink { _ in
-                    historyViewModel.fetchHistory()
-                    historyViewModel.filterData(for: selectedTimeRange)
-                }
         }
         .onDisappear {
-            historyRefreshTimer?.cancel()
-            historyRefreshTimer = nil
             tearDownBatteryStats()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sapphireSettingsWillClose)) { _ in
-            historyRefreshTimer?.cancel()
-            historyRefreshTimer = nil
             tearDownBatteryStats()
+        }
+        .onReceive(BatteryDataLogger.shared.entriesDidChange) { _ in
+            historyViewModel.fetchHistory(filtering: selectedTimeRange)
         }
         .onChange(of: selectedTimeRange) { _, newRange in
             historyViewModel.filterData(for: newRange)
@@ -7977,7 +8023,7 @@ struct PowerRow: View {
 }
 
 struct BatteryConfigurationView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @EnvironmentObject var powerStateController: PowerStateController
     @StateObject private var helperManager = HelperManager.shared
     @ObservedObject private var calibrationManager = CalibrationManager.shared
@@ -7985,7 +8031,7 @@ struct BatteryConfigurationView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 15) {
                     HelperStatusBanner(helperManager: helperManager)
                 }
@@ -8013,7 +8059,7 @@ struct BatteryConfigurationView: View {
     @ViewBuilder private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Notifications & Live Activity").font(.headline).padding([.top, .horizontal])
-            CustomSliderRowView(label: "Notify when battery is below", value: Binding(get: { Double(settings.settings.lowBatteryNotificationPercentage) }, set: { settings.settings.lowBatteryNotificationPercentage = Int($0) }), range: 10...50, specifier: "%.0f %%", commitsContinuously: true)
+            CustomSliderRowView(label: "Notify when battery is below", value: Binding(get: { Double(settings.settings.lowBatteryNotificationPercentage) }, set: { settings.settings.lowBatteryNotificationPercentage = Int($0) }), range: 10...50, specifier: "%.0f %%")
             Divider().padding(.leading, 20)
             ToggleRow(title: "Play Sound for Low Battery Alert", description: "Get an audible alert when your battery is running low.", isOn: $settings.settings.lowBatteryNotificationSoundEnabled)
             Divider().padding(.leading, 20)
@@ -8026,16 +8072,16 @@ struct BatteryConfigurationView: View {
     @ViewBuilder private var coreFeaturesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Battery Management Features").font(.headline).padding([.top, .horizontal])
-            CustomSliderRowView(label: "Charge Limit", value: Binding(get: { Double(settings.settings.batteryChargeLimit) }, set: { settings.settings.batteryChargeLimit = Int($0) }), range: 50...100, specifier: "%.0f %%", commitsContinuously: true)
+            CustomSliderRowView(label: "Charge Limit", value: Binding(get: { Double(settings.settings.batteryChargeLimit) }, set: { settings.settings.batteryChargeLimit = Int($0) }), range: 50...100, specifier: "%.0f %%")
             Divider().padding(.leading, 20)
             ToggleRow(title: "Sailing Mode", description: "Prevents battery wear from constant micro-charging cycles when plugged in for long periods. Charging will pause at the limit and only resume when the battery drops by a set amount.", isOn: $settings.settings.sailingModeEnabled)
             if settings.settings.sailingModeEnabled {
-                 CustomSliderRowView(label: "Resume charging below", value: Binding(get: { Double(settings.settings.sailingModeLowerLimit) }, set: { settings.settings.sailingModeLowerLimit = Int($0) }), range: 5...20, specifier: "%.0f%% below limit", commitsContinuously: true)
+                 CustomSliderRowView(label: "Resume charging below", value: Binding(get: { Double(settings.settings.sailingModeLowerLimit) }, set: { settings.settings.sailingModeLowerLimit = Int($0) }), range: 5...20, specifier: "%.0f%% below limit")
             }
             Divider().padding(.leading, 20)
             ToggleRow(title: "Heat Protection", description: "Automatically pauses charging if the battery temperature gets too high to prevent heat-related damage and extend its lifespan.", isOn: $settings.settings.heatProtectionEnabled)
             if settings.settings.heatProtectionEnabled {
-                 CustomSliderRowView(label: "Pause charging above", value: $settings.settings.heatProtectionThreshold, range: 35...50, specifier: "%.0f °C", commitsContinuously: true)
+                 CustomSliderRowView(label: "Pause charging above", value: $settings.settings.heatProtectionThreshold, range: 35...50, specifier: "%.0f °C")
             }
         }
         .modifier(SettingsContainerModifier()).animation(.default, value: settings.settings.sailingModeEnabled || settings.settings.heatProtectionEnabled)
@@ -8060,7 +8106,7 @@ struct BatteryConfigurationView: View {
             Divider().padding(.leading, 20)
             ToggleRow(title: "Log battery during sleep", description: "Wakes the Mac briefly (display stays off) at a set interval to record battery state and re-assert your charge limit overnight. Sleep is never disabled.", isOn: $settings.settings.logBatteryDuringSleep)
             if settings.settings.logBatteryDuringSleep {
-                CustomSliderRowView(label: "Log every", value: Binding(get: { Double(settings.settings.sleepLoggingIntervalMinutes) }, set: { settings.settings.sleepLoggingIntervalMinutes = Int($0) }), range: 15...120, specifier: "%.0f min", commitsContinuously: true)
+                CustomSliderRowView(label: "Log every", value: Binding(get: { Double(settings.settings.sleepLoggingIntervalMinutes) }, set: { settings.settings.sleepLoggingIntervalMinutes = Int($0) }), range: 15...120, specifier: "%.0f min")
             }
             Divider().padding(.leading, 20)
             ToggleRow(title: "Stop charging when app closed", description: "The helper tool ensures your charging rules are still applied even if the Sapphire app isn't running.", isOn: .constant(true)).disabled(true)
@@ -8091,7 +8137,7 @@ struct BatteryConfigurationView: View {
 }
 
 struct OneTimeDischargeView: View {
-    @StateObject private var settings = SettingsModel.shared
+    @EnvironmentObject private var settings: SettingsEditingSession
     @StateObject private var batteryMonitor = BatteryMonitor.shared
 
     private var dischargeProgress: Double {
@@ -8173,16 +8219,22 @@ struct OneTimeDischargeView: View {
 
 fileprivate extension TimeInterval {
     func formatted() -> String {
+        SettingsDurationFormatter.hourMinute.string(from: self) ?? "0m"
+    }
+}
+
+private enum SettingsDurationFormatter {
+    static let hourMinute: DateComponentsFormatter = {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.hour, .minute]
         formatter.unitsStyle = .abbreviated
-        return formatter.string(from: self) ?? "0m"
-    }
+        return formatter
+    }()
 }
 
 struct ScheduleView: View {
     @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var scheduleManager = ScheduleManager.shared
     @State private var showingAddTask = false
 
@@ -8257,7 +8309,7 @@ struct TaskRowView: View {
 
 struct AddTaskView: View {
     @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var fanManager = FanManager.shared
     @State private var newTask = ScheduledTask()
 
@@ -8327,7 +8379,7 @@ struct AddTaskView: View {
 }
 
 struct HUDSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var hudCustomColorBinding: Binding<Color> {
         Binding(
@@ -8349,7 +8401,7 @@ struct HUDSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("HUD")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -8693,8 +8745,7 @@ struct HUDSettingsView: View {
 }
 
 struct MusicSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
-    @ObservedObject private var appFetcher = SystemAppFetcher.shared
+    @EnvironmentObject var settings: SettingsEditingSession
 
     @State private var isPrivateApiLoading = false
     @State private var privateApiError: String?
@@ -8708,7 +8759,7 @@ struct MusicSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Music").font(.largeTitle.bold()).padding(.bottom)
 
                 VStack(spacing: 0) {
@@ -8971,10 +9022,20 @@ VStack(alignment: .leading, spacing: 8) {
                                 Stepper("", value: $settings.settings.lyricOffset, in: -5.0...5.0, step: 0.1)
                                     .labelsHidden()
                             } else {
-                                Slider(value: $settings.settings.lyricOffset, in: -5.0...5.0, step: 0.1) {
-                                    Text("Lyric Delay")
+                                DeferredValueEditor(value: $settings.settings.lyricOffset) { draft, onEditingChanged in
+                                    HStack(spacing: 8) {
+                                        Slider(
+                                            value: draft,
+                                            in: -5.0...5.0,
+                                            step: 0.1,
+                                            label: { Text("Lyric Delay") },
+                                            onEditingChanged: onEditingChanged
+                                        )
+                                        let draftOffset = draft.wrappedValue
+                                        let draftLabel = draftOffset == 0 ? "On time" : String(format: "%+.1fs", draftOffset)
+                                        Text(draftLabel).font(.caption).foregroundColor(.secondary).frame(width: 80, alignment: .trailing)
+                                    }
                                 }
-                                Text(label).font(.caption).foregroundColor(.secondary).frame(width: 80, alignment: .trailing)
                             }
                         }.padding()
                         if #available(macOS 26.0, *) {
@@ -9006,7 +9067,6 @@ VStack(alignment: .leading, spacing: 8) {
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
-                appFetcher.fetchApps()
                 syncMusicAuthState()
             }
             .onReceive(MusicManager.shared.$isPrivateAPIAuthenticated) { isPrivateAuth = $0 }
@@ -9079,7 +9139,7 @@ VStack(alignment: .leading, spacing: 8) {
 
 fileprivate struct MusicLongPressActionPickerRow: View {
     let target: MusicLongPressTarget
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var selection: Binding<MusicLongPressAction> {
         Binding(
@@ -9107,7 +9167,7 @@ fileprivate struct MusicLongPressActionPickerRow: View {
 
 fileprivate struct PlayerButtonSettingsRow: View {
     let buttonType: MusicPlayerButtonType
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var isEnabledBinding: Binding<Bool> {
         switch buttonType {
@@ -9139,11 +9199,11 @@ fileprivate struct PlayerButtonSettingsRow: View {
 }
 
 struct WeatherSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Weather")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -9188,7 +9248,7 @@ struct WeatherSettingsView: View {
 }
 
 struct CalendarSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var isLastEnabledWidget: Bool {
         settings.settings.calendarWidgetEnabled && settings.settings.enabledWidgetTypes.count <= 1
@@ -9206,7 +9266,7 @@ struct CalendarSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Calendar & Reminders")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -9292,7 +9352,7 @@ struct EyeBreakRecommendationsView: View {
             }
 
             ScrollView {
-                VStack(alignment: .center, spacing: 20) {
+                LazyVStack(alignment: .center, spacing: 20) {
                     recommendationCard(
                         title: "The 20-20-20 Rule",
                         description: "Every 20 minutes, take a 20-second break to look at something 20 feet away. This helps reduce eye strain and gives eye muscles a break.",
@@ -9366,13 +9426,13 @@ struct EyeBreakRecommendationsView: View {
 }
 
 struct EyeBreakSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var eyeBreakManager = EyeBreakManager.shared
     @State private var showingRecommendationsSheet = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Eye Break")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -9658,7 +9718,7 @@ struct EyeBreakSettingsView: View {
 
 struct EyeBreakGraphView: View {
     let summaries: [EyeBreakDailySummary]
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @State private var selectedDayName: String?
 
     private var selectedSummary: EyeBreakDailySummary? {
@@ -9928,11 +9988,11 @@ struct DailySummaryCard: View {
 }
 
 struct BluetoothSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Bluetooth")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -9964,7 +10024,7 @@ struct BluetoothSettingsView: View {
 }
 
 struct NeardropSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     @State private var downloadPath: String = ""
     @State private var isPathValid: Bool = true
@@ -9972,7 +10032,7 @@ struct NeardropSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 40) {
+            LazyVStack(alignment: .leading, spacing: 40) {
                 // MARK: - Nearby Share Section
                 VStack(alignment: .leading, spacing: 20) {
                     Text("Nearby Share")
@@ -10120,7 +10180,13 @@ struct NeardropSettingsView: View {
 }
 
 struct AboutSettingsView: View {
-    @EnvironmentObject var settingsModel: SettingsModel
+    private static let backupDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmm"
+        return formatter
+    }()
+
+    @EnvironmentObject var settingsModel: SettingsEditingSession
     @ObservedObject private var updateChecker = UpdateChecker.shared
     @ObservedObject private var permissionsManager = PermissionsManager.shared
     @ObservedObject private var debugMode = DebugMode.shared
@@ -10155,7 +10221,7 @@ struct AboutSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("About").font(.largeTitle.bold()).padding(.bottom)
 
                 HStack {
@@ -10245,13 +10311,16 @@ struct AboutSettingsView: View {
             }.padding(25).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 ReleaseChannelPolicy.reconcileStoredPreference(&settingsModel.settings)
+                settingsModel.commitNow()
                 updateChecker.checkForUpdatesMatchingCurrentChannel()
             }
         }
         .onChange(of: settingsModel.settings.releaseChannel) { _, _ in
+            settingsModel.commitNow()
             updateChecker.checkForUpdatesMatchingCurrentChannel()
         }
         .onChange(of: settingsModel.settings.automaticUpdateChecksEnabled) { _, enabled in
+            settingsModel.commitNow()
             updateChecker.setAutomaticChecksEnabled(enabled)
         }
         .onChange(of: settingsModel.settings.updateAvailableNotificationsEnabled) { _, enabled in
@@ -10521,9 +10590,7 @@ struct AboutSettingsView: View {
     }
 
     private var backupFilename: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HHmm"
-        return "Sapphire-Settings-\(formatter.string(from: .now))"
+        "Sapphire-Settings-\(Self.backupDateFormatter.string(from: .now))"
     }
 }
 
@@ -10828,7 +10895,7 @@ struct ModernChannelSwitcher: View {
 fileprivate struct NotchButtonRowView: View {
     let buttonType: NotchButtonType
 
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var permissionsManager = PermissionsManager.shared
 
     private var isEnabledBinding: Binding<Bool> {
@@ -10904,11 +10971,11 @@ fileprivate struct NotchButtonRowView: View {
 }
 
 struct AppearanceSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 40) {
+            LazyVStack(alignment: .leading, spacing: 40) {
                 Text("Appearance")
                     .font(.largeTitle.bold())
                 PerDisplayNotchSettingsView()
@@ -10927,7 +10994,7 @@ struct AppearanceSettingsView: View {
 }
 
 struct PerDisplayNotchSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var connectedScreens: [NSScreen] {
         NSScreen.screens
@@ -11097,7 +11164,7 @@ struct PerDisplayNotchSettingsView: View {
 }
 
 struct MenuBarHidingSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -11187,7 +11254,7 @@ struct MenuBarHidingSettingsView: View {
 // MARK: - Menu Bar Profiles (Conditional Reveal + Display/Space/Focus Bindings)
 
 struct MenuBarProfilesSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -11216,7 +11283,7 @@ struct MenuBarProfilesSettingsView: View {
 }
 
 private struct MenuBarProfileEditorView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @State private var expandedProfileIDs: Set<UUID> = []
 
     private var profilesBinding: Binding<[MenuBarProfile]> {
@@ -11267,7 +11334,7 @@ private struct MenuBarProfileCardView: View {
     @Binding var profile: MenuBarProfile
     let isExpanded: Bool
     var onExpandedChange: (Bool) -> Void = { _ in }
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -11490,7 +11557,7 @@ private struct MenuBarRevealConditionEditor: View {
 
 private struct MenuBarProfileBindingsSection: View {
     @Binding var profile: MenuBarProfile
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -11687,7 +11754,7 @@ private struct MenuBarFocusBindingsEditor: View {
 }
 
 struct MenuBarAppearanceEditor: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var opacityBinding: Binding<Double> {
         Binding(
@@ -11739,7 +11806,7 @@ struct MenuBarAppearanceEditor: View {
 
             Divider().padding(.leading, 20)
 
-                    CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%", commitsContinuously: true)
+                    CustomSliderRowView(label: "Master Opacity", value: opacityBinding, range: 0...100, specifier: "%.0f%%")
 
             if !settings.settings.menuBarLiquidGlass {
                 Divider().padding(.leading, 20)
@@ -11782,7 +11849,14 @@ struct MenuBarAppearanceEditor: View {
                             Image(systemName: "minus.circle.fill").foregroundColor(.red)
                         }.buttonStyle(.plain).disabled(settings.settings.menuBarGradientColors.count <= 1)
                     }
-                    Slider(value: $color.location, in: 0...1) { Text("Location") }
+                    DeferredValueEditor(value: $color.location.asDouble) { draft, onEditingChanged in
+                        Slider(
+                            value: draft,
+                            in: 0...1,
+                            label: { Text("Location") },
+                            onEditingChanged: onEditingChanged
+                        )
+                    }
                 }.padding(.horizontal)
             }
 
@@ -11803,22 +11877,24 @@ struct MenuBarAppearanceEditor: View {
     }
 
     private func resetTintSettings() {
-        settings.settings.menuBarLiquidGlass = false
-        settings.settings.menuBarLiquidGlassStyle = .frosted
-        settings.settings.menuBarTintStyle = "none"
-        settings.settings.menuBarSolidColor = CodableColor(color: .clear)
-        settings.settings.menuBarGradientAngle = 0.0
-        settings.settings.menuBarGradientColors = [
+        var updated = settings.settings
+        updated.menuBarLiquidGlass = false
+        updated.menuBarLiquidGlassStyle = .frosted
+        updated.menuBarTintStyle = "none"
+        updated.menuBarSolidColor = CodableColor(color: .clear)
+        updated.menuBarGradientAngle = 0.0
+        updated.menuBarGradientColors = [
             CodableColor(color: .white, location: 0),
             CodableColor(color: .black, location: 1)
         ]
-        settings.settings.menuBarOpacity = 1.0
-        settings.settings.menuBarBlur = false
+        updated.menuBarOpacity = 1.0
+        updated.menuBarBlur = false
+        settings.settings = updated
     }
 }
 
 struct MenuBarAppearanceSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var verticalPaddingBinding: Binding<Double> {
         Binding<Double>(
@@ -11877,28 +11953,30 @@ struct MenuBarAppearanceSettingsView: View {
     }
 
     private func resetAllAppearanceSettings() {
-        settings.settings.menuBarLiquidGlass = false
-        settings.settings.menuBarLiquidGlassStyle = .frosted
-        settings.settings.menuBarTintStyle = "none"
-        settings.settings.menuBarSolidColor = CodableColor(color: .clear)
-        settings.settings.menuBarGradientAngle = 0.0
-        settings.settings.menuBarGradientColors = [
+        var updated = settings.settings
+        updated.menuBarLiquidGlass = false
+        updated.menuBarLiquidGlassStyle = .frosted
+        updated.menuBarTintStyle = "none"
+        updated.menuBarSolidColor = CodableColor(color: .clear)
+        updated.menuBarGradientAngle = 0.0
+        updated.menuBarGradientColors = [
             CodableColor(color: .white, location: 0),
             CodableColor(color: .black, location: 1)
         ]
-        settings.settings.menuBarOpacity = 1.0
-        settings.settings.menuBarBlur = false
+        updated.menuBarOpacity = 1.0
+        updated.menuBarBlur = false
 
-        settings.settings.menuBarBorderWidth = 0
-        settings.settings.menuBarBorderColor = CodableColor(color: .black)
+        updated.menuBarBorderWidth = 0
+        updated.menuBarBorderColor = CodableColor(color: .black)
 
-        settings.settings.menuBarShapeStyle = "none"
-        settings.settings.menuBarVerticalPadding = 0
+        updated.menuBarShapeStyle = "none"
+        updated.menuBarVerticalPadding = 0
+        settings.settings = updated
     }
 }
 
 struct MenuBarSpacingSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @State private var spacingManager: MenuBarSpacingManager?
 
     private var spacingBinding: Binding<Double> {
@@ -12298,7 +12376,7 @@ struct FocusSessionSettingsView: View {
         var id: String { bundleID }
     }
 
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @StateObject private var shortcutRecorder = GlobalShortcutRecorder.shared
     @StateObject private var ambient = FocusAmbientSoundManager.shared
     @StateObject private var shortcutsCatalog = ShortcutsCatalog.shared
@@ -12313,7 +12391,7 @@ struct FocusSessionSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Focus Sessions")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -12687,7 +12765,7 @@ struct FocusSessionSettingsView: View {
                     Text("Dim Intensity:")
                         .font(.system(size: 13))
                     Spacer()
-                    Slider(value: $settings.settings.focusDimInactiveOpacity, in: 0.2...1.0)
+                    DeferredSlider(value: $settings.settings.focusDimInactiveOpacity, in: 0.2...1.0)
                         .frame(width: 160)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
@@ -12734,13 +12812,17 @@ struct FocusSessionSettingsView: View {
                     .buttonStyle(.plain)
                     Text("Volume")
                         .font(.system(size: 13))
-                    Slider(value: Binding(
-                        get: { ambient.volume },
-                        set: {
-                            ambient.volume = $0
-                            settings.settings.focusAmbientSoundVolume = $0
-                        }
-                    ), in: 0...1)
+                    DeferredSlider(
+                        value: Binding(
+                            get: { settings.settings.focusAmbientSoundVolume },
+                            set: {
+                                ambient.volume = $0
+                                settings.settings.focusAmbientSoundVolume = $0
+                            }
+                        ),
+                        in: 0...1,
+                        onDraftChange: { ambient.volume = $0 }
+                    )
                     .frame(width: 110)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
@@ -12990,7 +13072,7 @@ struct FocusSessionSettingsView: View {
 // MARK: - Scheduled Focus Sessions
 
 private struct FocusScheduleRowView: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @EnvironmentObject private var settings: SettingsEditingSession
     @Binding var schedule: ScheduledFocusSession
 
     var body: some View {
@@ -13048,7 +13130,7 @@ private struct FocusScheduleRowView: View {
 
 private struct AddFocusScheduleView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var settings: SettingsModel
+    @EnvironmentObject private var settings: SettingsEditingSession
     private struct WeekdayToken: Identifiable {
         let number: Int
         let label: String

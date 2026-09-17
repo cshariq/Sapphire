@@ -8,6 +8,7 @@
 import Foundation
 import IOKit.ps
 import AppKit
+import Combine
 
 // MARK: - Data Model
 struct BatteryLogEntry: Codable, Identifiable, Hashable {
@@ -33,6 +34,7 @@ struct BatteryLogEntry: Codable, Identifiable, Hashable {
 @MainActor
 class BatteryDataLogger {
     static let shared = BatteryDataLogger()
+    let entriesDidChange = PassthroughSubject<Void, Never>()
     private let logFileURL: URL
 
     private init() {
@@ -92,6 +94,7 @@ class BatteryDataLogger {
                 return
             }
             await Self.writeAppend(lines, to: url)
+            self?.entriesDidChange.send()
             self?.pendingFlush = nil
             self?.scheduleFlushIfNeeded()
         }

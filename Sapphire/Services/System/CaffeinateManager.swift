@@ -10,6 +10,34 @@ import Combine
 import Foundation
 import os.log
 
+private struct CaffeinateBehaviorSettings: Equatable {
+    let sleepInClamshell: Bool
+    let persistAfterClamshell: Bool
+    let turnOffScreenUsingLidAngle: Bool
+    let lidAngleTrigger: Double
+    let timeoutMinutes: Double
+
+    init(_ settings: Settings) {
+        sleepInClamshell = settings.sleepInClamshell
+        persistAfterClamshell = settings.persistentCaffeinateAfterClamshell
+        turnOffScreenUsingLidAngle = settings.caffeinateTurnOffScreenUsingLidAngle
+        lidAngleTrigger = settings.caffeinateLidAngleTrigger
+        timeoutMinutes = settings.caffeinateTimeoutMinutes
+    }
+}
+
+private struct CaffeinateTaskSettings: Equatable {
+    let isEnabled: Bool
+    let taskKinds: Set<String>
+    let gracePeriod: Double
+
+    init(_ settings: Settings) {
+        isEnabled = settings.caffeinateAutoDuringTasks
+        taskKinds = settings.caffeinateAutoTaskKinds
+        gracePeriod = settings.caffeinateAutoTaskGrace
+    }
+}
+
 @MainActor
 class CaffeineManager: ObservableObject {
     static let shared = CaffeineManager()
@@ -30,7 +58,6 @@ class CaffeineManager: ObservableObject {
     private var autoStartedByDevTask = false
     private var devTaskAutoSuppressed = false
     private var devTaskReleaseTask: Task<Void, Never>?
-    private var watchdogTimer: Timer?
     private var lastKnownClamshellClosed = false
     private var clamshellReleaseDebounceTask: Task<Void, Never>?
     private var powerGuardRefreshDebounceTask: Task<Void, Never>?
@@ -67,17 +94,8 @@ class CaffeineManager: ObservableObject {
             usingPolledClamshellFallback = true
         }
 
-        settings.$settings
-            .map {
-                (
-                    $0.sleepInClamshell,
-                    $0.persistentCaffeinateAfterClamshell,
-                    $0.caffeinateTurnOffScreenUsingLidAngle,
-                    $0.caffeinateLidAngleTrigger,
-                    $0.caffeinateTimeoutMinutes
-                )
-            }
-            .removeDuplicates { $0 == $1 }
+        settings.changes(of: CaffeinateBehaviorSettings.init)
+            .prepend(CaffeinateBehaviorSettings(settings.settings))
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateLidAngleSensorRequirement()
@@ -103,9 +121,24 @@ class CaffeineManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        settings.$settings
-            .map { ($0.caffeinateAutoDuringTasks, $0.caffeinateAutoTaskKinds, $0.caffeinateAutoTaskGrace) }
-            .removeDuplicates { $0 == $1 }
+        NotificationCenter.default.publisher(for: .sapphireHelperConnectionRestored)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.schedulePowerGuardRefresh()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .sapphireHelperConnectionLost)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.helperSleepDisabledActive = false
+                self.updateActiveState()
+            }
+            .store(in: &cancellables)
+
+        settings.changes(of: CaffeinateTaskSettings.init)
+            .prepend(CaffeinateTaskSettings(settings.settings))
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.evaluateDevTaskCaffeinate()
@@ -148,7 +181,6 @@ class CaffeineManager: ObservableObject {
         }
 
         refreshAllPowerGuards()
-        startWatchdogIfNeeded()
         evaluateLidAngleScreenOff()
         scheduleTimeout()
     }
@@ -163,7 +195,6 @@ class CaffeineManager: ObservableObject {
         devTaskReleaseTask?.cancel()
         devTaskReleaseTask = nil
         cancelTimeout()
-        stopWatchdog()
         clamshellReleaseDebounceTask?.cancel()
         powerGuardRefreshDebounceTask?.cancel()
         screenParameterDebounceTask?.cancel()
@@ -358,11 +389,6 @@ class CaffeineManager: ObservableObject {
         }
     }
 
-    private func refreshPowerGuardsIfNeeded() {
-        guard shouldRemainActive else { return }
-        refreshAllPowerGuards()
-    }
-
     private func restoreCaffeinateIfNeeded() {
         guard shouldRemainActive else { return }
 
@@ -372,7 +398,6 @@ class CaffeineManager: ObservableObject {
 
         if !isActive {
             refreshAllPowerGuards()
-            startWatchdogIfNeeded()
             evaluateLidAngleScreenOff()
             return
         }
@@ -597,32 +622,6 @@ class CaffeineManager: ObservableObject {
         }
 
         updateLidAngleSensorRequirement()
-    }
-
-    // MARK: - Watchdog
-
-    private func startWatchdogIfNeeded() {
-        guard watchdogTimer == nil else { return }
-
-        watchdogTimer = Timer.scheduledCoalescing(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.runWatchdog()
-            }
-        }
-    }
-
-    private func stopWatchdog() {
-        watchdogTimer?.invalidate()
-        watchdogTimer = nil
-    }
-
-    private func runWatchdog() {
-        guard shouldRemainActive else {
-            stopWatchdog()
-            return
-        }
-
-        refreshAllPowerGuards()
     }
 
     // MARK: - Lid Angle Screen Dimming

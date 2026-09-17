@@ -16,8 +16,6 @@ final class DesktopLiveWallpaperController {
     }
 
     nonisolated static let coveredThreshold = 0.97
-    private static let coverageCheckInterval: TimeInterval = 5
-
     private var media: WallpaperMedia?
     private var scaling: WallpaperScaling = .fill
     private var playbackMode: LiveWallpaperPlaybackMode = .adaptive
@@ -30,8 +28,7 @@ final class DesktopLiveWallpaperController {
     private var isSessionLocked = false
     private var playbackFailed = false
     private var isDesktopCovered = false
-    private var coverageTimer: Timer?
-    private var coverageObservers: [NSObjectProtocol] = []
+    private var coverageChangeToken: SystemWindowChangeMonitor.Token?
     private var isCoverageCheckScheduled = false
 
     var isShowing: Bool { !windows.isEmpty }
@@ -169,7 +166,7 @@ final class DesktopLiveWallpaperController {
 
     private func updatePlayback() {
         if playbackMode == .adaptive, isEligibleToPlay {
-            if coverageTimer == nil {
+            if coverageChangeToken == nil {
                 startCoverageMonitoring()
                 isDesktopCovered = Self.desktopIsCovered(on: NSScreen.screens)
             }
@@ -191,39 +188,17 @@ final class DesktopLiveWallpaperController {
     // MARK: - Coverage
 
     private func startCoverageMonitoring() {
-        guard coverageTimer == nil else { return }
-        let timer = Timer(timeInterval: Self.coverageCheckInterval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.refreshCoverage()
-            }
-        }
-        timer.tolerance = 1.5
-        RunLoop.main.add(timer, forMode: .default)
-        coverageTimer = timer
-
-        let workspace = NSWorkspace.shared.notificationCenter
-        for name in [
-            NSWorkspace.didActivateApplicationNotification,
-            NSWorkspace.activeSpaceDidChangeNotification,
-            NSWorkspace.didHideApplicationNotification,
-            NSWorkspace.didUnhideApplicationNotification
-        ] {
-            coverageObservers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.scheduleCoverageCheck()
-                }
-            })
+        guard coverageChangeToken == nil else { return }
+        coverageChangeToken = SystemWindowChangeMonitor.shared.subscribe { [weak self] in
+            self?.scheduleCoverageCheck()
         }
     }
 
     private func stopCoverageMonitoring() {
-        coverageTimer?.invalidate()
-        coverageTimer = nil
-        let workspace = NSWorkspace.shared.notificationCenter
-        for observer in coverageObservers {
-            workspace.removeObserver(observer)
+        if let coverageChangeToken {
+            SystemWindowChangeMonitor.shared.unsubscribe(coverageChangeToken)
+            self.coverageChangeToken = nil
         }
-        coverageObservers.removeAll()
     }
 
     private func scheduleCoverageCheck() {

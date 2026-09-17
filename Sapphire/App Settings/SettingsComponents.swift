@@ -121,6 +121,15 @@ extension Binding {
     }
 }
 
+extension Binding where Value == CGFloat {
+    var asDouble: Binding<Double> {
+        Binding<Double>(
+            get: { Double(wrappedValue) },
+            set: { wrappedValue = CGFloat($0) }
+        )
+    }
+}
+
 // MARK: - Rows
 
 struct IconToggleRow: View {
@@ -148,8 +157,8 @@ struct IconToggleRow: View {
 struct WidgetRowView: View {
     let widgetType: WidgetType
     let enabledWidgetCount: Int
-    @EnvironmentObject var settings: SettingsModel
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
+    let isPremiumLocked: Bool
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var availableBarWidth: CGFloat {
         WidgetLayoutPolicy.availableBarWidth()
@@ -169,8 +178,6 @@ struct WidgetRowView: View {
             bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
         )
     }
-
-    private var isPremiumLocked: Bool { widgetType.isPremiumLocked }
 
     private var baseEnabledBinding: Binding<Bool> {
         switch widgetType {
@@ -230,10 +237,8 @@ struct WidgetRowView: View {
 
 struct LiveActivityRowView: View {
     let activityType: LiveActivityType
-    @EnvironmentObject var settings: SettingsModel
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
-
-    private var isPremiumLocked: Bool { activityType.isPremiumLocked }
+    let isPremiumLocked: Bool
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var baseEnabledBinding: Binding<Bool> {
         switch activityType {
@@ -319,7 +324,7 @@ struct LiveActivityRowView: View {
 
 struct NotificationToggleRowView: View {
     let source: NotificationSource
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
 
     private var isEnabledBinding: Binding<Bool> {
         switch source {
@@ -345,11 +350,54 @@ struct SystemAppIconView: View {
     var cornerRadius: CGFloat = 6
 
     var body: some View {
-        Image(nsImage: AppIconLoader.icon(for: app.url, maxDimension: size * 2))
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        CachedAppIconView(url: app.url, size: size, cornerRadius: cornerRadius)
+    }
+}
+
+struct CachedAppIconView: View {
+    let url: URL
+    var size: CGFloat
+    var cornerRadius: CGFloat
+
+    @State private var icon: NSImage?
+
+    private var requestID: String {
+        "\(url.standardizedFileURL.path)#\(Int((size * 2).rounded(.up)))"
+    }
+
+    var body: some View {
+        Group {
+            if let icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: "app.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(size * 0.2)
+                    .foregroundStyle(.secondary)
+                    .background(.quaternary)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .task(id: requestID) {
+            icon = nil
+            let url = url
+            let dimension = size * 2
+            let worker = Task.detached(priority: .utility) { () -> NSImage? in
+                guard !Task.isCancelled else { return nil }
+                return AppIconLoader.icon(for: url, maxDimension: dimension)
+            }
+            let loaded = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard let loaded, !Task.isCancelled else { return }
+            icon = loaded
+        }
     }
 }
 
@@ -406,15 +454,36 @@ struct AppTogglesListView: View {
 
     @State private var query = ""
 
-    private var filteredApps: [SystemApp] {
+    private struct AppSections {
+        var browsers: [SystemApp] = []
+        var others: [SystemApp] = []
+
+        var isEmpty: Bool { browsers.isEmpty && others.isEmpty }
+    }
+
+    private var filteredSections: AppSections {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return appFetcher.apps }
-        return appFetcher.apps.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) || $0.id.localizedCaseInsensitiveContains(trimmed)
+        var result = AppSections()
+
+        for app in appFetcher.apps {
+            guard trimmed.isEmpty
+                    || app.name.localizedCaseInsensitiveContains(trimmed)
+                    || app.id.localizedCaseInsensitiveContains(trimmed) else {
+                continue
+            }
+
+            if app.isBrowser {
+                result.browsers.append(app)
+            } else {
+                result.others.append(app)
+            }
         }
+        return result
     }
 
     var body: some View {
+        let sections = filteredSections
+
         VStack(alignment: .leading, spacing: 8) {
             if showSearch {
                 ClearableSearchField(placeholder: "Search installed apps", text: $query)
@@ -436,18 +505,17 @@ struct AppTogglesListView: View {
                 ProgressView("Loading apps…")
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
-            } else if filteredApps.isEmpty {
+            } else if sections.isEmpty {
                 Text("No matching apps")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
             } else {
-                let apps = filteredApps
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        appSection(browsersSectionTitle, apps: apps.filter { $0.isBrowser })
-                        appSection("Other Apps", apps: apps.filter { !$0.isBrowser })
+                        appSection(browsersSectionTitle, apps: sections.browsers)
+                        appSection("Other Apps", apps: sections.others)
                     }
                 }
                 .frame(maxHeight: maxHeight)
@@ -541,35 +609,53 @@ struct CustomSliderRowView: View {
     let range: ClosedRange<Double>
     let specifier: String
     var onEditingChanged: ((Bool) -> Void)? = nil
-    var commitsContinuously: Bool = false
 
-    @State private var draft: Double = 0
+    @State private var draft: Double
     @State private var isEditing = false
+
+    init(
+        label: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        specifier: String,
+        onEditingChanged: ((Bool) -> Void)? = nil
+    ) {
+        self.label = label
+        self._value = value
+        self.range = range
+        self.specifier = specifier
+        self.onEditingChanged = onEditingChanged
+        self._draft = State(initialValue: value.wrappedValue)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(label)
                 Spacer()
-                Text(String(format: specifier, isEditing || !commitsContinuously ? draft : value))
+                Text(String(format: specifier, draft))
             }
             Slider(
                 value: Binding(
                     get: { draft },
                     set: { newValue in
                         draft = newValue
-                        if commitsContinuously || !isEditing {
+                        if !isEditing {
                             value = newValue
                         }
                     }
                 ),
                 in: range,
                 onEditingChanged: { editing in
-                    isEditing = editing
                     if editing {
+                        isEditing = true
                         draft = value
-                    } else if abs(draft - value) > .ulpOfOne {
-                        value = draft
+                    } else {
+                        let committedValue = draft
+                        isEditing = false
+                        if abs(committedValue - value) > .ulpOfOne {
+                            value = committedValue
+                        }
                     }
                     onEditingChanged?(editing)
                 }
@@ -580,6 +666,140 @@ struct CustomSliderRowView: View {
         .onChange(of: value) { _, newValue in
             if !isEditing {
                 draft = newValue
+            }
+        }
+    }
+}
+
+struct DeferredSlider: View {
+    @Binding private var value: Double
+    private let range: ClosedRange<Double>
+    private let step: Double?
+    private let onDraftChange: ((Double) -> Void)?
+    private let onEditingChanged: ((Bool) -> Void)?
+
+    @State private var draft: Double
+    @State private var isEditing = false
+
+    init(
+        value: Binding<Double>,
+        in range: ClosedRange<Double>,
+        step: Double? = nil,
+        onDraftChange: ((Double) -> Void)? = nil,
+        onEditingChanged: ((Bool) -> Void)? = nil
+    ) {
+        self._value = value
+        self.range = range
+        self.step = step
+        self.onDraftChange = onDraftChange
+        self.onEditingChanged = onEditingChanged
+        self._draft = State(initialValue: value.wrappedValue)
+    }
+
+    var body: some View {
+        Group {
+            if let step {
+                Slider(
+                    value: draftBinding,
+                    in: range,
+                    step: step,
+                    onEditingChanged: handleEditingChanged
+                )
+            } else {
+                Slider(
+                    value: draftBinding,
+                    in: range,
+                    onEditingChanged: handleEditingChanged
+                )
+            }
+        }
+        .onAppear { draft = value }
+        .onChange(of: value) { _, newValue in
+            if !isEditing {
+                draft = newValue
+            }
+        }
+    }
+
+    private var draftBinding: Binding<Double> {
+        Binding(
+            get: { draft },
+            set: { newValue in
+                draft = newValue
+                onDraftChange?(newValue)
+                if !isEditing {
+                    value = newValue
+                }
+            }
+        )
+    }
+
+    private func handleEditingChanged(_ editing: Bool) {
+        if editing {
+            isEditing = true
+            draft = value
+        } else {
+            let committedValue = draft
+            isEditing = false
+            if abs(committedValue - value) > .ulpOfOne {
+                value = committedValue
+            }
+        }
+        onEditingChanged?(editing)
+    }
+}
+
+struct DeferredValueEditor<Content: View>: View {
+    @Binding private var value: Double
+    private let onDraftChange: ((Double) -> Void)?
+    private let content: (Binding<Double>, @escaping (Bool) -> Void) -> Content
+
+    @State private var draft: Double
+    @State private var isEditing = false
+
+    init(
+        value: Binding<Double>,
+        onDraftChange: ((Double) -> Void)? = nil,
+        @ViewBuilder content: @escaping (Binding<Double>, @escaping (Bool) -> Void) -> Content
+    ) {
+        self._value = value
+        self.onDraftChange = onDraftChange
+        self.content = content
+        self._draft = State(initialValue: value.wrappedValue)
+    }
+
+    var body: some View {
+        content(draftBinding, handleEditingChanged)
+            .onAppear { draft = value }
+            .onChange(of: value) { _, newValue in
+                if !isEditing {
+                    draft = newValue
+                }
+            }
+    }
+
+    private var draftBinding: Binding<Double> {
+        Binding(
+            get: { draft },
+            set: { newValue in
+                draft = newValue
+                onDraftChange?(newValue)
+                if !isEditing {
+                    value = newValue
+                }
+            }
+        )
+    }
+
+    private func handleEditingChanged(_ editing: Bool) {
+        if editing {
+            isEditing = true
+            draft = value
+        } else {
+            let committedValue = draft
+            isEditing = false
+            if abs(committedValue - value) > .ulpOfOne {
+                value = committedValue
             }
         }
     }

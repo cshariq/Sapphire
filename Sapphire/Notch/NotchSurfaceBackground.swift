@@ -2,13 +2,11 @@
 //  NotchSurfaceBackground.swift
 //  Sapphire
 //
-//  Created by Raadfxrd on 2026-09-15
+//  Created by Shariq Charolia on 2026-09-15
 
 import SwiftUI
 import AppKit
 
-/// The notch's background surface. It only depends on the values below, so wrapping it in
-/// `.equatable()` lets SwiftUI skip it when `NotchController` updates for unrelated reasons.
 struct NotchSurfaceBackground: View, Equatable {
     let appearance: NotchAppearanceSettings
     let config: ResolvedNotchConfiguration

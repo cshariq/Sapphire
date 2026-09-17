@@ -28,24 +28,29 @@ struct LockScreenCaffeineInfoView: View {
     @EnvironmentObject var settings: SettingsModel
 
     var body: some View {
-        if caffeineManager.isActive {
-            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
-                Image(systemName: "cup.and.saucer.fill")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
-                Text("Caffeine On")
-                    .fontWeight(.semibold)
+        Group {
+            if caffeineManager.isActive {
+                HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
+                    Image(systemName: "cup.and.saucer.fill")
+                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
+                    Text("Caffeine On")
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.orange)
+                .modifier(TransparentEffect())
+                .transition(.opacity)
+            } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
+                HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
+                    Image(systemName: "cup.and.saucer")
+                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
+                    Text("Caffeine Off")
+                }
+                .foregroundColor(.secondary)
+                .modifier(TransparentEffect())
+                .transition(.opacity)
             }
-            .foregroundColor(.orange)
-            .modifier(TransparentEffect())
-        } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
-            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
-                Image(systemName: "cup.and.saucer")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
-                Text("Caffeine Off")
-            }
-            .foregroundColor(.secondary)
-            .modifier(TransparentEffect())
         }
+        .animation(.easeInOut(duration: 0.2), value: caffeineManager.isActive)
     }
 }
 
@@ -54,28 +59,31 @@ struct LockScreenTimerInfoView: View {
     @EnvironmentObject var settings: SettingsModel
 
     var body: some View {
-        if timerManager.isRunning {
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
+        Group {
+            if timerManager.isRunning {
                 HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                     Image(systemName: timerManager.activeTimer == .stopwatch ? "stopwatch.fill" : "timer")
                         .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
-                    Text(lockScreenFormatTimer(timerManager.displayTime))
-                        .font(.system(size: LockScreenConfiguration.infoWidgetBoldFontSize, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
+                    LockScreenTimerClockText(
+                        timerManager: timerManager,
+                        fontSize: LockScreenConfiguration.infoWidgetBoldFontSize
+                    )
                 }
                 .foregroundColor(.white)
                 .modifier(TransparentEffect())
+                .transition(.opacity)
+            } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
+                HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
+                    Image(systemName: "timer")
+                        .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
+                    Text("No Timer")
+                }
+                .foregroundColor(.secondary)
+                .modifier(TransparentEffect())
+                .transition(.opacity)
             }
-        } else if !settings.settings.lockScreenHideInactiveInfoWidgets {
-            HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
-                Image(systemName: "timer")
-                    .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
-                Text("No Timer")
-            }
-            .foregroundColor(.secondary)
-            .modifier(TransparentEffect())
         }
+        .animation(.easeInOut(duration: 0.2), value: timerManager.isRunning)
     }
 }
 
@@ -101,8 +109,7 @@ struct LockScreenNotesInfoView: View {
 
     private var latestTitle: String? {
         notesManager.notes
-            .sorted { $0.updatedAt > $1.updatedAt }
-            .first
+            .max { $0.updatedAt < $1.updatedAt }
             .map { note in
                 let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !title.isEmpty { return title }
@@ -181,6 +188,7 @@ struct LockScreenClipboardInfoView: View {
 
 struct LockScreenSystemInfoView: View {
     @ObservedObject private var statsManager = StatsManager.shared
+    @State private var statsPollingRequester = "LockScreenSystemInfo-\(UUID().uuidString)"
 
     var body: some View {
         let cpu = Int(((statsManager.currentStats?.cpu?.totalUsage ?? 0) * 100).rounded())
@@ -203,6 +211,15 @@ struct LockScreenSystemInfoView: View {
         .font(.system(size: LockScreenConfiguration.infoWidgetMediumFontSize, weight: .medium))
         .foregroundColor(.white)
         .modifier(TransparentEffect())
+        .onAppear {
+            statsManager.setPolling(
+                for: statsPollingRequester,
+                requiredStats: [.cpu, .ram]
+            )
+        }
+        .onDisappear {
+            statsManager.setPolling(for: statsPollingRequester, requiredStats: [])
+        }
     }
 }
 
@@ -246,27 +263,44 @@ struct LockScreenTimerMiniWidget: View {
     @EnvironmentObject var timerManager: TimerManager
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
-            HStack(spacing: 14) {
-                Image(systemName: timerManager.activeTimer == .stopwatch ? "stopwatch.fill" : "timer")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(.orange)
-                    .frame(width: 44, height: 44)
-                    .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        HStack(spacing: 14) {
+            Image(systemName: timerManager.activeTimer == .stopwatch ? "stopwatch.fill" : "timer")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(.orange)
+                .frame(width: 44, height: 44)
+                .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(timerManager.activeTimer == .stopwatch ? "Stopwatch" : "Timer")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(timerManager.isRunning ? lockScreenFormatTimer(timerManager.displayTime) : "No active timer")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(timerManager.activeTimer == .stopwatch ? "Stopwatch" : "Timer")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                if timerManager.isRunning {
+                    LockScreenTimerClockText(timerManager: timerManager, fontSize: 18)
+                        .foregroundStyle(.white)
+                } else {
+                    Text("No active timer")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(timerManager.isRunning ? .white : .secondary)
-                        .contentTransition(.numericText())
+                        .foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 0)
             }
-            .foregroundStyle(.white)
-            .frame(minWidth: 220)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.white)
+        .frame(minWidth: 220)
+    }
+}
+
+private struct LockScreenTimerClockText: View {
+    @ObservedObject var timerManager: TimerManager
+    let fontSize: CGFloat
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let displayTime = timerManager.displayTime
+            Text(lockScreenFormatTimer(displayTime))
+                .font(.system(size: fontSize, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText(countsDown: timerManager.activeTimer == .system))
+                .animation(.default, value: Int(displayTime))
         }
     }
 }
@@ -365,6 +399,7 @@ struct LockScreenBluetoothMiniWidget: View {
 
 struct LockScreenSystemMiniWidget: View {
     @ObservedObject private var statsManager = StatsManager.shared
+    @State private var statsPollingRequester = "LockScreenSystemMiniWidget-\(UUID().uuidString)"
 
     var body: some View {
         let cpu = Int(((statsManager.currentStats?.cpu?.totalUsage ?? 0) * 100).rounded())
@@ -383,6 +418,15 @@ struct LockScreenSystemMiniWidget: View {
         }
         .foregroundStyle(.white)
         .frame(minWidth: 240)
+        .onAppear {
+            statsManager.setPolling(
+                for: statsPollingRequester,
+                requiredStats: [.cpu, .ram, .gpu]
+            )
+        }
+        .onDisappear {
+            statsManager.setPolling(for: statsPollingRequester, requiredStats: [])
+        }
     }
 
     private func systemMeter(title: String, value: Int, color: Color) -> some View {
@@ -419,26 +463,20 @@ struct LockScreenBatteryMainView: View {
 }
 
 struct LockScreenFocusMainView: View {
-    @EnvironmentObject var focusModeManager: FocusModeManager
-    @EnvironmentObject var settings: SettingsModel
-
     var body: some View {
         LockScreenPaddedBackground {
             LockScreenFocusMiniWidget()
-                .environmentObject(focusModeManager)
                 .frame(minWidth: 280, minHeight: 80)
         }
     }
 }
 
 struct LockScreenTimerMainView: View {
-    @EnvironmentObject var timerManager: TimerManager
     @State private var dummyStack: [NotchWidgetMode] = []
 
     var body: some View {
         LockScreenPaddedBackground {
             TimerDetailView(navigationStack: $dummyStack)
-                .environmentObject(timerManager)
                 .frame(minWidth: 320)
         }
     }

@@ -25,6 +25,40 @@ struct FocusRestrictedAppActivityView: View {
     }
 
     var body: some View {
+        Group {
+            if hasPendingRequest {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let unlockRemaining = FocusSessionManager.shared.remainingUnlockTime(bundleID: bundleID)
+                        ?? Self.unlockWindow
+                    let messageRemaining = min(
+                        unlockRemaining,
+                        FocusSessionManager.shared.remainingSeconds
+                    )
+                    content(
+                        messageRemaining: messageRemaining,
+                        unlockRemaining: unlockRemaining
+                    )
+                    .onChange(of: context.date) { _, _ in
+                        if messageRemaining <= 0 { onUnlocked() }
+                    }
+                }
+            } else {
+                content(messageRemaining: nil, unlockRemaining: nil)
+            }
+        }
+        .task(id: bundleID) {
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+                appIcon = nil
+                return
+            }
+            appIcon = AppIconLoader.icon(for: url, maxDimension: 128)
+        }
+    }
+
+    private func content(
+        messageRemaining: TimeInterval?,
+        unlockRemaining: TimeInterval?
+    ) -> some View {
         VStack(spacing: 0) {
             Color.clear
                 .frame(height: NotchConfiguration.universalHeight)
@@ -38,7 +72,7 @@ struct FocusRestrictedAppActivityView: View {
                             .font(.headline)
                             .fontWeight(.bold)
                             .lineLimit(1)
-                        message
+                        message(remaining: messageRemaining)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(3)
@@ -49,45 +83,29 @@ struct FocusRestrictedAppActivityView: View {
                     Spacer()
                 }
 
-                actionButtons
+                actionButtons(unlockRemaining: unlockRemaining)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
             .frame(minWidth: 360, maxWidth: 440)
             .frame(minHeight: 120)
         }
-        .task(id: bundleID) {
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-                appIcon = nil
-                return
-            }
-            appIcon = AppIconLoader.icon(for: url, maxDimension: 128)
-        }
     }
 
     // MARK: - Content
 
     @ViewBuilder
-    private var message: some View {
-        if hasPendingRequest {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                let remaining = min(
-                    FocusSessionManager.shared.remainingUnlockTime(bundleID: bundleID) ?? Self.unlockWindow,
-                    FocusSessionManager.shared.remainingSeconds
-                )
-                Text("Unlocked in \(remaining.asMinuteSecondClock) — or when your session ends, whichever comes first.")
-                    .contentTransition(.numericText(countsDown: true))
-                    .onChange(of: context.date) { _, _ in
-                        if remaining <= 0 { onUnlocked() }
-                    }
-            }
+    private func message(remaining: TimeInterval?) -> some View {
+        if let remaining {
+            Text("Unlocked in \(remaining.asMinuteSecondClock) — or when your session ends, whichever comes first.")
+                .contentTransition(.numericText(countsDown: true))
         } else {
             Text("This app was closed because it's blocked during your focus session.")
         }
     }
 
     @ViewBuilder
-    private var actionButtons: some View {
+    private func actionButtons(unlockRemaining: TimeInterval?) -> some View {
         HStack {
             actionButton(title: "Dismiss", systemName: "xmark", isPrimary: false) {
                 onDismiss()
@@ -95,21 +113,18 @@ struct FocusRestrictedAppActivityView: View {
 
             Spacer()
 
-            if hasPendingRequest {
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    let remaining = FocusSessionManager.shared.remainingUnlockTime(bundleID: bundleID) ?? Self.unlockWindow
-                    HStack(spacing: 6) {
-                        Image(systemName: "hourglass")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(remaining.asMinuteSecondClock)
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .contentTransition(.numericText(countsDown: true))
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.orange.opacity(0.22))
-                    .foregroundStyle(.orange)
-                    .clipShape(Capsule())
+            if let unlockRemaining {
+                HStack(spacing: 6) {
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(unlockRemaining.asMinuteSecondClock)
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .contentTransition(.numericText(countsDown: true))
                 }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Color.orange.opacity(0.22))
+                .foregroundStyle(.orange)
+                .clipShape(Capsule())
             } else {
                 actionButton(title: "Unlock", systemName: "lock.open.fill", isPrimary: true) {
                     FocusSessionManager.shared.requestTemporaryUnlock(bundleID: bundleID)

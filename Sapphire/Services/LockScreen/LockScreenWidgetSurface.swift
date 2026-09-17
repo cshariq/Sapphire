@@ -20,7 +20,8 @@ struct LockScreenWidgetSurface<S: Shape>: View {
                     shape: shape,
                     cornerRadius: cornerRadius,
                     blendingMode: .behindWindow,
-                    appearance: .dark
+                    appearance: .dark,
+                    shapePathCacheKey: AnyHashable("lock-screen-widget-\(cornerRadius)")
                 )
                 .overlay(
                     shape

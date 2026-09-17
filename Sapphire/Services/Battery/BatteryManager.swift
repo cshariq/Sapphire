@@ -26,6 +26,58 @@ public struct PowerAdapterInfo: Equatable {
     var maxPower: Int = 0
 }
 
+private struct BatterySleepMonitoringSettings: Equatable {
+    let isEnabled: Bool
+    let intervalMinutes: Int
+    let chargeLimit: Int
+    let stopChargingWhileAsleep: Bool
+
+    init(_ settings: Settings) {
+        isEnabled = settings.logBatteryDuringSleep
+        intervalMinutes = settings.sleepLoggingIntervalMinutes
+        chargeLimit = settings.batteryChargeLimit
+        stopChargingWhileAsleep = settings.stopChargingWhenSleeping
+    }
+}
+
+private struct BatteryPowerPolicySettings: Equatable {
+    let chargeLimit: Int
+    let useHardwarePercentage: Bool
+    let oneTimeDischargeEnabled: Bool
+    let oneTimeDischargeTarget: Int
+    let dischargeToLimitEnabled: Bool
+    let preventSleepDuringDischarge: Bool
+    let sailingModeEnabled: Bool
+    let sailingModeLowerLimit: Int
+    let heatProtectionEnabled: Bool
+    let heatProtectionThreshold: Double
+    let lowPowerMode: LowPowerMode
+    let disableSleepUntilChargeLimit: Bool
+    let controlMagSafeLEDEnabled: Bool
+    let magSafeLEDSetting: MagSafeLEDSetting
+    let magSafeGreenAtLimit: Bool
+    let magSafeLEDBlinkOnDischarge: Bool
+
+    init(_ settings: Settings) {
+        chargeLimit = settings.batteryChargeLimit
+        useHardwarePercentage = settings.useHardwareBatteryPercentage
+        oneTimeDischargeEnabled = settings.oneTimeDischargeEnabled
+        oneTimeDischargeTarget = settings.oneTimeDischargeTarget
+        dischargeToLimitEnabled = settings.dischargeToLimitEnabled
+        preventSleepDuringDischarge = settings.preventSleepDuringDischarge
+        sailingModeEnabled = settings.sailingModeEnabled
+        sailingModeLowerLimit = settings.sailingModeLowerLimit
+        heatProtectionEnabled = settings.heatProtectionEnabled
+        heatProtectionThreshold = settings.heatProtectionThreshold
+        lowPowerMode = settings.lowPowerMode
+        disableSleepUntilChargeLimit = settings.disableSleepUntilChargeLimit
+        controlMagSafeLEDEnabled = settings.controlMagSafeLEDEnabled
+        magSafeLEDSetting = settings.magSafeLEDSetting
+        magSafeGreenAtLimit = settings.magSafeGreenAtLimit
+        magSafeLEDBlinkOnDischarge = settings.magSafeLEDBlinkOnDischarge
+    }
+}
+
 @MainActor
 class PowerStateController: ObservableObject {
     static let shared = PowerStateController()
@@ -52,16 +104,20 @@ class PowerStateController: ObservableObject {
 
     private init() {
         Publishers.Merge3(
-            settings.objectWillChange.map { _ in "Settings Change" },
+            settings.changes(of: BatteryPowerPolicySettings.init).map { _ in "Settings Change" },
             batteryMonitor.$currentState.map { _ in "Battery State Change" },
             calibrationManager.$state.map { _ in "Calibration State Change" }
         )
         .debounce(for: .milliseconds(350), scheduler: DispatchQueue.main)
         .sink { [weak self] _ in
             self?.evaluateState()
-            self?.reconcileSleepMonitoring()
         }
         .store(in: &cancellables)
+
+        settings.changes(of: BatterySleepMonitoringSettings.init)
+            .debounce(for: .milliseconds(350), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reconcileSleepMonitoring() }
+            .store(in: &cancellables)
 
         let workspaceNC = NSWorkspace.shared.notificationCenter
         workspaceNC.addObserver(self, selector: #selector(systemWillSleep), name: NSWorkspace.willSleepNotification, object: nil)
@@ -327,7 +383,7 @@ class BatteryManager {
     var isAppleSilicon: Bool { isARM }
 
     private init() {
-        self.batteryService = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleSmartBattery"))
+        self.batteryService = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
         helperConnectionObserver = NotificationCenter.default.addObserver(
             forName: .sapphireHelperConnectionLost,
             object: nil,

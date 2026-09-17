@@ -13,7 +13,7 @@ final class WindowDragStateTests: XCTestCase {
         let state = WindowDragState.shared
         state.endDrag()
 
-        state.beginDrag()
+        state.beginDrag(bypassModifierIsPressed: false)
         XCTAssertTrue(state.isDragging)
         XCTAssertFalse(state.isSnapZoneDismissedForCurrentDrag)
 
@@ -24,19 +24,37 @@ final class WindowDragStateTests: XCTestCase {
         XCTAssertFalse(state.isDragging)
         XCTAssertFalse(state.isSnapZoneDismissedForCurrentDrag)
 
-        state.beginDrag()
+        state.beginDrag(bypassModifierIsPressed: false)
         XCTAssertFalse(state.isSnapZoneDismissedForCurrentDrag)
         state.endDrag()
     }
 
     func testSnapZonesCannotBeDismissedOutsideAWindowDrag() {
         let state = WindowDragState.shared
-        state.beginDrag()
+        state.beginDrag(bypassModifierIsPressed: false)
         state.endDrag()
 
         state.dismissSnapZonesForCurrentDrag()
 
         XCTAssertFalse(state.isDragging)
         XCTAssertFalse(state.isSnapZoneDismissedForCurrentDrag)
+    }
+
+    func testCommandBypassModifierIsScopedToTheCurrentWindowDrag() {
+        let state = WindowDragState.shared
+        state.endDrag()
+
+        state.setSnapZoneBypassModifierPressed(true)
+        XCTAssertFalse(state.isSnapZoneBypassModifierPressed)
+
+        state.beginDrag(bypassModifierIsPressed: true)
+        XCTAssertTrue(state.isSnapZoneBypassModifierPressed)
+
+        state.setSnapZoneBypassModifierPressed(false)
+        XCTAssertFalse(state.isSnapZoneBypassModifierPressed)
+
+        state.setSnapZoneBypassModifierPressed(true)
+        state.endDrag()
+        XCTAssertFalse(state.isSnapZoneBypassModifierPressed)
     }
 }

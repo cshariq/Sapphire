@@ -27,11 +27,7 @@ final class EventTapRunLoop {
                 CFRunLoopAddSource(loop, keepAlive, .commonModes)
             }
 
-            while true {
-                _ = autoreleasepool {
-                    CFRunLoopRunInMode(.defaultMode, 1.0, false)
-                }
-            }
+            CFRunLoopRun()
         }
         thread.name = "com.sapphire.event-tap-runloop"
         thread.qualityOfService = .userInteractive

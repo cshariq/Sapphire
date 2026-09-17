@@ -180,22 +180,17 @@ class TidalAPIManager: ObservableObject {
         "collection.read", "collection.write", "playlists.read", "playlists.write"
     ]
 
-    private let settingsModel = SettingsModel.shared
-    private var cancellables = Set<AnyCancellable>()
     private var refreshTask: Task<Bool, Never>?
     private var pkceCodeVerifier: String?
 
     private init() {
         updateCredentials()
-        settingsModel.$settings.receive(on: DispatchQueue.main).sink { [weak self] _ in
-            self?.updateCredentials()
-        }.store(in: &cancellables)
         NotificationCenter.default.addObserver(
             forName: .apiKeyManagerTidalCredentialsChanged,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.updateCredentials()
+            Task { @MainActor in self?.updateCredentials() }
         }
 
         self.accessToken = UserDefaults.standard.string(forKey: "tidalAccessToken")
@@ -314,7 +309,7 @@ class TidalAPIManager: ObservableObject {
     }
 
     private var isAccessTokenValid: Bool {
-        guard let accessToken, let expiresAt = accessTokenExpiresAt else { return false }
+        guard accessToken != nil, let expiresAt = accessTokenExpiresAt else { return false }
         return Date().addingTimeInterval(60) < expiresAt
     }
 
@@ -370,7 +365,7 @@ class TidalAPIManager: ObservableObject {
                 print("[TidalAPIManager] Token request failed (\(statusCode)): \(errorBody)")
                 if let errorResponse = try? JSONDecoder().decode(TokenErrorResponse.self, from: data),
                    errorResponse.error == "invalid_grant" {
-                    await logout()
+                    logout()
                 }
                 return false
             }

@@ -45,6 +45,10 @@ struct LiveWallpaperPlan: Equatable {
     var lockScreenVideo: WallpaperMedia?
     var systemWallpaper: WallpaperMedia?
 
+    func shouldShowLockScreenOverlay(nativeWallpaperInstalled: Bool) -> Bool {
+        lockScreenVideo != nil && !nativeWallpaperInstalled
+    }
+
     static func resolve(
         desktop: WallpaperMedia?,
         lockScreen: WallpaperMedia?,
@@ -178,7 +182,14 @@ final class LiveWallpaperManager {
         applySystemWallpaper(plan.systemWallpaper, configured: [desktopMedia, lockMedia].compactMap { $0 })
 
         if isLocked {
-            lockScreen.hide(animated: false)
+            if let lockVideo = plan.lockScreenVideo,
+               plan.shouldShowLockScreenOverlay(
+                   nativeWallpaperInstalled: nativeLockScreen.isInstalled(for: lockVideo)
+               ) {
+                lockScreen.show(lockVideo, options: .init(scaling: configuration.scaling))
+            } else {
+                lockScreen.hide(animated: false)
+            }
             desktop.setSessionLocked(true)
             desktop.show(
                 plan.desktopVideo,

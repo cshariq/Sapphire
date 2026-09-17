@@ -112,7 +112,7 @@ class FileDropManager: ObservableObject {
             .store(in: &cancellables)
 
         SettingsModel.shared.changes(of: \.fileProgressLiveActivityEnabled)
-            .sink { [weak self] isEnabled in
+            .sink { isEnabled in
                 if isEnabled {
                     DownloadMonitor.shared.startMonitoring()
                 } else {
@@ -148,24 +148,27 @@ class FileDropManager: ObservableObject {
     private func scheduleTaskDismissal(for taskID: String, after delay: TimeInterval) {
         taskDismissalTimers[taskID]?.invalidate()
         let timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            print("[FDM] Dismissal timer fired for task \(taskID). Removing.")
-            self?.removeTask(withID: taskID)
-            self?.taskDismissalTimers.removeValue(forKey: taskID)
+            MainActor.assumeIsolated {
+                print("[FDM] Dismissal timer fired for task \(taskID). Removing.")
+                self?.removeTask(withID: taskID)
+                self?.taskDismissalTimers.removeValue(forKey: taskID)
+            }
         }
         taskDismissalTimers[taskID] = timer
     }
 
     private func updateNearbyShareTransfers(newTasks: [TransferProgressInfo]) {
         var activeIDs = Set<String>()
+        var updatedTasks = tasks
 
         for taskData in newTasks {
             let taskID = "transfer-\(taskData.id)"
             activeIDs.insert(taskID)
 
-            if let index = tasks.firstIndex(where: { $0.id == taskID }) {
-                tasks[index] = .incomingTransfer(taskData)
+            if let index = updatedTasks.firstIndex(where: { $0.id == taskID }) {
+                updatedTasks[index] = .incomingTransfer(taskData)
             } else {
-                tasks.insert(.incomingTransfer(taskData), at: 0)
+                updatedTasks.insert(.incomingTransfer(taskData), at: 0)
             }
 
             switch taskData.state {
@@ -177,14 +180,16 @@ class FileDropManager: ObservableObject {
             }
         }
 
-        tasks.removeAll { task in
+        updatedTasks.removeAll { task in
             if case .incomingTransfer = task {
                 return !activeIDs.contains(task.id) && taskDismissalTimers[task.id] == nil
             }
             return false
         }
 
-        objectWillChange.send()
+        if updatedTasks != tasks {
+            tasks = updatedTasks
+        }
     }
 
     func updateBrowserDownloads(_ downloads: [FileTransferTask]) {
@@ -203,9 +208,10 @@ class FileDropManager: ObservableObject {
     }
 
     private func syncUniversalTasks(newTasks: [FileTransferTask], sourceType: FileTransferTask.FileTransferSource, keepDuration: TimeInterval) {
+        var updatedTasks = tasks
         let activeTaskIDs = Set(newTasks.map { "universal-\($0.id)" })
 
-        let previousTaskIDs = Set(tasks.compactMap { task -> String? in
+        let previousTaskIDs = Set(updatedTasks.compactMap { task -> String? in
             guard case .universalTransfer(let t) = task, t.sourceType == sourceType else { return nil }
             return "universal-\(t.id)"
         })
@@ -213,10 +219,10 @@ class FileDropManager: ObservableObject {
         let completedTaskIDs = previousTaskIDs.subtracting(activeTaskIDs)
 
         for taskID in completedTaskIDs {
-            if let index = tasks.firstIndex(where: { $0.id == taskID }) {
-                if case .universalTransfer(var task) = tasks[index], taskDismissalTimers[taskID] == nil {
+            if let index = updatedTasks.firstIndex(where: { $0.id == taskID }) {
+                if case .universalTransfer(var task) = updatedTasks[index], taskDismissalTimers[taskID] == nil {
                     task.isComplete = true
-                    tasks[index] = .universalTransfer(task)
+                    updatedTasks[index] = .universalTransfer(task)
                     scheduleTaskDismissal(for: taskID, after: keepDuration)
                 }
             }
@@ -224,14 +230,16 @@ class FileDropManager: ObservableObject {
 
         for taskData in newTasks {
             let taskID = "universal-\(taskData.id)"
-            if let index = tasks.firstIndex(where: { $0.id == taskID }) {
-                tasks[index] = .universalTransfer(taskData)
+            if let index = updatedTasks.firstIndex(where: { $0.id == taskID }) {
+                updatedTasks[index] = .universalTransfer(taskData)
             } else {
-                tasks.insert(.universalTransfer(taskData), at: 0)
+                updatedTasks.insert(.universalTransfer(taskData), at: 0)
             }
         }
 
-        objectWillChange.send()
+        if updatedTasks != tasks {
+            tasks = updatedTasks
+        }
     }
 
     func addAirDropTask(fileName: String) {

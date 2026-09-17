@@ -8,6 +8,20 @@
 import SwiftUI
 import Combine
 
+private struct ScreenCornerSettings: Equatable {
+    let radius: CGFloat
+    let showTop: Bool
+    let showBelowMenu: Bool
+    let showBottom: Bool
+
+    init(_ settings: Settings) {
+        radius = settings.screenCornerRadius
+        showTop = settings.roundedCornersTop
+        showBelowMenu = settings.roundedCornersBelowMenu
+        showBottom = settings.roundedCornersBottom
+    }
+}
+
 @MainActor
 final class ScreenCornerManager {
     private var cornerOverlays = [NSScreen: [Corner: NSPanel]]()
@@ -40,7 +54,8 @@ final class ScreenCornerManager {
     }
 
     private func setupObservers() {
-        SettingsModel.shared.$settings
+        SettingsModel.shared.changes(of: ScreenCornerSettings.init)
+            .prepend(ScreenCornerSettings(SettingsModel.shared.settings))
             .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
             .sink { [weak self] settings in
                 self?.applyCornerSettings(from: settings)
@@ -49,13 +64,13 @@ final class ScreenCornerManager {
     }
 
     @objc private func screenParametersChanged() {
-        applyCornerSettings(from: SettingsModel.shared.settings)
+        applyCornerSettings(from: ScreenCornerSettings(SettingsModel.shared.settings))
     }
 
-    private func applyCornerSettings(from settings: Settings) {
-        let radius = settings.screenCornerRadius
-        let shouldShowTop = settings.roundedCornersTop || settings.roundedCornersBelowMenu
-        let shouldShowBottom = settings.roundedCornersBottom
+    private func applyCornerSettings(from settings: ScreenCornerSettings) {
+        let radius = settings.radius
+        let shouldShowTop = settings.showTop || settings.showBelowMenu
+        let shouldShowBottom = settings.showBottom
 
         guard shouldShowTop || shouldShowBottom else {
             removeAllOverlays(); return
@@ -65,7 +80,7 @@ final class ScreenCornerManager {
             var screenOverlays = cornerOverlays[screen] ?? [:]
 
             if shouldShowTop {
-                let yOffset = settings.roundedCornersBelowMenu ? (screen.frame.height - screen.visibleFrame.height) : 0
+                let yOffset = settings.showBelowMenu ? (screen.frame.height - screen.visibleFrame.height) : 0
                 screenOverlays[.topLeft] = createOrUpdatePanel(for: .topLeft, on: screen, radius: radius, yOffset: yOffset, existingPanel: screenOverlays[.topLeft])
                 screenOverlays[.topRight] = createOrUpdatePanel(for: .topRight, on: screen, radius: radius, yOffset: yOffset, existingPanel: screenOverlays[.topRight])
             } else {

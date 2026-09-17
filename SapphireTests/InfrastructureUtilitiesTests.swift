@@ -11,6 +11,173 @@ import XCTest
 @testable import Sapphire
 
 final class InfrastructureUtilitiesTests: XCTestCase {
+    @MainActor
+    func testNotchDragLocationOnlyPublishesDistinctCoordinates() {
+        let state = NotchDragLocationState()
+        var publications = 0
+        let cancellable = state.objectWillChange.sink { publications += 1 }
+        defer { cancellable.cancel() }
+
+        let location = CGPoint(x: 120, y: 42)
+        state.update(location)
+        state.update(location)
+        state.update(nil)
+        state.update(nil)
+
+        XCTAssertEqual(publications, 2)
+        XCTAssertNil(state.location)
+    }
+
+    func testSettingsSidebarCatalogContainsEveryDestinationExactlyOnce() {
+        let sidebarSections = SettingsSection.sidebarGroups.flatMap(\.sections)
+
+        XCTAssertEqual(sidebarSections.count, SettingsSection.allCases.count)
+        XCTAssertEqual(Set(sidebarSections.map(\.id)), Set(SettingsSection.allCases.map(\.id)))
+        XCTAssertEqual(Set(sidebarSections.map(\.id)).count, sidebarSections.count)
+    }
+
+    @MainActor
+    func testSettingsMutationPublishesOneObjectInvalidation() {
+        let model = SettingsModel.shared
+        let original = model.settings
+        var invalidations = 0
+        let cancellable = model.objectWillChange.sink { invalidations += 1 }
+        defer {
+            cancellable.cancel()
+            model.settings = original
+            model.flushPendingSave()
+        }
+
+        model.settings.menuBarOpacity = original.menuBarOpacity == 0.42 ? 0.43 : 0.42
+
+        XCTAssertEqual(invalidations, 1)
+    }
+
+    @MainActor
+    func testSettingsEditingSessionCoalescesRapidDraftChanges() async {
+        let model = SettingsModel.shared
+        let original = model.settings
+        let session = SettingsEditingSession(model: model)
+        var publications = 0
+        let cancellable = model.$settings.dropFirst().sink { _ in publications += 1 }
+        defer {
+            cancellable.cancel()
+            model.settings = original
+            model.flushPendingSave()
+        }
+
+        for index in 0..<40 {
+            session.settings.menuBarOpacity = 0.2 + Double(index) / 100
+        }
+        let expectedOpacity = session.settings.menuBarOpacity
+
+        try? await Task.sleep(nanoseconds: 180_000_000)
+
+        XCTAssertEqual(model.settings.menuBarOpacity, expectedOpacity)
+        XCTAssertEqual(publications, 1)
+    }
+
+    @MainActor
+    func testSettingsEditingSessionDoesNotPublishWhenDraftReturnsToBaseline() async {
+        let model = SettingsModel.shared
+        let original = model.settings
+        let session = SettingsEditingSession(model: model)
+        var publications = 0
+        let cancellable = model.$settings.dropFirst().sink { _ in publications += 1 }
+        defer {
+            cancellable.cancel()
+            model.settings = original
+            model.flushPendingSave()
+        }
+
+        session.settings.menuBarBlur.toggle()
+        session.settings.menuBarBlur = original.menuBarBlur
+
+        try? await Task.sleep(nanoseconds: 180_000_000)
+
+        XCTAssertEqual(publications, 0)
+        XCTAssertEqual(model.settings, original)
+    }
+
+    @MainActor
+    func testSettingsEditingSessionPreservesNewDraftAndConcurrentRuntimeChanges() async {
+        let model = SettingsModel.shared
+        let original = model.settings
+        defer {
+            model.settings = original
+            model.flushPendingSave()
+        }
+
+        let session = SettingsEditingSession(model: model)
+        let editedOpacity = original.menuBarOpacity == 0.314 ? 0.315 : 0.314
+        let editedBlur = !original.menuBarBlur
+        let runtimeHover = !original.showOnHover
+
+        session.settings.menuBarOpacity = editedOpacity
+        session.commitNow()
+
+        session.settings.menuBarBlur = editedBlur
+        model.settings.showOnHover = runtimeHover
+        try? await Task.sleep(nanoseconds: 30_000_000)
+
+        XCTAssertEqual(session.settings.menuBarOpacity, editedOpacity)
+        XCTAssertEqual(session.settings.menuBarBlur, editedBlur)
+        XCTAssertEqual(session.settings.showOnHover, runtimeHover)
+
+        session.commitNow()
+        XCTAssertEqual(model.settings.menuBarOpacity, editedOpacity)
+        XCTAssertEqual(model.settings.menuBarBlur, editedBlur)
+        XCTAssertEqual(model.settings.showOnHover, runtimeHover)
+    }
+
+    @MainActor
+    func testSettingsEditingSessionDiscardsQueuedExternalStateOlderThanCommit() async {
+        let model = SettingsModel.shared
+        let original = model.settings
+        defer {
+            model.settings = original
+            model.flushPendingSave()
+        }
+
+        let session = SettingsEditingSession(model: model)
+        let editedBlur = !original.menuBarBlur
+        let runtimeHover = !original.showOnHover
+
+        session.settings.menuBarBlur = editedBlur
+        model.settings.showOnHover = runtimeHover
+        session.commitNow()
+        try? await Task.sleep(nanoseconds: 30_000_000)
+
+        XCTAssertEqual(session.settings.menuBarBlur, editedBlur)
+        XCTAssertEqual(session.settings.showOnHover, runtimeHover)
+        XCTAssertEqual(session.settings, model.settings)
+    }
+
+    @MainActor
+    func testSettingsEditingSessionDoesNotMistakeEqualExternalRollbackForEcho() async {
+        let model = SettingsModel.shared
+        let original = model.settings
+        defer {
+            model.settings = original
+            model.flushPendingSave()
+        }
+
+        let session = SettingsEditingSession(model: model)
+        session.settings.menuBarBlur.toggle()
+        session.commitNow()
+        let firstCommit = model.settings
+
+        session.settings.showOnHover.toggle()
+        session.commitNow()
+        XCTAssertNotEqual(model.settings, firstCommit)
+
+        model.settings = firstCommit
+        try? await Task.sleep(nanoseconds: 30_000_000)
+
+        XCTAssertEqual(session.settings, firstCommit)
+        XCTAssertEqual(session.settings, model.settings)
+    }
+
     func testHardwareNotchDetectionRequiresSafeAreaAndCentralCutout() {
         let leftArea = CGRect(x: 0, y: 0, width: 700, height: 32)
         let rightArea = CGRect(x: 900, y: 0, width: 700, height: 32)
@@ -258,10 +425,10 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertFalse(settings.mediaToolsAutoOptimizeClipboard)
         XCTAssertFalse(settings.mediaToolsShowShelfActions)
         XCTAssertFalse(settings.mediaToolsOCRShortcutEnabled)
-        XCTAssertFalse(settings.automaticUpdateChecksEnabled)
-        XCTAssertFalse(settings.automaticallyDownloadSapphireUpdates)
-        XCTAssertFalse(settings.updateAvailableNotificationsEnabled)
-        XCTAssertFalse(settings.showUpdateAvailableLiveActivity)
+        XCTAssertTrue(settings.automaticUpdateChecksEnabled)
+        XCTAssertTrue(settings.automaticallyDownloadSapphireUpdates)
+        XCTAssertTrue(settings.updateAvailableNotificationsEnabled)
+        XCTAssertTrue(settings.showUpdateAvailableLiveActivity)
         XCTAssertFalse(settings.installedAppUpdatesEnabled)
         XCTAssertFalse(settings.installedAppUpdateNotificationsEnabled)
         XCTAssertFalse(settings.clipboardPickerEnabled)
@@ -365,6 +532,36 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         var dockClickScopeChange = original
         dockClickScopeChange.systemEnhanceDockClicksAllAppsEnabled = false
         XCTAssertFalse(EventHandlingSettingsSnapshot.hasSameInputs(original, dockClickScopeChange))
+    }
+
+    @MainActor
+    func testNotchRuntimeStateOnlyBacksOffWhenEveryWindowIsIdle() {
+        let state = NotchRuntimeState()
+        let firstWindow = NSObject()
+        let secondWindow = NSObject()
+        let first = ObjectIdentifier(firstWindow)
+        let second = ObjectIdentifier(secondWindow)
+
+        XCTAssertFalse(state.shouldReduceBackgroundWork)
+
+        state.register(source: first)
+        XCTAssertTrue(state.shouldReduceBackgroundWork)
+
+        state.register(source: second, isUserNear: true)
+        XCTAssertFalse(state.shouldReduceBackgroundWork)
+
+        state.update(source: second, isUserNear: false)
+        XCTAssertTrue(state.shouldReduceBackgroundWork)
+
+        state.update(source: first, isExpanded: true)
+        XCTAssertFalse(state.shouldReduceBackgroundWork)
+
+        state.update(source: first, isExpanded: false)
+        XCTAssertTrue(state.shouldReduceBackgroundWork)
+
+        state.unregister(source: first)
+        state.unregister(source: second)
+        XCTAssertFalse(state.shouldReduceBackgroundWork)
     }
 
     @MainActor

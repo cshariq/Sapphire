@@ -5,6 +5,7 @@
 //  Created by Shariq Charolia on 2026-08-10
 
 import AppKit
+import Combine
 
 @MainActor
 final class PasteboardChangeMonitor {
@@ -21,8 +22,12 @@ final class PasteboardChangeMonitor {
     }
 
     private var subscriptions: [Token: Subscription] = [:]
-    private var timer: Timer?
-    private var timerInterval: TimeInterval?
+    private var fallbackTimer: Timer?
+    private var fallbackTimerInterval: TimeInterval?
+    private var eventMonitorTokens: [NSEvent.EventType: UUID] = [:]
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var applicationObservers: [NSObjectProtocol] = []
+    private var pendingEventChecks: [DispatchWorkItem] = []
     private var lastChangeCount = NSPasteboard.general.changeCount
 
     private init() {}
@@ -32,7 +37,8 @@ final class PasteboardChangeMonitor {
         priority: Int = 0,
         handler: @escaping (Int) -> Void
     ) -> Token {
-        if subscriptions.isEmpty {
+        let wasEmpty = subscriptions.isEmpty
+        if wasEmpty {
             lastChangeCount = NSPasteboard.general.changeCount
         }
         let token = Token()
@@ -41,6 +47,7 @@ final class PasteboardChangeMonitor {
             priority: priority,
             handler: handler
         )
+        if wasEmpty { startEventMonitoring() }
         synchronizeTimer()
         return token
     }
@@ -54,47 +61,112 @@ final class PasteboardChangeMonitor {
 
     func unsubscribe(_ token: Token) {
         subscriptions.removeValue(forKey: token)
+        if subscriptions.isEmpty { stopEventMonitoring() }
         synchronizeTimer()
     }
 
     private static let idleInputThreshold: TimeInterval = 30
-    private static let idleInterval: TimeInterval = 3
+    private static let activeFallbackInterval: TimeInterval = 10
+    private static let idleFallbackInterval: TimeInterval = 30
+    private static let highPriorityFallbackInterval: TimeInterval = 1
     private static let anyInputEvent = CGEventType(rawValue: ~0)!
 
     private func effectiveInterval(requested: TimeInterval) -> TimeInterval {
-        guard requested < Self.idleInterval,
-              !subscriptions.values.contains(where: { $0.priority > 0 }) else {
-            return requested
+        if requested <= 0.25 {
+            return Self.highPriorityFallbackInterval
         }
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: Self.anyInputEvent)
-        return idle >= Self.idleInputThreshold ? Self.idleInterval : requested
+        return idle >= Self.idleInputThreshold
+            ? Self.idleFallbackInterval
+            : Self.activeFallbackInterval
     }
 
     private func synchronizeTimer() {
         guard let fastestInterval = subscriptions.values.map(\.interval).min() else {
-            timer?.invalidate()
-            timer = nil
-            timerInterval = nil
+            fallbackTimer?.invalidate()
+            fallbackTimer = nil
+            fallbackTimerInterval = nil
             return
         }
         let requestedInterval = effectiveInterval(requested: fastestInterval)
-        guard timer == nil || timerInterval != requestedInterval else { return }
+        guard fallbackTimer == nil || fallbackTimerInterval != requestedInterval else { return }
 
-        timer?.invalidate()
-        timerInterval = requestedInterval
+        fallbackTimer?.invalidate()
+        fallbackTimerInterval = requestedInterval
         let timer = Timer(timeInterval: requestedInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
-        timer.tolerance = requestedInterval * 0.5
+        timer.tolerance = requestedInterval * 0.3
         RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        fallbackTimer = timer
     }
 
     private var lastIdleCheck: CFAbsoluteTime = 0
 
+    private func startEventMonitoring() {
+        guard eventMonitorTokens.isEmpty else { return }
+        eventMonitorTokens = EventMonitorHub.shared.register(
+            for: [.keyDown, .leftMouseUp, .rightMouseUp, .otherMouseUp]
+        ) { [weak self] event in
+            guard let self else { return }
+            if event.type == .keyDown {
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                guard modifiers.contains(.command), event.keyCode == 7 || event.keyCode == 8 else { return }
+            }
+            self.scheduleEventChecks()
+        }
+
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers = [
+            NSWorkspace.didActivateApplicationNotification,
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ].map { name in
+            workspaceCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scheduleEventChecks() }
+            }
+        }
+
+        applicationObservers = [
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scheduleEventChecks() }
+            }
+        ]
+    }
+
+    private func stopEventMonitoring() {
+        EventMonitorHub.shared.unregister(tokens: eventMonitorTokens)
+        eventMonitorTokens.removeAll()
+
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceObservers.forEach(workspaceCenter.removeObserver)
+        workspaceObservers.removeAll()
+
+        applicationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        applicationObservers.removeAll()
+
+        pendingEventChecks.forEach { $0.cancel() }
+        pendingEventChecks.removeAll()
+    }
+
+    private func scheduleEventChecks() {
+        pendingEventChecks.forEach { $0.cancel() }
+        pendingEventChecks = [0.04, 0.25, 0.8].map { delay in
+            let work = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated { self?.tick() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            return work
+        }
+    }
+
     private func tick() {
         let now = CFAbsoluteTimeGetCurrent()
-        if now - lastIdleCheck >= Self.idleInterval {
+        if now - lastIdleCheck >= Self.activeFallbackInterval {
             lastIdleCheck = now
             synchronizeTimer()
         }
@@ -163,7 +235,7 @@ final class ClipboardManager: ObservableObject {
     @Published private(set) var recentItems: [ClipboardItem] = []
 
     private var pasteboardSubscription: PasteboardChangeMonitor.Token?
-    private var activePollInterval: TimeInterval?
+    private var activeFallbackInterval: TimeInterval?
     private var lastChangeCount: Int = NSPasteboard.general.changeCount
     private var highPriorityConsumers = 0
     private var ignoredExternalPasteboardChanges = 0
@@ -171,6 +243,7 @@ final class ClipboardManager: ObservableObject {
     private let maxFilesPerPasteboardChange = 200
     private nonisolated let secureFileURL: URL
     private var persistWorkItem: DispatchWorkItem?
+    private var runtimeStateCancellable: AnyCancellable?
     private nonisolated let persistQueue = DispatchQueue(label: "com.sapphire.clipboard.persist", qos: .utility)
     private let continuityRemoteMarker = NSPasteboard.PasteboardType("com.sapphire.continuity.remote")
 
@@ -182,7 +255,7 @@ final class ClipboardManager: ObservableObject {
         return max(4, settings.clipboardHistoryLimit)
     }
 
-    private var pollInterval: TimeInterval {
+    private var requestedCheckInterval: TimeInterval {
         if highPriorityConsumers > 0 { return 0.2 }
         if NotchRuntimeState.shared.shouldReduceBackgroundWork { return 1.5 }
         return 0.35
@@ -197,25 +270,32 @@ final class ClipboardManager: ObservableObject {
         }
         secureFileURL = appDirectory.appendingPathComponent("clipboard_history.encrypted")
         loadPersistedHistory()
+        runtimeStateCancellable = NotchRuntimeState.shared.reductionChanges
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.pasteboardSubscription != nil else { return }
+                self.restartMonitoringIfNeeded(force: false)
+            }
     }
 
     func startMonitoring() {
         guard SettingsModel.shared.settings.clipboardMonitoringEnabled else { return }
-        restartPollingIfNeeded(force: pasteboardSubscription == nil)
+        restartMonitoringIfNeeded(force: pasteboardSubscription == nil)
         captureCurrentIfNeeded()
     }
 
-    func beginHighPriorityPolling() {
+    func beginHighPriorityMonitoring() {
         highPriorityConsumers += 1
         if SettingsModel.shared.settings.clipboardMonitoringEnabled {
-            restartPollingIfNeeded(force: true)
+            restartMonitoringIfNeeded(force: true)
         }
     }
 
-    func endHighPriorityPolling() {
+    func endHighPriorityMonitoring() {
         highPriorityConsumers = max(0, highPriorityConsumers - 1)
         if pasteboardSubscription != nil {
-            restartPollingIfNeeded(force: true)
+            restartMonitoringIfNeeded(force: true)
         }
     }
 
@@ -235,15 +315,15 @@ final class ClipboardManager: ObservableObject {
             PasteboardChangeMonitor.shared.unsubscribe(pasteboardSubscription)
         }
         pasteboardSubscription = nil
-        activePollInterval = nil
+        activeFallbackInterval = nil
     }
 
-    private func restartPollingIfNeeded(force: Bool) {
-        let interval = pollInterval
-        if !force, let activePollInterval, abs(activePollInterval - interval) < 0.01 {
+    private func restartMonitoringIfNeeded(force: Bool) {
+        let interval = requestedCheckInterval
+        if !force, let activeFallbackInterval, abs(activeFallbackInterval - interval) < 0.01 {
             return
         }
-        activePollInterval = interval
+        activeFallbackInterval = interval
         if let pasteboardSubscription {
             PasteboardChangeMonitor.shared.updateInterval(interval, for: pasteboardSubscription)
             return

@@ -22,11 +22,17 @@ final class WindowDragState: ObservableObject {
     static let shared = WindowDragState()
     @Published private(set) var isDragging = false
     @Published private(set) var isSnapZoneDismissedForCurrentDrag = false
+    @Published private(set) var isSnapZoneBypassModifierPressed = false
+    private var modifierFlagsMonitorToken: UUID?
     private init() {}
 
-    func beginDrag() {
+    func beginDrag(
+        bypassModifierIsPressed: Bool = NSEvent.modifierFlags.contains(.command)
+    ) {
         isSnapZoneDismissedForCurrentDrag = false
         isDragging = true
+        isSnapZoneBypassModifierPressed = bypassModifierIsPressed
+        startModifierFlagsMonitoring()
     }
 
     func dismissSnapZonesForCurrentDrag() {
@@ -34,9 +40,29 @@ final class WindowDragState: ObservableObject {
         isSnapZoneDismissedForCurrentDrag = true
     }
 
+    func setSnapZoneBypassModifierPressed(_ isPressed: Bool) {
+        guard isDragging else { return }
+        isSnapZoneBypassModifierPressed = isPressed
+    }
+
     func endDrag() {
+        stopModifierFlagsMonitoring()
         isDragging = false
         isSnapZoneDismissedForCurrentDrag = false
+        isSnapZoneBypassModifierPressed = false
+    }
+
+    private func startModifierFlagsMonitoring() {
+        guard modifierFlagsMonitorToken == nil else { return }
+        modifierFlagsMonitorToken = EventMonitorHub.shared.register(for: .flagsChanged) { [weak self] event in
+            self?.setSnapZoneBypassModifierPressed(event.modifierFlags.contains(.command))
+        }
+    }
+
+    private func stopModifierFlagsMonitoring() {
+        guard let modifierFlagsMonitorToken else { return }
+        EventMonitorHub.shared.unregister(token: modifierFlagsMonitorToken, for: .flagsChanged)
+        self.modifierFlagsMonitorToken = nil
     }
 }
 

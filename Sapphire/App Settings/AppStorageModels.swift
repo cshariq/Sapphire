@@ -341,49 +341,100 @@ private actor StorageSnapshotCache {
     }
 
     private var values: [StorageCacheKey: CachedValue] = [:]
+    private var totalCost = 0
+    private var expirationTask: Task<Void, Never>?
     private let maximumEntries = 16
     private let maximumCost = 50_000
+    private let maximumRetention: TimeInterval = 5 * 60
 
     func value(for key: StorageCacheKey, maxAge: TimeInterval) -> StorageDirectorySnapshot? {
+        let now = Date()
+        purgeExpired(now: now)
         guard var cached = values[key],
-              Date().timeIntervalSince(cached.storedAt) >= 0,
-              Date().timeIntervalSince(cached.storedAt) < maxAge else {
-            values.removeValue(forKey: key)
+              now.timeIntervalSince(cached.storedAt) >= 0,
+              now.timeIntervalSince(cached.storedAt) < maxAge else {
+            removeValue(forKey: key)
             return nil
         }
-        cached.lastAccess = Date()
+        cached.lastAccess = now
         values[key] = cached
         return cached.snapshot
     }
 
     func store(_ snapshot: StorageDirectorySnapshot, for key: StorageCacheKey) {
         let now = Date()
+        purgeExpired(now: now)
         let cost = snapshot.entries.count
             + snapshot.insightEntries.count
             + snapshot.recommendations.reduce(0) { $0 + $1.entries.count }
             + snapshot.duplicateGroups.reduce(0) { $0 + $1.entries.count }
             + snapshot.issues.count
         guard cost <= maximumCost else {
-            values.removeValue(forKey: key)
+            removeValue(forKey: key)
             return
         }
+        removeValue(forKey: key)
         values[key] = CachedValue(snapshot: snapshot, storedAt: now, lastAccess: now, cost: cost)
-        while (values.count > maximumEntries
-                || (values.count > 1 && values.values.reduce(0, { $0 + $1.cost }) > maximumCost)),
+        totalCost += cost
+        while (values.count > maximumEntries || (values.count > 1 && totalCost > maximumCost)),
               let leastRecentlyUsed = values.min(by: { $0.value.lastAccess < $1.value.lastAccess })?.key {
-            values.removeValue(forKey: leastRecentlyUsed)
+            removeValue(forKey: leastRecentlyUsed)
         }
+        scheduleExpirationSweep()
     }
 
     func invalidate(affectedBy urls: [URL]) {
+        purgeExpired(now: Date())
         guard !urls.isEmpty else { return }
-        values = values.filter { key, _ in
+        let invalidKeys = values.keys.filter { key in
             let cachedRoot = URL(fileURLWithPath: key.path, isDirectory: true)
-            return !urls.contains { removed in
+            return urls.contains { removed in
                 StorageDeletionPolicy.contains(cachedRoot, removed)
                     || StorageDeletionPolicy.contains(removed, cachedRoot)
             }
         }
+        for key in invalidKeys { removeValue(forKey: key) }
+        scheduleExpirationSweep()
+    }
+
+    private func purgeExpired(now: Date) {
+        let expiredKeys = values.compactMap { key, value -> StorageCacheKey? in
+            let age = now.timeIntervalSince(value.storedAt)
+            return age < 0 || age >= maximumRetention ? key : nil
+        }
+        guard !expiredKeys.isEmpty else { return }
+        for key in expiredKeys { removeValue(forKey: key) }
+        scheduleExpirationSweep()
+    }
+
+    private func removeValue(forKey key: StorageCacheKey) {
+        guard let removed = values.removeValue(forKey: key) else { return }
+        totalCost = max(0, totalCost - removed.cost)
+    }
+
+    private func scheduleExpirationSweep() {
+        expirationTask?.cancel()
+        guard let nextExpiration = values.values.map({
+            $0.storedAt.addingTimeInterval(maximumRetention)
+        }).min() else {
+            expirationTask = nil
+            return
+        }
+        let delay = max(0, nextExpiration.timeIntervalSinceNow)
+        expirationTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(min(delay, 24 * 60 * 60) * 1_000_000_000))
+            } catch {
+                return
+            }
+            await self?.expireValuesAfterTimer()
+        }
+    }
+
+    private func expireValuesAfterTimer() {
+        expirationTask = nil
+        purgeExpired(now: Date())
+        if expirationTask == nil { scheduleExpirationSweep() }
     }
 }
 
@@ -550,7 +601,7 @@ private enum StorageScanner {
     private static let directFileBatchSize = 128
     private static let hashSampleSize = 128 * 1_024
     private static let minimumDuplicateFileSize: Int64 = 1_048_576
-    private static let progressUpdateInterval: TimeInterval = 0.1
+    private static let progressUpdateInterval: TimeInterval = 0.2
     private static let maximumInsightsPerCategoryPerChild = 32
     private static let maximumInsightsPerCategory = 200
     private static let maximumIssues = 100
@@ -2088,14 +2139,203 @@ enum DirectorySize {
     }
 }
 
-struct InstalledApp: Identifiable {
+final class InstalledAppIconRepository: @unchecked Sendable {
+    static let shared = InstalledAppIconRepository()
+
+    private struct Entry {
+        let image: NSImage
+        let path: String
+        let dimension: Int
+        let cost: Int
+        let storedAt: Date
+        var lastAccess: Date
+    }
+
+    private let lock = NSLock()
+    private let expirationQueue = DispatchQueue(
+        label: "com.cshariq.sapphire.installed-app-icons.expiration",
+        qos: .utility
+    )
+    private var entries: [String: Entry] = [:]
+    private var totalCost = 0
+    private var expirationTimer: DispatchSourceTimer?
+    private let maximumEntries = 160
+    private let maximumCost = 12 * 1_024 * 1_024
+    private let lifetime: TimeInterval = 20 * 60
+
+    private init() {
+        let timer = DispatchSource.makeTimerSource(queue: expirationQueue)
+        timer.setEventHandler { [weak self] in self?.purgeExpired() }
+        timer.schedule(deadline: .distantFuture)
+        timer.resume()
+        expirationTimer = timer
+    }
+
+    func icon(for url: URL, modifiedAt: Date?, maxDimension: CGFloat) -> NSImage {
+        let normalizedURL = url.standardizedFileURL
+        let dimension = Self.normalizedDimension(maxDimension)
+        let stamp = modifiedAt?.timeIntervalSinceReferenceDate ?? 0
+        let key = "\(normalizedURL.path)|\(stamp)|\(dimension)"
+        let now = Date()
+
+        lock.lock()
+        purgeExpiredLocked(now: now)
+        if var cached = entries[key] {
+            cached.lastAccess = now
+            entries[key] = cached
+            lock.unlock()
+            return cached.image
+        }
+        lock.unlock()
+
+        let image = autoreleasepool {
+            let source = NSWorkspace.shared.icon(forFile: normalizedURL.path)
+            return Self.rasterized(source, maxPixelDimension: dimension)
+        }
+        let cost = dimension * dimension * 4
+
+        lock.lock()
+        purgeExpiredLocked(now: now)
+        if var cached = entries[key] {
+            cached.lastAccess = now
+            entries[key] = cached
+            lock.unlock()
+            return cached.image
+        }
+
+        let supersededKeys = entries.compactMap { existingKey, entry -> String? in
+            entry.path == normalizedURL.path && entry.dimension == dimension ? existingKey : nil
+        }
+        for supersededKey in supersededKeys { removeLocked(forKey: supersededKey) }
+        entries[key] = Entry(
+            image: image,
+            path: normalizedURL.path,
+            dimension: dimension,
+            cost: cost,
+            storedAt: now,
+            lastAccess: now
+        )
+        totalCost += cost
+        trimLocked()
+        scheduleExpirationLocked(now: now)
+        lock.unlock()
+        return image
+    }
+
+    func purgeExpired() {
+        lock.lock()
+        let now = Date()
+        purgeExpiredLocked(now: now)
+        scheduleExpirationLocked(now: now)
+        lock.unlock()
+    }
+
+    func removeAll() {
+        lock.lock()
+        entries.removeAll(keepingCapacity: false)
+        totalCost = 0
+        expirationTimer?.schedule(deadline: .distantFuture)
+        lock.unlock()
+    }
+
+    private func purgeExpiredLocked(now: Date) {
+        let staleKeys = entries.compactMap { key, entry -> String? in
+            let age = now.timeIntervalSince(entry.storedAt)
+            return age < 0 || age >= lifetime ? key : nil
+        }
+        for key in staleKeys { removeLocked(forKey: key) }
+        if !staleKeys.isEmpty { scheduleExpirationLocked(now: now) }
+    }
+
+    private func trimLocked() {
+        while entries.count > maximumEntries || totalCost > maximumCost {
+            guard let leastRecentlyUsed = entries.min(by: {
+                $0.value.lastAccess < $1.value.lastAccess
+            })?.key else { break }
+            removeLocked(forKey: leastRecentlyUsed)
+        }
+    }
+
+    private func removeLocked(forKey key: String) {
+        guard let removed = entries.removeValue(forKey: key) else { return }
+        totalCost = max(0, totalCost - removed.cost)
+    }
+
+    private func scheduleExpirationLocked(now: Date) {
+        guard let nextExpiration = entries.values.map({
+            $0.storedAt.addingTimeInterval(lifetime)
+        }).min() else {
+            expirationTimer?.schedule(deadline: .distantFuture)
+            return
+        }
+        expirationTimer?.schedule(
+            deadline: .now() + max(0, nextExpiration.timeIntervalSince(now)),
+            leeway: .seconds(1)
+        )
+    }
+
+    private static func normalizedDimension(_ value: CGFloat) -> Int {
+        guard value.isFinite else { return 96 }
+        return min(max(Int(value.rounded(.up)), 1), 256)
+    }
+
+    private static func rasterized(_ source: NSImage, maxPixelDimension: Int) -> NSImage {
+        var proposedRect = NSRect(
+            x: 0,
+            y: 0,
+            width: maxPixelDimension,
+            height: maxPixelDimension
+        )
+        let sourceImage = source.cgImage(
+            forProposedRect: &proposedRect,
+            context: nil,
+            hints: [.interpolation: NSImageInterpolation.high]
+        ) ?? source.tiffRepresentation
+            .flatMap(NSBitmapImageRep.init(data:))?
+            .cgImage
+        guard let sourceImage else { return boundedFallback(dimension: maxPixelDimension) }
+
+        let sourceWidth = max(sourceImage.width, 1)
+        let sourceHeight = max(sourceImage.height, 1)
+        let scale = min(
+            CGFloat(maxPixelDimension) / CGFloat(max(sourceWidth, sourceHeight)),
+            1
+        )
+        let width = max(1, Int((CGFloat(sourceWidth) * scale).rounded()))
+        let height = max(1, Int((CGFloat(sourceHeight) * scale).rounded()))
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return boundedFallback(dimension: maxPixelDimension) }
+        context.interpolationQuality = .high
+        context.draw(sourceImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let raster = context.makeImage() else { return boundedFallback(dimension: maxPixelDimension) }
+        return NSImage(
+            cgImage: raster,
+            size: NSSize(width: CGFloat(width), height: CGFloat(height))
+        )
+    }
+
+    private static func boundedFallback(dimension: Int) -> NSImage {
+        let fallback = NSImage(systemSymbolName: "app", accessibilityDescription: nil)
+            ?? NSImage(size: NSSize(width: dimension, height: dimension))
+        fallback.size = NSSize(width: dimension, height: dimension)
+        return fallback
+    }
+}
+
+struct InstalledApp: Identifiable, Sendable {
     let id: String
     let name: String
     let bundleIdentifier: String
     let url: URL
     let size: Int64
     let isSystem: Bool
-    let icon: NSImage
     let resourceIdentifier: String?
     let version: String
     var sizeMeasuredAt: Date = .distantPast
@@ -2276,7 +2516,6 @@ private enum InstalledAppScanner {
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             ?? bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
             ?? "—"
-
         if system {
             return InstalledAppDescriptor(
                 id: standardizedURL.path,
@@ -2332,6 +2571,7 @@ private enum InstalledAppScanner {
     private var scanGeneration: UInt64 = 0
     private static var cachedApps: [InstalledApp] = []
     private static var cacheDate: Date?
+    private static var cacheExpirationTask: Task<Void, Never>?
     private static let cacheLifetime: TimeInterval = 5 * 60
 
     private let identifierOwnership: AppIdentifierOwnership = .uncertain
@@ -2362,6 +2602,7 @@ private enum InstalledAppScanner {
         scanGeneration &+= 1
         let generation = scanGeneration
         scanTask?.cancel()
+        Self.purgeExpiredCache(now: Date())
         if !force,
            let cacheDate = Self.cacheDate,
            Date().timeIntervalSince(cacheDate) < Self.cacheLifetime,
@@ -2388,15 +2629,13 @@ private enum InstalledAppScanner {
                         url: descriptor.url,
                         size: descriptor.size,
                         isSystem: descriptor.isSystem,
-                        icon: NSWorkspace.shared.icon(forFile: descriptor.url.path),
                         resourceIdentifier: descriptor.resourceIdentifier,
                         version: descriptor.version,
                         sizeMeasuredAt: descriptor.sizeMeasuredAt
                     )
                 }
                 self.apps = installedApps
-                Self.cachedApps = installedApps
-                Self.cacheDate = Date()
+                Self.storeInCache(installedApps)
                 self.isLoading = false
                 self.scanError = output.errors.isEmpty ? nil : output.errors.joined(separator: "\n")
                 if let selectedAppID = self.selectedAppID,
@@ -2493,7 +2732,7 @@ private enum InstalledAppScanner {
             if result.applicationRemoved {
                 apps.removeAll { $0.id == app.id }
                 Self.cachedApps.removeAll { $0.id == app.id }
-                Self.cacheDate = Date()
+                Self.storeInCache(Self.cachedApps)
                 artifacts = []
                 selectedArtifactIDs = []
                 selectedAppID = nil
@@ -2518,6 +2757,40 @@ private enum InstalledAppScanner {
                 uninstallResult = result
             }
         }
+    }
+
+    private static func storeInCache(_ apps: [InstalledApp]) {
+        cacheExpirationTask?.cancel()
+        guard !apps.isEmpty else {
+            cachedApps = []
+            cacheDate = nil
+            cacheExpirationTask = nil
+            return
+        }
+        let storedAt = Date()
+        cachedApps = apps
+        cacheDate = storedAt
+        cacheExpirationTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(cacheLifetime * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard cacheDate == storedAt else { return }
+            cachedApps = []
+            cacheDate = nil
+            cacheExpirationTask = nil
+        }
+    }
+
+    private static func purgeExpiredCache(now: Date) {
+        guard let cacheDate else { return }
+        let age = now.timeIntervalSince(cacheDate)
+        guard age < 0 || age >= cacheLifetime else { return }
+        cacheExpirationTask?.cancel()
+        cacheExpirationTask = nil
+        cachedApps = []
+        Self.cacheDate = nil
     }
 
 }
@@ -2736,29 +3009,41 @@ struct StorageRemovalResult: Equatable, Sendable {
     let completedAt: Date
 }
 
+private struct StorageScanPresentation: Equatable {
+    var progress: Double = 0
+    var label = ""
+    var state: StorageScanState = .idle
+}
+
+private struct StorageCapacityPresentation {
+    var total: Int64 = 0
+    var used: Int64 = 0
+    var available: Int64 = 0
+    var availableForImportantUsage: Int64 = 0
+    var purgeableBytes: Int64 = 0
+    var volumeURL = URL(fileURLWithPath: "/")
+    var error: String?
+}
+
+private struct StoragePresentedScan {
+    var entries: [StorageEntry] = []
+    var insightEntries: [StorageEntry] = []
+    var recommendations: [CleanupRecommendation] = []
+    var duplicateGroups: [StorageDuplicateGroup] = []
+    var categorySizes: [StorageCategory: Int64] = [:]
+    var reclaimableBytes: Int64 = 0
+    var errors: [StorageScanIssue] = []
+    var metrics: StorageScanMetrics?
+}
+
 @MainActor final class StorageViewModel: ObservableObject {
-    @Published private(set) var entries: [StorageEntry] = [] {
-        didSet { filteredEntriesCache = nil }
+    @Published private var presentedScan = StoragePresentedScan() {
+        didSet { invalidateFilteredEntryCaches() }
     }
-    @Published private(set) var insightEntries: [StorageEntry] = [] {
-        didSet { filteredInsightEntriesCache = nil }
-    }
-    @Published private(set) var total: Int64 = 0
-    @Published private(set) var used: Int64 = 0
-    @Published private(set) var available: Int64 = 0
-    @Published private(set) var availableForImportantUsage: Int64 = 0
-    @Published private(set) var purgeableBytes: Int64 = 0
-    @Published private(set) var volumeURL = URL(fileURLWithPath: "/")
+    @Published private var scanPresentation = StorageScanPresentation()
+    @Published private var capacityPresentation = StorageCapacityPresentation()
     @Published private(set) var currentURL = URL(fileURLWithPath: "/")
     @Published private(set) var isLoading = false
-    @Published private(set) var indexingProgress: Double = 0
-    @Published private(set) var indexingLabel = ""
-    @Published private(set) var scanState: StorageScanState = .idle
-    @Published private(set) var scanErrors: [StorageScanIssue] = []
-    @Published private(set) var scanMetrics: StorageScanMetrics?
-    @Published private(set) var duplicateGroups: [StorageDuplicateGroup] = []
-    @Published private(set) var reclaimableBytes: Int64 = 0
-    @Published private(set) var capacityError: String?
 
     @Published var viewMode: StorageViewMode = .pie
     @Published var sortBy: SortOption = .size { didSet { invalidateFilteredEntryCaches() } }
@@ -2766,7 +3051,6 @@ struct StorageRemovalResult: Equatable, Sendable {
     @Published var categoryFilter: StorageCategory? = nil { didSet { invalidateFilteredEntryCaches() } }
     @Published var minSizeFilter: Int64 = 0 { didSet { invalidateFilteredEntryCaches() } }
     @Published var maxSizeFilter: Int64 = Int64.max { didSet { invalidateFilteredEntryCaches() } }
-    @Published private(set) var recommendations: [CleanupRecommendation] = []
     @Published private(set) var scanHistory: [ScanResult] = []
     @Published var deepScanEnabled = false {
         didSet {
@@ -2784,7 +3068,6 @@ struct StorageRemovalResult: Equatable, Sendable {
     private var loadTask: Task<Void, Never>?
     private var removalTask: Task<Void, Never>?
     private var scanGeneration: UInt64 = 0
-    private var categorySizes: [StorageCategory: Int64] = [:]
     private var currentHistoryScopeIdentifier = ""
     private var pendingHistoryBytesMovedToTrash: Int64 = 0
     private var pendingHistoryScopeIdentifier: String?
@@ -2792,6 +3075,25 @@ struct StorageRemovalResult: Equatable, Sendable {
     private var filteredEntriesCache: [StorageEntry]?
     private var filteredInsightEntriesCache: [StorageEntry]?
     private var hasValidCapacity = false
+
+    var entries: [StorageEntry] { presentedScan.entries }
+    var insightEntries: [StorageEntry] { presentedScan.insightEntries }
+    var recommendations: [CleanupRecommendation] { presentedScan.recommendations }
+    var duplicateGroups: [StorageDuplicateGroup] { presentedScan.duplicateGroups }
+    var reclaimableBytes: Int64 { presentedScan.reclaimableBytes }
+    var scanErrors: [StorageScanIssue] { presentedScan.errors }
+    var scanMetrics: StorageScanMetrics? { presentedScan.metrics }
+    var indexingProgress: Double { scanPresentation.progress }
+    var indexingLabel: String { scanPresentation.label }
+    var scanState: StorageScanState { scanPresentation.state }
+    var total: Int64 { capacityPresentation.total }
+    var used: Int64 { capacityPresentation.used }
+    var available: Int64 { capacityPresentation.available }
+    var availableForImportantUsage: Int64 { capacityPresentation.availableForImportantUsage }
+    var purgeableBytes: Int64 { capacityPresentation.purgeableBytes }
+    var volumeURL: URL { capacityPresentation.volumeURL }
+    var capacityError: String? { capacityPresentation.error }
+    private var categorySizes: [StorageCategory: Int64] { presentedScan.categorySizes }
 
     private static let scanHistoryDefaultsKey = "storage.scan-history.v1"
     private static let historyScopeSaltDefaultsKey = "storage.scan-history.scope-salt.v1"
@@ -2915,9 +3217,11 @@ struct StorageRemovalResult: Equatable, Sendable {
         loadTask?.cancel()
         refreshCapacity()
         isLoading = true
-        scanState = .loadingCache
-        indexingProgress = 0
-        indexingLabel = "Looking for a recent storage index…"
+        updateScanPresentation(
+            state: .loadingCache,
+            progress: 0,
+            label: "Looking for a recent storage index…"
+        )
 
         let key = StorageCacheKey(url: target, deepScan: deepScanEnabled)
         let freshness = Self.scanFreshness
@@ -2936,8 +3240,7 @@ struct StorageRemovalResult: Equatable, Sendable {
             await MainActor.run {
                 guard let self = owner.value, self.scanGeneration == generation else { return }
                 self.isLoading = false
-                self.scanState = .idle
-                self.indexingLabel = "Ready to scan"
+                self.updateScanPresentation(state: .idle, label: "Ready to scan")
             }
         }
     }
@@ -2948,8 +3251,7 @@ struct StorageRemovalResult: Equatable, Sendable {
         loadTask?.cancel()
         loadTask = nil
         isLoading = false
-        scanState = .cancelled
-        indexingLabel = "Scan cancelled"
+        updateScanPresentation(state: .cancelled, label: "Scan cancelled")
     }
 
     func refreshCapacity() {
@@ -2960,51 +3262,51 @@ struct StorageRemovalResult: Equatable, Sendable {
                 .volumeAvailableCapacityKey,
                 .volumeAvailableCapacityForImportantUsageKey
             ])
-            volumeURL = values.volume ?? currentURL
             guard let capacity = values.volumeTotalCapacity,
                   let free = values.volumeAvailableCapacity,
                   capacity > 0 else {
-                resetCapacityState(message: "Storage capacity is unavailable for this location.")
+                resetCapacityState(
+                    message: "Storage capacity is unavailable for this location.",
+                    volumeURL: values.volume ?? currentURL
+                )
                 return
             }
 
-            total = Int64(capacity)
-            available = min(total, max(0, Int64(free)))
-            used = max(0, total - available)
+            let total = Int64(capacity)
+            let available = min(total, max(0, Int64(free)))
+            let used = max(0, total - available)
+            let availableForImportantUsage: Int64
             hasValidCapacity = true
             if let important = values.volumeAvailableCapacityForImportantUsage {
                 availableForImportantUsage = min(total, max(available, Int64(important)))
             } else {
                 availableForImportantUsage = available
             }
-            purgeableBytes = min(used, max(0, availableForImportantUsage - available))
-            capacityError = nil
+            capacityPresentation = StorageCapacityPresentation(
+                total: total,
+                used: used,
+                available: available,
+                availableForImportantUsage: availableForImportantUsage,
+                purgeableBytes: min(used, max(0, availableForImportantUsage - available)),
+                volumeURL: values.volume ?? currentURL,
+                error: nil
+            )
             normalizeCurrentScopeHistoryIfNeeded()
         } catch {
-            volumeURL = currentURL
             resetCapacityState(message: error.localizedDescription)
         }
     }
 
-    private func resetCapacityState(message: String) {
-        total = 0
-        used = 0
-        available = 0
-        availableForImportantUsage = 0
-        purgeableBytes = 0
+    private func resetCapacityState(message: String, volumeURL: URL? = nil) {
         hasValidCapacity = false
-        capacityError = message
+        capacityPresentation = StorageCapacityPresentation(
+            volumeURL: volumeURL ?? currentURL,
+            error: message
+        )
     }
 
     private func clearPresentedScan() {
-        entries = []
-        insightEntries = []
-        recommendations = []
-        duplicateGroups = []
-        categorySizes = [:]
-        reclaimableBytes = 0
-        scanMetrics = nil
-        scanErrors = []
+        presentedScan = StoragePresentedScan()
         confirmingRemoval = false
         pendingRemovalEntries = []
     }
@@ -3142,20 +3444,15 @@ struct StorageRemovalResult: Equatable, Sendable {
         refreshCapacity()
 
         if changedDirectory {
-            entries = []
-            insightEntries = []
-            recommendations = []
-            duplicateGroups = []
-            categorySizes = [:]
-            reclaimableBytes = 0
-            scanMetrics = nil
-            scanErrors = []
+            presentedScan = StoragePresentedScan()
         }
 
         isLoading = true
-        scanState = .loadingCache
-        indexingProgress = 0
-        indexingLabel = "Preparing \(target.lastPathComponent.isEmpty ? volumeName : target.lastPathComponent)…"
+        updateScanPresentation(
+            state: .loadingCache,
+            progress: 0,
+            label: "Preparing \(target.lastPathComponent.isEmpty ? volumeName : target.lastPathComponent)…"
+        )
 
         let deepScan = deepScanEnabled
         let key = StorageCacheKey(url: target, deepScan: deepScan)
@@ -3179,9 +3476,11 @@ struct StorageRemovalResult: Equatable, Sendable {
                 let lease = await StorageScanCoordinator.shared.acquire(request: request) { progress in
                     await MainActor.run {
                         guard let self = owner.value, self.scanGeneration == generation else { return }
-                        self.scanState = progress.state
-                        self.indexingProgress = progress.fraction
-                        self.indexingLabel = progress.label
+                        self.updateScanPresentation(
+                            state: progress.state,
+                            progress: progress.fraction,
+                            label: progress.label
+                        )
                     }
                 }
                 let scannedSnapshot: StorageDirectorySnapshot
@@ -3209,9 +3508,13 @@ struct StorageRemovalResult: Equatable, Sendable {
                 await MainActor.run {
                     guard let self = owner.value, self.scanGeneration == generation else { return }
                     self.isLoading = false
-                    self.scanState = .failed(error.localizedDescription)
-                    self.indexingLabel = "Scan failed"
-                    self.scanErrors = [StorageScanIssue(url: target, message: error.localizedDescription)]
+                    var failedScan = self.presentedScan
+                    failedScan.errors = [StorageScanIssue(url: target, message: error.localizedDescription)]
+                    self.presentedScan = failedScan
+                    self.updateScanPresentation(
+                        state: .failed(error.localizedDescription),
+                        label: "Scan failed"
+                    )
                 }
             }
         }
@@ -3220,18 +3523,13 @@ struct StorageRemovalResult: Equatable, Sendable {
     private func apply(snapshot: StorageDirectorySnapshot, generation: UInt64) {
         guard scanGeneration == generation, snapshot.url.standardizedFileURL == currentURL.standardizedFileURL else { return }
         let accountingLimit = physicalAccountingLimit
-        entries = snapshot.entries
-        insightEntries = snapshot.insightEntries
-        recommendations = snapshot.recommendations
-        duplicateGroups = snapshot.duplicateGroups
-        categorySizes = StorageCapacityAccounting.normalized(
+        let normalizedCategorySizes = StorageCapacityAccounting.normalized(
             snapshot.categorySizes,
             maximumTotal: accountingLimit
         )
-        reclaimableBytes = accountingLimit >= 0
+        let normalizedReclaimableBytes = accountingLimit >= 0
             ? min(max(0, snapshot.reclaimableBytes), accountingLimit)
             : max(0, snapshot.reclaimableBytes)
-        scanErrors = snapshot.issues
         var presentedMetrics = snapshot.metrics
         if accountingLimit >= 0 {
             presentedMetrics.allocatedBytesVisited = min(
@@ -3239,17 +3537,41 @@ struct StorageRemovalResult: Equatable, Sendable {
                 accountingLimit
             )
         }
-        scanMetrics = presentedMetrics
+        presentedScan = StoragePresentedScan(
+            entries: snapshot.entries,
+            insightEntries: snapshot.insightEntries,
+            recommendations: snapshot.recommendations,
+            duplicateGroups: snapshot.duplicateGroups,
+            categorySizes: normalizedCategorySizes,
+            reclaimableBytes: normalizedReclaimableBytes,
+            errors: snapshot.issues,
+            metrics: presentedMetrics
+        )
         isLoading = false
-        scanState = .completed
-        indexingProgress = 1
         let modeName = deepScanEnabled ? "Deep" : "Surface"
-        indexingLabel = snapshot.metrics.cacheHit
-            ? "Loaded cached \(modeName) scan"
-            : "\(modeName) scan complete"
+        updateScanPresentation(
+            state: .completed,
+            progress: 1,
+            label: snapshot.metrics.cacheHit
+                ? "Loaded cached \(modeName) scan"
+                : "\(modeName) scan complete"
+        )
         if !snapshot.metrics.cacheHit {
             recordScanResult(duration: snapshot.metrics.duration)
         }
+    }
+
+    private func updateScanPresentation(
+        state: StorageScanState? = nil,
+        progress: Double? = nil,
+        label: String? = nil
+    ) {
+        var updated = scanPresentation
+        if let state { updated.state = state }
+        if let progress { updated.progress = min(max(progress, 0), 1) }
+        if let label { updated.label = label }
+        guard updated != scanPresentation else { return }
+        scanPresentation = updated
     }
 
     fileprivate nonisolated static func generateRecommendations(

@@ -11,23 +11,43 @@ import SwiftUI
 
 @MainActor
 class BatteryStatsViewModel: ObservableObject {
-    @Published var batteryLevel: Int = 0
-    @Published var isCharging: Bool = false
-    @Published var timeRemaining: String = "--"
-    @Published var temperature: Double = 0
-    @Published var systemPower: Double = 0
-    @Published var powerConsumption: Double = 0
-    @Published var amperage: Int = 0
-    @Published var voltage: Double = 0
-    @Published var lowPowerModeEnabled: Bool = false
+    private struct Snapshot: Equatable {
+        var batteryLevel = 0
+        var isCharging = false
+        var timeRemaining = "--"
+        var temperature: Double = 0
+        var systemPower: Double = 0
+        var adapterPower: Double = 0
+        var powerConsumption: Double = 0
+        var amperage = 0
+        var voltage: Double = 0
+        var lowPowerModeEnabled = false
+        var designCapacity = 0
+        var maxCapacity = 0
+        var appleMaxCapacity = 0
+        var cycleCount = 0
+        var health = "Unknown"
+        var powerAdapterInfo: PowerAdapterInfo?
+    }
 
-    @Published var designCapacity: Int = 0
-    @Published var maxCapacity: Int = 0
-    @Published var appleMaxCapacity: Int = 0
-    @Published var cycleCount: Int = 0
-    @Published var health: String = "Unknown"
+    @Published private var snapshot = Snapshot()
 
-    @Published var powerAdapterInfo: PowerAdapterInfo?
+    var batteryLevel: Int { snapshot.batteryLevel }
+    var isCharging: Bool { snapshot.isCharging }
+    var timeRemaining: String { snapshot.timeRemaining }
+    var temperature: Double { snapshot.temperature }
+    var systemPower: Double { snapshot.systemPower }
+    var adapterPower: Double { snapshot.adapterPower }
+    var powerConsumption: Double { snapshot.powerConsumption }
+    var amperage: Int { snapshot.amperage }
+    var voltage: Double { snapshot.voltage }
+    var lowPowerModeEnabled: Bool { snapshot.lowPowerModeEnabled }
+    var designCapacity: Int { snapshot.designCapacity }
+    var maxCapacity: Int { snapshot.maxCapacity }
+    var appleMaxCapacity: Int { snapshot.appleMaxCapacity }
+    var cycleCount: Int { snapshot.cycleCount }
+    var health: String { snapshot.health }
+    var powerAdapterInfo: PowerAdapterInfo? { snapshot.powerAdapterInfo }
 
     private let batteryManager = BatteryManager.shared
     private let batteryMonitor = BatteryMonitor.shared
@@ -35,67 +55,59 @@ class BatteryStatsViewModel: ObservableObject {
     private let powerModeManager = PowerModeManager.shared
 
     private var cancellables = Set<AnyCancellable>()
-    private var refreshTimer: Timer?
     private var isStarted = false
-    private let normalPollInterval: TimeInterval = 1.5
-    private let highFrequencyPollInterval: TimeInterval = 1.0
-    private var isHighFrequency = false
     private var lastSlowRefresh = Date.distantPast
     private var fetchInFlight = false
 
     init() {}
 
-    deinit { refreshTimer?.invalidate() }
-
-    func start(highFrequency: Bool = false) {
+    func start(highFrequency _: Bool = false) {
         guard !isStarted else { return }
-        isHighFrequency = highFrequency
         isStarted = true
         setupBindings()
         fetchStats()
-        startTimer()
-    }
-
-    private func startTimer() {
-        refreshTimer?.invalidate()
-        let interval = isHighFrequency ? highFrequencyPollInterval : normalPollInterval
-        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.fetchStats()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        refreshTimer = timer
     }
 
     func stop() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
         cancellables.removeAll()
         isStarted = false
-        isHighFrequency = false
     }
 
     private func setupBindings() {
         batteryMonitor.$currentState.compactMap { $0 }.receive(on: DispatchQueue.main)
             .sink { [weak self] state in
-                self?.batteryLevel = state.level
-                self?.isCharging = state.isCharging
+                self?.updateSnapshot {
+                    $0.batteryLevel = state.level
+                    $0.isCharging = state.isCharging
+                }
             }.store(in: &cancellables)
 
-        statsManager.$currentStats.compactMap { $0?.systemPower }.receive(on: DispatchQueue.main)
-            .sink { [weak self] power in
-                self?.systemPower = power
+        statsManager.$currentStats.compactMap { $0 }.receive(on: DispatchQueue.main)
+            .sink { [weak self] payload in
+                guard let self else { return }
+                let batteryStats = payload.battery
+                let isCharging = self.snapshot.isCharging
+                let timeToUse = isCharging ? batteryStats?.timeToCharge : batteryStats?.timeToEmpty
+                self.updateSnapshot {
+                    if let power = payload.systemPower { $0.systemPower = power }
+                    $0.adapterPower = payload.sensors?.sensors.first { $0.key == "PDTR" }?.value ?? 0
+                    if let batteryStats {
+                        $0.powerConsumption = batteryStats.powerDraw
+                        $0.amperage = batteryStats.amperage
+                        $0.voltage = batteryStats.voltage
+                        $0.timeRemaining = self.formatTime(minutes: timeToUse)
+                    }
+                }
+                self.fetchStats()
             }.store(in: &cancellables)
 
-        statsManager.$currentStats.compactMap { $0?.battery }.receive(on: DispatchQueue.main)
-            .sink { [weak self] batteryStats in
-                self?.powerConsumption = batteryStats.powerDraw
-                self?.amperage = batteryStats.amperage
-                self?.voltage = batteryStats.voltage
-                let timeToUse = self?.isCharging == true ? batteryStats.timeToCharge : batteryStats.timeToEmpty
-                self?.timeRemaining = self?.formatTime(minutes: timeToUse) ?? "--"
-            }.store(in: &cancellables)
+        powerModeManager.$isLowPowerModeActive
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] enabled in
+                self?.updateSnapshot { $0.lowPowerModeEnabled = enabled }
+            }
+            .store(in: &cancellables)
     }
 
     func fetchStats() {
@@ -105,8 +117,12 @@ class BatteryStatsViewModel: ObservableObject {
             guard let self else { return }
             defer { fetchInFlight = false }
 
-            self.temperature = await batteryManager.getBatteryTemperature()
-            self.lowPowerModeEnabled = powerModeManager.isLowPowerModeEnabled()
+            let temperature = await batteryManager.getBatteryTemperature()
+            let lowPowerModeEnabled = powerModeManager.isLowPowerModeEnabled()
+            self.updateSnapshot {
+                $0.temperature = temperature
+                $0.lowPowerModeEnabled = lowPowerModeEnabled
+            }
 
             let now = Date()
             guard now.timeIntervalSince(lastSlowRefresh) >= 10 else { return }
@@ -119,8 +135,18 @@ class BatteryStatsViewModel: ObservableObject {
             async let health = batteryManager.getBatteryHealth()
             async let adapter = batteryManager.getPowerAdapterInfo()
 
-            (self.designCapacity, self.maxCapacity, self.appleMaxCapacity, self.cycleCount, self.health, self.powerAdapterInfo) = await (designCap, maxCap, appleMaxCap, cycles, health, adapter)
+            let values = await (designCap, maxCap, appleMaxCap, cycles, health, adapter)
+            self.updateSnapshot {
+                ($0.designCapacity, $0.maxCapacity, $0.appleMaxCapacity, $0.cycleCount, $0.health, $0.powerAdapterInfo) = values
+            }
         }
+    }
+
+    private func updateSnapshot(_ update: (inout Snapshot) -> Void) {
+        var next = snapshot
+        update(&next)
+        guard next != snapshot else { return }
+        snapshot = next
     }
 
     private func formatTime(minutes: Int?) -> String {

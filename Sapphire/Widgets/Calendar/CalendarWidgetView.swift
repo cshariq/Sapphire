@@ -19,21 +19,6 @@ struct ScheduleItem: Identifiable {
     let hasTime: Bool
 }
 
-struct CenterDateInfo: Equatable {
-    let date: Date
-    let distance: CGFloat
-}
-struct CenterDatePreferenceKey: PreferenceKey {
-    typealias Value = CenterDateInfo?
-    static var defaultValue: Value = nil
-    static func reduce(value: inout Value, nextValue: () -> Value) {
-        guard let next = nextValue() else { return }
-        if value == nil || next.distance < value!.distance {
-            value = next
-        }
-    }
-}
-
 struct CalendarWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
     @ObservedObject var viewModel: InteractiveCalendarViewModel
@@ -41,7 +26,7 @@ struct CalendarWidgetView: View {
     @EnvironmentObject var settings: SettingsModel
 
     @State private var hasScrolledInitially = false
-    @State private var selectionWorkItem: DispatchWorkItem?
+    @State private var centeredDate: Date?
 
     private var combinedScheduleItems: [ScheduleItem] {
         let events = calendarService.eventsForSelectedDate.compactMap { event -> ScheduleItem? in
@@ -114,60 +99,49 @@ struct CalendarWidgetView: View {
     }
 
     private func interactiveCalendar() -> some View {
-        ScrollViewReader { proxy in
-            GeometryReader { containerProxy in
-                let itemWidth: CGFloat = 28
-                let itemSpacing: CGFloat = 10
-                let horizontalPadding = (containerProxy.size.width / 2) - (itemWidth / 2)
+        GeometryReader { containerProxy in
+            let itemWidth: CGFloat = 28
+            let itemSpacing: CGFloat = 10
+            let horizontalPadding = (containerProxy.size.width / 2) - (itemWidth / 2)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: itemSpacing) {
-                        ForEach(viewModel.dates, id: \.self) { date in
-                            DynamicDayView(
-                                date: date,
-                                containerMidX: containerProxy.frame(in: .global).midX
-                            )
-                            .id(date)
-                            .onTapGesture {
-                                HapticManager.shared.perform(HapticFeedbackType.medium)
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
-                                    viewModel.selectDate(date)
-                                    proxy.scrollTo(date, anchor: .center)
-                                }
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: itemSpacing) {
+                    ForEach(viewModel.dates, id: \.self) { date in
+                        DynamicDayView(
+                            date: date,
+                            containerMidX: containerProxy.frame(in: .global).midX
+                        )
+                        .id(date)
+                        .onTapGesture {
+                            HapticManager.shared.perform(HapticFeedbackType.medium)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                viewModel.selectDate(date)
+                                centeredDate = date
                             }
                         }
                     }
-                    .padding(.horizontal, horizontalPadding)
                 }
-                .onAppear {
-                    DispatchQueue.main.async {
-                        proxy.scrollTo(viewModel.today, anchor: .center)
-                        hasScrolledInitially = true
-                    }
-                }
-                .onPreferenceChange(CenterDatePreferenceKey.self) { centerInfo in
-                    guard hasScrolledInitially, let newDate = centerInfo?.date else { return }
-
-                    selectionWorkItem?.cancel()
-
-                    let workItem = DispatchWorkItem {
-                        withAnimation(.easeOut(duration: 0.15)) {
-                            proxy.scrollTo(newDate, anchor: .center)
-                        }
-                        if !newDate.isSameDay(as: viewModel.selectedDate) {
-                            HapticManager.shared.perform(HapticFeedbackType.weak)
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                viewModel.selectDate(newDate)
-                            }
-                        }
-                    }
-
-                    selectionWorkItem = workItem
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+                .scrollTargetLayout()
+                .padding(.horizontal, horizontalPadding)
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $centeredDate, anchor: .center)
+            .onAppear {
+                DispatchQueue.main.async {
+                    centeredDate = viewModel.today
+                    hasScrolledInitially = true
                 }
             }
-            .frame(height: 36)
+            .onChange(of: centeredDate) { _, newDate in
+                guard hasScrolledInitially, let newDate,
+                      !newDate.isSameDay(as: viewModel.selectedDate) else { return }
+                HapticManager.shared.perform(HapticFeedbackType.weak)
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.selectDate(newDate)
+                }
+            }
         }
+        .frame(height: 36)
     }
 
     @ViewBuilder
@@ -191,7 +165,7 @@ struct CalendarWidgetView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else {
             let scrollView = ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 6) {
+                LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(upcomingItems) { item in
                         ScheduleItemRowView(item: item)
                     }
@@ -263,7 +237,6 @@ struct DynamicDayView: View {
 
             let scale = 0.7 + (focusFactor * 0.7)
             let opacity = 0.5 + (focusFactor * 0.5)
-            let rotationAngle = Angle.degrees(Double(distance / 12))
 
             let baseColor = date.isWeekend ? Color.red.opacity(0.8) : Color.white.opacity(0.8)
             let finalColor = baseColor.lerp(to: .blue, t: focusFactor)
@@ -288,7 +261,6 @@ struct DynamicDayView: View {
             .scaleEffect(scale)
             .opacity(opacity)
             .frame(width: itemProxy.size.width, height: itemProxy.size.height)
-            .preference(key: CenterDatePreferenceKey.self, value: CenterDateInfo(date: date, distance: absDistance))
         }
         .frame(width: 28)
     }

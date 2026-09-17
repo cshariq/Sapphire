@@ -10,6 +10,20 @@ import Combine
 import Darwin
 import Foundation
 
+private struct MenuBarReadoutsConfiguration: Equatable {
+    let isEnabled: Bool
+    let showCPU: Bool
+    let showMemory: Bool
+    let showNetwork: Bool
+
+    init(_ settings: Settings) {
+        isEnabled = settings.monitoringMenuBarReadoutsEnabled
+        showCPU = settings.monitoringReadoutShowCPU
+        showMemory = settings.monitoringReadoutShowMemory
+        showNetwork = settings.monitoringReadoutShowNetwork
+    }
+}
+
 @MainActor
 final class MenuBarReadoutsManager {
     static let shared = MenuBarReadoutsManager()
@@ -18,9 +32,8 @@ final class MenuBarReadoutsManager {
     private var isStarted = false
 
     private var statusItem: NSStatusItem?
-    private var timer: Timer?
-
-    private let cpuSampler = AggregateCPUUsageSampler()
+    private var statsCancellable: AnyCancellable?
+    private var networkTimer: Timer?
 
     private var lastNetworkSample: (received: UInt64, sent: UInt64, date: Date)?
 
@@ -30,37 +43,54 @@ final class MenuBarReadoutsManager {
         guard !isStarted else { return }
         isStarted = true
 
-        SettingsModel.shared.changes(of: \.monitoringMenuBarReadoutsEnabled)
-            .sink { [weak self] enabled in
-                guard let self else { return }
-                if enabled {
-                    self.installStatusItem()
-                } else {
-                    self.removeStatusItem()
-                }
+        SettingsModel.shared.changes(of: MenuBarReadoutsConfiguration.init)
+            .sink { [weak self] configuration in
+                self?.apply(configuration)
             }
             .store(in: &settingsCancellables)
 
-        if SettingsModel.shared.settings.monitoringMenuBarReadoutsEnabled {
-            installStatusItem()
-        }
+        apply(MenuBarReadoutsConfiguration(SettingsModel.shared.settings))
     }
 
-    private func installStatusItem() {
-        removeStatusItem()
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem = item
-        _ = cpuUsage()
-        updateReadout()
-        timer = Timer.scheduledCoalescing(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.updateReadout() }
+    private func apply(_ configuration: MenuBarReadoutsConfiguration) {
+        guard configuration.isEnabled else {
+            removeStatusItem()
+            return
         }
+
+        if statusItem == nil {
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        }
+
+        var requiredStats = Set<StatType>()
+        if configuration.showCPU { requiredStats.insert(.cpu) }
+        if configuration.showMemory { requiredStats.insert(.ram) }
+        StatsManager.shared.setPolling(for: "MenuBarReadouts", requiredStats: requiredStats)
+
+        statsCancellable = nil
+        if !requiredStats.isEmpty {
+            statsCancellable = StatsManager.shared.$currentStats
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.updateReadout() }
+        }
+
+        networkTimer?.invalidate()
+        networkTimer = nil
+        lastNetworkSample = nil
+        if configuration.showNetwork, requiredStats.isEmpty {
+            networkTimer = Timer.scheduledCoalescing(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                self?.updateReadout()
+            }
+        }
+        updateReadout()
     }
 
     func removeStatusItem() {
-        timer?.invalidate()
-        timer = nil
-        cpuSampler.reset()
+        StatsManager.shared.setPolling(for: "MenuBarReadouts", requiredStats: [])
+        statsCancellable = nil
+        networkTimer?.invalidate()
+        networkTimer = nil
+        lastNetworkSample = nil
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -72,15 +102,16 @@ final class MenuBarReadoutsManager {
         guard settings.monitoringMenuBarReadoutsEnabled else { return }
 
         var parts: [String] = []
-        if settings.monitoringReadoutShowCPU, let cpu = cpuUsage() {
+        let stats = StatsManager.shared.currentStats
+        if settings.monitoringReadoutShowCPU, let cpu = stats?.cpu?.totalUsage {
             parts.append("CPU \(Int((cpu * 100).rounded()))%")
         }
-        if settings.monitoringReadoutShowMemory, let memory = SystemMemorySnapshot.sample() {
+        if settings.monitoringReadoutShowMemory, let memory = stats?.ram {
             let gigabyte = 1024.0 * 1024.0 * 1024.0
             parts.append(String(
                 format: "RAM %.1f / %.0f GB",
-                Double(memory.usedBytes) / gigabyte,
-                Double(memory.totalBytes) / gigabyte
+                memory.used / gigabyte,
+                memory.total / gigabyte
             ))
         }
         if settings.monitoringReadoutShowNetwork {
@@ -110,10 +141,6 @@ final class MenuBarReadoutsManager {
     }
 
     // MARK: - Samplers
-
-    private func cpuUsage() -> Double? {
-        cpuSampler.sample()
-    }
 
     private func networkRates() -> (down: Double, up: Double) {
         var interfaceList: UnsafeMutablePointer<ifaddrs>?

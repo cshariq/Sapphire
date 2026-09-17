@@ -4,6 +4,7 @@
 //
 //  Created by Shariq Charolia on 2025-11-16
 
+import Combine
 import SwiftUI
 
 enum MusicWidgetVisibilityPolicy {
@@ -40,10 +41,6 @@ private struct OnSnapZoneHitRegionsChangeKey: EnvironmentKey {
     static let defaultValue: ([SnapZoneHitRegion]) -> Void = { _ in }
 }
 
-private struct NotchDragLocationKey: EnvironmentKey {
-    static let defaultValue: CGPoint? = nil
-}
-
 private struct FileDragModeKey: EnvironmentKey {
     static let defaultValue: FileDragMode = .newFile
 }
@@ -73,10 +70,6 @@ extension EnvironmentValues {
         get { self[OnSnapZoneHitRegionsChangeKey.self] }
         set { self[OnSnapZoneHitRegionsChangeKey.self] = newValue }
     }
-    var notchDragLocation: CGPoint? {
-        get { self[NotchDragLocationKey.self] }
-        set { self[NotchDragLocationKey.self] = newValue }
-    }
     var fileDragMode: FileDragMode {
         get { self[FileDragModeKey.self] }
         set { self[FileDragModeKey.self] = newValue }
@@ -87,23 +80,25 @@ extension EnvironmentValues {
     }
 }
 
+@MainActor
+final class NotchDragLocationState: ObservableObject {
+    @Published private(set) var location: CGPoint?
+
+    func update(_ newLocation: CGPoint?) {
+        guard location != newLocation else { return }
+        location = newLocation
+    }
+}
+
 struct NotchWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
     @Environment(\.activeDropZone) var activeDropZone
-    @Environment(\.isCalendarHovered) var isCalendarHovered
     @Environment(\.onActiveSnapZoneChange) var onActiveSnapZoneChange
     @Environment(\.onDropZoneFramesChange) var onDropZoneFramesChange
     @Environment(\.onSnapZoneHitRegionsChange) var onSnapZoneHitRegionsChange
     @Environment(\.fileDragMode) var fileDragMode
 
     private let calendarViewModel: InteractiveCalendarViewModel
-
-    @EnvironmentObject var settings: SettingsModel
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
-    @EnvironmentObject private var fileShelfState: FileShelfState
-    @EnvironmentObject var musicWidget: MusicManager
-    @EnvironmentObject private var calendarService: CalendarService
-    @EnvironmentObject var intelligenceVM: IntelligenceNotchViewModel
 
     private var currentMode: NotchWidgetMode {
         navigationStack.wrappedValue.last ?? .defaultWidgets
@@ -117,63 +112,6 @@ struct NotchWidgetView: View {
 
     init(calendarViewModel: InteractiveCalendarViewModel) {
         self.calendarViewModel = calendarViewModel
-    }
-
-    private var menuWidgetOrder: [WidgetType] {
-        settings.settings.widgetOrder
-    }
-
-    private var enabledAndOrderedWidgets: [WidgetType] {
-        let orderedTypes = menuWidgetOrder
-
-        let enabled = orderedTypes.filter { widgetType in
-            guard !widgetType.isPremiumLocked else { return false }
-            switch widgetType {
-            case .music:
-                return MusicWidgetVisibilityPolicy.shouldShow(
-                    isEnabled: settings.settings.musicWidgetEnabled,
-                    hideWhenNotPlaying: settings.settings.hideMusicWidgetWhenNotPlaying,
-                    isPlaying: musicWidget.isPlaying,
-                    hidePausedSpotifyWhenIdle: settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle,
-                    isSpotifyPausedWithNoOtherPlayback: musicWidget.isSpotifyPausedWithNoSystemMediaPlaying
-                )
-            case .weather:
-                return settings.settings.weatherWidgetEnabled
-            case .sports:
-                return settings.settings.sportsWidgetEnabled
-            case .finance:
-                return settings.settings.financeWidgetEnabled
-            case .shopify:
-                return settings.settings.shopifyWidgetEnabled
-            case .calendar:
-                return settings.settings.calendarWidgetEnabled
-            case .battery:
-                return settings.settings.batteryWidgetEnabled
-            case .timer:
-                return settings.settings.timerWidgetEnabled
-            case .shortcuts:
-                return settings.settings.shortcutsWidgetEnabled
-            case .notes:
-                return settings.settings.notesWidgetEnabled
-            case .clipboard:
-                return settings.settings.clipboardWidgetEnabled
-            case .mirror:
-                return settings.settings.mirrorWidgetEnabled
-            case .storage:
-                return settings.settings.storageWidgetEnabled
-            case .agent:
-                return false
-            case .focusSession:
-                return settings.settings.focusSessionWidgetEnabled
-            }
-        }
-
-        return WidgetLayoutPolicy.fittingWidgets(
-            from: enabled,
-            availableWidth: WidgetLayoutPolicy.availableBarWidth(),
-            showDividers: settings.settings.showDividersBetweenWidgets,
-            bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
-        )
     }
 
     var body: some View {
@@ -244,19 +182,7 @@ struct NotchWidgetView: View {
     private func contentSwitch(for mode: NotchWidgetMode) -> some View {
         switch mode {
         case .defaultWidgets:
-            let widgets = enabledAndOrderedWidgets
-            HStack(spacing: 20) {
-                ForEach(widgets) { widgetType in
-                    widgetView(for: widgetType)
-                        .id(widgetType)
-
-                    if widgetType != widgets.last && settings.settings.showDividersBetweenWidgets {
-                        Divider()
-                            .frame(height: 60)
-                            .background(Color.white.opacity(0.3))
-                    }
-                }
-            }
+            NotchDefaultWidgetsView(calendarViewModel: calendarViewModel)
         case .musicApiKeysMissing:
             ApiKeysMissingView(navigationStack: navigationStack)
         case .geminiApiKeysMissing:
@@ -311,15 +237,7 @@ struct NotchWidgetView: View {
                 onZoneFramesChange: onDropZoneFramesChange
             )
         case .fileActionPreview:
-            if let item = fileShelfState.selectedItemForPreview {
-                FileActionView(item: item, onDismiss: {
-                    if navigationStack.wrappedValue.last == .fileActionPreview {
-                        navigationStack.wrappedValue.removeLast()
-                    }
-                })
-            } else {
-                FileShelfView()
-            }
+            FileActionPreviewContent()
         case .multiAudio:
             MultiAudioView(navigationStack: navigationStack)
         case .multiAudioDeviceAdjust(let device):
@@ -355,6 +273,104 @@ struct NotchWidgetView: View {
         case .continuityActivityDetail:
             ContinuityExternalActivityDetailView(bridge: ContinuityManager.shared.liveActivityBridge)
         }
+    }
+
+}
+
+private struct NotchDefaultWidgetsView: View {
+    @Environment(\.navigationStack) private var navigationStack
+    @Environment(\.isCalendarHovered) private var isCalendarHovered
+    @EnvironmentObject private var settings: SettingsModel
+    @State private var musicVisibility: MusicWidgetVisibilitySnapshot
+
+    let calendarViewModel: InteractiveCalendarViewModel
+    private let musicWidget = MusicManager.shared
+
+    init(calendarViewModel: InteractiveCalendarViewModel) {
+        self.calendarViewModel = calendarViewModel
+        _musicVisibility = State(
+            initialValue: MusicWidgetVisibilitySnapshot(manager: MusicManager.shared)
+        )
+    }
+
+    private var enabledAndOrderedWidgets: [WidgetType] {
+        let enabled = settings.settings.widgetOrder.filter { widgetType in
+            guard !widgetType.isPremiumLocked else { return false }
+            switch widgetType {
+            case .music:
+                return MusicWidgetVisibilityPolicy.shouldShow(
+                    isEnabled: settings.settings.musicWidgetEnabled,
+                    hideWhenNotPlaying: settings.settings.hideMusicWidgetWhenNotPlaying,
+                    isPlaying: musicVisibility.isPlaying,
+                    hidePausedSpotifyWhenIdle: settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle,
+                    isSpotifyPausedWithNoOtherPlayback: musicVisibility.isSpotifyPausedWithNoOtherPlayback
+                )
+            case .weather:
+                return settings.settings.weatherWidgetEnabled
+            case .sports:
+                return settings.settings.sportsWidgetEnabled
+            case .finance:
+                return settings.settings.financeWidgetEnabled
+            case .shopify:
+                return settings.settings.shopifyWidgetEnabled
+            case .calendar:
+                return settings.settings.calendarWidgetEnabled
+            case .battery:
+                return settings.settings.batteryWidgetEnabled
+            case .timer:
+                return settings.settings.timerWidgetEnabled
+            case .shortcuts:
+                return settings.settings.shortcutsWidgetEnabled
+            case .notes:
+                return settings.settings.notesWidgetEnabled
+            case .clipboard:
+                return settings.settings.clipboardWidgetEnabled
+            case .mirror:
+                return settings.settings.mirrorWidgetEnabled
+            case .storage:
+                return settings.settings.storageWidgetEnabled
+            case .agent:
+                return false
+            case .focusSession:
+                return settings.settings.focusSessionWidgetEnabled
+            }
+        }
+
+        return WidgetLayoutPolicy.fittingWidgets(
+            from: enabled,
+            availableWidth: WidgetLayoutPolicy.availableBarWidth(),
+            showDividers: settings.settings.showDividersBetweenWidgets,
+            bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
+        )
+    }
+
+    var body: some View {
+        let widgets = enabledAndOrderedWidgets
+        HStack(spacing: 20) {
+            ForEach(widgets) { widgetType in
+                widgetView(for: widgetType)
+                    .id(widgetType)
+
+                if widgetType != widgets.last && settings.settings.showDividersBetweenWidgets {
+                    Divider()
+                        .frame(height: 60)
+                        .background(Color.white.opacity(0.3))
+                }
+            }
+        }
+        .onAppear(perform: refreshMusicVisibility)
+        .onReceive(
+            musicWidget.objectWillChange
+                .debounce(for: .milliseconds(1), scheduler: RunLoop.main)
+        ) { _ in
+            refreshMusicVisibility()
+        }
+    }
+
+    private func refreshMusicVisibility() {
+        let snapshot = MusicWidgetVisibilitySnapshot(manager: musicWidget)
+        guard snapshot != musicVisibility else { return }
+        musicVisibility = snapshot
     }
 
     @ViewBuilder
@@ -457,6 +473,34 @@ struct NotchWidgetView: View {
                 }
         case .agent:
             EmptyView()
+        }
+    }
+}
+
+private struct MusicWidgetVisibilitySnapshot: Equatable {
+    let isPlaying: Bool
+    let isSpotifyPausedWithNoOtherPlayback: Bool
+
+    @MainActor
+    init(manager: MusicManager) {
+        isPlaying = manager.isPlaying
+        isSpotifyPausedWithNoOtherPlayback = manager.isSpotifyPausedWithNoSystemMediaPlaying
+    }
+}
+
+private struct FileActionPreviewContent: View {
+    @Environment(\.navigationStack) private var navigationStack
+    @EnvironmentObject private var fileShelfState: FileShelfState
+
+    var body: some View {
+        if let item = fileShelfState.selectedItemForPreview {
+            FileActionView(item: item, onDismiss: {
+                if navigationStack.wrappedValue.last == .fileActionPreview {
+                    navigationStack.wrappedValue.removeLast()
+                }
+            })
+        } else {
+            FileShelfView()
         }
     }
 }

@@ -467,7 +467,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         emojiShortcutManager.stopMonitoring()
         clipboardPickerManager.stopMonitoring()
         clipboardAutoClearManager.stop()
-        cleanURLManager.stopPolling()
+        cleanURLManager.stopMonitoring()
         finderCutPasteManager.removeTap()
         snippetManager.removeHandler()
         mouseControlManager.shutdown()
@@ -716,7 +716,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func scheduleSubscriptionValidationTimer() {
         subscriptionValidationTimer?.invalidate()
-        subscriptionValidationTimer = Timer.scheduledCoalescing(withTimeInterval: 5 * 60 * 60, repeats: true) { [weak self] _ in
+        subscriptionValidationTimer = Timer.scheduledCoalescing(withTimeInterval: 5 * 60 * 60, repeats: true) { _ in
             Task { @MainActor in
                 print("[AppDelegate] Periodic subscription validation (5-hour interval).")
                 await SubscriptionManager.shared.validateSubscriptionStatus()
@@ -1431,7 +1431,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if cgsSpace == nil { cgsSpace = CGSSpace() }
         cgsSpace?.windows.insert(window)
 
-        let controllerView = NotchController(notchWindow: window)
+        let controllerView = NotchController(notchWindow: window, timerManager: timerManager)
         let container = ZStack(alignment: .top) {
             controllerView
         }

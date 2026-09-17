@@ -12,6 +12,16 @@ import AppKit
 final class PerAppAudioController {
     static let shared = PerAppAudioController()
 
+    enum ChangeKind: String {
+        case volume
+        case mute
+        case equalizer
+        case deviceScope
+        case reset
+    }
+
+    nonisolated static let changeKindUserInfoKey = "kind"
+
     private let volumeDefaultsKey = "SapphirePerAppVolumeMap"
     private let muteDefaultsKey = "SapphirePerAppMuteMap"
     private let eqDefaultsKey = "SapphirePerAppEQMap"
@@ -23,6 +33,7 @@ final class PerAppAudioController {
     private var eqMap: [String: [Double]] = [:]
     private var eqBassMap: [String: Double] = [:]
     private var eqDeviceScopeMap: [String: [String]] = [:]
+    private var persistenceTask: Task<Void, Never>?
 
     private init() {
         loadPersistedState()
@@ -31,9 +42,13 @@ final class PerAppAudioController {
     func hasAdjustments(for bundleID: String) -> Bool {
         if volumeMap[bundleID] != nil && volumeMap[bundleID] != 1.0 { return true }
         if muteMap[bundleID] == true { return true }
-        if let eq = eqMap[bundleID], !eq.allSatisfy({ $0 == 0.0 }) { return true }
-        if let bass = eqBassMap[bundleID], bass != 0.0 { return true }
+        if hasEqualizerAdjustment(for: bundleID) { return true }
         return false
+    }
+
+    func hasEqualizerAdjustment(for bundleID: String) -> Bool {
+        if let eq = eqMap[bundleID], !eq.allSatisfy({ $0 == 0.0 }) { return true }
+        return eqBassMap[bundleID] != nil && eqBassMap[bundleID] != 0.0
     }
 
     func volume(for bundleID: String) -> Double {
@@ -42,11 +57,13 @@ final class PerAppAudioController {
 
     func setVolume(_ value: Double, for bundleID: String) {
         let clamped = min(max(value, 0.0), 1.0)
+        guard volume(for: bundleID) != clamped else { return }
+        let previouslyNeededTap = hasAdjustments(for: bundleID)
         volumeMap[bundleID] = clamped
-        persistDoubleMap(volumeMap, forKey: volumeDefaultsKey)
+        schedulePersistence()
 
-        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
-        MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
+        postChange(.volume, bundleID: bundleID)
+        reconcileIfTapRequirementChanged(previouslyNeededTap, bundleID: bundleID)
         MultiAudioManager.shared.setAppVolume(bundleID: bundleID, volume: Float(clamped))
     }
 
@@ -55,11 +72,13 @@ final class PerAppAudioController {
     }
 
     func setMute(_ muted: Bool, for bundleID: String) {
+        guard mute(for: bundleID) != muted else { return }
+        let previouslyNeededTap = hasAdjustments(for: bundleID)
         muteMap[bundleID] = muted
         persistBoolMap(muteMap, forKey: muteDefaultsKey)
 
-        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
-        MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
+        postChange(.mute, bundleID: bundleID)
+        reconcileIfTapRequirementChanged(previouslyNeededTap, bundleID: bundleID)
         MultiAudioManager.shared.setAppMute(bundleID: bundleID, isMuted: muted)
     }
 
@@ -69,11 +88,13 @@ final class PerAppAudioController {
 
     func setEQGains(_ gains: [Double], for bundleID: String) {
         let normalized = AudioEQ.normalize(gains)
+        guard eqGains(for: bundleID) != normalized else { return }
+        let previouslyNeededTap = hasAdjustments(for: bundleID)
         eqMap[bundleID] = normalized
-        persistEQMap()
+        schedulePersistence()
 
-        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
-        MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
+        postChange(.equalizer, bundleID: bundleID)
+        reconcileIfTapRequirementChanged(previouslyNeededTap, bundleID: bundleID)
         MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: normalized, bassGain: eqBass(for: bundleID))
     }
 
@@ -83,15 +104,17 @@ final class PerAppAudioController {
 
     func setEQBass(_ value: Double, for bundleID: String) {
         let clamped = min(max(value, AudioEQ.bassRange.lowerBound), AudioEQ.bassRange.upperBound)
+        guard eqBass(for: bundleID) != clamped else { return }
+        let previouslyNeededTap = hasAdjustments(for: bundleID)
         if clamped == 0.0 {
             eqBassMap.removeValue(forKey: bundleID)
         } else {
             eqBassMap[bundleID] = clamped
         }
-        persistEQBassMap()
+        schedulePersistence()
 
-        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
-        MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
+        postChange(.equalizer, bundleID: bundleID)
+        reconcileIfTapRequirementChanged(previouslyNeededTap, bundleID: bundleID)
         MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: eqGains(for: bundleID), bassGain: clamped)
     }
 
@@ -106,15 +129,16 @@ final class PerAppAudioController {
     }
 
     func setEQTargetDeviceUIDs(_ uids: Set<String>?, for bundleID: String) {
-        if let uids, !uids.isEmpty {
+        let normalizedUIDs = uids.flatMap { $0.isEmpty ? nil : Set($0) }
+        guard targetDeviceUIDs(for: bundleID) != normalizedUIDs else { return }
+        if let uids = normalizedUIDs {
             eqDeviceScopeMap[bundleID] = Array(uids).sorted()
         } else {
             eqDeviceScopeMap.removeValue(forKey: bundleID)
         }
         persistEQScopeMap()
 
-        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
-        MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
+        postChange(.deviceScope, bundleID: bundleID)
         MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: eqGains(for: bundleID), bassGain: eqBass(for: bundleID))
     }
 
@@ -130,6 +154,7 @@ final class PerAppAudioController {
     }
 
     func reset(for bundleID: String) {
+        let previouslyNeededTap = hasAdjustments(for: bundleID)
         volumeMap.removeValue(forKey: bundleID)
         muteMap.removeValue(forKey: bundleID)
         eqMap.removeValue(forKey: bundleID)
@@ -142,11 +167,20 @@ final class PerAppAudioController {
         persistEQBassMap()
         persistEQScopeMap()
 
-        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self, userInfo: ["bundleID": bundleID])
-        MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
+        postChange(.reset, bundleID: bundleID)
+        MultiAudioManager.shared.setAppVolume(bundleID: bundleID, volume: 1.0)
+        MultiAudioManager.shared.setAppMute(bundleID: bundleID, isMuted: false)
+        MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: AudioEQ.flat, bassGain: 0.0)
+        reconcileIfTapRequirementChanged(previouslyNeededTap, bundleID: bundleID)
     }
 
     func clearAllPersistedState() {
+        persistenceTask?.cancel()
+        persistenceTask = nil
+        let affectedBundleIDs = Set(volumeMap.keys)
+            .union(muteMap.keys)
+            .union(eqMap.keys)
+            .union(eqBassMap.keys)
         volumeMap.removeAll()
         muteMap.removeAll()
         eqMap.removeAll()
@@ -160,7 +194,17 @@ final class PerAppAudioController {
         defaults.removeObject(forKey: eqBassDefaultsKey)
         defaults.removeObject(forKey: eqDeviceScopeDefaultsKey)
 
-        NotificationCenter.default.post(name: .perAppAudioSettingsDidChange, object: self)
+        NotificationCenter.default.post(
+            name: .perAppAudioSettingsDidChange,
+            object: self,
+            userInfo: [Self.changeKindUserInfoKey: ChangeKind.reset.rawValue]
+        )
+        for bundleID in affectedBundleIDs {
+            MultiAudioManager.shared.setAppVolume(bundleID: bundleID, volume: 1.0)
+            MultiAudioManager.shared.setAppMute(bundleID: bundleID, isMuted: false)
+            MultiAudioManager.shared.setAppEQ(bundleID: bundleID, gains: AudioEQ.flat, bassGain: 0.0)
+        }
+        MultiAudioManager.shared.notifyAdjustmentMade(for: "ResetAllPerAppAudio")
     }
 
     private func loadPersistedState() {
@@ -172,6 +216,40 @@ final class PerAppAudioController {
     }
 
     // MARK: - Persistence helpers
+
+    private func postChange(_ kind: ChangeKind, bundleID: String) {
+        NotificationCenter.default.post(
+            name: .perAppAudioSettingsDidChange,
+            object: self,
+            userInfo: [
+                "bundleID": bundleID,
+                Self.changeKindUserInfoKey: kind.rawValue
+            ]
+        )
+    }
+
+    private func reconcileIfTapRequirementChanged(_ previousValue: Bool, bundleID: String) {
+        guard previousValue != hasAdjustments(for: bundleID) else { return }
+        MultiAudioManager.shared.notifyAdjustmentMade(for: bundleID)
+    }
+
+    private func schedulePersistence() {
+        persistenceTask?.cancel()
+        persistenceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            self.persistenceTask = nil
+            self.persistAllMaps()
+        }
+    }
+
+    private func persistAllMaps() {
+        persistDoubleMap(volumeMap, forKey: volumeDefaultsKey)
+        persistBoolMap(muteMap, forKey: muteDefaultsKey)
+        persistEQMap()
+        persistEQBassMap()
+        persistEQScopeMap()
+    }
 
     private func persistDoubleMap(_ map: [String: Double], forKey key: String) {
         UserDefaults.standard.set(map, forKey: key)

@@ -10,14 +10,14 @@ struct BatteryWidgetView: View {
     @EnvironmentObject private var settings: SettingsModel
     @Environment(\.navigationStack) private var navigationStack
     @StateObject private var stats = BatteryStatsViewModel()
-    @ObservedObject private var statsManager = StatsManager.shared
+    @State private var statsPollingRequester = "BatteryWidget-\(UUID().uuidString)"
 
     // MARK: - System Power hero (mirrors the hero card in BatteryDetailView)
 
     private var power: SystemPowerReading {
         SystemPowerReading(
             systemLoad: stats.systemPower,
-            adapterPower: statsManager.adapterSensorPower,
+            adapterPower: stats.adapterPower,
             adapterConnected: (stats.powerAdapterInfo?.maxPower ?? 0) > 0,
             isCharging: stats.isCharging
         )
@@ -79,11 +79,11 @@ struct BatteryWidgetView: View {
         .help("Click for the full battery & power overview")
         .onAppear {
             stats.start()
-            statsManager.setPolling(for: "BatteryWidget", requiredStats: [.systemPower, .batteryPower])
+            StatsManager.shared.setPolling(for: statsPollingRequester, requiredStats: [.systemPower, .batteryPower])
         }
         .onDisappear {
             stats.stop()
-            statsManager.setPolling(for: "BatteryWidget", requiredStats: [])
+            StatsManager.shared.setPolling(for: statsPollingRequester, requiredStats: [])
         }
     }
 }

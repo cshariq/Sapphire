@@ -34,7 +34,6 @@ struct TimerWidgetView: View {
             }
         }
         .animation(.default, value: timerManager.isRunning)
-        .animation(.default, value: timerManager.displayTime)
     }
 
     // MARK: - Running (tap to open the full timer detail view)
@@ -51,11 +50,15 @@ struct TimerWidgetView: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundColor(accentColor)
 
-                Text(timerManager.displayTime.asStopwatchClock)
-                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
-                    .contentTransition(.numericText(countsDown: timerManager.activeTimer == .system))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    let displayTime = timerManager.displayTime
+                    Text(displayTime.asStopwatchClock)
+                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                        .contentTransition(.numericText(countsDown: timerManager.activeTimer == .system))
+                        .animation(.default, value: Int(displayTime))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
             .padding(.horizontal, 10)
         }

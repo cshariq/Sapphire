@@ -27,6 +27,8 @@ extension SettingsSection {
 struct SettingsSidebarView: View {
     @Binding var selectedSection: SettingsSection?
     @Binding var showAccountPane: Bool
+    let onQuit: () -> Void
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var searchText = ""
 
     private var filteredGroups: [SettingsSidebarGroup] {
@@ -42,7 +44,19 @@ struct SettingsSidebarView: View {
         }
     }
 
+    private var lockedSections: Set<SettingsSection> {
+        Set(SettingsSection.sidebarGroups
+            .flatMap(\.sections)
+            .filter { section in
+                section.requiredPremiumFeature
+                    .map { !subscriptionManager.hasAccess(to: $0) } ?? false
+            })
+    }
+
     var body: some View {
+        let lockedSections = lockedSections
+        let filteredGroups = filteredGroups
+
         VStack(alignment: .leading, spacing: 0) {
             Spacer().frame(height: 45)
 
@@ -56,7 +70,10 @@ struct SettingsSidebarView: View {
             .padding(.bottom, 12)
 
             // MARK: 2. Apple ID Style Account Sidebar Card (Below Search Bar)
-            SidebarAccountCardView(isSelected: showAccountPane) {
+            SidebarAccountCardView(
+                subscriptionManager: subscriptionManager,
+                isSelected: showAccountPane
+            ) {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     showAccountPane = true
                     selectedSection = nil
@@ -76,7 +93,11 @@ struct SettingsSidebarView: View {
                 ForEach(filteredGroups) { group in
                     Section {
                         ForEach(group.sections) { section in
-                            SidebarRowView(section: section).tag(section)
+                            SidebarRowView(
+                                section: section,
+                                isPremiumLocked: lockedSections.contains(section)
+                            )
+                            .tag(section)
                         }
                     } header: {
                         Text(group.title)
@@ -107,9 +128,7 @@ struct SettingsSidebarView: View {
 
             Spacer(minLength: 0)
 
-            Button(action: {
-                NSApp.terminate(nil)
-            }) {
+            Button(action: onQuit) {
                 HStack {
                     Image(systemName: "power.circle.fill")
                         .font(.system(size: 15, weight: .bold))
@@ -132,7 +151,7 @@ struct SettingsSidebarView: View {
 
 // MARK: - Sidebar Profile Card
 struct SidebarAccountCardView: View {
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
+    @ObservedObject var subscriptionManager: SubscriptionManager
     var isSelected: Bool
     var action: () -> Void
 
@@ -196,10 +215,8 @@ struct TrafficLightButtonStyle: ButtonStyle {
 }
 
 fileprivate struct SidebarRowView: View {
-    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     let section: SettingsSection
-
-    private var isPremiumLocked: Bool { section.isPremiumLocked }
+    let isPremiumLocked: Bool
 
     var body: some View {
         HStack(spacing: 12) {

@@ -24,7 +24,7 @@ final class FocusEnvironmentManager {
     private var appLimit = 2
 
     private let cid = CGSMainConnectionID()
-    private var refreshTimer: Timer?
+    private var windowChangeToken: SystemWindowChangeMonitor.Token?
     private var activeAppCancellables = Set<AnyCancellable>()
     private var dimWindows: [NSWindow] = []
     private var appliedScreenFrames: [NSRect] = []
@@ -98,7 +98,7 @@ final class FocusEnvironmentManager {
             }
             .store(in: &activeAppCancellables)
 
-        refreshTimer = Timer.scheduledCoalescing(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+        windowChangeToken = SystemWindowChangeMonitor.shared.subscribe { [weak self] in
             self?.refresh()
         }
         refresh()
@@ -106,8 +106,10 @@ final class FocusEnvironmentManager {
 
     private func stop() {
         activeAppCancellables.removeAll()
-        refreshTimer?.invalidate()
-        refreshTimer = nil
+        if let windowChangeToken {
+            SystemWindowChangeMonitor.shared.unsubscribe(windowChangeToken)
+            self.windowChangeToken = nil
+        }
 
         removeAllDimOverlays()
 

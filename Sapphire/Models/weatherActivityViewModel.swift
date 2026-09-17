@@ -23,7 +23,7 @@ class WeatherActivityViewModel: ObservableObject {
     }
 
     init() {
-        source.objectWillChange
+        source.weatherDataPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.objectWillChange.send()

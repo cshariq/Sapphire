@@ -202,8 +202,8 @@ class NotificationManager: ObservableObject {
     private var isSilent: Bool = true
     private var dbPath: String?
     private var dbConnection: Connection?
-    private var timer: Timer?
     private var walSource: DispatchSourceFileSystemObject?
+    private var walDirectorySource: DispatchSourceFileSystemObject?
     private var pendingWALCheck: DispatchWorkItem?
     private var lastNotificationId: Int64 = 0
     private var lastNotificationDate: Double = 0.0
@@ -211,30 +211,26 @@ class NotificationManager: ObservableObject {
     private var isStarted = false
     init(frequency: TimeInterval = 5.0, silent: Bool = true) { self.frequency = frequency; self.isSilent = silent; setupDatabaseConnection() }
     deinit {
-        timer?.invalidate()
         walSource?.cancel()
+        walDirectorySource?.cancel()
     }
     func start() {
         guard !isStarted, dbConnection != nil else { return }
         isStarted = true
         check()
         watchWriteAheadLog()
-        let fallbackInterval = max(frequency, 60)
-        timer = Timer.scheduledTimer(withTimeInterval: fallbackInterval, repeats: true) { [weak self] _ in self?.check() }
-        timer?.tolerance = fallbackInterval * 0.2
     }
 
     private func watchWriteAheadLog() {
         walSource?.cancel()
         walSource = nil
+        walDirectorySource?.cancel()
+        walDirectorySource = nil
         guard isStarted, let dbPath else { return }
 
         let fd = open(dbPath + "-wal", O_EVTONLY)
         guard fd >= 0 else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-                guard let self, self.walSource == nil else { return }
-                self.watchWriteAheadLog()
-            }
+            watchDatabaseDirectory(for: dbPath)
             return
         }
 
@@ -252,6 +248,25 @@ class NotificationManager: ObservableObject {
         source.setCancelHandler { close(fd) }
         source.resume()
         walSource = source
+    }
+
+    private func watchDatabaseDirectory(for dbPath: String) {
+        let directoryPath = (dbPath as NSString).deletingLastPathComponent
+        let fd = open(directoryPath, O_EVTONLY)
+        guard fd >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .delete, .rename, .revoke],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            self?.scheduleCheck()
+            self?.watchWriteAheadLog()
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        walDirectorySource = source
     }
 
     private func scheduleCheck() {

@@ -76,6 +76,16 @@ struct LiveWallpaperTests {
         #expect(unlocked == LiveWallpaperPlan(desktopVideo: nil, lockScreenVideo: nil, systemWallpaper: image))
     }
 
+    @Test("Falls back to Sapphire's video window when native lock-screen setup is unavailable")
+    func lockScreenOverlayFallback() {
+        let videoPlan = LiveWallpaperPlan.resolve(desktop: nil, lockScreen: video, isLocked: true)
+        #expect(videoPlan.shouldShowLockScreenOverlay(nativeWallpaperInstalled: false))
+        #expect(!videoPlan.shouldShowLockScreenOverlay(nativeWallpaperInstalled: true))
+
+        let stillPlan = LiveWallpaperPlan.resolve(desktop: nil, lockScreen: image, isLocked: true)
+        #expect(!stillPlan.shouldShowLockScreenOverlay(nativeWallpaperInstalled: false))
+    }
+
     @Test("Never-playing mode resolves videos to still wallpapers")
     func neverPlayingPlan() {
         let plan = LiveWallpaperPlan.resolve(

@@ -236,9 +236,7 @@ struct QueueAndPlaylistsView: View {
         .padding(.horizontal, 18)
         .frame(width: 800, height: 350)
         .task(id: selection) {
-            let pane = hubPane
-            await fetchData(for: pane)
-            await runQueueRefreshLoop(for: pane)
+            await fetchData(for: hubPane)
         }
         .onAppear {
             Task { await musicManager.setMusicHubOpen(true) }
@@ -483,25 +481,6 @@ struct QueueAndPlaylistsView: View {
         }
     }
 
-    private func runQueueRefreshLoop(for pane: MusicHubPane) async {
-        while !Task.isCancelled {
-            do {
-                try await Task.sleep(for: .seconds(15))
-            } catch {
-                return
-            }
-            guard !Task.isCancelled, musicManager.isPrivateAPIAuthenticated else { continue }
-            switch pane {
-            case .now:
-                await musicManager.spotifyPrivateAPI.refreshQueueForUI()
-            case .library where musicManager.spotifyPrivateAPI.nativePlaylists.isEmpty:
-                await musicManager.spotifyPrivateAPI.fetchUserLibrary()
-            default:
-                break
-            }
-        }
-    }
-
     @ViewBuilder
     private var queueView: some View {
         if isSpotifyActive && musicManager.isPrivateAPIAuthenticated {
@@ -742,7 +721,7 @@ struct QueueAndPlaylistsView: View {
         HStack(alignment: .top, spacing: 14) {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
-                            VStack(alignment: .leading, spacing: 14) {
+                            LazyVStack(alignment: .leading, spacing: 14) {
                                 Color.clear
                                     .frame(height: 0)
                                     .id("now-left-top")
@@ -752,7 +731,7 @@ struct QueueAndPlaylistsView: View {
                                 if !musicManager.spotifyPrivateAPI.similarAlbums.isEmpty {
                                     materialExpressiveCard(title: "Similar Albums", systemImage: "square.stack", accent: MaterialChartPalette.tertiary) {
                                         ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 12) {
+                                            LazyHStack(spacing: 12) {
                                                 ForEach(musicManager.spotifyPrivateAPI.similarAlbums.prefix(10)) { album in
                                                     SimilarAlbumCard(album: album, onPlay: handlePlaybackResult)
                                                 }
@@ -776,7 +755,7 @@ struct QueueAndPlaylistsView: View {
                                 if !musicManager.spotifyPrivateAPI.artistConcerts.isEmpty {
                                     materialExpressiveCard(title: "Nearby Concerts", systemImage: "ticket.fill", accent: MaterialChartPalette.error) {
                                         ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 12) {
+                                            LazyHStack(spacing: 12) {
                                                 ForEach(musicManager.spotifyPrivateAPI.artistConcerts.prefix(8)) { concert in
                                                     ConcertCard(concert: concert)
                                                 }
@@ -790,7 +769,7 @@ struct QueueAndPlaylistsView: View {
                                 if !musicManager.spotifyPrivateAPI.trackArtistCredits.isEmpty {
                                     materialExpressiveCard(title: "Credits", systemImage: "person.2.fill", accent: MaterialChartPalette.secondary) {
                                         ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 10) {
+                                            LazyHStack(spacing: 10) {
                                                 ForEach(musicManager.spotifyPrivateAPI.trackArtistCredits) { credit in
                                                     Button {
                                                         navigationStack.append(
@@ -818,7 +797,7 @@ struct QueueAndPlaylistsView: View {
                                 if let artist = musicManager.spotifyPrivateAPI.nowPlayingArtist, !artist.merch.isEmpty {
                                     materialExpressiveCard(title: "Merch", systemImage: "bag.fill", accent: MaterialChartPalette.warning) {
                                         ScrollView(.horizontal, showsIndicators: false) {
-                                            HStack(spacing: 12) {
+                                            LazyHStack(spacing: 12) {
                                                 ForEach(artist.merch.prefix(8)) { item in
                                                     MerchCard(item: item)
                                                 }
@@ -1194,7 +1173,7 @@ struct QueueAndPlaylistsView: View {
 
     private var discoverView: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 if let greeting = musicManager.spotifyPrivateAPI.homeGreeting, !greeting.isEmpty {
                     Text(greeting)
                         .font(.system(size: 18, weight: .bold, design: .rounded))
@@ -1227,7 +1206,7 @@ struct QueueAndPlaylistsView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             SectionHeader(title: section.title ?? "For You")
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
+                                LazyHStack(spacing: 12) {
                                     ForEach(section.items.prefix(24)) { item in
                                         Button {
                                             openHomeItem(item)
@@ -1280,7 +1259,7 @@ struct QueueAndPlaylistsView: View {
                     if !musicManager.spotifyPrivateAPI.recentlyPlayedItems.isEmpty {
                         SectionHeader(title: "Recently Played")
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
+                            LazyHStack(spacing: 12) {
                                 ForEach(musicManager.spotifyPrivateAPI.recentlyPlayedItems) { item in
                                     RecentlyPlayedCard(item: item) {
                                         if let playlist = musicManager.spotifyPrivateAPI.nativePlaylists.first(where: { $0.uri == item.uri }) {
@@ -1296,7 +1275,7 @@ struct QueueAndPlaylistsView: View {
                     if !musicManager.spotifyPrivateAPI.popularReleases.isEmpty {
                         SectionHeader(title: "Popular Releases")
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
+                            LazyHStack(spacing: 12) {
                                 ForEach(musicManager.spotifyPrivateAPI.popularReleases) { release in
                                     PopularReleaseCard(release: release) { result in
                                         handlePlaybackResult(result)
@@ -1739,7 +1718,7 @@ struct AddToPlaylistMenuView: View {
                     .padding(.vertical, 8)
             } else {
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    LazyVStack(alignment: .leading, spacing: 2) {
                         ForEach(addCandidates) { playlist in
                             playlistRow(playlist, isContained: false)
                         }
@@ -2668,7 +2647,7 @@ struct DevicesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 15) {
+                LazyVStack(alignment: .leading, spacing: 15) {
                     ForEach(musicManager.airplayDevices) { device in
                         AppleMusicDeviceRow(
                             device: device,
@@ -3725,7 +3704,7 @@ struct SpotifyArtistDetailView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    LazyVStack(alignment: .leading, spacing: 16) {
                         if let profile {
                             ArtistProfileCard(artist: profile)
                         }
@@ -3757,7 +3736,7 @@ struct SpotifyArtistDetailView: View {
                         if let related = overview?.relatedArtists, !related.isEmpty {
                             sectionTitle("Fans also like")
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
+                                LazyHStack(spacing: 12) {
                                     ForEach(related.prefix(12)) { artist in
                                         Button {
                                             navigationStack.append(
@@ -3784,7 +3763,7 @@ struct SpotifyArtistDetailView: View {
                         if let concerts = overview?.concerts, !concerts.isEmpty {
                             sectionTitle("Concerts")
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 10) {
+                                LazyHStack(spacing: 10) {
                                     ForEach(concerts.prefix(8)) { ConcertCard(concert: $0) }
                                 }
                             }
@@ -3793,7 +3772,7 @@ struct SpotifyArtistDetailView: View {
                         if let profile, !profile.merch.isEmpty {
                             sectionTitle("Merch")
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 10) {
+                                LazyHStack(spacing: 10) {
                                     ForEach(profile.merch.prefix(8)) { MerchCard(item: $0) }
                                 }
                             }
@@ -3858,7 +3837,7 @@ struct SpotifyArtistDetailView: View {
 
     private func horizontalAlbums(_ albums: [SpotifySearchAlbum]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
+            LazyHStack(spacing: 12) {
                 ForEach(albums.prefix(16)) { album in
                     Button {
                         navigationStack.append(.musicAlbumDetail(uri: album.uri, name: album.name))
@@ -4158,7 +4137,7 @@ struct SpotifyMusicSearchView: View {
                 }
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    LazyVStack(alignment: .leading, spacing: 14) {
                         if !suggestions.isEmpty {
                             Text("Suggestions")
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -4187,7 +4166,7 @@ struct SpotifyMusicSearchView: View {
                         if !results.artists.isEmpty {
                             sectionHeader("Artists")
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
+                                LazyHStack(spacing: 12) {
                                     ForEach(results.artists.prefix(12)) { artist in
                                         Button {
                                             navigationStack.append(
@@ -4213,7 +4192,7 @@ struct SpotifyMusicSearchView: View {
                         if !results.albums.isEmpty {
                             sectionHeader("Albums")
                             ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
+                                LazyHStack(spacing: 12) {
                                     ForEach(results.albums.prefix(12)) { album in
                                         Button {
                                             navigationStack.append(
@@ -5117,7 +5096,7 @@ struct AppleMusicSearchView: View {
 
     private var discoverSections: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 if !vm.forYou.isEmpty {
                     discoverSection(title: "Made for You", systemImage: "sparkles") {
                         ForEach(vm.forYou.prefix(5)) { playlist in
@@ -5175,7 +5154,7 @@ struct AppleMusicSearchView: View {
                 if !vm.heavyRotation.isEmpty {
                     discoverSection(title: "Heavy Rotation", systemImage: "repeat") {
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
+                            LazyHStack(spacing: 10) {
                                 ForEach(vm.heavyRotation.prefix(8)) { album in
                                     Button {
                                         Task { _ = await musicManager.appleMusic.playAlbum(albumID: album.id) }

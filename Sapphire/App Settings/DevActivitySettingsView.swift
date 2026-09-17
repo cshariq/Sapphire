@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct DevActivitySettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var monitor = DevActivityMonitor.shared
 
     private func kindBinding(_ kind: DevTaskKind, keyPath: WritableKeyPath<Settings, Set<String>>) -> Binding<Bool> {
@@ -26,7 +26,7 @@ struct DevActivitySettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            LazyVStack(alignment: .leading, spacing: 20) {
                 Text("Dev Activity")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
@@ -220,7 +220,7 @@ enum DevTaskFormatting {
 }
 
 struct CaffeineAutoTaskSettingsView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @EnvironmentObject var settings: SettingsEditingSession
     @ObservedObject private var monitor = DevActivityMonitor.shared
 
     private var unmonitoredKinds: [DevTaskKind] {

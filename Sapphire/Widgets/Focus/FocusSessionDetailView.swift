@@ -40,7 +40,6 @@ struct FocusSessionDetailView: View {
             customMinutes = settings.settings.focusSessionDuration / 60
         }
         .animation(.smooth(duration: 0.35), value: focusManager.phase)
-        .animation(.smooth(duration: 0.2), value: focusManager.remainingSeconds)
     }
 
     // MARK: - Left Stage: Pure Focus (65% width)
@@ -76,37 +75,7 @@ struct FocusSessionDetailView: View {
     }
 
     private var timerRing: some View {
-        ZStack {
-            ProgressRingView(
-                progress: max(focusManager.progress, 0.001),
-                lineWidth: 9,
-                track: AnyShapeStyle(Color.white.opacity(0.05)),
-                active: accent,
-                clampsProgress: false,
-                activeShadow: (accent.opacity(0.4), 12)
-            )
-
-            VStack(spacing: 5) {
-                Text(focusManager.remainingLabel)
-                    .font(.system(size: 46, weight: .light, design: .rounded))
-                    .foregroundColor(.white)
-                    .contentTransition(.numericText(countsDown: true))
-                    .monospacedDigit()
-
-                if focusManager.isSessionActive {
-                    Text("\(Int(focusManager.progress * 100))% COMPLETE")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(1.4)
-                        .foregroundColor(accent.opacity(0.8))
-                } else {
-                    Text("TAP START TO BEGIN")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundColor(.white.opacity(0.35))
-                }
-            }
-        }
-        .frame(width: 170, height: 170)
+        FocusSessionTimerRing(focusManager: focusManager, accent: accent)
     }
 
     private var primaryActionArea: some View {
@@ -504,4 +473,56 @@ struct FocusSessionDetailView: View {
         .buttonStyle(.plain)
     }
 
+}
+@MainActor
+private struct FocusSessionTimerRing: View {
+    let focusManager: FocusSessionManager
+    let accent: Color
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            content(at: context.date)
+        }
+    }
+
+    private func content(at date: Date) -> some View {
+        let remaining = focusManager.remaining(at: date)
+        let progress = max(focusManager.progress(at: date), 0.001)
+
+        return ZStack {
+            ProgressRingView(
+                progress: progress,
+                lineWidth: 9,
+                track: AnyShapeStyle(Color.white.opacity(0.05)),
+                active: accent,
+                clampsProgress: false,
+                activeShadow: (accent.opacity(0.4), 12)
+            )
+            .animation(.smooth(duration: 0.2), value: progress)
+
+            VStack(spacing: 5) {
+                Text(FocusSessionManager.format(remaining))
+                    .font(.system(size: 46, weight: .light, design: .rounded))
+                    .foregroundColor(.white)
+                    .contentTransition(.numericText(countsDown: true))
+                    .monospacedDigit()
+                    .animation(.smooth(duration: 0.2), value: remaining)
+
+                if focusManager.isSessionActive {
+                    Text("\(Int(progress * 100))% COMPLETE")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(1.4)
+                        .foregroundColor(accent.opacity(0.8))
+                        .contentTransition(.numericText())
+                        .animation(.smooth(duration: 0.2), value: Int(progress * 100))
+                } else {
+                    Text("TAP START TO BEGIN")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundColor(.white.opacity(0.35))
+                }
+            }
+        }
+        .frame(width: 170, height: 170)
+    }
 }

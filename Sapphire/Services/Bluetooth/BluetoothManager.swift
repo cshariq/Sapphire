@@ -34,10 +34,8 @@ class BluetoothManager: NSObject, ObservableObject {
     private var disconnectionNotifications: [String: IOBluetoothUserNotification] = [:]
     private var recentlyConnectedDebounceSet: Set<String> = []
 
-    private let iDeviceBattery = IDeviceBattery.shared
     private let magicBattery = MagicBattery.shared
     private let batteryReader = BluetoothBatteryReader.shared
-    private var periodicPollingTimer: Timer?
 
     private var cancellables = Set<AnyCancellable>()
     private var isProximityScanActive = false
@@ -77,7 +75,6 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     deinit {
-        periodicPollingTimer?.invalidate()
         connectionNotification?.unregister()
         disconnectionNotifications.values.forEach { $0.unregister() }
         NotificationCenter.default.removeObserver(self)
@@ -307,22 +304,6 @@ class BluetoothManager: NSObject, ObservableObject {
         for device in pairedDevices where device.isConnected() {
             handleDeviceConnected(device: device)
         }
-    }
-
-    private func startPollingServices() {
-        let interval = TimeInterval(ud.integer(forKey: "updateInterval") * 60)
-        let effectiveInterval = interval > 0 ? interval : 300.0
-
-        periodicPollingTimer = Timer.scheduledCoalescing(withTimeInterval: effectiveInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.pollForIDeviceUpdates()
-            }
-        }
-    }
-
-    private func pollForIDeviceUpdates() {
-        iDeviceBattery.scanDevices()
-        Task { await batteryReader.refreshAllBatteries() }
     }
 
     private func isContinuityDevice(name: String) -> Bool {

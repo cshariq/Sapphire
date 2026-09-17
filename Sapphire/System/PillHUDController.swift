@@ -12,6 +12,20 @@ import Combine
 final class PillHUDController: ObservableObject {
     static let shared = PillHUDController()
 
+    private struct LayoutSettings: Equatable {
+        var position: PillHUDPosition
+        var style: PillHUDStyle
+        var length: Double
+        var thickness: Double
+
+        init(_ settings: Settings) {
+            position = settings.hudPillPosition
+            style = settings.hudPillStyle
+            length = settings.hudPillLength
+            thickness = settings.hudPillThickness
+        }
+    }
+
     private let settings = SettingsModel.shared
     private let hudManager = SystemHUDManager.shared
     private var panel: NSPanel?
@@ -30,11 +44,10 @@ final class PillHUDController: ObservableObject {
             }
             .store(in: &cancellables)
 
-        settings.$settings
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+        settings.changes(of: LayoutSettings.init)
+            .sink { [weak self] layout in
                 guard let self, self.isVisible else { return }
-                self.positionPanel()
+                self.positionPanel(using: layout)
             }
             .store(in: &cancellables)
     }
@@ -67,8 +80,9 @@ final class PillHUDController: ObservableObject {
         guard let screen = targetScreen() else { return }
         let panel = ensurePanel()
         let wasVisible = panel.isVisible
-        let position = settings.settings.hudPillPosition
-        let frame = pillFrame(for: position, screen: screen)
+        let layout = LayoutSettings(settings.settings)
+        let position = layout.position
+        let frame = pillFrame(for: layout, screen: screen)
 
         if wasVisible {
             panel.alphaValue = 1
@@ -161,10 +175,11 @@ final class PillHUDController: ObservableObject {
         return CursorPosition.targetNotchScreen() ?? NSScreen.main
     }
 
-    private func pillFrame(for position: PillHUDPosition, screen: NSScreen) -> CGRect {
-        let length = CGFloat(settings.settings.hudPillLength)
-        let configuredThickness = CGFloat(settings.settings.hudPillThickness)
-        let thickness = settings.settings.hudPillStyle == .bare
+    private func pillFrame(for layout: LayoutSettings, screen: NSScreen) -> CGRect {
+        let position = layout.position
+        let length = CGFloat(layout.length)
+        let configuredThickness = CGFloat(layout.thickness)
+        let thickness = layout.style == .bare
             ? max(40, configuredThickness - 10)
             : configuredThickness
         let s = screen.frame
@@ -201,10 +216,10 @@ final class PillHUDController: ObservableObject {
         }
     }
 
-    private func positionPanel() {
+    private func positionPanel(using layout: LayoutSettings) {
         guard let panel = panel else { return }
         guard let screen = targetScreen() else { return }
-        let frame = pillFrame(for: settings.settings.hudPillPosition, screen: screen)
+        let frame = pillFrame(for: layout, screen: screen)
         panel.setFrame(frame, display: true)
         hostingView?.frame = NSRect(origin: .zero, size: frame.size)
     }

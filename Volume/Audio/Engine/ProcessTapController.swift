@@ -44,6 +44,8 @@ final class ProcessTapController: ProcessTapControlling {
     private var nextCallbackID: UInt32 = 0
 
     private nonisolated(unsafe) var crossfadeState = CrossfadeState()
+    private let crossfadeCompletionSignal = CrossfadeCompletionSignal()
+    private nonisolated(unsafe) var _didSignalCrossfadeCompletion = false
 
     // MARK: - Non-RT State (modified only from main thread)
 
@@ -576,6 +578,8 @@ final class ProcessTapController: ProcessTapControlling {
         logger.info("[CROSSFADE] Step 2: Preparing crossfade state")
 
         crossfadeState.beginWarmup()
+        crossfadeCompletionSignal.reset()
+        _didSignalCrossfadeCompletion = false
 
         logger.info("[CROSSFADE] Step 3: Creating secondary tap for \(deviceUIDs.count) device(s)")
         try createSecondaryTap(for: deviceUIDs)
@@ -600,17 +604,24 @@ final class ProcessTapController: ProcessTapControlling {
         crossfadeState.beginCrossfading()
         logger.info("[CROSSFADE] Step 5: Crossfade in progress (\(CrossfadeConfig.duration * 1000)ms)")
 
-        let timeoutMs = Int(CrossfadeConfig.duration * 1000) + (isBluetoothDestination ? 400 : 100)
-        let pollIntervalMs: UInt64 = 5
-        var elapsedMs: Int = 0
-
-        while (!crossfadeState.isCrossfadeComplete || !crossfadeState.isWarmupComplete) && elapsedMs < timeoutMs {
-            try await Task.sleep(for: .milliseconds(pollIntervalMs))
-            elapsedMs += Int(pollIntervalMs)
+        let timeout = CrossfadeConfig.duration + (isBluetoothDestination ? 0.4 : 0.1)
+        let completedFromAudioCallback = await withTaskGroup(of: Bool.self) { group in
+            group.addTask { [crossfadeCompletionSignal] in
+                await crossfadeCompletionSignal.wait()
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeout))
+                return false
+            }
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result
         }
 
+        try Task.checkCancellation()
+
         let progressAtTimeout = crossfadeState.progress
-        if progressAtTimeout < 1.0 {
+        if !completedFromAudioCallback || progressAtTimeout < 1.0 {
             logger.warning("[CROSSFADE] Timeout at \(progressAtTimeout * 100)% - forcing completion")
             crossfadeState.progress = 1.0
         }
@@ -1105,6 +1116,12 @@ final class ProcessTapController: ProcessTapControlling {
         } else {
             _secondaryPeakLevel = _secondaryPeakLevel + levelSmoothingFactor * (rawPeak - _secondaryPeakLevel)
             _ = crossfadeState.updateProgress(samples: totalSamplesThisBuffer)
+            if !_didSignalCrossfadeCompletion,
+               crossfadeState.isCrossfadeComplete,
+               crossfadeState.isWarmupComplete {
+                _didSignalCrossfadeCompletion = true
+                crossfadeCompletionSignal.signal()
+            }
         }
 
         if _isMuted {

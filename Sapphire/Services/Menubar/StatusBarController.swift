@@ -12,6 +12,26 @@ extension Notification.Name {
     static let menuBarHidingStateDidChange = Notification.Name("com.sapphire.menuBarHidingStateDidChange")
 }
 
+private struct StatusBarSettings: Equatable {
+    let enableAlwaysHiddenSection: Bool
+    let showSectionDividers: Bool
+    let hideMenuBarIcon: Bool
+    let controlItemIconStyle: ControlItemIconStyle
+    let autoRehide: Bool
+    let rehideStrategy: String
+    let tempShowInterval: TimeInterval
+
+    init(_ settings: Settings) {
+        enableAlwaysHiddenSection = settings.enableAlwaysHiddenSection
+        showSectionDividers = settings.showSectionDividers
+        hideMenuBarIcon = settings.hideMenuBarIcon
+        controlItemIconStyle = settings.controlItemIconStyle
+        autoRehide = settings.autoRehide
+        rehideStrategy = settings.rehideStrategy
+        tempShowInterval = settings.tempShowInterval
+    }
+}
+
 @MainActor
 final class StatusBarController {
 
@@ -41,7 +61,8 @@ final class StatusBarController {
     private var isConditionRevealed = false
 
     private var autoCollapseTimer: Timer?
-    private var smartRehideTimer: Timer?
+    private var smartRehideGlobalMonitor: Any?
+    private var smartRehideLocalMonitor: Any?
     private var appFocusObserver: NSObjectProtocol?
 
     private var cancellables = Set<AnyCancellable>()
@@ -134,14 +155,12 @@ final class StatusBarController {
     }
 
     private func setupObservers() {
-        SettingsModel.shared.$settings
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
+        SettingsModel.shared.changes(of: StatusBarSettings.init)
             .sink { [weak self] settings in self?.handleSettingsChange(settings) }
             .store(in: &cancellables)
     }
 
-    private func handleSettingsChange(_ settings: Settings) {
+    private func handleSettingsChange(_ settings: StatusBarSettings) {
         if settings.enableAlwaysHiddenSection != (alwaysHiddenItem != nil) { updateAlwaysHiddenItem() }
         updateAllItemVisuals()
         configureAutoRehide()
@@ -297,21 +316,40 @@ final class StatusBarController {
     }
 
     private func startSmartRehideMonitoring() {
-        smartRehideTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+        let mask: NSEvent.EventTypeMask = [
+            .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+        ]
+        smartRehideGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleSmartRehidePointerEvent() }
+        }
+        smartRehideLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            MainActor.assumeIsolated { self?.handleSmartRehidePointerEvent() }
+            return event
+        }
+        handleSmartRehidePointerEvent()
+    }
 
-            let mouseLoc = NSEvent.mouseLocation
+    private func handleSmartRehidePointerEvent() {
+        let mouseLocation = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: {
+            NSMouseInRect(mouseLocation, $0.frame, false)
+        }) else { return }
 
-            guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) else {
-                return
-            }
+        let menuBarBottom = screen.visibleFrame.maxY
+        let buffer: CGFloat = 50
+        if mouseLocation.y < menuBarBottom - buffer {
+            collapse()
+        }
+    }
 
-            let menuBarBottom = screen.visibleFrame.maxY
-            let buffer: CGFloat = 50.0
-
-            if mouseLoc.y < (menuBarBottom - buffer) {
-                self.collapse()
-            }
+    private func removeSmartRehideMonitors() {
+        if let smartRehideGlobalMonitor {
+            NSEvent.removeMonitor(smartRehideGlobalMonitor)
+            self.smartRehideGlobalMonitor = nil
+        }
+        if let smartRehideLocalMonitor {
+            NSEvent.removeMonitor(smartRehideLocalMonitor)
+            self.smartRehideLocalMonitor = nil
         }
     }
 
@@ -319,8 +357,7 @@ final class StatusBarController {
         autoCollapseTimer?.invalidate()
         autoCollapseTimer = nil
 
-        smartRehideTimer?.invalidate()
-        smartRehideTimer = nil
+        removeSmartRehideMonitors()
 
         if let observer = appFocusObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
