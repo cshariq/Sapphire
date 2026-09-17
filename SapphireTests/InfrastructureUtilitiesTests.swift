@@ -576,6 +576,33 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertLessThanOrEqual(small.size.width, 8)
         XCTAssertGreaterThan(larger.size.width, small.size.width)
     }
+
+    func testGameModeDetectionRecognizesGamesCategory() {
+        XCTAssertTrue(GameModeDetection.isGamesCategory("public.app-category.games"))
+        XCTAssertTrue(GameModeDetection.isGamesCategory("public.app-category.games.action"))
+        XCTAssertFalse(GameModeDetection.isGamesCategory("public.app-category.video"))
+        XCTAssertFalse(GameModeDetection.isGamesCategory(nil))
+    }
+
+    func testGameModeDetectionRequiresFrontmostGameFullScreen() {
+        let evaluation = FullScreenDetector.Evaluation(
+            displayIDs: [101],
+            displays: [
+                FullScreenDetector.DisplayResult(
+                    displayID: 101,
+                    pid: 42,
+                    appName: "Chess",
+                    isFullScreen: true,
+                    detail: "test"
+                )
+            ],
+            isAccessibilityTrusted: true
+        )
+
+        XCTAssertTrue(GameModeDetection.isFrontmostGameFullScreen(frontmostPID: 42, evaluation: evaluation))
+        XCTAssertFalse(GameModeDetection.isFrontmostGameFullScreen(frontmostPID: 99, evaluation: evaluation))
+        XCTAssertFalse(GameModeDetection.isFrontmostGameFullScreen(frontmostPID: nil, evaluation: evaluation))
+    }
 }
 
 @MainActor
