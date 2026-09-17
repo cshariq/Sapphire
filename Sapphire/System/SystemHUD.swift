@@ -309,6 +309,7 @@ class SystemHUDManager: ObservableObject {
             isBrightnessKey = true
         case NX_KEYTYPE_MUTE:
             if !eventSettings.enableVolumeHUD { return false }
+            if !Self.canRenderHUDOnCursorDisplay(isVolume: true) { return false }
             if isKeyDown { DispatchQueue.main.async { self.handleMute() } }
             return true
         default:
@@ -317,6 +318,7 @@ class SystemHUDManager: ObservableObject {
 
         if isVolumeKey && !eventSettings.enableVolumeHUD { return false }
         if isBrightnessKey && !eventSettings.enableBrightnessHUD { return false }
+        if !Self.canRenderHUDOnCursorDisplay(isVolume: isVolumeKey) { return false }
 
         guard let validAction = action else { return false }
 
@@ -333,6 +335,20 @@ class SystemHUDManager: ObservableObject {
         }
 
         return true
+    }
+
+    /// Returns false when Sapphire cannot show volume/brightness HUD on the cursor display
+    /// (e.g. notch is main-only but the user is on a secondary monitor with default HUD style).
+    /// In that case media keys must pass through so macOS can show its native OSD.
+    private nonisolated static func canRenderHUDOnCursorDisplay(isVolume: Bool) -> Bool {
+        let appSettings = SettingsModel.shared.settings
+        let style = isVolume ? appSettings.effectiveVolumeHUDStyle : appSettings.effectiveBrightnessHUDStyle
+        if style == .pill { return true }
+
+        guard let cursorScreen = CursorPosition.screen(containing: NSEvent.mouseLocation) else {
+            return false
+        }
+        return CursorPosition.visibleNotchWindows.contains { $0.screen == cursorScreen }
     }
 
     private func handleMute() {
