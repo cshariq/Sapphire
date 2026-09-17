@@ -1601,6 +1601,7 @@ struct Settings: Codable, Equatable {
     var eyeBreakWorkInterval: Double = 20
     var eyeBreakBreakDuration: Double = 20
     var eyeBreakSoundAlerts: Bool = true
+    var eyeBreakPauseDuringGameMode: Bool = false
     var showEyeBreakGraph: Bool = true
     var clickToShowTimerView: Bool = true
     var sleepInClamshell: Bool = true

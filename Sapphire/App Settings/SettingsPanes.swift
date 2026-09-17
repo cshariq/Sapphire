@@ -9644,6 +9644,14 @@ struct EyeBreakSettingsView: View {
             Divider().padding(.leading, 20)
 
             ToggleRow(
+                title: "Pause during Game Mode",
+                description: "Pause reminders while a categorized game is in full screen (same conditions macOS uses for Game Mode). Off by default.",
+                isOn: $settings.settings.eyeBreakPauseDuringGameMode
+            )
+
+            Divider().padding(.leading, 20)
+
+            ToggleRow(
                 title: "Show Activity Graph",
                 description: "Display a visual graph of your work and break intervals.",
                 isOn: $settings.settings.showEyeBreakGraph

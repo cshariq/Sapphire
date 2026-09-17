@@ -648,6 +648,7 @@ class LiveActivityManager: ObservableObject {
             NotificationCenter.default.publisher(for: NSNotification.Name("IOBluetoothHostControllerPoweredOnNotification")).mapToVoid(),
             NotificationCenter.default.publisher(for: NSNotification.Name("IOBluetoothHostControllerPoweredOffNotification")).mapToVoid(),
             eyeBreakManager.$isBreakTime.removeDuplicates().mapToVoid(),
+            eyeBreakManager.$isPausedForGameMode.removeDuplicates().mapToVoid(),
             timerManager.$isRunning.removeDuplicates().mapToVoid(),
             timerManager.$ringingTimers.removeDuplicates().mapToVoid(),
             FocusSessionManager.shared.$phase.removeDuplicates().mapToVoid(),
@@ -1832,7 +1833,10 @@ class LiveActivityManager: ObservableObject {
 
     private func checkForEyeBreak() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
         if !eyeBreakManager.isBreakTime { hasShownCurrentEyeBreak = false }
-        guard settingsModel.settings.eyeBreakLiveActivityEnabled, eyeBreakManager.isBreakTime, !hasShownCurrentEyeBreak else {
+        guard settingsModel.settings.eyeBreakLiveActivityEnabled,
+              !eyeBreakManager.isPausedForGameMode,
+              eyeBreakManager.isBreakTime,
+              !hasShownCurrentEyeBreak else {
             return nil
         }
         return (
