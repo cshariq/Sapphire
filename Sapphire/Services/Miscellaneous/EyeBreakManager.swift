@@ -163,10 +163,7 @@ class EyeBreakManager: ObservableObject {
 
     private func startBreakTimer() {
         if shouldPauseForGameMode && gameModeLikelyActive {
-            isBreakTime = true
-            isDoneButtonEnabled = false
-            timeRemainingInBreak = breakInterval
-            pauseForGameModeIfNeeded()
+            pauseForGameModeIfNeeded(pendingBreakDuration: breakInterval)
             return
         }
 
@@ -197,7 +194,6 @@ class EyeBreakManager: ObservableObject {
                 self.scheduleAutoAdvance()
             }
         }
-        pauseForGameModeIfNeeded()
     }
 
     private func scheduleAutoAdvance() {
@@ -319,7 +315,7 @@ class EyeBreakManager: ObservableObject {
         }
     }
 
-    private func pauseForGameModeIfNeeded() {
+    private func pauseForGameModeIfNeeded(pendingBreakDuration: TimeInterval? = nil) {
         guard shouldPauseForGameMode, gameModeLikelyActive, !isPausedForGameMode else { return }
         guard settingsModel.settings.eyeBreakLiveActivityEnabled else { return }
 
@@ -329,11 +325,16 @@ class EyeBreakManager: ObservableObject {
         autoAdvanceTimer?.invalidate()
         autoAdvanceTimer = nil
 
-        pausedWasBreakTime = isBreakTime
-        if isBreakTime {
-            pausedBreakRemaining = timeRemainingInBreak
+        if let pendingBreakDuration {
+            pausedWasBreakTime = true
+            pausedBreakRemaining = pendingBreakDuration
         } else {
-            pausedWorkRemaining = timeUntilNextBreak
+            pausedWasBreakTime = isBreakTime
+            if isBreakTime {
+                pausedBreakRemaining = timeRemainingInBreak
+            } else {
+                pausedWorkRemaining = timeUntilNextBreak
+            }
         }
         workDeadline = nil
         breakDeadline = nil
