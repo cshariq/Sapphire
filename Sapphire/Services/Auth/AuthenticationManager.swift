@@ -53,7 +53,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     static let shared = AuthenticationManager()
 
     @Published var isEnabled = false
-    @Published var status: String = "Disabled"
+    @Published var status: String = String(localized: "Disabled")
     @Published var scannedDevices: [Device] = []
     @Published var isScanning = false
     @Published var selectedDeviceID: String?
@@ -183,9 +183,9 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         (NSApp.delegate as? AppDelegate)?.markFaceIDRequiresPassword()
         switch event {
         case .spoofLocked:
-            setStatusThrottled("Face ID locked — spoof detected.")
+            setStatusThrottled(String(localized: "Face ID locked — spoof detected."))
         case .mismatchTimeout:
-            setStatusThrottled("Face ID stopped — face not recognized.")
+            setStatusThrottled(String(localized: "Face ID stopped — face not recognized."))
         }
     }
 
@@ -212,9 +212,9 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     var faceIDLocationDescription: String {
         let settings = settings.settings
-        guard settings.faceIDLocationPolicy == .selectedWiFiNetworks else { return "Everywhere" }
-        guard let networkName = WiFiStatusMonitor.shared.state.networkName else { return "No Wi-Fi network" }
-        return settings.faceIDAllowedWiFiNetworks.contains(networkName) ? networkName : "\(networkName) is not allowed"
+        guard settings.faceIDLocationPolicy == .selectedWiFiNetworks else { return String(localized: "Everywhere") }
+        guard let networkName = WiFiStatusMonitor.shared.state.networkName else { return String(localized: "No Wi-Fi network") }
+        return settings.faceIDAllowedWiFiNetworks.contains(networkName) ? networkName : String(localized: "\(networkName) is not allowed")
     }
 
     func isFaceIDAllowedAtCurrentLocation() -> Bool {
@@ -232,7 +232,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         guard settings.current.faceIDLocationPolicy == .selectedWiFiNetworks else { return }
         if !isFaceIDAllowedAtCurrentLocation(), isFaceIDAuthenticating {
             tearDownFaceID()
-            setStatusThrottled("Face ID unavailable at this location.")
+            setStatusThrottled(String(localized: "Face ID unavailable at this location."))
         }
         (NSApp.delegate as? AppDelegate)?.refreshFaceIDLocationAvailability()
     }
@@ -263,7 +263,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         if isBluetoothAuthenticating {
             isBluetoothAuthenticating = false
             ble.monitoredUUID = nil
-            setStatusThrottled("Disabled")
+            setStatusThrottled(String(localized: "Disabled"))
             self.monitoredPeripheralState = .disconnected
         }
         if isFaceIDAuthenticating {
@@ -298,13 +298,13 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         }
 
         guard hasAccessibilityPermission(promptIfNeeded: true) else {
-            setStatusThrottled("Enable Accessibility in System Settings to allow auto-unlock.")
+            setStatusThrottled(String(localized: "Enable Accessibility in System Settings to allow auto-unlock."))
             isUnlockInProgress = false
             stopAllAuthentication()
             return
         }
 
-        setStatusThrottled("Unlocking...")
+        setStatusThrottled(String(localized: "Unlocking..."))
         let attemptID = UUID()
         unlockAttemptID = attemptID
 
@@ -341,7 +341,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         guard let encrypted = KeychainManager.shared.load(for: passwordAccount),
               let decrypted = CryptoManager.shared.decrypt(data: encrypted),
               let password = String(data: decrypted, encoding: .utf8) else {
-            setStatusThrottled("Password not set")
+            setStatusThrottled(String(localized: "Password not set"))
             showPasswordPrompt()
             isUnlockInProgress = false
             return
@@ -351,7 +351,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         defer { passwordData.resetBytes(in: 0..<passwordData.count) }
 
         guard let source = CGEventSource(stateID: .hidSystemState) else {
-            setStatusThrottled("Unlock failed")
+            setStatusThrottled(String(localized: "Unlock failed"))
             isUnlockInProgress = false
             return
         }
@@ -383,7 +383,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             retDown?.post(tap: tapLocation)
             retUp?.post(tap: tapLocation)
 
-            self.setStatusThrottled("Unlocked")
+            self.setStatusThrottled(String(localized: "Unlocked"))
 
             if attempt < 2 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -409,27 +409,27 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
         isBluetoothAuthenticating = true
         ble.startMonitor(uuid: uuid)
-        setStatusThrottled("Monitoring for device...")
+        setStatusThrottled(String(localized: "Monitoring for device..."))
     }
 
     func startScan(includeUnnamed: Bool) {
-        guard ble.centralMgr.state == .poweredOn else { setStatusThrottled("Bluetooth is off"); return }
+        guard ble.centralMgr.state == .poweredOn else { setStatusThrottled(String(localized: "Bluetooth is off")); return }
         ble.thresholdRSSI = settings.current.bluetoothUnlockMinScanRSSI
         scannedDevices.removeAll()
         ble.devices.removeAll()
         isScanning = true
-        setStatusThrottled("Scanning...")
+        setStatusThrottled(String(localized: "Scanning..."))
         ble.startScanning(includeUnnamed: includeUnnamed)
     }
 
     func updateScanFilter(includeUnnamed: Bool) {
         ble.includeUnnamedDevices = includeUnnamed
-        if !includeUnnamed { scannedDevices.removeAll { $0.displayName == "Unnamed Device" } }
+        if !includeUnnamed { scannedDevices.removeAll { $0.isUnnamed } }
     }
 
     func stopScan() {
         isScanning = false
-        setStatusThrottled(isEnabled ? "Monitoring" : "Idle")
+        setStatusThrottled(isEnabled ? String(localized: "authentication.monitoring", defaultValue: "Monitoring") : String(localized: "Idle"))
         ble.stopScanning()
     }
 
@@ -547,21 +547,21 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         rssiUpdateWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            guard let rssi = rssi else { self.setStatusThrottled("Searching..."); return }
+            guard let rssi = rssi else { self.setStatusThrottled(String(localized: "Searching...")); return }
             let unlock = self.settings.current.bluetoothUnlockUnlockRSSI
             let lock = self.settings.current.bluetoothUnlockLockRSSI
             let newStatus: String
 
-            if rssi >= unlock { newStatus = "Monitoring (Near)" }
-            else if rssi < lock { newStatus = "Monitoring (Far)" }
-            else { newStatus = "Monitoring (Safe Zone)" }
+            if rssi >= unlock { newStatus = String(localized: "Monitoring (Near)") }
+            else if rssi < lock { newStatus = String(localized: "Monitoring (Far)") }
+            else { newStatus = String(localized: "Monitoring (Safe Zone)") }
             self.setStatusThrottled(newStatus)
         }
         rssiUpdateWorkItem = work
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
-    func bluetoothPowerWarn() { setStatusThrottled("Bluetooth is off!") }
+    func bluetoothPowerWarn() { setStatusThrottled(String(localized: "Bluetooth is off!")) }
 
     func updatePresence(presence: Bool, reason: String) {
         if isEnabled && isBluetoothAuthenticating {
@@ -581,12 +581,12 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             if isBluetoothAuthenticating && ble.monitoredUUID == uuid { return }
             isBluetoothAuthenticating = true
             ble.startMonitor(uuid: uuid)
-            setStatusThrottled("Monitoring for device...")
+            setStatusThrottled(String(localized: "Monitoring for device..."))
         } else {
             if isBluetoothAuthenticating {
                 isBluetoothAuthenticating = false
                 ble.stopMonitor()
-                setStatusThrottled("Disabled")
+                setStatusThrottled(String(localized: "Disabled"))
                 self.monitoredPeripheralState = .disconnected
             }
         }

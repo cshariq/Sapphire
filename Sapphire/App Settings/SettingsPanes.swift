@@ -11,6 +11,19 @@ import Charts
 import CoreBluetooth
 import UniformTypeIdentifiers
 
+private extension SensorGroup {
+    var displayName: String {
+        switch self {
+        case .CPU: return "CPU"
+        case .GPU: return "GPU"
+        case .system: return String(localized: "Systems")
+        case .sensor: return String(localized: "Sensors")
+        case .hid: return "HID"
+        case .unknown: return String(localized: "Unknown")
+        }
+    }
+}
+
 struct SettingsDetailView: View {
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     var selectedSection: SettingsSection?
@@ -171,10 +184,11 @@ struct RequiredPermissionsView: View {
         let names = missingPermissions.map(\.title)
         if names.isEmpty { return "" }
         if names.count == 1 {
-            return "\(names[0]) permission has not been granted. Some features may not work until it is enabled."
+            return String(localized: "\(names[0]) permission has not been granted. Some features may not work until it is enabled.")
         }
-        let list = names.dropLast().joined(separator: ", ") + " and " + names.last!
-        return "\(list) permissions have not been granted. Some features may not work until they are enabled."
+        let separator = String(localized: "settings.permissions.listSeparator", defaultValue: ", ", comment: "Separator between permission names in a list.")
+        let list = String(localized: "settings.permissions.list", defaultValue: "\(names.dropLast().joined(separator: separator)) and \(names.last!)", comment: "List of missing permission names: the leading names, then the last name.")
+        return String(localized: "\(list) permissions have not been granted. Some features may not work until they are enabled.")
     }
 }
 
@@ -185,8 +199,8 @@ struct PermissionStatusRowView: View {
         HStack(spacing: 15) {
             Image(systemName: permission.iconName).font(.system(size: 18, weight: .medium)).foregroundColor(permission.iconColor).frame(width: 36, height: 36).background(permission.iconColor.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(permission.title).font(.system(size: 14, weight: .medium))
-                Text(permission.description).font(.caption).foregroundColor(.secondary)
+                Text(verbatim: permission.title).font(.system(size: 14, weight: .medium))
+                Text(verbatim: permission.description).font(.caption).foregroundColor(.secondary)
             }
             Spacer()
             let status = permissionsManager.status(for: permission.type)
@@ -229,7 +243,7 @@ struct PermissionFeatureInfoPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label {
-                Text(permission.title)
+                Text(verbatim: permission.title)
             } icon: {
                 Image(systemName: permission.iconName)
                     .foregroundStyle(permission.iconColor)
@@ -239,7 +253,7 @@ struct PermissionFeatureInfoPopover: View {
             Divider()
 
             if features.isEmpty {
-                Text(permission.description)
+                Text(verbatim: permission.description)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -254,7 +268,7 @@ struct PermissionFeatureInfoPopover: View {
                             .font(.system(size: 12))
                             .foregroundStyle(section.iconBackgroundColor)
                             .frame(width: 16)
-                        Text(section.label)
+                        Text(verbatim: section.label)
                             .font(.subheadline)
                     }
                 }
@@ -281,7 +295,7 @@ struct NotchAppearanceEditorView: View {
                 Spacer()
                 Picker("", selection: $appearance.mode) {
                     ForEach(NotchAppearanceMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                        Text(verbatim: mode.displayName).tag(mode)
                     }
                 }
                 .labelsHidden()
@@ -550,8 +564,8 @@ private struct SystemEnhanceHingeAnimationSettingsCard: View {
     @ObservedObject private var permissionsManager = PermissionsManager.shared
 
     private var currentLidAngleText: String {
-        guard lidAngleSensor.isAvailable else { return "Unavailable" }
-        guard lidAngleSensor.isReporting else { return "Connecting…" }
+        guard lidAngleSensor.isAvailable else { return String(localized: "Unavailable") }
+        guard lidAngleSensor.isReporting else { return String(localized: "Connecting…") }
         return "\(Int(lidAngleSensor.angle.rounded()))°"
     }
 
@@ -617,6 +631,13 @@ struct AppsSettingsView: View {
         case uninstall = "Uninstall"
         var id: String { rawValue }
         var icon: String { self == .updates ? "arrow.triangle.2.circlepath" : "trash" }
+
+        var displayName: String {
+            switch self {
+            case .updates: return String(localized: "Updates")
+            case .uninstall: return String(localized: "Uninstall")
+            }
+        }
     }
 
     private enum AppUpdateFilter: String, CaseIterable, Identifiable {
@@ -626,6 +647,16 @@ struct AppsSettingsView: View {
         case ignored = "Ignored"
         case all = "All"
         var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .updates: return String(localized: "Updates")
+            case .current: return String(localized: "settings.apps.filter.current", defaultValue: "Current", comment: "Filter showing apps already at the latest version.")
+            case .attention: return String(localized: "Needs attention")
+            case .ignored: return String(localized: "Ignored")
+            case .all: return String(localized: "All")
+            }
+        }
     }
 
     private struct UpdateSnapshot {
@@ -733,7 +764,7 @@ struct AppsSettingsView: View {
 
             Picker("Apps section", selection: $selectedTab) {
                 ForEach(AppsTab.allCases) { tab in
-                    Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                    Label(tab.displayName, systemImage: tab.icon).tag(tab)
                 }
             }
             .labelsHidden()
@@ -760,23 +791,23 @@ struct AppsSettingsView: View {
     @ViewBuilder
     private func updateMetricCards(snapshot: UpdateSnapshot) -> some View {
         AppsMetricCard(
-            title: "Updates",
+            title: String(localized: "Updates"),
             value: "\(snapshot.availableCount)",
-            detail: snapshot.availableCount == 1 ? "app available" : "apps available",
+            detail: snapshot.availableCount == 1 ? String(localized: "app available") : String(localized: "apps available"),
             systemImage: "arrow.down.circle.fill",
             tint: .blue
         )
         AppsMetricCard(
-            title: "Current",
+            title: String(localized: "settings.apps.filter.current", defaultValue: "Current", comment: "Filter showing apps already at the latest version."),
             value: "\(snapshot.currentCount)",
-            detail: snapshot.currentCount == 1 ? "app up to date" : "apps up to date",
+            detail: snapshot.currentCount == 1 ? String(localized: "app up to date") : String(localized: "apps up to date"),
             systemImage: "checkmark.circle.fill",
             tint: .green
         )
         AppsMetricCard(
-            title: "Needs attention",
+            title: String(localized: "Needs attention"),
             value: "\(snapshot.unsupportedCount)",
-            detail: snapshot.unsupportedCount == 1 ? "app unsupported" : "apps unsupported",
+            detail: snapshot.unsupportedCount == 1 ? String(localized: "app unsupported") : String(localized: "apps unsupported"),
             systemImage: "exclamationmark.triangle.fill",
             tint: .orange
         )
@@ -825,7 +856,7 @@ struct AppsSettingsView: View {
 
             Picker("Update filter", selection: $updateFilter) {
                 ForEach(AppUpdateFilter.allCases) { filter in
-                    Text(filter.rawValue).tag(filter)
+                    Text(verbatim: filter.displayName).tag(filter)
                 }
             }
             .labelsHidden()
@@ -951,13 +982,13 @@ struct AppsSettingsView: View {
                         HStack(spacing: 12) {
                             CachedAppIconView(url: app.url, size: 40, cornerRadius: 9)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(app.name).font(.headline)
+                                Text(verbatim: app.name).font(.headline)
                                 Text(app.isSystem
                                     ? "Version \(app.version) · protected app"
                                     : "Version \(app.version) · \(app.formattedSize)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                Text(app.bundleIdentifier)
+                                Text(verbatim: app.bundleIdentifier)
                                     .font(.caption2.monospaced())
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(1)
@@ -1035,11 +1066,11 @@ private struct AppsMetricCard: View {
 }
 
 private struct AppsSearchField: View {
-    let placeholder: String
+    let placeholder: LocalizedStringKey
     @Binding var text: String
 
     var body: some View {
-        ClearableSearchField(placeholder: LocalizedStringKey(placeholder), text: $text)
+        ClearableSearchField(placeholder: placeholder, text: $text)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -1098,7 +1129,7 @@ private struct AppUninstallReviewSheet: View {
 
                         ForEach(groupedArtifacts, id: \.0.id) { category, artifacts in
                             VStack(alignment: .leading, spacing: 0) {
-                                Label(category.rawValue, systemImage: category.systemImage)
+                                Label(category.displayName, systemImage: category.systemImage)
                                     .font(.headline)
                                     .padding(.bottom, 7)
                                 ForEach(artifacts) { artifact in
@@ -1108,10 +1139,10 @@ private struct AppUninstallReviewSheet: View {
                                     )) {
                                         HStack(spacing: 10) {
                                             VStack(alignment: .leading, spacing: 2) {
-                                                Text(artifact.url.lastPathComponent)
+                                                Text(verbatim: artifact.url.lastPathComponent)
                                                     .font(.subheadline.weight(.medium))
                                                     .lineLimit(1)
-                                                Text(artifact.url.path)
+                                                Text(verbatim: artifact.url.path)
                                                     .font(.caption2.monospaced())
                                                     .foregroundStyle(.secondary)
                                                     .lineLimit(1)
@@ -1121,7 +1152,7 @@ private struct AppUninstallReviewSheet: View {
                                                         .font(.caption2)
                                                         .foregroundStyle(.secondary)
                                                 } else if artifact.confidence != .exact {
-                                                    Text(artifact.confidence.explanation)
+                                                    Text(verbatim: artifact.confidence.explanation)
                                                         .font(.caption2)
                                                         .foregroundStyle(.orange)
                                                 }
@@ -1132,7 +1163,7 @@ private struct AppUninstallReviewSheet: View {
                                                     .foregroundStyle(.secondary)
                                                     .help("Requires administrator access; Sapphire cannot remove this item")
                                             }
-                                            Text(artifact.formattedSize)
+                                            Text(verbatim: artifact.formattedSize)
                                                 .font(.caption.monospacedDigit())
                                                 .foregroundStyle(.secondary)
                                         }
@@ -1191,7 +1222,7 @@ private struct AppUninstallReviewSheet: View {
             Button("Uninstall", role: .destructive) { model.removeConfirmed() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(model.removalMessage)
+            Text(verbatim: model.removalMessage)
         }
     }
 
@@ -1205,14 +1236,16 @@ private struct AppUninstallReviewSheet: View {
                 ? (result.succeeded ? "App and selected data removed" : "App removed with some leftovers")
                 : "App could not be removed")
                 .font(.title3.bold())
-            Text("\(result.removed.count) item\(result.removed.count == 1 ? "" : "s") moved to Trash.")
+            Text(verbatim: result.removed.count == 1
+                ? String(localized: "1 item moved to Trash.")
+                : String(localized: "\(String(result.removed.count)) items moved to Trash."))
                 .foregroundStyle(.secondary)
             if !result.failures.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(result.failures) { failure in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(failure.url.path).font(.caption.monospaced()).lineLimit(1)
-                            Text(failure.message).font(.caption2).foregroundStyle(.secondary)
+                            Text(verbatim: failure.url.path).font(.caption.monospaced()).lineLimit(1)
+                            Text(verbatim: failure.message).font(.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -1236,7 +1269,7 @@ private struct InstalledAppUpdateRowView: View {
             CachedAppIconView(url: entry.url, size: 36, cornerRadius: 8)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
+                Text(verbatim: entry.name)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
 
@@ -1267,7 +1300,7 @@ private struct InstalledAppUpdateRowView: View {
                             .font(.caption)
                         }
                     }
-                    if checker.buttonLabel(for: entry) == "Open App" {
+                    if checker.canOpenManagedUpdater(for: entry) {
                         Text("Uses its own signed updater — Sapphire will open the app.")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
@@ -1386,7 +1419,7 @@ private struct InstalledAppReleaseNotesSheet: View {
             Divider()
             ScrollView {
                 if let notes = entry.releaseNotes, !notes.isEmpty {
-                    Text(notes)
+                    Text(verbatim: notes)
                         .font(.body)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1454,7 +1487,7 @@ struct StorageSettingsView: View {
         .alert("Move item to Trash?", isPresented: $model.confirmingRemoval) {
             Button("Move to Trash", role: .destructive) { model.removeConfirmed() }
             Button("Cancel", role: .cancel) { model.cancelRemovalRequest() }
-        } message: { Text(model.removalMessage) }
+        } message: { Text(verbatim: model.removalMessage) }
     }
 }
 
@@ -1607,7 +1640,7 @@ struct GeneralSettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     SettingsSectionHeader(title: "Behavior")
                 ForEach(GeneralSettingType.allCases) { setting in
-                    IconToggleRow(systemImage: setting.systemImage, color: setting.iconColor, title: setting.displayName, isOn: binding(for: setting))
+                    IconToggleRow(systemImage: setting.systemImage, color: setting.iconColor, title: Text(verbatim: setting.displayName), isOn: binding(for: setting))
                     if setting == .expandOnHover, settings.settings.expandOnHover {
                         CustomSliderRowView(
                             label: "Hover Delay",
@@ -1723,35 +1756,35 @@ struct GeneralSettingsView: View {
 
                             Group {
                                 Text("Main Transitions").font(.caption.bold()).foregroundColor(.secondary)
-                                AnimationSliderRow(title: "Expand Response", description: "Opening the main widget view.", value: $settings.settings.customAnimationConfiguration.expandResponse, range: 0.1...1.0)
-                                AnimationSliderRow(title: "Expand Damping", description: "", value: $settings.settings.customAnimationConfiguration.expandDamping, range: 0.4...1.0)
+                                AnimationSliderRow(title: String(localized: "Expand Response"), description: String(localized: "Opening the main widget view."), value: $settings.settings.customAnimationConfiguration.expandResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Expand Damping"), description: "", value: $settings.settings.customAnimationConfiguration.expandDamping, range: 0.4...1.0)
                                 Divider()
-                                AnimationSliderRow(title: "Collapse Response", description: "Closing the main widget view.", value: $settings.settings.customAnimationConfiguration.collapseResponse, range: 0.1...1.0)
-                                AnimationSliderRow(title: "Collapse Damping", description: "", value: $settings.settings.customAnimationConfiguration.collapseDamping, range: 0.4...1.0)
+                                AnimationSliderRow(title: String(localized: "Collapse Response"), description: String(localized: "Closing the main widget view."), value: $settings.settings.customAnimationConfiguration.collapseResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Collapse Damping"), description: "", value: $settings.settings.customAnimationConfiguration.collapseDamping, range: 0.4...1.0)
                                 Divider()
-                                AnimationSliderRow(title: "Swipe Open Response", description: "Opening the widget with a trackpad swipe.", value: $settings.settings.customAnimationConfiguration.swipeOpenResponse, range: 0.1...1.0)
-                                AnimationSliderRow(title: "Swipe Open Damping", description: "", value: $settings.settings.customAnimationConfiguration.swipeOpenDamping, range: 0.4...1.0)
+                                AnimationSliderRow(title: String(localized: "Swipe Open Response"), description: String(localized: "Opening the widget with a trackpad swipe."), value: $settings.settings.customAnimationConfiguration.swipeOpenResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Swipe Open Damping"), description: "", value: $settings.settings.customAnimationConfiguration.swipeOpenDamping, range: 0.4...1.0)
                             }
 
                             Group {
                                 Text("Dynamic States").font(.caption.bold()).foregroundColor(.secondary).padding(.top)
-                                AnimationSliderRow(title: "Hover Response", description: "The small expansion when hovering over the notch.", value: $settings.settings.customAnimationConfiguration.hoverResponse, range: 0.1...1.0)
-                                AnimationSliderRow(title: "Hover Damping", description: "", value: $settings.settings.customAnimationConfiguration.hoverDamping, range: 0.4...1.0)
+                                AnimationSliderRow(title: String(localized: "Hover Response"), description: String(localized: "The small expansion when hovering over the notch."), value: $settings.settings.customAnimationConfiguration.hoverResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Hover Damping"), description: "", value: $settings.settings.customAnimationConfiguration.hoverDamping, range: 0.4...1.0)
                                 Divider()
-                                AnimationSliderRow(title: "Auto-Expand Response", description: "When a Live Activity appears automatically.", value: $settings.settings.customAnimationConfiguration.autoExpandResponse, range: 0.1...1.0)
-                                AnimationSliderRow(title: "Auto-Expand Damping", description: "", value: $settings.settings.customAnimationConfiguration.autoExpandDamping, range: 0.4...1.0)
+                                AnimationSliderRow(title: String(localized: "Auto-Expand Response"), description: String(localized: "When a Live Activity appears automatically."), value: $settings.settings.customAnimationConfiguration.autoExpandResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Auto-Expand Damping"), description: "", value: $settings.settings.customAnimationConfiguration.autoExpandDamping, range: 0.4...1.0)
                             }
 
                             Group {
                                 Text("Content & Activities").font(.caption.bold()).foregroundColor(.secondary).padding(.top)
-                                AnimationSliderRow(title: "Content Transition Response", description: "How widgets appear inside the expanded view.", value: $settings.settings.customAnimationConfiguration.contentTransitionResponse, range: 0.1...1.0)
-                                AnimationSliderRow(title: "Content Transition Damping", description: "", value: $settings.settings.customAnimationConfiguration.contentTransitionDamping, range: 0.4...1.0)
+                                AnimationSliderRow(title: String(localized: "Content Transition Response"), description: String(localized: "How widgets appear inside the expanded view."), value: $settings.settings.customAnimationConfiguration.contentTransitionResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Content Transition Damping"), description: "", value: $settings.settings.customAnimationConfiguration.contentTransitionDamping, range: 0.4...1.0)
                                 Divider()
-                                AnimationSliderRow(title: "Activity Switch Response", description: "Transitioning between different Live Activities.", value: $settings.settings.customAnimationConfiguration.activityToActivityResponse, range: 0.1...1.0)
-                                AnimationSliderRow(title: "Activity Switch Damping", description: "", value: $settings.settings.customAnimationConfiguration.activityToActivityDamping, range: 0.4...1.0)
+                                AnimationSliderRow(title: String(localized: "Activity Switch Response"), description: String(localized: "Transitioning between different Live Activities."), value: $settings.settings.customAnimationConfiguration.activityToActivityResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Activity Switch Damping"), description: "", value: $settings.settings.customAnimationConfiguration.activityToActivityDamping, range: 0.4...1.0)
                                 Divider()
-                                AnimationSliderRow(title: "Activity Morph Response", description: "Smoothly changing the shape of a Live Activity.", value: $settings.settings.customAnimationConfiguration.activityMorphResponse, range: 0.1...1.0)
-                                AnimationSliderRow(title: "Activity Morph Damping", description: "", value: $settings.settings.customAnimationConfiguration.activityMorphDamping, range: 0.4...1.0)
+                                AnimationSliderRow(title: String(localized: "Activity Morph Response"), description: String(localized: "Smoothly changing the shape of a Live Activity."), value: $settings.settings.customAnimationConfiguration.activityMorphResponse, range: 0.1...1.0)
+                                AnimationSliderRow(title: String(localized: "Activity Morph Damping"), description: "", value: $settings.settings.customAnimationConfiguration.activityMorphDamping, range: 0.4...1.0)
                             }
                         }
                         .padding(.horizontal)
@@ -1841,15 +1874,15 @@ struct GeneralSettingsView: View {
     private func descriptionForCurrentProfile() -> String {
         switch settings.settings.animationProfile {
         case .snappy:
-            return "A quick and responsive feel with minimal bounce."
+            return String(localized: "A quick and responsive feel with minimal bounce.")
         case .fluid:
-            return "The default. Content grows out of the notch with the shape, blurring into focus as it lands."
+            return String(localized: "The default. Content grows out of the notch with the shape, blurring into focus as it lands.")
         case .bouncy:
-            return "A playful and energetic animation with noticeable bounce."
+            return String(localized: "A playful and energetic animation with noticeable bounce.")
         case .calm:
-            return "A slower, more graceful animation with a very gentle ease."
+            return String(localized: "A slower, more graceful animation with a very gentle ease.")
         case .custom:
-            return "Fine-tune every animation parameter to your exact liking."
+            return String(localized: "Fine-tune every animation parameter to your exact liking.")
         }
     }
 }
@@ -2133,8 +2166,8 @@ struct FileShelfSettingsView: View {
                     Divider().padding(.leading, 20)
 
                     ToggleRow(
-                        title: "Share to Devices",
-                        description: deviceDestinationDescription,
+                        title: Text("Share to Devices"),
+                        description: Text(verbatim: deviceDestinationDescription),
                         isOn: $settings.settings.fileShelfDeviceDestinationsEnabled
                     )
                 }
@@ -2147,9 +2180,9 @@ struct FileShelfSettingsView: View {
     private var deviceDestinationDescription: String {
         let count = continuity.peers.count
         if count == 0 {
-            return "Drop files onto your paired Continuity phone from the File Shelf. Pair a device in Continuity settings first."
+            return String(localized: "Drop files onto your paired Continuity phone from the File Shelf. Pair a device in Continuity settings first.")
         }
-        return "Drop files onto any of your \(count) paired Continuity \(count == 1 ? "device" : "devices") from the File Shelf. Offline devices stay visible."
+        return String(localized: "Drop files onto any of your \(count) paired Continuity devices from the File Shelf. Offline devices stay visible.")
     }
 }
 
@@ -2381,7 +2414,7 @@ struct ClipboardSettingsView: View {
                                 set: { settings.settings.clipboardHistoryLimit = Int($0.rounded()) }
                             ),
                             range: 4...Double(ClipboardHistoryBudget.itemLimitRange.upperBound),
-                            specifier: "%.0f items"
+                            specifier: String(localized: "%.0f items")
                         )
 
                         Divider().padding(.leading, 20)
@@ -2691,7 +2724,7 @@ struct MirrorSettingsView: View {
                         Spacer()
                         Picker("", selection: $settings.settings.mirrorRotationMode) {
                             ForEach(MirrorRotationMode.allCases) { mode in
-                                Text(mode.displayName).tag(mode)
+                                Text(verbatim: mode.displayName).tag(mode)
                             }
                         }
                         .labelsHidden()
@@ -2871,6 +2904,15 @@ struct LiveActivitiesSettingsView: View {
         case battery = "Battery"
         case weather = "Weather"
         var id: String { self.rawValue }
+
+        var displayName: String {
+            switch self {
+            case .none: return String(localized: "None")
+            case .stats: return String(localized: "Stats")
+            case .battery: return String(localized: "Battery")
+            case .weather: return String(localized: "Weather")
+            }
+        }
     }
 
     private var currentPersistentActivity: PersistentActivitySelection {
@@ -2986,7 +3028,7 @@ struct LiveActivitiesSettingsView: View {
                         Spacer()
                         Picker("Persistent Activity", selection: persistentActivityBinding) {
                             ForEach(PersistentActivitySelection.allCases) { option in
-                                Text(option.rawValue).tag(option)
+                                Text(verbatim: option.displayName).tag(option)
                             }
                         }
                         .labelsHidden()
@@ -3169,7 +3211,7 @@ fileprivate struct SensorSelectionView: View {
                     List {
                         ForEach(SensorGroup.allCases, id: \.self) { group in
                             if let groupSensors = groupedSensors[group], !groupSensors.isEmpty {
-                                Section(header: Text(group.rawValue).font(.headline)) {
+                                Section(header: Text(verbatim: group.displayName).font(.headline)) {
                                     ForEach(groupSensors, id: \.key) { sensor in
                                         Toggle(sensor.name, isOn: Binding<Bool>(
                                             get: { selectedSensorKeys.contains(sensor.key) },
@@ -3264,7 +3306,7 @@ struct ShortcutsSettingsView: View {
                     if fetcher.isLoading {
                         ProgressView().frame(maxWidth: .infinity, minHeight: 200)
                     } else if let error = fetcher.accessError {
-                         InfoContainer(text: error, iconName: "exclamationmark.triangle.fill", color: .yellow)
+                         InfoContainer(text: Text(verbatim: error), iconName: "exclamationmark.triangle.fill", color: .yellow)
                             .padding(.horizontal)
                     } else {
                         ScrollView {
@@ -3323,7 +3365,7 @@ fileprivate struct AddedShortcutRow: View {
                 ShortcutEditorView(shortcut: $shortcut)
             }
 
-            Text(shortcut.name)
+            Text(verbatim: shortcut.name)
             Spacer()
 
             Button(action: onRemove) {
@@ -3348,7 +3390,7 @@ fileprivate struct AvailableShortcutRow: View {
                 Image(nsImage: ShortcutsManager.shared.getIcon(for: shortcut))
                     .resizable().frame(width: 28, height: 28)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                Text(shortcut.name)
+                Text(verbatim: shortcut.name)
                     .foregroundColor(isEnabled ? .primary : .secondary)
                 Spacer()
                 Image(systemName: "plus.circle.fill")
@@ -3423,7 +3465,7 @@ fileprivate struct IconPickerView: View {
     }
 
     static let iconSections: [IconSection] = [
-        IconSection(title: "Interface & General", symbols: [
+        IconSection(title: String(localized: "Interface & General"), symbols: [
             "house.fill", "house", "gearshape.fill", "gearshape", "gearshape.2.fill", "gearshape.2",
             "slider.horizontal.3", "slider.vertical.3", "ellipsis", "ellipsis.circle.fill", "ellipsis.circle",
             "plus", "plus.circle.fill", "plus.circle", "minus", "minus.circle.fill", "minus.circle",
@@ -3446,7 +3488,7 @@ fileprivate struct IconPickerView: View {
             "list.dash", "list.clipboard.fill", "list.clipboard"
         ]),
 
-        IconSection(title: "Files & Documents", symbols: [
+        IconSection(title: String(localized: "Files & Documents"), symbols: [
             "folder.fill", "folder", "folder.circle.fill", "folder.circle", "folder.badge.plus",
             "folder.badge.minus", "folder.badge.person.crop", "folder.badge.questionmark",
             "doc.fill", "doc", "doc.text.fill", "doc.text", "doc.plaintext.fill", "doc.plaintext",
@@ -3466,7 +3508,7 @@ fileprivate struct IconPickerView: View {
             "doc.text.image.fill", "doc.text.image", "doc.badge.arrow.up.fill", "doc.badge.arrow.up"
         ]),
 
-        IconSection(title: "Text & Editing", symbols: [
+        IconSection(title: String(localized: "Text & Editing"), symbols: [
             "pencil", "pencil.circle", "pencil.circle.fill", "eraser.fill", "eraser", "highlighter", "scissors",
             "textformat", "textformat.size", "textformat.abc", "textformat.123",
             "bold", "italic", "underline", "strikethrough", "paragraphsign",
@@ -3493,7 +3535,7 @@ fileprivate struct IconPickerView: View {
             "bitcoinsign", "point.3.connected.trianglepath.dotted"
         ]),
 
-        IconSection(title: "Media & Audio", symbols: [
+        IconSection(title: String(localized: "Media & Audio"), symbols: [
             "play.fill", "play", "pause.fill", "pause", "stop.fill", "stop", "record.circle.fill", "record.circle",
             "forward.fill", "forward", "backward.fill", "backward",
             "gobackward.10", "goforward.10", "gobackward.15", "goforward.15", "gobackward.30", "goforward.30",
@@ -3515,7 +3557,7 @@ fileprivate struct IconPickerView: View {
             "play.rectangle.fill", "play.rectangle"
         ]),
 
-        IconSection(title: "Time & Date", symbols: [
+        IconSection(title: String(localized: "Time & Date"), symbols: [
             "clock.fill", "clock", "alarm.fill", "alarm", "timer", "stopwatch.fill", "stopwatch",
             "calendar", "calendar.circle.fill", "calendar.circle", "calendar.badge.plus",
             "calendar.badge.clock", "hourglass", "hourglass.tophalf.fill", "hourglass.bottomhalf.fill",
@@ -3523,7 +3565,7 @@ fileprivate struct IconPickerView: View {
             "moon.fill", "moon", "timelapse", "rays", "deskclock.fill", "deskclock"
         ]),
 
-        IconSection(title: "Connectivity & Devices", symbols: [
+        IconSection(title: String(localized: "Connectivity & Devices"), symbols: [
             "wifi", "wifi.slash", "dot.radiowaves.left.and.right", "network", "globe", "globe.americas.fill",
             "globe.europe.africa.fill", "personalhotspot", "antenna.radiowaves.left.and.right",
             "wave.3.right.circle.fill",
@@ -3545,7 +3587,7 @@ fileprivate struct IconPickerView: View {
             "laptopcomputer"
         ]),
 
-        IconSection(title: "Communication", symbols: [
+        IconSection(title: String(localized: "Communication"), symbols: [
             "envelope.fill", "envelope", "envelope.open.fill", "envelope.open", "tray.fill", "tray",
             "tray.and.arrow.up.fill", "tray.and.arrow.up", "tray.and.arrow.down.fill", "tray.and.arrow.down",
             "paperplane.fill", "paperplane", "message.fill", "message", "bubble.left.fill", "bubble.left",
@@ -3561,7 +3603,7 @@ fileprivate struct IconPickerView: View {
             "phone.arrow.up.right.fill", "phone.arrow.up.right", "phone.arrow.down.left.fill", "phone.arrow.down.left"
         ]),
 
-        IconSection(title: "People & Account", symbols: [
+        IconSection(title: String(localized: "People & Account"), symbols: [
             "person.fill", "person", "person.circle.fill", "person.circle", "person.badge.plus.fill",
             "person.badge.plus", "person.badge.minus.fill", "person.badge.minus",
             "person.crop.circle.fill", "person.crop.circle", "person.crop.circle.badge.plus.fill",
@@ -3579,7 +3621,7 @@ fileprivate struct IconPickerView: View {
             "person.and.background.dotted", "person.wave.2.fill", "person.wave.2"
         ]),
 
-        IconSection(title: "Health & Wellness", symbols: [
+        IconSection(title: String(localized: "Health & Wellness"), symbols: [
             "heart.fill", "heart", "heart.circle.fill", "heart.circle", "heart.text.square.fill",
             "staroflife.fill", "staroflife", "cross.case.fill", "cross.case", "pills.fill", "pills",
             "bandage.fill", "bandage", "lungs.fill", "lungs", "brain.head.profile", "brain",
@@ -3594,7 +3636,7 @@ fileprivate struct IconPickerView: View {
             "syringe.fill", "syringe", "medical.thermometer.fill", "medical.thermometer"
         ]),
 
-        IconSection(title: "Weather & Environment", symbols: [
+        IconSection(title: String(localized: "Weather & Environment"), symbols: [
             "sun.max.fill", "sun.max", "moon.fill", "moon", "cloud.fill", "cloud", "cloud.sun.fill",
             "cloud.sun", "cloud.rain.fill", "cloud.rain", "cloud.bolt.fill", "cloud.bolt",
             "cloud.bolt.rain.fill", "cloud.bolt.rain", "cloud.snow.fill", "cloud.snow", "cloud.fog.fill",
@@ -3606,7 +3648,7 @@ fileprivate struct IconPickerView: View {
             "smoke.fill", "smoke", "sparkle", "star.leadinghalf.filled"
         ]),
 
-        IconSection(title: "Location & Navigation", symbols: [
+        IconSection(title: String(localized: "Location & Navigation"), symbols: [
             "map.fill", "map", "mappin", "mappin.and.ellipse",
             "location.fill", "location", "location.circle.fill", "location.circle", "location.north.fill",
             "location.north", "location.north.line.fill", "location.north.line", "road.lanes",
@@ -3621,7 +3663,7 @@ fileprivate struct IconPickerView: View {
             "compass.drawing", "parkingsign"
         ]),
 
-        IconSection(title: "Sports & Games", symbols: [
+        IconSection(title: String(localized: "Sports & Games"), symbols: [
             "gamecontroller.fill", "gamecontroller", "dpad.fill", "dpad", "dice.fill", "dice",
             "sportscourt.fill", "sportscourt", "trophy.fill", "trophy", "medal.fill", "medal",
             "figure.tennis", "figure.baseball", "figure.basketball", "figure.soccer", "figure.pool.swim",
@@ -3629,7 +3671,7 @@ fileprivate struct IconPickerView: View {
             "circles.hexagongrid.fill", "circles.hexagongrid", "bell.badge.fill", "bell.badge"
         ]),
 
-        IconSection(title: "Accessibility", symbols: [
+        IconSection(title: String(localized: "Accessibility"), symbols: [
             "figure.walk.circle.fill", "figure.walk.circle", "figure.roll", "ear.and.waveform", "ear.fill",
             "hand.raised.fingers.spread.fill", "hand.raised.fingers.spread",
             "character.cursor.ibeam",
@@ -3638,7 +3680,7 @@ fileprivate struct IconPickerView: View {
             "accessibility", "accessibility.fill"
         ]),
 
-        IconSection(title: "Shapes & Geometry", symbols: [
+        IconSection(title: String(localized: "Shapes & Geometry"), symbols: [
             "circle.fill", "circle", "square.fill", "square", "triangle.fill", "triangle",
             "diamond.fill", "diamond", "octagon.fill", "octagon", "hexagon.fill", "hexagon",
             "capsule.fill", "capsule", "oval.fill", "oval", "cube.fill", "cube", "cylinder.fill", "cylinder",
@@ -3812,8 +3854,8 @@ struct LockScreenSettingsView: View {
 
                         WallpaperFileRow(
                             path: $settings.settings.lockScreenCustomWallpaperPath,
-                            panelTitle: "Choose Lock Screen Wallpaper",
-                            panelMessage: "Select an image or video to show on your lock screen."
+                            panelTitle: String(localized: "Choose Lock Screen Wallpaper"),
+                            panelMessage: String(localized: "Select an image or video to show on your lock screen.")
                         )
 
                         Divider().padding(.leading, 20)
@@ -3838,8 +3880,8 @@ struct LockScreenSettingsView: View {
 
                         WallpaperFileRow(
                             path: $settings.settings.desktopWallpaperPath,
-                            panelTitle: "Choose Desktop Wallpaper",
-                            panelMessage: "Select an image or video to use as your desktop wallpaper."
+                            panelTitle: String(localized: "Choose Desktop Wallpaper"),
+                            panelMessage: String(localized: "Select an image or video to use as your desktop wallpaper.")
                         )
                     }
 
@@ -3869,14 +3911,14 @@ struct LockScreenSettingsView: View {
 
                         HStack {
                             SettingsRowLabel(
-                                title: "Video Playback",
-                                description: settings.settings.liveWallpaperPlaybackMode.description,
+                                title: Text("Video Playback"),
+                                description: Text(verbatim: settings.settings.liveWallpaperPlaybackMode.description),
                                 titleFont: .system(size: 14, weight: .medium)
                             )
                             Spacer()
                             Picker("Video Playback", selection: $settings.settings.liveWallpaperPlaybackMode) {
                                 ForEach(LiveWallpaperPlaybackMode.allCases) { mode in
-                                    Text(mode.displayName).tag(mode)
+                                    Text(verbatim: mode.displayName).tag(mode)
                                 }
                             }
                             .labelsHidden()
@@ -4144,7 +4186,7 @@ private struct WallpaperFileRow: View {
         let panel = NSOpenPanel()
         panel.title = panelTitle
         panel.message = panelMessage
-        panel.prompt = "Choose"
+        panel.prompt = String(localized: "Choose")
         panel.allowedContentTypes = WallpaperMedia.allowedContentTypes
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -4178,9 +4220,9 @@ struct SnapZonesSettingsView: View {
     private var viewModeDescription: String {
         switch settings.settings.snapZoneViewMode {
         case .single:
-            return "Show one layout at a time, determined by your default or app-specific settings."
+            return String(localized: "Show one layout at a time, determined by your default or app-specific settings.")
         case .multi:
-            return "Show a user-defined list of layouts side-by-side in the widget for quick selection."
+            return String(localized: "Show a user-defined list of layouts side-by-side in the widget for quick selection.")
         }
     }
 
@@ -4266,7 +4308,7 @@ struct SnapZonesSettingsView: View {
                         Spacer()
                         Picker("Widget View Style", selection: $settings.settings.snapZoneViewMode) {
                             ForEach(SnapZoneViewMode.allCases) { mode in
-                                Text(mode.displayName).tag(mode)
+                                Text(verbatim: mode.displayName).tag(mode)
                             }
                         }
                         .pickerStyle(.segmented)
@@ -4372,7 +4414,7 @@ struct SnapZonesSettingsView: View {
             HStack {
                 Text("Global Default Layout").font(.headline)
                 Spacer()
-                ModernMenuPicker(selection: $settings.settings.defaultSnapLayout, options: allLayouts, titleKeyPath: \.name)
+                ModernMenuPicker(selection: $settings.settings.defaultSnapLayout, options: allLayouts, titleKeyPath: \.displayName)
             }.padding(.horizontal, 20).padding(.vertical, 12)
         }.modifier(SettingsContainerModifier())
     }
@@ -4414,7 +4456,7 @@ struct SnapZonesSettingsView: View {
                         if let layout = allLayouts.first(where: { $0.id == layoutID }) {
                             HStack {
                                 Image(systemName: "line.3.horizontal").foregroundStyle(.secondary)
-                                Text(layout.name)
+                                Text(verbatim: layout.displayName)
                                 Spacer()
                                 Button {
                                     deleteLayoutOption(at: IndexSet(integer: index))
@@ -4610,7 +4652,7 @@ fileprivate struct SnapZoneShortcutLayoutView: View {
             HStack {
                 Image(systemName: "rectangle.3.group")
                     .foregroundStyle(Color.accentColor)
-                Text(layout.name)
+                Text(verbatim: layout.displayName)
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Text("\(layout.zones.count) zones")
@@ -4719,7 +4761,7 @@ fileprivate struct AppSpecificLayoutConfigRow: View {
                 Image(systemName: "app.dashed").font(.title2).frame(width: 28)
             }
 
-            Text(appName).lineLimit(1)
+            Text(verbatim: appName).lineLimit(1)
             Spacer()
 
             Picker("Mode", selection: configTypeBinding) {
@@ -4734,7 +4776,7 @@ fileprivate struct AppSpecificLayoutConfigRow: View {
                     get: { layoutID },
                     set: { newID in configuration = .single(layoutID: newID) }
                 )
-                ModernMenuPickerWithID(selection: binding, options: allLayouts, titleKeyPath: \.name)
+                ModernMenuPickerWithID(selection: binding, options: allLayouts, titleKeyPath: \.displayName)
                     .frame(width: 150)
             case .multi:
                 Button("Edit", action: onEditMulti).buttonStyle(.borderless).tint(.accentColor)
@@ -4784,7 +4826,7 @@ fileprivate struct MultiLayoutPickerView: View {
                     Text("Available Layouts").font(.headline).padding([.top, .horizontal])
                     List(availableLayouts) { layout in
                         Button(action: { editedLayoutIDs.append(layout.id) }) {
-                            HStack { Text(layout.name); Spacer(); Image(systemName: "plus.circle.fill").foregroundColor(.green) }
+                            HStack { Text(verbatim: layout.displayName); Spacer(); Image(systemName: "plus.circle.fill").foregroundColor(.green) }
                         }.buttonStyle(.plain)
                     }.listStyle(.sidebar)
                 }
@@ -4796,7 +4838,7 @@ fileprivate struct MultiLayoutPickerView: View {
                         ForEach(editedLayoutIDs.indices, id: \.self) { index in
                             if let layout = layout(for: editedLayoutIDs[index]) {
                                 HStack {
-                                    Text(layout.name)
+                                    Text(verbatim: layout.displayName)
                                     Spacer()
                                     Button {
                                         delete(at: IndexSet(integer: index))
@@ -4842,7 +4884,7 @@ fileprivate struct ModernMenuPicker<T: Identifiable & Hashable>: View {
     let titleKeyPath: KeyPath<T, String>
 
     private var selectedOptionName: String {
-        return options.first { $0.id == selection.id }?[keyPath: titleKeyPath] ?? "Select"
+        return options.first { $0.id == selection.id }?[keyPath: titleKeyPath] ?? String(localized: "Select")
     }
 
     var body: some View {
@@ -4877,7 +4919,7 @@ fileprivate struct CustomLayoutRow: View {
                 .font(.title2)
                 .frame(width: 30)
                 .foregroundColor(.accentColor)
-            Text(layout.name).font(.headline)
+            Text(verbatim: layout.displayName).font(.headline)
             Spacer()
             Button(action: onEdit) {
                 Image(systemName: "pencil")
@@ -4902,13 +4944,13 @@ fileprivate struct ModernMenuPickerWithID<T: Identifiable & Hashable>: View wher
     let options: [T]
     let titleKeyPath: KeyPath<T, String>
     var defaultID: T.ID? = nil
-    var defaultTitle: String = "Default"
+    var defaultTitle: String = String(localized: "Default")
 
     private var selectedOptionName: String {
         if let defaultID = defaultID, selection == defaultID {
             return defaultTitle
         }
-        return options.first { $0.id == selection }?[keyPath: titleKeyPath] ?? "Select"
+        return options.first { $0.id == selection }?[keyPath: titleKeyPath] ?? String(localized: "Select")
     }
 
     var body: some View {
@@ -4940,7 +4982,7 @@ fileprivate struct PlaneRow: View {
     let onDelete: () -> Void
 
     private var shortcutDescription: String {
-        guard let shortcut = plane.shortcut else { return "No shortcut set" }
+        guard let shortcut = plane.shortcut else { return String(localized: "No shortcut set") }
         return "\(KeyboardShortcutHelper.description(for: shortcut.modifiers)) \(shortcut.key)"
     }
 
@@ -4953,7 +4995,7 @@ fileprivate struct PlaneRow: View {
                 .onTapGesture(perform: onEdit)
 
             VStack(alignment: .leading) {
-                Text(plane.name).font(.headline)
+                Text(verbatim: plane.name).font(.headline)
                 Text(shortcutDescription)
                     .font(.caption).foregroundColor(.secondary)
             }
@@ -4996,7 +5038,7 @@ fileprivate struct AppPickerView: View {
                 Button(action: { onSelect(app.id) }) {
                     HStack {
                         SystemAppIconView(app: app, size: 24, cornerRadius: 4)
-                        Text(app.name)
+                        Text(verbatim: app.name)
                     }
                 }
                 .buttonStyle(.plain)
@@ -5196,9 +5238,9 @@ struct ProximityUnlockSettingsView: View {
 
         var message: String {
             switch kind {
-            case .register: return "register the '\(profileName)' face profile"
-            case .append: return "add captures to the '\(profileName)' face profile"
-            case .delete: return "delete the '\(profileName)' face profile"
+            case .register: return String(localized: "register the '\(profileName)' face profile")
+            case .append: return String(localized: "add captures to the '\(profileName)' face profile")
+            case .delete: return String(localized: "delete the '\(profileName)' face profile")
             }
         }
     }
@@ -5253,7 +5295,7 @@ struct ProximityUnlockSettingsView: View {
     }
 
     private var filteredScannedDevices: [Device] {
-        return showUnnamedDevices ? authManager.scannedDevices : authManager.scannedDevices.filter { $0.displayName != "Unnamed Device" }
+        return showUnnamedDevices ? authManager.scannedDevices : authManager.scannedDevices.filter { !$0.isUnnamed }
     }
 
     var body: some View {
@@ -5289,8 +5331,8 @@ struct ProximityUnlockSettingsView: View {
                     set: { if !$0 { pendingFaceProfileAction = nil } }
                 ),
                 validate: { authManager.verifyPassword($0) },
-                title: "Face ID Authentication Required",
-                message: "Enter your Mac's password to \(action.message)."
+                title: String(localized: "Face ID Authentication Required"),
+                message: String(localized: "Enter your Mac's password to \(action.message).")
             ) { _ in
                 pendingFaceProfileAction = nil
                 performFaceProfileAction(action)
@@ -5379,7 +5421,7 @@ struct ProximityUnlockSettingsView: View {
                     ForEach(registeredFaces, id: \.self) { profileName in
                         HStack {
                             Image(systemName: "faceid").font(.title2).foregroundColor(.accentColor)
-                            Text(profileName)
+                            Text(verbatim: profileName)
                             Spacer()
                             Button("Re-Register") {
                                 pendingFaceProfileAction = FaceProfileAction(kind: .register, profileName: profileName)
@@ -5483,7 +5525,7 @@ struct ProximityUnlockSettingsView: View {
                         HStack {
                             Image(systemName: "wifi")
                                 .foregroundStyle(.secondary)
-                            Text(networkName)
+                            Text(verbatim: networkName)
                             Spacer()
                             Button {
                                 settings.settings.faceIDAllowedWiFiNetworks.removeAll { $0 == networkName }
@@ -5524,7 +5566,7 @@ struct ProximityUnlockSettingsView: View {
                 label: "Spoof Lock Duration",
                 value: $settings.settings.faceIDSpoofLockDuration,
                 range: 1...15,
-                specifier: "%.0f sec"
+                specifier: String(localized: "%.0f sec")
             )
             Text("Locks Face ID and requires your password after this much sustained clear spoof detection (not borderline frames).")
                 .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 4)
@@ -5533,7 +5575,7 @@ struct ProximityUnlockSettingsView: View {
                 label: "No-Match Timeout",
                 value: $settings.settings.faceIDMismatchTimeout,
                 range: 5...120,
-                specifier: "%.0f sec"
+                specifier: String(localized: "%.0f sec")
             )
             Text("Stops Face ID scanning when your face isn't recognized for this long.")
                 .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 8)
@@ -5650,9 +5692,9 @@ struct ProximityUnlockSettingsView: View {
     private var advancedSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Advanced").font(.subheadline).bold().padding(.horizontal)
-            CustomSliderRowView(label: "Delay to Lock", value: $settings.settings.bluetoothUnlockTimeout, range: 1...60, specifier: "%.0f sec")
+            CustomSliderRowView(label: "Delay to Lock", value: $settings.settings.bluetoothUnlockTimeout, range: 1...60, specifier: String(localized: "%.0f sec"))
             Divider().padding(.leading, 20)
-            CustomSliderRowView(label: "No-Signal Timeout", value: $settings.settings.bluetoothUnlockNoSignalTimeout, range: 10...300, specifier: "%.0f sec")
+            CustomSliderRowView(label: "No-Signal Timeout", value: $settings.settings.bluetoothUnlockNoSignalTimeout, range: 10...300, specifier: String(localized: "%.0f sec"))
             Divider().padding(.leading, 20)
             ToggleRow(title: "Passive Mode", description: "Uses less energy but may be slightly slower to react.", isOn: $settings.settings.bluetoothUnlockPassiveMode)
             Divider().padding(.leading, 20)
@@ -5718,12 +5760,12 @@ fileprivate struct DeviceRowView: View {
                     .frame(width: 22)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(device.displayName)
+                    Text(verbatim: device.displayName)
                         .fontWeight(isSelected ? .semibold : .medium)
                         .foregroundColor(isSelected ? .accentColor : .primary)
                         .lineLimit(1)
 
-                    Text(truncatedUUID)
+                    Text(verbatim: truncatedUUID)
                         .font(.caption2.monospaced())
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -5787,7 +5829,7 @@ fileprivate struct FindDeviceByDistanceWizard: View {
         Text("Bring your desired device as close as possible to your Mac, then press Next.").multilineTextAlignment(.center).foregroundColor(.secondary)
 
         let strongestDevice = authManager.scannedDevices.max(by: { $0.rssi < $1.rssi })
-        Text("Strongest Signal: \(strongestDevice?.displayName ?? "None") at \(strongestDevice?.rssi ?? -100) dBm")
+        Text("Strongest Signal: \(strongestDevice?.displayName ?? String(localized: "None")) at \(strongestDevice?.rssi ?? -100) dBm")
             .font(.body.bold()).padding()
 
         Button("Next") {
@@ -5824,8 +5866,8 @@ fileprivate struct FindDeviceByDistanceWizard: View {
                 }) {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text(result.device.displayName)
-                            Text(result.label)
+                            Text(verbatim: result.device.displayName)
+                            Text(verbatim: result.label)
                                 .font(.caption)
                                 .foregroundColor(labelColor(for: result.label))
                         }
@@ -6143,20 +6185,20 @@ struct FanRowView: View {
 
     private var modeString: String {
         switch fanManager.fanModes[fan.id] {
-        case .auto: return "Auto"
-        case .constant(let rpm): return "Constant \(rpm) RPM"
+        case .auto: return String(localized: "Auto")
+        case .constant(let rpm): return String(localized: "Constant \(String(rpm)) RPM")
         case .sensor(let key, _, _):
-            return "Sensor: \(SensorNameMap.name(for: key))"
+            return String(localized: "Sensor: \(SensorNameMap.name(for: key))")
         case .customCurve(let key, let points):
-            return "Curve (\(points.count) pts): \(SensorNameMap.name(for: key))"
-        case nil: return "Auto"
+            return String(localized: "Curve (\(points.count) pts): \(SensorNameMap.name(for: key))")
+        case nil: return String(localized: "Auto")
         }
     }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(fan.name.contains("Fan") ? "Fan \(fan.id + 1)" : fan.name)
+                Text(verbatim: fan.name.contains("Fan") ? String(localized: "Fan \(fan.id + 1)") : fan.name)
                     .font(.headline)
 
                 Text("Min: \(fan.minRPM) | Current: \(fan.currentRPM) | Max: \(fan.maxRPM) RPM")
@@ -6229,7 +6271,7 @@ struct FanControlSheetView: View {
         if let sensor = availableSensors.first(where: { $0.key == sensorKey }) {
             return String(format: "%.1f°C", sensor.value)
         }
-        return "N/A"
+        return String(localized: "N/A")
     }
 
     var body: some View {
@@ -6293,7 +6335,7 @@ struct FanControlSheetView: View {
                 Picker("Sensor", selection: $sensorKey) {
                     ForEach(availableSensors) { sensor in
                         HStack {
-                            Text(sensor.name)
+                            Text(verbatim: sensor.name)
                             Spacer()
                             Text(String(format: "%.1f°C", sensor.value))
                                 .foregroundColor(.secondary)
@@ -6407,14 +6449,14 @@ struct CalibrationView: View {
             VStack(spacing: 15) {
                 if calibrationManager.isActive {
                     VStack(spacing: 8) {
-                        Text(calibrationManager.state.description)
+                        Text(verbatim: calibrationManager.state.description)
                             .font(.headline)
                             .foregroundColor(.secondary)
 
                         ProgressView(value: calibrationManager.progress)
                             .progressViewStyle(.linear)
 
-                        Text(String(format: "%.1f%% complete", calibrationManager.progress * 100))
+                        Text(String(format: String(localized: "%.1f%% complete"), calibrationManager.progress * 100))
                             .font(.caption)
                             .foregroundColor(.secondary)
 
@@ -6466,7 +6508,7 @@ struct LidAngleCaffeineSettingsView: View {
     }
 
     private var currentAngleText: String {
-        guard lidAngleSensor.isAvailable else { return "Unavailable" }
+        guard lidAngleSensor.isAvailable else { return String(localized: "Unavailable") }
         return "\(Int(lidAngleSensor.angle.rounded()))°"
     }
 
@@ -6483,7 +6525,7 @@ struct LidAngleCaffeineSettingsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Current Lid Angle")
-                    Text(lidAngleSensor.statusMessage)
+                    Text(verbatim: lidAngleSensor.statusMessage)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -6593,7 +6635,8 @@ struct BatterySettingsView: View {
                 Text("Battery").font(.largeTitle.bold()).padding(.bottom, 10)
                 ModernSegmentedPicker(
                     selection: $selectedTab,
-                    options: ["Statistics", "Configuration"]
+                    options: ["Statistics", "Configuration"],
+                    title: { $0 == "Statistics" ? "Statistics" : "Configuration" }
                 )
                 .padding(.bottom, 5)
 
@@ -6648,20 +6691,20 @@ struct DateRangePickerView: View {
     var body: some View {
         HStack(spacing: 8) {
 
-            PickerButton(label: "24h", isSelected: selection == .last24Hours, namespace: datePickerNamespace) {
+            PickerButton(label: String(localized: "24h"), isSelected: selection == .last24Hours, namespace: datePickerNamespace) {
                 updateSelection(.last24Hours)
             }
-            PickerButton(label: "7d", isSelected: selection == .last7Days, namespace: datePickerNamespace) {
+            PickerButton(label: String(localized: "7d"), isSelected: selection == .last7Days, namespace: datePickerNamespace) {
                 updateSelection(.last7Days)
             }
-            PickerButton(label: "Month", isSelected: selection == .lastMonth, namespace: datePickerNamespace) {
+            PickerButton(label: String(localized: "Month"), isSelected: selection == .lastMonth, namespace: datePickerNamespace) {
                 updateSelection(.lastMonth)
             }
-            PickerButton(label: "Year", isSelected: selection == .lastYear, namespace: datePickerNamespace) {
+            PickerButton(label: String(localized: "Year"), isSelected: selection == .lastYear, namespace: datePickerNamespace) {
                 updateSelection(.lastYear)
             }
 
-            PickerButton(label: "Custom", isSelected: isCustomSelected, namespace: datePickerNamespace) {
+            PickerButton(label: String(localized: "Custom"), isSelected: isCustomSelected, namespace: datePickerNamespace) {
                 showCustomPicker = true
             }
             .popover(isPresented: $showCustomPicker, attachmentAnchor: .point(.bottom)) {
@@ -6745,7 +6788,7 @@ struct HeroMetricsView: View {
     private var chargingStatusValue: String {
         if viewModel.isCharging {
             let watts = abs(viewModel.powerConsumption)
-            return watts > 0 ? String(format: "%.1f W", watts) : "Active"
+            return watts > 0 ? String(format: "%.1f W", watts) : String(localized: "Active")
         }
         return viewModel.timeRemaining
     }
@@ -6770,7 +6813,7 @@ struct HeroMetricsView: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 MaterialStatChip(
-                    label: viewModel.isCharging ? "Charging" : "On Battery",
+                    label: viewModel.isCharging ? String(localized: "Charging") : String(localized: "On Battery"),
                     value: chargingStatusValue,
                     color: statusColor,
                     icon: viewModel.isCharging ? "bolt.fill" : "battery.100"
@@ -6779,14 +6822,14 @@ struct HeroMetricsView: View {
             .fixedSize(horizontal: true, vertical: false)
 
             LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 10) {
-                MaterialStatChip(label: "Time Remaining", value: viewModel.timeRemaining, color: MaterialChartPalette.primary, icon: "clock.fill")
-                MaterialStatChip(label: "Health", value: "\(viewModel.maxCapacityPercentage)%", color: Color.pink, icon: "heart.fill")
-                MaterialStatChip(label: "Cycles", value: "\(viewModel.cycleCount)", color: MaterialChartPalette.secondary, icon: "arrow.triangle.2.circlepath")
-                MaterialStatChip(label: "Temperature", value: String(format: "%.1f°C", viewModel.temperature), color: MaterialChartPalette.error, icon: "thermometer.medium")
-                MaterialStatChip(label: "Power", value: String(format: "%.1f W", abs(viewModel.powerConsumption)), color: MaterialChartPalette.warning, icon: "bolt.fill")
-                MaterialStatChip(label: "Voltage", value: String(format: "%.2f V", viewModel.voltage / 1000.0), color: MaterialChartPalette.tertiary, icon: "wave.3.right")
-                MaterialStatChip(label: "Current", value: String(format: "%.2f A", Double(abs(viewModel.amperage)) / 1000.0), color: MaterialChartPalette.primary, icon: "arrow.left.arrow.right")
-                MaterialStatChip(label: "Condition", value: viewModel.health, color: .pink, icon: "heart.text.square")
+                MaterialStatChip(label: String(localized: "Time Remaining"), value: viewModel.timeRemaining, color: MaterialChartPalette.primary, icon: "clock.fill")
+                MaterialStatChip(label: String(localized: "Health"), value: "\(viewModel.maxCapacityPercentage)%", color: Color.pink, icon: "heart.fill")
+                MaterialStatChip(label: String(localized: "Cycles"), value: "\(viewModel.cycleCount)", color: MaterialChartPalette.secondary, icon: "arrow.triangle.2.circlepath")
+                MaterialStatChip(label: String(localized: "Temperature"), value: String(format: "%.1f°C", viewModel.temperature), color: MaterialChartPalette.error, icon: "thermometer.medium")
+                MaterialStatChip(label: String(localized: "Power"), value: String(format: "%.1f W", abs(viewModel.powerConsumption)), color: MaterialChartPalette.warning, icon: "bolt.fill")
+                MaterialStatChip(label: String(localized: "Voltage"), value: String(format: "%.2f V", viewModel.voltage / 1000.0), color: MaterialChartPalette.tertiary, icon: "wave.3.right")
+                MaterialStatChip(label: String(localized: "Current"), value: String(format: "%.2f A", Double(abs(viewModel.amperage)) / 1000.0), color: MaterialChartPalette.primary, icon: "arrow.left.arrow.right")
+                MaterialStatChip(label: String(localized: "Condition"), value: viewModel.health, color: .pink, icon: "heart.text.square")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -6845,9 +6888,9 @@ struct ComponentPowerBreakdownView: View {
     private var heroWatts: Double { adapterConnected ? max(adapterPower, systemLoad) : systemLoad }
 
     private var statusLabel: String {
-        if isCharging { return "Charging" }
-        if adapterConnected { return "On AC Power" }
-        return "On Battery"
+        if isCharging { return String(localized: "Charging") }
+        if adapterConnected { return String(localized: "On AC Power") }
+        return String(localized: "On Battery")
     }
 
     private var statusColor: Color {
@@ -6859,7 +6902,7 @@ struct ComponentPowerBreakdownView: View {
     private var components: [(id: String, icon: String, title: String, power: Double, color: Color)] {
         var rows: [(id: String, icon: String, title: String, power: Double, color: Color)] = []
         if isCharging && chargingPower > 0.15 {
-            rows.append(("charging", "battery.100.bolt", "Charging", chargingPower, MaterialChartPalette.tertiary))
+            rows.append(("charging", "battery.100.bolt", String(localized: "Charging"), chargingPower, MaterialChartPalette.tertiary))
         }
         if cpuPower > 0.35 {
             rows.append(("cpu", "cpu", "CPU", cpuPower, Color.cyan))
@@ -6868,10 +6911,10 @@ struct ComponentPowerBreakdownView: View {
             rows.append(("gpu", "cube.fill", "GPU", gpuPower, MaterialChartPalette.secondary))
         }
         if displayPower > 0.35 {
-            rows.append(("display", "display", "Display", displayPower, MaterialChartPalette.warning))
+            rows.append(("display", "display", String(localized: "Display"), displayPower, MaterialChartPalette.warning))
         }
         if otherPower > 0.35 {
-            rows.append(("other", "ellipsis.circle", "Other", otherPower, MaterialChartPalette.onSurfaceVariant))
+            rows.append(("other", "ellipsis.circle", String(localized: "Other"), otherPower, MaterialChartPalette.onSurfaceVariant))
         }
         return rows
     }
@@ -6943,9 +6986,9 @@ struct ComponentPowerBreakdownView: View {
             if adapterConnected || isCharging {
                 HStack(spacing: 12) {
                     if adapterConnected {
-                        metaChip(icon: "bolt.horizontal.fill", text: String(format: "Adapter %.0f W", adapterPower > 0 ? adapterPower : heroWatts))
+                        metaChip(icon: "bolt.horizontal.fill", text: String(format: String(localized: "Adapter %.0f W"), adapterPower > 0 ? adapterPower : heroWatts))
                     }
-                    metaChip(icon: "laptopcomputer", text: String(format: "Draw %.2f W", systemLoad))
+                    metaChip(icon: "laptopcomputer", text: String(format: String(localized: "Draw %.2f W"), systemLoad))
                     Spacer(minLength: 0)
                 }
             }
@@ -7123,10 +7166,10 @@ struct BatterySpecsCard: View {
                 Text("Battery Specs").font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             Spacer()
-            SpecRow(label: "Current", value: String(format: "%.1f A", Double(abs(viewModel.amperage)) / 1000.0))
-            SpecRow(label: "Voltage", value: String(format: "%.1f V", viewModel.voltage / 1000.0))
-            SpecRow(label: "Power", value: String(format: "%.0f W", abs(viewModel.powerConsumption)))
-            SpecRow(label: "System Load", value: String(format: "%.2f W", systemLoad))
+            SpecRow(label: String(localized: "Current"), value: String(format: "%.1f A", Double(abs(viewModel.amperage)) / 1000.0))
+            SpecRow(label: String(localized: "Voltage"), value: String(format: "%.1f V", viewModel.voltage / 1000.0))
+            SpecRow(label: String(localized: "Power"), value: String(format: "%.0f W", abs(viewModel.powerConsumption)))
+            SpecRow(label: String(localized: "System Load"), value: String(format: "%.2f W", systemLoad))
 
             HStack {
                 Text("Low Power Mode").font(.system(size: 12)).foregroundColor(.secondary)
@@ -7266,14 +7309,14 @@ struct MaxCapacityGraphCard: View {
         let capacities = chartData.map(\.maxCapacity)
 
         BatteryMetricGraphCard(
-            title: "Max Capacity",
+            title: String(localized: "Max Capacity"),
             currentValue: "\(viewModel.maxCapacityPercentage)%",
             color: MaterialChartPalette.primary,
             chartData: chartData,
             selectedTimeRange: $selectedTimeRange,
             yDomain: ((capacities.min() ?? 0) - 50)...((capacities.max() ?? 8000) + 50),
             yAxisMarkCount: 3,
-            metricLabel: "Capacity",
+            metricLabel: String(localized: "Capacity"),
             metricValue: { $0.maxCapacity },
             annotationText: { "\($0.maxCapacity) mAh" }
         )
@@ -7290,14 +7333,14 @@ struct CycleCountGraphCard: View {
         let cycles = chartData.map(\.cycleCount)
 
         BatteryMetricGraphCard(
-            title: "Cycle Count",
+            title: String(localized: "Cycle Count"),
             currentValue: "\(viewModel.cycleCount)",
             color: MaterialChartPalette.secondary,
             chartData: chartData,
             selectedTimeRange: $selectedTimeRange,
             yDomain: ((cycles.min() ?? 0) - 10)...((cycles.max() ?? 1000) + 10),
             yAxisMarkCount: 3,
-            metricLabel: "Cycles",
+            metricLabel: String(localized: "Cycles"),
             metricValue: { $0.cycleCount },
             annotationText: { "\($0.cycleCount) cycles" }
         )
@@ -7311,14 +7354,14 @@ struct TemperatureGraphCard: View {
 
     var body: some View {
         BatteryMetricGraphCard(
-            title: "Temperature",
+            title: String(localized: "Temperature"),
             currentValue: String(format: "%.1f °C", viewModel.temperature),
             color: MaterialChartPalette.error,
             chartData: historyViewModel.chartData.filter { $0.temperature > 0 },
             selectedTimeRange: $selectedTimeRange,
             yDomain: 20...55,
             yAxisMarkCount: 4,
-            metricLabel: "Temp",
+            metricLabel: String(localized: "Temp"),
             metricValue: { $0.temperature },
             annotationText: { String(format: "%.1f °C", $0.temperature) }
         )
@@ -7459,14 +7502,14 @@ struct BatteryHistoryView: View {
                 if let stats = summaryStats {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
-                            StatPill(label: "Min", value: "\(stats.min)%", color: MaterialChartPalette.warning)
-                            StatPill(label: "Avg", value: "\(stats.avg)%", color: MaterialChartPalette.primary)
-                            StatPill(label: "Max", value: "\(stats.max)%", color: MaterialChartPalette.tertiary)
+                            StatPill(label: String(localized: "Min"), value: "\(stats.min)%", color: MaterialChartPalette.warning)
+                            StatPill(label: String(localized: "Avg"), value: "\(stats.avg)%", color: MaterialChartPalette.primary)
+                            StatPill(label: String(localized: "Max"), value: "\(stats.max)%", color: MaterialChartPalette.tertiary)
                             if stats.avgTemp > 0 {
-                                StatPill(label: "Temp", value: String(format: "%.0f°", stats.avgTemp), color: MaterialChartPalette.error)
+                                StatPill(label: String(localized: "Temp"), value: String(format: "%.0f°", stats.avgTemp), color: MaterialChartPalette.error)
                             }
                             if stats.avgPower > 0 {
-                                StatPill(label: "Draw", value: String(format: "%.1fW", stats.avgPower), color: MaterialChartPalette.warning)
+                                StatPill(label: String(localized: "Draw"), value: String(format: "%.1fW", stats.avgPower), color: MaterialChartPalette.warning)
                             }
                         }
                     }
@@ -7511,10 +7554,10 @@ struct BatteryHistoryView: View {
 
     private var historyLegend: some View {
         HStack(spacing: 10) {
-            legendChip(label: "Charging", color: MaterialChartPalette.tertiary)
-            legendChip(label: "Paused", color: MaterialChartPalette.primary)
-            legendChip(label: "On Battery", color: MaterialChartPalette.warning)
-            legendChip(label: "Low", color: MaterialChartPalette.error)
+            legendChip(label: String(localized: "Charging"), color: MaterialChartPalette.tertiary)
+            legendChip(label: String(localized: "Paused"), color: MaterialChartPalette.primary)
+            legendChip(label: String(localized: "On Battery"), color: MaterialChartPalette.warning)
+            legendChip(label: String(localized: "Low"), color: MaterialChartPalette.error)
             Spacer(minLength: 0)
             Text("Line color = status")
                 .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -7718,11 +7761,11 @@ struct BatteryDataPointCard: View {
     let onDismiss: () -> Void
 
     private var statusLabel: String {
-        if entry.isCharging && entry.isPluggedIn { return "Charging" }
-        if entry.isPluggedIn && !entry.isCharging { return "Charge Paused" }
-        if entry.charge <= 20 { return "Low Battery" }
-        if !entry.isPluggedIn { return "On Battery" }
-        return "Normal"
+        if entry.isCharging && entry.isPluggedIn { return String(localized: "Charging") }
+        if entry.isPluggedIn && !entry.isCharging { return String(localized: "Charge Paused") }
+        if entry.charge <= 20 { return String(localized: "Low Battery") }
+        if !entry.isPluggedIn { return String(localized: "On Battery") }
+        return String(localized: "Normal")
     }
 
     private var statusColor: Color {
@@ -7737,44 +7780,44 @@ struct BatteryDataPointCard: View {
         guard entry.timeRemainingMinutes > 0 else { return "—" }
         let hours = entry.timeRemainingMinutes / 60
         let minutes = entry.timeRemainingMinutes % 60
-        if hours > 0 { return "\(hours)h \(minutes)m" }
-        return "\(minutes)m"
+        if hours > 0 { return String(localized: "\(hours)h \(minutes)m") }
+        return String(localized: "\(minutes)m")
     }
 
     private var ledLabel: String {
         switch entry.ledColor {
-        case 1: return "Green"
-        case 2: return "Amber"
-        case 3: return "Red"
-        case 0: return "Off"
+        case 1: return String(localized: "Green")
+        case 2: return String(localized: "Amber")
+        case 3: return String(localized: "Red")
+        case 0: return String(localized: "Off")
         default: return "\(entry.ledColor)"
         }
     }
 
     private var detailRows: [(section: String, rows: [(icon: String, label: String, value: String, color: Color)])] {
         [
-            ("Charge", [
-                ("battery.100", "Charge", "\(entry.charge)%", statusColor),
-                ("cpu", "Hardware Charge", "\(entry.hardwareCharge)%", MaterialChartPalette.primary),
-                ("heart.fill", "Max Capacity", "\(entry.maxCapacity) mAh", .pink),
-                ("arrow.clockwise", "Cycle Count", "\(entry.cycleCount)", MaterialChartPalette.secondary),
+            (String(localized: "Charge"), [
+                ("battery.100", String(localized: "Charge"), "\(entry.charge)%", statusColor),
+                ("cpu", String(localized: "Hardware Charge"), "\(entry.hardwareCharge)%", MaterialChartPalette.primary),
+                ("heart.fill", String(localized: "Max Capacity"), "\(entry.maxCapacity) mAh", .pink),
+                ("arrow.clockwise", String(localized: "Cycle Count"), "\(entry.cycleCount)", MaterialChartPalette.secondary),
             ]),
-            ("Power", [
-                ("bolt.fill", "Power Draw", entry.powerConsumption > 0 ? String(format: "%.2f W", entry.powerConsumption) : "—", MaterialChartPalette.warning),
-                ("clock.fill", entry.isCharging ? "Time to Full" : "Time Remaining", timeRemainingText, MaterialChartPalette.primary),
-                ("thermometer.medium", "Temperature", String(format: "%.1f °C", entry.temperature), entry.temperature > 40 ? MaterialChartPalette.error : MaterialChartPalette.tertiary),
+            (String(localized: "Power"), [
+                ("bolt.fill", String(localized: "Power Draw"), entry.powerConsumption > 0 ? String(format: "%.2f W", entry.powerConsumption) : "—", MaterialChartPalette.warning),
+                ("clock.fill", entry.isCharging ? String(localized: "Time to Full") : String(localized: "Time Remaining"), timeRemainingText, MaterialChartPalette.primary),
+                ("thermometer.medium", String(localized: "Temperature"), String(format: "%.1f °C", entry.temperature), entry.temperature > 40 ? MaterialChartPalette.error : MaterialChartPalette.tertiary),
             ]),
-            ("State", [
-                ("powerplug.fill", "Adapter", entry.isPluggedIn ? "Connected" : "Unplugged", entry.isPluggedIn ? MaterialChartPalette.tertiary : .gray),
-                ("bolt.circle", "Charging", entry.isCharging ? "Yes" : "No", entry.isCharging ? MaterialChartPalette.tertiary : .gray),
-                ("slider.horizontal.3", "Management", entry.managementState.rawValue, MaterialChartPalette.secondary),
-                ("leaf.fill", "Low Power Mode", entry.isLowPowerMode ? "On" : "Off", entry.isLowPowerMode ? MaterialChartPalette.warning : .gray),
+            (String(localized: "State"), [
+                ("powerplug.fill", String(localized: "Adapter"), entry.isPluggedIn ? String(localized: "Connected") : String(localized: "Unplugged"), entry.isPluggedIn ? MaterialChartPalette.tertiary : .gray),
+                ("bolt.circle", String(localized: "Charging"), entry.isCharging ? String(localized: "Yes") : String(localized: "No"), entry.isCharging ? MaterialChartPalette.tertiary : .gray),
+                ("slider.horizontal.3", String(localized: "Management"), entry.managementState.displayName, MaterialChartPalette.secondary),
+                ("leaf.fill", String(localized: "Low Power Mode"), entry.isLowPowerMode ? String(localized: "On") : String(localized: "Off"), entry.isLowPowerMode ? MaterialChartPalette.warning : .gray),
             ]),
-            ("System", [
-                ("display", "Screen", entry.isScreenOn ? "On" : "Off", entry.isScreenOn ? MaterialChartPalette.primary : .gray),
-                ("moon.fill", "Sleeping", entry.isSleeping ? "Yes" : "No", entry.isSleeping ? MaterialChartPalette.secondary : .gray),
+            (String(localized: "System"), [
+                ("display", String(localized: "Screen"), entry.isScreenOn ? String(localized: "On") : String(localized: "Off"), entry.isScreenOn ? MaterialChartPalette.primary : .gray),
+                ("moon.fill", String(localized: "Sleeping"), entry.isSleeping ? String(localized: "Yes") : String(localized: "No"), entry.isSleeping ? MaterialChartPalette.secondary : .gray),
                 ("light.max", "LED", ledLabel, MaterialChartPalette.onSurfaceVariant),
-                ("calendar", "Logged", entry.timestamp.formatted(date: .abbreviated, time: .standard), MaterialChartPalette.onSurfaceVariant),
+                ("calendar", String(localized: "Logged"), entry.timestamp.formatted(date: .abbreviated, time: .standard), MaterialChartPalette.onSurfaceVariant),
             ]),
         ]
     }
@@ -7893,11 +7936,11 @@ struct BatteryHealthCard: View {
                 Text("Battery Health").font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             Spacer()
-            SpecRow(label: "Design Capacity", value: "\(viewModel.designCapacity) mAh", percentage: "100%")
-            SpecRow(label: "Maximum Capacity", value: "\(viewModel.maxCapacity) mAh", percentage: "\(viewModel.maxCapacityPercentage)%")
-            SpecRow(label: "macOS Capacity", value: "\(viewModel.appleMaxCapacity) mAh", percentage: "\(viewModel.appleMaxCapacityPercentage)%")
-            SpecRow(label: "macOS Condition", value: viewModel.health)
-            SpecRow(label: "Cycle Count", value: "\(viewModel.cycleCount)")
+            SpecRow(label: String(localized: "Design Capacity"), value: "\(viewModel.designCapacity) mAh", percentage: "100%")
+            SpecRow(label: String(localized: "Maximum Capacity"), value: "\(viewModel.maxCapacity) mAh", percentage: "\(viewModel.maxCapacityPercentage)%")
+            SpecRow(label: String(localized: "macOS Capacity"), value: "\(viewModel.appleMaxCapacity) mAh", percentage: "\(viewModel.appleMaxCapacityPercentage)%")
+            SpecRow(label: String(localized: "macOS Condition"), value: viewModel.health)
+            SpecRow(label: String(localized: "Cycle Count"), value: "\(viewModel.cycleCount)")
             Spacer()
         }
         .padding(16)
@@ -7920,7 +7963,7 @@ struct PowerAdapterSpecsCard: View {
             if let info = viewModel.powerAdapterInfo, info.maxPower > 0 {
                 if info.current > 0 || info.maxCurrent > 0 {
                     PowerAdapterSpecRow(
-                        label: "Current",
+                        label: String(localized: "Current"),
                         currentValue: info.current > 0 ? "\(Double(info.current) / 1000.0, default: "%.2f") A" : "0.0 A",
                         maxValue: info.maxCurrent > 0 ? "\(Double(info.maxCurrent) / 1000.0, default: "%.1f") A" : "N/A"
                     )
@@ -7928,28 +7971,28 @@ struct PowerAdapterSpecsCard: View {
 
                 if info.voltage > 0 || info.maxVoltage > 0 {
                     PowerAdapterSpecRow(
-                        label: "Voltage",
+                        label: String(localized: "Voltage"),
                         currentValue: info.voltage > 0 ? "\(Double(info.voltage) / 1000.0, default: "%.1f") V" : "0.0 V",
                         maxValue: info.maxVoltage > 0 ? "\(Double(info.maxVoltage) / 1000.0, default: "%.1f") V" : "N/A"
                     )
                 }
 
                 PowerAdapterSpecRow(
-                    label: "Power",
+                    label: String(localized: "Power"),
                     currentValue: "\(Double(info.power), default: "%.1f") W",
                     maxValue: "\(info.maxPower) W"
                 )
 
                 if !info.name.isEmpty && info.name != "N/A" {
-                    SpecRow(label: "Name", value: info.name)
+                    SpecRow(label: String(localized: "Name"), value: info.name)
                 }
 
                 if !info.manufacturer.isEmpty && info.manufacturer != "N/A" {
-                    SpecRow(label: "Manufacturer", value: info.manufacturer)
+                    SpecRow(label: String(localized: "Manufacturer"), value: info.manufacturer)
                 }
 
                 if !info.serialNumber.isEmpty && info.serialNumber != "N/A" {
-                    SpecRow(label: "Serial Number", value: info.serialNumber)
+                    SpecRow(label: String(localized: "Serial Number"), value: info.serialNumber)
                 }
             } else {
                 Text("Not Connected")
@@ -8004,7 +8047,7 @@ struct SignificantEnergyUsersView: View {
             } else {
                 ForEach(viewModel.topProcesses) { process in
                     HStack {
-                        Text(process.name).font(.caption)
+                        Text(verbatim: process.name).font(.caption)
                         Spacer()
                         Text(String(format: "%.2f%%", process.usage))
                             .font(.caption.weight(.semibold))
@@ -8138,7 +8181,7 @@ struct BatteryConfigurationView: View {
             Divider().padding(.leading, 20)
             ToggleRow(title: "Sailing Mode", description: "Prevents battery wear from constant micro-charging cycles when plugged in for long periods. Charging will pause at the limit and only resume when the battery drops by a set amount.", isOn: $settings.settings.sailingModeEnabled)
             if settings.settings.sailingModeEnabled {
-                 CustomSliderRowView(label: "Resume charging below", value: Binding(get: { Double(settings.settings.sailingModeLowerLimit) }, set: { settings.settings.sailingModeLowerLimit = Int($0) }), range: 5...20, specifier: "%.0f%% below limit")
+                 CustomSliderRowView(label: "Resume charging below", value: Binding(get: { Double(settings.settings.sailingModeLowerLimit) }, set: { settings.settings.sailingModeLowerLimit = Int($0) }), range: 5...20, specifier: String(localized: "%.0f%% below limit"))
             }
             Divider().padding(.leading, 20)
             ToggleRow(title: "Heat Protection", description: "Automatically pauses charging if the battery temperature gets too high to prevent heat-related damage and extend its lifespan.", isOn: $settings.settings.heatProtectionEnabled)
@@ -8168,7 +8211,7 @@ struct BatteryConfigurationView: View {
             Divider().padding(.leading, 20)
             ToggleRow(title: "Log battery during sleep", description: "Wakes the Mac briefly (display stays off) at a set interval to record battery state and re-assert your charge limit overnight. Sleep is never disabled.", isOn: $settings.settings.logBatteryDuringSleep)
             if settings.settings.logBatteryDuringSleep {
-                CustomSliderRowView(label: "Log every", value: Binding(get: { Double(settings.settings.sleepLoggingIntervalMinutes) }, set: { settings.settings.sleepLoggingIntervalMinutes = Int($0) }), range: 15...120, specifier: "%.0f min")
+                CustomSliderRowView(label: "Log every", value: Binding(get: { Double(settings.settings.sleepLoggingIntervalMinutes) }, set: { settings.settings.sleepLoggingIntervalMinutes = Int($0) }), range: 15...120, specifier: String(localized: "%.0f min"))
             }
             Divider().padding(.leading, 20)
             ToggleRow(title: "Stop charging when app closed", description: "The helper tool ensures your charging rules are still applied even if the Sapphire app isn't running.", isOn: .constant(true)).disabled(true)
@@ -8281,7 +8324,7 @@ struct OneTimeDischargeView: View {
 
 fileprivate extension TimeInterval {
     func formatted() -> String {
-        SettingsDurationFormatter.hourMinute.string(from: self) ?? "0m"
+        SettingsDurationFormatter.hourMinute.string(from: self) ?? String(localized: "0m")
     }
 }
 
@@ -8346,7 +8389,7 @@ struct TaskRowView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
-                Text(task.action.displayName).font(.headline)
+                Text(verbatim: task.action.displayName).font(.headline)
 
                 switch task.action {
                 case .setChargeLimit, .dischargeTo:
@@ -8407,7 +8450,7 @@ struct AddTaskView: View {
                     VStack(spacing: 15) {
                         Picker("Based on Sensor:", selection: $newTask.sensorKey) {
                             ForEach(fanManager.sensors) { sensor in
-                                Text(sensor.name).tag(sensor.key)
+                                Text(verbatim: sensor.name).tag(sensor.key)
                             }
                         }
 
@@ -8481,7 +8524,7 @@ struct HUDSettingsView: View {
                         Spacer()
                         Picker("", selection: $settings.settings.hudVisualStyle) {
                             ForEach(HUDVisualStyle.allCases) { style in
-                                Text(style.id).tag(style)
+                                Text(verbatim: style.displayName).tag(style)
                             }
                         }
                         .labelsHidden().frame(width: 150)
@@ -8508,7 +8551,7 @@ struct HUDSettingsView: View {
                             Spacer()
                             Picker("", selection: $settings.settings.hudPillPosition) {
                                 ForEach(PillHUDPosition.allCases) { position in
-                                    Text(position.id).tag(position)
+                                    Text(verbatim: position.displayName).tag(position)
                                 }
                             }
                             .labelsHidden()
@@ -8520,7 +8563,7 @@ struct HUDSettingsView: View {
                             Spacer()
                             Picker("", selection: $settings.settings.hudPillStyle) {
                                 ForEach(PillHUDStyle.allCases) { style in
-                                    Text(style.id).tag(style)
+                                    Text(verbatim: style.displayName).tag(style)
                                 }
                             }
                             .labelsHidden()
@@ -8604,7 +8647,7 @@ struct HUDSettingsView: View {
                         Spacer()
                         Picker("", selection: $settings.settings.volumeHUDStyle) {
                             ForEach(HUDStyle.allCases.filter { $0 != .dots }) { style in
-                                Text(style.id).tag(style)
+                                Text(verbatim: style.displayName).tag(style)
                             }
                         }
                         .labelsHidden()
@@ -8662,7 +8705,7 @@ struct HUDSettingsView: View {
 
                         ForEach(MultiAudioManager.shared.availableOutputDevices, id: \.uid) { device in
                             HStack {
-                                Text(device.name)
+                                Text(verbatim: device.name)
                                     .font(.system(size: 13))
                                 Spacer()
 
@@ -8715,7 +8758,7 @@ struct HUDSettingsView: View {
                         Spacer()
                         Picker("", selection: $settings.settings.brightnessHUDStyle) {
                             ForEach(HUDStyle.allCases.filter { $0 != .dots }) { style in
-                                Text(style.id).tag(style)
+                                Text(verbatim: style.displayName).tag(style)
                             }
                         }
                         .labelsHidden()
@@ -9222,7 +9265,7 @@ struct MusicSettingsView: View {
                         HStack {
                             Text("Lyric Delay"); Spacer()
                             let offset = settings.settings.lyricOffset
-                            let label = offset == 0 ? "On time" : String(format: "%+.1fs", offset)
+                            let label = offset == 0 ? String(localized: "On time") : String(format: "%+.1fs", offset)
                             Text(label).font(.caption).foregroundColor(.secondary)
                             Stepper("", value: $settings.settings.lyricOffset, in: -5.0...5.0, step: 0.1)
                                 .labelsHidden()
@@ -9348,7 +9391,7 @@ fileprivate struct MusicLongPressActionPickerRow: View {
             Spacer()
             Picker("", selection: selection) {
                 ForEach(target.pickerOptions) { action in
-                    Text(action.displayName).tag(action)
+                    Text(verbatim: action.displayName).tag(action)
                 }
             }
             .labelsHidden()
@@ -9378,7 +9421,7 @@ fileprivate struct PlayerButtonSettingsRow: View {
                 .font(.system(size: 16, weight: .medium))
                 .frame(width: 30)
 
-            Text(buttonType.displayName)
+            Text(verbatim: buttonType.displayName)
                 .font(.system(size: 14, weight: .medium))
 
             Spacer()
@@ -9500,7 +9543,7 @@ struct CalendarSettingsView: View {
                         Spacer()
                         Picker("", selection: $settings.settings.calendarStartOfWeek) {
                             ForEach(Day.allCases) { day in
-                                Text(day.id).tag(day)
+                                Text(verbatim: day.displayName).tag(day)
                             }
                         }
                         .labelsHidden()
@@ -9547,36 +9590,36 @@ struct EyeBreakRecommendationsView: View {
             ScrollView {
                 LazyVStack(alignment: .center, spacing: 20) {
                     recommendationCard(
-                        title: "The 20-20-20 Rule",
-                        description: "Every 20 minutes, take a 20-second break to look at something 20 feet away. This helps reduce eye strain and gives eye muscles a break.",
+                        title: String(localized: "The 20-20-20 Rule"),
+                        description: String(localized: "Every 20 minutes, take a 20-second break to look at something 20 feet away. This helps reduce eye strain and gives eye muscles a break."),
                         icon: "eyes",
                         color: .blue
                     )
 
                     recommendationCard(
-                        title: "Adjust Your Screen",
-                        description: "Position your monitor about an arm's length away and adjust the angle of the screen so that the top it is at or slightly below eye level. This reduces strain on your neck and eyes.",
+                        title: String(localized: "Adjust Your Screen"),
+                        description: String(localized: "Position your monitor about an arm's length away and adjust the angle of the screen so that the top it is at or slightly below eye level. This reduces strain on your neck and eyes."),
                         icon: "display",
                         color: .green
                     )
 
                     recommendationCard(
-                        title: "Reduce Blue Light",
-                        description: "Use Night Shift on your mac to reduce exposure to blue light, especially in dark environments or during late hours when it can interfere with sleep.",
+                        title: String(localized: "Reduce Blue Light"),
+                        description: String(localized: "Use Night Shift on your mac to reduce exposure to blue light, especially in dark environments or during late hours when it can interfere with sleep."),
                         icon: "moon.stars.fill",
                         color: .orange
                     )
 
                     recommendationCard(
-                        title: "Optimize Lighting",
-                        description: "Ensure your workspace has adequate lighting that doesn't cause glare on your screen. Avoid working in a dark room with just the screen light.",
+                        title: String(localized: "Optimize Lighting"),
+                        description: String(localized: "Ensure your workspace has adequate lighting that doesn't cause glare on your screen. Avoid working in a dark room with just the screen light."),
                         icon: "lightbulb.fill",
                         color: .yellow
                     )
 
                     recommendationCard(
-                        title: "Stay Hydrated",
-                        description: "Drink plenty of water throughout the day. Dehydration can contribute to dry eyes and eye strain.",
+                        title: String(localized: "Stay Hydrated"),
+                        description: String(localized: "Drink plenty of water throughout the day. Dehydration can contribute to dry eyes and eye strain."),
                         icon: "drop.fill",
                         color: .cyan
                     )
@@ -9812,7 +9855,7 @@ struct EyeBreakSettingsView: View {
                 label: "Work Interval",
                 value: $settings.settings.eyeBreakWorkInterval,
                 range: 5...60,
-                specifier: "%.0f min",
+                specifier: String(localized: "%.0f min"),
                 onEditingChanged: { isEditing in
                     if !isEditing {
                         eyeBreakManager.dismissBreak()
@@ -9826,7 +9869,7 @@ struct EyeBreakSettingsView: View {
                 label: "Break Duration",
                 value: $settings.settings.eyeBreakBreakDuration,
                 range: 10...60,
-                specifier: "%.0f sec",
+                specifier: String(localized: "%.0f sec"),
                 onEditingChanged: { isEditing in
                     if !isEditing {
                         eyeBreakManager.dismissBreak()
@@ -9978,15 +10021,15 @@ struct EyeBreakGraphView: View {
     private var keyMetricsView: some View {
         HStack(spacing: 12) {
             MetricCardView(
-                title: "Today's Breaks",
+                title: String(localized: "Today's Breaks"),
                 value: "\(summaries.first?.completedBreaks ?? 0)",
                 icon: "eyes",
                 color: .blue,
-                trend: "+\(summaries.first?.completedBreaks ?? 0) today"
+                trend: String(localized: "+\(summaries.first?.completedBreaks ?? 0) today")
             )
 
             MetricCardView(
-                title: "Compliance",
+                title: String(localized: "Compliance"),
                 value: "\(Int((summaries.first?.complianceRate ?? 0) * 100))%",
                 icon: "checkmark.circle",
                 color: complianceColor,
@@ -9994,15 +10037,15 @@ struct EyeBreakGraphView: View {
             )
 
             MetricCardView(
-                title: "Current Streak",
+                title: String(localized: "Current Streak"),
                 value: "\(EyeBreakManager.shared.currentStreak)",
                 icon: "bolt",
                 color: .orange,
-                trend: "days in a row"
+                trend: String(localized: "days in a row")
             )
 
             MetricCardView(
-                title: "Eye Health",
+                title: String(localized: "Eye Health"),
                 value: "\(summaries.first?.eyeStrainScore ?? 100)",
                 icon: "heart.text.square",
                 color: eyeHealthColor,
@@ -10085,11 +10128,11 @@ struct EyeBreakGraphView: View {
         let previous = summaries.dropFirst().first?.complianceRate ?? 0
 
         if current > previous {
-            return "↑ Improving"
+            return String(localized: "↑ Improving")
         } else if current < previous {
-            return "↓ Declining"
+            return String(localized: "↓ Declining")
         }
-        return "→ Steady"
+        return String(localized: "→ Steady")
     }
 
     private var eyeHealthColor: Color {
@@ -10139,7 +10182,7 @@ struct DailySummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(summary.dayName)
+                Text(verbatim: summary.dayName)
                     .font(.headline)
                 Spacer()
                 Circle()
@@ -10152,7 +10195,7 @@ struct DailySummaryCard: View {
                     Text("Work")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
-                    Text(summary.formattedWorkTime)
+                    Text(verbatim: summary.formattedWorkTime)
                         .font(.system(size: 12, weight: .medium))
                 }
 
@@ -10421,9 +10464,9 @@ struct AboutSettingsView: View {
 
     private var versionLabel: String {
         if BetaEntitlementRuntime.isBetaBuild {
-            return "Version \(currentAppVersion) Beta"
+            return String(localized: "Version \(currentAppVersion) Beta")
         }
-        return "Version \(currentAppVersion)"
+        return String(localized: "Version \(currentAppVersion)")
     }
 
     var body: some View {
@@ -10550,13 +10593,13 @@ struct AboutSettingsView: View {
                 backupStatusMessage = BackupStatusMessage(
                     icon: "checkmark.circle.fill",
                     color: .green,
-                    message: "Settings backup exported successfully."
+                    message: String(localized: "Settings backup exported successfully.")
                 )
             case .failure(let error):
                 backupStatusMessage = BackupStatusMessage(
                     icon: "xmark.octagon.fill",
                     color: .red,
-                    message: "Export failed: \(error.localizedDescription)"
+                    message: String(localized: "Export failed: \(error.localizedDescription)")
                 )
             }
         }
@@ -10571,20 +10614,20 @@ struct AboutSettingsView: View {
                     backupStatusMessage = BackupStatusMessage(
                         icon: "arrow.down.doc.fill",
                         color: .green,
-                        message: "Imported settings from \(url.lastPathComponent)."
+                        message: String(localized: "Imported settings from \(url.lastPathComponent).")
                     )
                 } catch {
                     backupStatusMessage = BackupStatusMessage(
                         icon: "xmark.octagon.fill",
                         color: .red,
-                        message: "Import failed: \(error.localizedDescription)"
+                        message: String(localized: "Import failed: \(error.localizedDescription)")
                     )
                 }
             case .failure(let error):
                 backupStatusMessage = BackupStatusMessage(
                     icon: "xmark.octagon.fill",
                     color: .red,
-                    message: "Import failed: \(error.localizedDescription)"
+                    message: String(localized: "Import failed: \(error.localizedDescription)")
                 )
             }
         }
@@ -10598,7 +10641,7 @@ struct AboutSettingsView: View {
                 backupStatusMessage = BackupStatusMessage(
                     icon: "arrow.counterclockwise.circle.fill",
                     color: .orange,
-                    message: "All Sapphire settings were reset to defaults."
+                    message: String(localized: "All Sapphire settings were reset to defaults.")
                 )
             }
             Button("Cancel", role: .cancel) {}
@@ -11005,7 +11048,7 @@ private struct ReleaseNotesSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
                     } else if let notes, !notes.isEmpty {
-                        Text(notes)
+                        Text(verbatim: notes)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
                     } else {
@@ -11067,7 +11110,7 @@ struct ModernChannelSwitcher: View {
     var body: some View {
         HStack(spacing: 0) {
             ForEach(ReleaseChannel.allCases, id: \.self) { channel in
-                Text(channel == .stable ? "Stable" : "Beta")
+                Text(verbatim: channel.displayName)
                     .font(.subheadline.weight(selection == channel ? .semibold : .regular))
                     .foregroundStyle(selection == channel ? .white : .secondary)
                     .padding(.horizontal, 20)
@@ -11162,7 +11205,7 @@ fileprivate struct NotchButtonRowView: View {
                     .font(.system(size: 16, weight: .medium))
                     .frame(width: 30)
 
-                Text(buttonType.displayName)
+                Text(verbatim: buttonType.displayName)
                     .font(.system(size: 14, weight: .medium))
             }
 
@@ -11571,7 +11614,7 @@ private struct MenuBarProfileCardView: View {
 
                 Spacer()
 
-                Text(profile.summaryText)
+                Text(verbatim: profile.summaryText)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -11856,7 +11899,7 @@ private struct MenuBarDisplayBindingsEditor: View {
                                     Image(systemName: isBound ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(isBound ? Color.accentColor : Color.secondary)
                                     Image(systemName: CGDisplayIsBuiltin(screen.displayID) != 0 ? "laptopcomputer" : "display")
-                                    Text(screen.displayLabel)
+                                    Text(verbatim: screen.displayLabel)
                                         .font(.callout)
                                     Spacer()
                                 }
@@ -11949,7 +11992,7 @@ private struct MenuBarFocusBindingsEditor: View {
                                     .foregroundStyle(isBound ? Color.accentColor : Color.secondary)
                                 Image(systemName: option.symbolName)
                                     .font(.callout)
-                                Text(option.name)
+                                Text(verbatim: option.name)
                                     .font(.callout)
                                 Spacer()
                             }
@@ -12285,7 +12328,7 @@ struct ControlItemIconPreview: View {
                         )
                 )
 
-            Text(iconStyle.displayName)
+            Text(verbatim: iconStyle.displayName)
                 .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
                 .foregroundColor(isSelected ? .primary : .secondary)
                 .lineLimit(2)
@@ -12360,13 +12403,14 @@ extension View {
 struct ModernSegmentedPicker: View {
     @Binding var selection: String
     let options: [String]
+    let title: (String) -> LocalizedStringKey
 
     @Namespace private var pickerNamespace
 
     var body: some View {
         HStack(spacing: 8) {
             ForEach(options, id: \.self) { option in
-                Text(option)
+                Text(title(option))
                     .font(.headline.weight(.bold))
                     .padding(.vertical, 10)
                     .padding(.horizontal, 20)
@@ -12657,7 +12701,7 @@ struct FocusSessionSettingsView: View {
 
     private var profilesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Profiles")
+            sectionLabel(String(localized: "Profiles"))
             Text("Each profile has its own timer, blocks, and social filters. Sync activation and settings separately.")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -12876,7 +12920,7 @@ struct FocusSessionSettingsView: View {
 
     private var schedulingSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Scheduling")
+            sectionLabel(String(localized: "Scheduling"))
             Text("Auto-start a focus session at a set time of day — daily, on specific days of the week, weekly, monthly, or once.")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -12917,7 +12961,7 @@ struct FocusSessionSettingsView: View {
 
     private var liveActivityToggleSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Widget & Activity")
+            sectionLabel(String(localized: "Widget & Activity"))
             ToggleRow(
                 title: "Show in Notch",
                 description: "Display the focus session as a live activity in the notch while it's running.",
@@ -12947,7 +12991,7 @@ struct FocusSessionSettingsView: View {
 
     private var durationSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Session Timing")
+            sectionLabel(String(localized: "Session Timing"))
             HStack {
                 Text("Focus Duration:")
                     .font(.system(size: 13))
@@ -12997,17 +13041,17 @@ struct FocusSessionSettingsView: View {
 
     private var blockingSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("App & Website Blocking")
+            sectionLabel(String(localized: "App & Website Blocking"))
             ToggleRow(title: "Enable Blocking", description: "Block distracting apps and websites during focus sessions.", isOn: $settings.settings.focusBlockingEnabled)
             if settings.settings.focusBlockingEnabled {
                 Divider().opacity(0.3).padding(.horizontal, 16)
                 Picker("Blocking mode", selection: $settings.settings.focusBlockingMode) {
                     ForEach(FocusBlockingMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                        Text(verbatim: mode.displayName).tag(mode)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
-                Text(settings.settings.focusBlockingMode.blurb)
+                Text(verbatim: settings.settings.focusBlockingMode.blurb)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 16).padding(.bottom, 8)
@@ -13049,7 +13093,7 @@ struct FocusSessionSettingsView: View {
                                 .padding(.top, 2)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text(level.displayName)
+                                    Text(verbatim: level.displayName)
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundColor(.primary)
                                     if settings.settings.focusIntensity == level {
@@ -13058,7 +13102,7 @@ struct FocusSessionSettingsView: View {
                                             .foregroundColor(.green)
                                     }
                                 }
-                                Text(level.blurb)
+                                Text(verbatim: level.blurb)
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -13089,7 +13133,7 @@ struct FocusSessionSettingsView: View {
                         Picker("Add app", selection: $newBlockedApp) {
                             Text("Select an app…").tag("")
                             ForEach(appCandidates, id: \.bundleID) { candidate in
-                                Text(candidate.name).tag(candidate.bundleID)
+                                Text(verbatim: candidate.name).tag(candidate.bundleID)
                             }
                         }
                         .padding(.horizontal, 16)
@@ -13124,7 +13168,7 @@ struct FocusSessionSettingsView: View {
                     Picker("Add app", selection: $newBlockedApp) {
                         Text("Select an app…").tag("")
                         ForEach(appCandidates, id: \.bundleID) { candidate in
-                            Text(candidate.name).tag(candidate.bundleID)
+                            Text(verbatim: candidate.name).tag(candidate.bundleID)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -13188,7 +13232,7 @@ struct FocusSessionSettingsView: View {
 
     private var environmentSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Environment")
+            sectionLabel(String(localized: "Environment"))
             Text("Apply environment adjustments to the whole Mac while a session runs.")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -13277,7 +13321,7 @@ struct FocusSessionSettingsView: View {
 
     private var automationSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Automation")
+            sectionLabel(String(localized: "Automation"))
 
             Text("Press this shortcut from anywhere to start or pause a focus session.")
                 .font(.caption)
@@ -13338,7 +13382,7 @@ struct FocusSessionSettingsView: View {
                 Divider().opacity(0.3).padding(.horizontal, 16)
                 Picker("Sync mode", selection: $settings.settings.focusShortcutSyncMode) {
                     ForEach(FocusShortcutSyncMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                        Text(verbatim: mode.displayName).tag(mode)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
@@ -13407,7 +13451,7 @@ private struct FocusScheduleRowView: View {
                     Text(schedule.startTime, style: .time)
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(schedule.isActive ? .primary : .secondary)
-                    Text(schedule.repeatDescription)
+                    Text(verbatim: schedule.repeatDescription)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -13437,12 +13481,12 @@ private struct FocusScheduleRowView: View {
     }
 
     private var subtitle: String {
-        var text = "\(Int(schedule.duration / 60)) min session"
+        var text = String(localized: "\(Int(schedule.duration / 60)) min session")
         if schedule.isActive,
            let next = FocusScheduleManager.shared.nextFireDate(for: schedule) {
             let day = Calendar.current.isDateInToday(next)
-                ? "today" : (Calendar.current.isDateInTomorrow(next) ? "tomorrow" : next.formatted(date: .abbreviated, time: .omitted))
-            text += " · next \(day) at \(next.formatted(date: .omitted, time: .shortened))"
+                ? String(localized: "today") : (Calendar.current.isDateInTomorrow(next) ? String(localized: "tomorrow") : next.formatted(date: .abbreviated, time: .omitted))
+            text += String(localized: " · next \(day) at \(next.formatted(date: .omitted, time: .shortened))")
         }
         return text
     }
@@ -13458,13 +13502,13 @@ private struct AddFocusScheduleView: View {
     }
 
     private static let weekdayChoices: [WeekdayToken] = [
-        WeekdayToken(number: 2, label: "Mon"),
-        WeekdayToken(number: 3, label: "Tue"),
-        WeekdayToken(number: 4, label: "Wed"),
-        WeekdayToken(number: 5, label: "Thu"),
-        WeekdayToken(number: 6, label: "Fri"),
-        WeekdayToken(number: 7, label: "Sat"),
-        WeekdayToken(number: 1, label: "Sun"),
+        WeekdayToken(number: 2, label: String(localized: "Mon")),
+        WeekdayToken(number: 3, label: String(localized: "Tue")),
+        WeekdayToken(number: 4, label: String(localized: "Wed")),
+        WeekdayToken(number: 5, label: String(localized: "Thu")),
+        WeekdayToken(number: 6, label: String(localized: "Fri")),
+        WeekdayToken(number: 7, label: String(localized: "Sat")),
+        WeekdayToken(number: 1, label: String(localized: "Sun")),
     ]
 
     @State private var startTime = Date().addingTimeInterval(60 * 60)
@@ -13482,7 +13526,7 @@ private struct AddFocusScheduleView: View {
 
                 Picker("Repeat:", selection: $repeatInterval) {
                     ForEach(FocusScheduleRepeat.allCases) { interval in
-                        Text(interval.displayName).tag(interval)
+                        Text(verbatim: interval.displayName).tag(interval)
                     }
                 }
 
@@ -13572,7 +13616,7 @@ private struct AddFocusScheduleView: View {
                 repeatWeekdays.append(token.number)
             }
         } label: {
-            Text(token.label)
+            Text(verbatim: token.label)
                 .font(.system(size: 11, weight: isOn ? .bold : .medium))
                 .foregroundColor(isOn ? .white : .secondary)
                 .frame(maxWidth: .infinity)

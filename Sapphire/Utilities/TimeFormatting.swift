@@ -29,7 +29,7 @@ extension TimeInterval {
     }
 
     var asRemainingClockOrNow: String {
-        if self <= 0 { return "Now" }
+        if self <= 0 { return String(localized: "Now") }
         let minutes = Int(self) / 60
         let seconds = Int(self) % 60
         return String(format: "%02d:%02d", minutes, seconds)

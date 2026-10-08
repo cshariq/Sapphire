@@ -35,6 +35,21 @@ enum AppArtifactCategory: String, CaseIterable, Identifiable {
         case .other: return "doc.fill"
         }
     }
+
+    var displayName: String {
+        switch self {
+        case .application: return String(localized: "Application")
+        case .applicationSupport: return String(localized: "Application Support")
+        case .caches: return String(localized: "Caches")
+        case .preferences: return String(localized: "Preferences")
+        case .savedState: return String(localized: "Saved State")
+        case .containers: return String(localized: "Containers")
+        case .webData: return String(localized: "Web Data")
+        case .logs: return String(localized: "Logs & Reports")
+        case .launchItems: return String(localized: "Launch Items")
+        case .other: return String(localized: "Other")
+        }
+    }
 }
 
 enum AppArtifactConfidence: String {
@@ -45,10 +60,10 @@ enum AppArtifactConfidence: String {
 
     var explanation: String {
         switch self {
-        case .exact: return "Exact app identifier match"
-        case .shared: return "Shared app-group container — review before removing"
-        case .ambiguous: return "This identifier may be shared or could not be verified — review before removing"
-        case .nameMatch: return "App-name match — review before removing"
+        case .exact: return String(localized: "Exact app identifier match")
+        case .shared: return String(localized: "Shared app-group container — review before removing")
+        case .ambiguous: return String(localized: "This identifier may be shared or could not be verified — review before removing")
+        case .nameMatch: return String(localized: "App-name match — review before removing")
         }
     }
 }
@@ -566,17 +581,17 @@ enum AppUninstaller {
         var errorDescription: String? {
             switch self {
             case .protectedApplication:
-                return "Sapphire and macOS system apps cannot be removed here."
+                return String(localized: "Sapphire and macOS system apps cannot be removed here.")
             case .applicationChanged:
-                return "The application changed after it was scanned. Scan it again before removing it."
+                return String(localized: "The application changed after it was scanned. Scan it again before removing it.")
             case .applicationDidNotQuit:
-                return "The application did not quit. Save your work, quit it manually, and try again."
+                return String(localized: "The application did not quit. Save your work, quit it manually, and try again.")
             case .artifactChanged(let url):
-                return "A related item changed after it was scanned and was left in place: \(url.path)"
+                return String(localized: "A related item changed after it was scanned and was left in place: \(url.path)")
             case .unsafePath(let url):
-                return "Sapphire refused to remove an unsafe path: \(url.path)"
+                return String(localized: "Sapphire refused to remove an unsafe path: \(url.path)")
             case .launchItemDeactivationFailed(let url, let reason):
-                return "The launch item could not be stopped and was left in place: \(url.path). \(reason)"
+                return String(localized: "The launch item could not be stopped and was left in place: \(url.path). \(reason)")
             }
         }
     }
@@ -775,7 +790,7 @@ enum AppUninstaller {
             let reason = result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines)
             throw ValidationError.launchItemDeactivationFailed(
                 url,
-                reason.isEmpty ? "launchctl exited with status \(result.terminationStatus)." : reason
+                reason.isEmpty ? String(localized: "launchctl exited with status \(result.terminationStatus).") : reason
             )
         }
     }

@@ -262,17 +262,17 @@ private enum UpdateMetadataError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: return "The update server returned an invalid response."
-        case .insecureRedirect: return "The update server redirected to an untrusted address."
-        case .httpStatus(let status): return "The update server returned HTTP \(status)."
+        case .invalidResponse: return String(localized: "The update server returned an invalid response.")
+        case .insecureRedirect: return String(localized: "The update server redirected to an untrusted address.")
+        case .httpStatus(let status): return String(localized: "The update server returned HTTP \(status).")
         case .rateLimited(let retry):
-            if let retry { return "GitHub rate-limited update checks. Retrying \(retry.formatted(date: .omitted, time: .shortened))." }
-            return "GitHub rate-limited update checks. Sapphire will retry automatically."
-        case .responseTooLarge: return "The update metadata was unexpectedly large."
-        case .emptyCache: return "No cached update information is available."
-        case .invalidMetadata: return "The update information could not be verified."
-        case .noEligibleRelease: return "No release is available for the selected channel."
-        case .noEligibleAsset: return "This release does not include a trusted Sapphire ZIP for this Mac."
+            if let retry { return String(localized: "GitHub rate-limited update checks. Retrying \(retry.formatted(date: .omitted, time: .shortened)).") }
+            return String(localized: "GitHub rate-limited update checks. Sapphire will retry automatically.")
+        case .responseTooLarge: return String(localized: "The update metadata was unexpectedly large.")
+        case .emptyCache: return String(localized: "No cached update information is available.")
+        case .invalidMetadata: return String(localized: "The update information could not be verified.")
+        case .noEligibleRelease: return String(localized: "No release is available for the selected channel.")
+        case .noEligibleAsset: return String(localized: "This release does not include a trusted Sapphire ZIP for this Mac.")
         }
     }
 }
@@ -367,8 +367,8 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             guard notificationSettings.authorizationStatus == .authorized
                 || notificationSettings.authorizationStatus == .provisional else { return }
             let content = UNMutableNotificationContent()
-            content.title = "Sapphire \(version) is available"
-            content.body = "A new version is ready to download. Open Settings → About → Updates to install it."
+            content.title = String(localized: "Sapphire \(version) is available")
+            content.body = String(localized: "A new version is ready to download. Open Settings → About → Updates to install it.")
             content.sound = .default
             let request = UNNotificationRequest(
                 identifier: "sapphire-update-available-\(version)",
@@ -707,7 +707,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             throw NSError(
                 domain: "UpdateError",
                 code: 26,
-                userInfo: [NSLocalizedDescriptionKey: "The update's executable architecture could not be verified."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "The update's executable architecture could not be verified.")]
             )
         }
         let required = hardwareArchitecture == .arm64
@@ -717,7 +717,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             throw NSError(
                 domain: "UpdateError",
                 code: 27,
-                userInfo: [NSLocalizedDescriptionKey: "This update cannot run natively on this Mac."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "This update cannot run natively on this Mac.")]
             )
         }
     }
@@ -952,7 +952,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
               asset.name.lowercased().hasSuffix(".zip"),
               asset.name.lowercased().contains("sapphire"),
               asset.size.map({ $0 > 0 && $0 <= Self.maximumDownloadBytes }) == true else {
-            applyStatus(.error("The release download did not pass Sapphire's security policy."))
+            applyStatus(.error(String(localized: "The release download did not pass Sapphire's security policy.")))
             return
         }
 
@@ -983,7 +983,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
               let finalURL = response.url,
               Self.isTrustedDownloadURL(finalURL),
               let asset = pendingDownloadAsset else {
-            applyStatus(.error("The update download returned an invalid response."))
+            applyStatus(.error(String(localized: "The update download returned an invalid response.")))
             return
         }
 
@@ -1002,10 +1002,10 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                     let values = try destinationURL.resourceValues(forKeys: [.fileSizeKey])
                     let actualSize = Int64(values.fileSize ?? 0)
                     guard actualSize > 0, actualSize <= maximumDownloadBytes else {
-                        throw NSError(domain: "UpdateError", code: 10, userInfo: [NSLocalizedDescriptionKey: "The update archive has an invalid size."])
+                        throw NSError(domain: "UpdateError", code: 10, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive has an invalid size.")])
                     }
                     if let expectedSize = asset.size, expectedSize > 0, actualSize != expectedSize {
-                        throw NSError(domain: "UpdateError", code: 11, userInfo: [NSLocalizedDescriptionKey: "The update archive was incomplete."])
+                        throw NSError(domain: "UpdateError", code: 11, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive was incomplete.")])
                     }
                     try Self.verifyDigest(of: destinationURL, expected: asset.digest)
                     try Self.validateArchiveEntries(destinationURL)
@@ -1053,7 +1053,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         guard let expected, !expected.isEmpty else { return }
         let pieces = expected.lowercased().split(separator: ":", maxSplits: 1).map(String.init)
         guard pieces.count == 2, pieces[0] == "sha256", pieces[1].count == 64 else {
-            throw NSError(domain: "UpdateError", code: 12, userInfo: [NSLocalizedDescriptionKey: "The release contains an unsupported checksum."])
+            throw NSError(domain: "UpdateError", code: 12, userInfo: [NSLocalizedDescriptionKey: String(localized: "The release contains an unsupported checksum.")])
         }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -1063,7 +1063,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         }
         let actual = hasher.finalize().map { String(format: "%02x", $0) }.joined()
         guard actual == pieces[1] else {
-            throw NSError(domain: "UpdateError", code: 13, userInfo: [NSLocalizedDescriptionKey: "The update checksum did not match the signed release metadata."])
+            throw NSError(domain: "UpdateError", code: 13, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update checksum did not match the signed release metadata.")])
         }
     }
 
@@ -1084,7 +1084,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             throw NSError(
                 domain: "UpdateError",
                 code: 25,
-                userInfo: [NSLocalizedDescriptionKey: "The downloaded update has the wrong bundle identifier."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "The downloaded update has the wrong bundle identifier.")]
             )
         }
         guard let installedTeam = installedIdentity.teamIdentifier else {
@@ -1095,7 +1095,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             throw NSError(
                 domain: "UpdateError",
                 code: 26,
-                userInfo: [NSLocalizedDescriptionKey: "The update was not signed by the same Apple developer team."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "The update was not signed by the same Apple developer team.")]
             )
         }
     }
@@ -1119,7 +1119,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                 throw NSError(
                     domain: "UpdateError",
                     code: 24,
-                    userInfo: [NSLocalizedDescriptionKey: "The staged app version changed before installation."]
+                    userInfo: [NSLocalizedDescriptionKey: String(localized: "The staged app version changed before installation.")]
                 )
             }
             return stagedURL
@@ -1138,7 +1138,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             throw NSError(
                 domain: "UpdateError",
                 code: 25,
-                userInfo: [NSLocalizedDescriptionKey: "The update was not staged on the installed app's volume."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "The update was not staged on the installed app's volume.")]
             )
         }
 
@@ -1162,10 +1162,10 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         expectedVersion: String
     ) async -> PrivilegedUpdateInstallOutcome {
         guard let version = await XPCClient.shared.helperProtocolVersion(timeout: 5) else {
-            return .failure("The privileged update helper is unavailable. Reinstall or repair Sapphire's helper, then try again.")
+            return .failure(String(localized: "The privileged update helper is unavailable. Reinstall or repair Sapphire's helper, then try again."))
         }
         guard version >= SapphireHelperProtocolVersion else {
-            return .failure("The privileged update helper is out of date. Reinstall or repair Sapphire's helper, then try again.")
+            return .failure(String(localized: "The privileged update helper is out of date. Reinstall or repair Sapphire's helper, then try again."))
         }
 
         return await withCheckedContinuation { continuation in
@@ -1176,7 +1176,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             }
 
             guard let helper = XPCClient.shared.helper else {
-                resumeOnce(.failure("The privileged update helper could not be contacted. Reinstall or repair Sapphire's helper, then try again."))
+                resumeOnce(.failure(String(localized: "The privileged update helper could not be contacted. Reinstall or repair Sapphire's helper, then try again.")))
                 return
             }
 
@@ -1188,13 +1188,13 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                 if success {
                     resumeOnce(.success)
                 } else {
-                    resumeOnce(.failure(message ?? "The privileged update helper could not install the update."))
+                    resumeOnce(.failure(message ?? String(localized: "The privileged update helper could not install the update.")))
                 }
             }
 
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 90) {
                 resumeOnce(.failure(
-                    "The privileged update helper did not respond within 90 seconds. Sapphire will not start a second installer while the first result is unknown; reopen Sapphire and verify its version before retrying."
+                    String(localized: "The privileged update helper did not respond within 90 seconds. Sapphire will not start a second installer while the first result is unknown; reopen Sapphire and verify its version before retrying.")
                 ))
             }
         }
@@ -1215,10 +1215,10 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
 
     private func installAndRelaunch(strategy: UpdateInstallStrategy) {
         guard let downloadedZipPath = downloadedAssetPath else {
-            applyStatus(.error("Downloaded file path not found.")); return
+            applyStatus(.error(String(localized: "Downloaded file path not found."))); return
         }
         guard let expectedVersion = pendingDownloadVersion, !expectedVersion.isEmpty else {
-            applyStatus(.error("The verified release version is missing. Download the update again.")); return
+            applyStatus(.error(String(localized: "The verified release version is missing. Download the update again."))); return
         }
 
         applyStatus(.installing)
@@ -1241,7 +1241,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                 unzipProcess.waitUntilExit()
 
                 if unzipProcess.terminationStatus != 0 {
-                    throw NSError(domain: "UpdateError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to unzip the update file."])
+                    throw NSError(domain: "UpdateError", code: 2, userInfo: [NSLocalizedDescriptionKey: String(localized: "Failed to unzip the update file.")])
                 }
 
                 let currentAppURL = Bundle.main.bundleURL
@@ -1250,7 +1250,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                     throw NSError(
                         domain: "UpdateError",
                         code: 23,
-                        userInfo: [NSLocalizedDescriptionKey: "Sapphire is running through an application symlink. Move the real app into Applications before updating."]
+                        userInfo: [NSLocalizedDescriptionKey: String(localized: "Sapphire is running through an application symlink. Move the real app into Applications before updating.")]
                     )
                 }
                 guard let currentBundleIdentifier = Bundle.main.bundleIdentifier,
@@ -1258,7 +1258,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                         in: tempUnzipDirectory,
                         bundleIdentifier: currentBundleIdentifier
                       ) else {
-                    throw NSError(domain: "UpdateError", code: 3, userInfo: [NSLocalizedDescriptionKey: "The archive did not contain the expected Sapphire app."])
+                    throw NSError(domain: "UpdateError", code: 3, userInfo: [NSLocalizedDescriptionKey: String(localized: "The archive did not contain the expected Sapphire app.")])
                 }
                 try Self.validateRuntimeArchitecture(newAppURL)
                 try Self.validateUpdatePublisher(candidate: newAppURL, replacing: currentAppURL)
@@ -1268,7 +1268,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                     throw NSError(
                         domain: "UpdateError",
                         code: 14,
-                        userInfo: [NSLocalizedDescriptionKey: "The signed app version (\(candidateVersion)) does not match the offered release (\(expectedVersion))."]
+                        userInfo: [NSLocalizedDescriptionKey: String(localized: "The signed app version (\(candidateVersion)) does not match the offered release (\(expectedVersion)).")]
                     )
                 }
                 let currentAppPath = Bundle.main.bundlePath
@@ -1298,7 +1298,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                         throw NSError(
                             domain: "UpdateError",
                             code: 9,
-                            userInfo: [NSLocalizedDescriptionKey: "Sapphire isn't in a user-writable location. Install or repair the privileged helper, then use the standard install method."]
+                            userInfo: [NSLocalizedDescriptionKey: String(localized: "Sapphire isn't in a user-writable location. Install or repair the privileged helper, then use the standard install method.")]
                         )
                     case .standard:
                         let outcome = await Self.installViaPrivilegedHelper(
@@ -1336,11 +1336,11 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             maximumBytes: maximumArchiveListingBytes
         )
         guard let listing = String(data: listingData, encoding: .utf8) else {
-            throw NSError(domain: "UpdateError", code: 15, userInfo: [NSLocalizedDescriptionKey: "The update archive is invalid."])
+            throw NSError(domain: "UpdateError", code: 15, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive is invalid.")])
         }
         let entries = listing.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
         guard !entries.isEmpty, entries.count <= maximumArchiveEntryCount else {
-            throw NSError(domain: "UpdateError", code: 16, userInfo: [NSLocalizedDescriptionKey: "The update archive contains an unsafe number of files."])
+            throw NSError(domain: "UpdateError", code: 16, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive contains an unsafe number of files.")])
         }
 
         let attributesData = try boundedProcessOutput(
@@ -1349,7 +1349,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             maximumBytes: maximumArchiveListingBytes
         )
         guard let attributesText = String(data: attributesData, encoding: .utf8) else {
-            throw NSError(domain: "UpdateError", code: 15, userInfo: [NSLocalizedDescriptionKey: "The update archive has invalid file metadata."])
+            throw NSError(domain: "UpdateError", code: 15, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive has invalid file metadata.")])
         }
         let attributeLines = attributesText.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
             guard line.count >= 11,
@@ -1358,7 +1358,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             return line[line.index(line.startIndex, offsetBy: 10)].isWhitespace
         }
         guard attributeLines.count == entries.count else {
-            throw NSError(domain: "UpdateError", code: 15, userInfo: [NSLocalizedDescriptionKey: "The update archive contains unsupported file metadata."])
+            throw NSError(domain: "UpdateError", code: 15, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive contains unsupported file metadata.")])
         }
 
         let totalsData = try boundedProcessOutput(
@@ -1376,7 +1376,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             throw NSError(
                 domain: "UpdateError",
                 code: 21,
-                userInfo: [NSLocalizedDescriptionKey: "The update archive has unsafe or inconsistent size metadata."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive has unsafe or inconsistent size metadata.")]
             )
         }
         let compressionRatio = Double(totals.uncompressedBytes) / Double(totals.compressedBytes)
@@ -1384,7 +1384,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             throw NSError(
                 domain: "UpdateError",
                 code: 22,
-                userInfo: [NSLocalizedDescriptionKey: "The update archive's expanded size is unexpectedly large."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive's expanded size is unexpectedly large.")]
             )
         }
 
@@ -1396,13 +1396,13 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                         .precomposedStringWithCanonicalMapping
                         .lowercased()
                   ).inserted else {
-                throw NSError(domain: "UpdateError", code: 17, userInfo: [NSLocalizedDescriptionKey: "The update archive contains an unsafe path."])
+                throw NSError(domain: "UpdateError", code: 17, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive contains an unsafe path.")])
             }
 
             if attributeLines[index].first == "l" {
                 guard !path.hasPrefix("-"),
                       !path.contains(where: { $0 == "*" || $0 == "?" || $0 == "[" }) else {
-                    throw NSError(domain: "UpdateError", code: 17, userInfo: [NSLocalizedDescriptionKey: "The update archive contains an unsupported symbolic-link path."])
+                    throw NSError(domain: "UpdateError", code: 17, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive contains an unsupported symbolic-link path.")])
                 }
                 let targetData = try boundedProcessOutput(
                     executablePath: "/usr/bin/unzip",
@@ -1411,7 +1411,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                 )
                 guard let target = String(data: targetData, encoding: .utf8),
                       isSafeArchiveSymlinkTarget(target, linkComponents: components) else {
-                    throw NSError(domain: "UpdateError", code: 17, userInfo: [NSLocalizedDescriptionKey: "The update archive contains an unsafe symbolic link."])
+                    throw NSError(domain: "UpdateError", code: 17, userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive contains an unsafe symbolic link.")])
                 }
             }
         }
@@ -1489,7 +1489,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                 throw NSError(
                     domain: "UpdateError",
                     code: 15,
-                    userInfo: [NSLocalizedDescriptionKey: "The update archive's directory is unexpectedly large."]
+                    userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive's directory is unexpectedly large.")]
                 )
             }
             data.append(chunk)
@@ -1500,7 +1500,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             throw NSError(
                 domain: "UpdateError",
                 code: 15,
-                userInfo: [NSLocalizedDescriptionKey: "The update archive is invalid."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "The update archive is invalid.")]
             )
         }
         return data
@@ -1580,7 +1580,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                     restoreAvailableDownloadState()
                 }
             } else {
-                applyStatus(.error("Download failed: \(error.localizedDescription)"))
+                applyStatus(.error(String(localized: "Download failed: \(error.localizedDescription)")))
             }
         }
     }
@@ -1589,7 +1589,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         guard downloadSession === session else { return }
         if totalBytesWritten > Self.maximumDownloadBytes
             || totalBytesExpectedToWrite > Self.maximumDownloadBytes {
-            downloadPolicyFailure = "The update archive exceeded Sapphire's maximum allowed size."
+            downloadPolicyFailure = String(localized: "The update archive exceeded Sapphire's maximum allowed size.")
             downloadTask.cancel()
             return
         }

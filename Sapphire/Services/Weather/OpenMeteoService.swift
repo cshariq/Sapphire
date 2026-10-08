@@ -101,31 +101,31 @@ private func wmcCodeToTWCIcon(_ wmo: Int, isDay: Bool) -> Int {
 
 private func wmcDescription(_ wmo: Int) -> String {
     switch wmo {
-    case 0:      return "Clear"
-    case 1:      return "Mostly Clear"
-    case 2:      return "Partly Cloudy"
-    case 3:      return "Overcast"
-    case 45:     return "Foggy"
-    case 48:     return "Icy Fog"
-    case 51:     return "Light Drizzle"
-    case 53:     return "Drizzle"
-    case 55:     return "Heavy Drizzle"
-    case 56, 57: return "Freezing Drizzle"
-    case 61:     return "Light Rain"
-    case 63:     return "Rain"
-    case 65:     return "Heavy Rain"
-    case 66, 67: return "Freezing Rain"
-    case 71:     return "Light Snow"
-    case 73:     return "Snow"
-    case 75:     return "Heavy Snow"
-    case 77:     return "Snow Grains"
-    case 80:     return "Light Showers"
-    case 81:     return "Showers"
-    case 82:     return "Heavy Showers"
-    case 85, 86: return "Snow Showers"
-    case 95:     return "Thunderstorm"
-    case 96, 99: return "Thunderstorm w/ Hail"
-    default:     return "Unknown"
+    case 0:      return String(localized: "weather.condition.clear", defaultValue: "Clear")
+    case 1:      return String(localized: "Mostly Clear")
+    case 2:      return String(localized: "Partly Cloudy")
+    case 3:      return String(localized: "Overcast")
+    case 45:     return String(localized: "Foggy")
+    case 48:     return String(localized: "Icy Fog")
+    case 51:     return String(localized: "Light Drizzle")
+    case 53:     return String(localized: "Drizzle")
+    case 55:     return String(localized: "Heavy Drizzle")
+    case 56, 57: return String(localized: "Freezing Drizzle")
+    case 61:     return String(localized: "Light Rain")
+    case 63:     return String(localized: "weather.condition.rain", defaultValue: "Rain")
+    case 65:     return String(localized: "Heavy Rain")
+    case 66, 67: return String(localized: "Freezing Rain")
+    case 71:     return String(localized: "Light Snow")
+    case 73:     return String(localized: "Snow")
+    case 75:     return String(localized: "Heavy Snow")
+    case 77:     return String(localized: "Snow Grains")
+    case 80:     return String(localized: "Light Showers")
+    case 81:     return String(localized: "Showers")
+    case 82:     return String(localized: "Heavy Showers")
+    case 85, 86: return String(localized: "Snow Showers")
+    case 95:     return String(localized: "Thunderstorm")
+    case 96, 99: return String(localized: "Thunderstorm w/ Hail")
+    default:     return String(localized: "Unknown")
     }
 }
 
@@ -139,10 +139,10 @@ enum OpenMeteoServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL:              return "Invalid Open-Meteo URL."
+        case .invalidURL:              return String(localized: "Invalid Open-Meteo URL.")
         case .networkError(let e):     return e.localizedDescription
-        case .decodingError(let e):    return "Failed to parse Open-Meteo response: \(e.localizedDescription)"
-        case .noData:                  return "No data from Open-Meteo."
+        case .decodingError(let e):    return String(localized: "Failed to parse Open-Meteo response: \(e.localizedDescription)")
+        case .noData:                  return String(localized: "No data from Open-Meteo.")
         }
     }
 }
@@ -176,7 +176,7 @@ final class OpenMeteoService {
 
     private static let hourlyFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "ha"
+        f.dateFormat = String(localized: "weather.hourly.dateFormat", defaultValue: "ha", comment: "Date format pattern for hourly forecast labels, e.g. 6AM.")
         return f
     }()
 
@@ -290,17 +290,17 @@ final class OpenMeteoService {
             iconCode:           twcIcon,
             feelsLike:          feelsF,
             feelsLikeMetric:    Int(feelsC.rounded()),
-            windInfo:           "\(windMph) mph",
-            windInfoMetric:     "\(windKmh) km/h",
+            windInfo:           String(localized: "\(windMph) mph"),
+            windInfoMetric:     String(localized: "\(windKmh) km/h"),
             humidity:           "\(humidity)%",
             precipChance:       precipPct,
             uvIndex:            "\(Int(uvRaw.rounded())) (\(uvDesc))",
             sunriseTime:        sunriseStr,
             sunsetTime:         sunsetStr,
-            visibility:         "-- mi",
-            visibilityMetric:   "-- km",
-            pressure:           "-- in",
-            pressureMetric:     "-- hPa",
+            visibility:         String(localized: "-- mi"),
+            visibilityMetric:   String(localized: "-- km"),
+            pressure:           String(localized: "-- in"),
+            pressureMetric:     String(localized: "-- hPa"),
             dailyForecasts:     dailyForecasts,
             hourlyForecasts:    hourlyForecasts,
             isAvailable:        true
@@ -315,11 +315,11 @@ final class OpenMeteoService {
 
     private func uvDescription(_ uv: Double) -> String {
         switch uv {
-        case ..<3:   return "Low"
-        case ..<6:   return "Moderate"
-        case ..<8:   return "High"
-        case ..<11:  return "Very High"
-        default:     return "Extreme"
+        case ..<3:   return String(localized: "Low")
+        case ..<6:   return String(localized: "Moderate")
+        case ..<8:   return String(localized: "High")
+        case ..<11:  return String(localized: "Very High")
+        default:     return String(localized: "Extreme")
         }
     }
 

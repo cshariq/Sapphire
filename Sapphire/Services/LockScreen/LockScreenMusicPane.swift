@@ -45,12 +45,12 @@ enum LockScreenMusicTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .nowPlaying: "Overview"
-        case .artist: "Artist"
-        case .playlists: "Library"
-        case .queue: "Queue"
-        case .devices: "Devices"
-        case .lyrics: "Lyrics"
+        case .nowPlaying: String(localized: "Overview")
+        case .artist: String(localized: "Artist")
+        case .playlists: String(localized: "Library")
+        case .queue: String(localized: "Queue")
+        case .devices: String(localized: "Devices")
+        case .lyrics: String(localized: "Lyrics")
         }
     }
 
@@ -290,8 +290,8 @@ private struct LockScreenMusicPaneContent: View {
             return musicManager.nativeQueue.enumerated().map { index, track in
                 PaneTrack(
                     id: "sp-\(index)-\(track.uid)",
-                    title: track.metadata?.title ?? "Unknown Track",
-                    subtitle: track.metadata?.artistName ?? "Unknown Artist",
+                    title: track.metadata?.title ?? String(localized: "Unknown Track"),
+                    subtitle: track.metadata?.artistName ?? String(localized: "Unknown Artist"),
                     imageURL: track.metadata?.imageURL
                 )
             }
@@ -311,7 +311,7 @@ private struct LockScreenMusicPaneContent: View {
     private func topBar(_ m: PaneMetrics) -> some View {
         HStack(spacing: 0) {
             HStack(spacing: 2 * m.k) {
-                topBarButton("xmark", help: "Close", selected: false, m) { controller.close() }
+                topBarButton("xmark", help: String(localized: "Close"), selected: false, m) { controller.close() }
                 Capsule()
                     .fill(Color.white.opacity(0.18))
                     .frame(width: 1, height: 18 * m.k)
@@ -410,7 +410,7 @@ private struct LockScreenMusicPaneContent: View {
                 VStack(alignment: .leading, spacing: 0) {
                     albumLine(m)
 
-                    Text(musicManager.title ?? "Not Playing")
+                    Text(musicManager.title ?? String(localized: "Not Playing"))
                         .font(.system(size: 50 * m.k, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(2)
@@ -480,7 +480,7 @@ private struct LockScreenMusicPaneContent: View {
         let label = [album, year].compactMap { $0 }.joined(separator: " · ")
 
         return HStack(spacing: 10 * m.k) {
-            eyebrow(label.isEmpty ? "Now Playing" : label, m)
+            eyebrow(label.isEmpty ? String(localized: "Now Playing") : label, m)
             if isAppleMusic {
                 ForEach(details.audioBadges.prefix(2), id: \.self) { badge in
                     Label(badge.rawValue, systemImage: badge.systemImage)
@@ -496,7 +496,7 @@ private struct LockScreenMusicPaneContent: View {
 
     private func artistLine(_ artist: SpotifyArtistProfile?, _ m: PaneMetrics) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10 * m.k) {
-            Text(musicManager.artist ?? "Unknown Artist")
+            Text(musicManager.artist ?? String(localized: "Unknown Artist"))
                 .font(.system(size: 23 * m.k, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.75))
                 .lineLimit(1)
@@ -513,9 +513,9 @@ private struct LockScreenMusicPaneContent: View {
         let details = musicManager.appleNowPlaying
         let plays: String? = {
             if isAppleMusic, let count = details.playCount ?? musicManager.applePlayCount, count > 0 {
-                return count == 1 ? "Played once" : "Played \(count) times"
+                return count == 1 ? String(localized: "Played once") : String(localized: "Played \(count) times")
             }
-            return musicManager.playCount.map { "\($0) plays" }
+            return musicManager.playCount.map { String(localized: "\($0) plays") }
         }()
 
         return HStack(spacing: 8 * m.k) {
@@ -576,7 +576,7 @@ private struct LockScreenMusicPaneContent: View {
     private func upNextCard(_ tracks: [PaneTrack], _ m: PaneMetrics) -> some View {
         VStack(alignment: .leading, spacing: 10 * m.k) {
             HStack {
-                eyebrow("Up Next", m)
+                eyebrow(String(localized: "Up Next"), m)
                 Spacer()
                 Button { controller.selectTab(.queue) } label: {
                     Text("See All")
@@ -618,13 +618,15 @@ private struct LockScreenMusicPaneContent: View {
             HStack(alignment: .top, spacing: 16 * m.k) {
                 remoteArtwork(artist.avatarURL ?? artist.headerImageURL, size: 64 * m.k, radius: 32 * m.k)
                 VStack(alignment: .leading, spacing: 6 * m.k) {
-                    eyebrow("About the Artist", m)
+                    eyebrow(String(localized: "About the Artist"), m)
                     Text(artist.name)
                         .font(.system(size: 19 * m.k, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     if let listeners = artist.monthlyListeners ?? artist.followers {
-                        Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
+                        Text(artist.monthlyListeners != nil
+                            ? String(localized: "\(listeners.compactFormatted) monthly listeners")
+                            : String(localized: "\(listeners.compactFormatted) followers"))
                             .font(.system(size: 13 * m.k, weight: .medium, design: .rounded))
                             .foregroundStyle(.white.opacity(0.6))
                     }
@@ -652,7 +654,7 @@ private struct LockScreenMusicPaneContent: View {
 
     private func moreByCard(_ songs: [AppleMusicSong], _ m: PaneMetrics) -> some View {
         VStack(alignment: .leading, spacing: 10 * m.k) {
-            eyebrow("More by \(musicManager.artist ?? "the Artist")", m)
+            eyebrow(musicManager.artist.map { String(localized: "More by \($0)") } ?? String(localized: "More by the Artist"), m)
             ForEach(songs) { song in
                 HStack(spacing: 12 * m.k) {
                     remoteArtwork(song.artworkURL, size: 42 * m.k, radius: 9 * m.k)
@@ -695,13 +697,13 @@ private struct LockScreenMusicPaneContent: View {
                 albumArtwork(size: m.lyricsArtwork, radius: 30 * m.k)
                     .shadow(color: .black.opacity(0.3), radius: 24 * m.k, y: 10 * m.k)
 
-                Text(musicManager.title ?? "Not Playing")
+                Text(musicManager.title ?? String(localized: "Not Playing"))
                     .font(.system(size: 24 * m.k, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .minimumScaleFactor(0.6)
                     .padding(.top, 22 * m.k)
-                Text(musicManager.artist ?? "Unknown Artist")
+                Text(musicManager.artist ?? String(localized: "Unknown Artist"))
                     .font(.system(size: 17 * m.k, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.65))
                     .lineLimit(1)
@@ -735,14 +737,16 @@ private struct LockScreenMusicPaneContent: View {
                                 .shadow(color: .black.opacity(0.3), radius: 20 * m.k, y: 8 * m.k)
                         }
                         VStack(alignment: .leading, spacing: 8 * m.k) {
-                            eyebrow(artist.isVerified ? "Verified Artist" : "Artist", m)
+                            eyebrow(artist.isVerified ? String(localized: "Verified Artist") : String(localized: "Artist"), m)
                             Text(artist.name)
                                 .font(.system(size: 52 * m.k, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.45)
                             if let listeners = artist.monthlyListeners ?? artist.followers {
-                                Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
+                                Text(artist.monthlyListeners != nil
+                                    ? String(localized: "\(listeners.compactFormatted) monthly listeners")
+                                    : String(localized: "\(listeners.compactFormatted) followers"))
                                     .font(.system(size: 18 * m.k, weight: .medium, design: .rounded))
                                     .foregroundStyle(.white.opacity(0.65))
                             }
@@ -752,7 +756,7 @@ private struct LockScreenMusicPaneContent: View {
                     HStack(alignment: .top, spacing: 28 * m.k) {
                         if !artist.biography.isEmpty {
                             paneCard(m, key: "bio") {
-                                cardTitle("About", m)
+                                cardTitle(String(localized: "About"), m)
                                 Text(artist.biography)
                                     .font(.system(size: 17 * m.k, weight: .regular, design: .rounded))
                                     .foregroundStyle(.white.opacity(0.78))
@@ -764,7 +768,7 @@ private struct LockScreenMusicPaneContent: View {
                             VStack(spacing: 28 * m.k) {
                                 if !api.artistConcerts.isEmpty {
                                     paneCard(m, key: "concerts") {
-                                        cardTitle("On Tour", m)
+                                        cardTitle(String(localized: "On Tour"), m)
                                         ForEach(api.artistConcerts.prefix(4)) { concert in
                                             VStack(alignment: .leading, spacing: 2 * m.k) {
                                                 Text(concert.title)
@@ -781,7 +785,7 @@ private struct LockScreenMusicPaneContent: View {
                                 }
                                 if !artist.topCities.isEmpty {
                                     paneCard(m, key: "cities") {
-                                        cardTitle("Top Cities", m)
+                                        cardTitle(String(localized: "Top Cities"), m)
                                         ForEach(Array(artist.topCities.prefix(5).enumerated()), id: \.offset) { index, city in
                                             HStack(spacing: 12 * m.k) {
                                                 Text("\(index + 1)")
@@ -803,7 +807,7 @@ private struct LockScreenMusicPaneContent: View {
 
                     if !api.relatedTracks.isEmpty {
                         VStack(alignment: .leading, spacing: 16 * m.k) {
-                            sectionTitle("Related Tracks", m)
+                            sectionTitle(String(localized: "Related Tracks"), m)
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16 * m.k), count: 3), spacing: 16 * m.k) {
                                 ForEach(api.relatedTracks.prefix(9)) { track in
                                     Button { Task { _ = await musicManager.play(trackUri: track.uri, contextUri: nil) } } label: {
@@ -836,13 +840,13 @@ private struct LockScreenMusicPaneContent: View {
                     }
 
                     if !api.similarAlbums.isEmpty {
-                        tileRow("Fans Also Like", m, items: Array(api.similarAlbums.prefix(10))) { album in
+                        tileRow(String(localized: "Fans Also Like"), m, items: Array(api.similarAlbums.prefix(10))) { album in
                             tile(url: album.imageURL, title: album.name, subtitle: album.artistName, m)
                         }
                     }
 
                     if !artist.merch.isEmpty {
-                        tileRow("Merch", m, items: artist.merch) { item in
+                        tileRow(String(localized: "Merch"), m, items: artist.merch) { item in
                             tile(url: item.imageURL, title: item.name, subtitle: item.price ?? "", m)
                         }
                     }
@@ -851,7 +855,7 @@ private struct LockScreenMusicPaneContent: View {
                 .padding(.vertical, 24 * m.k)
             }
         } else {
-            emptyState("No artist info for this track", icon: "person.crop.circle", m)
+            emptyState(String(localized: "No artist info for this track"), icon: "person.crop.circle", m)
         }
     }
 
@@ -866,14 +870,14 @@ private struct LockScreenMusicPaneContent: View {
             ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if playlists.isEmpty {
             emptyState(
-                signedIn ? "No playlists found" : (isAppleMusic ? "Allow Apple Music access to see your library" : "Sign in to Spotify to see your library"),
+                signedIn ? String(localized: "No playlists found") : (isAppleMusic ? String(localized: "Allow Apple Music access to see your library") : String(localized: "Sign in to Spotify to see your library")),
                 icon: "music.note.list",
                 m
             )
         } else {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 24 * m.k) {
-                    headline("Your Library", detail: "\(playlists.count) playlists", m)
+                    headline(String(localized: "Your Library"), detail: String(localized: "\(playlists.count) playlists"), m)
                     LazyVGrid(
                         columns: [GridItem(.adaptive(minimum: 190 * m.k, maximum: 260 * m.k), spacing: 28 * m.k)],
                         alignment: .leading,
@@ -922,11 +926,11 @@ private struct LockScreenMusicPaneContent: View {
         let signedIn = isAppleMusic || musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated
         return Group {
             paneCard(m, key: "queue", padding: 28 * m.k) {
-                headline("Up Next", detail: tracks.isEmpty ? nil : "\(tracks.count) songs", m)
+                headline(String(localized: "Up Next"), detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) songs"), m)
                 if !signedIn {
-                    emptyState("Sign in to Spotify to see your queue", icon: "person.crop.circle.badge.questionmark", m)
+                    emptyState(String(localized: "Sign in to Spotify to see your queue"), icon: "person.crop.circle.badge.questionmark", m)
                 } else if tracks.isEmpty {
-                    emptyState("Nothing queued", icon: "text.line.first.and.arrowtriangle.forward", m)
+                    emptyState(String(localized: "Nothing queued"), icon: "text.line.first.and.arrowtriangle.forward", m)
                 } else {
                     ScrollView(showsIndicators: false) {
                         LazyVStack(spacing: 4 * m.k) {
@@ -978,7 +982,7 @@ private struct LockScreenMusicPaneContent: View {
 
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 26 * m.k) {
-                headline("Play On", detail: nil, m)
+                headline(String(localized: "Play On"), detail: nil, m)
 
                 if isSpotify, !connect.isEmpty {
                     deviceSection("Spotify Connect", key: "connect", m) {
@@ -987,7 +991,7 @@ private struct LockScreenMusicPaneContent: View {
                             deviceTile(
                                 icon: deviceIcon(for: device.deviceType),
                                 name: device.name,
-                                detail: isActive ? "Playing" : device.deviceType.capitalized,
+                                detail: isActive ? String(localized: "Playing") : device.deviceType.capitalized,
                                 isActive: isActive,
                                 m
                             ) {
@@ -1002,7 +1006,7 @@ private struct LockScreenMusicPaneContent: View {
                             deviceTile(
                                 icon: deviceIcon(for: device.type),
                                 name: device.name,
-                                detail: device.isActive ? "Playing" : device.type.capitalized,
+                                detail: device.isActive ? String(localized: "Playing") : device.type.capitalized,
                                 isActive: device.isActive,
                                 m
                             ) {
@@ -1019,7 +1023,7 @@ private struct LockScreenMusicPaneContent: View {
                             deviceTile(
                                 icon: device.iconName,
                                 name: device.name,
-                                detail: device.isSelected ? "Connected" : "AirPlay",
+                                detail: device.isSelected ? String(localized: "Connected") : "AirPlay",
                                 isActive: device.isSelected,
                                 m
                             ) {
@@ -1082,7 +1086,7 @@ private struct LockScreenMusicPaneContent: View {
         HStack(spacing: 20 * m.k) {
             albumArtwork(size: 58 * m.k, radius: 12 * m.k)
             VStack(alignment: .leading, spacing: 2 * m.k) {
-                Text(musicManager.title ?? "Not Playing")
+                Text(musicManager.title ?? String(localized: "Not Playing"))
                     .font(.system(size: 17 * m.k, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -1523,7 +1527,7 @@ private struct PaneMacOutputs: View {
                         PaneDeviceTile(
                             icon: IconMapper.icon(for: device),
                             name: device.name,
-                            detail: active ? "Playing" : "Output",
+                            detail: active ? String(localized: "Playing") : String(localized: "Output"),
                             isActive: active,
                             m: m
                         ) {

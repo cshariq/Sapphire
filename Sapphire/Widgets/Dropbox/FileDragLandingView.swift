@@ -50,7 +50,7 @@ struct FileDragLandingView: View {
                 standardCard(
                     zone: .shelf,
                     icon: "tray.and.arrow.down.fill",
-                    text: "Add to Shelf"
+                    text: String(localized: "Add to Shelf")
                 )
             }
 
@@ -309,8 +309,8 @@ private struct DeviceDropTile: View {
     private var isEnabled: Bool { peer.linkState.isUsable }
 
     private var status: String {
-        if isEnabled { return "Ready" }
-        return peer.linkState == .nearby ? "Nearby" : "Offline"
+        if isEnabled { return String(localized: "Ready") }
+        return peer.linkState == .nearby ? String(localized: "Nearby") : String(localized: "Offline")
     }
 
     private var foreground: Color {
@@ -342,7 +342,7 @@ private struct DeviceDropTile: View {
             }
             .scaleEffect(isTargeted ? (style == .card ? 1.03 : 1.04) : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isTargeted)
-            .help(isEnabled ? "Send to \(peer.displayName)" : "\(peer.displayName) is \(status.lowercased())")
+            .help(isEnabled ? String(localized: "Send to \(peer.displayName)") : String(localized: "\(peer.displayName) is \(status.lowercased())"))
     }
 
     private var fillOpacity: Double {
@@ -475,9 +475,9 @@ enum FileProviderError: Error, LocalizedError {
     case loadingFailed, noValidURLFound, duplicationFailed(Error)
     var errorDescription: String? {
         switch self {
-        case .loadingFailed: return "Failed to load data from the item provider."
-        case .noValidURLFound: return "Could not retrieve a valid file URL from the dropped item."
-        case .duplicationFailed(let e): return "Failed to copy the file: \(e.localizedDescription)"
+        case .loadingFailed: return String(localized: "Failed to load data from the item provider.")
+        case .noValidURLFound: return String(localized: "Could not retrieve a valid file URL from the dropped item.")
+        case .duplicationFailed(let e): return String(localized: "Failed to copy the file: \(e.localizedDescription)")
         }
     }
 }

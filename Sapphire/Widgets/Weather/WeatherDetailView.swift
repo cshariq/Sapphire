@@ -30,12 +30,12 @@ struct RelativeTimeView: View {
         let minutes = Int(interval / 60)
 
         if minutes < 1 {
-            return "Updated just now"
+            return String(localized: "Updated just now")
         } else if minutes < 60 {
-            return "Updated \(minutes)m ago"
+            return String(localized: "Updated \(minutes)m ago")
         } else {
             let hours = minutes / 60
-            return "Updated \(hours)h ago"
+            return String(localized: "Updated \(hours)h ago")
         }
     }
 }

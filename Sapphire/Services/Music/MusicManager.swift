@@ -1566,7 +1566,7 @@ class MusicManager {
     }
 
     func appName(for bundleID: String?) -> String {
-        guard let bundleID = bundleID else { return "Unknown" }
+        guard let bundleID = bundleID else { return String(localized: "Unknown") }
         if let url = appURL(for: bundleID) {
             return url.deletingPathExtension().lastPathComponent
         }

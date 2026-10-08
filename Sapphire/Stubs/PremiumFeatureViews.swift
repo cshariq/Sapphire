@@ -15,7 +15,7 @@ struct SystemPowerReading {
 
     var heroWatts: Double { adapterConnected ? max(adapterPower, systemLoad) : systemLoad }
     var adapterDisplayWatts: Double { adapterPower > 0 ? adapterPower : heroWatts }
-    var statusLabel: String { isCharging ? "Charging" : (adapterConnected ? "On AC Power" : "On Battery") }
+    var statusLabel: String { isCharging ? String(localized: "Charging") : (adapterConnected ? String(localized: "On AC Power") : String(localized: "On Battery")) }
     var statusColor: Color { isCharging ? .green : (adapterConnected ? .cyan : .orange) }
 }
 
@@ -38,35 +38,35 @@ private struct PremiumUnavailableView: View {
     }
 }
 
-struct KeyboardShortcutsSettingsView: View { var body: some View { PremiumUnavailableView(title: "Keyboard Shortcuts") } }
-struct ContinuitySettingsView: View { var body: some View { PremiumUnavailableView(title: "Continuity") } }
-struct EmojiSettingsView: View { var body: some View { PremiumUnavailableView(title: "Emoji") } }
-struct MouseSettingsView: View { var body: some View { PremiumUnavailableView(title: "Mouse") } }
-struct MonitoringSettingsView: View { var body: some View { PremiumUnavailableView(title: "Monitoring") } }
-struct ArchivesAndDMGInstallerSettingsView: View { var body: some View { PremiumUnavailableView(title: "Archives") } }
-struct AppLockSettingsView: View { var body: some View { PremiumUnavailableView(title: "App Lock") } }
-struct DockLayoutsSettingsView: View { var body: some View { PremiumUnavailableView(title: "Dock Layouts") } }
-struct MediaOptimizerSettingsView: View { var body: some View { PremiumUnavailableView(title: "Media Optimizer") } }
+struct KeyboardShortcutsSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Keyboard Shortcuts")) } }
+struct ContinuitySettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Continuity")) } }
+struct EmojiSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Emoji")) } }
+struct MouseSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Mouse")) } }
+struct MonitoringSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Monitoring")) } }
+struct ArchivesAndDMGInstallerSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Archives")) } }
+struct AppLockSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "App Lock")) } }
+struct DockLayoutsSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Dock Layouts")) } }
+struct MediaOptimizerSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Media Optimizer")) } }
 
 struct StorageWorkspaceView: View {
     @ObservedObject var model: StorageViewModel
-    var body: some View { PremiumUnavailableView(title: "Storage Workspace") }
+    var body: some View { PremiumUnavailableView(title: String(localized: "Storage Workspace")) }
 }
 
 struct EightDAudioView: View {
     let bundleID: String
     let appName: String
-    var body: some View { PremiumUnavailableView(title: "8D Audio") }
+    var body: some View { PremiumUnavailableView(title: String(localized: "8D Audio")) }
 }
 
 struct SurroundAudioView: View {
     let bundleID: String
     let appName: String
-    var body: some View { PremiumUnavailableView(title: "Surround Audio") }
+    var body: some View { PremiumUnavailableView(title: String(localized: "Surround Audio")) }
 }
 
 struct StorageDetailView: View {
-    var body: some View { PremiumUnavailableView(title: "Storage") }
+    var body: some View { PremiumUnavailableView(title: String(localized: "Storage")) }
 }
 
 struct StorageWidgetView: View {

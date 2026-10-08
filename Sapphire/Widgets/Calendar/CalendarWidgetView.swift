@@ -158,7 +158,7 @@ struct CalendarWidgetView: View {
                 Image(systemName: "calendar.badge.checkmark")
                     .font(.system(size: 12))
                     .foregroundColor(.gray)
-                Text(Calendar.current.isDateInToday(viewModel.selectedDate) ? "No more items today" : "No items scheduled")
+                Text(Calendar.current.isDateInToday(viewModel.selectedDate) ? String(localized: "No more items today") : String(localized: "No items scheduled"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.gray)
             }

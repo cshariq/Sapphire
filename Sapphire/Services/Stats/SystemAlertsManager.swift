@@ -166,8 +166,8 @@ final class SystemAlertsManager: ObservableObject {
         guard let average = cpuGate.record(usage * 100, threshold: configuration.cpuThreshold, at: uptime) else { return }
         postAlert(
             kind: .cpu,
-            title: "High CPU Load",
-            body: "CPU has been at \(Int(average.rounded()))% for about a minute."
+            title: String(localized: "High CPU Load"),
+            body: String(localized: "CPU has been at \(Int(average.rounded()))% for about a minute.")
         )
     }
 
@@ -223,8 +223,8 @@ final class SystemAlertsManager: ObservableObject {
         guard temperatureGate.record(hottest, threshold: configuration.temperatureThreshold, at: uptime) != nil else { return }
         postAlert(
             kind: .temperature,
-            title: "High Temperature",
-            body: "The CPU has been running at about \(Int(hottest.rounded()))°C for 30 seconds."
+            title: String(localized: "High Temperature"),
+            body: String(localized: "The CPU has been running at about \(Int(hottest.rounded()))°C for 30 seconds.")
         )
     }
 
@@ -272,9 +272,9 @@ final class SystemAlertsManager: ObservableObject {
         lastPressureLevel = level
         switch level {
         case .critical:
-            postAlert(kind: .memoryPressure, title: "Memory Pressure", body: "Memory pressure is critical — consider closing some apps.")
+            postAlert(kind: .memoryPressure, title: String(localized: "Memory Pressure"), body: String(localized: "Memory pressure is critical — consider closing some apps."))
         case .warning:
-            postAlert(kind: .memoryPressure, title: "Memory Pressure", body: "Memory pressure is high — consider closing some apps.")
+            postAlert(kind: .memoryPressure, title: String(localized: "Memory Pressure"), body: String(localized: "Memory pressure is high — consider closing some apps."))
         }
     }
 
@@ -334,8 +334,8 @@ final class SystemAlertsManager: ObservableObject {
         lastDiskAlert = now
         postAlert(
             kind: .lowDisk,
-            title: "Low Disk Space",
-            body: "Only \(String(format: "%.1f", freeGB)) GB free on your startup disk."
+            title: String(localized: "Low Disk Space"),
+            body: String(localized: "Only \(String(format: "%.1f", freeGB)) GB free on your startup disk.")
         )
     }
 
@@ -376,7 +376,7 @@ final class SystemAlertsManager: ObservableObject {
             let onBattery = (info[kIOPSPowerSourceStateKey] as? String) == kIOPSBatteryPowerValue
             let threshold = Int(configuration.lowBatteryThreshold.rounded())
             if batteryLatch.update(level: level, onBattery: onBattery, threshold: threshold) {
-                postAlert(kind: .lowBattery, title: "Low Battery", body: "Battery is at \(level)%. Connect your Mac to power.")
+                postAlert(kind: .lowBattery, title: String(localized: "Low Battery"), body: String(localized: "Battery is at \(level)%. Connect your Mac to power."))
             }
             return
         }

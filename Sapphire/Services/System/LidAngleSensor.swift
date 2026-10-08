@@ -47,11 +47,11 @@ struct LASDiagnostic {
     var statusMessage: String {
         switch probeResult {
         case .foundStandard:
-            return "Sensor detected and ready."
+            return String(localized: "Sensor detected and ready.")
         case .foundVendorSpecific:
-            return "Sensor hardware exists, but only a vendor-specific HID interface was found."
+            return String(localized: "Sensor hardware exists, but only a vendor-specific HID interface was found.")
         case .notFound:
-            return "No lid angle sensor was detected on this Mac."
+            return String(localized: "No lid angle sensor was detected on this Mac.")
         }
     }
 
@@ -173,7 +173,7 @@ final class LidAngleSensor: ObservableObject {
     @Published private(set) var isAvailable = false
     @Published private(set) var isReporting = false
     @Published private(set) var tick: UInt = 0
-    @Published private(set) var statusMessage = "Sensor not available"
+    @Published private(set) var statusMessage = String(localized: "Sensor not available")
 
     private(set) var diagnostic: LASDiagnostic?
 
@@ -332,7 +332,7 @@ final class LidAngleSensor: ObservableObject {
         nextReopenAttemptTime = 0
         if !isReporting {
             isReporting = true
-            statusMessage = diagnostic?.statusMessage ?? "Sensor detected and ready."
+            statusMessage = diagnostic?.statusMessage ?? String(localized: "Sensor detected and ready.")
             isFirstUpdate = true
         }
 
@@ -383,7 +383,7 @@ final class LidAngleSensor: ObservableObject {
     private func markReadingUnavailable() {
         isReporting = false
         velocity = 0
-        statusMessage = "The lid angle sensor stopped responding. Reconnecting…"
+        statusMessage = String(localized: "The lid angle sensor stopped responding. Reconnecting…")
     }
 
     private func updateVelocity(from rawAngle: Double) {

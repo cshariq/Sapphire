@@ -8,20 +8,33 @@
 import SwiftUI
 
 struct SettingsSidebarGroup: Identifiable {
+    let id: String
     let title: String
     let sections: [SettingsSection]
-    var id: String { title }
 }
 
 extension SettingsSection {
     static let sidebarGroups: [SettingsSidebarGroup] = [
-        .init(title: "General", sections: (SettingsAssistant.isSupported ? [.overview] : []) + [.general, .keyboardShortcuts, .bluetoothUnlock, .intelligence, .nearbyShare, .continuity]),
-        .init(title: "Notch", sections: [.appearance, .widgets, .liveActivities, .appActivities, .fileProgress, .lockScreen, .notifications, .hud]),
-        .init(title: "Widgets & Content", sections: [.music, .weather, .calendar, .sports, .finance, .battery, .audio, .bluetooth, .shortcuts, .fileShelf, .notes, .clipboard, .mirror, .caffeine]),
-        .init(title: "System & Utilities", sections: [.systemEnhance, .snapZones, .dockLayouts, .mediaOptimizer, .mouse, .monitoring, .devActivity, .emoji, .archives, .apps, .storage]),
-        .init(title: "Focus & Security", sections: [.eyeBreak, .focusSession, .appLock]),
-        .init(title: "", sections: [.about])
+        .init(id: "general", title: String(localized: "General"), sections: (SettingsAssistant.isSupported ? [.overview] : []) + [.general, .keyboardShortcuts, .bluetoothUnlock, .intelligence, .nearbyShare, .continuity]),
+        .init(id: "notch", title: String(localized: "Notch"), sections: [.appearance, .widgets, .liveActivities, .appActivities, .fileProgress, .lockScreen, .notifications, .hud]),
+        .init(id: "widgetsAndContent", title: String(localized: "Widgets & Content"), sections: [.music, .weather, .calendar, .sports, .finance, .battery, .audio, .bluetooth, .shortcuts, .fileShelf, .notes, .clipboard, .mirror, .caffeine]),
+        .init(id: "systemAndUtilities", title: String(localized: "System & Utilities"), sections: [.systemEnhance, .snapZones, .dockLayouts, .mediaOptimizer, .mouse, .monitoring, .devActivity, .emoji, .archives, .apps, .storage]),
+        .init(id: "focusAndSecurity", title: String(localized: "Focus & Security"), sections: [.eyeBreak, .focusSession, .appLock]),
+        .init(id: "about", title: "", sections: [.about])
     ]
+
+    static func sidebarGroups(matching searchText: String) -> [SettingsSidebarGroup] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return sidebarGroups }
+
+        return sidebarGroups.compactMap { group in
+            let matches = group.sections.filter { section in
+                let haystacks = [section.label, section.shortDescription] + section.searchTokens + section.localizedSearchKeywords
+                return haystacks.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+            return matches.isEmpty ? nil : SettingsSidebarGroup(id: group.id, title: group.title, sections: matches)
+        }
+    }
 }
 
 struct SettingsSidebarView: View {
@@ -32,16 +45,7 @@ struct SettingsSidebarView: View {
     @State private var searchText = ""
 
     private var filteredGroups: [SettingsSidebarGroup] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return SettingsSection.sidebarGroups }
-
-        return SettingsSection.sidebarGroups.compactMap { group in
-            let matches = group.sections.filter { section in
-                let haystacks = [section.label, section.shortDescription] + section.searchTokens
-                return haystacks.contains { $0.localizedCaseInsensitiveContains(query) }
-            }
-            return matches.isEmpty ? nil : SettingsSidebarGroup(title: group.title, sections: matches)
-        }
+        SettingsSection.sidebarGroups(matching: searchText)
     }
 
     private var lockedSections: Set<SettingsSection> {
@@ -100,7 +104,7 @@ struct SettingsSidebarView: View {
                             .tag(section)
                         }
                     } header: {
-                        Text(group.title)
+                        Text(verbatim: group.title)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -167,7 +171,7 @@ struct SidebarAccountCardView: View {
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 ))
-                            Text(subscriptionManager.userInitials)
+                            Text(verbatim: subscriptionManager.userInitials)
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(.white.opacity(0.9))
                         }
@@ -180,11 +184,11 @@ struct SidebarAccountCardView: View {
                 .frame(width: 38, height: 38)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(subscriptionManager.userDisplayName)
+                    Text(verbatim: subscriptionManager.userDisplayName)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.white)
                         .lineLimit(1)
-                    Text(subscriptionManager.tierLabel)
+                    Text(verbatim: subscriptionManager.tierLabel)
                         .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.5))
                 }
@@ -221,7 +225,7 @@ fileprivate struct SidebarRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: section.systemImage).font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(LinearGradient(colors: section.iconGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.8)).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            Text(section.label).font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+            Text(verbatim: section.label).font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
             if section.isBeta {
                 Text("BETA")
                     .font(.system(size: 8, weight: .bold))
