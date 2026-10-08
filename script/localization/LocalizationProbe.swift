@@ -17,7 +17,15 @@ if let path = argument("--app") {
 } else {
     product = .main
 }
-let chinese = argument("--expected-language") == "zh-Hans"
+let expectedLanguage = argument("--expected-language") ?? "en"
+/// Expected value for the language this process is asked to verify.
+func pick(_ english: String, _ simplified: String, _ traditional: String) -> String {
+    switch expectedLanguage {
+    case "zh-Hans": simplified
+    case "zh-Hant": traditional
+    default: english
+    }
+}
 var checks: [[String: Any]] = []
 func check(_ name: String, _ actual: String, _ expected: String, scope: String) {
     checks.append([
@@ -27,16 +35,16 @@ func check(_ name: String, _ actual: String, _ expected: String, scope: String) 
 }
 
 check("General", String(localized: "General", bundle: product),
-      chinese ? "通用" : "General", scope: "product")
+      pick("General", "通用", "一般"), scope: "product")
 check("Search settings", String(localized: "Search settings", bundle: product),
-      chinese ? "搜索设置" : "Search settings", scope: "product")
+      pick("Search settings", "搜索设置", "搜尋設定"), scope: "product")
 check("Quit", String(localized: "Quit", bundle: product),
-      chinese ? "退出" : "Quit", scope: "product")
+      pick("Quit", "退出", "結束"), scope: "product")
 check("NSCameraUsageDescription",
       product.object(forInfoDictionaryKey: "NSCameraUsageDescription") as? String ?? "<missing>",
-      chinese
-        ? "Sapphire 使用摄像头提供镜子小组件，让你能在刘海区域看到自己。"
-        : "Sapphire uses the camera for the Mirror widget so you can see yourself in the notch.",
+      pick("Sapphire uses the camera for the Mirror widget so you can see yourself in the notch.",
+           "Sapphire 使用摄像头提供镜子小组件，让你能在刘海区域看到自己。",
+           "Sapphire 使用相機提供「鏡子」小工具，讓你可以在瀏海區域中看到自己。"),
       scope: "product")
 
 check("missing-key-default",
@@ -52,14 +60,14 @@ for count: Int64 in [0, 1, 2, 1000] {
     let number = count == 1000
         ? (Locale.current.region?.identifier == "FR" ? "1\u{202F}000" : "1,000")
         : String(count)
-    let expected = chinese ? "\(number)个项目" : "\(number) \(count == 1 ? "item" : "items")"
+    let expected = pick("\(number) \(count == 1 ? "item" : "items")", "\(number)个项目", "\(number)個項目")
     check("NFiles-\(count)",
           String(localized: "NFiles", defaultValue: "\(count) files", bundle: product),
-          chinese ? "\(number) 个文件" : "\(number) files",
+          pick("\(number) files", "\(number) 个文件", "\(number) 個檔案"),
           scope: "product")
     check("focus-history-sessions-\(count)",
           String(localized: "\(String(count)) sessions", bundle: product),
-          chinese ? "\(count) 次专注" : "\(count) sessions",
+          pick("\(count) sessions", "\(count) 次专注", "\(count) 次專注"),
           scope: "product")
     check("plural-interpolation-\(count)",
           String(localized: "fixture.count", defaultValue: "\(count) items",
@@ -76,34 +84,33 @@ let count: Int64 = 2
 check("two-argument-reorder-and-verbatim-name",
       String(localized: "fixture.destination", defaultValue: "Move \(count) items to \(name)",
              table: "ProbeFixtures", bundle: .main),
-      chinese ? "移到\(name)：\(count)个项目" : "Move \(count) items to \(name)",
+      pick("Move \(count) items to \(name)", "移到\(name)：\(count)个项目", "移到\(name)：\(count)個項目"),
       scope: "fixture")
 
 let archiveName = "报告 100% %@ 🧪 .zip"
 check("archive-file-name-verbatim",
       String(localized: "Extracting \(archiveName)…", bundle: product),
-      chinese ? "正在解压 \(archiveName)…" : "Extracting \(archiveName)…",
+      pick("Extracting \(archiveName)…", "正在解压 \(archiveName)…", "正在解壓縮 \(archiveName)…"),
       scope: "product")
 let step = 2, total = 7
 check("step-two-parameter-order",
       String(localized: "Step \(step) of \(total)", bundle: product),
-      chinese ? "第 2 步，共 7 步" : "Step 2 of 7", scope: "product")
+      pick("Step 2 of 7", "第 2 步，共 7 步", "第 2 步，共 7 步"), scope: "product")
 check("weather-semantic-key-default",
       String(localized: "weather.condition.clear", defaultValue: "Clear", bundle: product),
-      chinese ? "晴" : "Clear", scope: "product")
+      pick("Clear", "晴", "晴"), scope: "product")
 
 let speakerName = "客厅 100% %@ 🎵 General"
 check("spotify-transferred-device-name-verbatim",
       String(localized: "Playback moved to \(speakerName).", bundle: product),
-      chinese ? "已切换到 \(speakerName) 播放。" : "Playback moved to \(speakerName).",
+      pick("Playback moved to \(speakerName).", "已切换到 \(speakerName) 播放。", "已將播放移至 \(speakerName)。"),
       scope: "product")
 let playbackError = "HTTP 429: %@ / 100% 🔒"
 check("spotify-switch-error-detail-verbatim",
       String(localized: "Couldn’t switch device: \(playbackError)", bundle: product),
-      chinese ? "无法切换设备：\(playbackError)" : "Couldn’t switch device: \(playbackError)",
+      pick("Couldn’t switch device: \(playbackError)", "无法切换设备：\(playbackError)", "無法切換裝置：\(playbackError)"),
       scope: "product")
 
-let expectedLanguage = chinese ? "zh-Hans" : "en"
 check("selected-product-language", product.preferredLocalizations.first ?? "<missing>",
       expectedLanguage, scope: "product")
 check("selected-fixture-language", Bundle.main.preferredLocalizations.first ?? "<missing>",
@@ -114,7 +121,7 @@ check("requested-region", Locale.current.region?.identifier ?? "<missing>",
 
 func resources(_ bundle: Bundle, table: String) -> [String: String] {
     var paths: [String: String] = [:]
-    for language in ["en", "zh-Hans"] {
+    for language in ["en", "zh-Hans", "zh-Hant"] {
         for ext in ["strings", "stringsdict"] {
             let key = "\(language)/\(table).\(ext)"
             if let root = bundle.resourceURL {
@@ -128,7 +135,7 @@ func resources(_ bundle: Bundle, table: String) -> [String: String] {
 
 let productResources = resources(product, table: "Localizable")
 let infoResources = resources(product, table: "InfoPlist")
-for language in ["en", "zh-Hans"] {
+for language in ["en", "zh-Hans", "zh-Hant"] {
     check("compiled-Localizable-\(language)",
           String(productResources.keys.contains { $0.hasPrefix("\(language)/") }),
           "true", scope: "product")

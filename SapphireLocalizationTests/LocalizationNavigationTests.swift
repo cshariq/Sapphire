@@ -10,6 +10,8 @@ final class LocalizationNavigationTests: XCTestCase {
         var queries: [(String, SettingsSection)] = [("Music", .music), ("Battery", .battery), ("File Shelf", .fileShelf)]
         if language.hasPrefix("zh-Hans") {
             queries += [("音乐", .music), ("电池", .battery), ("文件", .fileShelf)]
+        } else if language.hasPrefix("zh-Hant") {
+            queries += [("音樂", .music), ("電池", .battery), ("檔案", .fileShelf)]
         }
         for (query, expected) in queries {
             XCTAssertTrue(SettingsSection.sidebarGroups(matching: query).flatMap(\.sections).contains(expected), query)

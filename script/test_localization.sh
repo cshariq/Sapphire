@@ -29,6 +29,7 @@ else
   xcodebuild "${BUILD_ARGUMENTS[@]}" -testLanguage en -testRegion US test
   xcodebuild "${BUILD_ARGUMENTS[@]}" -testLanguage zh-Hans -testRegion CN test
   xcodebuild "${BUILD_ARGUMENTS[@]}" -testLanguage zh-Hans -testRegion US test
+  xcodebuild "${BUILD_ARGUMENTS[@]}" -testLanguage zh-Hant -testRegion TW test
 fi
 
 APP="$DERIVED_DATA/Build/Products/Debug/Sapphire.app"

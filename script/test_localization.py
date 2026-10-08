@@ -31,7 +31,11 @@ SCENARIOS = [
     ("unsupported-language", "(fr)", "fr_FR", "en"),
     ("ordered-language-fallback", "(fr,zh-Hans,en)", "en_US", "zh-Hans"),
     ("Chinese-with-US-region", "(zh-Hans)", "en_US", "zh-Hans"),
+    ("traditional-Chinese", "(zh-Hant)", "zh_TW", "zh-Hant"),
+    ("Taiwan-language-tag", "(zh-Hant-TW)", "zh_TW", "zh-Hant"),
+    ("ordered-traditional-fallback", "(fr,zh-Hant,en)", "en_US", "zh-Hant"),
 ]
+LANGUAGES = ["en", "zh-Hans", "zh-Hant"]
 
 
 def digest(path):
@@ -107,7 +111,7 @@ def main():
         report["inputs"].append({"path": str(path), "sha256": hashlib.sha256(content).hexdigest()})
     app_resources = []
     if app:
-        for language in ["en", "zh-Hans"]:
+        for language in LANGUAGES:
             for table in ["Localizable", "InfoPlist"]:
                 for extension in ["strings", "stringsdict"]:
                     path = app / f"Contents/Resources/{language}.lproj/{table}.{extension}"
@@ -168,7 +172,7 @@ def main():
                 failures = [check["name"] for check in observed.get("checks", []) if not check["passed"]]
                 print(f"{name}: {'FAIL ' + ', '.join(failures) if failures else 'PASS'}", file=sys.stderr)
             product_resources = app / "Contents/Resources" if app else resources
-            for language in ["en", "zh-Hans"]:
+            for language in LANGUAGES:
                 for table in ["Localizable", "InfoPlist"]:
                     for extension in ["strings", "stringsdict"]:
                         path = product_resources / f"{language}.lproj/{table}.{extension}"
