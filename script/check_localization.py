@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check reviewed en/zh-Hans catalog values and optional compiler-key coverage.
+"""Check reviewed en/zh-Hans/zh-Hant catalog values and optional compiler-key coverage.
 
 This does not prove UI layout or runtime behavior. Run test_localization.py for
 native lookup/formatting and the Xcode test scheme for application code.
@@ -19,6 +19,10 @@ CATALOGS = {
     "permissions": ROOT / "Sapphire/App/InfoPlist.xcstrings",
     "widget": ROOT / "SapphireAndroidWidgets/Localizable.xcstrings",
 }
+# Every catalog must carry Simplified Chinese. Any other language that appears in a
+# catalog (currently Traditional Chinese) must then be complete for every entry.
+REQUIRED_TRANSLATIONS = ("zh-Hans",)
+COMPILED_LANGUAGES = ("en", "zh-Hans", "zh-Hant")
 # Swift extraction uses object, integer and floating-point printf arguments.
 # A space after % is deliberately not a flag: ordinary labels include “100% charge”.
 FORMAT = re.compile(r"%(?:(?P<position>\d+)\$)?[-+#0]*\d*(?:\.\d+)?(?P<length>hh|ll|[hlLzjtq])?(?P<type>[@diuoxXfFeEgGaAcCsSp%])")
@@ -54,13 +58,18 @@ def validate_catalog(catalog):
         errors.append("sourceLanguage must remain en")
     if not isinstance(catalog.get("strings"), dict) or not catalog["strings"]:
         return errors + ["Catalog must contain strings"]
+    translations = sorted(set(REQUIRED_TRANSLATIONS).union(
+        language
+        for key, entry in catalog["strings"].items() if key
+        for language in entry.get("localizations", {}) if language != "en"
+    ))
     for key, entry in catalog.get("strings", {}).items():
         if not key:  # SwiftUI permits intentionally empty labels.
             continue
         languages = entry.get("localizations", {})
         english = units(languages.get("en", {}))
-        chinese = units(languages.get("zh-Hans", {}))
-        for language, values in (("en", english), ("zh-Hans", chinese)):
+        translated_units = {language: units(languages.get(language, {})) for language in translations}
+        for language, values in (("en", english), *translated_units.items()):
             if not values:
                 errors.append(f"{key!r}: missing {language} value")
             for unit in values.values():
@@ -68,15 +77,16 @@ def validate_catalog(catalog):
                     errors.append(f"{key!r}: blank {language} value")
                 if unit.get("state") != "translated":
                     errors.append(f"{key!r}: {language} is not reviewed/translated")
-        for path, translated in chinese.items():
-            source = english.get(path)
-            if source is None and len(english) == 1:
-                source = next(iter(english.values()))
-            if source is None:
-                errors.append(f"{key!r}: no English counterpart for {path}")
-            elif isinstance(source.get("value"), str) and isinstance(translated.get("value"), str):
-                if arguments(source["value"]) != arguments(translated["value"]):
-                    errors.append(f"{key!r}: format argument positions/types differ at {path}")
+        for language, values in translated_units.items():
+            for path, translated in values.items():
+                source = english.get(path)
+                if source is None and len(english) == 1:
+                    source = next(iter(english.values()))
+                if source is None:
+                    errors.append(f"{key!r}: no English counterpart for {language} {path}")
+                elif isinstance(source.get("value"), str) and isinstance(translated.get("value"), str):
+                    if arguments(source["value"]) != arguments(translated["value"]):
+                        errors.append(f"{key!r}: {language} format argument positions/types differ at {path}")
     return errors
 
 
@@ -102,7 +112,7 @@ def read_compiled_table(path):
 
 def compare_compiled_tables(expected, actual, table):
     errors = []
-    for language in ("en", "zh-Hans"):
+    for language in COMPILED_LANGUAGES:
         for extension in ("strings", "stringsdict"):
             relative = Path(f"{language}.lproj/{table}.{extension}")
             source, built = expected / relative, actual / relative

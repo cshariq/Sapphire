@@ -14,6 +14,12 @@
             "state": "translated",
             "value": "Android 小组件"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android 小工具"
+          }
         }
       }
     },
@@ -29,6 +35,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Android 小组件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Android 小工具"
           }
         }
       }
@@ -46,6 +58,12 @@
             "state": "translated",
             "value": "选择一个从已配对 Android 手机镜像的小组件。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇一個從已配對 Android 手機鏡像的小工具。"
+          }
         }
       }
     },
@@ -61,6 +79,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "小组件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小工具"
           }
         }
       }
@@ -78,6 +102,12 @@
             "state": "translated",
             "value": "在 Sapphire 中添加 Android 小组件"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Sapphire 中加入 Android 小工具"
+          }
         }
       }
     },
@@ -93,6 +123,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在等待手机连接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待手機連線"
           }
         }
       }
@@ -110,6 +146,12 @@
             "state": "translated",
             "value": "将已配对 Android 手机上的实时小组件放到 Mac 桌面或通知中心。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將已配對 Android 手機上的即時小工具放到 Mac 桌面或通知中心。"
+          }
         }
       }
     },
@@ -124,6 +166,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "%@"

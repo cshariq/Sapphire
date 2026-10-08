@@ -64,6 +64,24 @@ class CatalogCheckTests(unittest.TestCase):
         value["strings"]["Hello %@"]["localizations"]["zh-Hans"]["stringUnit"]["state"] = "needs_review"
         self.assertTrue(CHECK.validate_catalog(value))
 
+    def test_traditional_chinese_must_cover_every_entry_once_present(self):
+        value = catalog()
+        value["strings"]["Clear"] = catalog("Clear", "Clear", "晴")["strings"]["Clear"]
+        self.assertEqual(CHECK.validate_catalog(value), [])
+        value["strings"]["Hello %@"]["localizations"]["zh-Hant"] = {"stringUnit": {"state": "translated", "value": "你好，%@"}}
+        errors = CHECK.validate_catalog(value)
+        self.assertTrue(any("'Clear': missing zh-Hant" in error for error in errors), errors)
+        value["strings"]["Clear"]["localizations"]["zh-Hant"] = {"stringUnit": {"state": "translated", "value": "晴"}}
+        self.assertEqual(CHECK.validate_catalog(value), [])
+
+    def test_traditional_chinese_format_arguments_are_checked(self):
+        value = catalog("Send %@ to %lld devices", "Send %@ to %lld devices", "向 %2$lld 台设备发送 %1$@")
+        localizations = value["strings"]["Send %@ to %lld devices"]["localizations"]
+        localizations["zh-Hant"] = {"stringUnit": {"state": "translated", "value": "向 %2$lld 台裝置傳送 %1$@"}}
+        self.assertEqual(CHECK.validate_catalog(value), [])
+        localizations["zh-Hant"]["stringUnit"]["value"] = "向 %1$lld 台裝置傳送 %2$@"
+        self.assertTrue(any("zh-Hant format" in error for error in CHECK.validate_catalog(value)))
+
     def test_compiler_inventory_requires_real_nonempty_extraction(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

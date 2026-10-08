@@ -15,6 +15,12 @@
             "state": "translated",
             "value": "Sapphire 需要控制 Music 和 Spotify 的播放，并读取歌曲信息。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要取用權限，才能控制「音樂」和 Spotify 的播放並讀取曲目資訊。"
+          }
         }
       }
     },
@@ -31,6 +37,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "用于在 Apple Music 中显示待播放歌曲和播放列表。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於在 Apple Music 中顯示即將播放的歌曲和播放列表。"
           }
         }
       }
@@ -49,6 +61,12 @@
             "state": "translated",
             "value": "Sapphire 会在此 Mac 上读取音乐应用的音频，以逐字同步歌词。音频不会离开你的 Mac。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 會在這台 Mac 上聆聽你的音樂 App 音訊，以逐字同步歌詞。音訊絕不會離開你的 Mac。"
+          }
         }
       }
     },
@@ -65,6 +83,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire 需要使用蓝牙来显示新连接和设备低电量通知。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用藍牙顯示裝置連線通知和電池狀態，並提供近距離解鎖。"
           }
         }
       }
@@ -83,6 +107,12 @@
             "state": "translated",
             "value": "Sapphire 需要访问日历来显示即将开始的日程。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要行事曆權限來顯示即將到來的行程。"
+          }
         }
       }
     },
@@ -99,6 +129,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Blip 可以根据你的日历安排，更好地理解你的日程和偏好。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用行事曆取用權限顯示即將到來的行程。"
           }
         }
       }
@@ -117,6 +153,12 @@
             "state": "translated",
             "value": "Sapphire 使用摄像头提供镜子小组件，让你能在刘海区域看到自己。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用相機提供「鏡子」小工具，讓你可以在瀏海區域中看到自己。"
+          }
         }
       }
     },
@@ -133,6 +175,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire 需要访问通讯录，以便在回复通知时找到正确的电话号码或电子邮件地址。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要取用你的聯絡人，以便從通知傳送回覆時找到正確的電話號碼或電子郵件。"
           }
         }
       }
@@ -151,6 +199,12 @@
             "state": "translated",
             "value": "用于实时更新专注状态。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於提供即時的專注狀態更新。"
+          }
         }
       }
     },
@@ -167,6 +221,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire 需要访问本地网络来提供附近互传功能。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用區域網路進行 Nearby Share 檔案傳輸和音樂裝置連線。"
           }
         }
       }
@@ -185,6 +245,12 @@
             "state": "translated",
             "value": "用于实时更新天气。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於提供即時的天氣更新。"
+          }
         }
       }
     },
@@ -201,6 +267,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire 需要使用位置来提供天气信息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要此權限以提供天氣資訊。"
           }
         }
       }
@@ -219,6 +291,12 @@
             "state": "translated",
             "value": "Blip 会使用你的位置来提供本地天气、附近地点和基于位置的任务。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用你的位置顯示當地天氣。"
+          }
         }
       }
     },
@@ -235,6 +313,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire 使用麦克风进行 Gemini Live 语音对话。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用麥克風擷取音訊。"
           }
         }
       }
@@ -253,6 +337,12 @@
             "state": "translated",
             "value": "Sapphire 需要访问网络宗卷来提供附近互传功能。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要此權限以提供 Nearby Share 功能。"
+          }
         }
       }
     },
@@ -269,6 +359,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire 需要访问提醒事项来显示即将到来的提醒。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要此權限以顯示即將到來的提醒事項。"
           }
         }
       }
@@ -287,6 +383,12 @@
             "state": "translated",
             "value": "用于显示提醒事项。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於顯示提醒事項。"
+          }
         }
       }
     },
@@ -304,6 +406,12 @@
             "state": "translated",
             "value": "Gemini 实时活动需要屏幕录制权限。"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini 即時動態需要螢幕錄製權限。"
+          }
         }
       }
     },
@@ -320,6 +428,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sapphire 需要此扩展来创建虚拟多输出音频设备。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用螢幕錄製權限擷取各 App 音訊並顯示即時視窗預覽。"
           }
         }
       }

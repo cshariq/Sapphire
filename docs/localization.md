@@ -1,6 +1,6 @@
 # Localization
 
-Sapphire uses Apple's String Catalogs. The source language is English; Simplified Chinese is `zh-Hans`. macOS selects the application language using the system language order or the per-app language preference. Quit and reopen Sapphire after changing that preference. No application-specific language setting is required.
+Sapphire uses Apple's String Catalogs. The source language is English; Simplified Chinese is `zh-Hans` and Traditional Chinese (Taiwan) is `zh-Hant`. macOS selects the application language using the system language order or the per-app language preference. Quit and reopen Sapphire after changing that preference. No application-specific language setting is required.
 
 ## Resource ownership
 
@@ -28,18 +28,20 @@ One integrator edits each catalog while module contributors supply reviewed keys
 
 ## Terminology
 
-| English | Simplified Chinese |
-| --- | --- |
-| Sapphire | Sapphire |
-| Notch | 刘海区域（导航短标签可用“刘海”） |
-| Widget | 小组件 |
-| Live Activity | 实时活动 |
-| File Shelf | 文件暂存架 |
-| Caffeinate | 保持唤醒 |
-| Eye Break | 护眼休息 |
-| Focus Session | 专注时段 |
-| HUD | 提示浮层 |
-| Helper | 辅助服务（macOS 登录项中的注册名 Sapphire Helper 保留） |
+| English | Simplified Chinese | Traditional Chinese (Taiwan) |
+| --- | --- | --- |
+| Sapphire | Sapphire | Sapphire |
+| Notch | 刘海区域（导航短标签可用“刘海”） | 瀏海區域（導覽短標籤可用「瀏海」） |
+| Widget | 小组件 | 小工具 |
+| Live Activity | 实时活动 | 即時動態 |
+| File Shelf | 文件暂存架 | 檔案暫存架 |
+| Caffeinate | 保持唤醒 | 保持喚醒 |
+| Eye Break | 护眼休息 | 護眼休息 |
+| Focus Session | 专注时段 | 專注時段 |
+| HUD | 提示浮层 | 浮動提示 |
+| Helper | 辅助服务（macOS 登录项中的注册名 Sapphire Helper 保留） | 輔助服務（macOS 登入項目中的註冊名稱 Sapphire Helper 保留） |
+
+Traditional Chinese follows Apple's Taiwan wording rather than a character conversion of the Simplified text: for example 檔案 (file), 設定 (settings), 視窗 (window), 螢幕 (screen), 網路 (network), 預設 (default), 影片 (video) and 使用者 (user).
 
 Product and service names such as Spotify, Apple Music, Gemini and Shopify retain their names. Public-build placeholders must continue to say that unavailable functionality is not included; translated text does not imply that a private implementation exists.
 
@@ -47,7 +49,7 @@ Product and service names such as Spotify, Apple Music, Gemini and Shopify retai
 
 Use Xcode 26.1.1 or newer: Sapphire uses Swift 6.2 isolated protocol conformances. CI selects Xcode 26.1.1 explicitly because the macOS 15 runner's default Xcode 16.4 cannot compile that syntax.
 
-Run `script/test_localization.sh` to build and execute the `SapphireLocalizationTests` scheme in English/US, Simplified Chinese/China, and Simplified Chinese/US, or add `build` to compile without executing. Both modes check the actual app and embedded Widget resources against freshly compiled catalogs, compare the app/NearbyShare/Widget compiler inventories, and run native bundle probes. Its test host suppresses application lifecycle work under XCTest. The original `SapphireTests` scheme remains available; missing private implementations in a public checkout must be reported separately rather than removing their tests.
+Run `script/test_localization.sh` to build and execute the `SapphireLocalizationTests` scheme in English/US, Simplified Chinese/China, Simplified Chinese/US, and Traditional Chinese/Taiwan, or add `build` to compile without executing. Both modes check the actual app and embedded Widget resources against freshly compiled catalogs, compare the app/NearbyShare/Widget compiler inventories, and run native bundle probes. Its test host suppresses application lifecycle work under XCTest. The original `SapphireTests` scheme remains available; missing private implementations in a public checkout must be reported separately rather than removing their tests.
 
 The native resource checks do not launch Sapphire or change preferences:
 
@@ -58,7 +60,7 @@ python3 script/test_localization.py --output /absolute/resource-check.json
 python3 script/test_localization.py --app /absolute/Sapphire.app --output /absolute/bundle-check.json
 ```
 
-The catalog validator rejects missing translations and changed format arguments. Its optional `--app-stringsdata` and `--widget-stringsdata` arguments compare against fresh compiler extraction; repeat the app argument for linked libraries that use the main bundle. `test_localization.py` compiles source catalogs by default, or reads the supplied app with `--app`. Both modes run fresh Foundation processes for English, Simplified Chinese, an unsupported language, ordered fallback and independent region settings. Formatting fixtures are separate from product strings and cannot establish UI coverage.
+The catalog validator rejects missing translations and changed format arguments. Simplified Chinese is required in every catalog; once a catalog contains Traditional Chinese, every entry must have it too. Its optional `--app-stringsdata` and `--widget-stringsdata` arguments compare against fresh compiler extraction; repeat the app argument for linked libraries that use the main bundle. `test_localization.py` compiles source catalogs by default, or reads the supplied app with `--app`. Both modes run fresh Foundation processes for English, Simplified Chinese, Traditional Chinese, an unsupported language, ordered fallback and independent region settings. Formatting fixtures are separate from product strings and cannot establish UI coverage.
 
 The Localization resources workflow runs catalog validation, native resource checks and the application test entry point on pull requests. It does not accept UI layout, system permissions or hardware-dependent features.
 

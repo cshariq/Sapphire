@@ -18,6 +18,13 @@
               "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld个项目" } }
             }
           }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld個項目" } }
+            }
+          }
         }
       }
     },
@@ -25,7 +32,8 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Move %1$lld items to %2$@" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移到%2$@：%1$lld个项目" } }
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移到%2$@：%1$lld个项目" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "移到%2$@：%1$lld個項目" } }
       }
     },
     "fixture.untranslated" : {

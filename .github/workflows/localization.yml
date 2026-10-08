@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Build and test three language and region combinations
+      - name: Build and test four language and region combinations
         env:
           SAPPHIRE_TEST_DERIVED_DATA: ${{ runner.temp }}/SapphireLocalization
           SAPPHIRE_TEST_PACKAGES_DIR: ${{ runner.temp }}/SourcePackages
