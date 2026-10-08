@@ -414,8 +414,8 @@ final class FocusSessionManager: ObservableObject {
                 syncBlocking()
                 NotificationCenter.default.post(name: .focusSessionBlockCompleted, object: nil, userInfo: ["phase": "break"])
                 postCompletionNotification(
-                    title: "Focus block complete ",
-                    body: "Great work! Time for a \(Int(plannedBreakDuration / 60)) minute break."
+                    title: String(localized: "Focus block complete "),
+                    body: String(localized: "Great work! Time for a \(Int(plannedBreakDuration / 60)) minute break.")
                 )
             } else {
                 finishSession()
@@ -434,8 +434,8 @@ final class FocusSessionManager: ObservableObject {
             syncBlocking()
             NotificationCenter.default.post(name: .focusSessionBlockCompleted, object: nil, userInfo: ["phase": "focus"])
             postCompletionNotification(
-                title: "Break over ",
-                body: "Back to it — new focus block started."
+                title: String(localized: "Break over "),
+                body: String(localized: "Back to it — new focus block started.")
             )
         case .sessionFinished:
             finishSession()
@@ -455,8 +455,8 @@ final class FocusSessionManager: ObservableObject {
         stopShortcutTimerIfNeeded()
         NotificationCenter.default.post(name: .focusSessionEnded, object: nil)
         postCompletionNotification(
-            title: "Focus session complete ",
-            body: "You finished \(sessionCompletedBlocks) block\(sessionCompletedBlocks == 1 ? "" : "s"). Total focus today: \(Self.format(completedToday))."
+            title: String(localized: "Focus session complete "),
+            body: String(localized: "You finished \(sessionCompletedBlocks) blocks. Total focus today: \(Self.format(completedToday)).")
         )
     }
 
@@ -786,8 +786,8 @@ final class FocusSessionManager: ObservableObject {
             let key = cal.dateComponents([.year, .month, .day], from: date)
             let seconds = totals[key, default: 0]
             let label: String = {
-                if daysAgo == 0 { return "Today" }
-                if daysAgo == 1 { return "Yest" }
+                if daysAgo == 0 { return String(localized: "Today") }
+                if daysAgo == 1 { return String(localized: "Yest") }
                 return Self.shortWeekdayFormatter.string(from: date)
             }()
             return (label, seconds)

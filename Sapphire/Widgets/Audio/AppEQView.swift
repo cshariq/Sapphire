@@ -106,7 +106,7 @@ struct AppEQView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ModernChip(title: "All Devices", isSelected: selectedUIDs == nil) {
+                    ModernChip(title: String(localized: "All Devices"), isSelected: selectedUIDs == nil) {
                         perAppCtrl.setTargetDeviceUIDs(nil, for: bundleID)
                     }
                     ForEach(allDevices, id: \.uid) { device in
@@ -153,7 +153,7 @@ fileprivate struct AppEQVolumeControl: View {
 
     var body: some View {
         ModernGlassSlider(
-            label: "App Volume",
+            label: String(localized: "App Volume"),
             value: $volume,
             range: 0...1.0,
             formatDisplay: { "\(Int($0 * 100))%" }

@@ -81,11 +81,11 @@ struct NearbyTransferLiveActivityView: View {
                 .transition(.opacity)
 
         case .finished:
-            StatusTagView(text: "Transfer Complete", color: .green)
+            StatusTagView(text: String(localized: "Transfer Complete"), color: .green)
                 .transition(.opacity)
 
         case .failed(let reason):
-            StatusTagView(text: "Failed: \(reason)", color: .red)
+            StatusTagView(text: String(localized: "Failed: \(reason)"), color: .red)
                 .transition(.opacity)
         }
     }
@@ -95,7 +95,7 @@ struct NearbyTransferLiveActivityView: View {
             return textTitle
         }
         if payload.transfer.files.count == 1 { return payload.transfer.files[0].name }
-        return String.localizedStringWithFormat(NSLocalizedString("NFiles", comment: ""), payload.transfer.files.count)
+        return String(localized: "NFiles", defaultValue: "\(payload.transfer.files.count) files")
     }
 
     private func extractURL(from string: String) -> URL? {

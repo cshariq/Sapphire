@@ -30,7 +30,7 @@ struct DeviceAdjustView: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(device.isOutput ? "MASTER ADJUSTMENTS" : "MICROPHONE CONFIGURATION")
+                    Text(device.isOutput ? String(localized: "MASTER ADJUSTMENTS") : String(localized: "MICROPHONE CONFIGURATION"))
                         .font(.system(size: 10, weight: .black))
                         .foregroundStyle(.white.opacity(0.4))
                         .tracking(1.2)
@@ -91,11 +91,11 @@ struct DeviceAdjustView: View {
             VStack(spacing: 16) {
                 HStack(spacing: 16) {
                     VStack(spacing: 12) {
-                        ModernDarkSlider(label: "Volume", value: $settings.volume, range: 0...1.0, formatDisplay: { "\(Int($0 * 100))%" })
-                        ModernDarkSlider(label: "Delay", value: $settings.delay, range: 0...0.5, formatDisplay: { "\(Int($0 * 1000))ms" })
-                        ModernDarkSlider(label: "Balance", value: $settings.balance, range: 0...1.0, formatDisplay: { val in
-                            if abs(val - 0.5) < 0.02 { return "Center" }
-                            return val < 0.5 ? "L \(Int((0.5-val)*200))" : "R \(Int((val-0.5)*200))"
+                        ModernDarkSlider(label: String(localized: "Volume"), value: $settings.volume, range: 0...1.0, formatDisplay: { "\(Int($0 * 100))%" })
+                        ModernDarkSlider(label: String(localized: "Delay"), value: $settings.delay, range: 0...0.5, formatDisplay: { "\(Int($0 * 1000))ms" })
+                        ModernDarkSlider(label: String(localized: "Balance"), value: $settings.balance, range: 0...1.0, formatDisplay: { val in
+                            if abs(val - 0.5) < 0.02 { return String(localized: "Center") }
+                            return val < 0.5 ? String(localized: "L \(Int((0.5-val)*200))") : String(localized: "R \(Int((val-0.5)*200))")
                         })
                     }
                     .padding(16)
@@ -129,7 +129,7 @@ struct DeviceAdjustView: View {
             VStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("LEVELS").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.4)).tracking(1)
-                    ModernDarkSlider(label: "Input Gain", value: Binding(get: { micGain }, set: { micGain = $0; audioManager.setInputVolume(Float($0), for: device.id) }), range: 0...1.0, formatDisplay: { "\(Int($0 * 100))%" })
+                    ModernDarkSlider(label: String(localized: "Input Gain"), value: Binding(get: { micGain }, set: { micGain = $0; audioManager.setInputVolume(Float($0), for: device.id) }), range: 0...1.0, formatDisplay: { "\(Int($0 * 100))%" })
 
                     HStack {
                         Label("Hardware Mute", systemImage: isMicMuted ? "mic.slash.fill" : "mic.fill")
@@ -165,7 +165,7 @@ struct DeviceAdjustView: View {
                 Text("SPECIFICATIONS").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.4)).tracking(1)
 
                 VStack(spacing: 12) {
-                    specRow(label: "Stream Format", value: streamFormat)
+                    specRow(label: String(localized: "Stream Format"), value: streamFormat)
 
                     Divider().background(Color.white.opacity(0.1))
 
@@ -318,7 +318,7 @@ fileprivate final class AdjustViewPerAppStore: ObservableObject {
                 guard info.isRegular, let bundleID = info.bundleID, activeBundles.contains(bundleID) else { return nil }
                 let icon = Self.iconCache[bundleID] ?? NSRunningApplication(processIdentifier: pid)?.icon
                 if let icon { Self.iconCache[bundleID] = icon }
-                return AdjustAppItem(bundleID: bundleID, name: info.name ?? "Unknown", icon: icon)
+                return AdjustAppItem(bundleID: bundleID, name: info.name ?? String(localized: "Unknown"), icon: icon)
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }

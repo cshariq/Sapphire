@@ -100,13 +100,13 @@ enum NotchExpandedChrome {
 
     static func title(for mode: NotchWidgetMode) -> String? {
         switch mode {
-        case .multiAudioDeviceAdjust: return "Adjust"
-        case .multiAudioEQ: return "EQ"
-        case .earbudControls: return "Earbuds"
-        case .musicDevices: return "Devices"
-        case .musicQueueAndPlaylists: return "Queue & Playlists"
-        case .multiAudio: return "Audio Devices"
-        case .continuityDetail: return "Phone"
+        case .multiAudioDeviceAdjust: return String(localized: "Adjust")
+        case .multiAudioEQ: return String(localized: "EQ")
+        case .earbudControls: return String(localized: "Earbuds")
+        case .musicDevices: return String(localized: "Devices")
+        case .musicQueueAndPlaylists: return String(localized: "Queue & Playlists")
+        case .multiAudio: return String(localized: "Audio Devices")
+        case .continuityDetail: return String(localized: "Phone")
         default: return nil
         }
     }
@@ -534,6 +534,6 @@ private struct ContinuityPhoneStatusItem: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(snapshot.deviceName.isEmpty ? "Phone" : snapshot.deviceName)
+        .help(snapshot.deviceName.isEmpty ? String(localized: "Phone") : snapshot.deviceName)
     }
 }

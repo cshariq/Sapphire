@@ -338,11 +338,11 @@ struct FileProgressLiveActivityView {
             fileName = transferTask.fileName
             let verb: String
             switch transferTask.sourceType {
-            case .finder: verb = "Copying..."
-            case .archiveExtraction: verb = "Extracting..."
-            case .dmgInstall: verb = "Installing..."
-            case .continuity: verb = "Continuity…"
-            case .browserDownload, .manual: verb = "Downloading..."
+            case .finder: verb = String(localized: "Copying...")
+            case .archiveExtraction: verb = String(localized: "Extracting...")
+            case .dmgInstall: verb = String(localized: "Installing...")
+            case .continuity: verb = String(localized: "Continuity…")
+            case .browserDownload, .manual: verb = String(localized: "Downloading...")
             }
             if transferTask.app != nil {
                 statusText = FileProgressFormat.status(
@@ -359,19 +359,19 @@ struct FileProgressLiveActivityView {
         case .airDrop(let airDropTask):
             progress = airDropTask.progress
             fileName = airDropTask.fileName
-            statusText = airDropTask.isComplete ? "Complete" : "Receiving..."
+            statusText = airDropTask.isComplete ? String(localized: "Complete") : String(localized: "Receiving...")
         case .incomingTransfer(let info):
             progress = info.progress
             fileName = info.fileDescription
-            statusText = "Receiving..."
+            statusText = String(localized: "Receiving...")
         case .fileConversion(let task):
             progress = task.progress
             fileName = task.fileName
-            statusText = "Converting..."
+            statusText = String(localized: "Converting...")
         case .local(let item):
             progress = 1.0
             fileName = item.fileName
-            statusText = "Ready"
+            statusText = String(localized: "Ready")
         }
 
         return HStack(spacing: 8) {
@@ -545,7 +545,7 @@ struct MusicUpNextView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("UP NEXT")
+            Text(String(localized: "music.up-next", defaultValue: "UP NEXT"))
                 .font(.system(size: 7.5, weight: .heavy, design: .rounded))
                 .kerning(1.3)
                 .foregroundColor(.gray.opacity(0.9))
@@ -568,7 +568,7 @@ struct MusicUpNextView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title.isEmpty ? "Unknown track" : title)
+                    Text(title.isEmpty ? String(localized: "Unknown track") : title)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundColor(.white.opacity(0.95))
                         .lineLimit(1)
@@ -748,31 +748,31 @@ struct DefaultBatteryActivityView {
 
         switch managementState {
         case .charging:
-            iconName = "bolt.fill"; text = "Charging"; style = AnyShapeStyle(Color.green)
+            iconName = "bolt.fill"; text = String(localized: "Charging"); style = AnyShapeStyle(Color.green)
         case .inhibited:
-            iconName = "pause.fill"; text = "Charging Paused"; style = foregroundStyle(for: .inhibited)
+            iconName = "pause.fill"; text = String(localized: "Charging Paused"); style = foregroundStyle(for: .inhibited)
         case .sailing:
-            iconName = "sailboat.fill"; text = "Sailing by \(state.level)%"; style = foregroundStyle(for: .sailing)
+            iconName = "sailboat.fill"; text = String(localized: "Sailing by \(state.level)%"); style = foregroundStyle(for: .sailing)
         case .heatProtectionOn:
-            iconName = "thermometer.sun.fill"; text = "Heat Protection On"; style = foregroundStyle(for: .heatProtectionOn)
+            iconName = "thermometer.sun.fill"; text = String(localized: "Heat Protection On"); style = foregroundStyle(for: .heatProtectionOn)
         case .heatProtectionOff:
-            iconName = "snowflake"; text = "Heat Protection Off"; style = AnyShapeStyle(Color.cyan)
+            iconName = "snowflake"; text = String(localized: "Heat Protection Off"); style = AnyShapeStyle(Color.cyan)
         case .heatProtection:
-            iconName = "thermometer.sun.fill"; text = "Heat Protection"; style = foregroundStyle(for: .heatProtection)
+            iconName = "thermometer.sun.fill"; text = String(localized: "Heat Protection"); style = foregroundStyle(for: .heatProtection)
         case .dischargeStarted:
-            iconName = "arrow.down.to.line.compact"; text = "Discharge Started"; style = foregroundStyle(for: .dischargeStarted)
+            iconName = "arrow.down.to.line.compact"; text = String(localized: "Discharge Started"); style = foregroundStyle(for: .dischargeStarted)
         case .dischargeStopped:
-            iconName = "checkmark"; text = "Discharge Stopped"; style = foregroundStyle(for: .dischargeStopped)
+            iconName = "checkmark"; text = String(localized: "Discharge Stopped"); style = foregroundStyle(for: .dischargeStopped)
         case .discharging:
-            iconName = "arrow.down.to.line.compact"; text = "Discharging"; style = foregroundStyle(for: .discharging)
+            iconName = "arrow.down.to.line.compact"; text = String(localized: "Discharging"); style = foregroundStyle(for: .discharging)
         case .calibrationStarted:
-            iconName = "battery.100.bolt"; text = "Calibration Started"; style = foregroundStyle(for: .calibrationStarted)
+            iconName = "battery.100.bolt"; text = String(localized: "Calibration Started"); style = foregroundStyle(for: .calibrationStarted)
         case .calibrating:
-            iconName = "battery.100.bolt"; text = "Calibrating"; style = foregroundStyle(for: .calibrating)
+            iconName = "battery.100.bolt"; text = String(localized: "Calibrating"); style = foregroundStyle(for: .calibrating)
         case .calibrationDone:
-            iconName = "checkmark.seal.fill"; text = "Calibration Complete"; style = foregroundStyle(for: .calibrationDone)
+            iconName = "checkmark.seal.fill"; text = String(localized: "Calibration Complete"); style = foregroundStyle(for: .calibrationDone)
         case .calibrationFailed:
-            iconName = "exclamationmark.triangle.fill"; text = "Calibration Failed"; style = foregroundStyle(for: .calibrationFailed)
+            iconName = "exclamationmark.triangle.fill"; text = String(localized: "Calibration Failed"); style = foregroundStyle(for: .calibrationFailed)
         }
 
         return AnyView(
@@ -1364,13 +1364,13 @@ struct FocusModeActivityView {
         let text: String
 
         if !mode.isActive {
-            text = "Off"
+            text = String(localized: "Off")
         } else {
             switch displayMode {
             case .full:
                 text = mode.name
             case .compact:
-                text = "On"
+                text = String(localized: "On")
             }
         }
 
@@ -1677,7 +1677,7 @@ struct NotificationLiveActivityView: View {
     @ViewBuilder
     private var actionButtons: some View {
         HStack {
-            standardActionButton(title: "Dismiss", systemName: "xmark") {
+            standardActionButton(title: String(localized: "Dismiss"), systemName: "xmark") {
                 notificationManager.dismissLatestNotification()
             }
 
@@ -1696,7 +1696,7 @@ struct NotificationLiveActivityView: View {
                     }
                 }) {
                     Label(
-                        didCopyCode ? "Copied" : code,
+                        didCopyCode ? String(localized: "Copied") : code,
                         systemImage: didCopyCode ? "checkmark" : "doc.on.doc"
                     )
                     .font(.system(size: 13, weight: .medium, design: didCopyCode ? .default : .monospaced))
@@ -1711,12 +1711,12 @@ struct NotificationLiveActivityView: View {
             }
 
             if payload.appIdentifier == "com.apple.sharingd" {
-                standardActionButton(title: "Show", systemName: "folder", isPrimary: true) {
+                standardActionButton(title: String(localized: "Show"), systemName: "folder", isPrimary: true) {
                     if let url = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first { NSWorkspace.shared.open(url) }
                     notificationManager.dismissLatestNotification()
                 }
             } else {
-                standardActionButton(title: "Open", systemName: "arrow.up.forward.app", isPrimary: true) {
+                standardActionButton(title: String(localized: "Open"), systemName: "arrow.up.forward.app", isPrimary: true) {
                     NSWorkspace.shared.launchApplication(withBundleIdentifier: payload.appIdentifier, options: [], additionalEventParamDescriptor: nil, launchIdentifier: nil)
                     notificationManager.dismissLatestNotification()
                 }
@@ -1949,7 +1949,7 @@ struct PowerStateActivityView {
 
     static func right(for state: BatterySystemState, batteryLevel: Int) -> some View {
         HStack(spacing: 6) {
-            Text(state.managementState.rawValue)
+            Text(state.managementState.displayName)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
 

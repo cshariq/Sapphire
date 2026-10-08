@@ -60,9 +60,9 @@ enum WallpaperScaling: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .fill: return "Fill Screen"
-        case .fit: return "Fit to Screen"
-        case .stretch: return "Stretch to Fill"
+        case .fill: return String(localized: "Fill Screen")
+        case .fit: return String(localized: "Fit to Screen")
+        case .stretch: return String(localized: "Stretch to Fill")
         }
     }
 
@@ -105,20 +105,20 @@ enum LiveWallpaperPlaybackMode: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .always: return "Always Playing"
-        case .adaptive: return "Adaptive"
-        case .never: return "Never Playing"
+        case .always: return String(localized: "Always Playing")
+        case .adaptive: return String(localized: "Adaptive")
+        case .never: return String(localized: "Never Playing")
         }
     }
 
     var description: String {
         switch self {
         case .always:
-            return "Keep live wallpapers running whenever the display is awake."
+            return String(localized: "Keep live wallpapers running whenever the display is awake.")
         case .adaptive:
-            return "Pause video when it is covered or power and thermal conditions call for it."
+            return String(localized: "Pause video when it is covered or power and thermal conditions call for it.")
         case .never:
-            return "Show a still frame without starting the video decoder."
+            return String(localized: "Show a still frame without starting the video decoder.")
         }
     }
 }

@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import IOKit.ps
 
 @MainActor
 class BatteryStatsViewModel: ObservableObject {
@@ -48,7 +49,16 @@ class BatteryStatsViewModel: ObservableObject {
     var maxCapacity: Int { snapshot.maxCapacity }
     var appleMaxCapacity: Int { snapshot.appleMaxCapacity }
     var cycleCount: Int { snapshot.cycleCount }
-    var health: String { snapshot.health }
+    var health: String {
+        switch snapshot.health {
+        case kIOPSGoodValue: return String(localized: "battery.health.good", defaultValue: "Good")
+        case kIOPSFairValue: return String(localized: "battery.health.fair", defaultValue: "Fair")
+        case kIOPSPoorValue: return String(localized: "battery.health.poor", defaultValue: "Poor")
+        case "Normal": return String(localized: "battery.health.normal", defaultValue: "Normal")
+        case "Unknown": return String(localized: "battery.health.unknown", defaultValue: "Unknown")
+        default: return snapshot.health
+        }
+    }
     var powerAdapterInfo: PowerAdapterInfo? { snapshot.powerAdapterInfo }
 
     private let batteryManager = BatteryManager.shared
@@ -157,9 +167,9 @@ class BatteryStatsViewModel: ObservableObject {
         let hours = minutes / 60
         let remainingMinutes = minutes % 60
         if hours > 0 {
-            return "\(hours)h \(remainingMinutes)m"
+            return String(localized: "\(hours)h \(remainingMinutes)m")
         }
-        return "\(remainingMinutes)m"
+        return String(localized: "\(remainingMinutes)m")
     }
 
     var maxCapacityPercentage: Int {

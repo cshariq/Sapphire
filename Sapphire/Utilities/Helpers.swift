@@ -144,9 +144,9 @@ public func haptic(strength: HapticFeedbackType = .strong) {
 
 func relativeTimeAbbreviated(from date: Date) -> String {
     let interval = Date().timeIntervalSince(date)
-    guard interval >= 60 else { return "just now" }
-    guard let formatted = RelativeTimeFormatter.abbreviated.string(from: interval) else { return "just now" }
-    return formatted + " ago"
+    guard interval >= 60 else { return String(localized: "just now") }
+    guard let formatted = RelativeTimeFormatter.abbreviated.string(from: interval) else { return String(localized: "just now") }
+    return String(localized: "\(formatted) ago")
 }
 
 private enum RelativeTimeFormatter {
@@ -357,8 +357,21 @@ struct VisualEffectView: NSViewRepresentable {
     }
 }
 
+/// Chinese uses native number and date conventions (for example 万/亿 counts); every other
+/// language keeps Sapphire's English formats (K/M/B abbreviations, fixed date patterns).
+enum ChineseFormatting {
+    static var isActive: Bool {
+        Bundle.main.preferredLocalizations.first?.hasPrefix("zh") == true
+    }
+
+    static func compactCount(_ value: Int) -> String {
+        value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
+    }
+}
+
 extension Int {
     var compactFormatted: String {
+        if ChineseFormatting.isActive { return ChineseFormatting.compactCount(self) }
         let value = Double(self)
         for (threshold, suffix) in [(1_000_000_000.0, "B"), (1_000_000.0, "M"), (1_000.0, "K")] where value >= threshold {
             return String(format: "%.1f", value / threshold).replacingOccurrences(of: ".0", with: "") + suffix
@@ -401,7 +414,7 @@ struct PlayCountIndicator: View {
             systemImage: "play.fill",
             text: playCount.compactFormatted,
             color: color,
-            help: "Total Plays: \(playCount.formatted())"
+            help: String(localized: "Total Plays: \(playCount.formatted())")
         )
     }
 }
@@ -424,7 +437,7 @@ struct PopularityIndicator: View {
             systemImage: "chart.line.uptrend.xyaxis",
             text: estimatedPlays.compactFormatted,
             color: color,
-            help: "Popularity Score: \(popularity)/100"
+            help: String(localized: "Popularity Score: \(popularity)/100")
         )
     }
 }

@@ -17,12 +17,12 @@ enum FocusScheduleRepeat: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .once: return "Once"
-        case .daily: return "Daily"
-        case .weekdays: return "Weekdays"
-        case .weekly: return "Weekly"
-        case .custom: return "Specific days"
-        case .monthly: return "Monthly"
+        case .once: return String(localized: "Once")
+        case .daily: return String(localized: "Daily")
+        case .weekdays: return String(localized: "Weekdays")
+        case .weekly: return String(localized: "Weekly")
+        case .custom: return String(localized: "Specific days")
+        case .monthly: return String(localized: "Monthly")
         }
     }
 }
@@ -37,7 +37,8 @@ struct ScheduledFocusSession: Codable, Equatable, Identifiable {
     var lastFiredDate: Date?
 
     private static let weekdayShort = [
-        "", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
+        "", String(localized: "Sun"), String(localized: "Mon"), String(localized: "Tue"), String(localized: "Wed"),
+        String(localized: "Thu"), String(localized: "Fri"), String(localized: "Sat"),
     ]
 
     var sortedDisplayWeekdays: [Int] {
@@ -54,8 +55,8 @@ struct ScheduledFocusSession: Codable, Equatable, Identifiable {
     var repeatDescription: String {
         guard repeatInterval == .custom else { return repeatInterval.displayName }
         let days = sortedDisplayWeekdays
-        guard !days.isEmpty else { return "Every day" }
-        return days.map { Self.weekdayShort[$0] }.joined(separator: ", ")
+        guard !days.isEmpty else { return String(localized: "Every day") }
+        return days.map { Self.weekdayShort[$0] }.joined(separator: String(localized: "focus.schedule.weekdaySeparator", defaultValue: ", ", comment: "Separator between weekday names in a focus schedule's repeat summary."))
     }
 }
 
@@ -201,8 +202,8 @@ final class FocusScheduleManager: ObservableObject {
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
             let content = UNMutableNotificationContent()
-            content.title = "Focus session started "
-            content.body = "Your scheduled focus session is running for \(Int(duration / 60)) minutes. Stay focused!"
+            content.title = String(localized: "Focus session started ")
+            content.body = String(localized: "Your scheduled focus session is running for \(Int(duration / 60)) minutes. Stay focused!")
             content.sound = .default
             center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }

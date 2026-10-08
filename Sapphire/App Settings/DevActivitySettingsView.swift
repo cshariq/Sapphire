@@ -200,13 +200,13 @@ private struct DevTaskRow: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.title)
+                Text(verbatim: task.title)
                     .font(.system(size: 13, weight: .medium))
                 HStack(spacing: 6) {
                     Text(task.kind.displayName)
                     if !task.detail.isEmpty {
                         Text("·")
-                        Text(task.detail)
+                        Text(verbatim: task.detail)
                     }
                 }
                 .font(.caption)
@@ -249,9 +249,9 @@ struct CaffeineAutoTaskSettingsView: View {
     private var runningSummary: String {
         let kinds = settings.settings.caffeinateAutoTaskKinds
         let relevant = monitor.tasks.filter { kinds.contains($0.kind.rawValue) }
-        guard let first = relevant.first else { return "Nothing running" }
+        guard let first = relevant.first else { return String(localized: "Nothing running") }
         if relevant.count == 1 { return first.title }
-        return "\(first.title) + \(relevant.count - 1) more"
+        return String(localized: "\(first.title) + \(relevant.count - 1) more")
     }
 
     private func kindBinding(_ kind: DevTaskKind) -> Binding<Bool> {
@@ -281,7 +281,7 @@ struct CaffeineAutoTaskSettingsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Currently Detected")
-                        Text(runningSummary)
+                        Text(verbatim: runningSummary)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

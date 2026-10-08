@@ -157,7 +157,7 @@ struct FocusSessionDetailView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: focusManager.isPaused ? "play.fill" : "pause.fill")
-                            Text(focusManager.isPaused ? "Resume" : "Pause")
+                            Text(focusManager.isPaused ? String(localized: "Resume") : String(localized: "Pause"))
                         }
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.white)
@@ -209,7 +209,7 @@ struct FocusSessionDetailView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!focusManager.canEndSessionEarly)
-                    .help(focusManager.canEndSessionEarly ? "End session early" : "Locked: strict mode active")
+                    .help(focusManager.canEndSessionEarly ? String(localized: "End session early") : String(localized: "Locked: strict mode active"))
                 }
             }
         }
@@ -219,11 +219,11 @@ struct FocusSessionDetailView: View {
     private var statusText: String {
         switch focusManager.phase {
         case .idle, .finished:
-            return focusManager.phase == .finished ? "Session finished" : "Ready"
+            return focusManager.phase == .finished ? String(localized: "Session finished") : String(localized: "Ready")
         case .focusing:
-            return focusManager.isPaused ? "Paused" : "Block \(focusManager.currentBlockIndex + 1)"
+            return focusManager.isPaused ? String(localized: "Paused") : String(localized: "Block \(focusManager.currentBlockIndex + 1)")
         case .onBreak:
-            return focusManager.isPaused ? "Paused" : "Rest & recharge"
+            return focusManager.isPaused ? String(localized: "Paused") : String(localized: "Rest & recharge")
         }
     }
 
@@ -235,7 +235,7 @@ struct FocusSessionDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 StreakFlame(size: 18, isActive: snapshot.streak > 0)
-                Text(snapshot.streak == 1 ? "1 day streak" : "\(snapshot.streak) day streak")
+                Text(snapshot.streak == 1 ? String(localized: "1 day streak") : String(localized: "\(String(snapshot.streak)) day streak"))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.white)
                     .lineLimit(1)
@@ -289,11 +289,11 @@ struct FocusSessionDetailView: View {
 
     private var statsStrip: some View {
         HStack(spacing: 8) {
-            statItem(label: "Focused", value: FocusSessionManager.format(focusManager.completedToday))
+            statItem(label: String(localized: "Focused"), value: FocusSessionManager.format(focusManager.completedToday))
             Divider().frame(height: 20).opacity(0.15)
-            statItem(label: "Blocks", value: "\(focusManager.blocksCompletedThisSession)")
+            statItem(label: String(localized: "Blocks"), value: "\(focusManager.blocksCompletedThisSession)")
             Divider().frame(height: 20).opacity(0.15)
-            statItem(label: "Total", value: "\(focusManager.history.count)")
+            statItem(label: String(localized: "Total"), value: "\(focusManager.history.count)")
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 2)
@@ -410,22 +410,22 @@ struct FocusSessionDetailView: View {
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
                 quickToggleChip(
-                    title: "Dim Apps",
+                    title: String(localized: "Dim Apps"),
                     icon: "moon.fill",
                     isOn: $settings.settings.focusDimInactiveApps
                 )
                 quickToggleChip(
-                    title: "Mission Ctl",
+                    title: String(localized: "Mission Ctl"),
                     icon: "rectangle.inset.filled",
                     isOn: $settings.settings.focusDisableDimInMissionControl
                 )
                 quickToggleChip(
-                    title: "Hide Wall",
+                    title: String(localized: "Hide Wall"),
                     icon: "photo.fill",
                     isOn: $settings.settings.focusHideWallpaper
                 )
                 quickToggleChip(
-                    title: "App Limit",
+                    title: String(localized: "App Limit"),
                     icon: "shield.fill",
                     isOn: $settings.settings.focusAppLimitEnabled
                 )

@@ -1,0 +1,39 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "fixture.count" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : { "stringUnit" : { "state" : "translated", "value" : "%lld item" } },
+              "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld items" } }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld个项目" } }
+            }
+          }
+        }
+      }
+    },
+    "fixture.destination" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Move %1$lld items to %2$@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移到%2$@：%1$lld个项目" } }
+      }
+    },
+    "fixture.untranslated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "English-only fixture" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}
