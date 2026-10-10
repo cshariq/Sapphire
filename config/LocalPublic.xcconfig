@@ -1,0 +1,9 @@
+// Local build of the public sources; use existing public substitute interfaces.
+SAPPHIRE_LOCAL_BUILD = YES
+// Gemini's real implementation is tracked in this public checkout.
+EXCLUDED_SOURCE_FILE_NAMES = GeminiLiveManagerStub.swift
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) PUBLIC_BUILD
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+PROVISIONING_PROFILE_SPECIFIER =

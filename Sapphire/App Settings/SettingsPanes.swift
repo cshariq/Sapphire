@@ -1570,7 +1570,7 @@ private struct StoragePieSlice: View {
                         .shadow(radius: 2)
                         .clipped()
                         .rotationEffect(.radians(angle + .pi / 2))
-                        .position(x: geometry.size.width / 2 + cos(angle) * radius, y: geometry.size.height / 2 + sin(angle) * radius)
+                        .position(x: geometry.size.width / 2 + CGFloat(cos(angle)) * radius, y: geometry.size.height / 2 + CGFloat(sin(angle)) * radius)
                 }
             }
         }
