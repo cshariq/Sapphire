@@ -433,7 +433,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sapphire 使用螢幕錄製權限擷取各 App 音訊並顯示即時視窗預覽。"
+            "value": "Sapphire 需要此延伸功能來建立虛擬多重輸出音訊裝置。"
           }
         }
       }
