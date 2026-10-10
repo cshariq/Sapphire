@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 100;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -1319,7 +1319,7 @@
 				DA5E1008304CBB63003D1D37 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				F5A1000030F0000000000001 /* XCRemoteSwiftPackageReference "GoogleDataTransport" */,
 			);
-			preferredProjectObjectVersion = 100;
+			preferredProjectObjectVersion = 77;
 			productRefGroup = DA46CF772DCBCA0000F00EC5 /* Products */;
 			projectDirPath = "";
 			projectReferences = (
@@ -1523,6 +1523,11 @@
 			shellPath = /bin/sh;
 			shellScript = (
 				"set -e",
+				"if [ \"${SAPPHIRE_LOCAL_BUILD:-NO}\" = \"YES\" ]; then",
+				"  echo \"Local public build: Crashlytics symbol upload disabled\"",
+				"  touch \"${SCRIPT_OUTPUT_FILE_0}\"",
+				"  exit 0",
+				"fi",
 				"\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"",
 				"touch \"${SCRIPT_OUTPUT_FILE_0}\"",
 				"",
