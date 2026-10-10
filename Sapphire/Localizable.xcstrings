@@ -24142,7 +24142,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "缺少 Gemini API 密鑰"
+            "value": "缺少 Gemini API 金鑰"
           }
         }
       }
@@ -25202,7 +25202,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hack Club API 密鑰"
+            "value": "Hack Club API 金鑰"
           }
         }
       }
@@ -26421,7 +26421,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "將裝置放在 Mac 解鎖時你平常使用的位置（例如觸控式軸板旁邊）。"
+            "value": "將裝置放在 Mac 解鎖時你平常使用的位置（例如觸控式軌跡板旁邊）。"
           }
         }
       }
@@ -33528,7 +33528,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "自訂滑鼠與觸控式軸板的捲動、加速度和按鈕。"
+            "value": "自訂滑鼠與觸控式軌跡板的捲動、加速度和按鈕。"
           }
         }
       }
@@ -39092,7 +39092,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "以觸控式軸板滑動打開小工具時。"
+            "value": "以觸控式軌跡板滑動打開小工具時。"
           }
         }
       }
@@ -52775,7 +52775,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "缺少 Spotify API 密鑰"
+            "value": "缺少 Spotify API 金鑰"
           }
         }
       }
@@ -58914,7 +58914,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "請在 Sapphire 設定中加入 Google AI Studio API 密鑰，才能使用 Gemini Live。"
+            "value": "請在 Sapphire 設定中加入 Google AI Studio API 金鑰，才能使用 Gemini Live。"
           }
         }
       }
@@ -62940,7 +62940,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚未設定天氣 API 密鑰。"
+            "value": "尚未設定天氣 API 金鑰。"
           }
         }
       }
@@ -66690,7 +66690,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mouse, 滑鼠, 觸控式軸板, 捲動, 指標"
+            "value": "Mouse, 滑鼠, 觸控式軌跡板, 捲動, 指標"
           }
         }
       }
