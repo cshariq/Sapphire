@@ -35,12 +35,14 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
     case otp = 82
     case geminiLive = 85
     case microphone = 86
+    case appActivity = 87
     case nearbyShare = 90
     case eyeBreak = 95
     case focusSession = 96
     case systemHUD = 100
     case unlocked = 105
     case lockScreen = 110
+    case capsLock = 115
     case intelligenceAgent = 120
     case devActivity = 121
     case sports = 125
@@ -52,6 +54,7 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
 
     init?(from settingsType: LiveActivityType) {
         switch settingsType {
+        case .capsLock: self = .capsLock
         case .music: self = .music
         case .weather: self = .weather
         case .calendar: self = .calendar
@@ -73,6 +76,7 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
 
     func toLiveActivityType() -> LiveActivityType? {
         switch self {
+        case .capsLock: return .capsLock
         case .music: return .music
         case .weather, .persistentWeather: return .weather
         case .calendar: return .calendar

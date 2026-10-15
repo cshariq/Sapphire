@@ -5,24 +5,18 @@
 //  Created by Shariq Charolia on 2025-09-26
 //
 
+import AppKit
 import SwiftUI
 
 struct TimerDetailView: View {
     @EnvironmentObject var timerManager: TimerManager
     @Binding var navigationStack: [NotchWidgetMode]
 
-    @State private var presetMinutes: Int = 5
-    @State private var customHours: Int = 0
-    @State private var customMinutes: Int = 5
-    @State private var customSeconds: Int = 0
-    @State private var useCustomDuration: Bool = false
-    @State private var timerLabel: String = ""
-
-    private static let presetMinutesOptions = [1, 3, 5, 10, 15, 30, 60]
+    @State private var selectedMinutes: Int = 15
 
     var body: some View {
         VStack(spacing: 16) {
-            quickStartSection
+            durationPickerSection
             sapphireTimersSection
             systemTimersSection
             systemStopwatchesSection
@@ -43,91 +37,51 @@ struct TimerDetailView: View {
         .animation(.default, value: timerManager.sapphireTimers.map(\.id))
     }
 
-    // MARK: - Quick Start (Sapphire-owned timers)
+    // MARK: - Duration picker
 
-    private var quickStartSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Quick Timer")
-                .font(.title3.bold())
-                .foregroundColor(.orange)
+    private var durationPickerSection: some View {
+        VStack(spacing: 12) {
+            TimerDurationRuler(minutes: $selectedMinutes, range: 1...120)
+                .frame(height: 74)
 
-            HStack(spacing: 8) {
-                ForEach(Self.presetMinutesOptions, id: \.self) { minutes in
-                    Button {
-                        useCustomDuration = false
-                        presetMinutes = minutes
-                    } label: {
-                        Text(minutes >= 60 ? "1 hr" : "\(minutes) min")
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(
-                                    !useCustomDuration && presetMinutes == minutes
-                                        ? Color.orange.opacity(0.85)
-                                        : Color.white.opacity(0.12)
-                                )
-                            )
-                            .foregroundColor(.white)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            DisclosureGroup(isExpanded: $useCustomDuration) {
-                HStack(spacing: 12) {
-                    durationStepper(value: $customHours, range: 0...23, label: "hr")
-                    durationStepper(value: $customMinutes, range: 0...59, label: "min")
-                    durationStepper(value: $customSeconds, range: 0...59, label: "sec")
-                }
-                .padding(.top, 8)
-            } label: {
-                Text("Custom Duration")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.85))
-            }
-
-            HStack(spacing: 8) {
-                TextField("Label (optional)", text: $timerLabel)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 13))
-
+            HStack(spacing: 12) {
                 Button {
                     startTimer()
                 } label: {
-                    Label("Start", systemImage: "play.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(Color.orange))
-                        .foregroundColor(.white)
+                    Text("Start Timer")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 18)
+                        .frame(height: 34)
+                        .background(Capsule().fill(Color.orange.opacity(0.22)))
+                        .foregroundColor(.orange)
                 }
-                .buttonStyle(.plain)
-                .disabled(selectedDuration <= 0)
-                .opacity(selectedDuration <= 0 ? 0.4 : 1)
+                .buttonStyle(TimerPillButtonStyle())
+
+                Spacer()
+
+                LayerNumericText(
+                    text: String(format: "%d:00", selectedMinutes),
+                    font: Self.pickerFont,
+                    color: Self.pickerColor,
+                    duration: 0.18
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
     }
 
-    private var selectedDuration: TimeInterval {
-        if useCustomDuration {
-            return TimeInterval(customHours * 3600 + customMinutes * 60 + customSeconds)
-        }
-        return TimeInterval(presetMinutes * 60)
-    }
+    private static let pickerFont: NSFont = {
+        let base = NSFont.monospacedDigitSystemFont(ofSize: 40, weight: .light)
+        guard let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return NSFont(descriptor: rounded, size: 40) ?? base
+    }()
 
-    private func durationStepper(value: Binding<Int>, range: ClosedRange<Int>, label: String) -> some View {
-        Stepper("\(value.wrappedValue) \(label)", value: value, in: range)
-            .font(.system(size: 13, design: .monospaced))
-    }
+    private static let pickerColor = NSColor.notchResolved(.orange)
 
     private func startTimer() {
-        let duration = selectedDuration
-        guard duration > 0 else { return }
-        let label = timerLabel.trimmingCharacters(in: .whitespaces)
-        _ = timerManager.startSapphireTimer(duration: duration, label: label.isEmpty ? nil : label)
-        timerLabel = ""
+        let duration = TimeInterval(selectedMinutes * 60)
+        _ = timerManager.startSapphireTimer(duration: duration)
     }
 
     // MARK: - Sapphire-Owned Timers
@@ -157,12 +111,7 @@ struct TimerDetailView: View {
                         Image(systemName: timer.isRunning ? "timer" : "timer.pause")
                             .foregroundColor(timer.isRunning ? .orange : .secondary)
 
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(timer.label)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.secondary)
-                            SapphireTimerClockText(timer: timer)
-                        }
+                        SapphireTimerClockText(timer: timer)
 
                         Spacer()
 
@@ -293,6 +242,18 @@ struct TimerDetailView: View {
     }
 }
 
+private struct TimerClockLabel: View {
+    let text: String
+    let font: NSFont
+
+    static let titleFont = NSFont.monospacedSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize, weight: .medium)
+    static let bodyFont = NSFont.monospacedSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize, weight: .medium)
+
+    var body: some View {
+        LayerNumericText(text: text, font: font, color: TimerActivityView.primaryTextColor)
+    }
+}
+
 private struct SapphireTimerClockText: View {
     let timer: SapphireTimer
 
@@ -307,10 +268,7 @@ private struct SapphireTimerClockText: View {
     }
 
     private func clock(_ value: TimeInterval) -> some View {
-        Text(value.asStopwatchClock)
-            .contentTransition(.numericText(countsDown: true))
-            .font(.system(.title3, design: .monospaced).weight(.medium))
-            .animation(.default, value: Int(value))
+        TimerClockLabel(text: value.asStopwatchClock, font: TimerClockLabel.titleFont)
     }
 }
 
@@ -328,9 +286,7 @@ private struct SystemTimerClockText: View {
     }
 
     private func clock(_ value: TimeInterval) -> some View {
-        Text(value.asStopwatchClock)
-            .contentTransition(.numericText(countsDown: true))
-            .animation(.default, value: Int(value))
+        TimerClockLabel(text: value.asStopwatchClock, font: TimerClockLabel.bodyFont)
     }
 }
 
@@ -348,8 +304,6 @@ private struct SystemStopwatchClockText: View {
     }
 
     private func clock(_ value: TimeInterval) -> some View {
-        Text(value.asStopwatchClock)
-            .contentTransition(.numericText())
-            .animation(.default, value: Int(value))
+        TimerClockLabel(text: value.asStopwatchClock, font: TimerClockLabel.bodyFont)
     }
 }

@@ -7,37 +7,16 @@
 import SwiftUI
 
 struct LockScreenWidgetSurface<S: Shape>: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     let shape: S
-    let cornerRadius: CGFloat
+    var cacheKey: String = "card"
 
     var body: some View {
-        ZStack {
-            if settings.settings.lockScreenLiquidGlassLook {
-                LiquidGlassShapeFill(
-                    material: settings.settings.lockScreenLiquidGlassStyle,
-                    shape: shape,
-                    cornerRadius: cornerRadius,
-                    blendingMode: .behindWindow,
-                    appearance: .dark,
-                    shapePathCacheKey: AnyHashable("lock-screen-widget-\(cornerRadius)")
-                )
-                .overlay(
-                    shape
-                        .fill(.ultraThinMaterial)
-                        .opacity(0.18)
-                        .allowsHitTesting(false)
-                )
-
-                if settings.settings.lockScreenFrostedOverLiquidGlass {
-                    frostedOverlay
-                } else {
-                    glassHighlightLayer
-                }
-            } else {
-                glassyFallback
-            }
+        if settings.settings.lockScreenLiquidGlassLook {
+            LockScreenLiquidGlass(options: settings.settings.lockScreenGlass, shape: shape, cacheKey: cacheKey)
+        } else {
+            glassyFallback
         }
     }
 
@@ -89,84 +68,37 @@ struct LockScreenWidgetSurface<S: Shape>: View {
                 .blur(radius: LockScreenConfiguration.backgroundStrokeBlur)
         }
     }
+}
 
-    @ViewBuilder
-    private var glassHighlightLayer: some View {
-        shape
-            .fill(
-                RadialGradient(
-                    colors: [
-                        Color.white.opacity(0.10),
-                        Color.clear
-                    ],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 140
-                )
-            )
+struct LockScreenLiquidGlass<S: Shape>: View {
+    let options: LiquidGlassOptions
+    let shape: S
+    var cacheKey: String = "card"
 
-        shape
-            .stroke(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.22),
-                        Color.white.opacity(0.06),
-                        Color.white.opacity(0.12)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 0.8
-            )
+    var body: some View {
+        LiquidGlassShapeFill(
+            material: options.material,
+            shape: shape,
+            tint: options.tintColor.map(Color.init(nsColor:)),
+            blendingMode: .behindWindow,
+            appearance: options.appearance,
+            interaction: options.interaction,
+            shapePathCacheKey: AnyHashable("lock-screen-\(cacheKey)-\(options.cornerRadius)")
+        )
+        .overlay(
+            shape
+                .fill(Color(red: 8 / 255, green: 5 / 255, blue: 16 / 255, opacity: 24 / 255))
+                .allowsHitTesting(false)
+        )
     }
+}
 
-    @ViewBuilder
-    private var frostedOverlay: some View {
-        VisualEffectView(material: .fullScreenUI, blendingMode: .behindWindow)
-            .clipShape(shape)
+struct LockScreenCardSurface: View {
+    @ObservedSettings var settings: SettingsObserver
 
-        VisualEffectView(material: .hudWindow, blendingMode: .withinWindow)
-            .clipShape(shape)
-            .opacity(0.55)
-
-        shape
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.20),
-                        Color.white.opacity(0.08),
-                        Color.white.opacity(0.16)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-
-        shape
-            .fill(
-                RadialGradient(
-                    colors: [
-                        Color.white.opacity(0.09),
-                        Color.clear
-                    ],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 100
-                )
-            )
-
-        shape
-            .stroke(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.35),
-                        Color.white.opacity(0.10),
-                        Color.white.opacity(0.22)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 0.9
-            )
+    var body: some View {
+        LockScreenWidgetSurface(
+            shape: RoundedRectangle(cornerRadius: settings.settings.lockScreenGlass.cornerRadius, style: .continuous)
+        )
     }
 }

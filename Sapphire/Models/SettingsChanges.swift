@@ -57,13 +57,30 @@ extension SettingsModel {
 }
 
 @MainActor
-final class SettingsEditingSession: ObservableObject {
-    @Published var settings: Settings {
+final class SettingsEditingSession: Observable, TrackedSettingsSource {
+    let fieldTracker = SettingsFieldTracker()
+
+    private var draft: Settings {
         didSet {
+            fieldTracker.didChange(from: oldValue, to: draft)
             guard !isApplyingModelUpdate else { return }
             isDirty = true
             pendingCommit.send()
         }
+    }
+
+    var settings: TrackedSettings { TrackedSettings(source: self) }
+
+    nonisolated func readSettings<Value>(_ keyPath: KeyPath<Settings, Value>) -> Value {
+        MainActor.assumeIsolated { draft[keyPath: keyPath] }
+    }
+
+    nonisolated var settingsSnapshot: Settings {
+        MainActor.assumeIsolated { draft }
+    }
+
+    nonisolated func writeSettings(_ update: (inout Settings) -> Void) {
+        MainActor.assumeIsolated { update(&draft) }
     }
 
     private let model: SettingsModel
@@ -76,7 +93,7 @@ final class SettingsEditingSession: ObservableObject {
 
     init(model: SettingsModel = .shared) {
         self.model = model
-        self.settings = model.settings
+        self.draft = model.settings
         self.baseline = model.settings
 
         pendingCommit
@@ -109,11 +126,11 @@ final class SettingsEditingSession: ObservableObject {
 
     func commitNow() {
         guard isDirty else { return }
-        guard settings != baseline else {
+        guard draft != baseline else {
             isDirty = false
             return
         }
-        let localSettings = settings
+        let localSettings = draft
         let currentModelSettings = model.settings
         let committedSettings: Settings
 
@@ -177,7 +194,7 @@ final class SettingsEditingSession: ObservableObject {
         if isDirty {
             let rebased = Self.rebaseLocalChanges(
                 from: baseline,
-                local: settings,
+                local: draft,
                 onto: updated
             )
             baseline = updated
@@ -192,9 +209,9 @@ final class SettingsEditingSession: ObservableObject {
     }
 
     private func applyToEditor(_ updated: Settings) {
-        guard updated != settings else { return }
+        guard updated != draft else { return }
         isApplyingModelUpdate = true
-        settings = updated
+        draft = updated
         isApplyingModelUpdate = false
     }
 

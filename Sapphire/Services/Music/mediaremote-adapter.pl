@@ -148,6 +148,7 @@ fail "Invalid function name: '$function_name'"
   || $function_name eq "shuffle"
   || $function_name eq "repeat"
   || $function_name eq "speed"
+  || $function_name eq "serve"
   || $function_name eq "test";
 
 sub parse_options {
@@ -206,6 +207,48 @@ sub set_env_option_value {
     fail "Missing value for option '$key'";
   }
   set_env_option_unsafe($key, $value);
+}
+
+# Sapphire: a long-lived command channel, so a play/pause or seek does not pay
+# for a new perl plus framework load each time. Each stdin line is
+# "<send|seek|shuffle|repeat|speed> <number>"; one "ok" or "err" line answers it,
+# which lets the host keep exactly one command in flight. EOF (host gone) ends it.
+# An adapter-level failure exits through fail() like the one-shot form does.
+if ($function_name eq "serve") {
+  fail "Too many arguments" if @ARGV;
+  $| = 1;
+  my %param_names = (
+    send => "command", seek => "position", shuffle => "mode",
+    repeat => "mode", speed => "speed",
+  );
+  my %installed;
+  while (defined(my $line = <STDIN>)) {
+    $line =~ s/\s+\z//;
+    my ($command, $value) = split /\s+/, $line, 2;
+    unless (defined $command && exists $param_names{$command}
+            && defined $value && $value =~ /\A-?\d+(?:\.\d+)?\z/) {
+      print "err\n";
+      next;
+    }
+    my $symbol = "adapter_$command";
+    unless ($installed{$command}) {
+      my $address = DynaLoader::dl_find_symbol($handle, env_func($symbol));
+      unless ($address) {
+        print "err\n";
+        next;
+      }
+      DynaLoader::dl_install_xsub("main::serve_$command", $address);
+      $installed{$command} = 1;
+    }
+    set_env_param($symbol, 0, $param_names{$command}, $value);
+    my $ok = eval {
+      no strict "refs";
+      &{"main::serve_$command"}();
+      1;
+    };
+    print $ok ? "ok\n" : "err\n";
+  }
+  exit 0;
 }
 
 my $symbol_name = "adapter_$function_name";

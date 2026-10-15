@@ -24,6 +24,7 @@ struct KeyboardShortcutHelper {
     }
 }
 
+@MainActor
 struct KeyCodeTranslator {
     static let shared = KeyCodeTranslator()
 

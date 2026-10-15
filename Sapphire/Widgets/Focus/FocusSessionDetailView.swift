@@ -5,12 +5,13 @@
 //  Created by Shariq Charolia on 2026-08-25
 //
 
+import AppKit
 import SwiftUI
 
 @MainActor
 struct FocusSessionDetailView: View {
     @EnvironmentObject var focusManager: FocusSessionManager
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @StateObject private var ambient = FocusAmbientSoundManager.shared
     @Binding var navigationStack: [NotchWidgetMode]
 
@@ -476,53 +477,58 @@ struct FocusSessionDetailView: View {
 }
 @MainActor
 private struct FocusSessionTimerRing: View {
-    let focusManager: FocusSessionManager
+    @ObservedObject var focusManager: FocusSessionManager
     let accent: Color
 
+    private static let clockFont: NSFont = {
+        let base = NSFont.monospacedDigitSystemFont(ofSize: 46, weight: .light)
+        guard let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return NSFont(descriptor: rounded, size: 46) ?? base
+    }()
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            content(at: context.date)
-        }
-    }
-
-    private func content(at date: Date) -> some View {
-        let remaining = focusManager.remaining(at: date)
-        let progress = max(focusManager.progress(at: date), 0.001)
-
-        return ZStack {
-            ProgressRingView(
-                progress: progress,
+        ZStack {
+            LayerGradientProgressRing(
+                motion: .focusBlock(focusManager, minimum: 0.001),
                 lineWidth: 9,
-                track: AnyShapeStyle(Color.white.opacity(0.05)),
-                active: accent,
-                clampsProgress: false,
-                activeShadow: (accent.opacity(0.4), 12)
+                trackColor: Color.white.opacity(0.05),
+                colors: [accent],
+                shadowColor: accent.opacity(0.4),
+                shadowRadius: 12,
+                catchUpDuration: 0.2
             )
-            .animation(.smooth(duration: 0.2), value: progress)
 
-            VStack(spacing: 5) {
-                Text(FocusSessionManager.format(remaining))
-                    .font(.system(size: 46, weight: .light, design: .rounded))
-                    .foregroundColor(.white)
-                    .contentTransition(.numericText(countsDown: true))
-                    .monospacedDigit()
-                    .animation(.smooth(duration: 0.2), value: remaining)
-
-                if focusManager.isSessionActive {
-                    Text("\(Int(progress * 100))% COMPLETE")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(1.4)
-                        .foregroundColor(accent.opacity(0.8))
-                        .contentTransition(.numericText())
-                        .animation(.smooth(duration: 0.2), value: Int(progress * 100))
-                } else {
-                    Text("TAP START TO BEGIN")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundColor(.white.opacity(0.35))
-                }
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                labels(at: context.date)
             }
         }
         .frame(width: 170, height: 170)
+    }
+
+    private func labels(at date: Date) -> some View {
+        let progress = max(focusManager.progress(at: date), 0.001)
+
+        return VStack(spacing: 5) {
+            LayerNumericText(
+                text: FocusSessionManager.format(focusManager.remaining(at: date)),
+                font: Self.clockFont,
+                color: .white,
+                duration: 0.2
+            )
+
+            if focusManager.isSessionActive {
+                Text("\(Int(progress * 100))% COMPLETE")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.4)
+                    .foregroundColor(accent.opacity(0.8))
+                    .contentTransition(.numericText())
+                    .animation(.smooth(duration: 0.2), value: Int(progress * 100))
+            } else {
+                Text("TAP START TO BEGIN")
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundColor(.white.opacity(0.35))
+            }
+        }
     }
 }

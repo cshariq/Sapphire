@@ -8,7 +8,7 @@
 
 //
 //  KBPAnimation.m
-//  KBPulse
+//  Sapphire
 //
 //  Created by EthanRDoesMC on 10/25/21.
 //

@@ -122,6 +122,8 @@ final class RunningApps: @unchecked Sendable {
     struct AppInfo {
         let bundleID: String?
         let isAppBundle: Bool
+        var name: String? = nil
+        var isRegular: Bool = false
     }
 
     func infoByPID() -> [pid_t: AppInfo] {
@@ -140,7 +142,9 @@ final class RunningApps: @unchecked Sendable {
         for app in apps {
             byPID[app.processIdentifier] = AppInfo(
                 bundleID: app.bundleIdentifier,
-                isAppBundle: app.bundleURL?.pathExtension == "app"
+                isAppBundle: app.bundleURL?.pathExtension == "app",
+                name: app.localizedName,
+                isRegular: app.activationPolicy == .regular
             )
         }
         lock.lock()

@@ -8,7 +8,7 @@ import SwiftUI
 
 @MainActor
 struct BatteryDetailView: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @EnvironmentObject private var batteryEstimator: BatteryEstimator
     @StateObject private var stats = BatteryStatsViewModel()
     @State private var statsPollingRequester = "BatteryDetail-\(UUID().uuidString)"

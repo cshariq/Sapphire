@@ -105,7 +105,7 @@ final class IDeviceBattery {
                 lastUpdate: Date().timeIntervalSince1970
             )
             DispatchQueue.main.async {
-                AirBatteryModel.updateDevice(pencil)
+                AccessoryBatteryStore.updateDevice(pencil)
             }
         }
     }
@@ -137,7 +137,7 @@ final class IDeviceBattery {
     }
 
     private func shouldScan(id: String) -> Bool {
-        guard let device = AirBatteryModel.getByID(id) else { return true }
+        guard let device = AccessoryBatteryStore.getByID(id) else { return true }
         return Date().timeIntervalSince1970 - device.lastUpdate >= Double(60 * updateInterval)
     }
 
@@ -187,7 +187,7 @@ final class IDeviceBattery {
             lastUpdate: lastUpdate
         )
         DispatchQueue.main.async {
-            AirBatteryModel.updateDevice(device)
+            AccessoryBatteryStore.updateDevice(device)
         }
 
         updatePairedWatch(parentName: deviceName, deviceID: id, lastUpdate: lastUpdate)
@@ -228,7 +228,7 @@ final class IDeviceBattery {
             lastUpdate: lastUpdate
         )
         DispatchQueue.main.async {
-            AirBatteryModel.updateDevice(watch)
+            AccessoryBatteryStore.updateDevice(watch)
         }
     }
 

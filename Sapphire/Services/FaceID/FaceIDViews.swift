@@ -141,15 +141,9 @@ struct FaceIDRegistrationView: View {
     private var registrationProgress: Double { cameraController.registrationProgress }
     private var instructionText: String { isRegistered ? "Registration Complete!" : cameraController.userInstruction }
 
-    private var isAskExtended: Bool {
-        if case .registering(let step) = cameraController.appState, step == .askExtended { return true }
-        return false
-    }
-
     private var overlayColor: Color {
         if case .registering(let step) = cameraController.appState {
             if step == .finalizing { return .purple }
-            if step == .askExtended { return .orange }
             return .blue
         }
         return isRegistered ? .green : .blue
@@ -178,9 +172,6 @@ struct FaceIDRegistrationView: View {
                     CameraView(cameraController: cameraController)
                         .frame(width: 300, height: 300)
                         .clipShape(Circle())
-                        .blur(radius: isAskExtended ? 15 : 0)
-                        .scaleEffect(isAskExtended ? 1.05 : 1.0)
-                        .animation(.easeInOut(duration: 0.5), value: isAskExtended)
 
                     Circle()
                         .trim(from: 0, to: CGFloat(registrationProgress))
@@ -189,13 +180,13 @@ struct FaceIDRegistrationView: View {
                         .rotationEffect(.degrees(-90))
                         .animation(.easeOut(duration: 0.22), value: registrationProgress)
 
-                    if !isRegistered && !isAskExtended {
+                    if !isRegistered {
                         Circle()
                             .stroke(Color.white.opacity(0.14), lineWidth: 6)
                             .frame(width: 276, height: 276)
                     }
 
-                    if displayedHoldProgress > 0 && displayedHoldProgress < 1.0 && !isRegistered && !isAskExtended {
+                    if displayedHoldProgress > 0 && displayedHoldProgress < 1.0 && !isRegistered {
                         Circle()
                             .trim(from: 0, to: CGFloat(displayedHoldProgress))
                             .stroke(Color.white.opacity(0.95), style: StrokeStyle(lineWidth: 6, lineCap: .round))
@@ -217,7 +208,7 @@ struct FaceIDRegistrationView: View {
                         .frame(width: 300, height: 300)
                     }
 
-                    if !isRegistered && !isAskExtended {
+                    if !isRegistered {
                         FaceIDPulseRing(
                             color: NSColor(overlayColor.opacity(0.5)),
                             lineWidth: 8,
@@ -227,45 +218,6 @@ struct FaceIDRegistrationView: View {
                             .frame(width: 300, height: 300)
                     }
 
-                    if isAskExtended {
-                        VStack(spacing: 14) {
-                            Image(systemName: "faceid")
-                                .font(.system(size: 42))
-                                .foregroundStyle(.blue)
-
-                            Text("Basic Setup Complete")
-                                .font(.headline)
-                                .foregroundColor(.primary)
-
-                            Text("Capture more angles for better accuracy with glasses and varying lighting.")
-                                .font(.caption)
-                                .multilineTextAlignment(.center)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 10)
-
-                            HStack(spacing: 12) {
-                                Button("Skip") {
-                                    cameraController.skipExtendedRegistration()
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.regular)
-
-                                Button("Continue") {
-                                    cameraController.acceptExtendedRegistration()
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.regular)
-                                .tint(.blue)
-                            }
-                            .padding(.top, 4)
-                        }
-                        .padding(20)
-                        .frame(width: 260)
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 20))
-                        .shadow(color: Color.black.opacity(0.15), radius: 10, y: 5)
-                        .transition(.scale.combined(with: .opacity))
-                    }
                 }
                 .padding(.vertical, 30)
 
@@ -275,33 +227,19 @@ struct FaceIDRegistrationView: View {
                             .font(.system(size: 50, weight: .bold))
                             .foregroundColor(.green)
                             .transition(.scale.combined(with: .opacity))
-                    } else if isAskExtended {
-                        Color.clear
                     } else {
                         VStack(spacing: 16) {
-                            if cameraController.isExtendedPhase {
-                                HStack(spacing: 10) {
-                                    poseIndicator(label: "Up", key: "up")
-                                    poseIndicator(label: "Down", key: "down")
-                                    poseIndicator(label: "Tilt L", key: "tiltLeft")
-                                    poseIndicator(label: "Tilt R", key: "tiltRight")
-                                }
-                                HStack(spacing: 10) {
-                                    poseIndicator(label: "Near", key: "closer")
-                                    poseIndicator(label: "Far", key: "farther")
-                                }
-                            } else {
-                                HStack(spacing: 10) {
-                                    poseIndicator(label: "Front", key: "center")
-                                    poseIndicator(label: "Left", key: "left")
-                                    poseIndicator(label: "Right", key: "right")
-                                }
+                            HStack(spacing: 10) {
+                                poseIndicator(label: "Front", key: "center")
+                                poseIndicator(label: "Left", key: "left")
+                                poseIndicator(label: "Right", key: "right")
                             }
 
                             Text(instructionText)
                                 .font(.system(size: 18, weight: .semibold, design: .rounded))
                                 .foregroundColor(.white)
                                 .multilineTextAlignment(.center)
+                                .minimumScaleFactor(0.7)
                                 .frame(height: 50)
                                 .transition(.opacity)
                         }

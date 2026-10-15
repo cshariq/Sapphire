@@ -158,7 +158,7 @@ struct WeatherPlayerView: View {
 
 private struct HourlyForecastCell: View {
     let forecast: HourlyForecastUIData
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
 
     var body: some View {
         VStack(spacing: 4) {

@@ -14,7 +14,7 @@ private struct Weekday: Identifiable {
 }
 
 struct CalendarDetailView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @EnvironmentObject private var calendarService: CalendarService
     @StateObject private var viewModel: InteractiveCalendarViewModel
 
@@ -94,8 +94,8 @@ struct CalendarDetailView: View {
             calendarService.fetchEvents(for: viewModel.selectedDate)
             calendarService.fetchReminders(for: viewModel.selectedDate)
         }
-        .onChange(of: settings.settings.calendarStartOfWeek) {
-            viewModel.updateStartOfWeek($0)
+        .onChange(of: settings.settings.calendarStartOfWeek) { _, startOfWeek in
+            viewModel.updateStartOfWeek(startOfWeek)
         }
     }
 

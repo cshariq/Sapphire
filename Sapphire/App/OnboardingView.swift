@@ -18,8 +18,8 @@ struct OnboardingView: View {
     @State private var currentStep: OnboardingStep = .welcome
     var onComplete: () -> Void
 
-    @EnvironmentObject var settings: SettingsModel
-    @StateObject var musicManager = MusicManager.shared
+    @ObservedSettings var settings: SettingsObserver
+    var musicManager: MusicManager { .shared }
 
     @State private var isPrivateApiLoading = false
     @State private var privateApiError: String?
@@ -64,7 +64,6 @@ struct OnboardingView: View {
                             isLoading: $isPrivateApiLoading,
                             error: $privateApiError
                         )
-                        .environmentObject(musicManager)
                     case .batterySetup:
                         BatterySetupStepView(onNext: { currentStep = .corePreferences })
                     case .corePreferences:
@@ -151,6 +150,13 @@ private struct PermissionsStepView: View {
                 .animation(.easeInOut, value: permissionsManager.areAllRequiredPermissionsGranted)
         }
         .onAppear { permissionsManager.checkAllPermissions() }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                permissionsManager.refreshLightweightStatuses()
+            }
+        }
     }
 }
 
@@ -270,7 +276,7 @@ private struct HelperInstallationStepView: View {
 }
 
 private struct PrivacyStepView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     var onContinue: () -> Void
 
     var body: some View {
@@ -343,7 +349,7 @@ private struct PrivacyStepView: View {
 }
 
 private struct MusicChoiceStepView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @State private var selection: DefaultMusicPlayer?
     var onNext: () -> Void
 
@@ -393,8 +399,8 @@ private struct MusicChoiceStepView: View {
 }
 
 private struct SpotifySetupStepView: View {
-    @EnvironmentObject var musicManager: MusicManager
-    @ObservedObject private var spotifyPrivateAPI = SpotifyPrivateAPIManager.shared
+    var musicManager: MusicManager { .shared }
+    private var spotifyPrivateAPI: SpotifyPrivateAPIManager { .shared }
     var onNext: () -> Void
     @Binding var isLoading: Bool
     @Binding var error: String?
@@ -421,7 +427,7 @@ private struct SpotifySetupStepView: View {
             Spacer()
             if musicManager.isPrivateAPIAuthenticated { OnboardingButton(title: "Continue", action: onNext) } else if !isLoading { Button("Skip for Now", action: onNext).buttonStyle(.plain).foregroundColor(.secondary).padding(.bottom, 50) } else { OnboardingButton(title: "Continue", action: {}).hidden().padding(.bottom, 50) }
         }
-        .sheet(item: $spotifyPrivateAPI.loginChallenge) { _ in
+        .sheet(item: Bindable(spotifyPrivateAPI).loginChallenge) { _ in
             SpotifyLoginWebView(
                 onComplete: { cookieProperties in
                     spotifyPrivateAPI.completeLoginAfterWebViewSuccess(with: cookieProperties)
@@ -439,7 +445,7 @@ private struct SpotifySetupStepView: View {
 }
 
 private struct BatterySetupStepView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     var onNext: () -> Void
 
     private var chargeLimitBinding: Binding<Int> {
@@ -491,7 +497,7 @@ private struct BatterySetupStepView: View {
 }
 
 private struct CorePreferencesStepView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     var onNext: () -> Void
     private var showHudsBinding: Binding<Bool> { Binding(get: { settings.settings.enableVolumeHUD && settings.settings.enableBrightnessHUD }, set: { settings.settings.enableVolumeHUD = $0; settings.settings.enableBrightnessHUD = $0 }) }
     var body: some View {
@@ -514,7 +520,7 @@ private struct CorePreferencesStepView: View {
 }
 
 private struct LockScreenSetupStepView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     var onNext: () -> Void
 
     var body: some View {

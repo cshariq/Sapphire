@@ -15,6 +15,7 @@ struct FocusRestrictedAppActivityView: View {
     let onDismiss: () -> Void
     let onUnlocked: () -> Void
 
+    @Environment(\.notchBandHeight) private var notchBandHeight
     @State private var requested = false
     @State private var appIcon: NSImage?
 
@@ -61,7 +62,7 @@ struct FocusRestrictedAppActivityView: View {
     ) -> some View {
         VStack(spacing: 0) {
             Color.clear
-                .frame(height: NotchConfiguration.universalHeight)
+                .frame(height: notchBandHeight)
 
             VStack(spacing: 12) {
                 HStack(alignment: .center, spacing: 12) {
@@ -98,7 +99,6 @@ struct FocusRestrictedAppActivityView: View {
     private func message(remaining: TimeInterval?) -> some View {
         if let remaining {
             Text("Unlocked in \(remaining.asMinuteSecondClock) — or when your session ends, whichever comes first.")
-                .contentTransition(.numericText(countsDown: true))
         } else {
             Text("This app was closed because it's blocked during your focus session.")
         }
@@ -119,7 +119,6 @@ struct FocusRestrictedAppActivityView: View {
                         .font(.system(size: 12, weight: .semibold))
                     Text(unlockRemaining.asMinuteSecondClock)
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .contentTransition(.numericText(countsDown: true))
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(Color.orange.opacity(0.22))

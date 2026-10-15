@@ -55,6 +55,8 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
     private(set) var isArmedForMouseSequence = false
     private(set) var isHoverDetectionEnabled = false
     private var didAcceptFileDropInCurrentSession = false
+    private var sessionOperation: NSDragOperation = []
+    private var lastDragUpdateLocation: NSPoint?
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
@@ -108,6 +110,8 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
 
     func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         let operation = acceptedOperation(for: sender)
+        sessionOperation = operation
+        lastDragUpdateLocation = nil
         guard !operation.isEmpty else { return [] }
         isFileDragSessionActive = true
         didAcceptFileDropInCurrentSession = false
@@ -118,10 +122,13 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
     }
 
     func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        let operation = acceptedOperation(for: sender)
-        guard !operation.isEmpty else { return [] }
-        onFileDragMoved?(screenLocation(for: sender))
-        return operation
+        guard isFileDragSessionActive, !sessionOperation.isEmpty else { return [] }
+        let location = screenLocation(for: sender)
+        if location != lastDragUpdateLocation {
+            lastDragUpdateLocation = location
+            onFileDragMoved?(location)
+        }
+        return sessionOperation
     }
 
     func draggingExited(_ sender: NSDraggingInfo?) {
@@ -129,7 +136,7 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
     }
 
     func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        !acceptedOperation(for: sender).isEmpty
+        isFileDragSessionActive && !sessionOperation.isEmpty
     }
 
     func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -175,6 +182,8 @@ final class HoverProbeWindow: NSPanel, NSDraggingDestination {
         let dropWasAccepted = didAcceptFileDropInCurrentSession
         isFileDragSessionActive = false
         didAcceptFileDropInCurrentSession = false
+        sessionOperation = []
+        lastDragUpdateLocation = nil
         updateMouseEventHandling()
         onFileDragEnded?(location, dropWasAccepted)
     }
@@ -222,15 +231,24 @@ final class NotchHoverMonitor {
     private var isUsingDragEnvelope = false
     private var isExternalMouseDragActive = false
     private var lastExternalMouseDragLocation: NSPoint?
+    private var dropWindow: HoverProbeWindow?
+    private var dropArmMouseDownToken: UUID?
+    private var dropArmTimer: Timer?
+    private var dropArmBaselineChangeCount: Int?
+    private var isDropZoneShown = false
+    private var isDropZoneEngaged = false
 
     private static let resizeThreshold: CGFloat = 6
     private static let mouseDragThresholdSquared: CGFloat = 9
     private static let dragEnvelopeSize = CGSize(width: 640, height: 240)
     private static let lateNativeFileDragGrace: Duration = .milliseconds(100)
+    private static let dropZoneOutset = CGSize(width: 60, height: 60)
+    private static let dropArmPollInterval: TimeInterval = 1 / 15
 
     private static let stuckHoverWatchdogInterval: TimeInterval = 0.2
 
     var isRunning: Bool { notchWindow != nil }
+    private var isNativeFileDragActive: Bool { dropWindow?.isFileDragSessionActive == true }
     var hasActiveMouseEventMonitors: Bool {
         localMouseMonitor != nil || globalDragMonitor != nil || mouseUpToken != nil
     }
@@ -259,25 +277,33 @@ final class NotchHoverMonitor {
         }
         probe.contentView = tracker
 
-        probe.onFileDragBegan = { [weak self] location in
+        let drop = HoverProbeWindow(level: window.level, collectionBehavior: window.collectionBehavior)
+        drop.contentView = NSView(frame: .zero)
+        drop.onFileDragBegan = { [weak self] location in
+            self?.setDropZoneEngaged(true)
             self?.handleFileDragBegan(at: location)
         }
-        probe.onFileDragMoved = { [weak self] location in
+        drop.onFileDragMoved = { [weak self] location in
             self?.handlers?.onFileDrag(true, location)
         }
-        probe.onFileDragExited = { [weak self] location in
+        drop.onFileDragExited = { [weak self] location in
+            self?.setDropZoneEngaged(false)
             self?.handlers?.onFileDrag(false, location)
         }
-        probe.onFileDragEnded = { [weak self] location, dropWasAccepted in
+        drop.onFileDragEnded = { [weak self] location, dropWasAccepted in
             self?.handleFileDragEnded(at: location, dropWasAccepted: dropWasAccepted)
         }
-        probe.onFileDrop = { [weak self] urls, location in
+        drop.onFileDrop = { [weak self] urls, location in
             self?.handlers?.onFileDrop(urls, location) ?? false
         }
-        probe.enableFileDropDestination()
+        drop.enableFileDropDestination()
 
         self.tracker = tracker
         self.probeWindow = probe
+        self.dropWindow = drop
+        dropArmMouseDownToken = EventMonitorHub.shared.register(for: .leftMouseDown) { [weak self] _ in
+            self?.armDropZoneForPotentialDrag()
+        }
 
         (NSApp.delegate as? AppDelegate)?.attachAuxiliaryNotchWindow(probe)
         window.addChildWindow(probe, ordered: .above)
@@ -312,8 +338,23 @@ final class NotchHoverMonitor {
         tracker?.onPointerEvent = nil
         tracker = nil
 
+        if let dropArmMouseDownToken {
+            EventMonitorHub.shared.unregister(token: dropArmMouseDownToken, for: .leftMouseDown)
+            self.dropArmMouseDownToken = nil
+        }
+        dropArmTimer?.invalidate()
+        dropArmTimer = nil
+        dropArmBaselineChangeCount = nil
+        if let dropWindow {
+            dropWindow.disableFileDropDestination()
+            dropWindow.orderOut(nil)
+            dropWindow.contentView = nil
+            dropWindow.close()
+        }
+        dropWindow = nil
+        isDropZoneShown = false
+
         if let probeWindow {
-            probeWindow.disableFileDropDestination()
             notchWindow?.removeChildWindow(probeWindow)
             (NSApp.delegate as? AppDelegate)?.detachAuxiliaryNotchWindow(probeWindow)
             probeWindow.orderOut(nil)
@@ -348,8 +389,9 @@ final class NotchHoverMonitor {
         }
         requestedRect = rect
         let effectiveRect = dragEnvelopeRect(for: rect)
+        if isDropZoneShown { placeDropZone() }
 
-        if probeWindow.isArmedForMouseSequence || probeWindow.isFileDragSessionActive {
+        if probeWindow.isArmedForMouseSequence || isNativeFileDragActive {
             if !effectiveRect.equalTo(currentRect) {
                 applyRect(effectiveRect, to: probeWindow, in: window)
             }
@@ -363,6 +405,11 @@ final class NotchHoverMonitor {
             isParked = false
             probeWindow.order(.above, relativeTo: window.windowNumber)
         }
+    }
+
+    func invalidatePlacement() {
+        guard !isParked else { return }
+        currentRect = .null
     }
 
     private func applyRect(_ rect: CGRect, to probeWindow: HoverProbeWindow, in window: NSWindow) {
@@ -574,7 +621,7 @@ final class NotchHoverMonitor {
               let probeWindow else { return }
 
         finishDeferredMouseSequenceBeforeNewPress(in: probeWindow)
-        guard !probeWindow.isFileDragSessionActive,
+        guard !isNativeFileDragActive,
               mouseDownLocation == nil else { return }
 
         beginMouseSequence(at: location, in: probeWindow)
@@ -599,7 +646,7 @@ final class NotchHoverMonitor {
     private func finishDeferredMouseSequenceBeforeNewPress(in probeWindow: HoverProbeWindow) {
         guard mouseDownLocation == nil,
               activeMouseSequenceGeneration != nil,
-              !probeWindow.isFileDragSessionActive else { return }
+              !isNativeFileDragActive else { return }
 
         deferredDisarmTask?.cancel()
         deferredDisarmTask = nil
@@ -645,7 +692,7 @@ final class NotchHoverMonitor {
         probeWindow.setArmedForMouseSequence(true)
         startDragMonitoring()
 
-        guard !probeWindow.isFileDragSessionActive else { return }
+        guard !isNativeFileDragActive else { return }
         if let isInside = knownContainment {
             publishMouseDragContainment(isInside, at: location)
             return
@@ -658,16 +705,18 @@ final class NotchHoverMonitor {
               probeWindow.isArmedForMouseSequence,
               hasObservedMouseDrag,
               NSEvent.pressedMouseButtons & 1 != 0,
-              !probeWindow.isFileDragSessionActive else { return }
+              !isNativeFileDragActive else { return }
 
         let isInside = probeWindow.isVisible && probeWindow.frame.contains(location)
         publishMouseDragContainment(isInside, at: location)
     }
 
     private func publishMouseDragContainment(_ isInside: Bool, at location: NSPoint) {
-        let dragPasteboard = NSPasteboard(name: .drag)
-        if let baseline = dragPasteboardChangeCountBeforeMouseSequence,
-           FileDragPasteboard.containsDroppableContent(dragPasteboard, newerThan: baseline) {
+        let isFileDrag = didObserveFileDragInMouseSequence
+            || dragPasteboardChangeCountBeforeMouseSequence.map {
+                FileDragPasteboard.containsDroppableContent(NSPasteboard(name: .drag), newerThan: $0)
+            } == true
+        if isFileDrag {
             didObserveFileDragInMouseSequence = true
             hasEnteredDuringMouseDrag = false
             if isInside {
@@ -715,15 +764,15 @@ final class NotchHoverMonitor {
             && probeWindow.isVisible
             && probeWindow.frame.contains(location)
         let shouldFinishMouseDrag = hasEnteredDuringMouseDrag
-            && !probeWindow.isFileDragSessionActive
+            && !isNativeFileDragActive
             && !didObserveFileDragInMouseSequence
         let shouldFinishProactiveFileDrag = didTargetFileDragInMouseSequence
-            && !probeWindow.isFileDragSessionActive
+            && !isNativeFileDragActive
 
         mouseDownLocation = nil
         hasObservedMouseDrag = false
         hasEnteredDuringMouseDrag = false
-        guard !probeWindow.isFileDragSessionActive else { return }
+        guard !isNativeFileDragActive else { return }
 
         if shouldFinishMouseDrag, pendingPlainDragEndLocation == nil {
             pendingPlainDragEndLocation = location
@@ -765,6 +814,7 @@ final class NotchHoverMonitor {
     }
 
     private func handleFileDragEnded(at location: NSPoint, dropWasAccepted: Bool) {
+        setDropZoneEngaged(false)
         stopDragMonitoring()
         stopGlobalMouseUpMonitoring()
         deferredDisarmTask?.cancel()
@@ -783,8 +833,87 @@ final class NotchHoverMonitor {
         deactivateDragEnvelope()
         probeWindow?.setArmedForMouseSequence(false)
         syncLocalMouseMonitor()
+        if NSEvent.pressedMouseButtons & 1 == 0 {
+            stopDropArmTimer()
+            hideDropZone()
+        }
         handlers?.onFileDrag(false, location)
         handlers?.onFileDragEnded(location, dropWasAccepted)
+    }
+
+    // MARK: Drop zone
+
+    private func armDropZoneForPotentialDrag() {
+        guard dropWindow != nil, !requestedRect.isNull else { return }
+        dropArmBaselineChangeCount = NSPasteboard(name: .drag).changeCount
+        guard dropArmTimer == nil else { return }
+        let timer = Timer(timeInterval: Self.dropArmPollInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pollDropArm() }
+        }
+        timer.tolerance = Self.dropArmPollInterval * 0.2
+        RunLoop.main.add(timer, forMode: .common)
+        dropArmTimer = timer
+    }
+
+    private func pollDropArm() {
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+            stopDropArmTimer()
+            if !isNativeFileDragActive { hideDropZone() }
+            return
+        }
+        guard !isDropZoneShown, let baseline = dropArmBaselineChangeCount else { return }
+        let pasteboard = NSPasteboard(name: .drag)
+        guard pasteboard.changeCount != baseline else { return }
+        dropArmBaselineChangeCount = nil
+        guard FileDragPasteboard.containsDroppableContent(pasteboard) else {
+            stopDropArmTimer()
+            return
+        }
+        showDropZone()
+    }
+
+    private func stopDropArmTimer() {
+        dropArmTimer?.invalidate()
+        dropArmTimer = nil
+        dropArmBaselineChangeCount = nil
+    }
+
+    private func showDropZone() {
+        guard let dropWindow, !isDropZoneShown else { return }
+        isDropZoneShown = true
+        placeDropZone()
+        dropWindow.setHoverDetectionEnabled(true)
+        dropWindow.orderFrontRegardless()
+    }
+
+    private func placeDropZone() {
+        guard let dropWindow,
+              let window = notchWindow,
+              !requestedRect.isNull,
+              !requestedRect.isEmpty else { return }
+        var zone = window.convertToScreen(requestedRect)
+        if isDropZoneEngaged {
+            zone = zone.insetBy(dx: -Self.dropZoneOutset.width, dy: 0)
+            zone.origin.y -= Self.dropZoneOutset.height
+            zone.size.height += Self.dropZoneOutset.height
+        }
+        if let screen = window.screen { zone = zone.intersection(screen.frame) }
+        guard !zone.isEmpty, !zone.equalTo(dropWindow.frame) else { return }
+        dropWindow.setFrame(zone, display: false)
+    }
+
+    private func setDropZoneEngaged(_ isEngaged: Bool) {
+        guard isDropZoneEngaged != isEngaged else { return }
+        isDropZoneEngaged = isEngaged
+        if isDropZoneShown { placeDropZone() }
+    }
+
+    private func hideDropZone() {
+        isDropZoneEngaged = false
+        guard isDropZoneShown, let dropWindow else { return }
+        isDropZoneShown = false
+        dropWindow.setHoverDetectionEnabled(false)
+        dropWindow.orderOut(nil)
     }
 
     private func startDragMonitoring() {
@@ -842,14 +971,14 @@ final class NotchHoverMonitor {
                   let probeWindow,
                   self.mouseDownLocation == nil,
                   self.activeMouseSequenceGeneration == sequenceGeneration,
-                  !probeWindow.isFileDragSessionActive else { return }
+                  !self.isNativeFileDragActive else { return }
             if let location = self.pendingPlainDragEndLocation,
                !self.didObserveFileDragInMouseSequence {
                 self.handlers?.onMouseDrag(false, location)
                 self.handlers?.onMouseDragEnded(location)
             }
             if let location = self.pendingProactiveFileDragEndLocation,
-               !probeWindow.isFileDragSessionActive {
+               !self.isNativeFileDragActive {
                 self.isProactiveFileDragTargeted = false
                 self.handlers?.onFileDrag(false, location)
                 self.handlers?.onFileDragEnded(location, false)

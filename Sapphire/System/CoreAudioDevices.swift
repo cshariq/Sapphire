@@ -59,6 +59,11 @@ enum CoreAudioDevices {
         return UnsafeMutableAudioBufferListPointer(bufferList).contains { $0.mNumberChannels > 0 }
     }
 
+    static func isOutput(_ deviceID: AudioDeviceID) -> Bool {
+        hasStreams(deviceID, scope: kAudioObjectPropertyScopeOutput)
+            || hasChannels(deviceID, scope: kAudioObjectPropertyScopeOutput)
+    }
+
     private static func stringProperty(_ selector: AudioObjectPropertySelector, of deviceID: AudioDeviceID) -> String? {
         var value: Unmanaged<CFString>?
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)

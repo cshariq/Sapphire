@@ -25,7 +25,7 @@ class InboundNearbyConnection: NearbyConnection {
     public weak var delegate: InboundNearbyConnectionDelegate?
     private var cipherCommitment: Data?
     private var textPayloadID: Int64 = 0
-    private var userAction: NearDropUserAction = .save
+    private var userAction: NearbyTransferUserAction = .save
     private var totalBytesExpected: Int64 = 0
     private var totalBytesReceived: Int64 = 0
 
@@ -253,7 +253,7 @@ class InboundNearbyConnection: NearbyConnection {
         return dest
     }
 
-    func submitUserConsent(accepted: Bool, action: NearDropUserAction) {
+    func submitUserConsent(accepted: Bool, action: NearbyTransferUserAction) {
         connectionQueue.async {
             if accepted { self.userAction = action; self.acceptTransfer() }
             else { self.rejectTransfer() }

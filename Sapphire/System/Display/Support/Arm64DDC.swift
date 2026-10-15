@@ -162,25 +162,26 @@ class Arm64DDC: NSObject {
     return matchScore
   }
 
-  static func ioregIterateToNextObjectOfInterest(interests: [String], iterator: inout io_iterator_t) -> (name: String, entry: io_service_t, preceedingEntry: io_service_t)? {
-    var entry: io_service_t = IO_OBJECT_NULL
-    var preceedingEntry: io_service_t = IO_OBJECT_NULL
+  static func ioregIterateToNextObjectOfInterest(interests: [String], iterator: inout io_iterator_t) -> (name: String, entry: io_service_t)? {
     let name = UnsafeMutablePointer<CChar>.allocate(capacity: MemoryLayout<io_name_t>.size)
     defer {
       name.deallocate()
     }
     while true {
-      preceedingEntry = entry
-      entry = IOIteratorNext(iterator)
-      guard IORegistryEntryGetName(entry, name) == KERN_SUCCESS, entry != MACH_PORT_NULL else {
-        break
+      let entry = IOIteratorNext(iterator)
+      guard entry != IO_OBJECT_NULL else {
+        return nil
+      }
+      guard IORegistryEntryGetName(entry, name) == KERN_SUCCESS else {
+        IOObjectRelease(entry)
+        continue
       }
       let nameString = String(cString: name)
-      for interest in interests where entry != IO_OBJECT_NULL && nameString.contains(interest) {
-        return (nameString, entry, preceedingEntry)
+      if interests.contains(where: { nameString.contains($0) }) {
+        return (nameString, entry)
       }
+      IOObjectRelease(entry)
     }
-    return nil
   }
 
   static func getIORegServiceAppleCDC2Properties(entry: io_service_t) -> IOregService {
@@ -189,6 +190,8 @@ class Arm64DDC: NSObject {
       ioregService.edidUUID = edidUUID
     }
     let cpath = UnsafeMutablePointer<CChar>.allocate(capacity: MemoryLayout<io_string_t>.size)
+    defer { cpath.deallocate() }
+    cpath.initialize(to: 0)
     IORegistryEntryGetPath(entry, kIOServicePlane, cpath)
     ioregService.ioDisplayLocation = String(cString: cpath)
     if let unmanagedDisplayAttrs = IORegistryEntryCreateCFProperty(entry, "DisplayAttributes" as CFString, kCFAllocatorDefault, IOOptionBits(kIORegistryIterateRecursively)), let displayAttrs = unmanagedDisplayAttrs.takeRetainedValue() as? NSDictionary {
@@ -251,11 +254,18 @@ class Arm64DDC: NSObject {
       }
       if keysFramebuffer.contains(objectOfInterest.name) {
         ioregService = self.getIORegServiceAppleCDC2Properties(entry: objectOfInterest.entry)
+        IOObjectRelease(objectOfInterest.entry)
         serviceLocation += 1
         ioregService.serviceLocation = serviceLocation
       } else if objectOfInterest.name == keyDCPAVServiceProxy {
+        ioregService.service = nil
         self.setIORegServiceDCPAVServiceProxy(entry: objectOfInterest.entry, ioregService: &ioregService)
+        if ioregService.service == nil {
+          IOObjectRelease(objectOfInterest.entry)
+        }
         ioregServicesForMatching.append(ioregService)
+      } else {
+        IOObjectRelease(objectOfInterest.entry)
       }
     }
     return ioregServicesForMatching

@@ -4,10 +4,12 @@
 //
 //  Created by Shariq Charolia on 2026-09-15
 
+import AppKit
 import AVFoundation
 import CoreAudio
 import Foundation
 
+@available(macOS 14.2, *)
 final class LyricsAudioTap {
     enum TapError: LocalizedError {
         case processNotFound(pid_t)
@@ -28,12 +30,12 @@ final class LyricsAudioTap {
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
 
-    func start(processID: pid_t, onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
+    func start(processID: pid_t, muted: Bool = false, onBuffer: @escaping (AVAudioPCMBuffer) -> Void) throws {
         stop()
 
-        let description = CATapDescription(stereoMixdownOfProcesses: [try Self.processObject(for: processID)])
+        let description = CATapDescription(stereoMixdownOfProcesses: try Self.processObjects(for: processID))
         description.uuid = UUID()
-        description.muteBehavior = .unmuted
+        description.muteBehavior = muted ? .mutedWhenTapped : .unmuted
         description.isPrivate = true
 
         var newTap = AudioObjectID(kAudioObjectUnknown)
@@ -47,7 +49,12 @@ final class LyricsAudioTap {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        try Self.check("read tap format", AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &size, &streamDescription))
+        do {
+            try Self.check("read tap format", AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &size, &streamDescription))
+        } catch {
+            stop()
+            throw error
+        }
         guard let format = AVAudioFormat(streamDescription: &streamDescription) else {
             stop()
             throw TapError.unsupportedFormat
@@ -67,6 +74,7 @@ final class LyricsAudioTap {
         do {
             try Self.check("create aggregate device", AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &newAggregate))
             aggregateID = newAggregate
+            Self.requestLargeIOBuffer(on: aggregateID)
 
             var newProc: AudioDeviceIOProcID?
             try Self.check("create IO proc", AudioDeviceCreateIOProcIDWithBlock(&newProc, aggregateID, queue) { _, inputData, _, _, _ in
@@ -99,6 +107,76 @@ final class LyricsAudioTap {
 
     deinit {
         stop()
+    }
+
+    static let preferredIOBufferFrames: UInt32 = 4096
+
+    private static func requestLargeIOBuffer(on device: AudioObjectID) {
+        var range = AudioValueRange()
+        var rangeSize = UInt32(MemoryLayout<AudioValueRange>.size)
+        var rangeAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyBufferFrameSizeRange,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var frames = preferredIOBufferFrames
+        if AudioObjectGetPropertyData(device, &rangeAddress, 0, nil, &rangeSize, &range) == noErr, range.mMaximum > 0 {
+            frames = UInt32(min(max(Double(frames), range.mMinimum), range.mMaximum))
+        }
+        var sizeAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyBufferFrameSize,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let status = AudioObjectSetPropertyData(device, &sizeAddress, 0, nil, UInt32(MemoryLayout<UInt32>.size), &frames)
+        if status != noErr {
+            LyricsLog.info("Word timing: capture buffer size request (\(frames) frames) refused (OSStatus \(status)); using the default")
+        }
+    }
+
+    private static func processObjects(for pid: pid_t) throws -> [AudioObjectID] {
+        if let own = try? processObject(for: pid) { return [own] }
+        let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
+        var prefixes = bundleID.isEmpty ? [] : [bundleID]
+        if bundleID.hasPrefix("com.apple.Safari") { prefixes.append("com.apple.WebKit") }
+        let helpers = allProcessObjects().filter { object in
+            guard isRunningOutput(object), let helperID = string(object, kAudioProcessPropertyBundleID) else { return false }
+            return prefixes.contains { helperID.hasPrefix($0) }
+        }
+        guard !helpers.isEmpty else { throw TapError.processNotFound(pid) }
+        return helpers
+    }
+
+    private static func allProcessObjects() -> [AudioObjectID] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var objects = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &objects) == noErr else { return [] }
+        return objects
+    }
+
+    private static func isRunningOutput(_ object: AudioObjectID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyIsRunningOutput,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var running: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        return AudioObjectGetPropertyData(object, &address, 0, nil, &size, &running) == noErr && running != 0
+    }
+
+    private static func string(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return value?.takeRetainedValue() as String?
     }
 
     private static func processObject(for pid: pid_t) throws -> AudioObjectID {

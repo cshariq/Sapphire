@@ -13,36 +13,37 @@ import CoreAudio
 import CoreMedia
 
 @MainActor
-final class GeminiLiveManager: NSObject, ObservableObject, AVCaptureAudioDataOutputSampleBufferDelegate {
-    @Published var isSessionRunning = false
-    @Published var isMicMuted = true
-    @Published var currentAudioLevel: Float = 0.0
-    @Published var inputTranscript = ""
-    @Published var outputTranscript = ""
-    @Published var lastError: String?
+@Observable
+final class GeminiLiveManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    var isSessionRunning = false
+    var isMicMuted = true
+    var currentAudioLevel: Float = 0.0
+    var inputTranscript = ""
+    var outputTranscript = ""
+    var lastError: String?
 
     let sessionDidEndPublisher = PassthroughSubject<Void, Never>()
 
     private let liveSession = GeminiLiveSession()
-    private var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
 
     private let playbackEngine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
-    private var playerAttached = false
-    private var audioLevelTimer: Timer?
-    private var setupTimeoutTask: Task<Void, Never>?
-    private var screenCaptureTask: Task<Void, Never>?
-    private var hardwarePlaybackFormat: AVAudioFormat?
+    @ObservationIgnored private var playerAttached = false
+    @ObservationIgnored private var audioLevelTimer: Timer?
+    @ObservationIgnored private var setupTimeoutTask: Task<Void, Never>?
+    @ObservationIgnored private var screenCaptureTask: Task<Void, Never>?
+    @ObservationIgnored private var hardwarePlaybackFormat: AVAudioFormat?
 
     private let captureSession = AVCaptureSession()
     private let captureOutput = AVCaptureAudioDataOutput()
     private let captureQueue = DispatchQueue(label: "sapphire.gemini.live.mic")
-    private var captureConfigured = false
-    nonisolated(unsafe) private var micConverter: AVAudioConverter?
-    nonisolated(unsafe) private var micSourceFormat: AVAudioFormat?
+    @ObservationIgnored private var captureConfigured = false
+    @ObservationIgnored nonisolated(unsafe) private var micConverter: AVAudioConverter?
+    @ObservationIgnored nonisolated(unsafe) private var micSourceFormat: AVAudioFormat?
 
-    private var isWaitingForSetupComplete = false
-    private var currentScreenFilter: SCContentFilter?
+    @ObservationIgnored private var isWaitingForSetupComplete = false
+    @ObservationIgnored private var currentScreenFilter: SCContentFilter?
     private let inputSampleRate: Double = 16000.0
     private let outputSampleRate: Double = 24000.0
     private let maxAudioFramesPerBuffer = 240

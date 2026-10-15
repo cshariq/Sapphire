@@ -12,7 +12,7 @@ struct ReminderNotificationView: View {
     let reminder: EKReminder
     let timeUntil: String
 
-    @EnvironmentObject private var liveActivityManager: LiveActivityManager
+    @Environment(LiveActivityManager.self) private var liveActivityManager
 
     var body: some View {
         CalendarNotificationLayout(

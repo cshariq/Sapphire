@@ -37,8 +37,10 @@ struct LyricsDatabaseDocumentTests {
     """
 
     private static func document(extras: [[String: Any]]?) -> [String: Any] {
-        var data: [String: Any] = ["schemaVersion": 1, "lyricsfile": lyricsfile]
-        if let extras { data["extras"] = ["lines": extras] }
+        var data: [String: Any] = ["v": 2, "z": LyricsDatabaseDocument.deflate(Data(lyricsfile.utf8))!, "c": 2]
+        if let extras {
+            data["x"] = LyricsDatabaseDocument.deflate(try! JSONSerialization.data(withJSONObject: ["lines": extras]))!
+        }
         return data
     }
 
@@ -82,11 +84,80 @@ struct LyricsDatabaseDocumentTests {
     @Test("Rejects unknown schema versions and invalid Lyricsfiles")
     func rejectsInvalidDocuments() {
         var future = Self.document(extras: nil)
-        future["schemaVersion"] = 2
+        future["v"] = 3
         #expect(LyricsDatabaseDocument.lines(from: future) == nil)
 
         var broken = Self.document(extras: nil)
-        broken["lyricsfile"] = "version: '9.9'"
+        broken["z"] = LyricsDatabaseDocument.deflate(Data("version: '9.9'".utf8))!
         #expect(LyricsDatabaseDocument.lines(from: broken) == nil)
+
+        var garbage = Self.document(extras: nil)
+        garbage["z"] = Data([0xFF, 0x00, 0x13, 0x37])
+        #expect(LyricsDatabaseDocument.lines(from: garbage) == nil)
+    }
+
+    @Test("Reads documents compressed by the importer (Node zlib.deflateRawSync)")
+    func readsImporterCompression() throws {
+        let z = try #require(Data(base64Encoded: "bY5LDsIwDET3PYV3WYFSpG6y6w2QOAAyxNBIToIS8zk+SQQFVfXyjeZ5HpSyi8GA6rdadZ4ELQqaDkCcMJVgz3imKbKlBIcYrqpkmMRlWYRjgzV2IUu6ewqCbOCCnKljFyhX7waEXrU78m1COJWXtQOQpWiPPhvotdYNUbAN7L7gGZNtlnoLk/rgVdO/rR9mOCt+MxaCYUXQ5rwB"))
+        let x = try #require(Data(base64Encoded: "q1bKycxLLVayiq5WSkxPzStRslIqM1TSUSrOz0sPSCwC8cNSi4pTgUJJicnZ6UX5pXkpQOWxtbG1AA=="))
+        let lines = try #require(LyricsDatabaseDocument.lines(from: ["v": NSNumber(value: 2), "z": z, "x": x, "c": 2]))
+        #expect(lines.map(\.text) == ["Alpha beta"])
+        #expect(lines[0].words.map(\.text) == ["Alpha ", "beta"])
+        #expect(lines[0].agent == "v1")
+        #expect(lines[0].songPart == "Verse")
+    }
+
+    @Test("Refuses to inflate past the Lyricsfile size limit")
+    func boundsDecompression() throws {
+        let bomb = try #require(LyricsDatabaseDocument.deflate(Data(repeating: 0x61, count: LyricsDatabaseDocument.maximumUnpackedBytes + 10)))
+        #expect(bomb.count < LyricsDatabaseDocument.maximumPackedBytes)
+        #expect(LyricsDatabaseDocument.inflate(bomb) == nil)
+    }
+
+    @Test("Builds timing documents the rules accept and reads them back")
+    func timingDocument() throws {
+        let overlay = LyricsTimingOverlay(lines: [
+            .init(hash: "1a2b3c4d", words: [.init(start: 1000, end: 1400), .init(start: 1400, end: 2100)]),
+        ])
+        let data = try #require(LyricsDatabaseDocument.timing(overlay, confidence: 0.83, samples: 2, durationMs: 213_000, engine: "speechtranscriber-v2"))
+        #expect(Set(data.keys) == ["v", "o", "c", "n", "d", "e"])
+        #expect(data["n"] as? Int == 2)
+        #expect(LyricsDatabaseDocument.result(from: data, playingMs: 214_000) == .timing(overlay, samples: 2, confidence: 0.83))
+        #expect(LyricsDatabaseDocument.result(from: data, playingMs: 250_000) == .notFound)
+        #expect(LyricsDatabaseDocument.timing(overlay, confidence: 0.9, samples: 9, durationMs: 50, engine: "e")?["d"] == nil)
+        #expect(LyricsDatabaseDocument.timing(overlay, confidence: 0.9, samples: 900, durationMs: nil, engine: "e")?["n"] as? Int == LyricsTimingOverlay.maximumSamples)
+        guard case .lyrics(let lines) = LyricsDatabaseDocument.result(from: Self.document(extras: nil), playingMs: nil) else {
+            Issue.record("expected curated lyrics"); return
+        }
+        #expect(lines.count == 2)
+    }
+
+    @Test("Disk cache remembers hits and misses until they expire")
+    func diskCache() throws {
+        let key = "meta:test\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        let now = Date()
+        #expect(LyricsDatabaseDiskCache.entry(for: key) == nil)
+
+        LyricsDatabaseDiskCache.store(nil, for: key, now: now)
+        guard case .missing = LyricsDatabaseDiskCache.entry(for: key, now: now.addingTimeInterval(60)) else {
+            Issue.record("expected a cached miss"); return
+        }
+        #expect(LyricsDatabaseDiskCache.entry(for: key, now: now.addingTimeInterval(LyricsDatabaseDiskCache.missLifetime + 1)) == nil)
+
+        LyricsDatabaseDiskCache.store(Self.document(extras: nil).merging(["t": "server only"]) { $1 }, for: key, now: now)
+        guard case .document(let cached) = LyricsDatabaseDiskCache.entry(for: key, now: now.addingTimeInterval(60)) else {
+            Issue.record("expected a cached document"); return
+        }
+        #expect(cached["t"] == nil)
+        #expect(LyricsDatabaseDocument.lines(from: cached)?.count == 2)
+    }
+
+    @Test("Rejects generated timings recorded on a different-length version")
+    func durationGuard() {
+        #expect(LyricsDatabaseDocument.durationMatches(stored: 213_000, playingMs: 214_500))
+        #expect(LyricsDatabaseDocument.durationMatches(stored: NSNumber(value: 213_000), playingMs: 210_000))
+        #expect(!LyricsDatabaseDocument.durationMatches(stored: 213_000, playingMs: 245_000))
+        #expect(LyricsDatabaseDocument.durationMatches(stored: nil, playingMs: 245_000))
+        #expect(LyricsDatabaseDocument.durationMatches(stored: 213_000, playingMs: nil))
     }
 }

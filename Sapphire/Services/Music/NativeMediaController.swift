@@ -69,6 +69,7 @@ struct TrackInfo: Equatable {
         var mediaType: String? = nil
         var artwork: NSImage? = nil
         var artworkMimeType: String? = nil
+        var artworkKnownAbsent: Bool = false
 
         var calculatedElapsedTime: TimeInterval {
             interpolatedElapsedTime(at: Date())
@@ -114,10 +115,6 @@ struct TrackInfo: Equatable {
 
 @MainActor
 final class NativeMediaController: NSObject {
-    private struct SendableMetadata: @unchecked Sendable {
-        let value: [String: Any]
-    }
-
     var onActiveClientsChanged: (([String: TrackInfo]) -> Void)?
     var onListenerTerminated: (() -> Void)?
     var onDecodingError: ((String, String?) -> Void)?
@@ -125,18 +122,37 @@ final class NativeMediaController: NSObject {
 
     @Published var activeClients: [String: TrackInfo] = [:]
 
-    nonisolated private let pollQueue = DispatchQueue(label: "com.sapphire.mediaremote.adapter", qos: .userInitiated)
+    private enum SuspendReason: Hashable {
+        case systemSleep
+    }
+
+    private struct StreamLaunch {
+        let token: UInt64
+        let process: Process
+        let stdin: Pipe
+        let stdout: Pipe
+        let startedAt: Date
+    }
+
     private var isListening = false
-    private var streamProcess: Process?
-    nonisolated(unsafe) private var buffer = Data()
+    private var suspendReasons = Set<SuspendReason>()
+    nonisolated(unsafe) private var stream: StreamLaunch?
+    private var launchToken: UInt64 = 0
+    private var restartPolicy = StreamRestartPolicy()
+    private var restartTask: Task<Void, Never>?
+    private var powerObservers: [NSObjectProtocol] = []
+    private let commands = AdapterCommandChannel()
+
     private var lastActiveClientKey: String?
     private var lastTrackIdentity: String?
     private var lastMediaFingerprint: String?
     private var currentMergedMetadata: [String: Any] = [:]
-    private var lastDecodedArtworkHash: Int?
-    private var lastDecodedArtworkImage: NSImage?
+    private var currentArtwork: NSImage?
+    private var currentArtworkDigest: String?
+    private var lastTrackChangeAt: Date?
+    private var artworkGraceTask: Task<Void, Never>?
 
-    nonisolated private static let cachedPaths: (script: String, adapter: String, testClient: String?)? = {
+    nonisolated static let cachedPaths: (script: String, adapter: String, testClient: String?)? = {
         let fm = FileManager.default
         guard let resourcePath = Bundle.main.resourcePath else { return nil }
 
@@ -195,12 +211,14 @@ final class NativeMediaController: NSObject {
         }
     }
 
+    // MARK: - Lifecycle
+
     func startListening() {
         guard !isListening else { return }
         isListening = true
-        pollQueue.async { [weak self] in
-            Task { @MainActor in self?.launchStream() }
-        }
+        restartPolicy.reset()
+        installPowerObservers()
+        launchStream()
     }
 
     func restartListeningIfNeeded() {
@@ -208,66 +226,58 @@ final class NativeMediaController: NSObject {
             startListening()
             return
         }
-        pollQueue.async { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.streamProcess?.terminate()
-                self.streamProcess = nil
-                self.launchStream()
-            }
-        }
+        restartPolicy.reset()
+        terminateStream()
+        launchStream()
     }
 
     func stop() {
         guard isListening else { return }
         isListening = false
-        pollQueue.async { [weak self] in
-            Task { @MainActor in
-                self?.streamProcess?.terminate()
-                self?.streamProcess = nil
-            }
-        }
+        removePowerObservers()
+        terminateStream()
+        commands.shutdown()
     }
 
-    deinit { streamProcess?.terminate() }
+    deinit {
+        stream?.process.terminate()
+    }
 
     // MARK: - Native Media Remote Transport Commands
-    func play() { runAdapterCommand(["send", "0"]) }
-    func pause() { runAdapterCommand(["send", "1"]) }
-    func togglePlayPause() { runAdapterCommand(["send", "2"]) }
-    func stopPlayback() { runAdapterCommand(["send", "3"]) }
-    func nextTrack() { runAdapterCommand(["send", "4"]) }
-    func previousTrack() { runAdapterCommand(["send", "5"]) }
-    func toggleShuffle() { runAdapterCommand(["send", "6"]) }
-    func toggleRepeat() { runAdapterCommand(["send", "7"]) }
-    func beginForwardSeek() { runAdapterCommand(["send", "8"]) }
-    func endForwardSeek() { runAdapterCommand(["send", "8"]) }
-    func beginBackwardSeek() { runAdapterCommand(["send", "10"]) }
-    func endBackwardSeek() { runAdapterCommand(["send", "11"]) }
-    func skipBack15Seconds() { runAdapterCommand(["send", "12"]) }
-    func skipForward15Seconds() { runAdapterCommand(["send", "13"]) }
+    func play() { commands.submit(.send(0)) }
+    func pause() { commands.submit(.send(1)) }
+    func togglePlayPause() { commands.submit(.send(2)) }
+    func stopPlayback() { commands.submit(.send(3)) }
+    func nextTrack() { commands.submit(.send(4)) }
+    func previousTrack() { commands.submit(.send(5)) }
+    func toggleShuffle() { commands.submit(.send(6)) }
+    func toggleRepeat() { commands.submit(.send(7)) }
+    func beginForwardSeek() { commands.submit(.send(8)) }
+    func endForwardSeek() { commands.submit(.send(9)) }
+    func beginBackwardSeek() { commands.submit(.send(10)) }
+    func endBackwardSeek() { commands.submit(.send(11)) }
+    func skipBack15Seconds() { commands.submit(.send(12)) }
+    func skipForward15Seconds() { commands.submit(.send(13)) }
     func setTime(seconds: Double) {
-        runAdapterCommand(["seek", String(Self.micros(fromSeconds: seconds) ?? 0)])
+        commands.submit(.seek(micros: Self.micros(fromSeconds: max(0, seconds)) ?? 0))
     }
 
-    private func runAdapterCommand(_ args: [String]) {
-        pollQueue.async {
-            guard let paths = Self.cachedPaths else { return }
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
-            var arguments = [paths.script, paths.adapter]
-            arguments.append(contentsOf: args)
-            task.arguments = arguments
-            task.standardOutput = FileHandle.nullDevice
-            task.standardError = FileHandle.nullDevice
-            try? task.run()
-        }
-    }
+    // MARK: - Stream process
 
     private func launchStream() {
-        guard let paths = Self.cachedPaths else { return }
+        guard isListening, suspendReasons.isEmpty, stream == nil else { return }
+        restartTask?.cancel()
+        restartTask = nil
+        guard let paths = Self.cachedPaths else {
+            print("[NativeMediaController] mediaremote-adapter resources are missing; now playing is unavailable.")
+            return
+        }
+        Self.reapOrphanedStreamsOnce()
 
-        print("[NativeMediaController]  Starting mediaremote-adapter.pl stream...")
+        launchToken &+= 1
+        let token = launchToken
+        print("[NativeMediaController] Starting mediaremote-adapter.pl stream (launch \(token))...")
+
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
         task.arguments = [paths.script, paths.adapter, "stream", "--debounce=100", "--micros"]
@@ -276,86 +286,157 @@ final class NativeMediaController: NSObject {
         env["PERLIO"] = ":unix"
         env["SAPPHIRE_WATCH_PARENT_STDIN"] = "1"
         task.environment = env
-        task.standardInput = Pipe()
-        Self.reapOrphanedStreamsOnce()
-
+        let stdin = Pipe()
+        task.standardInput = stdin
         let stdout = Pipe()
         task.standardOutput = stdout
         task.standardError = FileHandle.nullDevice
-        streamProcess = task
-        pollQueue.async { [weak self] in
-            self?.buffer.removeAll()
-        }
 
+        currentMergedMetadata.removeAll()
+
+        let parser = NowPlayingStreamParser()
+        let parseQueue = DispatchQueue(label: "com.sapphire.mediaremote.stream-parse", qos: .userInitiated)
         stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else {
                 handle.readabilityHandler = nil
                 return
             }
-            self?.pollQueue.async { [weak self] in
-                self?.appendAndProcessBuffer(data)
-            }
-        }
-
-        task.terminationHandler = { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                print("[NativeMediaController] ️ Stream process terminated.")
-                self.onListenerTerminated?()
-                if self.isListening {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    guard self.isListening else { return }
-                    self.launchStream()
+            parseQueue.async {
+                let events = parser.consume(data)
+                guard !events.isEmpty else { return }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        for event in events { self.handleStreamEvent(event, token: token) }
+                    }
                 }
             }
         }
 
-        try? task.run()
-    }
-
-    nonisolated private func appendAndProcessBuffer(_ data: Data) {
-        buffer.append(data)
-        while let range = buffer.range(of: Data("\n".utf8)) {
-            let lineData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
-            buffer.removeSubrange(buffer.startIndex..<range.upperBound)
-            guard !lineData.isEmpty else { continue }
-
-            guard let parsed = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
-                continue
+        task.terminationHandler = { [weak self] process in
+            let status = process.terminationStatus
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.streamDidExit(token: token, status: status)
+                }
             }
+        }
 
-            let payload: [String: Any]
-            if let inner = parsed["payload"] as? [String: Any] {
-                payload = inner
-            } else {
-                payload = parsed
-            }
-
-            let metadata = SendableMetadata(value: payload)
-            Task { @MainActor [weak self] in
-                self?.handleTrackUpdate(metadata.value)
-            }
+        let launch = StreamLaunch(token: token, process: task, stdin: stdin, stdout: stdout, startedAt: Date())
+        stream = launch
+        do {
+            try task.run()
+        } catch {
+            print("[NativeMediaController] Could not start the now playing stream: \(error.localizedDescription)")
+            stream = nil
+            Self.closePipes(of: launch)
+            scheduleRestartAfterExit(lifetime: 0)
         }
     }
 
+    private func terminateStream() {
+        restartTask?.cancel()
+        restartTask = nil
+        guard let launch = stream else { return }
+        stream = nil
+        if launch.process.isRunning { launch.process.terminate() }
+        Self.closePipes(of: launch)
+    }
+
+    private static func closePipes(of launch: StreamLaunch) {
+        launch.stdout.fileHandleForReading.readabilityHandler = nil
+        try? launch.stdin.fileHandleForWriting.close()
+    }
+
+    private func streamDidExit(token: UInt64, status: Int32) {
+        guard let launch = stream, launch.token == token else { return }
+        stream = nil
+        Self.closePipes(of: launch)
+        print("[NativeMediaController] Stream process exited (status \(status)).")
+        onListenerTerminated?()
+        scheduleRestartAfterExit(lifetime: Date().timeIntervalSince(launch.startedAt))
+    }
+
+    private func scheduleRestartAfterExit(lifetime: TimeInterval) {
+        guard isListening, suspendReasons.isEmpty else { return }
+        guard let delay = restartPolicy.delayAfterExit(lifetime: lifetime) else {
+            print("[NativeMediaController] Now playing stream keeps dying; giving up until wake or an explicit restart.")
+            return
+        }
+        restartTask?.cancel()
+        restartTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            self.restartTask = nil
+            self.launchStream()
+        }
+    }
+
+    // MARK: - Sleep
+
+    private func installPowerObservers() {
+        guard powerObservers.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        powerObservers = [
+            center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.suspend(.systemSleep) }
+            },
+            center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.resume(.systemSleep) }
+            },
+        ]
+    }
+
+    private func removePowerObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        powerObservers.forEach(center.removeObserver)
+        powerObservers.removeAll()
+        suspendReasons.removeAll()
+    }
+
+    private func suspend(_ reason: SuspendReason) {
+        guard isListening, suspendReasons.insert(reason).inserted else { return }
+        terminateStream()
+    }
+
+    private func resume(_ reason: SuspendReason) {
+        guard suspendReasons.remove(reason) != nil else { return }
+        restartPolicy.reset()
+        launchStream()
+    }
+
+    // MARK: - Payload handling
+
     private func clearActiveSystemMedia(notify: Bool = true) {
-        print("[NativeMediaController]  Clearing active system media source.")
+        print("[NativeMediaController] Clearing active system media source.")
         activeClients.removeAll()
         currentMergedMetadata.removeAll()
         lastActiveClientKey = nil
         lastTrackIdentity = nil
         lastMediaFingerprint = nil
-        lastDecodedArtworkHash = nil
-        lastDecodedArtworkImage = nil
+        resetArtwork()
         if notify {
             onActiveClientsChanged?([:])
             onTrackInfoReceived?(nil)
         }
     }
 
-    private func handleTrackUpdate(_ metadata: [String: Any]) {
-        if metadata.isEmpty {
+    private func resetArtwork() {
+        currentArtwork = nil
+        currentArtworkDigest = nil
+        lastTrackChangeAt = nil
+        artworkGraceTask?.cancel()
+        artworkGraceTask = nil
+    }
+
+    private func handleStreamEvent(_ event: NowPlayingStreamParser.Event, token: UInt64) {
+        guard stream?.token == token else { return }
+        handleTrackUpdate(event.metadata, artwork: event.artwork)
+    }
+
+    private func handleTrackUpdate(_ metadata: [String: Any], artwork artworkUpdate: NowPlayingStreamParser.ArtworkUpdate) {
+        if metadata.isEmpty, case .unchanged = artworkUpdate {
             clearActiveSystemMedia(notify: true)
             return
         }
@@ -379,12 +460,11 @@ final class NativeMediaController: NSObject {
         }
 
         if let last = lastActiveClientKey, last != targetKey {
-            print("[NativeMediaController]  Switching active system source: '\(last)' -> '\(targetKey)'")
+            print("[NativeMediaController] Switching active system source: '\(last)' -> '\(targetKey)'")
             currentMergedMetadata.removeAll()
             lastTrackIdentity = nil
             lastMediaFingerprint = nil
-            lastDecodedArtworkHash = nil
-            lastDecodedArtworkImage = nil
+            resetArtwork()
         }
         lastActiveClientKey = targetKey
 
@@ -415,7 +495,7 @@ final class NativeMediaController: NSObject {
 
         let mergedIdentity = Self.trackIdentity(currentMergedMetadata)
         let fingerprint = Self.mediaFingerprint(currentMergedMetadata)
-        let transportOnly = Self.isTransportOnlyMetadata(metadata)
+        let transportOnly = Self.isTransportOnlyMetadata(metadata) && artworkUpdate.isUnchanged
 
         var trackChanged = false
         if !transportOnly {
@@ -428,50 +508,51 @@ final class NativeMediaController: NSObject {
             }
         }
 
+        let now = Date()
         if trackChanged {
-            print("[NativeMediaController]  System track changed: [\(targetKey)] -> \(title)")
+            print("[NativeMediaController] System track changed: [\(targetKey)] -> \(title)")
             lastTrackIdentity = mergedIdentity
             if !fingerprint.isEmpty {
                 lastMediaFingerprint = fingerprint
             }
-            if metadata["artworkData"] == nil {
-                lastDecodedArtworkHash = nil
-                lastDecodedArtworkImage = nil
-            }
+            lastTrackChangeAt = now
         }
 
-        var artworkImage = lastDecodedArtworkImage
         var artworkChanged = false
-        let eventCarriesArtwork = metadata["artworkData"] != nil
-        let hasNoArtworkRecord = lastDecodedArtworkImage == nil && lastDecodedArtworkHash == nil
-        if eventCarriesArtwork || hasNoArtworkRecord,
-           let base64 = currentMergedMetadata["artworkData"] as? String, !base64.isEmpty {
-            let utf8 = base64.utf8
-            let currentHash: Int = {
-                var h = base64.count
-                h &+= Int(utf8.first ?? 0)
-                h &+= Int(utf8.last ?? 0) << 8
-                let midIndex = utf8.index(utf8.startIndex, offsetBy: min(63, utf8.count - 1))
-                h &+= Int(utf8[midIndex]) << 16
-                return h
-            }()
-            if currentHash == lastDecodedArtworkHash, let cached = lastDecodedArtworkImage {
-                artworkImage = cached
-            } else if let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters),
-                      let decoded = NSImage(data: data) {
-                lastDecodedArtworkHash = currentHash
-                lastDecodedArtworkImage = decoded
-                artworkImage = decoded
+        switch artworkUpdate {
+        case .unchanged:
+            break
+        case .removed:
+            if currentArtwork != nil || currentArtworkDigest != nil {
+                currentArtwork = nil
+                currentArtworkDigest = nil
                 artworkChanged = true
-            } else if lastDecodedArtworkHash != currentHash {
-                lastDecodedArtworkHash = currentHash
-                lastDecodedArtworkImage = nil
-                artworkImage = nil
+            }
+        case .image(let digest, let image):
+            if digest != currentArtworkDigest {
+                currentArtworkDigest = digest
+                currentArtwork = image
                 artworkChanged = true
             }
         }
 
-        guard let track = buildTrackInfo(from: currentMergedMetadata, artwork: artworkImage) else {
+        let artworkKnownAbsent = ArtworkGracePolicy.isArtworkKnownAbsent(
+            trackChangedAt: lastTrackChangeAt,
+            now: now,
+            hasArtwork: currentArtwork != nil
+        )
+        if currentArtwork == nil, !artworkKnownAbsent {
+            scheduleArtworkGraceCheck()
+        } else {
+            artworkGraceTask?.cancel()
+            artworkGraceTask = nil
+        }
+
+        guard let track = buildTrackInfo(
+            from: currentMergedMetadata,
+            artwork: currentArtwork,
+            artworkKnownAbsent: artworkKnownAbsent
+        ) else {
             clearActiveSystemMedia(notify: true)
             return
         }
@@ -481,14 +562,30 @@ final class NativeMediaController: NSObject {
             || existingClient?.payload.playbackRate != track.payload.playbackRate
         let positionChanged = playbackPositionChanged(from: existingClient?.payload, to: track.payload)
         let artworkArrived = track.payload.artwork != nil && existingClient?.payload.artwork == nil
+        let absenceSettled = artworkKnownAbsent && existingClient?.payload.artworkKnownAbsent != true
 
-        let shouldNotify = trackChanged || playStateChanged || positionChanged || artworkChanged || artworkArrived
+        let shouldNotify = trackChanged || playStateChanged || positionChanged || artworkChanged
+            || artworkArrived || absenceSettled
 
         activeClients = [targetKey: track]
 
         if shouldNotify {
             onActiveClientsChanged?(activeClients)
             onTrackInfoReceived?(track)
+        }
+    }
+
+    private func scheduleArtworkGraceCheck() {
+        guard artworkGraceTask == nil, let changedAt = lastTrackChangeAt else { return }
+        let remaining = max(0, ArtworkGracePolicy.interval - Date().timeIntervalSince(changedAt))
+        let identity = lastTrackIdentity
+        artworkGraceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(remaining + 0.05))
+            guard !Task.isCancelled, let self else { return }
+            self.artworkGraceTask = nil
+            guard self.isListening, self.lastTrackIdentity == identity,
+                  self.currentArtwork == nil, !self.currentMergedMetadata.isEmpty else { return }
+            self.handleTrackUpdate([:], artwork: .removed)
         }
     }
 
@@ -501,11 +598,6 @@ final class NativeMediaController: NSObject {
         let expectedElapsed = prev.interpolatedElapsedTime(at: Date())
 
         return abs(expectedElapsed - currElapsed) > 1.5
-    }
-
-    func trimArtworkCache(keeping identity: String?) {
-        lastDecodedArtworkHash = nil
-        lastDecodedArtworkImage = nil
     }
 
     nonisolated private static func micros(fromSeconds seconds: Double) -> Int64? {
@@ -564,7 +656,11 @@ final class NativeMediaController: NSObject {
         return false
     }
 
-    nonisolated private func buildTrackInfo(from metadata: [String: Any], artwork: NSImage?) -> TrackInfo? {
+    nonisolated private func buildTrackInfo(
+        from metadata: [String: Any],
+        artwork: NSImage?,
+        artworkKnownAbsent: Bool
+    ) -> TrackInfo? {
         let title = metadata["title"] as? String
         let artist = metadata["artist"] as? String
         let rawBundle = metadata["bundleIdentifier"] as? String
@@ -663,7 +759,8 @@ final class NativeMediaController: NSObject {
             uniqueIdentifier: metadata["uniqueIdentifier"] as? String,
             mediaType: metadata["mediaType"] as? String,
             artwork: artwork,
-            artworkMimeType: metadata["artworkMimeType"] as? String
+            artworkMimeType: metadata["artworkMimeType"] as? String,
+            artworkKnownAbsent: artworkKnownAbsent
         )
         return TrackInfo(payload: payload)
     }

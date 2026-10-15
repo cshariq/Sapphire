@@ -13,11 +13,21 @@ enum MusicWidgetVisibilityPolicy {
         hideWhenNotPlaying: Bool,
         isPlaying: Bool,
         hidePausedSpotifyWhenIdle: Bool,
-        isSpotifyPausedWithNoOtherPlayback: Bool
+        isSpotifyPausedWithNoOtherPlayback: Bool,
+        hideSpotifyWhenAppClosed: Bool,
+        isLoggedIntoSpotify: Bool,
+        isSpotifyOnlySource: Bool,
+        isSpotifyAppRunning: Bool
     ) -> Bool {
         guard isEnabled else { return false }
         if hideWhenNotPlaying && !isPlaying { return false }
         if hidePausedSpotifyWhenIdle && isSpotifyPausedWithNoOtherPlayback { return false }
+        if hideSpotifyWhenAppClosed,
+           isLoggedIntoSpotify,
+           isSpotifyOnlySource,
+           !isSpotifyAppRunning {
+            return false
+        }
         return true
     }
 }
@@ -80,6 +90,10 @@ extension EnvironmentValues {
     }
 }
 
+extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {
+    static var notchDrag: NamedCoordinateSpace { .named("NotchDragCoordinateSpace") }
+}
+
 @MainActor
 final class NotchDragLocationState: ObservableObject {
     @Published private(set) var location: CGPoint?
@@ -104,78 +118,36 @@ struct NotchWidgetView: View {
         navigationStack.wrappedValue.last ?? .defaultWidgets
     }
     @State private var displayedMode: NotchWidgetMode = .defaultWidgets
-
-    @State private var blurRadius: CGFloat = 20
-    @State private var isScaledIn: Bool = false
-    @State private var isFadedIn: Bool = false
-    @State private var isPositioned: Bool = false
+    @Environment(\.notchWidgetSwitchGate) private var switchGate
 
     init(calendarViewModel: InteractiveCalendarViewModel) {
         self.calendarViewModel = calendarViewModel
     }
 
     var body: some View {
-        ZStack {
-            contentSwitch(for: displayedMode)
-                .id(displayedMode)
-                .compositingGroup()
-                .blur(radius: blurRadius)
-                .scaleEffect(isScaledIn ? 1.0 : 0.7, anchor: .top)
-                .opacity(isFadedIn ? 1.0 : 0.0)
-                .offset(y: isPositioned ? 0 : -50)
-        }
-        .onAppear {
-            self.displayedMode = self.currentMode
-        }
-        .task {
-            let animation: Animation
-            if self.currentMode == .defaultWidgets {
-                animation = .interpolatingSpring(stiffness: 230, damping: 22)
-            } else {
-                animation = .interpolatingSpring(stiffness: 220, damping: 18)
+        contentSwitch(for: displayedMode)
+            .id(displayedMode)
+            .onAppear {
+                self.displayedMode = self.currentMode
             }
-            do {
-                try await Task.sleep(for: .milliseconds(100))
-            } catch {
-                return
+            .onChange(of: currentMode) {
+                guard displayedMode != currentMode else { return }
+                if switchGate?.isSuppressed == true {
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { self.displayedMode = self.currentMode }
+                    return
+                }
+                playSwitch()
             }
-            guard !Task.isCancelled else { return }
-            withAnimation(animation) {
-                self.isScaledIn = true
-                self.isPositioned = true
-                self.isFadedIn = true
-            }
-            withAnimation(.easeOut(duration: 0.6)) {
-                self.blurRadius = 0
-            }
-        }
-        .onChange(of: currentMode) {
-            withAnimation(.easeIn(duration: 0.2)) {
-                self.isFadedIn = false
-                self.blurRadius = 20
-            }
+            .notchHorizontalPadding()
+    }
 
-            self.displayedMode = self.currentMode
-            self.isScaledIn = false
-            self.isPositioned = false
-
-            let animation: Animation
-            if self.currentMode == .defaultWidgets {
-                animation = .interpolatingSpring(stiffness: 220, damping: 22)
-            } else {
-                animation = .interpolatingSpring(stiffness: 220, damping: 20)
-            }
-
-            withAnimation(animation) {
-                self.isScaledIn = true
-                self.isPositioned = true
-                self.isFadedIn = true
-            }
-            withAnimation(.easeOut(duration: 0.6)) {
-                self.blurRadius = 0
-            }
-        }
-        .notchHorizontalPadding()
+    private func playSwitch() {
+        switchGate?.willSwitch?()
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { self.displayedMode = self.currentMode }
     }
 
     @ViewBuilder
@@ -215,7 +187,7 @@ struct NotchWidgetView: View {
             SpotifyArtistDetailView(uri: uri, name: name, navigationStack: navigationStack)
         case .musicAlbumDetail(let uri, let name):
             SpotifyAlbumDetailView(uri: uri, name: name, navigationStack: navigationStack)
-        case .nearDrop:
+        case .nearbyTransfer:
             FileTaskView(navigationStack: navigationStack)
         case .weatherPlayer:
             WeatherPlayerView()
@@ -244,6 +216,8 @@ struct NotchWidgetView: View {
             DeviceAdjustView(device: device)
         case .multiAudioEQ(let device):
             DeviceEQView(device: device)
+        case .earbudControls(let device):
+            EarbudControlsView(device: device)
         case .multiAudioAppEQ(let bundleID, let appName):
             AppEQView(bundleID: bundleID, appName: appName)
         case .multiAudioApp8D(let bundleID, let appName):
@@ -272,6 +246,14 @@ struct NotchWidgetView: View {
             ContinuityNotchDetailView(navigationStack: navigationStack)
         case .continuityActivityDetail:
             ContinuityExternalActivityDetailView(bridge: ContinuityManager.shared.liveActivityBridge)
+        case .fileProgressDetail:
+            FileProgressDetailView()
+        case .appActivityDetail:
+            AppActivityDetailView()
+        case .devDashboard:
+            DevDashboardView(initialTab: .activity)
+        case .devActivityDetail:
+            DevDashboardView(initialTab: .activity)
         }
     }
 
@@ -279,8 +261,9 @@ struct NotchWidgetView: View {
 
 private struct NotchDefaultWidgetsView: View {
     @Environment(\.navigationStack) private var navigationStack
+    @Environment(\.notchDisplayWidth) private var notchDisplayWidth
     @Environment(\.isCalendarHovered) private var isCalendarHovered
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @State private var musicVisibility: MusicWidgetVisibilitySnapshot
 
     let calendarViewModel: InteractiveCalendarViewModel
@@ -303,7 +286,11 @@ private struct NotchDefaultWidgetsView: View {
                     hideWhenNotPlaying: settings.settings.hideMusicWidgetWhenNotPlaying,
                     isPlaying: musicVisibility.isPlaying,
                     hidePausedSpotifyWhenIdle: settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle,
-                    isSpotifyPausedWithNoOtherPlayback: musicVisibility.isSpotifyPausedWithNoOtherPlayback
+                    isSpotifyPausedWithNoOtherPlayback: musicVisibility.isSpotifyPausedWithNoOtherPlayback,
+                    hideSpotifyWhenAppClosed: settings.settings.hideSpotifyWidgetWhenAppClosed,
+                    isLoggedIntoSpotify: musicVisibility.isLoggedIntoSpotify,
+                    isSpotifyOnlySource: musicVisibility.isSpotifyOnlySource,
+                    isSpotifyAppRunning: musicVisibility.isSpotifyAppRunning
                 )
             case .weather:
                 return settings.settings.weatherWidgetEnabled
@@ -329,6 +316,8 @@ private struct NotchDefaultWidgetsView: View {
                 return settings.settings.mirrorWidgetEnabled
             case .storage:
                 return settings.settings.storageWidgetEnabled
+            case .dev:
+                return settings.settings.devWidgetEnabled
             case .agent:
                 return false
             case .focusSession:
@@ -338,7 +327,7 @@ private struct NotchDefaultWidgetsView: View {
 
         return WidgetLayoutPolicy.fittingWidgets(
             from: enabled,
-            availableWidth: WidgetLayoutPolicy.availableBarWidth(),
+            availableWidth: WidgetLayoutPolicy.availableBarWidth(notchDisplayWidth: notchDisplayWidth),
             showDividers: settings.settings.showDividersBetweenWidgets,
             bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
         )
@@ -359,13 +348,25 @@ private struct NotchDefaultWidgetsView: View {
             }
         }
         .onAppear(perform: refreshMusicVisibility)
+        .onReceive(Self.musicVisibilityChanges) { snapshot in
+            if snapshot != musicVisibility { musicVisibility = snapshot }
+        }
         .onReceive(
-            musicWidget.objectWillChange
-                .debounce(for: .milliseconds(1), scheduler: RunLoop.main)
+            NSWorkspace.shared.notificationCenter
+                .publisher(for: NSWorkspace.didLaunchApplicationNotification)
+                .merge(with: NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification))
+                .filter { notification in
+                    (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier == "com.spotify.client"
+                }
         ) { _ in
             refreshMusicVisibility()
         }
     }
+
+    private static let musicVisibilityChanges = observationPublisher {
+        MainActor.assumeIsolated { MusicWidgetVisibilitySnapshot(manager: .shared) }
+    }
+    .removeDuplicates()
 
     private func refreshMusicVisibility() {
         let snapshot = MusicWidgetVisibilitySnapshot(manager: musicWidget)
@@ -471,6 +472,14 @@ private struct NotchDefaultWidgetsView: View {
                         }
                     }
                 }
+        case .dev:
+            DevWidgetView()
+                .onTapGesture {
+                    Task {
+                        try? await Task.sleep(for: .seconds(NotchConfiguration.primaryWidgetSwitchDelay))
+                        navigationStack.wrappedValue.append(NotchWidgetMode.devDashboard)
+                    }
+                }
         case .agent:
             EmptyView()
         }
@@ -480,11 +489,20 @@ private struct NotchDefaultWidgetsView: View {
 private struct MusicWidgetVisibilitySnapshot: Equatable {
     let isPlaying: Bool
     let isSpotifyPausedWithNoOtherPlayback: Bool
+    let isLoggedIntoSpotify: Bool
+    let isSpotifyOnlySource: Bool
+    let isSpotifyAppRunning: Bool
 
     @MainActor
     init(manager: MusicManager) {
         isPlaying = manager.isPlaying
         isSpotifyPausedWithNoOtherPlayback = manager.isSpotifyPausedWithNoSystemMediaPlaying
+        isLoggedIntoSpotify = manager.spotifyPrivateAPI.isLoggedIn
+        isSpotifyOnlySource = manager.isSpotifySourceSelected
+            && manager.activeMediaSources.keys.allSatisfy { key in
+                key == "com.spotify.client:spotify-live" || key.hasPrefix("com.spotify.client")
+            }
+        isSpotifyAppRunning = RunningApps.shared.isRunning("com.spotify.client")
     }
 }
 

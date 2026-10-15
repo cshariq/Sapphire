@@ -9,6 +9,10 @@ import SwiftUI
 import Foundation
 import IOBluetooth
 
+extension Notification.Name {
+    static let bluetoothBatteryLevelsDidUpdate = Notification.Name("bluetoothBatteryLevelsDidUpdate")
+}
+
 struct SPParsedInfo {
     let name: String
     let minorType: String
@@ -24,37 +28,34 @@ class SPBluetoothDataModel {
 
     var deviceMap: [String: SPParsedInfo] = [:]
 
-    private var lastRefreshTime: Date = .distantPast
-    private var isRefreshing = false
+    private var lastRefreshTime: Date?
+    private var waiters: [(String?) -> Void] = []
     private let refreshQueue = DispatchQueue(label: "com.sapphire.sp_refresh", qos: .utility)
+    private static let processTimeout = 10
 
-    func refeshData(force: Bool = false, completion: @escaping (String) -> Void, error: (() -> Void)? = nil) {
-        let now = Date()
-        if !force && now.timeIntervalSince(lastRefreshTime) < 10 {
+    func refeshData(force: Bool = false, maxAge: TimeInterval = 5 * 60, completion: @escaping (String) -> Void, error: (() -> Void)? = nil) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        if !force, let lastRefreshTime, Date().timeIntervalSince(lastRefreshTime) < maxAge {
             completion(data)
             return
         }
 
-        guard !isRefreshing else {
-            completion(data)
-            return
+        waiters.append { result in
+            if let result { completion(result) } else { error?() }
         }
-        isRefreshing = true
+        guard waiters.count == 1 else { return }
 
         refreshQueue.async {
-            if let result = process(path: "/usr/sbin/system_profiler", arguments: ["SPBluetoothDataType", "-json"]) {
-                DispatchQueue.main.async {
+            let result = process(path: "/usr/sbin/system_profiler", arguments: ["SPBluetoothDataType", "-json"], timeout: Self.processTimeout)
+            DispatchQueue.main.async {
+                if let result {
                     self.data = result
                     self.parseJSONToMap()
                     self.lastRefreshTime = Date()
-                    self.isRefreshing = false
-                    completion(result)
                 }
-            } else {
-                DispatchQueue.main.async {
-                    self.isRefreshing = false
-                    error?()
-                }
+                let pending = self.waiters
+                self.waiters.removeAll()
+                pending.forEach { $0(result) }
             }
         }
     }
@@ -135,18 +136,18 @@ class MagicBattery {
         var productName = ""
         let lastUpdate = Date().timeIntervalSince1970
 
-        if let productProperty = IORegistryEntryCreateCFProperty(object, "DeviceAddress" as CFString, kCFAllocatorDefault, 0) {
-            mac = (productProperty.takeRetainedValue() as! String).replacingOccurrences(of:"-", with:":").uppercased()
+        if let address = IORegistryEntryCreateCFProperty(object, "DeviceAddress" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String {
+            mac = address.replacingOccurrences(of:"-", with:":").uppercased()
         }
-        if let percentProperty = IORegistryEntryCreateCFProperty(object, "BatteryStatusFlags" as CFString, kCFAllocatorDefault, 0) {
-            status = (percentProperty.takeRetainedValue() as! Int)
+        if let flags = IORegistryEntryCreateCFProperty(object, "BatteryStatusFlags" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Int {
+            status = flags
             if status == 4 { status = 0 }
         }
-        if let percentProperty = IORegistryEntryCreateCFProperty(object, "BatteryPercent" as CFString, kCFAllocatorDefault, 0) {
-            percent = (percentProperty.takeRetainedValue() as! Int)
+        if let level = IORegistryEntryCreateCFProperty(object, "BatteryPercent" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? Int {
+            percent = level
         }
-        if let productProperty = IORegistryEntryCreateCFProperty(object, "Product" as CFString, kCFAllocatorDefault, 0) {
-            productName = (productProperty.takeRetainedValue() as! String)
+        if let product = IORegistryEntryCreateCFProperty(object, "Product" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String {
+            productName = product
 
             if productName.contains("Trackpad") { type = "Trackpad" }
             else if productName.contains("Keyboard") { type = "Keyboard" }
@@ -163,7 +164,7 @@ class MagicBattery {
         }
         if !productName.contains("Internal"){
             DispatchQueue.main.async {
-                AirBatteryModel.updateDevice(BatteryDevice(deviceID: mac, deviceType: type, deviceName: productName, batteryLevel: percent, isCharging: status, parentName: self.deviceName, lastUpdate: lastUpdate))
+                AccessoryBatteryStore.updateDevice(BatteryDevice(deviceID: mac, deviceType: type, deviceName: productName, batteryLevel: percent, isCharging: status, parentName: self.deviceName, lastUpdate: lastUpdate))
             }
         }
     }
@@ -177,9 +178,11 @@ class MagicBattery {
         if KERN_SUCCESS == kernResult {
             repeat {
                 object = IOIteratorNext(serialPortIterator)
-                if object != 0 { readMagicBattery(object: object) }
+                if object != 0 {
+                    readMagicBattery(object: object)
+                    IOObjectRelease(object)
+                }
             } while object != 0
-            IOObjectRelease(object)
         }
         IOObjectRelease(serialPortIterator)
     }
@@ -191,9 +194,11 @@ class MagicBattery {
         if IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, &serialPortIterator) == KERN_SUCCESS {
             repeat {
                 object = IOIteratorNext(serialPortIterator)
-                if object != 0 { readMagicBattery(object: object) }
+                if object != 0 {
+                    readMagicBattery(object: object)
+                    IOObjectRelease(object)
+                }
             } while object != 0
-            IOObjectRelease(object)
         }
         IOObjectRelease(serialPortIterator)
     }
@@ -205,9 +210,11 @@ class MagicBattery {
         if IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, &serialPortIterator) == KERN_SUCCESS {
             repeat {
                 object = IOIteratorNext(serialPortIterator)
-                if object != 0 { readMagicBattery(object: object) }
+                if object != 0 {
+                    readMagicBattery(object: object)
+                    IOObjectRelease(object)
+                }
             } while object != 0
-            IOObjectRelease(object)
         }
         IOObjectRelease(serialPortIterator)
     }
@@ -219,9 +226,11 @@ class MagicBattery {
         if IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, &serialPortIterator) == KERN_SUCCESS {
             repeat {
                 object = IOIteratorNext(serialPortIterator)
-                if object != 0 { readMagicBattery(object: object) }
+                if object != 0 {
+                    readMagicBattery(object: object)
+                    IOObjectRelease(object)
+                }
             } while object != 0
-            IOObjectRelease(object)
         }
         IOObjectRelease(serialPortIterator)
     }
@@ -246,24 +255,24 @@ class MagicBattery {
                         }
 
                         if caseLevel > 0 && caseLevel <= 100 {
-                            AirBatteryModel.updateDevice(BatteryDevice(deviceID: address + "_case", deviceType: "ap_case", deviceName: name + " (Case)".local, batteryLevel: Int(caseLevel), isCharging: 0, lastUpdate: now))
+                            AccessoryBatteryStore.updateDevice(BatteryDevice(deviceID: address + "_case", deviceType: "ap_case", deviceName: name + " (Case)".local, batteryLevel: Int(caseLevel), isCharging: 0, lastUpdate: now))
                         }
                         if leftLevel > 0 && leftLevel <= 100 {
-                            AirBatteryModel.updateDevice(BatteryDevice(deviceID: address + "_left", deviceType: "ap_pod_left", deviceName: name + " 🄻", batteryLevel: Int(leftLevel), isCharging: 0, parentName: name + " (Case)".local, lastUpdate: now))
+                            AccessoryBatteryStore.updateDevice(BatteryDevice(deviceID: address + "_left", deviceType: "ap_pod_left", deviceName: name + " 🄻", batteryLevel: Int(leftLevel), isCharging: 0, parentName: name + " (Case)".local, lastUpdate: now))
                         }
                         if rightLevel > 0 && rightLevel <= 100 {
-                            AirBatteryModel.updateDevice(BatteryDevice(deviceID: address + "_right", deviceType: "ap_pod_right", deviceName: name + " 🅁", batteryLevel: Int(rightLevel), isCharging: 0, parentName: name + " (Case)".local, lastUpdate: now))
+                            AccessoryBatteryStore.updateDevice(BatteryDevice(deviceID: address + "_right", deviceType: "ap_pod_right", deviceName: name + " 🅁", batteryLevel: Int(rightLevel), isCharging: 0, parentName: name + " (Case)".local, lastUpdate: now))
                         }
 
                         let validLevels = [leftLevel, rightLevel].filter { $0 > 0 && $0 <= 100 }
                         if !validLevels.isEmpty {
                             let averageLevel = validLevels.reduce(0, +) / validLevels.count
-                            let userInfo = ["name": name, "level": averageLevel] as [String : Any]
-                            NotificationCenter.default.post(name: .didUpdateAirPodsBattery, object: nil, userInfo: userInfo)
+                            let userInfo = ["name": name, "address": address, "level": averageLevel] as [String : Any]
+                            NotificationCenter.default.post(name: .bluetoothBatteryLevelsDidUpdate, object: nil, userInfo: userInfo)
                         }
 
-                    } else if let battery = device.batteryPercentSingle as? Int, battery > 0 && battery <= 100 {
-                        AirBatteryModel.updateDevice(BatteryDevice(deviceID: address, deviceType: type, deviceName: name, batteryLevel: battery, isCharging: 0, lastUpdate: now))
+                    } else if case let battery = device.batteryPercentSingle, battery > 0 && battery <= 100 {
+                        AccessoryBatteryStore.updateDevice(BatteryDevice(deviceID: address, deviceType: type, deviceName: name, batteryLevel: battery, isCharging: 0, lastUpdate: now))
                     }
                 }
             }

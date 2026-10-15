@@ -56,11 +56,15 @@ struct BatteryDevice: Hashable, Codable {
     }
 }
 
-enum AirBatteryModel {
+enum AccessoryBatteryStore {
     private static let devicesLock = NSLock()
     private static var devices: [BatteryDevice] = []
     static let machineType = ud.string(forKey: "machineType") ?? "Mac"
-    static let key = "com.lihaoyun6.AirBattery.widget"
+    static var storageDirectory: URL {
+        let support = fd.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fd.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        return support.appendingPathComponent("Sapphire/AccessoryBatteries", isDirectory: true)
+    }
 
     static func updateDevice(_ device: BatteryDevice) {
         devicesLock.lock()
@@ -155,31 +159,8 @@ enum AirBatteryModel {
         getAll(noFilter: true).first { $0.deviceID == id }
     }
 
-    static func singleDeviceName() -> String {
-        let bundleIdentifier = Bundle.main.bundleIdentifier
-        if bundleIdentifier == key {
-            guard let documents = fd.urls(for: .documentDirectory, in: .userDomainMask).first else { return "" }
-            return (try? String(
-                contentsOf: documents.appendingPathComponent("singleDeviceName"),
-                encoding: .utf8
-            )) ?? ""
-        }
-
-        guard let library = fd.urls(for: .libraryDirectory, in: .userDomainMask).first else { return "" }
-        let url = library.appendingPathComponent("Containers/\(key)/Data/Documents/singleDeviceName")
-        try? fd.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? ud.string(forKey: "deviceOnWidget")?.write(to: url, atomically: true, encoding: .utf8)
-        return ""
-    }
-
     static func getJsonURL() -> URL {
-        if Bundle.main.bundleIdentifier == key,
-           let documents = fd.urls(for: .documentDirectory, in: .userDomainMask).first {
-            return documents.appendingPathComponent("data.json")
-        }
-        let library = fd.urls(for: .libraryDirectory, in: .userDomainMask).first
-            ?? fd.homeDirectoryForCurrentUser.appendingPathComponent("Library", isDirectory: true)
-        return library.appendingPathComponent("Containers/\(key)/Data/Documents/data.json")
+        storageDirectory.appendingPathComponent("data.json")
     }
 
     static func writeData() {

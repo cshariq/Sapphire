@@ -39,7 +39,7 @@ public struct RAM_Usage: Codable, Equatable, Hashable {
     var swap: Swap
     var pressure: Pressure
     public var usage: Double {
-        get { Double((self.total - self.free) / self.total) }
+        MemoryUsageMath.usageFraction(used: used, total: total)
     }
 }
 
@@ -299,26 +299,39 @@ public class StatsManager: ObservableObject {
     private lazy var ramReader: RAMUsageReader = RAMUsageReader { [weak self] value in self?.ram = value }
     private lazy var gpuReader: GPUInfoReader = GPUInfoReader { [weak self] value in self?.gpus = value ?? GPUs() }
     private lazy var diskReader: DiskActivityReader = DiskActivityReader { [weak self] value in self?.disks = value ?? Disks() }
-    private lazy var sensorsReader: SensorsStatsReader = SensorsStatsReader { [weak self] value in self?.sensors = value ?? Sensors_List() }
+    private lazy var sensorsReader: SensorsStatsReader = SensorsStatsReader(
+        onCatalog: { [weak self] catalog in self?.allSensors = catalog },
+        onValues: { [weak self] values in self?.sensors = values }
+    )
     private lazy var batteryReader: BatteryStatsReader = BatteryStatsReader { [weak self] value in self?.battery = value }
 
-    private var cpu: CPU_Load? { didSet { schedulePayloadUpdate() } }
+    private var cpu: CPU_Load? { didSet {
+        if let cpu { cpuSamples.send((cpu, ProcessInfo.processInfo.systemUptime)) }
+        schedulePayloadUpdate()
+    } }
     private var ram: RAM_Usage? { didSet { schedulePayloadUpdate() } }
     private var gpus = GPUs() { didSet { schedulePayloadUpdate() } }
     private var disks = Disks() { didSet { schedulePayloadUpdate() } }
     private var sensors = Sensors_List() { didSet {
-        let sortedSensors = sensors.sensors.sorted(by: { $0.name < $1.name })
-        if !Self.sensorsEqual(allSensors, sortedSensors) {
-            allSensors = sortedSensors
-        }
+        if !sensors.sensors.isEmpty { sensorSamples.send((sensors.sensors, ProcessInfo.processInfo.systemUptime)) }
         schedulePayloadUpdate()
-    }}
+    } }
     private var battery: Battery_Usage? { didSet { schedulePayloadUpdate() } }
     private var payloadUpdateTask: Task<Void, Never>?
 
     private var pollingRequesters: [String: Set<StatType>] = [:]
+    private var sensorKeyRequesters: [String: Set<String>] = [:]
+    private var sensorIntervals: [String: TimeInterval] = [:]
+
+    let cpuSamples = PassthroughSubject<(load: CPU_Load, uptime: TimeInterval), Never>()
+    let sensorSamples = PassthroughSubject<(sensors: [any Sensor_p], uptime: TimeInterval), Never>()
+
+    nonisolated static let defaultSensorInterval: TimeInterval = 3
+
+    static let powerSensorKeys: Set<String> = ["PSTR", "PDTR", "PCPC", "PCTR", "PC0C", "PGTR", "PG0C", "PCGC"]
 
     private var settingsCancellable: AnyCancellable?
+    private var sensorKeysCancellable: AnyCancellable?
     private let settingsModel = SettingsModel.shared
 
     private init() {
@@ -328,6 +341,12 @@ public class StatsManager: ObservableObject {
             .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
             .sink { [weak self] requiredStats in
                 self?.setPolling(for: "LiveActivitySettings", requiredStats: requiredStats)
+            }
+        self.sensorKeysCancellable = settingsModel.changes(of: Self.requiredSensorKeys(from:))
+            .prepend(Self.requiredSensorKeys(from: settingsModel.settings))
+            .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
+            .sink { [weak self] keys in
+                self?.setSensorKeys(for: "LiveActivitySettings", keys: keys)
             }
 
         let workspace = NSWorkspace.shared.notificationCenter
@@ -340,16 +359,52 @@ public class StatsManager: ObservableObject {
 
     private func refreshActiveReaders() {
         let activeStats = pollingRequesters.values.reduce(Set<StatType>()) { $0.union($1) }
-        guard !activeStats.isEmpty else { return }
         if activeStats.contains(.cpu) { cpuReader.refresh() }
         if activeStats.contains(.ram) { ramReader.refresh() }
         if activeStats.contains(.gpu) { gpuReader.refresh() }
         if activeStats.contains(.disk) { diskReader.refresh() }
         let needsPower = activeStats.contains(.systemPower) || activeStats.contains(.batteryPower)
-        if needsPower {
+        if !requiredSensorKeys(for: activeStats).isEmpty {
             Task { @MainActor in await sensorsReader.readNow() }
+        }
+        if needsPower {
             batteryReader.refresh()
         }
+    }
+
+    private static func requiredSensorKeys(from settings: Settings) -> Set<String> {
+        guard settings.statsLiveActivityEnabled else { return [] }
+        return Set(settings.selectedSensorKeys)
+    }
+
+    public func setSensorKeys(for requester: String, keys: Set<String>, interval: TimeInterval? = nil) {
+        let previous = sensorKeyRequesters[requester] ?? []
+        var changed = previous != keys
+        if keys.isEmpty {
+            sensorKeyRequesters.removeValue(forKey: requester)
+            changed = sensorIntervals.removeValue(forKey: requester) != nil || changed
+        } else {
+            sensorKeyRequesters[requester] = keys
+            if let interval, sensorIntervals[requester] != interval {
+                sensorIntervals[requester] = interval
+                changed = true
+            }
+        }
+        guard changed else { return }
+        updatePollingState()
+    }
+
+    public func requestSensorCatalog() {
+        guard allSensors.isEmpty else { return }
+        Task { @MainActor in await sensorsReader.loadCatalogIfNeeded() }
+    }
+
+    private func requiredSensorKeys(for activeStats: Set<StatType>) -> Set<String> {
+        var keys = sensorKeyRequesters.values.reduce(Set<String>()) { $0.union($1) }
+        if activeStats.contains(.systemPower) || activeStats.contains(.batteryPower) {
+            keys.formUnion(Self.powerSensorKeys)
+        }
+        return keys
     }
 
     private static func requiredStats(from settings: Settings) -> Set<StatType> {
@@ -399,7 +454,19 @@ public class StatsManager: ObservableObject {
         update(reader: diskReader, for: .disk, in: activeStats)
 
         let needsPowerStats = activeStats.contains(.systemPower) || activeStats.contains(.batteryPower)
-        update(reader: sensorsReader, for: .systemPower, in: activeStats, force: needsPowerStats)
+        let sensorKeys = requiredSensorKeys(for: activeStats)
+        sensorsReader.setRequestedKeys(sensorKeys)
+        if sensorKeys.isEmpty {
+            sensorsReader.stop()
+            if !sensors.sensors.isEmpty { sensors = Sensors_List() }
+        } else {
+            var sensorInterval = sensorKeyRequesters.keys
+                .map { sensorIntervals[$0] ?? Self.defaultSensorInterval }
+                .min() ?? Self.defaultSensorInterval
+            if needsPowerStats { sensorInterval = min(sensorInterval, Self.defaultSensorInterval) }
+            sensorsReader.setInterval(sensorInterval)
+            sensorsReader.start()
+        }
         update(reader: batteryReader, for: .batteryPower, in: activeStats, force: needsPowerStats)
 
         let fastestBattery = pollingIntervals
@@ -417,14 +484,6 @@ public class StatsManager: ObservableObject {
         }
     }
 
-    private func update(reader: SensorsStatsReader, for statType: StatType, in activeStats: Set<StatType>, force: Bool = false) {
-        if activeStats.contains(statType) || force {
-            reader.start()
-        } else {
-            reader.stop()
-        }
-    }
-
     private func schedulePayloadUpdate() {
         guard payloadUpdateTask == nil else { return }
         payloadUpdateTask = Task { @MainActor [weak self] in
@@ -432,13 +491,6 @@ public class StatsManager: ObservableObject {
             guard let self, !Task.isCancelled else { return }
             self.payloadUpdateTask = nil
             self.updatePayload()
-        }
-    }
-
-    private static func sensorsEqual(_ lhs: [any Sensor_p], _ rhs: [any Sensor_p]) -> Bool {
-        guard lhs.count == rhs.count else { return false }
-        return zip(lhs, rhs).allSatisfy { left, right in
-            left.id == right.id && left.value == right.value && left.name == right.name
         }
     }
 
@@ -510,6 +562,7 @@ internal class Reader<T> {
             self.isActive = false
             self.source?.cancel()
             self.source = nil
+            self.teardown()
         }
     }
 
@@ -551,6 +604,8 @@ internal class Reader<T> {
 
     public func setup() {}
 
+    func teardown() {}
+
     internal func fireCallback(_ value: T?) {
         let callback = callback
         DispatchQueue.main.async {
@@ -566,13 +621,8 @@ internal class Reader<T> {
 // MARK: - CPU Readers
 
 final class AggregateCPUUsageSampler: @unchecked Sendable {
-    private struct Snapshot {
-        let total: UInt64
-        let idle: UInt64
-    }
-
     private let lock = NSLock()
-    private var previous: Snapshot?
+    private var previous: CPUTicks?
 
     func sample() -> Double? {
         guard let current = Self.snapshot() else { return nil }
@@ -582,47 +632,39 @@ final class AggregateCPUUsageSampler: @unchecked Sendable {
         self.previous = current
         lock.unlock()
 
-        guard let previous,
-              current.total >= previous.total,
-              current.idle >= previous.idle else {
-            return nil
-        }
-
-        let totalDelta = current.total - previous.total
-        guard totalDelta > 0 else { return 0 }
-        let idleDelta = current.idle - previous.idle
-        return max(0, min(1, Double(totalDelta - min(idleDelta, totalDelta)) / Double(totalDelta)))
+        guard let previous, let load = CPUTickMath.load(from: previous, to: current) else { return nil }
+        return max(0, min(1, load.busy))
     }
 
     func reset() {
         lock.withLock { previous = nil }
     }
 
-    private static func snapshot() -> Snapshot? {
+    private static func snapshot() -> CPUTicks? {
         let count = MemoryLayout<host_cpu_load_info>.stride / MemoryLayout<integer_t>.stride
         var infoCount = mach_msg_type_number_t(count)
         var info = host_cpu_load_info()
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
         let result = withUnsafeMutablePointer(to: &info) { pointer in
             pointer.withMemoryRebound(to: integer_t.self, capacity: count) {
-                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &infoCount)
+                host_statistics(host, HOST_CPU_LOAD_INFO, $0, &infoCount)
             }
         }
         guard result == KERN_SUCCESS else { return nil }
-
-        let user = UInt64(info.cpu_ticks.0)
-        let system = UInt64(info.cpu_ticks.1)
-        let idle = UInt64(info.cpu_ticks.2)
-        let nice = UInt64(info.cpu_ticks.3)
-        return Snapshot(total: user + system + idle + nice, idle: idle)
+        return CPUTicks(user: info.cpu_ticks.0, system: info.cpu_ticks.1, idle: info.cpu_ticks.2, nice: info.cpu_ticks.3)
     }
 }
 
 internal class CPUUsageReader: Reader<CPU_Load> {
+    private static let maximumBaselineAge: TimeInterval = 12
+
     private var prevCpuInfo: processor_info_array_t?
     private var numPrevCpuInfo: mach_msg_type_number_t = 0
     private var numCPUs: uint = 0
     private let CPUUsageLock: NSLock = NSLock()
-    private var previousInfo = host_cpu_load_info()
+    private var previousTicks: CPUTicks?
+    private var previousSampleUptime: TimeInterval?
     private var numCPUsU: natural_t = 0
 
     override func setup() {
@@ -633,89 +675,106 @@ internal class CPUUsageReader: Reader<CPU_Load> {
         }
     }
 
+    override func teardown() {
+        CPUUsageLock.lock()
+        releasePreviousCpuInfo()
+        previousTicks = nil
+        previousSampleUptime = nil
+        CPUUsageLock.unlock()
+    }
+
+    deinit {
+        releasePreviousCpuInfo()
+    }
+
+    private func releasePreviousCpuInfo() {
+        if let prev = prevCpuInfo {
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: prev), vm_size_t(MemoryLayout<integer_t>.stride * Int(numPrevCpuInfo)))
+        }
+        prevCpuInfo = nil
+        numPrevCpuInfo = 0
+    }
+
     override func read() {
+        defer { super.read() }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let baselineIsFresh = previousTicks != nil && prevCpuInfo != nil
+            && previousSampleUptime.map { now - $0 <= Self.maximumBaselineAge } == true
+        previousSampleUptime = now
+
         var newResponse = CPU_Load()
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
 
         var localCpuInfo: processor_info_array_t?
         var localNumCpuInfo: mach_msg_type_number_t = 0
 
-        let result: kern_return_t = host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &self.numCPUsU, &localCpuInfo, &localNumCpuInfo)
+        let result: kern_return_t = host_processor_info(host, PROCESSOR_CPU_LOAD_INFO, &self.numCPUsU, &localCpuInfo, &localNumCpuInfo)
 
         if result == KERN_SUCCESS, let currentCpuInfo = localCpuInfo {
             CPUUsageLock.lock()
 
-            var usagePerCore: [Double] = []
-            for i in 0 ..< Int32(numCPUs) {
-                var inUse: Int32, total: Int32
-                if let prev = prevCpuInfo {
-                    inUse = (currentCpuInfo[Int(CPU_STATE_MAX * i + CPU_STATE_USER)] - prev[Int(CPU_STATE_MAX * i + CPU_STATE_USER)])
-                        + (currentCpuInfo[Int(CPU_STATE_MAX * i + CPU_STATE_SYSTEM)] - prev[Int(CPU_STATE_MAX * i + CPU_STATE_SYSTEM)])
-                        + (currentCpuInfo[Int(CPU_STATE_MAX * i + CPU_STATE_NICE)] - prev[Int(CPU_STATE_MAX * i + CPU_STATE_NICE)])
-                    total = inUse + (currentCpuInfo[Int(CPU_STATE_MAX * i + CPU_STATE_IDLE)] - prev[Int(CPU_STATE_MAX * i + CPU_STATE_IDLE)])
-                } else {
-                    inUse = currentCpuInfo[Int(CPU_STATE_MAX * i + CPU_STATE_USER)] + currentCpuInfo[Int(CPU_STATE_MAX * i + CPU_STATE_SYSTEM)] + currentCpuInfo[Int(CPU_STATE_MAX * i + CPU_STATE_NICE)]
-                    total = inUse + currentCpuInfo[Int(CPU_STATE_MAX * i + CPU_STATE_IDLE)]
+            if baselineIsFresh, let prevCpuInfo {
+                var usagePerCore: [Double] = []
+                let stride = Int(CPU_STATE_MAX)
+                let coreCount = min(Int(numCPUs), Int(localNumCpuInfo) / stride)
+                func ticks(_ info: processor_info_array_t, _ core: Int) -> CPUTicks {
+                    let base = stride * core
+                    return CPUTicks(
+                        signedUser: info[base + Int(CPU_STATE_USER)],
+                        system: info[base + Int(CPU_STATE_SYSTEM)],
+                        idle: info[base + Int(CPU_STATE_IDLE)],
+                        nice: info[base + Int(CPU_STATE_NICE)]
+                    )
                 }
-
-                if total > 0 {
-                    let coreUsage = Double(inUse) / Double(total)
-                    usagePerCore.append( (coreUsage >= 0 && coreUsage <= 1.0) ? coreUsage : 0.0 )
-                } else {
-                    usagePerCore.append(0.0)
+                let previousCoreCount = Int(numPrevCpuInfo) / stride
+                for core in 0..<max(0, coreCount) {
+                    guard core < previousCoreCount else {
+                        usagePerCore.append(0)
+                        continue
+                    }
+                    let busy = CPUTickMath.load(from: ticks(prevCpuInfo, core), to: ticks(currentCpuInfo, core))?.busy ?? 0
+                    usagePerCore.append((0...1).contains(busy) ? busy : 0)
                 }
-            }
-            newResponse.usagePerCore = usagePerCore
-
-            CPUUsageLock.unlock()
-
-            if let prev = prevCpuInfo {
-                vm_deallocate(mach_task_self_, vm_address_t(bitPattern: prev), vm_size_t(MemoryLayout<integer_t>.stride * Int(numPrevCpuInfo)))
+                newResponse.usagePerCore = usagePerCore
             }
 
+            releasePreviousCpuInfo()
             prevCpuInfo = localCpuInfo
             numPrevCpuInfo = localNumCpuInfo
 
+            CPUUsageLock.unlock()
         } else if let localCpuInfo = localCpuInfo {
             vm_deallocate(mach_task_self_, vm_address_t(bitPattern: localCpuInfo), vm_size_t(MemoryLayout<integer_t>.stride * Int(localNumCpuInfo)))
         }
 
-        if let cpuInfo = hostCPULoadInfo() {
-            let userDiff = Double(cpuInfo.cpu_ticks.0 - previousInfo.cpu_ticks.0)
-            let sysDiff  = Double(cpuInfo.cpu_ticks.1 - previousInfo.cpu_ticks.1)
-            let idleDiff = Double(cpuInfo.cpu_ticks.2 - previousInfo.cpu_ticks.2)
-            let niceDiff = Double(cpuInfo.cpu_ticks.3 - previousInfo.cpu_ticks.3)
-            let totalTicks = sysDiff + userDiff + niceDiff + idleDiff
+        guard let cpuInfo = hostCPULoadInfo(host) else { return }
+        let current = CPUTicks(user: cpuInfo.cpu_ticks.0, system: cpuInfo.cpu_ticks.1, idle: cpuInfo.cpu_ticks.2, nice: cpuInfo.cpu_ticks.3)
+        let previous = previousTicks
+        previousTicks = current
 
-            guard totalTicks > 0 else {
-                super.read()
-                return
-            }
+        guard baselineIsFresh, let previous,
+              let load = CPUTickMath.load(from: previous, to: current) else { return }
 
-            newResponse.systemLoad = sysDiff / totalTicks
-            newResponse.userLoad = userDiff / totalTicks
-            newResponse.idleLoad = idleDiff / totalTicks
-            newResponse.totalUsage = newResponse.systemLoad + newResponse.userLoad
-            previousInfo = cpuInfo
+        newResponse.systemLoad = load.system
+        newResponse.userLoad = load.user
+        newResponse.idleLoad = load.idle
+        newResponse.totalUsage = load.system + load.user
 
-            guard newResponse.totalUsage >= 0 && newResponse.totalUsage <= 1.0 else {
-                super.read()
-                return
-            }
+        guard newResponse.totalUsage >= 0 && newResponse.totalUsage <= 1.0 else { return }
 
-            self.fireCallback(newResponse)
-        }
-
-        super.read()
+        self.fireCallback(newResponse)
     }
 
-    private func hostCPULoadInfo() -> host_cpu_load_info? {
+    private func hostCPULoadInfo(_ host: host_t) -> host_cpu_load_info? {
         let count = MemoryLayout<host_cpu_load_info>.stride / MemoryLayout<integer_t>.stride
         var size = mach_msg_type_number_t(count)
         var cpuLoadInfo = host_cpu_load_info()
 
         let result: kern_return_t = withUnsafeMutablePointer(to: &cpuLoadInfo) {
             $0.withMemoryRebound(to: integer_t.self, capacity: count) {
-                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &size)
+                host_statistics(host, HOST_CPU_LOAD_INFO, $0, &size)
             }
         }
         return result == KERN_SUCCESS ? cpuLoadInfo : nil
@@ -729,9 +788,11 @@ internal class RAMUsageReader: Reader<RAM_Usage> {
     override func setup() {
         var stats = host_basic_info()
         var count = UInt32(MemoryLayout<host_basic_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
         let kerr: kern_return_t = withUnsafeMutablePointer(to: &stats) {
             $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                host_info(mach_host_self(), HOST_BASIC_INFO, $0, &count)
+                host_info(host, HOST_BASIC_INFO, $0, &count)
             }
         }
         if kerr == KERN_SUCCESS, stats.max_mem > 0 {
@@ -744,26 +805,33 @@ internal class RAMUsageReader: Reader<RAM_Usage> {
     override func read() {
         var stats = vm_statistics64()
         var count = UInt32(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
         let result: kern_return_t = withUnsafeMutablePointer(to: &stats) {
             $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+                host_statistics64(host, HOST_VM_INFO64, $0, &count)
             }
         }
 
         if result == KERN_SUCCESS {
-            let active = Double(stats.active_count) * Double(vm_page_size)
-            let inactive = Double(stats.inactive_count) * Double(vm_page_size)
-            let wired = Double(stats.wire_count) * Double(vm_page_size)
-            let compressed = Double(stats.compressor_page_count) * Double(vm_page_size)
-            let speculative = Double(stats.speculative_count) * Double(vm_page_size)
-            let purgeable = Double(stats.purgeable_count) * Double(vm_page_size)
-            let external = Double(stats.external_page_count) * Double(vm_page_size)
+            let pageSize = Double(vm_page_size)
+            let active = Double(stats.active_count) * pageSize
+            let inactive = Double(stats.inactive_count) * pageSize
+            let memory = MemoryUsageMath.breakdown(
+                internalPages: UInt64(stats.internal_page_count),
+                purgeablePages: UInt64(stats.purgeable_count),
+                externalPages: UInt64(stats.external_page_count),
+                wiredPages: UInt64(stats.wire_count),
+                compressedPages: UInt64(stats.compressor_page_count),
+                pageSize: UInt64(vm_page_size)
+            )
+            let used = min(memory.used, self.totalSize)
 
-            let used = active + inactive + speculative + wired + compressed - purgeable - external
-
-            var pressureLevel: Int = 0
-            var size: size_t = MemoryLayout<uint>.size
-            sysctlbyname("kern.memorystatus_vm_pressure_level", &pressureLevel, &size, nil, 0)
+            var pressureLevel: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            if sysctlbyname("kern.memorystatus_vm_pressure_level", &pressureLevel, &size, nil, 0) != 0 {
+                pressureLevel = 0
+            }
             let pressure: RAMPressure = {
                 switch pressureLevel {
                 case 2: return .warning
@@ -772,16 +840,18 @@ internal class RAMUsageReader: Reader<RAM_Usage> {
                 }
             }()
 
-            var swap: xsw_usage = xsw_usage()
+            var swap = xsw_usage()
             size = MemoryLayout<xsw_usage>.size
-            sysctlbyname("vm.swapusage", &swap, &size, nil, 0)
+            if sysctlbyname("vm.swapusage", &swap, &size, nil, 0) != 0 {
+                swap = xsw_usage()
+            }
 
             self.fireCallback(RAM_Usage(
-                total: self.totalSize, used: used, free: self.totalSize - used,
-                active: active, inactive: inactive, wired: wired, compressed: compressed,
-                app: used - wired - compressed, cache: purgeable + external,
+                total: self.totalSize, used: used, free: max(0, self.totalSize - used),
+                active: active, inactive: inactive, wired: memory.wired, compressed: memory.compressed,
+                app: memory.app, cache: memory.cache,
                 swap: Swap(total: Double(swap.xsu_total), used: Double(swap.xsu_used), free: Double(swap.xsu_avail)),
-                pressure: Pressure(level: pressureLevel, value: pressure)
+                pressure: Pressure(level: Int(pressureLevel), value: pressure)
             ))
         }
 
@@ -846,7 +916,9 @@ internal class GPUInfoReader: Reader<GPUs> {
         }
 
         self.gpus.list = updatedGPUs.sorted{ !$0.state && $1.state }
-        self.fireCallback(gpus)
+        let snapshot = GPUs()
+        snapshot.list = self.gpus.list
+        self.fireCallback(snapshot)
         super.read()
     }
 }
@@ -854,39 +926,74 @@ internal class GPUInfoReader: Reader<GPUs> {
 // MARK: - Disk Reader
 internal class DiskActivityReader: Reader<Disks> {
     private var list: Disks = Disks()
+    private var session: DASession?
+    private var readsSinceCapacityRefresh = 0
+    private static let capacityRefreshReads = 5
+
+    override func setup() {
+        if session == nil {
+            session = DASessionCreate(kCFAllocatorDefault)
+        }
+    }
 
     override func read() {
+        defer { super.read() }
         let keys: [URLResourceKey] = [.volumeNameKey]
         let paths = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]) ?? []
 
-        guard let session = DASessionCreate(kCFAllocatorDefault) else {
-            super.read()
-            return
-        }
+        guard let session else { return }
 
-        var active: [String] = []
+        readsSinceCapacityRefresh += 1
+        let refreshCapacity = readsSinceCapacityRefresh >= Self.capacityRefreshReads
+        if refreshCapacity { readsSinceCapacityRefresh = 0 }
+
+        var active: Set<String> = []
         for url in paths {
-            if url.pathComponents.count == 1 || (url.pathComponents.count > 1 && url.pathComponents[1] == "Volumes") {
-                if let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, url as CFURL), let diskName = DADiskGetBSDName(disk) {
-                    let BSDName: String = String(cString: diskName)
-                    active.append(BSDName)
+            guard url.pathComponents.count == 1 || (url.pathComponents.count > 1 && url.pathComponents[1] == "Volumes") else { continue }
+            guard let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, url as CFURL),
+                  let diskName = DADiskGetBSDName(disk) else { continue }
+            let BSDName: String = String(cString: diskName)
+            active.insert(BSDName)
 
-                    if let idx = self.list.array.firstIndex(where: { $0.BSDName == BSDName }) {
-                        var d = self.list.array[idx]
-                        driveStats(d: &d)
-                        self.list.array[idx] = d
-                    } else if var d = driveDetails(disk, bsdName: BSDName) {
-                        driveStats(d: &d)
-                        list.array.append(d)
-                    }
-                }
+            if let idx = self.list.array.firstIndex(where: { $0.BSDName == BSDName }) {
+                var d = self.list.array[idx]
+                if refreshCapacity { Self.refreshCapacity(of: &d) }
+                driveStats(d: &d)
+                self.list.array[idx] = d
+            } else if var d = driveDetails(disk, bsdName: BSDName) {
+                driveStats(d: &d)
+                list.array.append(d)
             }
         }
 
+        for removed in list.array where !active.contains(removed.BSDName) && removed.parent != 0 {
+            IOObjectRelease(removed.parent)
+        }
         list.array = list.array.filter { active.contains($0.BSDName) }
 
-        self.fireCallback(list)
-        super.read()
+        let snapshot = Disks()
+        snapshot.array = list.array
+        self.fireCallback(snapshot)
+    }
+
+    deinit {
+        for d in list.array where d.parent != 0 {
+            IOObjectRelease(d.parent)
+        }
+    }
+
+    private static func refreshCapacity(of d: inout drive) {
+        guard var path = d.path else { return }
+        path.removeAllCachedResourceValues()
+        guard let resources = try? path.resourceValues(forKeys: [
+            .volumeTotalCapacityKey, .volumeAvailableCapacityKey, .volumeAvailableCapacityForImportantUsageKey
+        ]) else { return }
+        if let total = resources.volumeTotalCapacity, total > 0 { d.size = Int64(total) }
+        if let important = resources.volumeAvailableCapacityForImportantUsage, important > 0 {
+            d.free = important
+        } else if let free = resources.volumeAvailableCapacity {
+            d.free = Int64(free)
+        }
     }
 
     private func driveStats(d: inout drive) {
@@ -897,10 +1004,10 @@ internal class DiskActivityReader: Reader<Disks> {
             let writeBytes = statistics.object(forKey: "Bytes (Write)") as? Int64 ?? 0
 
             if d.activity.readBytes != 0 {
-                d.activity.read = readBytes - d.activity.readBytes
+                d.activity.read = max(0, readBytes - d.activity.readBytes)
             }
             if d.activity.writeBytes != 0 {
-                d.activity.write = writeBytes - d.activity.writeBytes
+                d.activity.write = max(0, writeBytes - d.activity.writeBytes)
             }
 
             d.activity.readBytes = readBytes
@@ -921,31 +1028,46 @@ internal class DiskActivityReader: Reader<Disks> {
                 d.root = path.pathComponents.count == 1
 
                 do {
-                    let resources = try path.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey])
+                    let resources = try path.resourceValues(forKeys: [
+                        .volumeTotalCapacityKey, .volumeAvailableCapacityKey, .volumeAvailableCapacityForImportantUsageKey
+                    ])
                     d.size = Int64(resources.volumeTotalCapacity ?? 1)
-                    d.free = Int64(resources.volumeAvailableCapacity ?? 0)
+                    if let important = resources.volumeAvailableCapacityForImportantUsage, important > 0 {
+                        d.free = important
+                    } else {
+                        d.free = Int64(resources.volumeAvailableCapacity ?? 0)
+                    }
                 } catch { return nil }
             }
         }
 
+        guard d.path != nil else { return nil }
+
         let partitionLevel = d.BSDName.filter { "0"..."9" ~= $0 }.count
-        if let parent = getDeviceIOParent(DADiskCopyIOMedia(disk), level: Int(partitionLevel)) {
-            d.parent = parent
+        let media = DADiskCopyIOMedia(disk)
+        if media != 0 {
+            if let parent = getDeviceIOParent(media, level: Int(partitionLevel)) {
+                d.parent = parent
+            }
+            IOObjectRelease(media)
         }
 
-        return d.path != nil ? d : nil
+        return d
     }
 
     private func getDeviceIOParent(_ obj: io_registry_entry_t, level: Int) -> io_registry_entry_t? {
-        var parent: io_registry_entry_t = 0
-        guard IORegistryEntryGetParentEntry(obj, kIOServicePlane, &parent) == KERN_SUCCESS else { return nil }
+        var current: io_registry_entry_t = 0
+        guard IORegistryEntryGetParentEntry(obj, kIOServicePlane, &current) == KERN_SUCCESS else { return nil }
 
-        for _ in 1...level where IORegistryEntryGetParentEntry(parent, kIOServicePlane, &parent) != KERN_SUCCESS {
-            IOObjectRelease(parent)
-            return nil
+        for _ in 0..<max(0, level) {
+            var next: io_registry_entry_t = 0
+            let result = IORegistryEntryGetParentEntry(current, kIOServicePlane, &next)
+            IOObjectRelease(current)
+            guard result == KERN_SUCCESS else { return nil }
+            current = next
         }
 
-        return parent
+        return current
     }
 
     private func getIOProperties(_ entry: io_registry_entry_t) -> NSDictionary? {
@@ -958,24 +1080,55 @@ internal class DiskActivityReader: Reader<Disks> {
 }
 
 // MARK: - Sensors Readers
+
 @MainActor
 internal class SensorsStatsReader {
     private var timer: Timer?
     private var startupTask: Task<Void, Never>?
     private var scheduledReadTask: Task<Void, Never>?
+    private var catalogTask: Task<Void, Never>?
     private var readInFlight = false
     private var isRunning = false
     private var lifecycleGeneration: UInt = 0
-    internal let callback: (Sensors_List?) -> Void
-    private var list: Sensors_List = Sensors_List()
-    private var initialized: Bool = false
-    private let pollInterval: TimeInterval = 3.0
+    private let onCatalog: ([any Sensor_p]) -> Void
+    private let onValues: (Sensors_List) -> Void
+    private var catalog: [Sensor] = []
+    private var catalogLoaded = false
+    private var requestedKeys: Set<String> = []
+    private var lastValues: [String: Double] = [:]
+    private var pollInterval: TimeInterval = StatsManager.defaultSensorInterval
 
-    init(callback: @escaping (Sensors_List?) -> Void) {
-        self.callback = callback
+    init(onCatalog: @escaping ([any Sensor_p]) -> Void, onValues: @escaping (Sensors_List) -> Void) {
+        self.onCatalog = onCatalog
+        self.onValues = onValues
     }
 
-    @MainActor
+    func setRequestedKeys(_ keys: Set<String>) {
+        guard keys != requestedKeys else { return }
+        requestedKeys = keys
+        lastValues = lastValues.filter { keys.contains($0.key) }
+        if isRunning {
+            scheduleRead(generation: lifecycleGeneration)
+        }
+    }
+
+    func setInterval(_ interval: TimeInterval) {
+        guard interval > 0, interval != pollInterval else { return }
+        pollInterval = interval
+        if timer != nil {
+            startTimer(generation: lifecycleGeneration)
+        }
+    }
+
+    private func startTimer(generation: UInt) {
+        timer?.invalidate()
+        timer = Timer.scheduledCoalescing(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleRead(generation: generation)
+            }
+        }
+    }
+
     public func start() {
         guard !isRunning else { return }
         isRunning = true
@@ -990,20 +1143,12 @@ internal class SensorsStatsReader {
                 }
             }
 
-            if !self.initialized {
-                await self.initializeSensors()
-                guard self.isCurrent(generation) else { return }
-                self.initialized = true
-            }
+            await self.loadCatalogIfNeeded()
+            guard self.isCurrent(generation) else { return }
             await self.read(generation: generation)
             guard self.isCurrent(generation) else { return }
 
-            let timer = Timer.scheduledCoalescing(withTimeInterval: self.pollInterval, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.scheduleRead(generation: generation)
-                }
-            }
-            self.timer = timer
+            self.startTimer(generation: generation)
         }
     }
 
@@ -1018,46 +1163,57 @@ internal class SensorsStatsReader {
         timer = nil
     }
 
-    @MainActor
     func readNow() async {
-        if !initialized {
-            await initializeSensors()
-            initialized = true
-        }
+        await loadCatalogIfNeeded()
         await read()
     }
 
-    private func initializeSensors() async {
-        guard let helper = BatteryManager.shared.getHelper() else { return }
+    func loadCatalogIfNeeded() async {
+        if catalogLoaded { return }
+        if let catalogTask {
+            await catalogTask.value
+            return
+        }
+        let task = Task { @MainActor [weak self] in
+            guard let helper = BatteryManager.shared.getHelper() else { return }
+            let keys = await helper.getAllSMCKeys()
+            guard !keys.isEmpty else { return }
+            let built = await Task.detached(priority: .utility) { Self.buildCatalog(from: keys) }.value
+            guard let self else { return }
+            self.catalog = built
+            self.catalogLoaded = true
+            self.onCatalog(built)
+        }
+        catalogTask = task
+        await task.value
+        catalogTask = nil
+    }
 
-        let availableKeys = Set(await helper.getAllSMCKeys())
-        var sensors: [any Sensor_p] = []
+    nonisolated private static func buildCatalog(from keys: [String]) -> [Sensor] {
+        let availableKeys = Set(keys)
+        var sensors: [Sensor] = []
+        var seen: Set<String> = []
 
-        SENSORS_LIST.forEach { def in
-            if availableKeys.contains(def.key) {
-                sensors.append(Sensor(key: def.key, name: def.name, value: 0, group: def.group, type: def.type))
+        for def in SENSORS_LIST where availableKeys.contains(def.key) && !seen.contains(def.key) {
+            seen.insert(def.key)
+            sensors.append(Sensor(key: def.key, name: def.name, value: 0, group: def.group, type: def.type))
+        }
+
+        for key in availableKeys where !seen.contains(key) {
+            let type: SensorType?
+            switch key.prefix(1) {
+            case "T": type = .temperature
+            case "V": type = .voltage
+            case "P": type = .power
+            case "I": type = .current
+            default: type = nil
+            }
+            if let type {
+                sensors.append(Sensor(key: key, name: key, value: 0, group: .unknown, type: type))
             }
         }
 
-        availableKeys.forEach { key in
-            if !sensors.contains(where: { $0.key == key }) {
-                if SENSORS_LIST.first(where: { $0.key == key }) == nil {
-                    var type: SensorType?
-                    switch key.prefix(1) {
-                    case "T": type = .temperature
-                    case "V": type = .voltage
-                    case "P": type = .power
-                    case "I": type = .current
-                    default: break
-                    }
-                    if let type = type {
-                        sensors.append(Sensor(key: key, name: key, value: 0, group: .unknown, type: type))
-                    }
-                }
-            }
-        }
-
-        self.list.sensors = sensors.sorted(by: { $0.name < $1.name })
+        return sensors.sorted { $0.name == $1.name ? $0.key < $1.key : $0.name < $1.name }
     }
 
     private func scheduleRead(generation: UInt) {
@@ -1080,41 +1236,56 @@ internal class SensorsStatsReader {
     private func read(generation: UInt? = nil) async {
         if let generation, !isCurrent(generation) { return }
         guard !readInFlight else { return }
-        guard initialized, let helper = BatteryManager.shared.getHelper() else { return }
+        if !catalogLoaded { await loadCatalogIfNeeded() }
+        guard catalogLoaded, let helper = BatteryManager.shared.getHelper() else { return }
+
+        let wanted = catalog.filter { requestedKeys.contains($0.key) }
+        guard !wanted.isEmpty else {
+            onValues(Sensors_List())
+            return
+        }
+
         readInFlight = true
         defer { readInFlight = false }
 
-        let sensors = self.list.sensors
-        let count = sensors.count
-        guard count > 0 else { return }
-
-        let values = await helper.getSensorValues(keys: sensors.map(\.key))
+        let values = await helper.getSensorValues(keys: wanted.map(\.key))
         if let generation, !isCurrent(generation) { return }
-        var updatedSensors = self.list.sensors
-        for (index, sensor) in sensors.enumerated() {
-            guard let number = values[sensor.key] as? NSNumber else { continue }
-            let newValue = number.doubleValue
-            if newValue >= 0 {
-                if updatedSensors[index].type == .temperature && newValue < 10.0 {
-                    continue
-                }
-                updatedSensors[index].value = newValue
+
+        let list = Sensors_List()
+        list.sensors = wanted.compactMap { sensor -> (any Sensor_p)? in
+            if let number = values[sensor.key] as? NSNumber {
+                let value = number.doubleValue
+                let plausible = value.isFinite && value >= 0 && !(sensor.type == .temperature && value < 10.0)
+                if plausible { lastValues[sensor.key] = value }
             }
+            guard let value = lastValues[sensor.key] else { return nil }
+            var updated = sensor
+            updated.value = value
+            return updated
         }
-        self.list.sensors = updatedSensors
-        callback(list)
+        onValues(list)
     }
 }
 
 // MARK: - Battery Reader
 internal class BatteryStatsReader: Reader<Battery_Usage> {
-    private var service: io_connect_t = 0
+    private var service: io_service_t = 0
 
     override func setup() {
+        lookUpServiceIfNeeded()
+    }
+
+    private func lookUpServiceIfNeeded() {
+        guard service == 0 else { return }
         service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
     }
 
+    deinit {
+        if service != 0 { IOObjectRelease(service) }
+    }
+
     override func read() {
+        lookUpServiceIfNeeded()
         let psInfo = IOPSCopyPowerSourcesInfo().takeRetainedValue()
         let psList = IOPSCopyPowerSourcesList(psInfo).takeRetainedValue() as [CFTypeRef]
         if let ps = psList.first,
@@ -1158,6 +1329,7 @@ internal class BatteryStatsReader: Reader<Battery_Usage> {
     }
 
     private func getIntValue(_ identifier: CFString) -> Int? {
+        guard service != 0 else { return nil }
         if let value = IORegistryEntryCreateCFProperty(self.service, identifier, kCFAllocatorDefault, 0) {
             return value.takeRetainedValue() as? Int
         }
@@ -1165,6 +1337,7 @@ internal class BatteryStatsReader: Reader<Battery_Usage> {
     }
 
     private func getDoubleValue(_ identifier: CFString) -> Double? {
+        guard service != 0 else { return nil }
         if let value = IORegistryEntryCreateCFProperty(self.service, identifier, kCFAllocatorDefault, 0) {
             return value.takeRetainedValue() as? Double
         }

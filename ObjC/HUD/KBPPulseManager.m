@@ -1,6 +1,6 @@
 //
 //  KBPPulseManager.m
-//  KBPulse
+//  Sapphire
 //
 //  Created by EthanRDoesMC on 10/20/21.
 //
@@ -11,7 +11,6 @@
 @interface KBPPulseManager()
 +(void)loadPrivateFrameworks;
 +(void)modifyBacklightSettings;
-+(void)showBezel;
 @end
 
 @implementation KBPPulseManager
@@ -41,7 +40,7 @@
         id kbcInstance = [[kbcClass alloc] init];
         [KBPPulseManager.sharedInstance setBrightnessClient:kbcInstance];
     } else {
-        printf("KBPulse ERROR: KeyboardBrightnessClient class not found!\n");
+        printf("Keyboard backlight ERROR: KeyboardBrightnessClient class not found!\n");
     }
     
     // Load OSD framework
@@ -58,26 +57,13 @@
     }
 }
 
-+(void)showBezel {
-    [[NSClassFromString(@"OSDManager") sharedManager] showImage:11 onDisplayID:1 priority:1 msecUntilFade:1000 withText:@"KBPulse"];
-}
-
 +(void)configure {
     [self loadPrivateFrameworks];
     [self modifyBacklightSettings];
-    // [self showBezel]; // Disabled to prevent showing an unwanted "KBPulse" HUD.
 }
 
 +(KeyboardBrightnessClient *)brightnessClient {
     return [KBPPulseManager.sharedInstance brightnessClient];
-}
-
-+(NSString *)configurationFile {
-    NSString * configuration = @"Yawn";
-    if ([NSProcessInfo.processInfo arguments][1]) {
-        configuration = [NSString stringWithFormat:@"/KBPulse/%@.json", NSProcessInfo.processInfo.arguments[1] ];
-    }
-    return configuration;
 }
 
 - (id)init {

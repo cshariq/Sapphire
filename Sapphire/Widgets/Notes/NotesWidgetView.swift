@@ -39,7 +39,7 @@ struct NotesWidgetView: View {
 
 struct NotesPlayerView: View {
     @Binding var navigationStack: [NotchWidgetMode]
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @ObservedObject private var notesManager = NotesManager.shared
     @StateObject private var editorGate = NoteEditorGate()
     @State private var searchText = ""
@@ -227,6 +227,7 @@ private struct InNotchNoteEditor: View {
     @State private var draft: QuickNote
     @State private var attributedBody: NSAttributedString
     @StateObject private var textViewBox = RichTextViewBox()
+    @State private var autosaveTask: Task<Void, Never>?
 
     let onBack: () -> Void
     let onSave: (QuickNote) -> Void
@@ -292,12 +293,25 @@ private struct InNotchNoteEditor: View {
         }
         .frame(width: 520, height: 310)
         .clipped()
+        .onChange(of: draft.title) { _, _ in scheduleAutosave() }
+        .onChange(of: attributedBody) { _, _ in scheduleAutosave() }
         .onDisappear {
             persistDraft()
         }
     }
 
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+        autosaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            persistDraft()
+        }
+    }
+
     private func persistDraft() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
         draft.applyAttributedBody(attributedBody)
         onSave(draft)
     }

@@ -392,6 +392,7 @@ class HelperManager: ObservableObject {
     }
 
     func installIfNeeded() {
+        guard !OnboardingLaunchPolicy.shouldShowOnboarding else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let currentStatus = await self.refreshStatus()
@@ -399,18 +400,18 @@ class HelperManager: ObservableObject {
 
             switch currentStatus {
             case .notFound:
-                _ = await self.registerHelper(userInitiated: true, forceReinstall: true)
+                _ = await self.registerHelper(userInitiated: false, forceReinstall: true, presentsUI: false)
             case .notRegistered:
-                _ = await self.registerHelper(userInitiated: false, forceReinstall: false)
+                _ = await self.registerHelper(userInitiated: false, forceReinstall: false, presentsUI: false)
             case .enabled:
                 if await self.helperIsRunningAndCurrent() {
                     self.applyPingResult(true)
                     return
                 }
                 helperLogger.info("[HelperManager] Helper enabled but down or stale; rebuilding registration")
-                _ = await self.registerHelper(userInitiated: false, forceReinstall: true)
+                _ = await self.registerHelper(userInitiated: false, forceReinstall: true, presentsUI: false)
             case .requiresApproval:
-                _ = await self.registerHelper(userInitiated: true, forceReinstall: false)
+                self.refreshIssue()
             @unknown default:
                 break
             }
@@ -485,7 +486,7 @@ class HelperManager: ObservableObject {
     }
 
     @discardableResult
-    private func registerHelper(userInitiated: Bool, forceReinstall: Bool) async -> Bool {
+    private func registerHelper(userInitiated: Bool, forceReinstall: Bool, presentsUI: Bool = true) async -> Bool {
         if isRegistering { return false }
         if let last = lastRegisterAttempt, Date().timeIntervalSince(last) < registerCooldown, !userInitiated, !forceReinstall {
             return false
@@ -496,7 +497,7 @@ class HelperManager: ObservableObject {
         defer { isRegistering = false }
 
         guard bundledPlistIsReadable() else {
-            presentIssue(.notFound, force: userInitiated)
+            if presentsUI { presentIssue(.notFound, force: userInitiated) }
             return false
         }
 
@@ -512,8 +513,10 @@ class HelperManager: ObservableObject {
         refreshIssue()
 
         if status == .requiresApproval {
-            SMAppService.openSystemSettingsLoginItems()
-            presentIssue(.needsApproval, force: true)
+            if presentsUI {
+                SMAppService.openSystemSettingsLoginItems()
+                presentIssue(.needsApproval, force: true)
+            }
             return false
         }
 
@@ -521,7 +524,7 @@ class HelperManager: ObservableObject {
             if await pingUntilRunning() {
                 return true
             }
-            presentIssue(.notFound, force: userInitiated)
+            if presentsUI { presentIssue(.notFound, force: userInitiated) }
             return false
         }
 
@@ -537,7 +540,7 @@ class HelperManager: ObservableObject {
         }
 
         refreshIssue()
-        if let issue = lastIssue {
+        if presentsUI, let issue = lastIssue {
             presentIssue(issue, force: userInitiated || issue == .notFound)
         }
         return isRunning

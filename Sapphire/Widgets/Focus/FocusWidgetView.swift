@@ -5,11 +5,12 @@
 //  Created by Shariq Charolia on 2026-08-25
 //
 
+import AppKit
 import SwiftUI
 
 struct FocusWidgetView: View {
     @EnvironmentObject private var focusManager: FocusSessionManager
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @Environment(\.navigationStack) private var navigationStack
 
     private var accent: Color { focusManager.isFocusBlock ? .green : .orange }
@@ -137,26 +138,26 @@ struct FocusWidgetView: View {
 
 @MainActor
 private struct FocusWidgetTimerRing: View {
-    let focusManager: FocusSessionManager
+    @ObservedObject var focusManager: FocusSessionManager
     let accent: Color
     let accentColors: [Color]
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            ZStack {
-                ProgressRingView(
-                    progress: focusManager.progress(at: context.date),
-                    lineWidth: 4,
-                    active: AngularGradient(colors: accentColors, center: .center)
-                )
-                Image(systemName: focusManager.isFocusBlock ? "figure.mind.and.body" : "cup.and.saucer.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(accent)
-            }
-            .animation(.default, value: focusManager.remaining(at: context.date))
+        ZStack {
+            LayerGradientProgressRing(
+                motion: .focusBlock(focusManager),
+                lineWidth: 4,
+                colors: accentColors,
+                shadowColor: accent.opacity(0.45),
+                shadowRadius: 6,
+                shadowIncludesTrack: true
+            )
+            Image(systemName: focusManager.isFocusBlock ? "figure.mind.and.body" : "cup.and.saucer.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(accent)
+                .shadow(color: accent.opacity(0.45), radius: 6)
         }
         .frame(width: 44, height: 44)
-        .shadow(color: accent.opacity(0.45), radius: 6)
     }
 }
 
@@ -164,14 +165,19 @@ private struct FocusWidgetTimerRing: View {
 private struct FocusWidgetCountdownText: View {
     let focusManager: FocusSessionManager
 
+    private static let font: NSFont = {
+        let base = NSFont.systemFont(ofSize: 30, weight: .bold)
+        guard let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return NSFont(descriptor: rounded, size: 30) ?? base
+    }()
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let remaining = focusManager.remaining(at: context.date)
-            let label = FocusSessionManager.format(remaining)
-            Text(label)
-                .id(label)
-                .contentTransition(.numericText(countsDown: true))
-                .animation(.default, value: remaining)
+            LayerNumericText(
+                text: FocusSessionManager.format(focusManager.remaining(at: context.date)),
+                font: Self.font,
+                color: .white
+            )
         }
     }
 }

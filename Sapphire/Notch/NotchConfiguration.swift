@@ -13,7 +13,6 @@ struct NotchConfiguration {
     private static let designReferenceResolution = CGSize(width: 1728, height: 1117)
 
     private static let fallbackClosedNotchSize = (width: CGFloat(185), height: CGFloat(32))
-    private static let externalMonitorNotchWidth: CGFloat = 150
 
     static func hasHardwareNotch(on screen: NSScreen?) -> Bool {
         guard let screen else { return false }
@@ -38,22 +37,6 @@ struct NotchConfiguration {
     }
 
     // MARK: - Screen Size Adjustments
-    static func screenWidthAdjustment(for screen: NSScreen?) -> CGFloat {
-        let currentWidth = (screen ?? NSScreen.main)?.frame.size.width ?? designReferenceResolution.width
-        return currentWidth / designReferenceResolution.width
-    }
-
-    static func screenHeightAdjustment(for screen: NSScreen?) -> CGFloat {
-        let currentHeight = (screen ?? NSScreen.main)?.frame.size.height ?? designReferenceResolution.height
-        return currentHeight / designReferenceResolution.height
-    }
-
-    static func cornerRadiusAdjustment(for screen: NSScreen?) -> CGFloat {
-        let widthScale = screenWidthAdjustment(for: screen)
-        let heightScale = screenHeightAdjustment(for: screen)
-        return min(max(min(widthScale, heightScale), 0.85), 1.10)
-    }
-
     // MARK: - Measured Notch Geometry
     private static var referenceScreen: NSScreen? {
         CursorPosition.visibleNotchWindows.first?.screen
@@ -64,33 +47,8 @@ struct NotchConfiguration {
         guard let screen = screen ?? referenceScreen else {
             return fallbackClosedNotchSize
         }
-
-        var width = fallbackClosedNotchSize.width
-        var height = fallbackClosedNotchSize.height
-
-        if hasHardwareNotch(on: screen),
-           let leftArea = screen.auxiliaryTopLeftArea,
-           let rightArea = screen.auxiliaryTopRightArea {
-            let notchMinX = leftArea.maxX
-            let notchMaxX = rightArea.minX
-            let measuredWidth = notchMaxX - notchMinX
-            if measuredWidth.isFinite, measuredWidth > 0 {
-                width = measuredWidth + 4
-            }
-        } else if CGDisplayIsBuiltin(screen.displayID) != 0 {
-            width = fallbackClosedNotchSize.width * screenWidthAdjustment(for: screen)
-        } else {
-            width = externalMonitorNotchWidth
-        }
-
-        let menuBarHeight = getMenuBarHeight(for: screen)
-        if menuBarHeight > 0 {
-            height = max(0, menuBarHeight - 0.2)
-        } else if screen.safeAreaInsets.top > 0 {
-            height = screen.safeAreaInsets.top
-        }
-
-        return (width: width, height: height)
+        let size = NotchDisplayMetrics.current(for: screen).closedSize
+        return (width: size.width, height: size.height)
     }
 
     // MARK: - Basic Size Configuration
@@ -113,28 +71,28 @@ struct NotchConfiguration {
     static var collapseAnimationDelay: TimeInterval = 0
 
     // MARK: - Animation Configurations (Represents the 'Snappy' default)
-    static var expandAnimation = Animation.spring(response: 0.4, dampingFraction: 0.55, blendDuration: 0)
-    static var widgetSwitchAnimation = Animation.spring(response: 0.4, dampingFraction: 0.95, blendDuration: 0)
-    static var swipeOpenAnimation = Animation.spring(response: 0.35, dampingFraction: 0.45, blendDuration: 0)
-    static var collapseAnimation = Animation.spring(response: 0.3, dampingFraction: 0.98, blendDuration: 0)
-    static var hoverAnimation = Animation.spring(response: 0.25, dampingFraction: 0.55, blendDuration: 0)
-    static var contentTransitionAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
-    static var activityToActivityAnimation = Animation.spring(response: 0.4, dampingFraction: 0.98, blendDuration: 0)
-    static var bottomContentAnimation = Animation.spring(response: 0.42, dampingFraction: 0.999, blendDuration: 0)
-    static var bottomContentTransitionAnimation = Animation.easeInOut(duration: 0.3)
-    static var activityOpacityAnimation = Animation.easeInOut(duration: 0.2)
+    static var expandAnimation = Animation.notchMorphSpring(response: 0.4, dampingFraction: 0.55)
+    static var widgetSwitchAnimation = Animation.notchMorphSpring(response: 0.4, dampingFraction: 0.95)
+    static var swipeOpenAnimation = Animation.notchMorphSpring(response: 0.35, dampingFraction: 0.45)
+    static var collapseAnimation = Animation.notchMorphSpring(response: 0.3, dampingFraction: 0.98)
+    static var hoverAnimation = Animation.notchMorphSpring(response: 0.25, dampingFraction: 0.55)
+    static var contentTransitionAnimation = Animation.notchMorphSpring(response: 0.45, dampingFraction: 1.0)
+    static var activityToActivityAnimation = Animation.notchMorphSpring(response: 0.4, dampingFraction: 0.98)
+    static var bottomContentAnimation = Animation.notchMorphSpring(response: 0.42, dampingFraction: 0.999)
+    static var bottomContentTransitionAnimation = Animation.notchMorphTiming(.easeInOut, duration: 0.3)
+    static var activityOpacityAnimation = Animation.notchMorphTiming(.easeInOut, duration: 0.2)
 
     // MARK: - Blur Animation Configurations
-    static var blurAnimation = Animation.easeIn(duration: 0.1)
-    static var blurRemovalAnimation = Animation.easeOut(duration: 0.22)
+    static var blurAnimation = Animation.notchMorphTiming(.easeIn, duration: 0.1)
+    static var blurRemovalAnimation = Animation.notchMorphTiming(.easeOut, duration: 0.22)
     static var widgetBlurRadiusMax: CGFloat = 30
-    static var focusPullAnimation = Animation.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.8)
-    static var widgetBlurAnimation = Animation.easeIn(duration: 0.08)
+    static var focusPullAnimation = Animation.notchMorphTiming(.bezier(x1: 0.2, y1: 0.8, x2: 0.2, y2: 1), duration: 0.8)
+    static var widgetBlurAnimation = Animation.notchMorphTiming(.easeIn, duration: 0.08)
     static var widgetBlurRemovalAnimation = focusPullAnimation
-    static var contentFadeAnimation = Animation.easeIn(duration: 0.3)
+    static var contentFadeAnimation = Animation.notchMorphTiming(.easeIn, duration: 0.3)
     static var activityBlurRadiusMax: CGFloat = 40
-    static var activityBlurAnimation = Animation.easeIn(duration: 0.1)
-    static var activityBlurRemovalAnimation = Animation.timingCurve(0.33, 0.1, 0.67, 1, duration: 0.4)
+    static var activityBlurAnimation = Animation.notchMorphTiming(.easeIn, duration: 0.1)
+    static var activityBlurRemovalAnimation = Animation.notchMorphTiming(.bezier(x1: 0.33, y1: 0.1, x2: 0.67, y2: 1), duration: 0.4)
 
     static var expandedShadowColor = Color.black.opacity(0.4)
     static var expandedShadowRadius: CGFloat = 18
@@ -204,13 +162,65 @@ struct NotchConfiguration {
     static var onboardingWindowHeight: CGFloat = 820
 
     // MARK: - Menu Type Detection
-    static func isLargeVerticalMenu(_ mode: NotchWidgetMode) -> Bool {
-        switch mode {
-        case .musicPlayer, .sportsPlayer, .financePlayer, .notesPlayer, .clipboardPlayer, .nearDrop, .fileShelf, .weatherPlayer, .calendarPlayer, .geminiApiKeysMissing, .agentS, .blipHub, .circleToSearch, .multiAudio, .multiAudioDeviceAdjust, .multiAudioEQ, .multiAudioAppEQ, .multiAudioApp8D, .multiAudioAppSurround:
-            return true
-        default:
-            return false
+}
+
+// MARK: - Notch Screens
+
+enum NotchScreens {
+    static func screens(for settings: Settings, among screens: [NSScreen] = NSScreen.screens) -> [NSScreen] {
+        let ruleScreens = defaultScreens(for: settings.notchDisplayTarget, among: screens)
+        return screens.filter { screen in
+            DisplaySettingsKey.value(in: settings.perDisplayShowNotch, for: screen.displayIdentifier)
+                ?? ruleScreens.contains(screen)
         }
+    }
+
+    static func showsNotch(on screen: NSScreen, settings: Settings) -> Bool {
+        screens(for: settings).contains(screen)
+    }
+
+    static func defaultScreens(for target: NotchDisplayTarget, among screens: [NSScreen]) -> [NSScreen] {
+        let main = screens.filter { $0.displayID == CGMainDisplayID() }
+        switch target {
+        case .macbookDisplay:
+            if let builtIn = screens.first(where: { CGDisplayIsBuiltin($0.displayID) != 0 }) {
+                return [builtIn]
+            }
+            return main
+        case .mainDisplay:
+            return main
+        case .allDisplays:
+            return screens
+        }
+    }
+}
+
+// MARK: - Environment
+
+private struct NotchBandHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 32
+}
+
+extension EnvironmentValues {
+    var notchBandHeight: CGFloat {
+        get { self[NotchBandHeightKey.self] }
+        set { self[NotchBandHeightKey.self] = newValue }
+    }
+}
+
+// MARK: - Expanded Sizing
+
+enum NotchSizing {
+    static func expandedContentSize(
+        contentSize: CGSize,
+        minimumSize: CGSize,
+        scale: CGFloat = 1
+    ) -> CGSize {
+        let safeScale = max(0, scale)
+        return CGSize(
+            width: max(contentSize.width * safeScale, minimumSize.width),
+            height: max(contentSize.height * safeScale, minimumSize.height)
+        )
     }
 }
 
@@ -224,7 +234,12 @@ struct ResolvedNotchConfiguration: Equatable {
     let initialCornerRadius: CGFloat
     let topBuffer: CGFloat
     let isFloatingIsland: Bool
+    let isNotchless: Bool
+    let floatingIslandCornerRadius: CGFloat
+    let widgetMenuTopInset: CGFloat
     let topInset: CGFloat
+    let displayScale: CGFloat
+    let cameraWidth: CGFloat
 
     // MARK: - Hover State
     let scaleFactor: CGFloat
@@ -254,6 +269,8 @@ struct ResolvedNotchConfiguration: Equatable {
     let activityToActivityAnimation: Animation
     let bottomContentAnimation: Animation
 
+    let couplesContentToMorph: Bool
+
     let bottomContentTransitionAnimation: Animation
     let activityOpacityAnimation: Animation
 
@@ -266,10 +283,13 @@ struct ResolvedNotchConfiguration: Equatable {
     let activityBlurAnimation = NotchConfiguration.activityBlurAnimation
 
     // MARK: - Shadow
-    let expandedShadowColor = NotchConfiguration.expandedShadowColor
+    let expandedShadowColor: Color
     let expandedShadowRadius: CGFloat
     let expandedShadowOffsetY: CGFloat
     var expandedShadowOffset: CGPoint { CGPoint(x: 0, y: expandedShadowOffsetY) }
+    let restingShadowOpacity: Double
+    let restingShadowRadius: CGFloat
+    let restingShadowOffsetY: CGFloat
 
     // MARK: - Content Padding and Layout
     let contentTopPadding: CGFloat
@@ -294,65 +314,108 @@ struct ResolvedNotchConfiguration: Equatable {
     let activityDefaultHorizontalPadding: CGFloat
     let activityWithContentHorizontalPadding: CGFloat
     let activityContentBottomPadding: CGFloat
+    let activityCenterGap: CGFloat
+    let barMinimumSpacerWidth: CGFloat
     let contentUpdateDelay = NotchConfiguration.contentUpdateDelay
     let activityAnimationOutDelay = NotchConfiguration.activityAnimationOutDelay
     let autoContentRenderDelay = NotchConfiguration.autoContentRenderDelay
     let activityBlurUpdateDelay = NotchConfiguration.activityBlurUpdateDelay
     let activitySizeChangeDelay = NotchConfiguration.activitySizeChangeDelay
 
+    static let floatingIslandMinimumHeight: CGFloat = 30
+    static let notchlessClickExpandedCornerRadius: CGFloat = 26
+
+    static func islandCornerInset(radius: CGFloat, depth: CGFloat) -> CGFloat {
+        guard depth < radius else { return 0 }
+        let rise = radius - max(0, depth)
+        return radius - (radius * radius - rise * rise).squareRoot()
+    }
+
+    static func islandRowInset(style: FloatingIslandStyle, rowTop: CGFloat) -> CGFloat {
+        max(style.openPadding, islandCornerInset(radius: style.openCornerRadius, depth: rowTop) + 4)
+    }
+
     init(from settings: Settings, screen: NSScreen? = nil) {
         let targetScreen = screen ?? CursorPosition.targetNotchScreen() ?? NSScreen.main
-        let screenWidthAdj = NotchConfiguration.screenWidthAdjustment(for: targetScreen)
-        let screenHeightAdj = NotchConfiguration.screenHeightAdjustment(for: targetScreen)
-        self.isFloatingIsland = settings.floatingIslandOnNotchlessDisplays
-            && !NotchConfiguration.hasHardwareNotch(on: targetScreen)
-        self.topInset = isFloatingIsland ? max(0, settings.floatingIslandTopOffset) : 0
+        let displayID = targetScreen?.displayIdentifier
+        let metrics = targetScreen.map { NotchDisplayMetrics.current(for: $0) } ?? .fallback
+        self.displayScale = metrics.scale
+        self.cameraWidth = metrics.cameraWidth ?? 0
+        self.isNotchless = !metrics.hasHardwareNotch
+        self.isFloatingIsland = settings.resolvedFloatingIsland(forDisplayID: displayID)
+            && !metrics.hasHardwareNotch
 
-        self.activityContentHorizontalPadding = 15 * screenHeightAdj
-        self.activityDefaultHorizontalPadding = 13 * screenHeightAdj
-        self.activityWithContentHorizontalPadding = 15 * screenHeightAdj
+        self.activityContentHorizontalPadding = 15
+        let islandStyle = settings.resolvedFloatingIslandStyle(forDisplayID: displayID)
+        self.floatingIslandCornerRadius = islandStyle.openCornerRadius
+        self.widgetMenuTopInset = isFloatingIsland ? islandStyle.openTopPadding : 0
+        self.activityDefaultHorizontalPadding = isFloatingIsland ? islandStyle.sidePadding : 13
+        self.activityWithContentHorizontalPadding = isFloatingIsland ? islandStyle.sidePadding + 2 : 15
 
-        var baseWidth: CGFloat
-        var baseHeight: CGFloat
-
-        let measured = NotchConfiguration.measuredNotchSize(for: targetScreen)
-        baseWidth = measured.width
-        baseHeight = measured.height
-            self.initialCornerRadius = NotchConfiguration.initialCornerRadius
             self.topBuffer = NotchConfiguration.topBuffer
             self.scaleFactor = NotchConfiguration.scaleFactor
-            self.hoverExpandedCornerRadius = 18 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)
-            self.autoExpandedCornerRadius = 13 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)
-            self.autoExpandedTallHeight = 80 * screenHeightAdj
+            self.hoverExpandedCornerRadius = 18
+            self.autoExpandedCornerRadius = 13
+            self.autoExpandedTallHeight = 80
             self.autoExpandedContentVerticalPadding = NotchConfiguration.autoExpandedContentVerticalPadding
-            self.clickExpandedCornerRadius = NotchConfiguration.clickExpandedCornerRadius
-            self.liveActivityBottomCornerRadius = 18 * NotchConfiguration.cornerRadiusAdjustment(for: targetScreen)
+            self.clickExpandedCornerRadius = isNotchless
+                ? Self.notchlessClickExpandedCornerRadius
+                : NotchConfiguration.clickExpandedCornerRadius
+            self.liveActivityBottomCornerRadius = 18
             self.collapseAnimationDelay = NotchConfiguration.collapseAnimationDelay
             self.dragActivationCollapseDelay = NotchConfiguration.dragActivationCollapseDelay
             self.widgetBlurRadiusMax = NotchConfiguration.widgetBlurRadiusMax
             self.activityBlurRadiusMax = NotchConfiguration.activityBlurRadiusMax
-            self.expandedShadowRadius = NotchConfiguration.expandedShadowRadius
-            self.expandedShadowOffsetY = NotchConfiguration.expandedShadowOffset.y
-            self.contentTopPadding = 10 * screenHeightAdj
-            self.contentBottomPadding = 10 * screenHeightAdj
-            self.contentHorizontalPadding = 35 * screenHeightAdj
-            self.activityContentBottomPadding = 10 * screenHeightAdj
-            self.lyricsFontSize = 10 * screenHeightAdj
-            self.lyricsMaxWidth = 200 * screenWidthAdj
-            self.navHeaderLeadingPadding = 40 * screenWidthAdj
-            self.navHeaderTopPadding = 8 * screenHeightAdj
-            self.navHeaderTitleFontSize = 18 * screenHeightAdj
-            self.navHeaderTitleTopPadding = 10 * screenHeightAdj
-            self.defaultModeIconsHorizontalPadding = 40 * screenWidthAdj
+            self.expandedShadowColor = isNotchless ? Color.black.opacity(0.5) : NotchConfiguration.expandedShadowColor
+            self.expandedShadowRadius = isNotchless ? 28 : NotchConfiguration.expandedShadowRadius
+            self.expandedShadowOffsetY = isNotchless ? 14 : NotchConfiguration.expandedShadowOffset.y
+            self.restingShadowOpacity = isFloatingIsland ? 0.32 : 0
+            self.restingShadowRadius = 7
+            self.restingShadowOffsetY = 3
+            self.contentTopPadding = isFloatingIsland ? islandStyle.openPadding : 10
+            self.contentBottomPadding = isFloatingIsland ? islandStyle.openPadding : 10
+            self.contentHorizontalPadding = isFloatingIsland
+                ? max(0, islandStyle.openPadding - CustomNotchShape.horizontalContentPadding)
+                : 35
+            self.activityContentBottomPadding = 10
+            self.lyricsFontSize = 10
+            self.lyricsMaxWidth = 200
+            self.navHeaderLeadingPadding = isFloatingIsland
+                ? max(0, Self.islandRowInset(style: islandStyle, rowTop: 8) - 10)
+                : 40
+            self.navHeaderTopPadding = 8
+            self.navHeaderTitleFontSize = 18
+            self.navHeaderTitleTopPadding = 10
+            self.defaultModeIconsHorizontalPadding = isFloatingIsland
+                ? Self.islandRowInset(style: islandStyle, rowTop: islandStyle.openTopPadding + 5)
+                : 40
 
-        let displayID = targetScreen?.displayIdentifier
-        let resolvedWidth = settings.resolvedNotchWidth(forDisplayID: displayID)
-        let resolvedHeight = settings.resolvedNotchHeight(forDisplayID: displayID)
-        self.universalWidth = resolvedWidth > 0 ? resolvedWidth * screenWidthAdj : baseWidth
-        self.universalHeight = resolvedHeight > 0 ? resolvedHeight * screenHeightAdj : baseHeight
+        let closedSize = NotchDisplayMetrics.resolvedClosedSize(
+            measured: metrics,
+            customWidth: settings.resolvedNotchWidth(forDisplayID: displayID),
+            customHeight: settings.resolvedNotchHeight(forDisplayID: displayID),
+            isFloatingIsland: isFloatingIsland,
+            floatingIslandMinimumHeight: Self.floatingIslandMinimumHeight
+        )
+        self.universalWidth = closedSize.width
+        self.universalHeight = closedSize.height
+        self.initialCornerRadius = isFloatingIsland ? closedSize.height / 2 : NotchConfiguration.initialCornerRadius
+        self.activityCenterGap = isFloatingIsland ? islandStyle.centerGap : max(universalWidth, cameraWidth)
+        self.barMinimumSpacerWidth = (!isFloatingIsland && metrics.hasHardwareNotch)
+            ? max(universalWidth, cameraWidth)
+            : 0
+        self.topInset = isFloatingIsland
+            ? NotchDisplayMetrics.floatingIslandTopInset(
+                userOffset: settings.resolvedFloatingIslandTopOffset(forDisplayID: displayID),
+                islandHeight: closedSize.height,
+                menuBarHeight: metrics.menuBarHeight,
+                scale: metrics.scale
+            )
+            : 0
 
         let profile = settings.animationProfile
         let customAnim = settings.customAnimationConfiguration
+        self.couplesContentToMorph = profile == .fluid
 
         switch profile {
         case .snappy:
@@ -365,35 +428,49 @@ struct ResolvedNotchConfiguration: Equatable {
             self.activityToActivityAnimation = NotchConfiguration.activityToActivityAnimation
             self.bottomContentAnimation = NotchConfiguration.bottomContentAnimation
 
+        case .fluid:
+            self.expandAnimation = .notchMorphSpring(response: 0.42, dampingFraction: 0.62)
+            self.widgetSwitchAnimation = .notchMorphSpring(response: 0.44, dampingFraction: 0.86)
+            self.swipeOpenAnimation = .notchMorphSpring(response: 0.42, dampingFraction: 0.62)
+            self.collapseAnimation = .notchMorphSpring(response: 0.4, dampingFraction: 1.0)
+            self.hoverAnimation = isFloatingIsland
+                ? .notchMorphSpring(response: 0.3, dampingFraction: 0.56)
+                : .notchMorphSpring(response: 0.32, dampingFraction: 0.62)
+            self.contentTransitionAnimation = .notchMorphSpring(response: 0.44, dampingFraction: 0.9)
+            self.activityToActivityAnimation = isFloatingIsland
+                ? .notchMorphSpring(response: 0.46, dampingFraction: 0.7)
+                : .notchMorphSpring(response: 0.44, dampingFraction: 0.88)
+            self.bottomContentAnimation = .notchMorphSpring(response: 0.46, dampingFraction: 0.92)
+
         case .bouncy:
-            self.expandAnimation = .spring(response: 0.4, dampingFraction: 0.65)
-            self.widgetSwitchAnimation = .spring(response: 1.0, dampingFraction: 0.85)
-            self.swipeOpenAnimation = .spring(response: 0.35, dampingFraction: 0.45)
-            self.collapseAnimation = .spring(response: 0.3, dampingFraction: 0.98)
-            self.hoverAnimation = .spring(response: 0.25, dampingFraction: 0.45)
-            self.contentTransitionAnimation = .spring(response: 0.55, dampingFraction: 0.85)
-            self.activityToActivityAnimation = .spring(response: 0.4, dampingFraction: 0.98)
-            self.bottomContentAnimation = .spring(response: 0.42, dampingFraction: 0.999)
+            self.expandAnimation = .notchMorphSpring(response: 0.4, dampingFraction: 0.65)
+            self.widgetSwitchAnimation = .notchMorphSpring(response: 1.0, dampingFraction: 0.85)
+            self.swipeOpenAnimation = .notchMorphSpring(response: 0.35, dampingFraction: 0.45)
+            self.collapseAnimation = .notchMorphSpring(response: 0.3, dampingFraction: 0.98)
+            self.hoverAnimation = .notchMorphSpring(response: 0.25, dampingFraction: 0.45)
+            self.contentTransitionAnimation = .notchMorphSpring(response: 0.55, dampingFraction: 0.85)
+            self.activityToActivityAnimation = .notchMorphSpring(response: 0.4, dampingFraction: 0.98)
+            self.bottomContentAnimation = .notchMorphSpring(response: 0.42, dampingFraction: 0.999)
 
         case .calm:
-            self.expandAnimation = .spring(response: 0.7, dampingFraction: 0.9)
-            self.widgetSwitchAnimation = .spring(response: 0.7, dampingFraction: 0.9)
-            self.swipeOpenAnimation = .spring(response: 0.7, dampingFraction: 0.9)
-            self.collapseAnimation = .spring(response: 0.5, dampingFraction: 0.95)
-            self.hoverAnimation = .spring(response: 0.5, dampingFraction: 1.0)
-            self.contentTransitionAnimation = .spring(response: 0.75, dampingFraction: 0.9)
-            self.activityToActivityAnimation = .spring(response: 0.6, dampingFraction: 0.98)
-            self.bottomContentAnimation = .spring(response: 0.6, dampingFraction: 0.98)
+            self.expandAnimation = .notchMorphSpring(response: 0.7, dampingFraction: 0.9)
+            self.widgetSwitchAnimation = .notchMorphSpring(response: 0.7, dampingFraction: 0.9)
+            self.swipeOpenAnimation = .notchMorphSpring(response: 0.7, dampingFraction: 0.9)
+            self.collapseAnimation = .notchMorphSpring(response: 0.5, dampingFraction: 0.95)
+            self.hoverAnimation = .notchMorphSpring(response: 0.5, dampingFraction: 1.0)
+            self.contentTransitionAnimation = .notchMorphSpring(response: 0.75, dampingFraction: 0.9)
+            self.activityToActivityAnimation = .notchMorphSpring(response: 0.6, dampingFraction: 0.98)
+            self.bottomContentAnimation = .notchMorphSpring(response: 0.6, dampingFraction: 0.98)
 
         case .custom:
-            self.expandAnimation = .spring(response: customAnim.expandResponse, dampingFraction: customAnim.expandDamping)
-            self.widgetSwitchAnimation = .spring(response: customAnim.contentTransitionResponse, dampingFraction: customAnim.contentTransitionDamping)
-            self.swipeOpenAnimation = .spring(response: customAnim.swipeOpenResponse, dampingFraction: customAnim.swipeOpenDamping)
-            self.collapseAnimation = .spring(response: customAnim.collapseResponse, dampingFraction: customAnim.collapseDamping)
-            self.hoverAnimation = .spring(response: customAnim.hoverResponse, dampingFraction: customAnim.hoverDamping)
-            self.contentTransitionAnimation = .spring(response: customAnim.contentTransitionResponse, dampingFraction: customAnim.contentTransitionDamping)
-            self.activityToActivityAnimation = .spring(response: customAnim.activityToActivityResponse, dampingFraction: customAnim.activityToActivityDamping)
-            self.bottomContentAnimation = .spring(response: customAnim.bottomContentResponse, dampingFraction: customAnim.bottomContentDamping)
+            self.expandAnimation = .notchMorphSpring(response: customAnim.expandResponse, dampingFraction: customAnim.expandDamping)
+            self.widgetSwitchAnimation = .notchMorphSpring(response: customAnim.contentTransitionResponse, dampingFraction: customAnim.contentTransitionDamping)
+            self.swipeOpenAnimation = .notchMorphSpring(response: customAnim.swipeOpenResponse, dampingFraction: customAnim.swipeOpenDamping)
+            self.collapseAnimation = .notchMorphSpring(response: customAnim.collapseResponse, dampingFraction: customAnim.collapseDamping)
+            self.hoverAnimation = .notchMorphSpring(response: customAnim.hoverResponse, dampingFraction: customAnim.hoverDamping)
+            self.contentTransitionAnimation = .notchMorphSpring(response: customAnim.contentTransitionResponse, dampingFraction: customAnim.contentTransitionDamping)
+            self.activityToActivityAnimation = .notchMorphSpring(response: customAnim.activityToActivityResponse, dampingFraction: customAnim.activityToActivityDamping)
+            self.bottomContentAnimation = .notchMorphSpring(response: customAnim.bottomContentResponse, dampingFraction: customAnim.bottomContentDamping)
         }
 
         self.bottomContentTransitionAnimation = NotchConfiguration.bottomContentTransitionAnimation

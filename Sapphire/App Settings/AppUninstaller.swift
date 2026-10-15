@@ -488,6 +488,72 @@ struct AppLaunchctlResult: Equatable {
     let errorOutput: String
 }
 
+private final class LaunchctlRun: @unchecked Sendable {
+    enum Failure: LocalizedError {
+        case timedOut
+
+        var errorDescription: String? { "launchctl did not finish in time." }
+    }
+
+    private let lock = NSLock()
+    private let process = Process()
+    private let errorPipe = Pipe()
+    private var continuation: CheckedContinuation<AppLaunchctlResult, Error>?
+
+    func start(
+        arguments: [String],
+        timeout: TimeInterval,
+        continuation: CheckedContinuation<AppLaunchctlResult, Error>
+    ) {
+        lock.lock()
+        self.continuation = continuation
+        lock.unlock()
+
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = errorPipe
+        process.terminationHandler = { [self] process in
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            finish(.success(AppLaunchctlResult(
+                terminationStatus: process.terminationStatus,
+                errorOutput: String(data: errorData, encoding: .utf8) ?? ""
+            )))
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            do {
+                try process.run()
+            } catch {
+                finish(.failure(error))
+                return
+            }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) { [self] in
+                guard process.isRunning else { return }
+                finish(.failure(Failure.timedOut))
+                terminate()
+            }
+        }
+    }
+
+    func terminate() {
+        guard process.isRunning else { return }
+        process.terminate()
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) { [self] in
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
+    }
+
+    private func finish(_ result: Result<AppLaunchctlResult, Error>) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(with: result)
+    }
+}
+
 enum AppUninstaller {
     enum ValidationError: LocalizedError {
         case protectedApplication
@@ -528,8 +594,11 @@ enum AppUninstaller {
             )
         }
 
+        let cask = await InstalledAppUpdatesChecker.shared.homebrewCask(forAppAt: app.url)
+
         let selectedAppPath = app.url.standardizedFileURL.resolvingSymlinksInPath()
-        if let running = NSWorkspace.shared.runningApplications.first(where: {
+        let runningApplications = NSWorkspace.shared.runningApplications
+        if let running = runningApplications.first(where: {
             guard $0.bundleIdentifier == app.bundleIdentifier,
                   let runningURL = $0.bundleURL else { return false }
             return runningURL.standardizedFileURL.resolvingSymlinksInPath() == selectedAppPath
@@ -546,6 +615,9 @@ enum AppUninstaller {
                 )
             }
         }
+        for helper in runningApplications where isNestedBundle(helper.bundleURL, in: selectedAppPath) {
+            _ = await helper.sapphireTerminateAndWait(timeout: 3)
+        }
 
         let ordered = artifacts.sorted {
             if $0.isApplication != $1.isApplication { return $0.isApplication }
@@ -555,16 +627,24 @@ enum AppUninstaller {
         var failures: [AppUninstallFailure] = []
         let fileManager = FileManager.default
         for artifact in ordered {
+            if artifact.requiresAuthorization, !artifact.isApplication { continue }
             do {
                 guard try artifactExistsForRemoval(app: app, artifact: artifact, fileManager: fileManager) else {
                     continue
                 }
                 try validateImmediatelyBeforeRemoval(app: app, artifact: artifact)
                 if artifact.category == .launchItems {
-                    try deactivateLaunchItemIfPossible(at: artifact.url)
+                    try await deactivateLaunchItemIfPossible(at: artifact.url)
                 }
                 try await moveToTrash(artifact.url)
                 removed.append(artifact.url)
+                if artifact.isApplication, let cask,
+                   let message = await HomebrewCaskInventory.uninstall(cask) {
+                    failures.append(.init(
+                        url: HomebrewCaskInventory.caskroomURL(token: cask.token) ?? artifact.url,
+                        message: message
+                    ))
+                }
             } catch {
                 failures.append(.init(url: artifact.url, message: error.localizedDescription))
                 if artifact.isApplication { break }
@@ -677,12 +757,12 @@ enum AppUninstaller {
 
     static func deactivateLaunchItemIfPossible(
         at url: URL,
-        runner: ([String]) throws -> AppLaunchctlResult = runLaunchctl
-    ) throws {
+        runner: ([String]) async throws -> AppLaunchctlResult = runLaunchctl
+    ) async throws {
         guard let arguments = launchctlArguments(for: url) else { return }
         let result: AppLaunchctlResult
         do {
-            result = try runner(arguments)
+            result = try await runner(arguments)
         } catch {
             throw ValidationError.launchItemDeactivationFailed(url, error.localizedDescription)
         }
@@ -700,20 +780,46 @@ enum AppUninstaller {
         }
     }
 
-    private static func runLaunchctl(arguments: [String]) throws -> AppLaunchctlResult {
-        let process = Process()
-        let errorPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = errorPipe
-        try process.run()
-        process.waitUntilExit()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        return AppLaunchctlResult(
-            terminationStatus: process.terminationStatus,
-            errorOutput: String(data: errorData, encoding: .utf8) ?? ""
-        )
+    private static let launchctlTimeout: TimeInterval = 20
+
+    private static func runLaunchctl(arguments: [String]) async throws -> AppLaunchctlResult {
+        let run = LaunchctlRun()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                run.start(arguments: arguments, timeout: launchctlTimeout, continuation: continuation)
+            }
+        } onCancel: {
+            run.terminate()
+        }
+    }
+
+    static func isNestedBundle(_ candidateURL: URL?, in appURL: URL) -> Bool {
+        guard let candidateURL else { return false }
+        let appPath = appURL.standardizedFileURL.resolvingSymlinksInPath().path
+        let candidatePath = candidateURL.standardizedFileURL.resolvingSymlinksInPath().path
+        return candidatePath.hasPrefix(appPath + "/")
+    }
+
+    static func identifierOwnership(
+        for app: InstalledApp,
+        knownApplications: [(url: URL, bundleID: String)],
+        fileManager: FileManager = .default
+    ) -> AppIdentifierOwnership {
+        guard AppSecurityValidator.isSafeIdentifier(app.bundleIdentifier),
+              let identity = try? AppSecurityValidator.identity(at: app.url),
+              identity.teamIdentifier?.isEmpty == false else { return .uncertain }
+        let selectedPath = app.url.resolvingSymlinksInPath().standardizedFileURL.path
+        var candidates = knownApplications
+        candidates += NSWorkspace.shared.urlsForApplications(withBundleIdentifier: app.bundleIdentifier)
+            .map { (url: $0, bundleID: app.bundleIdentifier) }
+        let claimedElsewhere = candidates.contains { candidate in
+            guard candidate.bundleID.caseInsensitiveCompare(app.bundleIdentifier) == .orderedSame else { return false }
+            let path = candidate.url.resolvingSymlinksInPath().standardizedFileURL.path
+            return path != selectedPath
+                && !path.hasPrefix(selectedPath + "/")
+                && fileManager.fileExists(atPath: path)
+        }
+        return claimedElsewhere ? .shared : .verifiedExclusive
     }
 
     private static var allowedRoots: [URL] {

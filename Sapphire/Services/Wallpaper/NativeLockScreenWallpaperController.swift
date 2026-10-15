@@ -60,6 +60,9 @@ final class NativeLockScreenWallpaperController {
     func screenDidLock() {
         guard installedCacheKey != nil else { return }
         Task.detached(priority: .utility) {
+            if !NativeLockScreenWallpaperInstaller.isInstallationIntact() {
+                await NativeLockScreenWallpaperInstaller.shared.repair()
+            }
             NativeLockScreenWallpaperInstaller.restartAerialPlayer()
         }
     }
@@ -74,7 +77,7 @@ final class NativeLockScreenWallpaperController {
     }
 }
 
-private actor NativeLockScreenWallpaperInstaller {
+actor NativeLockScreenWallpaperInstaller {
     struct Installation: Codable {
         let slotURL: URL
         let backupURL: URL
@@ -82,6 +85,9 @@ private actor NativeLockScreenWallpaperInstaller {
         var indexURL: URL?
         var originalIdleConfigurations: [String: Data]?
         var configurationVersion: Int?
+        var slotWasPresent: Bool?
+        var movieURL: URL?
+        var installedSize: Int64?
     }
 
     static let shared = NativeLockScreenWallpaperInstaller()
@@ -90,7 +96,7 @@ private actor NativeLockScreenWallpaperInstaller {
         WallpaperAssetStore.directory.appendingPathComponent("NativeLockScreen", isDirectory: true)
     }
 
-    private static var convertedDirectory: URL {
+    private static var legacyConvertedDirectory: URL {
         nativeDirectory.appendingPathComponent("Converted", isDirectory: true)
     }
 
@@ -107,8 +113,14 @@ private actor NativeLockScreenWallpaperInstaller {
 
     func install(media: WallpaperMedia, cacheKey: String) async -> Bool {
         do {
-            let convertedURL = try await Self.convertToAerialMovie(media.url, cacheKey: cacheKey)
+            let target = await MainActor.run { WallpaperVideoTarget.current }
+            let convertedURL = try await WallpaperVideoOptimizer.shared.playableURL(
+                for: media.url,
+                target: target,
+                requireHEVCMovie: true
+            )
             try Task.checkCancellation()
+            try? FileManager.default.removeItem(at: Self.legacyConvertedDirectory)
             try Self.install(convertedURL, cacheKey: cacheKey)
             Self.restartWallpaperServices()
             return true
@@ -124,10 +136,43 @@ private actor NativeLockScreenWallpaperInstaller {
         Self.restoreSynchronously()
     }
 
+    func repair() {
+        guard let installation = Self.loadInstallation(),
+              let movieURL = installation.movieURL,
+              let cacheKey = installation.sourceCacheKey,
+              FileManager.default.fileExists(atPath: movieURL.path) else { return }
+        do {
+            try Self.install(movieURL, cacheKey: cacheKey)
+            NSLog("[LiveWallpaper] Repaired the native lock-screen wallpaper")
+        } catch {
+            NSLog("[LiveWallpaper] Native lock-screen repair failed: \(error.localizedDescription)")
+        }
+    }
+
+    nonisolated static func isInstallationIntact() -> Bool {
+        guard let installation = loadInstallation() else { return true }
+        let size = (try? installation.slotURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
+        if let expected = installation.installedSize, size != expected {
+            return false
+        }
+        let aerialID = installation.slotURL.deletingPathExtension().lastPathComponent
+        guard let indexURL = installation.indexURL,
+              let data = try? Data(contentsOf: indexURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let selected = selectedIdleAerialID(in: plist) else {
+            return true
+        }
+        return selected == aerialID
+    }
+
     nonisolated static func restoreSynchronously() {
         guard let installation = loadInstallation() else { return }
         do {
-            try replaceItem(at: installation.slotURL, with: installation.backupURL)
+            if installation.slotWasPresent == false {
+                try? FileManager.default.removeItem(at: installation.slotURL)
+            } else {
+                try replaceItem(at: installation.slotURL, with: installation.backupURL)
+            }
             try restoreIdlePlist(using: installation)
             try? FileManager.default.removeItem(at: installation.backupURL)
             try? FileManager.default.removeItem(at: stateURL)
@@ -165,6 +210,7 @@ private actor NativeLockScreenWallpaperInstaller {
 
         var installation = loadInstallation()
         if let existing = installation,
+           existing.slotWasPresent != false,
            !fileManager.fileExists(atPath: existing.backupURL.path) {
             try? fileManager.removeItem(at: stateURL)
             installation = nil
@@ -180,14 +226,18 @@ private actor NativeLockScreenWallpaperInstaller {
             if fileManager.fileExists(atPath: backupURL.path) {
                 try fileManager.removeItem(at: backupURL)
             }
-            try fileManager.copyItem(at: slotURL, to: backupURL)
+            let slotWasPresent = fileManager.fileExists(atPath: slotURL.path)
+            if slotWasPresent {
+                try fileManager.copyItem(at: slotURL, to: backupURL)
+            }
             installation = Installation(
                 slotURL: slotURL,
                 backupURL: backupURL,
                 sourceCacheKey: nil,
                 indexURL: nil,
                 originalIdleConfigurations: nil,
-                configurationVersion: nil
+                configurationVersion: nil,
+                slotWasPresent: slotWasPresent
             )
             try saveInstallation(installation!)
         }
@@ -199,26 +249,71 @@ private actor NativeLockScreenWallpaperInstaller {
             installation: &installation
         )
         installation.sourceCacheKey = cacheKey
+        installation.movieURL = movieURL
+        installation.installedSize = (try? installation.slotURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+            .map(Int64.init)
         installation.configurationVersion = 2
         try saveInstallation(installation)
+    }
+
+    private static var aerialsDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/com.apple.wallpaper/aerials", isDirectory: true)
     }
 
     private static func selectedAerialSlotURL() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let indexURL = home.appendingPathComponent("Library/Application Support/com.apple.wallpaper/Store/Index.plist")
-        guard let data = try? Data(contentsOf: indexURL),
-              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-              let assetID = selectedAerialID(in: plist) else {
+        let plist = (try? Data(contentsOf: indexURL)).flatMap {
+            try? PropertyListSerialization.propertyList(from: $0, options: [], format: nil)
+        }
+        let downloaded = (try? FileManager.default.contentsOfDirectory(
+            at: aerialsDirectory.appendingPathComponent("videos", isDirectory: true),
+            includingPropertiesForKeys: nil
+        ))?.filter { $0.pathExtension == "mov" && !$0.lastPathComponent.hasPrefix(".") }
+            .map { $0.deletingPathExtension().lastPathComponent } ?? []
+        let catalog = (try? Data(contentsOf: aerialsDirectory.appendingPathComponent("manifest/entries.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            .flatMap { $0["assets"] as? [[String: Any]] }?
+            .compactMap { $0["id"] as? String } ?? []
+
+        guard let assetID = slotAerialID(
+            selected: plist.flatMap(selectedIdleAerialID(in:)) ?? plist.flatMap(selectedAerialID(in:)),
+            downloaded: downloaded.sorted(),
+            catalog: catalog
+        ) else {
             return nil
         }
-
-        let videoURL = home.appendingPathComponent(
-            "Library/Application Support/com.apple.wallpaper/aerials/videos/\(assetID).mov"
-        )
-        return FileManager.default.fileExists(atPath: videoURL.path) ? videoURL : nil
+        return aerialsDirectory.appendingPathComponent("videos/\(assetID).mov")
     }
 
-    private static func selectedAerialID(in value: Any) -> String? {
+    nonisolated static func slotAerialID(selected: String?, downloaded: [String], catalog: [String]) -> String? {
+        let isSafeID = { (id: String) in
+            !id.isEmpty && !id.contains("/") && !id.hasPrefix(".")
+        }
+        if let selected, isSafeID(selected) { return selected }
+        return downloaded.first(where: isSafeID) ?? catalog.first(where: isSafeID)
+    }
+
+    nonisolated static func selectedIdleAerialID(in value: Any) -> String? {
+        if let dictionary = value as? [String: Any] {
+            if let idle = dictionary["Idle"], let identifier = selectedAerialID(in: idle) {
+                return identifier
+            }
+            for key in dictionary.keys.sorted() where key != "Idle" {
+                if let child = dictionary[key], let identifier = selectedIdleAerialID(in: child) {
+                    return identifier
+                }
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                if let identifier = selectedIdleAerialID(in: child) { return identifier }
+            }
+        }
+        return nil
+    }
+
+    nonisolated static func selectedAerialID(in value: Any) -> String? {
         if let dictionary = value as? [String: Any] {
             if let provider = dictionary["Provider"] as? String,
                provider.localizedCaseInsensitiveContains("aerial"),
@@ -382,58 +477,6 @@ private actor NativeLockScreenWallpaperInstaller {
             }
             value = array
         }
-    }
-
-    private static func convertToAerialMovie(_ sourceURL: URL, cacheKey: String) async throws -> URL {
-        let fileManager = FileManager.default
-        WallpaperAssetStore.ensureDirectory(convertedDirectory)
-        let destination = convertedDirectory.appendingPathComponent("\(cacheKey).mov")
-        if fileManager.fileExists(atPath: destination.path) {
-            return destination
-        }
-
-        let temporary = convertedDirectory.appendingPathComponent("\(cacheKey)-\(UUID().uuidString).tmp.mov")
-        defer { try? fileManager.removeItem(at: temporary) }
-
-        let asset = AVURLAsset(url: sourceURL)
-        let tracks = try await asset.loadTracks(withMediaType: .video)
-        let formatDescriptions = try await tracks.first?.load(.formatDescriptions) ?? []
-        let isNativeHEVC = sourceURL.pathExtension.caseInsensitiveCompare("mov") == .orderedSame
-            && formatDescriptions.contains {
-                CMFormatDescriptionGetMediaSubType($0) == kCMVideoCodecType_HEVC
-            }
-        if isNativeHEVC {
-            try Task.checkCancellation()
-            try fileManager.copyItem(at: sourceURL, to: temporary)
-            try fileManager.moveItem(at: temporary, to: destination)
-            return destination
-        }
-
-        let compatiblePresets = await AVAssetExportSession.compatibility(ofExportPreset: AVAssetExportPresetHEVCHighestQuality, with: asset, outputFileType: .mov)
-        guard compatiblePresets else {
-            throw CocoaError(.fileWriteUnknown, userInfo: [
-                NSLocalizedDescriptionKey: "The selected video can't be converted to a native HEVC wallpaper."
-            ])
-        }
-        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHEVCHighestQuality) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        exporter.outputURL = temporary
-        exporter.outputFileType = .mov
-        exporter.shouldOptimizeForNetworkUse = false
-
-        await withCheckedContinuation { continuation in
-            exporter.exportAsynchronously {
-                continuation.resume()
-            }
-        }
-        try Task.checkCancellation()
-        guard exporter.status == .completed else {
-            throw exporter.error ?? CocoaError(.fileWriteUnknown)
-        }
-
-        try fileManager.moveItem(at: temporary, to: destination)
-        return destination
     }
 
     private nonisolated static func replaceItem(at destination: URL, with source: URL) throws {

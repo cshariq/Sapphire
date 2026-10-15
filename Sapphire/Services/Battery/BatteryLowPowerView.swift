@@ -13,6 +13,7 @@ struct BatteryLowPowerView: View {
     let onDismiss: () -> Void
 
     @ObservedObject private var powerMode = PowerModeManager.shared
+    @Environment(\.notchBandHeight) private var notchBandHeight
 
     @State private var isShowing = false
     @State private var isPressed = false
@@ -64,7 +65,7 @@ struct BatteryLowPowerView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 10)
             .padding(12)
-            .padding(.top, (NotchConfiguration.universalHeight - 15))
+            .padding(.top, 0)
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")

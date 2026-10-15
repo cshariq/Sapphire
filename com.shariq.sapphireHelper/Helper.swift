@@ -169,12 +169,9 @@ class Helper: NSObject, HelperProtocol {
     private var sensorCacheTimestamp = Date.distantPast
     private let sensorCacheLifetime: TimeInterval = 0.25
 
-    private struct AppliedFanState: Equatable {
-        let mode: FanMode
-        let speed: Int?
-    }
-    private let fanStateLock = NSLock()
-    private var appliedFanStates: [Int: AppliedFanState] = [:]
+    private let fanController: FanController?
+    private let smcKeysLock = NSLock()
+    private var cachedSMCKeys: [String]?
 
     private var keyChargeControl: String?
     private var keyChargeControlSecondary: String?
@@ -183,6 +180,7 @@ class Helper: NSObject, HelperProtocol {
     private var keyMagsafeLED: String?
     private var keyAdapterEnable: String?
     private var keyChargeLimit: String?
+    private var keyAdapterInhibit: String?
 
     private var keyFirmwareChargeLimitActivation: String?
     private var keyFirmwareChargeLimitUpper: String?
@@ -199,7 +197,9 @@ class Helper: NSObject, HelperProtocol {
     private var dischargeWatchdogBypass: Bool = false
 
     override init() {
-        self.smc = SMC()
+        let smc = SMC()
+        self.smc = smc
+        self.fanController = smc.map { FanController(smc: $0) }
         super.init()
 
         if self.smc == nil {
@@ -213,12 +213,7 @@ class Helper: NSObject, HelperProtocol {
     deinit {
         stopDischargeWatchdog()
         logger.log("Helper deinitializing and closing SMC connection.")
-        if let smc = smc, let fanCount = smc.getValue("FNum") {
-            for i in 0..<Int(fanCount) {
-                logger.log("Reverting fan \(i) to automatic mode as helper is deinitializing.")
-                _ = smc.setFanMode(i, mode: .automatic)
-            }
-        }
+        fanController?.revertAllSynchronously()
         _ = smc?.close()
     }
 
@@ -269,10 +264,26 @@ class Helper: NSObject, HelperProtocol {
             keyFirmwareChargeLimitLower = "bfE0"
         }
 
+        #if arch(arm64)
+        if has("CHIE") {
+            keyAdapterInhibit = "CHIE"
+        } else if keyAdapterEnable != nil {
+            keyAdapterInhibit = keyAdapterEnable
+        }
+        #else
+        if keyAdapterEnable != nil {
+            keyAdapterInhibit = keyAdapterEnable
+        } else if has("CHIE") {
+            keyAdapterInhibit = "CHIE"
+        }
+        #endif
+
         if keyFirmwareChargeLimitActivation != nil && keyFirmwareChargeLimitUpper != nil && keyFirmwareChargeLimitLower != nil {
             chargeControlMode = .firmware
         } else if keyChargeControl != nil || keyChargeLimit != nil {
             chargeControlMode = .legacy
+        } else if keyAdapterInhibit != nil {
+            chargeControlMode = .adapter
         } else {
             chargeControlMode = .unsupported
         }
@@ -285,6 +296,7 @@ class Helper: NSObject, HelperProtocol {
         - MagSafe LED Key: \(self.keyMagsafeLED ?? "Not Found")
         - Charge Limit Key (BCLM): \(self.keyChargeLimit ?? "Not Found")
         - Adapter Enable Key (ACEN): \(self.keyAdapterEnable ?? "Not Found")
+        - Adapter Inhibit Key: \(self.keyAdapterInhibit ?? "Not Found")
         - Firmware Charge-Limit Keys: \(self.keyFirmwareChargeLimitActivation == nil ? "Not Found" : "bfF0/bfD0/bfE0")
         """)
     }
@@ -309,6 +321,12 @@ class Helper: NSObject, HelperProtocol {
                 }
             } else {
                 reply(makeError(code: .smcWriteFailed, description: "No charge limit key found for this Mac."))
+            }
+        case .adapter:
+            if clamped >= 100 {
+                enableCharging(true, reply: reply)
+            } else {
+                reply(nil)
             }
         case .unsupported:
             reply(makeError(code: .smcWriteFailed, description: "No charge control key found for this Mac."))
@@ -397,6 +415,11 @@ class Helper: NSObject, HelperProtocol {
             return
         }
 
+        if chargeControlMode == .adapter {
+            reply(writeAdapterPowerEnabled(enabled))
+            return
+        }
+
         guard let chargeKey = keyChargeControl else {
             if let limitKey = keyChargeLimit {
                 let data = Data([enabled ? 0x64 : 0x0A])
@@ -442,6 +465,30 @@ class Helper: NSObject, HelperProtocol {
         }
 
         reply(succeeded ? nil : makeError(code: .smcWriteFailed, description: "Failed to write charge key '\(chargeKey)'."))
+    }
+
+    private func writeAdapterPowerEnabled(_ enabled: Bool) -> Error? {
+        guard let key = keyAdapterInhibit else {
+            return makeError(code: .smcWriteFailed, description: "No adapter inhibit key found for this Mac.")
+        }
+
+        let data: Data
+        switch key {
+        case "CHIE":
+            data = Data(enabled ? [0x00] : [0x08])
+        case "ACEN":
+            data = Data(enabled ? [0x01] : [0x00])
+        default:
+            return makeError(code: .smcWriteFailed, description: "Unknown adapter inhibit key '\(key)'.")
+        }
+
+        let hexString = data.map { String(format: "%02x", $0) }.joined()
+        logger.debug("[SapphireHelper] Adapter mode: writing '\(key)' = 0x\(hexString) (charging \(enabled ? "allowed" : "inhibited"))")
+        let result = smc?.writeData(key, data: data)
+        if result == kIOReturnSuccess {
+            return nil
+        }
+        return makeError(code: .smcWriteFailed, description: "Failed to write adapter key '\(key)'.")
     }
 
     private func writeDischargeControlDirect(_ discharging: Bool) -> Error? {
@@ -673,11 +720,20 @@ class Helper: NSObject, HelperProtocol {
     }
 
     func getAllTemperatureSensors(reply: @escaping ([String]) -> Void) {
-        let allKeys = smc?.getAllKeys() ?? []
+        let allKeys = allSMCKeys()
         reply(allKeys.filter { $0.hasPrefix("T") && $0.count == 4 })
     }
     func getAllSMCKeys(reply: @escaping ([String]) -> Void) {
-        reply(smc?.getAllKeys() ?? [])
+        reply(allSMCKeys())
+    }
+
+    private func allSMCKeys() -> [String] {
+        smcKeysLock.lock()
+        defer { smcKeysLock.unlock() }
+        if let cachedSMCKeys { return cachedSMCKeys }
+        let keys = smc?.getAllKeys() ?? []
+        if !keys.isEmpty { cachedSMCKeys = keys }
+        return keys
     }
     func getSensorValues(keys: [String], reply: @escaping (NSDictionary) -> Void) {
         guard let smc else {
@@ -990,73 +1046,36 @@ class Helper: NSObject, HelperProtocol {
         ))
     }
     func setFanMode(fanIndex: Int, mode: UInt8, reply: @escaping (Error?) -> Void) {
-        guard let smc = smc else { reply(makeError(code: .smcOpenFailed, description: "SMC not connected.")); return }
-        let targetMode: FanMode = mode == 0 ? .automatic : .forced
-        let requestedState = AppliedFanState(mode: targetMode, speed: targetMode == .automatic ? 0 : nil)
-
-        fanStateLock.lock()
-        let alreadyApplied = appliedFanStates[fanIndex] == requestedState
-        fanStateLock.unlock()
-        if alreadyApplied {
-            reply(nil)
-            return
-        }
-
-        logger.log("Request to set fan \(fanIndex) to \(targetMode == .automatic ? "AUTO" : "FORCED") mode.")
-        let modeResult = smc.setFanMode(fanIndex, mode: targetMode)
-        let speedResult = targetMode == .automatic ? smc.setFanSpeed(fanIndex, speed: 0) : kIOReturnSuccess
-        if modeResult == kIOReturnSuccess && speedResult == kIOReturnSuccess {
-            fanStateLock.lock()
-            appliedFanStates[fanIndex] = requestedState
-            fanStateLock.unlock()
-            reply(nil)
-        } else {
-            reply(makeError(code: .smcWriteFailed, description: "Failed to set fan mode."))
-        }
+        guard let fanController else { reply(makeError(code: .smcOpenFailed, description: "SMC not connected.")); return }
+        fanController.setMode(fanIndex: fanIndex, forced: mode != 0, connection: NSXPCConnection.current(), reply: reply)
     }
+
     func setFanTargetSpeed(fanIndex: Int, speed: Int, reply: @escaping (Error?) -> Void) {
-        guard let smc = smc else { reply(makeError(code: .smcOpenFailed, description: "SMC not connected.")); return }
-        fanStateLock.lock()
-        let alreadyApplied = appliedFanStates[fanIndex] == AppliedFanState(mode: .forced, speed: speed)
-        fanStateLock.unlock()
-        if alreadyApplied {
-            reply(nil)
-            return
-        }
-
-        let result = smc.setFanSpeed(fanIndex, speed: speed)
-        if result == kIOReturnSuccess {
-            fanStateLock.lock()
-            appliedFanStates[fanIndex] = AppliedFanState(mode: .forced, speed: speed)
-            fanStateLock.unlock()
-        }
-        reply(result == kIOReturnSuccess ? nil : makeError(code: .smcWriteFailed, description: "Failed to write F\(fanIndex)Tg."))
+        guard let fanController else { reply(makeError(code: .smcOpenFailed, description: "SMC not connected.")); return }
+        fanController.setTargetSpeed(fanIndex: fanIndex, speed: speed, connection: NSXPCConnection.current(), reply: reply)
     }
-    func setFanToConstantRPM(fanIndex: Int, speed: Int, reply: @escaping (Error?) -> Void) {
-        logger.log("Request to set fan \(fanIndex) to a constant \(speed) RPM.")
-        guard let smc = smc else { logger.error("SMC connection not available."); reply(makeError(code: .smcOpenFailed, description: "SMC not connected.")); return }
 
-        fanStateLock.lock()
-        let alreadyApplied = appliedFanStates[fanIndex] == AppliedFanState(mode: .forced, speed: speed)
-        fanStateLock.unlock()
-        if alreadyApplied {
-            reply(nil)
-            return
-        }
-        logger.log("Step 1/2: Setting fan \(fanIndex) to FORCED mode.")
-        let modeResult = smc.setFanMode(fanIndex, mode: .forced)
-        if modeResult != kIOReturnSuccess {
-            logger.error("Failed to set fan mode to forced for fan \(fanIndex). Aborting. Error code: \(modeResult)"); reply(makeError(code: .smcWriteFailed, description: "Failed to set fan to manual mode.")); return
-        }
-        logger.log("Step 2/2: Setting fan \(fanIndex) target speed to \(speed) RPM.")
-        let speedResult = smc.setFanSpeed(fanIndex, speed: speed)
-        if speedResult != kIOReturnSuccess {
-            logger.error("Failed to set fan target speed for fan \(fanIndex). Error code: \(speedResult)"); _ = smc.setFanMode(fanIndex, mode: .automatic); reply(makeError(code: .smcWriteFailed, description: "Failed to write F\(fanIndex)Tg.")); return
-        }
-        fanStateLock.lock()
-        appliedFanStates[fanIndex] = AppliedFanState(mode: .forced, speed: speed)
-        fanStateLock.unlock()
-        logger.log("Successfully set fan \(fanIndex) to \(speed) RPM."); reply(nil)
+    func setFanToConstantRPM(fanIndex: Int, speed: Int, reply: @escaping (Error?) -> Void) {
+        guard let fanController else { reply(makeError(code: .smcOpenFailed, description: "SMC not connected.")); return }
+        fanController.setConstantRPM(fanIndex: fanIndex, speed: speed, connection: NSXPCConnection.current(), reply: reply)
+    }
+
+    func renewFanLease(reply: @escaping (Bool) -> Void) {
+        guard let fanController else { reply(false); return }
+        fanController.renew(connection: NSXPCConnection.current(), reply: reply)
+    }
+
+    func releaseFanLease(reply: @escaping (Error?) -> Void) {
+        guard let fanController else { reply(nil); return }
+        fanController.release(reply: reply)
+    }
+
+    func clientConnectionEnded(_ connectionID: ObjectIdentifier) {
+        fanController?.connectionEnded(connectionID)
+    }
+
+    func prepareForExit() {
+        fanController?.revertAllSynchronously()
     }
 
     func createAggregateDevice(subDeviceUIDs: [String], masterDeviceUID: String, reply: @escaping (UInt32) -> Void) {

@@ -27,6 +27,7 @@ final class SapphireBrowserIntegration {
 
     private var observers: [NSObjectProtocol] = []
     private var hasStarted = false
+    private var didCheckNotificationAuthorization = false
 
     private(set) var browserMedia: (title: String, isPlaying: Bool, url: URL?)?
 
@@ -46,7 +47,6 @@ final class SapphireBrowserIntegration {
         hasStarted = true
 
         registerNotificationCategory()
-        requestNotificationAuthorizationIfNeeded()
 
         let center = DistributedNotificationCenter.default()
 
@@ -189,6 +189,8 @@ final class SapphireBrowserIntegration {
     }
 
     private func requestNotificationAuthorizationIfNeeded() {
+        guard !didCheckNotificationAuthorization, !OnboardingLaunchPolicy.shouldShowOnboarding else { return }
+        didCheckNotificationAuthorization = true
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             switch settings.authorizationStatus {
             case .notDetermined:
@@ -202,6 +204,7 @@ final class SapphireBrowserIntegration {
     }
 
     private func postLocalNotification(title: String, body: String, category: String?, userInfo: [AnyHashable: Any]?) {
+        requestNotificationAuthorizationIfNeeded()
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

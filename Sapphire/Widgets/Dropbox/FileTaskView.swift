@@ -209,10 +209,10 @@ private struct TrackpadSwipeCapture: NSViewRepresentable {
 struct FileTaskView: View {
     @Binding var navigationStack: [NotchWidgetMode]
 
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @StateObject private var fileDropManager = FileDropManager.shared
     @StateObject private var shelfManager = FileShelfManager.shared
-    @EnvironmentObject var liveActivityManager: LiveActivityManager
+    @Environment(LiveActivityManager.self) var liveActivityManager
     @EnvironmentObject private var fileShelfState: FileShelfState
 
     @State private var isShowing = false
@@ -237,7 +237,7 @@ struct FileTaskView: View {
         .frame(maxHeight: 300)
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(red: 0.1, green: 0.1, blue: 0.1), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .environmentObject(liveActivityManager)
+        .environment(liveActivityManager)
         .scaleEffect(isShowing ? 1 : 0.98)
         .opacity(isShowing ? 1 : 0)
         .padding(.top, 1)
@@ -282,7 +282,7 @@ struct FileTaskView: View {
 private struct UnifiedRowView: View {
     let item: FileTask
     let onSelectDetails: (ShelfItem) -> Void
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     private var leadingAction: NotchSwipeAction? {
         swipeAction(settings.settings.swipeActionSettings.fileDropLeading)
@@ -429,6 +429,7 @@ private struct UniversalTransferRowView: View {
         case .finder: return "Copying"
         case .archiveExtraction: return "Extracting"
         case .dmgInstall: return "Installing"
+        case .continuity: return "Phone"
         case .browserDownload, .manual: return "Downloading"
         }
     }
@@ -438,6 +439,7 @@ private struct UniversalTransferRowView: View {
         case .finder: return "arrow.right.arrow.left.circle.fill"
         case .archiveExtraction: return "archivebox.fill"
         case .dmgInstall: return "externaldrive.fill.badge.plus"
+        case .continuity: return "iphone"
         case .browserDownload, .manual: return "arrow.down.circle.fill"
         }
     }
@@ -453,6 +455,15 @@ private struct UniversalTransferRowView: View {
     private var subtitle: String {
         let sizeString = ByteFormatter.string(task.currentSize)
         guard !task.isComplete else { return "Complete (\(sizeString))" }
+
+        if task.sourceType == .continuity {
+            if let totalBytes = task.totalSize, totalBytes > 0 {
+                let total = ByteFormatter.string(totalBytes)
+                let pct = Int((Double(task.currentSize) / Double(totalBytes)) * 100)
+                return "Continuity · \(sizeString) of \(total) · \(pct)%"
+            }
+            return "Continuity · \(sizeString)"
+        }
 
         var parts = ["\(verb)..."]
         if let total = task.totalSize {
@@ -599,12 +610,12 @@ private struct ConversionRowView: View {
 private struct ModernTransferRowView: View {
     let transfer: TransferProgressInfo
     let onSelectDetails: (ShelfItem) -> Void
-    @EnvironmentObject var liveActivityManager: LiveActivityManager
+    @Environment(LiveActivityManager.self) var liveActivityManager
     @State private var isHovering = false
 
     private var shelfItemForCompletedTransfer: ShelfItem? {
         guard transfer.state == .finished,
-              let payload = liveActivityManager.currentNearDropPayload,
+              let payload = liveActivityManager.currentNearbyTransferPayload,
               payload.id == transfer.id,
               let url = payload.destinationURLs.first else {
             return nil
@@ -638,7 +649,7 @@ private struct ModernTransferRowView: View {
         switch transfer.state {
         case .waiting:
             IntegratedActionIconButtonsView(transfer: transfer)
-                .environmentObject(liveActivityManager)
+                .environment(liveActivityManager)
         case .inProgress:
             ProgressIndicator(progress: transfer.progress, color: .accentColor)
         case .finished:
@@ -691,10 +702,10 @@ private struct ActionButtons: View {
 
 private struct IntegratedActionIconButtonsView: View {
     let transfer: TransferProgressInfo
-    @EnvironmentObject var liveActivityManager: LiveActivityManager
+    @Environment(LiveActivityManager.self) var liveActivityManager
 
-    private func submitConsent(accept: Bool, action: NearDropUserAction = .save) {
-        liveActivityManager.clearNearDropActivity(id: transfer.id)
+    private func submitConsent(accept: Bool, action: NearbyTransferUserAction = .save) {
+        liveActivityManager.clearNearbyTransferActivity(id: transfer.id)
         NearbyConnectionManager.shared.submitUserConsent(transferID: transfer.id, accept: accept, action: action)
     }
 

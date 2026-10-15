@@ -16,6 +16,8 @@ enum MediaApplicationIdentity {
             return "com.microsoft.edgemac"
         case "company.thebrowser.Browser.helper":
             return "company.thebrowser.Browser"
+        case let id where id == AppleMusicPlaybackIdentity.hostBundleID && AppleMusicPlaybackIdentity.isInAppPlaybackActive:
+            return "com.apple.Music"
         default:
             return bundleID
         }

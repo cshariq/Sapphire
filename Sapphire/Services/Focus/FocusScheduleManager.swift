@@ -111,7 +111,7 @@ final class FocusScheduleManager: ObservableObject {
 
     func checkSchedules() {
         let now = Date()
-        var schedules = settings.settings.scheduledFocusSessions
+        var schedules = settings.current.scheduledFocusSessions
         var changed = false
 
         for index in schedules.indices {
@@ -132,7 +132,7 @@ final class FocusScheduleManager: ObservableObject {
         timer?.invalidate()
         timer = nil
 
-        let nextDate = settings.settings.scheduledFocusSessions
+        let nextDate = settings.current.scheduledFocusSessions
             .filter(\.isActive)
             .compactMap(nextFireDate(for:))
             .min()
@@ -196,7 +196,7 @@ final class FocusScheduleManager: ObservableObject {
     }
 
     private func postStartedNotification(duration: TimeInterval) {
-        guard settings.settings.focusNotificationsEnabled else { return }
+        guard settings.current.focusNotificationsEnabled else { return }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }

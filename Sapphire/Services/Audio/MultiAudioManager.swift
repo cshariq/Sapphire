@@ -140,31 +140,38 @@ class MultiAudioManager: ObservableObject {
     private let selectedOutputUIDsDefaultsKey = "SapphireSelectedOutputDeviceUIDs"
     private let eightDAudioDefaultsKey = "SapphireEightDAudioSettingsByBundleID"
     private let surroundAudioDefaultsKey = "SapphireSurroundAudioSettingsByBundleID"
+    private let appRoutesDefaultsKey = "SapphirePerAppOutputRouteUIDs"
+    private let appOrderingDefaultsKey = "SapphireMixerAppOrdering"
+    private let preferredInputDefaultsKey = "SapphirePreferredInputDeviceUID"
 
     @Published var availableOutputDevices: [AudioDevice] = []
     @Published var availableInputDevices: [AudioDevice] = []
-    @Published var currentInputDeviceID: AudioDeviceID?
+    @Published private(set) var currentInputDeviceID: AudioDeviceID?
     @Published var defaultOutputDeviceID: AudioDeviceID?
+    @Published private(set) var defaultOutputUID: String?
+    @Published private(set) var inputVolumes: [AudioDeviceID: Float] = [:]
+    @Published private(set) var inputMutes: [AudioDeviceID: Bool] = [:]
+    @Published private(set) var appRoutes: [String: String] = [:]
+    @Published private(set) var appOrdering = MixerAppOrdering()
+    @Published private(set) var preferredInputUID: String?
 
     @Published var selectedOutputDeviceIDs: Set<AudioDeviceID> = [] {
         didSet {
             rebuildLiveDeviceSettingsFromArchive()
             if !isRestoringPersistedSelection {
                 persistSelectedOutputUIDs()
-                reTapAllApps()
+                scheduleReconcile()
             }
         }
     }
 
     @Published var deviceSettings: [AudioDeviceID: AudioDeviceSettings] = [:]
 
-    private(set) var activeTaps: [String: [String: AppTapController]] = [:]
-    private var isProcessMonitorStarted = false
-    private var processListListenerBlock: AudioObjectPropertyListenerBlock?
-    private var processRunningListenerBlocks: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
-    private var monitoredProcessObjectIDs: Set<AudioObjectID> = []
-    private var processPIDByObjectID: [AudioObjectID: pid_t] = [:]
-    private var processBundleIDByObjectID: [AudioObjectID: String] = [:]
+    var activeTaps: [String: [String: AppTapController]] { engine.state.snapshot() }
+
+    func hasActiveTap(for bundleID: String) -> Bool { engine.state.hasTap(for: bundleID) }
+
+    private let engine = MixerEngine()
     private var reconcileTask: Task<Void, Never>?
     private var settingsPersistenceTask: Task<Void, Never>?
     private var latestActiveBundleIDs: Set<String> = []
@@ -175,75 +182,79 @@ class MultiAudioManager: ObservableObject {
     private var eightDAudioSettingsByBundleID: [String: EightDAudioSettings] = [:]
     private var surroundAudioSettingsByBundleID: [String: SurroundAudioSettings] = [:]
     private var isRestoringPersistedSelection = false
+    private var preferredInputEnforcements: [Date] = []
+    private var hasAppliedSnapshot = false
+    private var premiumAccessCancellable: AnyCancellable?
+    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
 
     private init() {
-        CrashGuard.install()
-        requestCapturePermissions()
-        discoverDevices()
         loadPersistedDeviceState()
-        setupDeviceListeners()
-        configureProcessMonitor()
-        if isAuthorized { startProcessMonitorIfNeeded() }
+
+        engine.onDevices = { [weak self] snapshot in
+            Task { @MainActor in self?.apply(snapshot) }
+        }
+        engine.onActiveBundles = { [weak self] bundles in
+            Task { @MainActor in self?.applyActiveBundles(bundles) }
+        }
+        engine.onProcessListChanged = { [weak self] in
+            Task { @MainActor in self?.scheduleReconcile() }
+        }
+        pushAllParameters()
+        engine.start()
+        AudioOutputSwitcher.shared.start()
+
+        if CGPreflightScreenCaptureAccess() {
+            isAuthorized = true
+            engine.startProcessMonitoring()
+            scheduleReconcile()
+        }
 
         premiumAccessCancellable = PremiumGate.accessChanges
             .sink { [weak self] in self?.applyPremiumDSPAccess() }
 
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.refreshAuthorization()
-            }
-        }
+        let center = NotificationCenter.default
+        observers.append((center, center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshAuthorization() }
+        }))
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        observers.append((workspaceCenter, workspaceCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.engine.handleWillSleep() }
+        }))
+        observers.append((workspaceCenter, workspaceCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.engine.handleDidWake() }
+        }))
     }
 
     func refreshAuthorization() {
         guard !isAuthorized else { return }
-        if CGPreflightScreenCaptureAccess() {
-            isAuthorized = true
-            startProcessMonitorIfNeeded()
-        }
+        if ensureAuthorized() { scheduleReconcile() }
     }
 
-    private func requestCapturePermissions() {
-        if CGPreflightScreenCaptureAccess() {
-            self.isAuthorized = true
+    private func ensureAuthorized() -> Bool {
+        if !isAuthorized, CGPreflightScreenCaptureAccess() {
+            isAuthorized = true
+            engine.startProcessMonitoring()
         }
+        return isAuthorized
     }
 
     // MARK: - DSP Controls (UI to Engine Bridge)
 
     func notifyAdjustmentMade(for bundleID: String) {
-        reconcileRunningApps()
+        scheduleReconcile()
     }
 
     func setAppVolume(bundleID: String, volume: Float) {
-        guard let taps = activeTaps[bundleID]?.values else { return }
-        for tap in taps {
-            tap.updateAppVolume(volume)
-        }
+        pushAppParameters(for: bundleID)
     }
 
     func setAppMute(bundleID: String, isMuted: Bool) {
-        guard let taps = activeTaps[bundleID]?.values else { return }
-        for tap in taps {
-            tap.updateAppMute(isMuted)
-        }
+        pushAppParameters(for: bundleID)
     }
 
     func setAppEQ(bundleID: String, gains: [Double], bassGain: Double = 0.0) {
-        guard let taps = activeTaps[bundleID]?.values else { return }
-        let normalized = AudioEQ.normalize(gains)
-        for tap in taps {
-            let shouldApply = PerAppAudioController.shared.appliesEQ(for: bundleID, toDeviceUID: tap.targetDeviceUID)
-            tap.updateAppEQ(gains: shouldApply ? normalized : AudioEQ.flat,
-                            bassGain: shouldApply ? bassGain : 0.0)
-        }
+        pushAppParameters(for: bundleID)
     }
-
-    private var premiumAccessCancellable: AnyCancellable?
 
     func eightDAudioSettings(for bundleID: String) -> EightDAudioSettings {
         guard PremiumGate.hasAccess(.audio8D) else { return EightDAudioSettings() }
@@ -251,16 +262,9 @@ class MultiAudioManager: ObservableObject {
     }
 
     private func applyPremiumDSPAccess() {
-        for (bundleID, taps) in activeTaps {
-            let eightD = eightDAudioSettings(for: bundleID)
-            let surround = surroundAudioSettings(for: bundleID)
-            for tap in taps.values {
-                tap.updateEightDAudio(settings: eightD)
-                tap.updateSurroundAudio(settings: surround)
-            }
-        }
+        pushAllParameters()
         objectWillChange.send()
-        reconcileRunningApps()
+        scheduleReconcile()
     }
 
     func setEightDAudioSettings(_ settings: EightDAudioSettings, for bundleID: String) {
@@ -281,10 +285,10 @@ class MultiAudioManager: ObservableObject {
         eightDAudioSettingsByBundleID[bundleID] = clamped
         scheduleSettingsPersistence()
 
-        activeTaps[bundleID]?.values.forEach { $0.updateEightDAudio(settings: clamped) }
+        pushAppParameters(for: bundleID)
         if previous.enabled != clamped.enabled {
             objectWillChange.send()
-            reconcileRunningApps()
+            scheduleReconcile()
         }
     }
 
@@ -306,253 +310,190 @@ class MultiAudioManager: ObservableObject {
         surroundAudioSettingsByBundleID[bundleID] = clamped
         scheduleSettingsPersistence()
 
-        activeTaps[bundleID]?.values.forEach { $0.updateSurroundAudio(settings: clamped) }
+        pushAppParameters(for: bundleID)
         if previous.enabled != clamped.enabled {
             objectWillChange.send()
-            reconcileRunningApps()
+            scheduleReconcile()
         }
     }
 
     func resetEightDAudio(for bundleID: String) {
         eightDAudioSettingsByBundleID.removeValue(forKey: bundleID)
         persistEightDAudioSettings()
-        activeTaps[bundleID]?.values.forEach { $0.updateEightDAudio(settings: EightDAudioSettings()) }
+        pushAppParameters(for: bundleID)
         objectWillChange.send()
-        reconcileRunningApps()
+        scheduleReconcile()
     }
 
     func resetSurroundAudio(for bundleID: String) {
         surroundAudioSettingsByBundleID.removeValue(forKey: bundleID)
         persistSurroundAudioSettings()
-        activeTaps[bundleID]?.values.forEach { $0.updateSurroundAudio(settings: SurroundAudioSettings()) }
+        pushAppParameters(for: bundleID)
         objectWillChange.send()
-        reconcileRunningApps()
+        scheduleReconcile()
     }
 
     func clearAllEightDAudioSettings() {
+        let affected = Set(eightDAudioSettingsByBundleID.keys).union(surroundAudioSettingsByBundleID.keys)
         eightDAudioSettingsByBundleID.removeAll()
         surroundAudioSettingsByBundleID.removeAll()
         persistEightDAudioSettings()
         persistSurroundAudioSettings()
-        activeTaps.values.flatMap(\.values).forEach {
-            $0.updateEightDAudio(settings: EightDAudioSettings())
-            $0.updateSurroundAudio(settings: SurroundAudioSettings())
-        }
+        affected.forEach { pushAppParameters(for: $0) }
         objectWillChange.send()
-        reconcileRunningApps()
+        scheduleReconcile()
     }
 
     func updateSettings(for deviceID: AudioDeviceID, settings: AudioDeviceSettings) {
         let previous = deviceSettings[deviceID] ?? AudioDeviceSettings()
         guard previous != settings else { return }
         self.deviceSettings[deviceID] = settings
-        guard let uid = CoreAudioDevices.uid(of: deviceID) else { return }
+        guard let uid = availableOutputDevices.first(where: { $0.id == deviceID })?.uid else { return }
         settingsByUID[uid] = settings
         scheduleSettingsPersistence()
-
-        for tapMap in activeTaps.values {
-            for tap in tapMap.values where tap.targetDeviceUID == uid {
-                tap.updateDeviceControls(volume: Float(settings.volume), balance: Float(settings.balance), delay: Float(settings.delay))
-                tap.updateDeviceEQ(gains: settings.customEQGains, bassGain: settings.bassGain)
-            }
-        }
+        engine.state.setDeviceParameters(DeviceTapParameters(settings), forUID: uid)
         if Self.requiresProcessing(previous) != Self.requiresProcessing(settings) {
-            reconcileRunningApps()
+            scheduleReconcile()
         }
     }
 
     func clearAllDeviceSettings() {
+        for uid in settingsByUID.keys {
+            engine.state.setDeviceParameters(DeviceTapParameters(), forUID: uid)
+        }
         settingsByUID.removeAll()
         deviceSettings.removeAll()
         UserDefaults.standard.removeObject(forKey: deviceSettingsDefaultsKey)
         notifyAdjustmentMade(for: "ResetAll")
     }
 
+    func resetAllTaps() {
+        engine.rebuildAll()
+    }
+
+    private func appParameters(for bundleID: String) -> AppTapParameters {
+        let perApp = PerAppAudioController.shared
+        return AppTapParameters(
+            volume: Float(perApp.volume(for: bundleID)),
+            muted: perApp.mute(for: bundleID),
+            eqGains: perApp.eqGains(for: bundleID),
+            eqBass: perApp.eqBass(for: bundleID),
+            eqDeviceScope: perApp.targetDeviceUIDs(for: bundleID),
+            eightD: eightDAudioSettings(for: bundleID),
+            surround: surroundAudioSettings(for: bundleID)
+        )
+    }
+
+    private func pushAppParameters(for bundleID: String) {
+        engine.state.setAppParameters(appParameters(for: bundleID), for: bundleID)
+    }
+
+    private func pushAllParameters() {
+        let bundles = PerAppAudioController.shared.adjustedBundleIDs()
+            .union(eightDAudioSettingsByBundleID.keys)
+            .union(surroundAudioSettingsByBundleID.keys)
+            .union(engine.state.snapshot().keys)
+        bundles.forEach { pushAppParameters(for: $0) }
+        for (uid, settings) in settingsByUID {
+            engine.state.setDeviceParameters(DeviceTapParameters(settings), forUID: uid)
+        }
+    }
+
+    // MARK: - Per-app routing, order and visibility
+
+    func route(for bundleID: String) -> String? { appRoutes[bundleID] }
+
+    func setRoute(_ uid: String?, for bundleID: String) {
+        guard appRoutes[bundleID] != uid else { return }
+        if let uid { appRoutes[bundleID] = uid } else { appRoutes.removeValue(forKey: bundleID) }
+        UserDefaults.standard.set(appRoutes, forKey: appRoutesDefaultsKey)
+        scheduleReconcile()
+    }
+
+    func togglePin(_ bundleID: String) {
+        appOrdering.togglePin(bundleID)
+        persistAppOrdering()
+    }
+
+    func move(_ bundleID: String, offset: Int, visible: [String]) {
+        appOrdering.move(bundleID, offset: offset, visible: visible)
+        persistAppOrdering()
+    }
+
+    func hideApp(_ bundleID: String) {
+        appOrdering.hide(bundleID)
+        persistAppOrdering()
+    }
+
+    func unhideApp(_ bundleID: String) {
+        appOrdering.unhide(bundleID)
+        persistAppOrdering()
+    }
+
+    func unhideAllApps() {
+        appOrdering.unhideAll()
+        persistAppOrdering()
+    }
+
+    private func persistAppOrdering() {
+        if let data = try? JSONEncoder().encode(appOrdering) {
+            UserDefaults.standard.set(data, forKey: appOrderingDefaultsKey)
+        }
+    }
+
+    // MARK: - Output devices
+
+    func setSystemDefaultOutput(uid: String, completion: (@Sendable (Bool) -> Void)? = nil) {
+        engine.setDefaultDevice(uid: uid, input: false, completion: completion)
+    }
+
     // MARK: - Input Device Controls
+
+    func selectInputDevice(_ device: AudioDevice) {
+        preferredInputUID = device.uid
+        UserDefaults.standard.set(device.uid, forKey: preferredInputDefaultsKey)
+        currentInputDeviceID = device.id
+        engine.setDefaultDevice(uid: device.uid, input: true)
+    }
+
+    func clearPreferredInput() {
+        preferredInputUID = nil
+        UserDefaults.standard.removeObject(forKey: preferredInputDefaultsKey)
+    }
 
     func setInputMute(_ mute: Bool, for deviceID: AudioDeviceID) {
         setAllInputMutes(mute)
     }
 
     func setAllInputMutes(_ mute: Bool) {
-        let deviceIDs: [AudioDeviceID]
-        if availableInputDevices.isEmpty {
-            deviceIDs = Self.allHardwareInputDeviceIDs()
-        } else {
-            deviceIDs = Array(Set(availableInputDevices.map(\.id) + Self.allHardwareInputDeviceIDs()))
-        }
-
-        for id in deviceIDs {
-            applyInputMute(mute, to: id)
-        }
-        objectWillChange.send()
-
-        Task { @MainActor in
-            MicrophoneUsageManager.shared.applyExternalMuteState(mute)
-        }
+        let deviceIDs = Array(Set(availableInputDevices.map(\.id)).union(inputMutes.keys))
+        var updated = inputMutes
+        for id in inputMutes.keys { updated[id] = mute }
+        inputMutes = updated
+        engine.setInputMute(mute, deviceIDs: deviceIDs)
+        MicrophoneUsageManager.shared.applyExternalMuteState(mute)
     }
 
     func isInputMuted(for deviceID: AudioDeviceID) -> Bool {
-        readInputMute(of: deviceID)
+        inputMutes[deviceID] ?? false
     }
 
     var areAllInputsMuted: Bool {
-        let ids = availableInputDevices.isEmpty ? Self.allHardwareInputDeviceIDs() : availableInputDevices.map(\.id)
-        let muteable = ids.filter { Self.hasInputMuteProperty($0) }
-        guard !muteable.isEmpty else { return false }
-        return muteable.allSatisfy { readInputMute(of: $0) }
-    }
-
-    private func applyInputMute(_ mute: Bool, to deviceID: AudioDeviceID) {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        if !AudioObjectHasProperty(deviceID, &address) {
-            address.mElement = 1
-        }
-        guard AudioObjectHasProperty(deviceID, &address) else { return }
-
-        var settable: DarwinBoolean = false
-        if AudioObjectIsPropertySettable(deviceID, &address, &settable) == noErr, !settable.boolValue {
-            return
-        }
-
-        var muteVal: UInt32 = mute ? 1 : 0
-        AudioObjectSetPropertyData(deviceID, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &muteVal)
-    }
-
-    private func readInputMute(of deviceID: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        if !AudioObjectHasProperty(deviceID, &address) {
-            address.mElement = 1
-        }
-        guard AudioObjectHasProperty(deviceID, &address) else { return false }
-
-        var muteVal: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muteVal) == noErr {
-            return muteVal != 0
-        }
-        return false
-    }
-
-    private static func hasInputMuteProperty(_ deviceID: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyMute,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        if AudioObjectHasProperty(deviceID, &address) { return true }
-        address.mElement = 1
-        return AudioObjectHasProperty(deviceID, &address)
-    }
-
-    private static func allHardwareInputDeviceIDs() -> [AudioDeviceID] {
-        (CoreAudioDevices.all() ?? []).filter { CoreAudioDevices.hasChannels($0, scope: kAudioObjectPropertyScopeInput) }
+        !inputMutes.isEmpty && inputMutes.values.allSatisfy { $0 }
     }
 
     func getInputVolume(for deviceID: AudioDeviceID) -> Float {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyVolumeScalar,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        if !AudioObjectHasProperty(deviceID, &address) {
-            address.mElement = 1
-            if !AudioObjectHasProperty(deviceID, &address) { return 1.0 }
-        }
-        var vol: Float = 0.0
-        var size = UInt32(MemoryLayout<Float>.size)
-        if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &vol) == noErr {
-            return vol
-        }
-        return 1.0
+        inputVolumes[deviceID] ?? 1.0
     }
 
     func setInputVolume(_ volume: Float, for deviceID: AudioDeviceID) {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyVolumeScalar,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        if !AudioObjectHasProperty(deviceID, &address) { address.mElement = 1 }
-
-        var vol = volume
-        let status = AudioObjectSetPropertyData(deviceID, &address, 0, nil, UInt32(MemoryLayout<Float>.size), &vol)
-
-        if status == noErr {
-            self.objectWillChange.send()
-        }
+        let clamped = min(max(volume, 0), 1)
+        guard inputVolumes[deviceID] != clamped else { return }
+        inputVolumes[deviceID] = clamped
+        engine.setInputVolume(clamped, deviceID: deviceID)
     }
 
-    // MARK: - Process Monitoring & Lazy Tapping
-    private func configureProcessMonitor() { }
-
-    private func startProcessMonitorIfNeeded() {
-        guard !isProcessMonitorStarted else { return }
-        isProcessMonitorStarted = true
-
-        var listAddr = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyProcessObjectList,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            Task { @MainActor [weak self] in
-                self?.scheduleReconcile()
-            }
-        }
-
-        processListListenerBlock = block
-        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &listAddr, .main, block)
-        reconcileRunningApps()
-    }
-
-    private func getResponsibleAppBundleID(for pid: pid_t, runningApps: [pid_t: RunningApps.AppInfo]) -> String? {
-        if let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -1), "responsibility_get_pid_responsible_for_pid") {
-            let responsiblePID = unsafeBitCast(sym, to: (@convention(c) (pid_t) -> pid_t).self)(pid)
-            if responsiblePID > 0 && responsiblePID != pid, let app = runningApps[responsiblePID] { return app.bundleID }
-        }
-        var currentPID = pid
-        while currentPID > 1 {
-            if let app = runningApps[currentPID], app.isAppBundle { return app.bundleID }
-            var info = kinfo_proc(); var size = MemoryLayout<kinfo_proc>.size; var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, currentPID]
-            guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { break }
-            let parentPID = info.kp_eproc.e_ppid
-            if parentPID == currentPID { break }; currentPID = parentPID
-        }
-        return nil
-    }
-
-    private func appNeedsTap(bundleID: String, outputDeviceIDs: [AudioDeviceID]) -> Bool {
-        if PerAppAudioController.shared.hasAdjustments(for: bundleID) || eightDAudioSettings(for: bundleID).enabled || surroundAudioSettings(for: bundleID).enabled { return true }
-        if selectedOutputDeviceIDs.count > 1 { return true }
-        if selectedOutputDeviceIDs.count == 1 {
-            if let selectedID = selectedOutputDeviceIDs.first,
-               let defaultID = defaultOutputDeviceID,
-               selectedID != defaultID {
-                return true
-            }
-        }
-        for deviceID in outputDeviceIDs {
-            if let settings = deviceSettings[deviceID] {
-                if settings.volume != 1.0 { return true }
-                if settings.balance != 0.5 { return true }
-                if settings.delay > 0.0 { return true }
-                if settings.bassGain != 0.0 { return true }
-                if !settings.customEQGains.allSatisfy({ $0 == 0.0 }) { return true }
-            }
-        }
-        return false
-    }
+    // MARK: - Reconcile
 
     private func scheduleReconcile() {
         reconcileTask?.cancel()
@@ -565,205 +506,121 @@ class MultiAudioManager: ObservableObject {
     }
 
     private func reconcileRunningApps() {
-        if !isAuthorized {
-            if CGPreflightScreenCaptureAccess() {
-                isAuthorized = true
-                startProcessMonitorIfNeeded()
-            } else {
-                return
-            }
+        guard ensureAuthorized() else { return }
+        engine.setFrontmostBundleID(ActiveAppMonitor.shared.activeAppBundleID)
+        engine.submit(makePlan())
+    }
+
+    private func makePlan() -> MixerPlan {
+        var available = Set(availableOutputDevices.map(\.uid))
+        if let defaultOutputUID { available.insert(defaultOutputUID) }
+        let selectedUIDs = availableOutputDevices
+            .filter { selectedOutputDeviceIDs.contains($0.id) }
+            .map(\.uid)
+            .sorted()
+        let globalOutputs = MixerRouting.globalOutputUIDs(selectedUIDs: selectedUIDs, availableUIDs: available, defaultUID: defaultOutputUID)
+
+        var tapAll = selectedOutputDeviceIDs.count > 1
+        if selectedOutputDeviceIDs.count == 1, let selected = selectedOutputDeviceIDs.first,
+           let defaultOutputDeviceID, selected != defaultOutputDeviceID {
+            tapAll = true
+        }
+        if !tapAll {
+            tapAll = globalOutputs.contains { uid in settingsByUID[uid].map(Self.requiresProcessing) ?? false }
         }
 
-        let outputDeviceIDs: [AudioDeviceID] = {
-            if !selectedOutputDeviceIDs.isEmpty {
-                return Array(selectedOutputDeviceIDs)
-            }
-            if let defaultID = defaultOutputDeviceID {
-                return [defaultID]
-            }
-            return[]
-        }()
-        guard !outputDeviceIDs.isEmpty else { return }
-
-        let outputUIDByDeviceID: [AudioDeviceID: String] = Dictionary(uniqueKeysWithValues: outputDeviceIDs.compactMap { deviceID -> (AudioDeviceID, String)? in
-            guard let uid = CoreAudioDevices.uid(of: deviceID) else { return nil }
-            return (deviceID, uid)
-        })
-        guard !outputUIDByDeviceID.isEmpty else { return }
-
-        var listAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &listAddr, 0, nil, &size) == noErr else { return }
-
-        var objectIDs = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
-        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &listAddr, 0, nil, &size, &objectIDs)
-        updateProcessRunningListeners(for: objectIDs)
-
-        let runningAppsByPID = RunningApps.shared.infoByPID()
-        var newBundleGroups: [String: [AudioObjectID]] = [:]
-
-        for objID in objectIDs {
-            var isRunning: UInt32 = 0
-            var runSize = UInt32(MemoryLayout<UInt32>.size)
-            var runAddr = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunning, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-            if AudioObjectGetPropertyData(objID, &runAddr, 0, nil, &runSize, &isRunning) == noErr, isRunning == 0 { continue }
-
-            let pid: pid_t
-            if let cachedPID = processPIDByObjectID[objID] {
-                pid = cachedPID
-            } else {
-                var readPID: pid_t = 0
-                var pidSize = UInt32(MemoryLayout<pid_t>.size)
-                var pidAddr = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyPID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-                guard AudioObjectGetPropertyData(objID, &pidAddr, 0, nil, &pidSize, &readPID) == noErr else { continue }
-                pid = readPID
-                processPIDByObjectID[objID] = readPID
-            }
-
-            let bundleID = processBundleIDByObjectID[objID]
-                ?? runningAppsByPID[pid]?.bundleID
-                ?? getResponsibleAppBundleID(for: pid, runningApps: runningAppsByPID)
-            if let bundleID { processBundleIDByObjectID[objID] = bundleID }
-            if let bID = bundleID, !bID.hasPrefix("com.apple.audio") && bID != Bundle.main.bundleIdentifier {
-                newBundleGroups[bID, default: []].append(objID)
-            }
+        var adjusted = PerAppAudioController.shared.adjustedBundleIDs()
+        for (bundleID, settings) in eightDAudioSettingsByBundleID where settings.enabled && PremiumGate.hasAccess(.audio8D) {
+            adjusted.insert(bundleID)
         }
+        for (bundleID, settings) in surroundAudioSettingsByBundleID where settings.enabled && PremiumGate.hasAccess(.surroundSound) {
+            adjusted.insert(bundleID)
+        }
+        return MixerPlan(globalOutputUIDs: globalOutputs, tapAllAudibleApps: tapAll, adjustedBundleIDs: adjusted, routes: appRoutes)
+    }
 
-        let currentBundles = Set(newBundleGroups.keys)
+    private func applyActiveBundles(_ bundles: Set<String>) {
         let now = Date()
-        for bundleID in currentBundles {
-            lastAudioActivityByBundleID[bundleID] = now
-        }
+        for bundleID in bundles { lastAudioActivityByBundleID[bundleID] = now }
         lastAudioActivityByBundleID = lastAudioActivityByBundleID.filter {
             now.timeIntervalSince($0.value) <= recentAudioPriorityWindow * 4
         }
-
-        if currentBundles != latestActiveBundleIDs {
-            latestActiveBundleIDs = currentBundles
+        if bundles != latestActiveBundleIDs {
+            latestActiveBundleIDs = bundles
             NotificationCenter.default.post(name: .multiAudioActiveBundlesDidChange, object: self)
         }
-
-        let trackedBundles = Set(activeTaps.keys)
-        let activeOutputUIDs = Set(outputUIDByDeviceID.values)
-        let perAppCtrl = PerAppAudioController.shared
-
-        for bID in trackedBundles {
-            guard currentBundles.contains(bID), appNeedsTap(bundleID: bID, outputDeviceIDs: outputDeviceIDs) else {
-                activeTaps[bID]?.values.forEach { $0.invalidate() }
-                activeTaps.removeValue(forKey: bID)
-                continue
-            }
-
-            var tapMap = activeTaps[bID] ?? [:]
-            for (uid, tap) in tapMap where !activeOutputUIDs.contains(uid) {
-                tap.invalidate()
-                tapMap.removeValue(forKey: uid)
-            }
-            activeTaps[bID] = tapMap.isEmpty ? nil : tapMap
-        }
-
-        for (bundleID, objIDs) in newBundleGroups {
-            guard appNeedsTap(bundleID: bundleID, outputDeviceIDs: outputDeviceIDs) else { continue }
-            let sortedIDs = Array(Set(objIDs)).sorted()
-            var tapMap = activeTaps[bundleID] ?? [:]
-
-            for (outputDeviceID, outputUID) in outputUIDByDeviceID {
-                if let existingTap = tapMap[outputUID] {
-                    if existingTap.processObjectIDs != sortedIDs {
-                        existingTap.invalidate()
-                        tapMap.removeValue(forKey: outputUID)
-                    }
-                }
-
-                if tapMap[outputUID] == nil {
-                    do {
-                        let hwSampleRate = MultiAudioManager.getNominalSampleRate(for: outputDeviceID)
-
-                        let tap = try AppTapController(bundleID: bundleID, processObjectIDs: sortedIDs, targetDeviceUID: outputUID, sampleRate: hwSampleRate)
-
-                        tap.updateAppVolume(Float(perAppCtrl.volume(for: bundleID)))
-                        tap.updateAppMute(perAppCtrl.mute(for: bundleID))
-
-                        tap.updateEightDAudio(settings: eightDAudioSettings(for: bundleID))
-                        tap.updateSurroundAudio(settings: surroundAudioSettings(for: bundleID))
-
-                        let appEQGains = perAppCtrl.eqGains(for: bundleID)
-                        let appEQBass = perAppCtrl.eqBass(for: bundleID)
-                        let shouldApplyAppEQ = perAppCtrl.appliesEQ(for: bundleID, toDeviceUID: outputUID)
-
-                        tap.updateAppEQ(gains: shouldApplyAppEQ ? appEQGains : AudioEQ.flat,
-                                        bassGain: shouldApplyAppEQ ? appEQBass : 0.0)
-
-                        if let devSettings = deviceSettings[outputDeviceID] {
-                            tap.updateDeviceControls(volume: Float(devSettings.volume), balance: Float(devSettings.balance), delay: Float(devSettings.delay))
-                            tap.updateDeviceEQ(gains: devSettings.customEQGains, bassGain: devSettings.bassGain)
-                        }
-
-                        try tap.activate()
-                        tapMap[outputUID] = tap
-                    } catch {
-                        print("[Engine]  Failed to tap \(bundleID): \(error.localizedDescription)")
-                    }
-                }
-            }
-            activeTaps[bundleID] = tapMap.isEmpty ? nil : tapMap
-        }
     }
 
-    private func reTapAllApps() {
-        activeTaps.values.forEach { tapMap in
-            tapMap.values.forEach { $0.invalidate() }
-        }
-        activeTaps.removeAll()
-        reconcileRunningApps()
-    }
+    // MARK: - Device snapshots
 
-    // MARK: - Device Discovery & Helpers
-    private func discoverDevices() {
-        self.defaultOutputDeviceID = getDefaultDevice(for: kAudioHardwarePropertyDefaultOutputDevice)
-
+    private func apply(_ snapshot: MixerDeviceSnapshot) {
         let previouslySelectedUIDs = Set(
             availableOutputDevices
                 .filter { selectedOutputDeviceIDs.contains($0.id) }
                 .map(\.uid)
             + (UserDefaults.standard.stringArray(forKey: selectedOutputUIDsDefaultsKey) ?? [])
         )
-
-        var outputs: [AudioDevice] = []; var inputs: [AudioDevice] = []
-        guard let deviceIDs = CoreAudioDevices.all() else { return }
-
-        for deviceID in deviceIDs {
-            guard let name = CoreAudioDevices.name(of: deviceID), let uid = CoreAudioDevices.uid(of: deviceID), !name.hasPrefix("Sapphire-") else { continue }
-            if shouldHideVirtualDevice(name: name, uid: uid) { continue }
-
-            let isInput = CoreAudioDevices.hasStreams(deviceID, scope: kAudioObjectPropertyScopeInput)
-            let isOutput = CoreAudioDevices.hasStreams(deviceID, scope: kAudioObjectPropertyScopeOutput)
-
-            if isOutput { outputs.append(AudioDevice(id: deviceID, uid: uid, name: name, isInput: isInput, isOutput: isOutput)) }
-            if isInput { inputs.append(AudioDevice(id: deviceID, uid: uid, name: name, isInput: isInput, isOutput: isOutput)) }
+        let outputsChanged = availableOutputDevices != snapshot.outputs
+            || defaultOutputDeviceID != snapshot.defaultOutputID
+            || defaultOutputUID != snapshot.defaultOutputUID
+        let inputsChanged = availableInputDevices != snapshot.inputs || currentInputDeviceID != snapshot.defaultInputID
+            || inputMutes != snapshot.inputMutes
+        if availableOutputDevices != snapshot.outputs { availableOutputDevices = snapshot.outputs }
+        if availableInputDevices != snapshot.inputs { availableInputDevices = snapshot.inputs }
+        if defaultOutputDeviceID != snapshot.defaultOutputID { defaultOutputDeviceID = snapshot.defaultOutputID }
+        if defaultOutputUID != snapshot.defaultOutputUID { defaultOutputUID = snapshot.defaultOutputUID }
+        if currentInputDeviceID != snapshot.defaultInputID { currentInputDeviceID = snapshot.defaultInputID }
+        if inputVolumes != snapshot.inputVolumes { inputVolumes = snapshot.inputVolumes }
+        if inputMutes != snapshot.inputMutes { inputMutes = snapshot.inputMutes }
+        if inputsChanged {
+            enforcePreferredInput(snapshot)
+            MicrophoneUsageManager.shared.inputDevicesDidChange()
         }
-        self.availableOutputDevices = outputs.sorted { $0.name < $1.name }; self.availableInputDevices = inputs.sorted { $0.name < $1.name }
-        rematchSelectedDevices(to: previouslySelectedUIDs)
+        if outputsChanged || !hasAppliedSnapshot {
+            hasAppliedSnapshot = true
+            rematchSelectedDevices(to: previouslySelectedUIDs)
+            AudioOutputSwitcher.shared.devicesDidChange(snapshot)
+            scheduleReconcile()
+        }
+    }
+
+    private func enforcePreferredInput(_ snapshot: MixerDeviceSnapshot) {
+        guard let target = PreferredInputPolicy.deviceToSelect(
+            preferredUID: preferredInputUID,
+            currentDefaultUID: snapshot.defaultInputUID,
+            availableUIDs: Set(snapshot.inputs.map(\.uid))
+        ) else { return }
+        let now = Date()
+        preferredInputEnforcements.removeAll { now.timeIntervalSince($0) > 10 }
+        guard preferredInputEnforcements.count < 3 else { return }
+        preferredInputEnforcements.append(now)
+        engine.setDefaultDevice(uid: target, input: true)
     }
 
     // MARK: - Device Settings Persistence
 
     private func loadPersistedDeviceState() {
-        if let data = UserDefaults.standard.data(forKey: deviceSettingsDefaultsKey),
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: deviceSettingsDefaultsKey),
            let decoded = try? JSONDecoder().decode([String: AudioDeviceSettings].self, from: data) {
             settingsByUID = decoded
         }
-        if let data = UserDefaults.standard.data(forKey: eightDAudioDefaultsKey),
+        if let data = defaults.data(forKey: eightDAudioDefaultsKey),
            let decoded = try? JSONDecoder().decode([String: EightDAudioSettings].self, from: data) {
             eightDAudioSettingsByBundleID = decoded
         }
-        if let data = UserDefaults.standard.data(forKey: surroundAudioDefaultsKey),
+        if let data = defaults.data(forKey: surroundAudioDefaultsKey),
            let decoded = try? JSONDecoder().decode([String: SurroundAudioSettings].self, from: data) {
             surroundAudioSettingsByBundleID = decoded
         }
-
-        let savedUIDs = Set(UserDefaults.standard.stringArray(forKey: selectedOutputUIDsDefaultsKey) ?? [])
-        rematchSelectedDevices(to: savedUIDs)
+        if let routes = defaults.dictionary(forKey: appRoutesDefaultsKey) as? [String: String] {
+            appRoutes = routes.filter { !$0.key.isEmpty && !$0.value.isEmpty }
+        }
+        if let data = defaults.data(forKey: appOrderingDefaultsKey),
+           let decoded = try? JSONDecoder().decode(MixerAppOrdering.self, from: data) {
+            appOrdering = decoded
+        }
+        preferredInputUID = defaults.string(forKey: preferredInputDefaultsKey)
     }
 
     private func persistDeviceSettingsArchive() {
@@ -818,7 +675,7 @@ class MultiAudioManager: ObservableObject {
                 live[device.id] = archived
             }
         }
-        deviceSettings = live
+        if live != deviceSettings { deviceSettings = live }
     }
 
     private func rematchSelectedDevices(to uids: Set<String>) {
@@ -835,66 +692,10 @@ class MultiAudioManager: ObservableObject {
         selectedOutputDeviceIDs = matchedIDs
         isRestoringPersistedSelection = false
         rebuildLiveDeviceSettingsFromArchive()
-        reTapAllApps()
-    }
-
-    private func setupDeviceListeners() {
-        var devicesAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &devicesAddr, nil) { [weak self] _, _ in
-            Task { @MainActor [weak self] in self?.discoverDevices() }
-        }
-
-        var defaultOutputAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &defaultOutputAddr, nil) { [weak self] _, _ in
-            Task { @MainActor [weak self] in
-                self?.defaultOutputDeviceID = self?.getDefaultDevice(for: kAudioHardwarePropertyDefaultOutputDevice)
-                self?.scheduleReconcile()
-            }
-        }
-    }
-
-    private func shouldHideVirtualDevice(name: String, uid: String) -> Bool {
-        let loweredName = name.lowercased()
-        let loweredUID = uid.lowercased()
-        let virtualMarkers = ["blackhole", "loopback", "aggregate", "multi-output", "soundflower", "background music", "airfoil", "vb-cable", "virtual"]
-        return virtualMarkers.contains { loweredName.contains($0) || loweredUID.contains($0) }
-    }
-
-    private func getDefaultDevice(for selector: AudioObjectPropertySelector) -> AudioDeviceID? {
-        var id: AudioDeviceID = 0; var size = UInt32(MemoryLayout<AudioDeviceID>.size); var addr = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &id) == noErr ? id : nil
-    }
-
-    private func updateProcessRunningListeners(for processObjectIDs: [AudioObjectID]) {
-        let newSet = Set(processObjectIDs)
-        let removed = monitoredProcessObjectIDs.subtracting(newSet)
-        for objectID in removed {
-            processPIDByObjectID[objectID] = nil
-            processBundleIDByObjectID[objectID] = nil
-            guard let block = processRunningListenerBlocks.removeValue(forKey: objectID) else { continue }
-            var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunning, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-            _ = AudioObjectRemovePropertyListenerBlock(objectID, &address, .main, block)
-        }
-        let added = newSet.subtracting(monitoredProcessObjectIDs)
-        for objectID in added {
-            var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunning, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-            let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-                Task { @MainActor [weak self] in self?.scheduleReconcile() }
-            }
-            if AudioObjectAddPropertyListenerBlock(objectID, &address, .main, block) == noErr { processRunningListenerBlocks[objectID] = block }
-        }
-        monitoredProcessObjectIDs = newSet
     }
 
     func activeAudioBundleIDs() -> Set<String> {
-        if !isAuthorized {
-            if CGPreflightScreenCaptureAccess() {
-                isAuthorized = true
-                startProcessMonitorIfNeeded()
-            } else {
-                return[]
-            }
-        }
+        guard ensureAuthorized() else { return [] }
         return latestActiveBundleIDs
     }
 
@@ -907,78 +708,84 @@ class MultiAudioManager: ObservableObject {
         return Date().timeIntervalSince(date) <= window
     }
 
-    // MARK: - Advanced Hardware Property Helpers
+    // MARK: - Device format (read on the HAL queue)
 
-    nonisolated static func getNominalSampleRate(for deviceID: AudioDeviceID) -> Double {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var rate: Double = 0; var size = UInt32(MemoryLayout<Double>.size)
-        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &rate)
-        return (status == noErr && rate > 8000) ? rate : 48000.0
-    }
-
-    func getAvailableSampleRates(for deviceID: AudioDeviceID) -> [Double] {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyAvailableNominalSampleRates,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var size: UInt32 = 0
-        AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size)
-        let count = Int(size) / MemoryLayout<AudioValueRange>.size
-        var ranges = [AudioValueRange](repeating: AudioValueRange(), count: count)
-        AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &ranges)
-        return ranges.map { $0.mMinimum }.sorted()
+    func loadFormatInfo(for deviceID: AudioDeviceID, completion: @escaping @Sendable (MixerEngine.DeviceFormatInfo) -> Void) {
+        engine.readFormatInfo(deviceID: deviceID, completion: completion)
     }
 
     func setNominalSampleRate(_ rate: Double, for deviceID: AudioDeviceID) {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyNominalSampleRate,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var newRate = rate
-        AudioObjectSetPropertyData(deviceID, &address, 0, nil, UInt32(MemoryLayout<Double>.size), &newRate)
+        engine.setNominalSampleRate(rate, deviceID: deviceID)
     }
+}
 
-    func getStreamFormat(for deviceID: AudioDeviceID) -> String {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamFormat,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var format = AudioStreamBasicDescription()
-        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &format) == noErr else { return "Unknown" }
+// MARK: - Call Audio Attribution
+enum CallAudioAttribution {
+    static let callAudioDaemonBundleIDs: Set<String> = [
+        "com.apple.avconferenced",
+        "com.apple.TelephonyUtilities"
+    ]
+    static let callingAppBundleIDs = ["com.apple.FaceTime", "com.apple.mobilephone"]
 
-        let bitDepth = format.mBitsPerChannel
-        let channels = format.mChannelsPerFrame
-        return "\(channels) Ch / \(bitDepth)-bit"
+    static func callingApp(
+        forDaemonBundleID daemonBundleID: String?,
+        frontmostBundleID: String?,
+        isRunning: (String) -> Bool
+    ) -> String? {
+        guard let daemonBundleID, callAudioDaemonBundleIDs.contains(daemonBundleID) else { return nil }
+        if let frontmostBundleID, callingAppBundleIDs.contains(frontmostBundleID) { return frontmostBundleID }
+        return callingAppBundleIDs.first(where: isRunning)
     }
 }
 
 // MARK: - Sapphire Process Tap Controller
-class AppTapController {
-    let bundleID: String, processObjectIDs: [AudioObjectID], targetDeviceUID: String
-    var tapID: AudioObjectID = 0, aggregateDeviceID: AudioObjectID = 0, procID: AudioDeviceIOProcID?
+final class AppTapController {
+    let bundleID: String
+    let targetDeviceUID: String
+    private(set) var processObjectIDs: [AudioObjectID]
+    private(set) var tapID: AudioObjectID = 0
+    private(set) var aggregateDeviceID: AudioObjectID = 0
+    private var procID: AudioDeviceIOProcID?
+    private let tapDescription: CATapDescription
+    private let ioQueue: DispatchQueue
+    private let ioQueueToken = UUID()
+    private static let ioQueueKey = DispatchSpecificKey<UUID>()
 
-    nonisolated(unsafe) var appVolume: Float = 1.0, isAppMuted: Bool = false, appEqSetup: vDSP_biquad_Setup?
-    nonisolated(unsafe) var deviceVolume: Float = 1.0, deviceBalance: Float = 0.5, deviceDelay: Float = 0.0, deviceEqSetup: vDSP_biquad_Setup?
-    private var parameterLock = os_unfair_lock_s()
+    private struct EQKey: Equatable {
+        var gains: [Double]
+        var bass: Double
+    }
+
+    private let parameterLock: UnsafeMutablePointer<os_unfair_lock_s>
+    private var appVolume: Float = 1.0
+    private var isAppMuted = false
+    private var appEqKey = EQKey(gains: AudioEQ.flat, bass: 0)
+    private var deviceVolume: Float = 1.0
+    private var deviceBalance: Float = 0.5
+    private var deviceDelay: Float = 0.0
+    private var deviceEqKey = EQKey(gains: AudioEQ.flat, bass: 0)
+    private var eqSampleRate: Double
+    private var installedEQ: (app: EQKey, device: EQKey, sampleRate: Double)?
     private var pendingEightDSettings = EightDAudioSettings()
     private var pendingSurroundSettings = SurroundAudioSettings()
+    private var isInvalidated = false
+
     private var renderAppVolume: Float = 1.0
     private var renderAppMuted = false
     private var renderDeviceVolume: Float = 1.0
     private var renderDeviceBalance: Float = 0.5
     private var renderDeviceDelay: Float = 0.0
-    private var renderAppEQ: vDSP_biquad_Setup?
-    private var renderDeviceEQ: vDSP_biquad_Setup?
     private var renderEightDSettings = EightDAudioSettings()
     private var renderSurroundSettings = SurroundAudioSettings()
-    private var retiredEQSetups: [vDSP_biquad_Setup] = []
+    private var renderGain: Float = 0
+    private let renderCounter: UnsafeMutablePointer<UInt64>
+    private let primaryLimiter: LookaheadLimiter
+    private let secondaryLimiter: LookaheadLimiter
 
-    private let appBufferL, appBufferR, devBufferL, devBufferR: UnsafeMutablePointer<Float>
-    private let bufferSize = 2 * BiquadMath.sectionCount + 2
+    private let primaryEQ = GraphicEQProcessor()
+    private let secondaryEQ = GraphicEQProcessor()
+    private let designQueue = DispatchQueue(label: "com.sapphire.audiotap.eq-design", qos: .userInitiated)
+    private var sampleRateListener: AudioObjectPropertyListenerBlock?
     private let maxDelaySamples = 96000
     private static let eightDDelaySamples = 4096
     private static let roomBufferSamples = 32768
@@ -1016,22 +823,26 @@ class AppTapController {
     private var roomTapOffsets: [Int] = []
     private var delayBufferL, delayBufferR: UnsafeMutablePointer<Float>
     private var delayWriteIndex = 0
-    private var fadeInSamplesRemaining = 2048
-    private var isInvalidated = false
     private var currentSampleRate: Double
 
+    var renderCount: UInt64 { renderCounter.pointee }
+
     init(bundleID: String, processObjectIDs: [AudioObjectID], targetDeviceUID: String, sampleRate: Double) throws {
-        self.bundleID = bundleID; self.processObjectIDs = processObjectIDs; self.targetDeviceUID = targetDeviceUID
+        self.bundleID = bundleID
+        self.processObjectIDs = processObjectIDs
+        self.targetDeviceUID = targetDeviceUID
         self.currentSampleRate = sampleRate
         self.roomTapOffsets = Self.roomTapTimes.map { min(Int($0 * sampleRate), Self.roomBufferSamples - 1) }
+        _ = Self.roomTapGains
 
-        appBufferL = .allocate(capacity: bufferSize); appBufferR = .allocate(capacity: bufferSize)
-        devBufferL = .allocate(capacity: bufferSize); devBufferR = .allocate(capacity: bufferSize)
+        parameterLock = .allocate(capacity: 1)
+        parameterLock.initialize(to: os_unfair_lock_s())
+        renderCounter = .allocate(capacity: 1)
+        renderCounter.initialize(to: 0)
+        primaryLimiter = LookaheadLimiter(sampleRate: sampleRate, lookaheadSeconds: 0.002)
+        secondaryLimiter = LookaheadLimiter(sampleRate: sampleRate, lookaheadSeconds: 0.002)
 
-        appBufferL.initialize(repeating: 0, count: bufferSize)
-        appBufferR.initialize(repeating: 0, count: bufferSize)
-        devBufferL.initialize(repeating: 0, count: bufferSize)
-        devBufferR.initialize(repeating: 0, count: bufferSize)
+        eqSampleRate = sampleRate
 
         delayBufferL = .allocate(capacity: maxDelaySamples); delayBufferR = .allocate(capacity: maxDelaySamples)
         delayBufferL.initialize(repeating: 0, count: maxDelaySamples); delayBufferR.initialize(repeating: 0, count: maxDelaySamples)
@@ -1042,52 +853,103 @@ class AppTapController {
         surroundDelayL = .allocate(capacity: Self.surroundDelaySamples); surroundDelayR = .allocate(capacity: Self.surroundDelaySamples)
         surroundDelayL.initialize(repeating: 0, count: Self.surroundDelaySamples); surroundDelayR.initialize(repeating: 0, count: Self.surroundDelaySamples)
 
-        let objectIDNumbers = processObjectIDs.map { NSNumber(value: $0) }
-        let tapDesc = CATapDescription(stereoMixdownOfProcesses: objectIDNumbers as! [AudioObjectID])
-        tapDesc.uuid = UUID(); tapDesc.muteBehavior = .mutedWhenTapped; tapDesc.isPrivate = true
+        ioQueue = DispatchQueue(label: "com.sapphire.audiotap.\(bundleID)", qos: .userInteractive)
+        ioQueue.setSpecific(key: Self.ioQueueKey, value: ioQueueToken)
 
-        var err = AudioHardwareCreateProcessTap(tapDesc, &tapID)
-        guard err == noErr else { throw NSError(domain: "TapError", code: Int(err)) }
+        tapDescription = CATapDescription(stereoMixdownOfProcesses: processObjectIDs)
+        tapDescription.uuid = UUID()
+        tapDescription.muteBehavior = .mutedWhenTapped
+        tapDescription.isPrivate = true
 
-        let aggDesc: [String: Any] = [
+        guard #available(macOS 14.2, *) else {
+            invalidate()
+            throw NSError(domain: "TapError", code: Int(kAudioHardwareUnsupportedOperationError))
+        }
+        var err = AudioHardwareCreateProcessTap(tapDescription, &tapID)
+        guard err == noErr else {
+            invalidate()
+            throw NSError(domain: "TapError", code: Int(err))
+        }
+
+        let aggregateDescription: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Sapphire-\(bundleID.split(separator: ".").last ?? "App")",
             kAudioAggregateDeviceUIDKey: UUID().uuidString, kAudioAggregateDeviceMainSubDeviceKey: targetDeviceUID,
             kAudioAggregateDeviceClockDeviceKey: targetDeviceUID, kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: true, kAudioAggregateDeviceTapAutoStartKey: true,
             kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: targetDeviceUID]],
-            kAudioAggregateDeviceTapListKey: [[kAudioSubTapDriftCompensationKey: false, kAudioSubTapUIDKey: tapDesc.uuid.uuidString]]
+            kAudioAggregateDeviceTapListKey: [[kAudioSubTapDriftCompensationKey: false, kAudioSubTapUIDKey: tapDescription.uuid.uuidString]]
         ]
 
-        err = AudioHardwareCreateAggregateDevice(aggDesc as CFDictionary, &aggregateDeviceID)
-        guard err == noErr else { invalidate(); throw NSError(domain: "AggregateError", code: Int(err)) }
-        CrashGuard.trackDevice(aggregateDeviceID)
+        err = AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &aggregateDeviceID)
+        guard err == noErr else {
+            invalidate()
+            throw NSError(domain: "AggregateError", code: Int(err))
+        }
     }
 
-    deinit { invalidate() }
+    deinit {
+        invalidate()
+        parameterLock.deinitialize(count: 1)
+        parameterLock.deallocate()
+        renderCounter.deallocate()
+    }
 
     func activate() throws {
-        let queue = DispatchQueue(label: "com.sapphire.audiotap.\(bundleID)", qos: .userInteractive)
-        var err = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateDeviceID, queue) { [weak self] _, inData, _, outData, _ in self?.process(inData, outData) }
-        guard err == noErr else { throw NSError(domain: "IOProcError", code: Int(err)) }
-        err = AudioDeviceStart(aggregateDeviceID, procID!)
+        var err = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateDeviceID, ioQueue) { [weak self] _, inData, _, outData, _ in
+            self?.process(inData, outData)
+        }
+        guard err == noErr, let procID else { throw NSError(domain: "IOProcError", code: Int(err)) }
+        err = AudioDeviceStart(aggregateDeviceID, procID)
         guard err == noErr else { throw NSError(domain: "DeviceStartError", code: Int(err)) }
+        observeSampleRate()
+    }
+
+    func updateProcesses(_ objectIDs: [AudioObjectID]) -> Bool {
+        guard !objectIDs.isEmpty, tapID != 0 else { return false }
+        let previous = tapDescription.processes
+        tapDescription.processes = objectIDs
+        var address = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyDescription, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var description: CATapDescription = tapDescription
+        let status = withUnsafeMutablePointer(to: &description) { pointer in
+            AudioObjectSetPropertyData(tapID, &address, 0, nil, UInt32(MemoryLayout<CATapDescription>.size), pointer)
+        }
+        guard status == noErr else {
+            tapDescription.processes = previous
+            return false
+        }
+        processObjectIDs = objectIDs
+        return true
     }
 
     func invalidate() {
-        guard !isInvalidated else { return }
+        os_unfair_lock_lock(parameterLock)
+        let alreadyInvalidated = isInvalidated
         isInvalidated = true
-        if let pID = procID { AudioDeviceStop(aggregateDeviceID, pID); AudioDeviceDestroyIOProcID(aggregateDeviceID, pID) }
-        if aggregateDeviceID != 0 { CrashGuard.untrackDevice(aggregateDeviceID); AudioHardwareDestroyAggregateDevice(aggregateDeviceID) }
-        if tapID != 0 { AudioHardwareDestroyProcessTap(tapID) }
-        os_unfair_lock_lock(&parameterLock)
-        if let setup = appEqSetup { vDSP_biquad_DestroySetup(setup) }
-        if let setup = deviceEqSetup { vDSP_biquad_DestroySetup(setup) }
-        retiredEQSetups.forEach { vDSP_biquad_DestroySetup($0) }
-        retiredEQSetups.removeAll()
-        appEqSetup = nil
-        deviceEqSetup = nil
-        os_unfair_lock_unlock(&parameterLock)
-        appBufferL.deallocate(); appBufferR.deallocate(); devBufferL.deallocate(); devBufferR.deallocate()
+        os_unfair_lock_unlock(parameterLock)
+        guard !alreadyInvalidated else { return }
+
+        if let procID {
+            AudioDeviceStop(aggregateDeviceID, procID)
+            AudioDeviceDestroyIOProcID(aggregateDeviceID, procID)
+            self.procID = nil
+        }
+        if DispatchQueue.getSpecific(key: Self.ioQueueKey) != ioQueueToken {
+            ioQueue.sync {}
+        }
+        if let sampleRateListener {
+            var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            AudioObjectRemovePropertyListenerBlock(aggregateDeviceID, &address, designQueue, sampleRateListener)
+            self.sampleRateListener = nil
+        }
+        if aggregateDeviceID != 0 {
+            AudioHardwareDestroyAggregateDevice(aggregateDeviceID)
+            aggregateDeviceID = 0
+        }
+        if tapID != 0, #available(macOS 14.2, *) {
+            AudioHardwareDestroyProcessTap(tapID)
+            tapID = 0
+        }
+
         delayBufferL.deallocate(); delayBufferR.deallocate()
         eightDDelayL.deallocate(); eightDDelayR.deallocate()
         eightDReverbL.deallocate(); eightDReverbR.deallocate()
@@ -1095,92 +957,132 @@ class AppTapController {
     }
 
     func updateAppVolume(_ volume: Float) {
-        os_unfair_lock_lock(&parameterLock)
-        appVolume = volume
-        os_unfair_lock_unlock(&parameterLock)
+        os_unfair_lock_lock(parameterLock)
+        appVolume = min(max(volume, 0), PerAppAudioController.maxVolume)
+        os_unfair_lock_unlock(parameterLock)
     }
 
     func updateAppMute(_ muted: Bool) {
-        os_unfair_lock_lock(&parameterLock)
+        os_unfair_lock_lock(parameterLock)
         isAppMuted = muted
-        os_unfair_lock_unlock(&parameterLock)
+        os_unfair_lock_unlock(parameterLock)
     }
 
     func updateDeviceControls(volume: Float, balance: Float, delay: Float) {
-        os_unfair_lock_lock(&parameterLock)
+        os_unfair_lock_lock(parameterLock)
         deviceVolume = volume
         deviceBalance = balance
         deviceDelay = delay
-        os_unfair_lock_unlock(&parameterLock)
+        os_unfair_lock_unlock(parameterLock)
     }
 
     func updateEightDAudio(settings: EightDAudioSettings) {
-        os_unfair_lock_lock(&parameterLock)
+        os_unfair_lock_lock(parameterLock)
         pendingEightDSettings = settings
-        os_unfair_lock_unlock(&parameterLock)
+        os_unfair_lock_unlock(parameterLock)
     }
 
     func updateSurroundAudio(settings: SurroundAudioSettings) {
-        os_unfair_lock_lock(&parameterLock)
+        os_unfair_lock_lock(parameterLock)
         pendingSurroundSettings = settings
-        os_unfair_lock_unlock(&parameterLock)
+        os_unfair_lock_unlock(parameterLock)
     }
 
     func updateAppEQ(gains: [Double], bassGain: Double = 0.0) {
-        let newSetup = BiquadMath.createSetup(gains: gains, bassGain: bassGain, sampleRate: currentSampleRate, oldSetup: nil)
-        os_unfair_lock_lock(&parameterLock)
-        if let oldSetup = appEqSetup { retiredEQSetups.append(oldSetup) }
-        appEqSetup = newSetup
-        os_unfair_lock_unlock(&parameterLock)
+        installEQ(EQKey(gains: AudioEQ.normalize(gains), bass: bassGain), isApp: true)
     }
 
     func updateDeviceEQ(gains: [Double], bassGain: Double = 0.0) {
-        let newSetup = BiquadMath.createSetup(gains: gains, bassGain: bassGain, sampleRate: currentSampleRate, oldSetup: nil)
-        os_unfair_lock_lock(&parameterLock)
-        if let oldSetup = deviceEqSetup { retiredEQSetups.append(oldSetup) }
-        deviceEqSetup = newSetup
-        os_unfair_lock_unlock(&parameterLock)
+        installEQ(EQKey(gains: AudioEQ.normalize(gains), bass: bassGain), isApp: false)
+    }
+
+    private func installEQ(_ key: EQKey, isApp: Bool) {
+        os_unfair_lock_lock(parameterLock)
+        if isApp { appEqKey = key } else { deviceEqKey = key }
+        os_unfair_lock_unlock(parameterLock)
+        scheduleEQDesign()
+    }
+
+    private func scheduleEQDesign() {
+        designQueue.async { [weak self] in
+            guard let self else { return }
+            os_unfair_lock_lock(self.parameterLock)
+            let app = self.appEqKey, device = self.deviceEqKey, rate = self.eqSampleRate
+            let invalidated = self.isInvalidated
+            os_unfair_lock_unlock(self.parameterLock)
+            guard !invalidated else { return }
+            if let installed = self.installedEQ, installed.app == app, installed.device == device, installed.sampleRate == rate { return }
+            self.installedEQ = (app, device, rate)
+
+            let gains = zip(app.gains, device.gains).map { $0 + $1 }
+            let design = GraphicEQDesigner.design(gains: gains, bass: app.bass + device.bass, sampleRate: rate)
+            self.primaryEQ.post(design)
+            self.secondaryEQ.post(design)
+        }
+    }
+
+    private func observeSampleRate() {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self else { return }
+            var rate: Float64 = 0
+            var size = UInt32(MemoryLayout<Float64>.size)
+            var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            guard AudioObjectGetPropertyData(self.aggregateDeviceID, &address, 0, nil, &size, &rate) == noErr, rate > 0 else { return }
+            os_unfair_lock_lock(self.parameterLock)
+            self.eqSampleRate = rate
+            os_unfair_lock_unlock(self.parameterLock)
+            self.scheduleEQDesign()
+        }
+        if AudioObjectAddPropertyListenerBlock(aggregateDeviceID, &address, designQueue, listener) == noErr {
+            sampleRateListener = listener
+        }
     }
 
     @_optimize(speed)
     private func process(_ inData: UnsafePointer<AudioBufferList>, _ outData: UnsafeMutablePointer<AudioBufferList>) {
+        renderCounter.pointee &+= 1
         let inBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inData))
         let outBuffers = UnsafeMutableAudioBufferListPointer(outData)
 
-        if os_unfair_lock_trylock(&parameterLock) {
+        if os_unfair_lock_trylock(parameterLock) {
             renderAppVolume = appVolume
             renderAppMuted = isAppMuted
             renderDeviceVolume = deviceVolume
             renderDeviceBalance = deviceBalance
             renderDeviceDelay = deviceDelay
-            renderAppEQ = appEqSetup
-            renderDeviceEQ = deviceEqSetup
             renderEightDSettings = pendingEightDSettings
             renderSurroundSettings = pendingSurroundSettings
-            os_unfair_lock_unlock(&parameterLock)
+            os_unfair_lock_unlock(parameterLock)
         }
-        let finalVol = renderAppMuted ? 0.0 : (renderAppVolume * renderDeviceVolume)
+        let targetGain = renderAppMuted ? 0 : renderAppVolume * renderDeviceVolume
+        let startGain = renderGain
+        renderGain = targetGain
         let needs8D = renderEightDSettings.enabled
         let needsSurround = renderSurroundSettings.enabled
-        let needsProcessing = finalVol != 1.0 || renderAppEQ != nil || renderDeviceEQ != nil || renderDeviceBalance != 0.5 || renderDeviceDelay > 0.0 || fadeInSamplesRemaining > 0 || needs8D || needsSurround
 
         for i in 0..<outBuffers.count {
-            guard let outBytes = outBuffers[i].mData, let inBytes = inBuffers[i].mData else { continue }
-            let totalSamples = Int(outBuffers[i].mDataByteSize) / MemoryLayout<Float>.size
-            let channels = Int(outBuffers[i].mNumberChannels)
-            let outPtr = outBytes.assumingMemoryBound(to: Float.self); let inPtr = inBytes.assumingMemoryBound(to: Float.self)
-
-            if !needsProcessing {
-                if inBytes != outBytes { memcpy(outBytes, inBytes, totalSamples * MemoryLayout<Float>.size) }
+            guard let outBytes = outBuffers[i].mData else { continue }
+            let outSampleCount = Int(outBuffers[i].mDataByteSize) / MemoryLayout<Float>.size
+            guard i < inBuffers.count, let inBytes = inBuffers[i].mData else {
+                memset(outBytes, 0, Int(outBuffers[i].mDataByteSize))
                 continue
             }
+            let channels = max(1, Int(outBuffers[i].mNumberChannels))
+            let inSampleCount = Int(inBuffers[i].mDataByteSize) / MemoryLayout<Float>.size
+            let frameCount = min(outSampleCount, inSampleCount) / channels
+            let outPtr = outBytes.assumingMemoryBound(to: Float.self)
+            let inPtr = inBytes.assumingMemoryBound(to: Float.self)
+            if frameCount * channels < outSampleCount {
+                outPtr.advanced(by: frameCount * channels).update(repeating: 0, count: outSampleCount - frameCount * channels)
+            }
+            guard frameCount > 0 else { continue }
 
-            if finalVol == 0 { vDSP_vclr(outPtr, 1, vDSP_Length(totalSamples)) }
-            else { var v = finalVol; vDSP_vsmul(inPtr, 1, &v, outPtr, 1, vDSP_Length(totalSamples)) }
+            GainRamp.apply(input: inPtr, output: outPtr, frames: frameCount, channels: channels, from: startGain, to: targetGain)
 
-            let frameCount = totalSamples / channels
-            if let eq = renderAppEQ, channels == 2 { vDSP_biquad(eq, appBufferL, outPtr, 2, outPtr, 2, vDSP_Length(frameCount)); vDSP_biquad(eq, appBufferR, outPtr.advanced(by: 1), 2, outPtr.advanced(by: 1), 2, vDSP_Length(frameCount)) }
-            if let eq = renderDeviceEQ, channels == 2 { vDSP_biquad(eq, devBufferL, outPtr, 2, outPtr, 2, vDSP_Length(frameCount)); vDSP_biquad(eq, devBufferR, outPtr.advanced(by: 1), 2, outPtr.advanced(by: 1), 2, vDSP_Length(frameCount)) }
+            if channels == 2, i < 2 {
+                (i == 0 ? primaryEQ : secondaryEQ).process(outPtr, frames: frameCount)
+            }
 
             if needsSurround && channels == 2 {
                 applySurround(outPtr, frameCount: frameCount, settings: renderSurroundSettings)
@@ -1205,12 +1107,15 @@ class AppTapController {
                     ptr[0] = l; ptr[1] = r; ptr += 2
                 }
             }
-            if fadeInSamplesRemaining > 0 {
-                let fadeCount = min(totalSamples, fadeInSamplesRemaining)
-                for s in 0..<fadeCount { outPtr[s] *= Float(2048 - fadeInSamplesRemaining + s) / 2048.0 }
-                fadeInSamplesRemaining -= fadeCount
+
+            switch i {
+            case 0: primaryLimiter.process(outPtr, frames: frameCount, channels: channels)
+            case 1: secondaryLimiter.process(outPtr, frames: frameCount, channels: channels)
+            default:
+                for index in 0..<(frameCount * channels) {
+                    outPtr[index] = LookaheadLimiter.softKnee(outPtr[index], ceiling: primaryLimiter.ceiling)
+                }
             }
-            SoftLimiter.processBuffer(outPtr, sampleCount: totalSamples)
         }
     }
 
@@ -1442,125 +1347,7 @@ class AppTapController {
     }
 }
 
-// MARK: - Sharp DSP Utilities
-
-enum BiquadMath {
-    static let sectionCount = AudioEQ.bandCount + 2
-
-    private static func rbjPeaking(freq: Double, gainDB: Double, q: Double, sampleRate: Double) -> [Double] {
-        let A = pow(10.0, gainDB / 40.0)
-        let w0 = 2.0 * .pi * freq / sampleRate
-        let cs = cos(w0)
-        let alpha = sin(w0) / (2.0 * q)
-        let b0 = 1.0 + alpha * A
-        let b1 = -2.0 * cs
-        let b2 = 1.0 - alpha * A
-        let a0 = 1.0 + alpha / A
-        let a1 = -2.0 * cs
-        let a2 = 1.0 - alpha / A
-        return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0]
-    }
-
-    private static func rbjLowShelf(freq: Double, gainDB: Double, sampleRate: Double) -> [Double] {
-        let A = pow(10.0, gainDB / 40.0)
-        let w0 = 2.0 * .pi * freq / sampleRate
-        let cs = cos(w0)
-        let sn = sin(w0)
-        let alpha = sn / 2.0 * sqrt((A + 1.0 / A) * (1.0 / 0.9 - 1.0) + 2.0)
-        let twoSqrtAAlpha = 2.0 * sqrt(A) * alpha
-        let b0 = A * ((A + 1.0) - (A - 1.0) * cs + twoSqrtAAlpha)
-        let b1 = 2.0 * A * ((A - 1.0) - (A + 1.0) * cs)
-        let b2 = A * ((A + 1.0) - (A - 1.0) * cs - twoSqrtAAlpha)
-        let a0 = (A + 1.0) + (A - 1.0) * cs + twoSqrtAAlpha
-        let a1 = -2.0 * ((A - 1.0) + (A + 1.0) * cs)
-        let a2 = (A + 1.0) + (A - 1.0) * cs - twoSqrtAAlpha
-        return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0]
-    }
-
-    private static func rbjHighShelf(freq: Double, gainDB: Double, sampleRate: Double) -> [Double] {
-        let A = pow(10.0, gainDB / 40.0)
-        let w0 = 2.0 * .pi * freq / sampleRate
-        let cs = cos(w0)
-        let sn = sin(w0)
-        let alpha = sn / 2.0 * sqrt((A + 1.0 / A) * (1.0 / 0.9 - 1.0) + 2.0)
-        let twoSqrtAAlpha = 2.0 * sqrt(A) * alpha
-        let b0 = A * ((A + 1.0) + (A - 1.0) * cs + twoSqrtAAlpha)
-        let b1 = -2.0 * A * ((A - 1.0) + (A + 1.0) * cs)
-        let b2 = A * ((A + 1.0) + (A - 1.0) * cs - twoSqrtAAlpha)
-        let a0 = (A + 1.0) - (A - 1.0) * cs + twoSqrtAAlpha
-        let a1 = 2.0 * ((A - 1.0) - (A + 1.0) * cs)
-        let a2 = (A + 1.0) - (A - 1.0) * cs - twoSqrtAAlpha
-        return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0]
-    }
-
-    private static let passthrough: [Double] = [1, 0, 0, 0, 0]
-
-    static func createSetup(gains rawGains: [Double], bassGain: Double, sampleRate: Double, oldSetup: vDSP_biquad_Setup?) -> vDSP_biquad_Setup? {
-        if let old = oldSetup { DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { vDSP_biquad_DestroySetup(old) } }
-
-        let gains = AudioEQ.normalize(rawGains)
-        if bassGain == 0.0 && gains.allSatisfy({ $0 == 0.0 }) { return nil }
-
-        let bandQ = 4.318
-        let sr = max(sampleRate, 8000.0)
-        var coeffs: [Double] = []
-        coeffs.reserveCapacity(sectionCount * 5)
-
-        coeffs += bassGain == 0.0 ? passthrough
-            : rbjLowShelf(freq: AudioEQ.bassShelfFrequency, gainDB: bassGain, sampleRate: sr)
-
-        for i in 0..<AudioEQ.bandCount {
-            let g = gains[i]
-            let f = min(AudioEQ.frequencies[i], sr * 0.45)
-            if g == 0.0 {
-                coeffs += passthrough
-            } else if i == 0 {
-                coeffs += rbjLowShelf(freq: f, gainDB: g, sampleRate: sr)
-            } else if i == AudioEQ.bandCount - 1 {
-                coeffs += rbjHighShelf(freq: f, gainDB: g, sampleRate: sr)
-            } else {
-                coeffs += rbjPeaking(freq: f, gainDB: g, q: bandQ, sampleRate: sr)
-            }
-        }
-
-        let positiveSum = gains.filter { $0 > 0 }.reduce(0, +) + max(0, bassGain)
-        let peakBoost = (gains.max() ?? 0) + max(0, bassGain) * 0.5
-        let makeupDB = -min(peakBoost * 0.5 + positiveSum * 0.06, 9.0)
-        let makeup = pow(10.0, makeupDB / 20.0)
-        coeffs += [makeup, 0, 0, 0, 0]
-
-        return coeffs.withUnsafeBufferPointer { vDSP_biquad_CreateSetup($0.baseAddress!, vDSP_Length(sectionCount)) }
-    }
-}
-
-enum SoftLimiter {
-    @inline(__always) static func processBuffer(_ buffer: UnsafeMutablePointer<Float>, sampleCount: Int) {
-        guard sampleCount > 0 else { return }
-
-        let threshold: Float = 0.88
-        let remainingHeadroom: Float = 1.0 - threshold
-        for index in 0..<sampleCount {
-            let sample = buffer[index]
-            let magnitude = abs(sample)
-            guard magnitude > threshold else { continue }
-
-            let excess = magnitude - threshold
-            let compressed = threshold + remainingHeadroom * excess / (remainingHeadroom + excess)
-            buffer[index] = sample < 0 ? -compressed : compressed
-        }
-    }
-}
-
 extension Notification.Name {
     static let multiAudioActiveBundlesDidChange = Notification.Name("multiAudioActiveBundlesDidChange")
     static let perAppAudioSettingsDidChange = Notification.Name("perAppAudioSettingsDidChange")
-}
-
-enum CrashGuard {
-    private static var devices: [AudioObjectID] = []
-    private static let lock = NSLock()
-    static func install() { signal(SIGABRT, { CrashGuard.handleSignal($0) }); signal(SIGSEGV, { CrashGuard.handleSignal($0) }) }
-    static func handleSignal(_ sig: Int32) { devices.forEach { AudioHardwareDestroyAggregateDevice($0) }; signal(sig, SIG_DFL); raise(sig) }
-    static func trackDevice(_ id: AudioObjectID) { lock.lock(); devices.append(id); lock.unlock() }
-    static func untrackDevice(_ id: AudioObjectID) { lock.lock(); devices.removeAll { $0 == id }; lock.unlock() }
 }

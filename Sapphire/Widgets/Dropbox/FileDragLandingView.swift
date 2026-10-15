@@ -41,7 +41,7 @@ struct FileDragLandingView: View {
     @Binding var activeZone: DropZone?
     let onZoneFramesChange: ([DropZone: CGRect]) -> Void
 
-    @ObservedObject private var settings = SettingsModel.shared
+    @ObservedSettings private var settings: SettingsObserver
     @State private var zoneFrames: [DropZone: CGRect] = [:]
 
     var body: some View {
@@ -123,7 +123,7 @@ struct FileDragLandingView: View {
             )
             .preference(
                 key: DropZonePreferenceKey.self,
-                value: [zone: geometry.frame(in: .global)]
+                value: [zone: geometry.frame(in: .notchDrag)]
             )
         }
         .frame(width: Self.cardWidth, height: Self.cardHeight)
@@ -176,7 +176,7 @@ private struct FileDropHitTestObserver: View {
 }
 
 private struct ContinuityDeviceDropZone: View {
-    @ObservedObject private var continuity = ContinuityManager.shared
+    private var continuity: ContinuityManager { .shared }
 
     let activeZone: DropZone?
     let cardWidth: CGFloat
@@ -193,117 +193,220 @@ private struct ContinuityDeviceDropZone: View {
 }
 
 private struct DeviceDropZoneView: View {
+    private static let maxVisiblePeers = 6
+    private static let cardRadius: CGFloat = 24
+    private static let inset: CGFloat = 6
+
     let peers: [ContinuityPeer]
     let activeZone: DropZone?
     let cardWidth: CGFloat
     let cardHeight: CGFloat
+
+    private var visiblePeers: [ContinuityPeer] {
+        let usable = peers.filter { $0.linkState.isUsable }
+        let unusable = peers.filter { !$0.linkState.isUsable }
+        return Array((usable + unusable).prefix(Self.maxVisiblePeers))
+    }
 
     private var isTargeted: Bool {
         guard case .device = activeZone else { return false }
         return true
     }
 
-    private var columns: [GridItem] {
-        let count: Int
-        switch peers.count {
-        case 0, 1: count = 1
-        case 2, 3: count = peers.count
-        default: count = min(4, Int(ceil(Double(peers.count) / 2.0)))
+    var body: some View {
+        let peers = visiblePeers
+        Group {
+            switch peers.count {
+            case 0:
+                emptyState
+            case 1:
+                DeviceDropTile(
+                    peer: peers[0],
+                    style: .card,
+                    cornerRadius: Self.cardRadius,
+                    isTargeted: activeZone == .device(peers[0].id)
+                )
+            default:
+                tiles(for: peers)
+                    .padding(Self.inset)
+                    .background(
+                        RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
+                            .fill(isTargeted ? Color.accentColor.opacity(0.12) : Color.white.opacity(0.05))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
+                            .strokeBorder(isTargeted ? Color.accentColor : Color.white.opacity(0.2), lineWidth: 1.5)
+                    )
+                    .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isTargeted)
+            }
         }
-        return Array(repeating: GridItem(.flexible(), spacing: 6), count: count)
+        .frame(width: cardWidth, height: cardHeight)
     }
 
-    var body: some View {
-        VStack(spacing: 7) {
-            HStack(spacing: 6) {
-                Image(systemName: "rectangle.connected.to.line.below")
-                Text("Share to Devices")
-                    .lineLimit(1)
+    @ViewBuilder
+    private func tiles(for peers: [ContinuityPeer]) -> some View {
+        let radius = Self.cardRadius - Self.inset
+        if peers.count <= 3 {
+            HStack(spacing: Self.inset) {
+                ForEach(peers) { peer in
+                    DeviceDropTile(
+                        peer: peer,
+                        style: .column,
+                        cornerRadius: radius,
+                        isTargeted: activeZone == .device(peer.id)
+                    )
+                }
             }
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(isTargeted ? .white : .secondary)
-
-            if peers.isEmpty {
-                VStack(spacing: 3) {
-                    Image(systemName: "iphone.slash")
-                        .font(.system(size: 20, weight: .light))
-                    Text("No paired devices")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+        } else {
+            let columns = Array(
+                repeating: GridItem(.flexible(), spacing: Self.inset),
+                count: Int(ceil(Double(peers.count) / 2))
+            )
+            LazyVGrid(columns: columns, spacing: Self.inset) {
+                ForEach(peers) { peer in
+                    DeviceDropTile(
+                        peer: peer,
+                        style: .compact,
+                        cornerRadius: radius - 4,
+                        isTargeted: activeZone == .device(peer.id)
+                    )
+                    .frame(height: (cardHeight - Self.inset * 3) / 2)
                 }
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView(.vertical) {
-                    LazyVGrid(columns: columns, spacing: 6) {
-                        ForEach(peers) { peer in
-                            DeviceDropCell(
-                                peer: peer,
-                                isTargeted: activeZone == .device(peer.id)
-                            )
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
             }
         }
-        .padding(10)
-        .frame(width: cardWidth, height: cardHeight)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "iphone.slash")
+                .font(.system(size: 26, weight: .light))
+            Text("No Devices")
+                .font(.system(.headline, design: .rounded).weight(.medium))
+            Text("Pair one in Continuity settings")
+                .font(.system(size: 10, design: .rounded))
+        }
+        .foregroundStyle(.tertiary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(isTargeted ? Color.accentColor.opacity(0.28) : Color.white.opacity(0.05))
+            RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
+                .fill(Color.white.opacity(0.03))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(isTargeted ? Color.accentColor : Color.white.opacity(0.2), lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: Self.cardRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1.5)
         )
-        .scaleEffect(isTargeted ? 1.03 : 1.0)
-        .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isTargeted)
     }
 }
 
-private struct DeviceDropCell: View {
-    @ObservedObject var peer: ContinuityPeer
+private struct DeviceDropTile: View {
+    enum Style { case card, column, compact }
+
+    let peer: ContinuityPeer
+    let style: Style
+    let cornerRadius: CGFloat
     let isTargeted: Bool
 
-    private var zone: DropZone { .device(peer.id) }
     private var isEnabled: Bool { peer.linkState.isUsable }
 
+    private var status: String {
+        if isEnabled { return "Ready" }
+        return peer.linkState == .nearby ? "Nearby" : "Offline"
+    }
+
+    private var foreground: Color {
+        if isTargeted { return .white }
+        return isEnabled ? .secondary : .secondary.opacity(0.45)
+    }
+
     var body: some View {
-        VStack(spacing: 2) {
-            ZStack(alignment: .bottomTrailing) {
+        content
+            .foregroundStyle(foreground)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(isTargeted ? Color.accentColor.opacity(0.8) : Color.white.opacity(fillOpacity))
+            )
+            .overlay {
+                if style == .card {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(isTargeted ? Color.accentColor : Color.white.opacity(0.2), lineWidth: 1.5)
+                }
+            }
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: DropZonePreferenceKey.self,
+                        value: isEnabled ? [.device(peer.id): geometry.frame(in: .notchDrag)] : [:]
+                    )
+                }
+            }
+            .scaleEffect(isTargeted ? (style == .card ? 1.03 : 1.04) : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isTargeted)
+            .help(isEnabled ? "Send to \(peer.displayName)" : "\(peer.displayName) is \(status.lowercased())")
+    }
+
+    private var fillOpacity: Double {
+        switch style {
+        case .card: 0.05
+        case .column, .compact: isEnabled ? 0.07 : 0.03
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch style {
+        case .card:
+            VStack(spacing: 6) {
                 Image(systemName: peer.record.deviceType.glyph)
-                    .font(.system(size: 16, weight: .medium))
-                Circle()
-                    .fill(isEnabled ? Color.green : Color.secondary)
-                    .frame(width: 5, height: 5)
-                    .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 1))
+                    .font(.system(size: 28, weight: .light))
+                Text(peer.displayName)
+                    .font(.system(.headline, design: .rounded).weight(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                statusLabel(size: 10)
             }
-            Text(peer.displayName)
-                .font(.system(size: 9, weight: .medium, design: .rounded))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .foregroundStyle(isTargeted ? Color.white : (isEnabled ? Color.secondary : Color.secondary.opacity(0.45)))
-        .frame(maxWidth: .infinity, minHeight: 42)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isTargeted ? Color.accentColor.opacity(0.85) : Color.white.opacity(isEnabled ? 0.06 : 0.025))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(isTargeted ? Color.white.opacity(0.6) : Color.clear, lineWidth: 1)
-        )
-        .background {
-            GeometryReader { geometry in
-                Color.clear.preference(
-                    key: DropZonePreferenceKey.self,
-                    value: isEnabled ? [zone: geometry.frame(in: .global)] : [:]
-                )
+            .padding(.horizontal, 14)
+        case .column:
+            VStack(spacing: 5) {
+                Image(systemName: peer.record.deviceType.glyph)
+                    .font(.system(size: 22, weight: .light))
+                    .frame(height: 26)
+                Text(peer.displayName)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                statusLabel(size: 9)
             }
+            .padding(.horizontal, 6)
+        case .compact:
+            HStack(spacing: 6) {
+                Image(systemName: peer.record.deviceType.glyph)
+                    .font(.system(size: 15, weight: .regular))
+                    .frame(width: 18)
+                Text(peer.displayName)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 0)
+                statusDot
+            }
+            .padding(.horizontal, 9)
         }
-        .scaleEffect(isTargeted ? 1.04 : 1.0)
-        .animation(.spring(response: 0.2, dampingFraction: 0.65), value: isTargeted)
-        .help(isEnabled ? "Send to \(peer.displayName)" : "\(peer.displayName) is offline")
+    }
+
+    private func statusLabel(size: CGFloat) -> some View {
+        HStack(spacing: 4) {
+            statusDot
+            Text(status)
+                .font(.system(size: size, weight: .medium, design: .rounded))
+        }
+        .opacity(isTargeted ? 0.9 : 0.8)
+    }
+
+    private var statusDot: some View {
+        Circle()
+            .fill(isEnabled ? Color.green : Color.secondary.opacity(0.6))
+            .frame(width: 5, height: 5)
     }
 }
 

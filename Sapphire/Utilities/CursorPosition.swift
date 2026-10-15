@@ -35,23 +35,15 @@ enum CursorPosition {
 
     static func targetNotchScreen() -> NSScreen? {
         let settings = SettingsModel.shared.settings
-        switch settings.notchDisplayTarget {
-        case .macbookDisplay:
-            return NSScreen.screens.first { screen in
-                if let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
-                    return CGDisplayIsBuiltin(displayID) != 0
-                }
-                return false
-            } ?? NSScreen.screens.first { screen in
-                screen.displayID == CGMainDisplayID()
-            }
-        case .mainDisplay, .allDisplays:
-            return NSScreen.main
-        }
+        let shown = NotchScreens.screens(for: settings)
+        let preferred = settings.notchDisplayTarget == .macbookDisplay
+            ? shown.first { CGDisplayIsBuiltin($0.displayID) != 0 } ?? shown.first { $0.displayID == CGMainDisplayID() }
+            : shown.first { $0 == NSScreen.main }
+        return preferred ?? shown.first ?? NSScreen.main
     }
 
     static func screen(containing point: NSPoint) -> NSScreen? {
-        NSScreen.screens.first { $0.frame.contains(point) }
+        NotchDisplayTargeting.screen(containing: point)
     }
 
     static func notchActivationRect(extraWidth: CGFloat = 40, extraHeight: CGFloat = 12) -> CGRect? {

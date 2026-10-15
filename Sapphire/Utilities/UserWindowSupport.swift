@@ -231,6 +231,7 @@ enum HelperAlertPresenter {
         messageText: String,
         informativeText: String,
         alertStyle: NSAlert.Style = .warning,
+        accessoryView: NSView? = nil,
         buttonTitles: [String],
         completion: @escaping (Int) -> Void
     ) {
@@ -244,6 +245,10 @@ enum HelperAlertPresenter {
         alert.messageText = messageText
         alert.informativeText = informativeText
         alert.alertStyle = alertStyle
+        if let accessoryView {
+            alert.accessoryView = accessoryView
+            alert.window.initialFirstResponder = accessoryView
+        }
         for title in buttonTitles {
             alert.addButton(withTitle: title)
         }

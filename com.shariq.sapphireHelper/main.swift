@@ -10,4 +10,13 @@ NSLog("[SMJBS]: Privileged Helper has started")
 
 XPCServer.shared.start()
 
+signal(SIGTERM, SIG_IGN)
+let terminationSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+terminationSource.setEventHandler {
+    NSLog("[SMJBS]: SIGTERM received; restoring automatic fan control before exit.")
+    XPCServer.shared.prepareForExit()
+    exit(0)
+}
+terminationSource.resume()
+
 CFRunLoopRun()

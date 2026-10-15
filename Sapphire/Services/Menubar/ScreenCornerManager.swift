@@ -24,7 +24,7 @@ private struct ScreenCornerSettings: Equatable {
 
 @MainActor
 final class ScreenCornerManager {
-    private var cornerOverlays = [NSScreen: [Corner: NSPanel]]()
+    private var cornerOverlays = [CGDirectDisplayID: [Corner: NSPanel]]()
     private var cancellables = Set<AnyCancellable>()
 
     enum Corner {
@@ -76,11 +76,15 @@ final class ScreenCornerManager {
             removeAllOverlays(); return
         }
 
-        for screen in NSScreen.screens {
-            var screenOverlays = cornerOverlays[screen] ?? [:]
+        let screens = NSScreen.screens
+        removeOverlays(forDisplaysNotIn: Set(screens.map(\.displayID)))
+
+        for screen in screens {
+            let displayID = screen.displayID
+            var screenOverlays = cornerOverlays[displayID] ?? [:]
 
             if shouldShowTop {
-                let yOffset = settings.showBelowMenu ? (screen.frame.height - screen.visibleFrame.height) : 0
+                let yOffset = settings.showBelowMenu ? NotchDisplayMetrics.menuBarGap(frame: screen.frame, visibleFrame: screen.visibleFrame) : 0
                 screenOverlays[.topLeft] = createOrUpdatePanel(for: .topLeft, on: screen, radius: radius, yOffset: yOffset, existingPanel: screenOverlays[.topLeft])
                 screenOverlays[.topRight] = createOrUpdatePanel(for: .topRight, on: screen, radius: radius, yOffset: yOffset, existingPanel: screenOverlays[.topRight])
             } else {
@@ -96,7 +100,14 @@ final class ScreenCornerManager {
                 screenOverlays[.bottomRight]?.close(); screenOverlays.removeValue(forKey: .bottomRight)
             }
 
-            cornerOverlays[screen] = screenOverlays
+            cornerOverlays[displayID] = screenOverlays
+        }
+    }
+
+    private func removeOverlays(forDisplaysNotIn activeDisplayIDs: Set<CGDirectDisplayID>) {
+        let removedDisplayIDs = cornerOverlays.keys.filter { !activeDisplayIDs.contains($0) }
+        for displayID in removedDisplayIDs {
+            cornerOverlays.removeValue(forKey: displayID)?.values.forEach { $0.close() }
         }
     }
 
@@ -104,8 +115,7 @@ final class ScreenCornerManager {
         let frame = frameFor(corner: corner, on: screen, radius: radius, yOffset: yOffset)
 
         if let panel = existingPanel {
-            panel.setFrame(frame, display: true)
-            (panel.contentView as? NSHostingView<CornerView>)?.rootView.corner = corner
+            if panel.frame != frame { panel.setFrame(frame, display: true) }
             return panel
         } else {
             let panel = NSPanel(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)

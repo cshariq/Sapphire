@@ -194,39 +194,88 @@ class iMessageActionManager {
     }
 }
 
+struct NotificationDisplayQueue {
+    static let defaultCapacity = 8
+
+    private(set) var pending: [NotificationPayload] = []
+    let capacity: Int
+
+    init(capacity: Int = NotificationDisplayQueue.defaultCapacity) {
+        self.capacity = max(1, capacity)
+    }
+
+    var isEmpty: Bool { pending.isEmpty }
+
+    mutating func enqueue(_ incoming: [NotificationPayload], current: NotificationPayload?) {
+        for payload in incoming where payload.id != current?.id && !pending.contains(where: { $0.id == payload.id }) {
+            pending.append(payload)
+        }
+        if pending.count > capacity {
+            pending.removeFirst(pending.count - capacity)
+        }
+    }
+
+    mutating func next() -> NotificationPayload? {
+        pending.isEmpty ? nil : pending.removeFirst()
+    }
+
+    mutating func removeAll() { pending.removeAll() }
+}
+
 class NotificationManager: ObservableObject {
     static let shared = NotificationManager()
 
-    @Published var latestNotification: NotificationPayload?
+    @Published var latestNotification: NotificationPayload? {
+        didSet { latestShownAt = latestNotification == nil ? nil : Date() }
+    }
+    private var latestShownAt: Date?
     private var frequency: TimeInterval = 5.0
     private var isSilent: Bool = true
-    private var dbPath: String?
-    private var dbConnection: Connection?
     private var walSource: DispatchSourceFileSystemObject?
     private var walDirectorySource: DispatchSourceFileSystemObject?
     private var pendingWALCheck: DispatchWorkItem?
-    private var lastNotificationId: Int64 = 0
-    private var lastNotificationDate: Double = 0.0
     private let settingsModel = SettingsModel.shared
     private var isStarted = false
-    init(frequency: TimeInterval = 5.0, silent: Bool = true) { self.frequency = frequency; self.isSilent = silent; setupDatabaseConnection() }
+
+    private var displayQueue = NotificationDisplayQueue()
+    private var advanceWorkItem: DispatchWorkItem?
+    static let displayDwell: TimeInterval = 15.5
+
+    private let workQueue = DispatchQueue(label: "com.sapphire.notifications.db", qos: .utility)
+    private var dbPath: String?
+    private var dbConnection: Connection?
+    private var lastNotificationId: Int64 = 0
+    private var lastNotificationDate: Double = 0.0
+    private var iconCache: [String: NSImage] = [:]
+
+    init(frequency: TimeInterval = 5.0, silent: Bool = true) {
+        self.frequency = frequency
+        self.isSilent = silent
+        workQueue.async { [weak self] in self?.setupDatabaseConnection() }
+    }
     deinit {
         walSource?.cancel()
         walDirectorySource?.cancel()
+        advanceWorkItem?.cancel()
     }
     func start() {
-        guard !isStarted, dbConnection != nil else { return }
+        guard !isStarted else { return }
         isStarted = true
-        check()
-        watchWriteAheadLog()
+        workQueue.async { [weak self] in
+            guard let self, self.dbConnection != nil, let path = self.dbPath else { return }
+            self.checkOnWorkQueue()
+            DispatchQueue.main.async { [weak self] in
+                self?.watchWriteAheadLog(dbPath: path)
+            }
+        }
     }
 
-    private func watchWriteAheadLog() {
+    private func watchWriteAheadLog(dbPath: String) {
         walSource?.cancel()
         walSource = nil
         walDirectorySource?.cancel()
         walDirectorySource = nil
-        guard isStarted, let dbPath else { return }
+        guard isStarted else { return }
 
         let fd = open(dbPath + "-wal", O_EVTONLY)
         guard fd >= 0 else {
@@ -243,7 +292,7 @@ class NotificationManager: ObservableObject {
             guard let self, let source else { return }
             let replaced = !source.data.isDisjoint(with: [.delete, .rename, .revoke])
             self.scheduleCheck()
-            if replaced { self.watchWriteAheadLog() }
+            if replaced { self.watchWriteAheadLog(dbPath: dbPath) }
         }
         source.setCancelHandler { close(fd) }
         source.resume()
@@ -262,7 +311,7 @@ class NotificationManager: ObservableObject {
         )
         source.setEventHandler { [weak self] in
             self?.scheduleCheck()
-            self?.watchWriteAheadLog()
+            self?.watchWriteAheadLog(dbPath: dbPath)
         }
         source.setCancelHandler { close(fd) }
         source.resume()
@@ -272,31 +321,81 @@ class NotificationManager: ObservableObject {
     private func scheduleCheck() {
         guard pendingWALCheck == nil else { return }
         let work = DispatchWorkItem { [weak self] in
-            self?.pendingWALCheck = nil
-            self?.check()
+            guard let self else { return }
+            self.pendingWALCheck = nil
+            self.workQueue.async { [weak self] in self?.checkOnWorkQueue() }
         }
         pendingWALCheck = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
-    func dismissLatestNotification() { DispatchQueue.main.async { self.latestNotification = nil } }
+
+    func dismissLatestNotification() {
+        DispatchQueue.main.async { self.advanceDisplay() }
+    }
+
+    // MARK: - Display queue (main)
+
+    private func present(_ notifications: [NotificationPayload]) {
+        guard !notifications.isEmpty else { return }
+        let currentExpired = latestShownAt.map { Date().timeIntervalSince($0) >= Self.displayDwell } ?? true
+        if latestNotification == nil || currentExpired {
+            var incoming = notifications
+            latestNotification = incoming.removeFirst()
+            displayQueue.enqueue(incoming, current: latestNotification)
+        } else {
+            displayQueue.enqueue(notifications, current: latestNotification)
+        }
+        scheduleAdvanceIfNeeded()
+    }
+
+    private func advanceDisplay() {
+        advanceWorkItem?.cancel()
+        advanceWorkItem = nil
+        latestNotification = displayQueue.next()
+        scheduleAdvanceIfNeeded()
+    }
+
+    private func scheduleAdvanceIfNeeded() {
+        guard advanceWorkItem == nil, !displayQueue.isEmpty else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.advanceWorkItem = nil
+            self.advanceDisplay()
+        }
+        advanceWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.displayDwell, execute: work)
+    }
+
+    // MARK: - Database (workQueue)
+
+    private static func darwinUserDirectory() -> String? {
+        let length = confstr(_CS_DARWIN_USER_DIR, nil, 0)
+        guard length > 0 else { return nil }
+        var buffer = [CChar](repeating: 0, count: length)
+        guard confstr(_CS_DARWIN_USER_DIR, &buffer, length) > 0 else { return nil }
+        return String(cString: buffer)
+    }
+
     private func setupDatabaseConnection() {
+        dispatchPrecondition(condition: .onQueue(workQueue))
         let fileManager = FileManager.default, homeDirectory = NSHomeDirectory(), sequoiaPath = "\(homeDirectory)/Library/Group Containers/group.com.apple.usernoted/db2/db"
-        if fileManager.fileExists(atPath: sequoiaPath) { self.dbPath = sequoiaPath } else {
-            do {
-                let darwinUserDir = try subprocess(path: "/usr/bin/getconf", args: ["DARWIN_USER_DIR"]).trimmingCharacters(in: .whitespacesAndNewlines)
-                let primaryLegacyPath = "\(darwinUserDir)com.apple.NotificationCenter/db2/db", fallbackLegacyPath = "\(darwinUserDir)com.apple.notificationcenter/db2/db"
-                if fileManager.fileExists(atPath: primaryLegacyPath) { self.dbPath = primaryLegacyPath } else if fileManager.fileExists(atPath: fallbackLegacyPath) { self.dbPath = fallbackLegacyPath }
-            } catch {}
+        if fileManager.fileExists(atPath: sequoiaPath) {
+            self.dbPath = sequoiaPath
+        } else if let darwinUserDir = Self.darwinUserDirectory() {
+            let primaryLegacyPath = "\(darwinUserDir)com.apple.NotificationCenter/db2/db", fallbackLegacyPath = "\(darwinUserDir)com.apple.notificationcenter/db2/db"
+            if fileManager.fileExists(atPath: primaryLegacyPath) { self.dbPath = primaryLegacyPath } else if fileManager.fileExists(atPath: fallbackLegacyPath) { self.dbPath = fallbackLegacyPath }
         }
         guard let validPath = self.dbPath else { return }
         do { dbConnection = try Connection(validPath, readonly: true); if let lastRecord = getLastNotificationFromDB() { self.lastNotificationId = lastRecord.id; self.lastNotificationDate = lastRecord.date } } catch { print("Error setting up database connection to \(validPath): \(error)") }
     }
-    @objc private func check() {
+
+    private func checkOnWorkQueue() {
+        dispatchPrecondition(condition: .onQueue(workQueue))
         do {
             guard let db = dbConnection else { return }
             let recordTable = Table("record"), recId = Expression<Int64>("rec_id"), deliveredDate = Expression<Double?>("delivered_date"), requestDate = Expression<Double?>("request_date"), data = Expression<Data>("data")
             let query = recordTable.select(recId, data, deliveredDate, requestDate).where(recId > lastNotificationId && (deliveredDate ?? requestDate) >= lastNotificationDate).order(recId.desc)
-            var notificationsToPublish: [NotificationPayload] = []
+            var parsed: [NotificationPayload] = []
             var newestScannedID = lastNotificationId
             var newestScannedDate = lastNotificationDate
             for row in try db.prepare(query) {
@@ -307,33 +406,44 @@ class NotificationManager: ObservableObject {
                     newestScannedDate = rowDate
                 }
                 if let notification = parseNotification(from: row[data], id: rowID, dateValue: rowDate) {
-                    if _shouldShowNotification(for: notification) { notificationsToPublish.append(notification) }
+                    parsed.append(notification)
                 }
             }
             if newestScannedID > lastNotificationId {
                 lastNotificationId = newestScannedID
                 lastNotificationDate = newestScannedDate
             }
-            for notification in notificationsToPublish.reversed() {
-                self.latestNotification = notification
-                if let code = notification.verificationCode {
-                    let source = notification.appName
-                    let title = notification.title
-                    let body = notification.body
-                    Task { @MainActor in
-                        SmartInboxMonitor.shared.presentOTP(
-                            code: code,
-                            source: source,
-                            title: title,
-                            body: body
-                        )
-                    }
-                }
+            guard !parsed.isEmpty else { return }
+            let chronological = Array(parsed.reversed())
+            DispatchQueue.main.async { [weak self] in
+                self?.publish(chronological)
             }
         } catch { print("Failed to check for notifications: \(error)") }
     }
-    private func _shouldShowNotification(for payload: NotificationPayload) -> Bool {
+
+    private func publish(_ notifications: [NotificationPayload]) {
         let settings = settingsModel.settings
+        let allowed = notifications.filter { Self.shouldShowNotification($0, settings: settings) }
+        guard !allowed.isEmpty else { return }
+        for notification in allowed {
+            if let code = notification.verificationCode {
+                let source = notification.appName
+                let title = notification.title
+                let body = notification.body
+                Task { @MainActor in
+                    SmartInboxMonitor.shared.presentOTP(
+                        code: code,
+                        source: source,
+                        title: title,
+                        body: body
+                    )
+                }
+            }
+        }
+        present(allowed)
+    }
+
+    private static func shouldShowNotification(_ payload: NotificationPayload, settings: Settings) -> Bool {
         var isInitiallyAllowed: Bool
         if !settings.masterNotificationsEnabled { isInitiallyAllowed = false } else {
             switch payload.appIdentifier {
@@ -360,7 +470,13 @@ class NotificationManager: ObservableObject {
             return NotificationPayload(id: String(id), appIdentifier: appIdentifier, title: title, body: combinedBody, date: date, appIcon: appIcon)
         } catch { return nil }
     }
-    private func getAppIcon(for identifier: String) -> NSImage? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier).map { NSWorkspace.shared.icon(forFile: $0.path) } }
+    private func getAppIcon(for identifier: String) -> NSImage? {
+        if let cached = iconCache[identifier] { return cached }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) else { return nil }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        iconCache[identifier] = icon
+        return icon
+    }
     private func getLastNotificationFromDB() -> (id: Int64, date: Double)? {
         guard let db = dbConnection else { return nil }
         do {
@@ -368,11 +484,5 @@ class NotificationManager: ObservableObject {
             if let lastRow = try db.pluck(record.order(recId.desc)) { return (try lastRow.get(recId), try lastRow.get(deliveredDate) ?? lastRow.get(requestDate) ?? 0.0) }
         } catch {}
         return nil
-    }
-    private func subprocess(path: String, args: [String]) throws -> String {
-        guard let result = ProcessRunner.runSync(executablePath: path, arguments: args, timeout: 10) else {
-            throw CocoaError(.fileReadUnknown)
-        }
-        return result.stdout
     }
 }

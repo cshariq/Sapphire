@@ -27,7 +27,7 @@ final class DesktopLiveWallpaperController {
     private var isScreenReconcileScheduled = false
     private var isSessionLocked = false
     private var playbackFailed = false
-    private var isDesktopCovered = false
+    private var coveredDisplays: Set<CGDirectDisplayID> = []
     private var coverageChangeToken: SystemWindowChangeMonitor.Token?
     private var isCoverageCheckScheduled = false
 
@@ -168,11 +168,11 @@ final class DesktopLiveWallpaperController {
         if playbackMode == .adaptive, isEligibleToPlay {
             if coverageChangeToken == nil {
                 startCoverageMonitoring()
-                isDesktopCovered = Self.desktopIsCovered(on: NSScreen.screens)
+                coveredDisplays = Self.coveredDisplays(on: NSScreen.screens)
             }
         } else {
             stopCoverageMonitoring()
-            isDesktopCovered = false
+            coveredDisplays = []
         }
         for (displayID, source) in sources {
             guard let client = playbackClients[displayID] else { continue }
@@ -180,7 +180,7 @@ final class DesktopLiveWallpaperController {
             let shouldPlay = !isSessionLocked
                 && playbackMode != .never
                 && (playbackMode == .always || windowVisible)
-                && (playbackMode != .adaptive || !isDesktopCovered)
+                && (playbackMode != .adaptive || !coveredDisplays.contains(displayID))
             source.setWantsPlayback(shouldPlay, client: client)
         }
     }
@@ -213,16 +213,16 @@ final class DesktopLiveWallpaperController {
 
     private func refreshCoverage() {
         guard isEligibleToPlay else { return }
-        let covered = Self.desktopIsCovered(on: NSScreen.screens)
-        guard covered != isDesktopCovered else { return }
-        isDesktopCovered = covered
+        let covered = Self.coveredDisplays(on: NSScreen.screens)
+        guard covered != coveredDisplays else { return }
+        coveredDisplays = covered
         updatePlayback()
     }
 
-    private static func desktopIsCovered(on screens: [NSScreen]) -> Bool {
+    private static func coveredDisplays(on screens: [NSScreen]) -> Set<CGDirectDisplayID> {
         guard let primaryHeight = screens.first?.frame.maxY,
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
-            return false
+            return []
         }
         let floatingLevel = Int(CGWindowLevelForKey(.floatingWindow))
         let rects: [CGRect] = list.compactMap { info in
@@ -235,7 +235,9 @@ final class DesktopLiveWallpaperController {
             }
             return CGRect(x: bounds.minX, y: primaryHeight - bounds.maxY, width: bounds.width, height: bounds.height)
         }
-        return screens.allSatisfy { coveredFraction(of: $0.visibleFrame, by: rects) >= coveredThreshold }
+        return Set(screens.lazy
+            .filter { coveredFraction(of: $0.visibleFrame, by: rects) >= coveredThreshold }
+            .map(displayID(of:)))
     }
 
     nonisolated static func coveredFraction(of area: CGRect, by rects: [CGRect], columns: Int = 32, rows: Int = 20) -> Double {

@@ -7,7 +7,7 @@
 import SwiftUI
 
 struct AudioSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var audioManager = MultiAudioManager.shared
     @ObservedObject private var permissionsManager = PermissionsManager.shared
     @State private var showResetAppConfirmation = false
@@ -72,6 +72,9 @@ struct AudioSettingsView: View {
                 .modifier(SettingsContainerModifier())
 
                 MicrophoneAmplifierSettingsView()
+                    .modifier(SettingsContainerModifier())
+
+                AudioSwitchingSettingsView()
                     .modifier(SettingsContainerModifier())
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -157,6 +160,8 @@ struct AudioSettingsView: View {
             selectedAdjustment = .deviceAdjust(device)
         case .multiAudioEQ(let device):
             selectedAdjustment = .deviceEQ(device)
+        case .earbudControls(let device):
+            selectedAdjustment = .earbudControls(device)
         case .multiAudioAppEQ(let bundleID, let appName):
             selectedAdjustment = .appEQ(bundleID: bundleID, appName: appName)
         case .multiAudioApp8D(let bundleID, let appName):
@@ -172,10 +177,7 @@ struct AudioSettingsView: View {
         Task { @MainActor in
             PerAppAudioController.shared.clearAllPersistedState()
             MultiAudioManager.shared.clearAllEightDAudioSettings()
-            MultiAudioManager.shared.activeTaps.values.forEach { tapMap in
-                tapMap.values.forEach { $0.invalidate() }
-            }
-            MultiAudioManager.shared.notifyAdjustmentMade(for: "ResetAll")
+            MultiAudioManager.shared.resetAllTaps()
         }
     }
 
@@ -189,6 +191,7 @@ struct AudioSettingsView: View {
 private enum AudioSettingsAdjustment: Identifiable {
     case deviceAdjust(AudioDevice)
     case deviceEQ(AudioDevice)
+    case earbudControls(AudioDevice)
     case appEQ(bundleID: String, appName: String)
     case app8D(bundleID: String, appName: String)
     case appSurround(bundleID: String, appName: String)
@@ -199,6 +202,8 @@ private enum AudioSettingsAdjustment: Identifiable {
             return "device-adjust-\(device.id)"
         case .deviceEQ(let device):
             return "device-eq-\(device.id)"
+        case .earbudControls(let device):
+            return "earbuds-\(device.id)"
         case .appEQ(let bundleID, _):
             return "app-eq-\(bundleID)"
         case .app8D(let bundleID, _):
@@ -240,6 +245,8 @@ private struct AudioSettingsAdjustmentSheet: View {
             DeviceAdjustView(device: device)
         case .deviceEQ(let device):
             DeviceEQView(device: device)
+        case .earbudControls(let device):
+            EarbudControlsView(device: device)
         case .appEQ(let bundleID, let appName):
             AppEQView(bundleID: bundleID, appName: appName)
         case .app8D(let bundleID, let appName):
@@ -314,6 +321,8 @@ private struct MicrophoneAmplifierSettingsView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
+        .onAppear { mic.beginMetering() }
+        .onDisappear { mic.endMetering() }
     }
 }
 
@@ -342,6 +351,178 @@ private struct AudioResetRow: View {
                 .tint(buttonColor)
         }
         .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+}
+// MARK: - Output switching & microphone
+
+private struct AudioSwitchingSettingsView: View {
+    @ObservedObject private var switcher = AudioOutputSwitcher.shared
+    @ObservedObject private var audio = MultiAudioManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Output Switching & Microphone")
+                .font(.headline)
+                .padding([.top, .horizontal])
+
+            AudioShortcutRow(
+                title: "Cycle output device",
+                subtitle: "Makes the next output below the system default.",
+                identifier: "audioOutputCycleShortcut",
+                shortcut: $switcher.cycleShortcut
+            )
+
+            if !audio.availableOutputDevices.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Outputs in the cycle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(audio.availableOutputDevices) { device in
+                        Toggle(device.name, isOn: cycleBinding(for: device.uid))
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 12))
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
+            }
+
+            Divider().padding(.leading, 20)
+
+            CompactToggleRow(
+                title: "Lower volume when headphones disconnect",
+                description: "Drops the speakers to a safe level when headphones go away, and puts their volume back when the headphones return.",
+                isOn: $switcher.lowerVolumeOnHeadphoneDisconnect
+            )
+            HStack {
+                Text("Speaker level")
+                Slider(value: $switcher.headphoneDisconnectLevel, in: 0...0.8, step: 0.05)
+                Text("\(Int(switcher.headphoneDisconnectLevel * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, alignment: .trailing)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 10)
+            .disabled(!switcher.lowerVolumeOnHeadphoneDisconnect)
+
+            Divider().padding(.leading, 20)
+
+            AudioShortcutRow(
+                title: "Mute microphone",
+                subtitle: "Toggles mute on every input device.",
+                identifier: "microphoneMuteShortcut",
+                shortcut: $switcher.micMuteShortcut
+            )
+
+            Divider().padding(.leading, 20)
+
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Preferred microphone")
+                    Text("Kept as the system input, even when headphones with their own microphone connect.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Picker("Preferred microphone", selection: preferredInputBinding) {
+                    Text("System choice").tag(String?.none)
+                    ForEach(audio.availableInputDevices) { device in
+                        Text(device.name).tag(String?.some(device.uid))
+                    }
+                    if let preferred = audio.preferredInputUID,
+                       !audio.availableInputDevices.contains(where: { $0.uid == preferred }) {
+                        Text("Disconnected device").tag(String?.some(preferred))
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 200)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+    }
+
+    private func cycleBinding(for uid: String) -> Binding<Bool> {
+        Binding(
+            get: { switcher.cycleDeviceUIDs.isEmpty || switcher.cycleDeviceUIDs.contains(uid) },
+            set: { included in
+                var uids = switcher.cycleDeviceUIDs.isEmpty ? audio.availableOutputDevices.map(\.uid) : switcher.cycleDeviceUIDs
+                if included {
+                    if !uids.contains(uid) { uids.append(uid) }
+                } else {
+                    uids.removeAll { $0 == uid }
+                }
+                switcher.cycleDeviceUIDs = uids
+            }
+        )
+    }
+
+    private var preferredInputBinding: Binding<String?> {
+        Binding(
+            get: { audio.preferredInputUID },
+            set: { uid in
+                if let uid, let device = audio.availableInputDevices.first(where: { $0.uid == uid }) {
+                    audio.selectInputDevice(device)
+                } else if uid == nil {
+                    audio.clearPreferredInput()
+                }
+            }
+        )
+    }
+}
+
+private struct AudioShortcutRow: View {
+    let title: String
+    let subtitle: String
+    let identifier: String
+    @Binding var shortcut: KeyboardShortcut?
+    @ObservedObject private var recorder = GlobalShortcutRecorder.shared
+
+    private var isRecordingThis: Bool {
+        recorder.isRecording && recorder.recordingIdentifier == identifier
+    }
+
+    private var shortcutText: String {
+        guard let shortcut else { return "Not set" }
+        var text = ""
+        if shortcut.modifiers.contains(.control) { text += "⌃" }
+        if shortcut.modifiers.contains(.option) { text += "⌥" }
+        if shortcut.modifiers.contains(.shift) { text += "⇧" }
+        if shortcut.modifiers.contains(.command) { text += "⌘" }
+        return text + shortcut.key
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(isRecordingThis ? "Press keys…" : shortcutText)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(shortcut == nil && !isRecordingThis ? .secondary : .primary)
+            Button(isRecordingThis ? "Cancel" : "Record") {
+                if isRecordingThis {
+                    recorder.stopRecording()
+                } else if !recorder.isRecording {
+                    recorder.startRecording(identifier: identifier) { key, flags in
+                        shortcut = KeyboardShortcut(key: key, modifiers: flags)
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
+            if shortcut != nil {
+                Button("Clear") { shortcut = nil }
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding(.horizontal, 20)
         .padding(.vertical, 10)
     }
 }

@@ -8,7 +8,7 @@
 
 //
 //  KeyboardBrightnessClient.h
-//  KBPulse
+//  Sapphire
 //
 //  Created by EthanRDoesMC on 10/20/21.
 //

@@ -23,6 +23,10 @@ class XPCServer: NSObject {
         NSLog("[SMJBS]: XPC listener resumed for \(Constant.helperMachLabel)")
     }
 
+    internal func prepareForExit() {
+        helper.prepareForExit()
+    }
+
     private func connectionInterruptionHandler(_ connection: NSXPCConnection) {
         NSLog("[SMJBS]: Client connection interrupted (pid=\(connection.processIdentifier)).")
     }
@@ -64,11 +68,15 @@ extension XPCServer: NSXPCListenerDelegate {
 
         newConnection.remoteObjectInterface = NSXPCInterface(with: InstallationClient.self)
 
+        let connectionID = ObjectIdentifier(newConnection)
+        let helper = self.helper
         newConnection.interruptionHandler = { [weak self, weak newConnection] in
+            helper.clientConnectionEnded(connectionID)
             guard let newConnection else { return }
             self?.connectionInterruptionHandler(newConnection)
         }
         newConnection.invalidationHandler = { [weak self, weak newConnection] in
+            helper.clientConnectionEnded(connectionID)
             guard let newConnection else { return }
             self?.connectionInvalidationHandler(newConnection)
         }

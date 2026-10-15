@@ -26,6 +26,12 @@ class AudioDeviceManager: ObservableObject {
     @Published var lastSwitchEvent: AudioSwitchEvent?
 
     private var previousDeviceName: String?
+    private var defaultOutputListener: AudioObjectPropertyListenerBlock?
+    private static let defaultOutputAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
 
     init() {
 
@@ -36,27 +42,28 @@ class AudioDeviceManager: ObservableObject {
         }
     }
 
-    private func setupAudioListener() {
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
+    deinit {
+        if let defaultOutputListener {
+            var address = Self.defaultOutputAddress
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, defaultOutputListener)
+        }
+    }
 
+    private func setupAudioListener() {
+        guard defaultOutputListener == nil else { return }
         let propertyListener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            DispatchQueue.main.async {
-                self?.handleDeviceChange()
-            }
+            self?.handleDeviceChange()
         }
 
+        var address = Self.defaultOutputAddress
         let status = AudioObjectAddPropertyListenerBlock(
             AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            nil,
+            &address,
+            .main,
             propertyListener
         )
-
-        if status != noErr {
+        if status == noErr {
+            defaultOutputListener = propertyListener
         }
     }
 

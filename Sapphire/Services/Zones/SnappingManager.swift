@@ -51,7 +51,7 @@ final class SnappingManager {
     private nonisolated static let smoothFrameInterval: CFTimeInterval = 1.0 / 60.0
 
     static func snap(layoutID: UUID, zoneID: UUID) {
-        let layouts = LayoutTemplate.allTemplates + SettingsModel.shared.settings.customSnapLayouts
+        let layouts = LayoutTemplate.allTemplates + SettingsModel.shared.current.customSnapLayouts
         guard let layout = layouts.first(where: { $0.id == layoutID }),
               let zone = layout.zones.first(where: { $0.id == zoneID }) else {
             print("[SnappingManager] Could not find layout/zone for shortcut.")
@@ -84,7 +84,7 @@ final class SnappingManager {
         let displays = NSScreen.screens.map { Display(frame: $0.frame, visibleFrame: $0.visibleFrame) }
         let fallbackDisplay = NSScreen.main.map { Display(frame: $0.frame, visibleFrame: $0.visibleFrame) }
         let mainDisplayFrame = self.mainDisplayFrame
-        let animation = SettingsModel.shared.settings.snapWindowAnimation
+        let animation = SettingsModel.shared.current.snapWindowAnimation
         let pid = app.processIdentifier
         let appName = app.bundleIdentifier ?? "unknown app"
         let generation = nextGeneration(for: pid)

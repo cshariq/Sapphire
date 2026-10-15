@@ -10,7 +10,7 @@ import EventKit
 import AppKit
 
 class CalendarService: ObservableObject {
-    private let eventStore = EKEventStore()
+    private let eventStore = SharedEventStore.store
 
     @Published var eventsForSelectedDate: [EKEvent] = []
     @Published var remindersForSelectedDate: [EKReminder] = []
@@ -26,6 +26,8 @@ class CalendarService: ObservableObject {
     private var selectedRemindersGeneration = 0
     private var upcomingRemindersGeneration = 0
     private var eventStoreRefreshWorkItem: DispatchWorkItem?
+    private var boundaryTimer: Timer?
+    private var workspaceObservers: [NSObjectProtocol] = []
 
     init() {
         NotificationCenter.default.addObserver(
@@ -40,11 +42,57 @@ class CalendarService: ObservableObject {
             name: NSApplication.didBecomeActiveNotification,
             object: nil
         )
+        for name in [Notification.Name.NSCalendarDayChanged, .NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(timeContextChanged),
+                name: name,
+                object: nil
+            )
+        }
+        workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.timeContextChanged()
+        })
     }
 
     deinit {
         eventStoreRefreshWorkItem?.cancel()
+        boundaryTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+    }
+
+    private var hasAnyAccess: Bool {
+        EKEventStore.authorizationStatus(for: .event) == .fullAccess
+            || EKEventStore.authorizationStatus(for: .reminder) == .fullAccess
+    }
+
+    @objc private func timeContextChanged() {
+        eventStoreChanged()
+    }
+
+    private func scheduleBoundaryRefresh(for events: [EKEvent]) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        boundaryTimer?.invalidate()
+        boundaryTimer = nil
+        let now = Date()
+        let intervals = events.compactMap { event -> (start: Date, end: Date)? in
+            guard let start = event.startDate, let end = event.endDate else { return nil }
+            return (start, end)
+        }
+        let boundary = CalendarSchedule.nextRefreshBoundary(now: now, events: intervals)
+        let delay = max(1, boundary.timeIntervalSince(now) + 1)
+        boundaryTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.boundaryTimer = nil
+            self.fetchAllUpcomingEvents()
+            self.fetchAllUpcomingReminders()
+        }
+        boundaryTimer?.tolerance = min(5, delay * 0.05)
     }
 
     func requestAccess() {
@@ -74,7 +122,7 @@ class CalendarService: ObservableObject {
 
     @objc private func eventStoreChanged() {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.hasAnyAccess else { return }
             self.eventStoreRefreshWorkItem?.cancel()
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
@@ -90,6 +138,7 @@ class CalendarService: ObservableObject {
     }
 
     @objc private func applicationDidBecomeActive() {
+        guard hasAnyAccess else { return }
         fetchEvents(for: currentlyTrackedDate)
         fetchAllUpcomingEvents()
     }
@@ -168,6 +217,7 @@ class CalendarService: ObservableObject {
             DispatchQueue.main.async {
                 guard self.upcomingEventsGeneration == generation else { return }
                 self.upcomingEvents = fetchedEvents
+                self.scheduleBoundaryRefresh(for: fetchedEvents)
             }
         }
     }

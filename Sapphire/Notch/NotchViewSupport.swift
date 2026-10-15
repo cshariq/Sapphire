@@ -11,15 +11,18 @@ struct IdealSizeReader: Layout {
     final class Cache {
         var ideal: CGSize = .zero
         var reported: CGSize?
+        var reportGeneration = 0
     }
 
     let epsilon: CGFloat
     let sizeIsProposalIndependent: Bool
+    var reportGeneration = 0
     let onChange: (CGSize) -> Void
 
     func makeCache(subviews: Subviews) -> Cache {
         let cache = Cache()
         cache.ideal = Self.idealSize(of: subviews)
+        cache.reportGeneration = reportGeneration
         return cache
     }
 
@@ -29,7 +32,7 @@ struct IdealSizeReader: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
         report(cache.ideal, cache: cache)
-        if sizeIsProposalIndependent { return cache.ideal }
+        if sizeIsProposalIndependent || proposal == .unspecified { return cache.ideal }
         guard let subview = subviews.first else { return .zero }
         return subview.sizeThatFits(proposal)
     }
@@ -44,6 +47,10 @@ struct IdealSizeReader: Layout {
     }
 
     private func report(_ size: CGSize, cache: Cache) {
+        if cache.reportGeneration != reportGeneration {
+            cache.reportGeneration = reportGeneration
+            cache.reported = nil
+        }
         if let reported = cache.reported,
            abs(reported.width - size.width) <= epsilon,
            abs(reported.height - size.height) <= epsilon {
@@ -59,11 +66,13 @@ extension View {
     func measureIdealSize(
         into binding: Binding<CGSize>,
         epsilon: CGFloat = 0.5,
-        sizeIsProposalIndependent: Bool = false
+        sizeIsProposalIndependent: Bool = false,
+        reportGeneration: Int = 0
     ) -> some View {
         let reader = IdealSizeReader(
             epsilon: epsilon,
-            sizeIsProposalIndependent: sizeIsProposalIndependent
+            sizeIsProposalIndependent: sizeIsProposalIndependent,
+            reportGeneration: reportGeneration
         ) { newValue in
             guard abs(newValue.width - binding.wrappedValue.width) > epsilon
                 || abs(newValue.height - binding.wrappedValue.height) > epsilon else { return }
@@ -109,6 +118,7 @@ struct SubtleIconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusable(false)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) { isHovering = hovering }
         }

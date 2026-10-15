@@ -10,6 +10,52 @@ import Combine
 import AppKit
 import SwiftUI
 
+@_silgen_name("notify_register_dispatch")
+private func notifyRegisterDispatch(
+    _ name: UnsafePointer<CChar>,
+    _ outToken: UnsafeMutablePointer<Int32>,
+    _ queue: DispatchQueue,
+    _ handler: @escaping @convention(block) (Int32) -> Void
+) -> UInt32
+
+@_silgen_name("notify_get_state")
+private func notifyGetState(_ token: Int32, _ state: UnsafeMutablePointer<UInt64>) -> UInt32
+
+@_silgen_name("notify_cancel")
+private func notifyCancel(_ token: Int32) -> UInt32
+
+private final class GameModeMonitor: ObservableObject {
+    @Published private(set) var isActive = false
+
+    private var notificationToken: Int32 = -1
+    private static let notificationName = "com.apple.system.game_mode_status_changed"
+
+    init() {
+        var token: Int32 = -1
+        let status = Self.notificationName.withCString { name in
+            notifyRegisterDispatch(name, &token, .main) { [weak self] token in
+                self?.updateState(for: token)
+            }
+        }
+
+        guard status == 0 else { return }
+        notificationToken = token
+        updateState(for: token)
+    }
+
+    deinit {
+        if notificationToken >= 0 {
+            _ = notifyCancel(notificationToken)
+        }
+    }
+
+    private func updateState(for token: Int32) {
+        var state: UInt64 = 0
+        guard notifyGetState(token, &state) == 0 else { return }
+        isActive = state != 0
+    }
+}
+
 struct EyeBreakSession: Identifiable, Codable {
     enum SessionType: String, Codable {
         case work, `break`
@@ -76,10 +122,11 @@ struct EyeBreakDailySummary: Identifiable {
 class EyeBreakManager: ObservableObject {
     static let shared = EyeBreakManager()
     private let settingsModel = SettingsModel.shared
+    private let gameModeMonitor = GameModeMonitor()
 
-    private var workInterval: TimeInterval { TimeInterval(settingsModel.settings.eyeBreakWorkInterval * 60) }
-    private var breakInterval: TimeInterval { TimeInterval(settingsModel.settings.eyeBreakBreakDuration) }
-    private var soundAlertsEnabled: Bool { settingsModel.settings.eyeBreakSoundAlerts }
+    private var workInterval: TimeInterval { TimeInterval(settingsModel.current.eyeBreakWorkInterval * 60) }
+    private var breakInterval: TimeInterval { TimeInterval(settingsModel.current.eyeBreakBreakDuration) }
+    private var soundAlertsEnabled: Bool { settingsModel.current.eyeBreakSoundAlerts }
 
     @Published var isBreakTime: Bool = false
     @Published var timeUntilNextBreak: TimeInterval
@@ -92,22 +139,28 @@ class EyeBreakManager: ObservableObject {
     @Published var breaksSkippedToday: Int = 0
     @Published var eyeStrainScore: Int = 100
     @Published var currentStreak: Int = 0
+    @Published private(set) var isPausedForGameMode: Bool = false
 
     private var timer: Timer?
     private var autoAdvanceTimer: Timer?
     private var currentWorkSessionStartDate: Date?
     private var workDeadline: Date?
     private var breakDeadline: Date?
+    private var autoAdvanceDeadline: Date?
+    private var gameModePauseStartDate: Date?
+    private var isScreenLocked = false
+    private var cancellables = Set<AnyCancellable>()
 
     private let autoAdvanceGracePeriod: TimeInterval = 45
 
     init() {
-        self.timeUntilNextBreak = TimeInterval(settingsModel.settings.eyeBreakWorkInterval * 60)
+        self.timeUntilNextBreak = TimeInterval(settingsModel.current.eyeBreakWorkInterval * 60)
 
         loadHistory()
         calculateDailySummaries()
 
         startWorkTimer()
+        observeGameModePause()
 
         let dnc = DistributedNotificationCenter.default()
         dnc.addObserver(self, selector: #selector(handleScreenLocked), name: .init("com.apple.screenIsLocked"), object: nil)
@@ -120,6 +173,77 @@ class EyeBreakManager: ObservableObject {
         DistributedNotificationCenter.default().removeObserver(self)
     }
 
+    private func observeGameModePause() {
+        Publishers.CombineLatest(
+            gameModeMonitor.$isActive,
+            settingsModel.$settings
+                .map(\.eyeBreakPauseDuringGameMode)
+                .removeDuplicates()
+        )
+        .map { isGameModeActive, shouldPause in isGameModeActive && shouldPause }
+        .removeDuplicates()
+        .receive(on: RunLoop.main)
+        .sink { [weak self] shouldPause in
+            self?.setPausedForGameMode(shouldPause)
+        }
+        .store(in: &cancellables)
+    }
+
+    private func setPausedForGameMode(_ shouldPause: Bool) {
+        guard shouldPause != isPausedForGameMode else { return }
+        isPausedForGameMode = shouldPause
+
+        if shouldPause {
+            pauseForGameMode()
+        } else {
+            resumeAfterGameMode()
+        }
+    }
+
+    private func pauseForGameMode() {
+        let now = Date()
+        gameModePauseStartDate = now
+
+        if let workDeadline {
+            timeUntilNextBreak = max(0, workDeadline.timeIntervalSince(now))
+        }
+        if let breakDeadline {
+            timeRemainingInBreak = max(0, breakDeadline.timeIntervalSince(now))
+        }
+
+        timer?.invalidate()
+        timer = nil
+        autoAdvanceTimer?.invalidate()
+        autoAdvanceTimer = nil
+        NSSound(named: "Blow")?.stop()
+        NSSound(named: "Glass")?.stop()
+    }
+
+    private func resumeAfterGameMode() {
+        guard let pauseStartDate = gameModePauseStartDate else { return }
+        let pausedDuration = max(0, Date().timeIntervalSince(pauseStartDate))
+        gameModePauseStartDate = nil
+
+        workDeadline = workDeadline?.addingTimeInterval(pausedDuration)
+        breakDeadline = breakDeadline?.addingTimeInterval(pausedDuration)
+        autoAdvanceDeadline = autoAdvanceDeadline?.addingTimeInterval(pausedDuration)
+        currentWorkSessionStartDate = currentWorkSessionStartDate?.addingTimeInterval(pausedDuration)
+
+        guard settingsModel.current.eyeBreakLiveActivityEnabled, !isScreenLocked else { return }
+
+        if isBreakTime {
+            if let autoAdvanceDeadline {
+                scheduleAutoAdvance(deadline: autoAdvanceDeadline)
+            } else if breakDeadline != nil {
+                scheduleBreakCountdownTimer()
+            }
+        } else if workDeadline != nil {
+            scheduleWorkCountdownTimer()
+        } else {
+            startWorkTimer()
+        }
+    }
+
     private func startWorkTimer() {
         isBreakTime = false
         isDoneButtonEnabled = false
@@ -127,32 +251,49 @@ class EyeBreakManager: ObservableObject {
         currentWorkSessionStartDate = nil
         workDeadline = nil
         breakDeadline = nil
+        autoAdvanceDeadline = nil
         timer?.invalidate()
         autoAdvanceTimer?.invalidate()
         autoAdvanceTimer = nil
-        if settingsModel.settings.eyeBreakLiveActivityEnabled {
+        if settingsModel.current.eyeBreakLiveActivityEnabled {
             timeUntilNextBreak = workInterval
+            guard !isPausedForGameMode, !isScreenLocked else { return }
             currentWorkSessionStartDate = Date()
             workDeadline = Date().addingTimeInterval(workInterval)
-
-            timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-                guard let self, let deadline = self.workDeadline else { return }
-
-                self.timeUntilNextBreak = max(0, deadline.timeIntervalSinceNow)
-                if self.timeUntilNextBreak <= 0 {
-                    self.recordWorkSession()
-                    self.startBreakTimer()
-                }
-            }
+            scheduleWorkCountdownTimer()
         }
+    }
+
+    var secondsUntilNextBreak: TimeInterval {
+        guard !isPausedForGameMode, let workDeadline else { return timeUntilNextBreak }
+        return max(0, workDeadline.timeIntervalSinceNow)
+    }
+
+    private func scheduleWorkCountdownTimer() {
+        timer?.invalidate()
+        guard let deadline = workDeadline else { return }
+        let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in
+            guard let self, !self.isPausedForGameMode, let deadline = self.workDeadline else { return }
+            guard deadline.timeIntervalSinceNow <= 0.5 else {
+                self.scheduleWorkCountdownTimer()
+                return
+            }
+            self.timeUntilNextBreak = 0
+            self.recordWorkSession()
+            self.startBreakTimer()
+        }
+        timer.tolerance = 1
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func startBreakTimer() {
         timer?.invalidate()
         autoAdvanceTimer?.invalidate()
         autoAdvanceTimer = nil
+        autoAdvanceDeadline = nil
 
-        if soundAlertsEnabled {
+        if soundAlertsEnabled && !isPausedForGameMode {
             NSSound(named: "Blow")?.play()
         }
 
@@ -162,27 +303,48 @@ class EyeBreakManager: ObservableObject {
         workDeadline = nil
         breakDeadline = Date().addingTimeInterval(breakInterval)
 
+        guard !isPausedForGameMode, !isScreenLocked else { return }
+        scheduleBreakCountdownTimer()
+    }
+
+    private func scheduleBreakCountdownTimer() {
+        timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self, let deadline = self.breakDeadline else { return }
+            guard let self, !self.isPausedForGameMode, let deadline = self.breakDeadline else { return }
 
             self.timeRemainingInBreak = max(0, deadline.timeIntervalSinceNow)
             if self.timeRemainingInBreak <= 0 {
                 self.isDoneButtonEnabled = true
-                if soundAlertsEnabled {
+                self.breakDeadline = nil
+                if self.soundAlertsEnabled {
                     NSSound(named: "Glass")?.play()
                 }
                 self.timer?.invalidate()
+                self.timer = nil
                 self.scheduleAutoAdvance()
             }
         }
     }
 
-    private func scheduleAutoAdvance() {
+    private func scheduleAutoAdvance(deadline: Date? = nil) {
         autoAdvanceTimer?.invalidate()
-        autoAdvanceTimer = Timer.scheduledTimer(withTimeInterval: autoAdvanceGracePeriod, repeats: false) { [weak self] _ in
+        let deadline = deadline ?? Date().addingTimeInterval(autoAdvanceGracePeriod)
+        autoAdvanceDeadline = deadline
+        let remainingTime = deadline.timeIntervalSinceNow
+
+        guard remainingTime > 0 else {
+            autoAdvanceDeadline = nil
+            if isBreakTime {
+                completeBreak()
+            }
+            return
+        }
+
+        autoAdvanceTimer = Timer.scheduledTimer(withTimeInterval: remainingTime, repeats: false) { [weak self] _ in
             guard let self = self else { return }
             self.autoAdvanceTimer = nil
-            guard self.isBreakTime else { return }
+            self.autoAdvanceDeadline = nil
+            guard self.isBreakTime, !self.isPausedForGameMode else { return }
             self.completeBreak()
         }
     }
@@ -241,6 +403,13 @@ class EyeBreakManager: ObservableObject {
     }
 
     @objc private func handleScreenLocked() {
+        isScreenLocked = true
+        if let pauseStartDate = gameModePauseStartDate,
+           let currentWorkSessionStartDate {
+            self.currentWorkSessionStartDate = currentWorkSessionStartDate.addingTimeInterval(
+                max(0, Date().timeIntervalSince(pauseStartDate))
+            )
+        }
         if !isBreakTime {
             recordWorkSession()
         }
@@ -250,9 +419,11 @@ class EyeBreakManager: ObservableObject {
         autoAdvanceTimer = nil
         workDeadline = nil
         breakDeadline = nil
+        autoAdvanceDeadline = nil
     }
 
     @objc private func handleScreenUnlocked() {
+        isScreenLocked = false
         resetAndStartWork()
     }
 

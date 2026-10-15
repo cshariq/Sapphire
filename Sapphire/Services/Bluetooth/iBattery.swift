@@ -104,11 +104,7 @@ class InternalFinder {
     }
 
     fileprivate func open() {
-        if #available(macOS 12, *) {
-            self.serviceInternal = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-        } else {
-            self.serviceInternal = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-        }
+        self.serviceInternal = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
     }
 
     fileprivate func close() {

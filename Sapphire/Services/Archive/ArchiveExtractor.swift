@@ -74,6 +74,9 @@ final class ArchiveExtractor: ObservableObject {
     private let settingsModel = SettingsModel.shared
     private var pendingURLs: [URL] = []
     private var isDrainingQueue = false
+    private var cancellables = Set<AnyCancellable>()
+
+    static let systemArchiveHandlers = ["com.apple.archiveutility"]
 
     static let defaultArchiveContentTypeIdentifiers: [String] = [
         "public.zip-archive",
@@ -92,7 +95,22 @@ final class ArchiveExtractor: ObservableObject {
         "7z", "rar", "iso", "cpio", "cab", "z"
     ]
 
-    private init() {}
+    private init() {
+        settingsModel.changes(of: { $0.archiveExtractorEnabled })
+            .sink { [weak self] enabled in
+                guard enabled else { return }
+                self?.reconcileDefaultHandlerIfNeeded()
+            }
+            .store(in: &cancellables)
+    }
+
+    func reconcileDefaultHandlerIfNeeded() {
+        Task { @MainActor in
+            await DefaultFileHandler.reclaimFromOtherCopies(
+                Self.defaultArchiveContentTypeIdentifiers.compactMap(UTType.init)
+            )
+        }
+    }
 
     // MARK: - Detection
 
@@ -125,13 +143,19 @@ final class ArchiveExtractor: ObservableObject {
             )
         }
 
-        let handlerBundleIDs = defaultArchiveContentTypeIdentifiers.map { identifier in
-            UTType(identifier).flatMap(defaultApplicationBundleIdentifier)
+        let handlerBundleIDs = defaultArchiveContentTypeIdentifiers.map { identifier -> String? in
+            guard let type = UTType(identifier) else { return nil }
+            let handler = DefaultFileHandler.currentHandler(for: type)
+            return DefaultFileHandler.isThisApp(handlerURL: handler.url) ? handler.bundleIdentifier : nil
         }
         return evaluateDefaultHandlerStatus(
             bundleIdentifier: bundleID,
             handlerBundleIdentifiers: handlerBundleIDs
         )
+    }
+
+    static func shadowingCopy() -> URL? {
+        DefaultFileHandler.shadowingCopy(for: defaultArchiveContentTypeIdentifiers.compactMap(UTType.init))
     }
 
     static func isDefaultArchiveHandler() -> Bool {
@@ -140,34 +164,10 @@ final class ArchiveExtractor: ObservableObject {
 
     @discardableResult
     static func setAsDefaultArchiveHandler() async -> Bool {
-        guard let bundleID = Bundle.main.bundleIdentifier else { return false }
-
-        var allSucceeded = true
-        for identifier in defaultArchiveContentTypeIdentifiers {
-            guard let contentType = UTType(identifier) else {
-                allSucceeded = false
-                continue
-            }
-            if defaultApplicationBundleIdentifier(for: contentType)?
-                .caseInsensitiveCompare(bundleID) == .orderedSame {
-                continue
-            }
-
-            do {
-                try await NSWorkspace.shared.setDefaultApplication(
-                    at: Bundle.main.bundleURL,
-                    toOpen: contentType
-                )
-            } catch {
-                allSucceeded = false
-            }
-        }
-        return allSucceeded
-    }
-
-    private static func defaultApplicationBundleIdentifier(for contentType: UTType) -> String? {
-        NSWorkspace.shared.urlForApplication(toOpen: contentType)
-            .flatMap { Bundle(url: $0)?.bundleIdentifier }
+        guard Bundle.main.bundleIdentifier != nil else { return false }
+        let types = defaultArchiveContentTypeIdentifiers.compactMap(UTType.init)
+        let resolvedAll = types.count == defaultArchiveContentTypeIdentifiers.count
+        return await DefaultFileHandler.claim(types) && resolvedAll
     }
 
     // MARK: - Entry points
@@ -176,7 +176,7 @@ final class ArchiveExtractor: ObservableObject {
         let archives = urls.filter(Self.isArchiveURL)
         guard !archives.isEmpty else { return }
 
-        guard settingsModel.settings.archiveExtractorEnabled else {
+        guard settingsModel.current.archiveExtractorEnabled else {
             handOffToSystem(archives)
             return
         }
@@ -191,7 +191,14 @@ final class ArchiveExtractor: ObservableObject {
 
     private func handOffToSystem(_ urls: [URL]) {
         for url in urls {
-            NSWorkspace.shared.open(url)
+            guard let app = DefaultFileHandler.alternativeApplication(
+                for: url,
+                preferredBundleIdentifiers: Self.systemArchiveHandlers
+            ) else {
+                Task { await notify(title: "Sapphire Archives", body: "No other app can open \(url.lastPathComponent). Turn on Auto-Extract Archives to let Sapphire extract it.") }
+                continue
+            }
+            NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
         }
     }
 
@@ -227,40 +234,59 @@ final class ArchiveExtractor: ObservableObject {
         currentActivity = "Reading \(archiveName)…"
 
         let parent = url.deletingLastPathComponent()
-        let baseName = url.deletingPathExtension().lastPathComponent
-        let mode = settingsModel.settings.archiveExtractionMode
+        let baseName = Self.extractionBaseName(for: url)
+        let fileManager = FileManager.default
 
         let listing = await listEntries(in: url)
-        let destination: URL
-        switch mode {
-        case .inPlace:
-            destination = parent
-        case .folder:
-            destination = parent.appendingPathComponent(baseName)
-        case .smart:
-            destination = Self.topLevelCount(listing) > 1
-                ? parent.appendingPathComponent(baseName)
-                : parent
+
+        if let listing, Self.hasUnsafeEntry(listing) {
+            await notify(
+                title: "Sapphire Archives",
+                body: "\(archiveName) was not extracted: it contains entries that would be written outside the destination folder."
+            )
+            return
         }
 
-        do {
-            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        } catch {
-            await notify(title: "Sapphire Archives", body: "Could not create \(destination.lastPathComponent) to extract \(archiveName).")
+        let intoFolder: Bool
+        switch settingsModel.current.archiveExtractionMode {
+        case .inPlace:
+            intoFolder = listing == nil
+        case .folder:
+            intoFolder = true
+        case .smart:
+            intoFolder = listing.map { Self.topLevelCount($0) > 1 } ?? true
+        }
+        let displayDestination = intoFolder ? parent.appendingPathComponent(baseName, isDirectory: true) : parent
+
+        guard let staging = try? fileManager.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: parent,
+            create: true
+        ) else {
+            await notify(title: "Sapphire Archives", body: "Could not prepare a temporary folder to extract \(archiveName).")
             return
+        }
+        defer {
+            Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: staging) }
         }
 
         currentActivity = "Extracting \(archiveName)…"
 
-        let archiveAttrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let archiveAttrs = try? fileManager.attributesOfItem(atPath: url.path)
         let archiveBytes = (archiveAttrs?[.size] as? NSNumber)?.int64Value ?? 0
-        let totalEntries = listing.count
+        let totalEntries = listing?.count ?? 0
+        let allowDitto = listing != nil
 
-        var result = await runExtraction(url: url, destination: destination, passphrase: nil, totalEntries: totalEntries, totalBytes: archiveBytes)
+        var result = await runExtraction(url: url, stagingDirectory: staging, displayDestination: displayDestination, passphrase: nil, totalEntries: totalEntries, totalBytes: archiveBytes, allowDitto: allowDitto)
 
-        if !result.success, result.needsPassphrase, settingsModel.settings.archivePromptForPasswords {
+        if !result.success, result.needsPassphrase, settingsModel.current.archivePromptForPasswords {
             if let password = await promptForPassword(archiveName: archiveName) {
-                result = await runExtraction(url: url, destination: destination, passphrase: password, totalEntries: totalEntries, totalBytes: archiveBytes)
+                await Task.detached(priority: .utility) {
+                    try? FileManager.default.removeItem(at: staging)
+                    try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+                }.value
+                result = await runExtraction(url: url, stagingDirectory: staging, displayDestination: displayDestination, passphrase: password, totalEntries: totalEntries, totalBytes: archiveBytes, allowDitto: allowDitto)
             }
         }
 
@@ -273,24 +299,113 @@ final class ArchiveExtractor: ObservableObject {
             return
         }
 
+        currentActivity = "Moving \(archiveName) into place…"
+
+        let placement: ExtractionPlacement
+        do {
+            placement = try await Task.detached(priority: .userInitiated) {
+                try Self.placeExtractedItems(
+                    from: staging,
+                    into: parent,
+                    folderName: intoFolder ? baseName : nil,
+                    quarantineSource: url
+                )
+            }.value
+        } catch {
+            currentTransferTask = nil
+            await notify(title: "Sapphire Archives", body: "Could not move the extracted files of \(archiveName) into \(parent.lastPathComponent).")
+            return
+        }
+
         markExtractionComplete()
         completedExtractCount += 1
         currentActivity = nil
 
-        if settingsModel.settings.archiveDeleteAfterExtract {
-            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        if settingsModel.current.archiveDeleteAfterExtract {
+            try? fileManager.trashItem(at: url, resultingItemURL: nil)
         }
 
-        switch settingsModel.settings.archivePostExtractAction {
+        switch settingsModel.current.archivePostExtractAction {
         case .reveal:
-            NSWorkspace.shared.activateFileViewerSelecting([destination])
+            NSWorkspace.shared.activateFileViewerSelecting(placement.items.isEmpty ? [placement.destination] : placement.items)
         case .open:
-            NSWorkspace.shared.open(destination)
+            NSWorkspace.shared.open(placement.destination)
         case .none:
             break
         }
 
         await notify(title: "Sapphire Archives", body: "\(archiveName) extracted successfully.")
+    }
+
+    // MARK: - Placement
+
+    private struct ExtractionPlacement: Sendable {
+        let destination: URL
+        let items: [URL]
+    }
+
+    private nonisolated static func placeExtractedItems(
+        from staging: URL,
+        into parent: URL,
+        folderName: String?,
+        quarantineSource: URL
+    ) throws -> ExtractionPlacement {
+        let fileManager = FileManager.default
+        let extracted = try fileManager.contentsOfDirectory(
+            at: staging,
+            includingPropertiesForKeys: nil,
+            options: []
+        ).filter { !ignoredTopLevelEntries.contains($0.lastPathComponent) }
+
+        let destination: URL
+        if let folderName {
+            destination = uniqueURL(for: parent.appendingPathComponent(folderName, isDirectory: true))
+            try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+        } else {
+            destination = parent
+        }
+
+        var placed: [URL] = []
+        for item in extracted {
+            let target = uniqueURL(for: destination.appendingPathComponent(item.lastPathComponent))
+            try fileManager.moveItem(at: item, to: target)
+            placed.append(target)
+        }
+
+        if folderName != nil {
+            QuarantineAttribute.copy(from: [quarantineSource], to: destination, recursively: true)
+        } else {
+            for item in placed {
+                QuarantineAttribute.copy(from: [quarantineSource], to: item, recursively: true)
+            }
+        }
+
+        return ExtractionPlacement(destination: destination, items: placed)
+    }
+
+    nonisolated static func uniqueURL(for proposed: URL) -> URL {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: proposed.path) else { return proposed }
+        let directory = proposed.deletingLastPathComponent()
+        let ext = proposed.pathExtension
+        let stem = proposed.deletingPathExtension().lastPathComponent
+        var counter = 2
+        while true {
+            var candidate = directory.appendingPathComponent("\(stem) \(counter)")
+            if !ext.isEmpty { candidate = candidate.appendingPathExtension(ext) }
+            if !fileManager.fileExists(atPath: candidate.path) { return candidate }
+            counter += 1
+        }
+    }
+
+    nonisolated static func extractionBaseName(for url: URL) -> String {
+        let compressionExtensions: Set<String> = ["gz", "bz2", "xz", "zst", "lz", "lzma", "z"]
+        let stripped = url.deletingPathExtension()
+        if compressionExtensions.contains(url.pathExtension.lowercased()),
+           stripped.pathExtension.lowercased() == "tar" {
+            return stripped.deletingPathExtension().lastPathComponent
+        }
+        return stripped.lastPathComponent
     }
 
     // MARK: - Extraction
@@ -300,14 +415,14 @@ final class ArchiveExtractor: ObservableObject {
         let needsPassphrase: Bool
     }
 
-    private func runExtraction(url: URL, destination: URL, passphrase: String?, totalEntries: Int, totalBytes: Int64) async -> ExtractResult {
+    private func runExtraction(url: URL, stagingDirectory: URL, displayDestination: URL, passphrase: String?, totalEntries: Int, totalBytes: Int64, allowDitto: Bool) async -> ExtractResult {
         let startDate = Date()
         let archiveName = url.lastPathComponent
 
         currentTransferTask = FileTransferTask(
             fileURL: url,
             fileName: archiveName,
-            destinationURL: destination,
+            destinationURL: displayDestination,
             currentSize: 0,
             totalSize: totalBytes > 0 ? totalBytes : nil,
             speed: 0,
@@ -317,14 +432,12 @@ final class ArchiveExtractor: ObservableObject {
         )
 
         guard totalEntries > 0 else {
-            return await runExtractionProcess(url: url, destination: destination, passphrase: passphrase, onOutputLine: nil)
+            return await runExtractionProcess(url: url, destination: stagingDirectory, passphrase: passphrase, allowDitto: allowDitto, onOutputLine: nil)
         }
 
-        let counter = ExtractionLineCounter()
+        let throttle = ExtractionProgressThrottle(totalEntries: totalEntries)
         let onLine: @Sendable (String) -> Void = { [weak self] _ in
-            guard let self else { return }
-            let done = counter.increment()
-            let fraction = min(1.0, Double(done) / Double(totalEntries))
+            guard let self, let fraction = throttle.registerEntry() else { return }
             let bytesDone = Int64(Double(totalBytes) * fraction)
             let elapsed = Date().timeIntervalSince(startDate)
             let speed = elapsed > 0 ? Double(bytesDone) / elapsed : 0
@@ -332,21 +445,23 @@ final class ArchiveExtractor: ObservableObject {
                 self.updateExtractionProgress(bytesDone: bytesDone, speed: speed)
             }
         }
-        return await runExtractionProcess(url: url, destination: destination, passphrase: passphrase, onOutputLine: onLine)
+        return await runExtractionProcess(url: url, destination: stagingDirectory, passphrase: passphrase, allowDitto: allowDitto, onOutputLine: onLine)
     }
 
-    private func runExtractionProcess(url: URL, destination: URL, passphrase: String?, onOutputLine: (@Sendable (String) -> Void)?) async -> ExtractResult {
+    private func runExtractionProcess(url: URL, destination: URL, passphrase: String?, allowDitto: Bool, onOutputLine: (@Sendable (String) -> Void)?) async -> ExtractResult {
 
-        if url.pathExtension.lowercased() == "zip", passphrase == nil {
+        if allowDitto, url.pathExtension.lowercased() == "zip", passphrase == nil {
             let result = await ProcessRunner.runCapturing(
                 executableURL: URL(fileURLWithPath: "/usr/bin/ditto"),
-                arguments: ["-x", "-k", "-v", url.path, destination.path],
+                arguments: ["-x", "-k", "-V", url.path, destination.path],
                 timeout: 900,
                 onOutputLine: onOutputLine
             )
             if result.exitStatus == 0 {
                 return ExtractResult(success: true, needsPassphrase: false)
             }
+            try? FileManager.default.removeItem(at: destination)
+            try? FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         }
 
         var args: [String] = []
@@ -397,49 +512,54 @@ final class ArchiveExtractor: ObservableObject {
 
     // MARK: - Archive listing
 
-    private func listEntries(in url: URL) async -> [String] {
+    private func listEntries(in url: URL) async -> [String]? {
         let result = await ProcessRunner.runCapturing(
             executableURL: URL(fileURLWithPath: "/usr/bin/bsdtar"),
             arguments: ["-tf", url.path],
             timeout: 30
         )
-        guard result.exitStatus == 0 else { return [] }
+        guard !result.timedOut, result.exitStatus == 0 else { return nil }
         return result.standardOutput
             .split(separator: "\n")
             .map(String.init)
     }
 
-    private nonisolated static func topLevelCount(_ entries: [String]) -> Int {
+    nonisolated static func hasUnsafeEntry(_ entries: [String]) -> Bool {
+        entries.contains { entry in
+            entry.hasPrefix("/")
+                || entry.hasPrefix("\\")
+                || entry.split(whereSeparator: { $0 == "/" || $0 == "\\" }).contains("..")
+        }
+    }
+
+    nonisolated static let ignoredTopLevelEntries: Set<String> = ["__MACOSX", ".DS_Store"]
+
+    nonisolated static func topLevelCount(_ entries: [String]) -> Int {
         Set(entries.compactMap { entry -> String? in
             guard let first = entry.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: true).first else {
                 return nil
             }
-            return String(first)
+            let name = String(first)
+            return ignoredTopLevelEntries.contains(name) ? nil : name
         }).count
     }
 
     // MARK: - Password prompt
 
     private func promptForPassword(archiveName: String) async -> String? {
-        await withCheckedContinuation { continuation in
-            let alert = NSAlert()
-            alert.messageText = "\"\(archiveName)\" is password protected"
-            alert.informativeText = "Enter the password to extract this archive. Sapphire does not store it."
-            alert.alertStyle = .informational
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.placeholderString = "Password"
 
-            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-            field.placeholderString = "Password"
-            alert.accessoryView = field
-
-            alert.addButton(withTitle: "Extract")
-            alert.addButton(withTitle: "Cancel")
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
+        return await withCheckedContinuation { continuation in
+            HelperAlertPresenter.presentModal(
+                messageText: "\"\(archiveName)\" is password protected",
+                informativeText: "Enter the password to extract this archive. Sapphire does not store it.",
+                alertStyle: .informational,
+                accessoryView: field,
+                buttonTitles: ["Extract", "Cancel"]
+            ) { index in
                 let password = field.stringValue
-                continuation.resume(returning: password.isEmpty ? nil : password)
-            } else {
-                continuation.resume(returning: nil)
+                continuation.resume(returning: index == 0 && !password.isEmpty ? password : nil)
             }
         }
     }
@@ -473,14 +593,28 @@ final class ArchiveExtractor: ObservableObject {
 
     // MARK: - Extraction Progress
 
-    private final class ExtractionLineCounter: @unchecked Sendable {
+    private final class ExtractionProgressThrottle: @unchecked Sendable {
+        private let totalEntries: Int
         private var count = 0
+        private var lastReportedFraction = -1.0
+        private var lastReportDate = Date.distantPast
         private let lock = NSLock()
-        func increment() -> Int {
+
+        init(totalEntries: Int) {
+            self.totalEntries = max(1, totalEntries)
+        }
+
+        func registerEntry() -> Double? {
             lock.lock()
             defer { lock.unlock() }
             count += 1
-            return count
+            let fraction = min(1.0, Double(count) / Double(totalEntries))
+            let now = Date()
+            guard fraction - lastReportedFraction >= 0.01
+                    || now.timeIntervalSince(lastReportDate) >= 0.1 else { return nil }
+            lastReportedFraction = fraction
+            lastReportDate = now
+            return fraction
         }
     }
 }

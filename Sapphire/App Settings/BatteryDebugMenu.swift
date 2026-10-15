@@ -346,12 +346,16 @@ struct BatteryDebugMenu: View {
 
     private func pauseCharging() async {
         let mode = await BatteryManager.shared.currentChargeControlMode()
-        if mode == .firmware {
+        switch mode {
+        case .firmware:
             BatteryManager.shared.setChargeLimit(limitInput)
             appendLog("firmware pause: setChargeLimit(\(limitInput))")
-        } else {
+        case .adapter:
             BatteryManager.shared.enableCharging(false)
-            appendLog("legacy pause: enableCharging(false)")
+            appendLog("adapter pause: enableCharging(false) [wall-power cut]")
+        case .legacy, .unsupported:
+            BatteryManager.shared.enableCharging(false)
+            appendLog("\(mode) pause: enableCharging(false)")
         }
     }
 

@@ -53,10 +53,11 @@ extension CodableColor: Hashable {
     }
 }
 
-// MARK: - Codable Conformance (from Ice)
+// MARK: - Codable Conformance
 extension CodableColor: Codable {
     private enum CodingKeys: String, CodingKey {
         case components
+        case colorSpaceName
         case colorSpace
         case location
     }
@@ -64,18 +65,31 @@ extension CodableColor: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         var components = try container.decode([CGFloat].self, forKey: .components)
-        let iccData = try container.decode(Data.self, forKey: .colorSpace) as CFData
-
         self.location = try container.decodeIfPresent(CGFloat.self, forKey: .location) ?? 0.0
 
-        guard let colorSpace = CGColorSpace(iccData: iccData) else {
-            throw DecodingError.dataCorruptedError(
-                forKey: .colorSpace,
-                in: container,
-                debugDescription: "Invalid ICC profile data"
-            )
+        let colorSpace: CGColorSpace
+        if let name = try container.decodeIfPresent(String.self, forKey: .colorSpaceName) {
+            guard let named = CGColorSpace(name: name as CFString) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .colorSpaceName,
+                    in: container,
+                    debugDescription: "Unknown color space \(name)"
+                )
+            }
+            colorSpace = named
+        } else {
+            let iccData = try container.decode(Data.self, forKey: .colorSpace) as CFData
+            guard let profiled = CGColorSpace(iccData: iccData) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .colorSpace,
+                    in: container,
+                    debugDescription: "Invalid ICC profile data"
+                )
+            }
+            colorSpace = profiled
         }
-        guard let cgColor = CGColor(colorSpace: colorSpace, components: &components) else {
+        guard components.count == colorSpace.numberOfComponents + 1,
+              let cgColor = CGColor(colorSpace: colorSpace, components: &components) else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
                     codingPath: decoder.codingPath,
@@ -87,37 +101,34 @@ extension CodableColor: Codable {
     }
 
     func encode(to encoder: Encoder) throws {
-        guard let components = cgColor.components else {
+        guard let (name, components) = Self.portableRepresentation(of: cgColor) else {
             throw EncodingError.invalidValue(
                 cgColor,
                 EncodingError.Context(
                     codingPath: encoder.codingPath,
-                    debugDescription: "Missing color components"
-                )
-            )
-        }
-        guard let colorSpace = cgColor.colorSpace else {
-            throw EncodingError.invalidValue(
-                cgColor,
-                EncodingError.Context(
-                    codingPath: encoder.codingPath,
-                    debugDescription: "Missing color space"
-                )
-            )
-        }
-        guard let iccData = colorSpace.copyICCData() else {
-            throw EncodingError.invalidValue(
-                colorSpace,
-                EncodingError.Context(
-                    codingPath: encoder.codingPath,
-                    debugDescription: "Missing ICC profile data"
+                    debugDescription: "Color has no components in a named color space"
                 )
             )
         }
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(components, forKey: .components)
-        try container.encode(iccData as Data, forKey: .colorSpace)
+        try container.encode(name, forKey: .colorSpaceName)
         try container.encode(location, forKey: .location)
+    }
+
+    static func portableRepresentation(of color: CGColor) -> (name: String, components: [CGFloat])? {
+        if let name = color.colorSpace?.name,
+           CGColorSpace(name: name) != nil,
+           let components = color.components {
+            return (name as String, components)
+        }
+        guard let extended = CGColorSpace(name: CGColorSpace.extendedSRGB),
+              let converted = color.converted(to: extended, intent: .defaultIntent, options: nil),
+              let components = converted.components else {
+            return nil
+        }
+        let inGamut = components.dropLast().allSatisfy { (0...1).contains($0) }
+        return ((inGamut ? CGColorSpace.sRGB : CGColorSpace.extendedSRGB) as String, components)
     }
 }
 

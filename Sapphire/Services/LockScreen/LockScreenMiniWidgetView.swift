@@ -26,15 +26,12 @@ struct LockScreenWidgetBackground<Content: View>: View {
 
     @ViewBuilder
     private var backgroundMaterial: some View {
-        LockScreenWidgetSurface(
-            shape: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous),
-            cornerRadius: LockScreenConfiguration.cornerRadius
-        )
+        LockScreenCardSurface()
     }
 }
 
 struct LockScreenMiniWidgetView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     @StateObject private var batteryStatusManager = BatteryStatusManager.shared
 
@@ -68,10 +65,6 @@ struct LockScreenMiniWidgetView: View {
                     }
                     .transition(fadeTransition)
 
-                case .music:
-                    LockScreenMusicMiniSlot()
-                        .environment(\.navigationStack, $dummyNavigationStack)
-                        .transition(fadeTransition)
                 case .battery:
                     LockScreenWidgetBackground {
                         BatteryMiniWidget()
@@ -118,7 +111,7 @@ struct LockScreenMiniWidgetView: View {
                     }
                     .transition(fadeTransition)
 
-                case .none:
+                case .none, .music:
                     EmptyView()
                 }
             }
@@ -137,26 +130,8 @@ struct LockScreenMiniWidgetView: View {
 
 }
 
-private struct LockScreenMusicMiniSlot: View {
-    @EnvironmentObject private var musicManager: MusicManager
-
-    var body: some View {
-        Group {
-            if musicManager.isPlaying {
-                LockScreenWidgetBackground {
-                    MusicWidgetView(onExpand: {
-                        LockScreenMusicPaneController.shared.open()
-                    })
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            }
-        }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: musicManager.isPlaying)
-    }
-}
-
 private struct LockScreenTimerMiniSlot: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @EnvironmentObject private var timerManager: TimerManager
 
     var body: some View {
@@ -177,7 +152,7 @@ struct BatteryMiniWidget: View {
     @EnvironmentObject var bluetoothManager: BluetoothManager
     @EnvironmentObject var batteryStatusManager: BatteryStatusManager
     @StateObject private var batteryEstimator = BatteryEstimator.shared
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

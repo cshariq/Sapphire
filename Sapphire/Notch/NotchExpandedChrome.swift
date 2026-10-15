@@ -3,133 +3,236 @@
 //  Sapphire
 //
 //  Created by Shariq Charolia on 2026-09-02
+//
 
 import SwiftUI
 import AppKit
 
-struct NotchExpandedChrome: View {
-    let config: ResolvedNotchConfiguration
-    let mode: NotchWidgetMode
-    let notchState: NotchController.NotchState
-    let animatedWidth: CGFloat
-    let showRightHUDOverlay: Bool
-    @Binding var navigationStack: [NotchWidgetMode]
-    @Binding var isPinned: Bool
-    @Binding var iconsLeftWidth: CGFloat
-    @Binding var iconsRightWidth: CGFloat
-    let iconsIntrinsicWidth: CGFloat
-    let onPin: (Bool) -> Void
-    let onOpenBlipHub: () -> Void
-    let onOpenAgentS: () -> Void
-
-    @EnvironmentObject private var settings: SettingsModel
-    @ObservedObject private var caffeineManager = CaffeineManager.shared
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            if mode == .defaultWidgets {
-                defaultModeIcons
-            } else if ![.fileShelfLanding, .snapZones, .dragActivated].contains(mode) {
-                navigationHeader
-            }
-        }
+enum NotchExpandedChrome {
+    struct Context {
+        var config: ResolvedNotchConfiguration
+        var mode: NotchWidgetMode
+        var notchState: NotchController.NotchState
+        var barWidth: CGFloat
+        var fixedSpacer: Bool
+        var showRightHUDOverlay: Bool
+        var navigationStack: Binding<[NotchWidgetMode]>
+        var isPinned: Binding<Bool>
+        var iconsLeftWidth: Binding<CGFloat>
+        var iconsRightWidth: Binding<CGFloat>
+        var iconsIntrinsicWidth: CGFloat
+        var islandBarItems: [NotchIslandBar.Item] = []
+        var onPin: (Bool) -> Void
+        var onOpenBlipHub: () -> Void
+        var onOpenAgentS: () -> Void
     }
 
-    private var currentViewTitle: String? {
+    static func showsHeader(for mode: NotchWidgetMode) -> Bool {
+        mode == .defaultWidgets || ![.fileShelfLanding, .snapZones, .dragActivated].contains(mode)
+    }
+
+    static func key(_ context: Context) -> NotchContentKey {
+        NotchContentKey(
+            config: context.config,
+            numbers: [context.fixedSpacer ? context.barWidth : 0, context.iconsIntrinsicWidth],
+            flags: [context.fixedSpacer, context.showRightHUDOverlay],
+            tags: [String(describing: context.mode), String(describing: context.notchState)]
+                + context.islandBarItems.map { String(describing: $0) }
+        )
+    }
+
+    static func pieces(_ context: Context) -> [NotchChromeSlot: NotchChromePiece] {
+        var pieces = unkeyedPieces(context)
+        let key = key(context)
+        for slot in pieces.keys { pieces[slot]?.key = key }
+        return pieces
+    }
+
+    private static func unkeyedPieces(_ context: Context) -> [NotchChromeSlot: NotchChromePiece] {
+        let config = context.config
+        if config.isFloatingIsland {
+            guard NotchIslandBar.showsBar(for: context.mode), !context.islandBarItems.isEmpty else { return [:] }
+            return [
+                .islandBar: NotchChromePiece(
+                    anchor: .center,
+                    bottom: 0,
+                    view: AnyView(NotchIslandBarView(items: context.islandBarItems, context: context))
+                ),
+            ]
+        }
+        if context.mode == .defaultWidgets {
+            let top = config.widgetMenuTopInset
+            let inset = config.defaultModeIconsHorizontalPadding
+            if context.fixedSpacer {
+                return [
+                    .centerBar: NotchChromePiece(
+                        anchor: .center,
+                        top: top,
+                        view: AnyView(NotchChromeFixedBar(context: context))
+                    ),
+                ]
+            }
+            return [
+                .leadingIcons: NotchChromePiece(
+                    anchor: .leading,
+                    inset: inset,
+                    top: top,
+                    view: AnyView(NotchChromeIconGroup(side: .leading, context: context))
+                ),
+                .trailingIcons: NotchChromePiece(
+                    anchor: .trailing,
+                    inset: inset,
+                    top: top,
+                    view: AnyView(NotchChromeIconGroup(side: .trailing, context: context))
+                ),
+            ]
+        }
+        guard showsHeader(for: context.mode) else { return [:] }
+        return [
+            .header: NotchChromePiece(
+                anchor: .leading,
+                width: .outline,
+                height: config.initialSize.height,
+                view: AnyView(NotchChromeNavigationHeader(context: context))
+            ),
+        ]
+    }
+
+    static func title(for mode: NotchWidgetMode) -> String? {
         switch mode {
         case .multiAudioDeviceAdjust: return "Adjust"
         case .multiAudioEQ: return "EQ"
+        case .earbudControls: return "Earbuds"
         case .musicDevices: return "Devices"
         case .musicQueueAndPlaylists: return "Queue & Playlists"
         case .multiAudio: return "Audio Devices"
+        case .continuityDetail: return "Phone"
         default: return nil
         }
     }
 
-    private var leftNotchButtons: [NotchButtonType] {
-        let allButtons = settings.settings.notchButtonOrder
-        if let spacerIndex = allButtons.firstIndex(of: .spacer) {
-            return Array(allButtons.prefix(upTo: spacerIndex))
-        }
-        return allButtons
+    static func split(_ buttons: [NotchButtonType]) -> (leading: [NotchButtonType], trailing: [NotchButtonType]) {
+        guard let spacerIndex = buttons.firstIndex(of: .spacer) else { return (buttons, []) }
+        return (
+            Array(buttons.prefix(upTo: spacerIndex)),
+            Array(buttons.suffix(from: buttons.index(after: spacerIndex)))
+        )
     }
+}
 
-    private var rightNotchButtons: [NotchButtonType] {
-        let allButtons = settings.settings.notchButtonOrder
-        if let spacerIndex = allButtons.firstIndex(of: .spacer) {
-            return Array(allButtons.suffix(from: allButtons.index(after: spacerIndex)))
-        }
-        return []
-    }
+// MARK: - Pieces
 
-    @ViewBuilder
-    private var navigationHeader: some View {
-        ZStack {
-            HStack {
-                Button(action: {
-                    if NotchBackRouter.shared.handleBack() { return }
-                    if navigationStack.count > 1 {
-                        navigationStack.removeLast()
-                    } else {
-                        navigationStack = [.defaultWidgets]
-                    }
-                }) {
-                    NotchCapsuleBackButtonContent()
-                        .padding(.leading, config.navHeaderLeadingPadding + 10)
-                }
-                .padding(.top, config.navHeaderTopPadding)
-                .buttonStyle(.plain)
+struct NotchChromeIconGroup: View {
+    enum Side { case leading, trailing }
 
-                NotchMediaSourceSwitcherSlot(
-                    mode: mode,
-                    topPadding: config.navHeaderTopPadding
-                )
+    let side: Side
+    let context: NotchExpandedChrome.Context
 
-                if let title = currentViewTitle {
-                    Text(title)
-                        .font(.system(size: config.navHeaderTitleFontSize, weight: .bold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(.top, config.navHeaderTitleTopPadding)
-                }
-                Spacer()
+    @ObservedSettings private var settings: SettingsObserver
+
+    var body: some View {
+        let buttons = NotchExpandedChrome.split(settings.settings.notchButtonOrder)
+        let group = HStack(spacing: 0) {
+            ForEach(side == .leading ? buttons.leading : buttons.trailing) { buttonType in
+                NotchChromeButton(type: buttonType, context: context)
             }
         }
-        .frame(height: config.initialSize.height)
-        .frame(width: animatedWidth)
+        .fixedSize(horizontal: true, vertical: false)
+
+        Group {
+            switch side {
+            case .leading:
+                group.measureIdealWidth(into: context.iconsLeftWidth)
+            case .trailing:
+                group
+                    .opacity(context.showRightHUDOverlay ? 0.0 : 1.0)
+                    .animation(.easeInOut(duration: 0.12), value: context.showRightHUDOverlay)
+                    .measureIdealWidth(into: context.iconsRightWidth)
+            }
+        }
+        .frame(height: context.config.initialSize.height)
+    }
+}
+
+struct NotchChromeFixedBar: View {
+    let context: NotchExpandedChrome.Context
+
+    @ObservedSettings private var settings: SettingsObserver
+
+    private var spacerWidth: CGFloat {
+        NotchBarSpacerPolicy.resolvedSpacerWidth(
+            configuredWidth: settings.settings.notchBarSpacerWidth,
+            barWidth: max(context.barWidth, context.iconsIntrinsicWidth),
+            itemsWidth: context.iconsIntrinsicWidth,
+            minimumSpacerWidth: context.config.barMinimumSpacerWidth
+        )
     }
 
-    @ViewBuilder
-    private var defaultModeIcons: some View {
+    private var halfWidth: CGFloat? {
+        let half = max(context.iconsLeftWidth.wrappedValue, context.iconsRightWidth.wrappedValue)
+        return half > 0 ? half : nil
+    }
+
+    var body: some View {
+        HStack(spacing: spacerWidth) {
+            NotchChromeIconGroup(side: .leading, context: context)
+                .frame(width: halfWidth, alignment: .leading)
+            NotchChromeIconGroup(side: .trailing, context: context)
+                .frame(width: halfWidth, alignment: .trailing)
+        }
+        .padding(.horizontal, context.config.defaultModeIconsHorizontalPadding)
+        .frame(height: context.config.initialSize.height)
+    }
+}
+
+struct NotchChromeNavigationHeader: View {
+    let context: NotchExpandedChrome.Context
+
+    var body: some View {
+        let config = context.config
         HStack {
-            HStack(spacing: 0) {
-                ForEach(leftNotchButtons) { buttonType in
-                    notchButton(for: buttonType)
+            Button(action: {
+                if NotchBackRouter.shared.handleBack() { return }
+                if context.navigationStack.wrappedValue.count > 1 {
+                    context.navigationStack.wrappedValue.removeLast()
+                } else {
+                    context.navigationStack.wrappedValue = [.defaultWidgets]
                 }
+            }) {
+                NotchCapsuleBackButtonContent()
+                    .padding(.leading, config.navHeaderLeadingPadding + 10)
             }
-            .fixedSize(horizontal: true, vertical: false)
-            .measureIdealWidth(into: $iconsLeftWidth)
+            .padding(.top, config.navHeaderTopPadding)
+            .buttonStyle(.plain)
 
-            Spacer()
+            NotchMediaSourceSwitcherSlot(
+                mode: context.mode,
+                topPadding: config.navHeaderTopPadding
+            )
 
-            HStack(spacing: 0) {
-                ForEach(rightNotchButtons) { buttonType in
-                    notchButton(for: buttonType)
-                }
+            if let title = NotchExpandedChrome.title(for: context.mode) {
+                Text(title)
+                    .font(.system(size: config.navHeaderTitleFontSize, weight: .bold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(.white.opacity(0.9))
+                    .padding(.top, config.navHeaderTitleTopPadding)
             }
-            .opacity(showRightHUDOverlay ? 0.0 : 1.0)
-            .animation(.easeInOut(duration: 0.12), value: showRightHUDOverlay)
-            .fixedSize(horizontal: true, vertical: false)
-            .measureIdealWidth(into: $iconsRightWidth)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, config.defaultModeIconsHorizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: config.initialSize.height)
-        .frame(width: max(animatedWidth, iconsIntrinsicWidth))
     }
+}
 
-    @ViewBuilder
-    private func notchButton(for type: NotchButtonType) -> some View {
+private struct NotchChromeButton: View {
+    let type: NotchButtonType
+    let context: NotchExpandedChrome.Context
+
+    @ObservedSettings private var settings: SettingsObserver
+    @ObservedObject private var caffeineManager = CaffeineManager.shared
+
+    var body: some View {
         switch type {
         case .settings:
             SubtleIconButton(systemName: "gearshape", action: {
@@ -137,22 +240,22 @@ struct NotchExpandedChrome: View {
             })
         case .fileShelf:
             if settings.settings.fileShelfIconEnabled {
-                SubtleIconButton(systemName: "tray.full", action: { navigationStack.append(.fileShelf) })
+                SubtleIconButton(systemName: "tray.full", action: { context.navigationStack.wrappedValue.append(.fileShelf) })
             }
         case .notes:
             if settings.settings.notesIconEnabled {
-                SubtleIconButton(systemName: "note.text", action: { navigationStack.append(.notesPlayer) })
+                SubtleIconButton(systemName: "note.text", action: { context.navigationStack.wrappedValue.append(.notesPlayer) })
             }
         case .clipboard:
             if settings.settings.clipboardIconEnabled {
-                SubtleIconButton(systemName: "list.clipboard", action: { navigationStack.append(.clipboardPlayer) })
+                SubtleIconButton(systemName: "list.clipboard", action: { context.navigationStack.wrappedValue.append(.clipboardPlayer) })
             }
         case .intelligence:
             if settings.settings.intelligenceEnabled {
                 NotchIntelligenceControls(
-                    notchState: notchState,
-                    onOpenBlipHub: onOpenBlipHub,
-                    onOpenAgentS: onOpenAgentS
+                    notchState: context.notchState,
+                    onOpenBlipHub: context.onOpenBlipHub,
+                    onOpenAgentS: context.onOpenAgentS
                 )
             } else {
                 EmptyView()
@@ -163,13 +266,14 @@ struct NotchExpandedChrome: View {
             if settings.settings.focusSessionIconEnabled {
                 SubtleIconButton(
                     systemName: "moon.fill",
-                    action: { navigationStack.append(.focusSessionDetailView) }
+                    action: { context.navigationStack.wrappedValue.append(.focusSessionDetailView) }
                 )
             }
         case .caffeine:
             if settings.settings.caffeinateEnabled {
                 SubtleIconButton(systemName: caffeineManager.isActive ? "cup.and.heat.waves.fill" : "cup.and.heat.waves", action: { caffeineManager.toggle() }, horizontalPadding: 6)
                     .offset(y: -2)
+                    .contextMenu { NotchCaffeinateMenu(caffeineManager: caffeineManager) }
             }
         case .battery:
             if settings.settings.batteryEstimatorEnabled {
@@ -177,15 +281,23 @@ struct NotchExpandedChrome: View {
             } else {
                 EmptyView()
             }
+        case .continuity:
+            if settings.settings.continuityEnabled && settings.settings.continuityShowPhoneBattery {
+                ContinuityPhoneStatusItem {
+                    context.navigationStack.wrappedValue.append(.continuityDetail)
+                }
+            } else {
+                EmptyView()
+            }
         case .multiAudio:
             if settings.settings.showMultiAudioIcon {
-                SubtleIconButton(systemName: "hifispeaker.and.homepod.mini.fill", action: { navigationStack.append(.multiAudio) })
+                SubtleIconButton(systemName: "hifispeaker.and.homepod.mini.fill", action: { context.navigationStack.wrappedValue.append(.multiAudio) })
             }
         case .pin:
             if settings.settings.pinEnabled {
-                SubtleIconButton(systemName: isPinned ? "pin.fill" : "pin", action: {
-                    isPinned.toggle()
-                    onPin(isPinned)
+                SubtleIconButton(systemName: context.isPinned.wrappedValue ? "pin.fill" : "pin", action: {
+                    context.isPinned.wrappedValue.toggle()
+                    context.onPin(context.isPinned.wrappedValue)
                 }, horizontalPadding: 6)
             }
         case .spacer:
@@ -194,8 +306,32 @@ struct NotchExpandedChrome: View {
     }
 }
 
+struct NotchCaffeinateMenu: View {
+    @ObservedObject var caffeineManager: CaffeineManager
+
+    private static let durations: [(label: String, minutes: Double)] = [
+        ("15 Minutes", 15), ("30 Minutes", 30), ("1 Hour", 60), ("2 Hours", 120), ("4 Hours", 240), ("8 Hours", 480)
+    ]
+
+    var body: some View {
+        if caffeineManager.isActive, let endsAt = caffeineManager.timeoutEndsAt {
+            Text("Awake until \(endsAt.formatted(date: .omitted, time: .shortened))")
+        }
+        Section("Keep Awake For") {
+            ForEach(Self.durations, id: \.minutes) { duration in
+                Button(duration.label) { caffeineManager.start(forMinutes: duration.minutes) }
+            }
+            Button("Until Turned Off") { caffeineManager.startIndefinitely() }
+        }
+        if caffeineManager.isActive {
+            Divider()
+            Button("Turn Off") { caffeineManager.stop() }
+        }
+    }
+}
+
 private struct NotchMediaSourceSwitcherSlot: View {
-    @EnvironmentObject private var musicManager: MusicManager
+    private var musicManager: MusicManager { .shared }
 
     let mode: NotchWidgetMode
     let topPadding: CGFloat
@@ -223,7 +359,7 @@ private struct NotchBatteryInfoSlot: View {
 }
 
 private struct NotchIntelligenceControls: View {
-    @EnvironmentObject private var geminiLiveManager: GeminiLiveManager
+    @Environment(GeminiLiveManager.self) private var geminiLiveManager
     @ObservedObject private var microphoneManager = MicrophoneUsageManager.shared
 
     let notchState: NotchController.NotchState
@@ -343,8 +479,8 @@ private struct NotchIntelligenceControls: View {
 
 struct GeminiPickerBridge: View {
     @EnvironmentObject private var pickerHelper: ContentPickerHelper
-    @EnvironmentObject private var geminiLiveManager: GeminiLiveManager
-    @EnvironmentObject private var liveActivityManager: LiveActivityManager
+    @Environment(GeminiLiveManager.self) private var geminiLiveManager
+    @Environment(LiveActivityManager.self) private var liveActivityManager
 
     var body: some View {
         Color.clear
@@ -360,5 +496,44 @@ struct GeminiPickerBridge: View {
                     else { print("Picker was cancelled by the user.") }
                 }
             }
+    }
+}
+
+private struct ContinuityPhoneStatusItem: View {
+    let action: () -> Void
+
+    private var manager: ContinuityManager { .shared }
+
+    private var snapshot: ContinuityConnectivitySnapshot { manager.connectivity }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: snapshot.hasDevice ? "iphone" : "iphone.slash")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(snapshot.severity.tint)
+
+                Image(systemName: "cellularbars")
+                    .font(.system(size: 10, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(snapshot.phoneSignalLevel > 0 ? Color.white.opacity(0.9) : Color.white.opacity(0.35))
+
+                if let battery = snapshot.phoneBatteryPercent {
+                    HStack(spacing: 2) {
+                        Image(systemName: snapshot.phoneCharging ? "battery.100percent.bolt" : "battery.100percent")
+                            .font(.system(size: 10, weight: .medium))
+                        Text("\(battery)")
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(battery <= 20 && !snapshot.phoneCharging ? Color.orange : Color.white.opacity(0.9))
+                }
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(snapshot.deviceName.isEmpty ? "Phone" : snapshot.deviceName)
     }
 }

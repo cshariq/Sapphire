@@ -87,23 +87,26 @@ struct ClipboardWidgetView: View {
 
 struct ClipboardPlayerView: View {
     @Binding var navigationStack: [NotchWidgetMode]
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @ObservedObject private var clipboardManager = ClipboardManager.shared
     @State private var searchText = ""
     @State private var showSearch = false
     @State private var filterImagesOnly = false
+    @StateObject private var search = ClipboardSearchModel()
 
     private var filteredItems: [ClipboardItem] {
-        var items = clipboardManager.recentItems
-        if filterImagesOnly {
-            items = items.filter(\.isImage)
-        }
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return items }
-        return items.filter {
-            $0.preview.localizedCaseInsensitiveContains(query)
-                || ($0.textContent?.localizedCaseInsensitiveContains(query) ?? false)
-        }
+        let results = search.results
+        return results.filter(\.isPinned) + results.filter { !$0.isPinned }
+    }
+
+    private func refreshSearch(debounce: Bool) {
+        search.update(
+            items: clipboardManager.recentItems,
+            revision: clipboardManager.historyRevision,
+            kinds: filterImagesOnly ? [.image] : nil,
+            query: searchText,
+            debounce: debounce
+        )
     }
 
     var body: some View {
@@ -138,9 +141,15 @@ struct ClipboardPlayerView: View {
         .onAppear {
             clipboardManager.startMonitoring()
             clipboardManager.beginHighPriorityMonitoring()
+            refreshSearch(debounce: false)
         }
         .onDisappear {
             clipboardManager.endHighPriorityMonitoring()
+        }
+        .onChange(of: searchText) { _, _ in refreshSearch(debounce: true) }
+        .onChange(of: filterImagesOnly) { _, _ in refreshSearch(debounce: false) }
+        .onReceive(clipboardManager.$recentItems.dropFirst()) { _ in
+            DispatchQueue.main.async { refreshSearch(debounce: false) }
         }
     }
 
@@ -163,6 +172,11 @@ struct ClipboardPlayerView: View {
                     RelativeMinuteText(date: item.copiedAt)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    if item.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.yellow.opacity(0.85))
+                    }
                 }
             }
 
@@ -182,6 +196,7 @@ struct ClipboardPlayerView: View {
         }
         .contextMenu {
             Button("Copy") { performCopy(item, via: clipboardManager) }
+            Button(item.isPinned ? "Unpin" : "Pin") { clipboardManager.togglePin(id: item.id) }
             Button("Share…") { performShare(item, via: clipboardManager) }
             Button("Delete", role: .destructive) { clipboardManager.removeItem(id: item.id) }
         }

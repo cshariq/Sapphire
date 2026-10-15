@@ -1,0 +1,30 @@
+Improvements, macOS 14.0 support and repo cleanup
+
+- Lower the deployment target of every target from macOS 14.6 to 14.0;
+  guard the 14.2-only Core Audio process taps (per-app mixer, lyrics tap)
+  and drop availability checks that are now always true
+- Fix the Music settings lyric-delay row resolving to a macOS 26-only
+  SwiftUI type, which broke it on macOS 14 and 15
+- Fix AdapterCommandQueue coalescing a seek ahead of later commands
+- Default widgetOrder now lists every widget, matching load normalization
+- Overview settings assistant: retrieve matching settings for every question
+  instead of relying on the on-device model to call findSettings (it skipped
+  the tool in 10 of 12 test questions and denied features that exist), list
+  the panes in its instructions, rank search by word starts and word rarity
+  with everyday synonyms, and apply notch size / hiding / full-screen changes
+  to every display. Index generator now takes titles and panes from the
+  Settings control that binds each setting and covers per-display settings.
+  Changes no longer depend on the model calling a tool: a guided-generation
+  decision picks the setting, the app applies it (questions never change
+  anything, on/off follows the wording), and the reply reports what happened
+- Repair test fixtures damaged by the comment/emoji strip pass and make
+  the settings round-trip test independent of Set/Dictionary encoding order
+- Clean up compiler warnings in changed code
+- Untrack SapphireVM/.build, the root SwiftProtobuf bundle, default.profraw
+  and Xcode user state; ignore build products and local scratch clones
+- Work from the parallel sessions: notch morph/windowing, settings storage
+  and index, audio mixer engine, Apple Music queue, file progress,
+  menu bar catalog, display brightness/DDC, continuity widgets and widget
+  gallery, live wallpaper video optimizer, CPU usage work, tests
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

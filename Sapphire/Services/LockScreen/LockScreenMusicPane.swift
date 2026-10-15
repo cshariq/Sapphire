@@ -7,11 +7,32 @@
 import SwiftUI
 import AppKit
 
-private struct LockScreenPaneClickPassthrough: NSViewRepresentable {
-    let interactive: Bool
+private struct LockScreenPaneWindowPresence: NSViewRepresentable {
+    let isPresented: Bool
+
+    final class Coordinator {
+        var pendingOrderOut: DispatchWorkItem?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSView { NSView() }
+
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { nsView.window?.ignoresMouseEvents = !interactive }
+        let coordinator = context.coordinator
+        let presented = isPresented
+        DispatchQueue.main.async {
+            guard let window = nsView.window else { return }
+            coordinator.pendingOrderOut?.cancel()
+            coordinator.pendingOrderOut = nil
+            window.ignoresMouseEvents = !presented
+            if presented {
+                if !window.isVisible { RemoteViewCrashGuardRunBlock { window.orderFrontRegardless() } }
+            } else if window.isVisible {
+                let orderOut = DispatchWorkItem { [weak window] in window?.orderOut(nil) }
+                coordinator.pendingOrderOut = orderOut
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: orderOut)
+            }
+        }
     }
 }
 
@@ -26,7 +47,7 @@ enum LockScreenMusicTab: String, CaseIterable, Identifiable {
         switch self {
         case .nowPlaying: "Overview"
         case .artist: "Artist"
-        case .playlists: "Playlists"
+        case .playlists: "Library"
         case .queue: "Queue"
         case .devices: "Devices"
         case .lyrics: "Lyrics"
@@ -62,8 +83,16 @@ final class LockScreenMusicPaneController: ObservableObject {
     @Published var overlay: LockScreenMusicPaneOverlay?
     @Published var isLyricsView = false
     private init() {}
-    func open() { withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) { isPresented = true; selectedTab = .nowPlaying; overlay = nil; isLyricsView = false } }
-    func close() { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { isPresented = false; overlay = nil } }
+    func open() {
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.82)) { isPresented = true; selectedTab = .nowPlaying; overlay = nil; isLyricsView = false }
+        LockScreenManager.shared.setWidgetWindowsCovered(true)
+        LiveWallpaperManager.shared.setCoveredByLockScreenMusicPane(true)
+    }
+    func close() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { isPresented = false; overlay = nil }
+        LockScreenManager.shared.setWidgetWindowsCovered(false)
+        LiveWallpaperManager.shared.setCoveredByLockScreenMusicPane(false)
+    }
     func selectTab(_ tab: LockScreenMusicTab) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             selectedTab = tab
@@ -73,81 +102,112 @@ final class LockScreenMusicPaneController: ObservableObject {
     }
     func present(_ destination: LockScreenMusicPaneOverlay) { withAnimation { overlay = destination } }
     func dismissOverlay() { withAnimation { overlay = nil } }
-    func reset() { isPresented = false; selectedTab = .nowPlaying; overlay = nil; isLyricsView = false }
+    func reset() {
+        isPresented = false; selectedTab = .nowPlaying; overlay = nil; isLyricsView = false
+        LiveWallpaperManager.shared.setCoveredByLockScreenMusicPane(false)
+    }
+}
+
+// MARK: - Layout
+
+private struct PaneMetrics {
+    let size: CGSize
+    let k: CGFloat
+
+    init(size: CGSize) {
+        self.size = size
+        k = min(max(min(size.width / 1440, size.height / 900), 0.8), 1.8)
+    }
+
+    var hPad: CGFloat { 72 * k }
+    var heroArtwork: CGFloat { min(size.height * 0.44, size.width * 0.3) }
+    var lyricsArtwork: CGFloat { min(size.height * 0.3, size.width * 0.2) }
+}
+
+private struct PaneTrack: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let imageURL: URL?
+    var play: (() async -> Void)?
 }
 
 // MARK: - Main Pane
 
 struct LockScreenFullScreenMusicPane: View {
     @ObservedObject private var controller = LockScreenMusicPaneController.shared
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
-    @State private var dummyNavigationStack: [NotchWidgetMode] = []
-    @State private var desktopWallpaper: NSImage?
     @StateObject private var navigationManager = LockScreenNavigationManager()
-    @State private var isAnimatingIn = false
-    @State private var spotifyQueue: SpotifyQueue?
-    @State private var appleMusicQueueTracks: [AppleMusicManager.QueueTrack] = []
-    @Namespace private var tabNamespace
     private var screenSize: CGSize { NSScreen.main?.frame.size ?? CGSize(width: 1440, height: 900) }
 
     var body: some View {
         ZStack {
-            if controller.isPresented { paneContent.transition(.opacity) }
-            if let overlay = controller.overlay { overlayPanel(for: overlay).transition(.move(edge: .bottom).combined(with: .opacity)) }
+            if controller.isPresented {
+                LockScreenMusicPaneContent(controller: controller, m: PaneMetrics(size: screenSize))
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
         }
         .frame(width: screenSize.width, height: screenSize.height)
-        .opacity(controller.isPresented ? 1 : 0)
         .allowsHitTesting(controller.isPresented)
-        .background(LockScreenPaneClickPassthrough(interactive: controller.isPresented))
-        .animation(.spring(response: 0.5, dampingFraction: 0.82), value: controller.isPresented)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: controller.selectedTab)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: controller.overlay)
-        .onAppear { isAnimatingIn = controller.isPresented }
-        .onChange(of: controller.isPresented) { _, presented in
-            isAnimatingIn = false
-            if presented { withAnimation(.spring(response: 0.52, dampingFraction: 0.76).delay(0.04)) { isAnimatingIn = true } }
+        .background(LockScreenPaneWindowPresence(isPresented: controller.isPresented))
+        .environmentObject(navigationManager)
+        .environment(\.colorScheme, .dark)
+        .animation(.spring(response: 0.5, dampingFraction: 0.84), value: controller.isPresented)
+    }
+}
+
+private struct LockScreenMusicPaneContent: View {
+    @ObservedObject var controller: LockScreenMusicPaneController
+    let m: PaneMetrics
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
+    @State private var dummyNavigationStack: [NotchWidgetMode] = []
+    @State private var spotifyQueue: SpotifyQueue?
+    @State private var appleMusicQueueTracks: [AppleMusicManager.QueueTrack] = []
+    @State private var playlists: [SpotifyPlaylist] = []
+    @State private var isLoadingLibrary = false
+    @State private var officialDevices: [SpotifyDevice] = []
+    @Namespace private var tabNamespace
+
+    var body: some View {
+        ZStack {
+            paneContent(m)
+            if let overlay = controller.overlay {
+                overlayPanel(for: overlay, m).transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: controller.selectedTab)
+        .animation(.spring(response: 0.4, dampingFraction: 0.84), value: controller.overlay)
         .onChange(of: musicManager.isPlaying) { _, playing in
             if !playing && (musicManager.title?.isEmpty ?? true) { controller.close() }
         }
     }
 
-    private var paneContent: some View {
+    private func paneContent(_ m: PaneMetrics) -> some View {
         ZStack {
-            ambientBackground.ignoresSafeArea()
+            wallpaperBackdrop
 
             VStack(spacing: 0) {
-                topBar
-                    .padding(.top, 28)
-                    .padding(.horizontal, 40)
+                topBar(m)
+                    .padding(.horizontal, m.hPad)
+                    .padding(.top, 30 * m.k)
 
-                tabBar
-                    .padding(.horizontal, 40)
-                    .padding(.top, 14)
-
-                Spacer(minLength: 16)
-
-                tabContent
+                tabContent(m)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, 20 * m.k)
 
-                Spacer(minLength: 16)
-
-                LockScreenMusicDock(navigationStack: $dummyNavigationStack, navigationManager: navigationManager)
-                    .padding(.horizontal, 48)
-                    .padding(.bottom, 36)
+                if showsMiniPlayer {
+                    miniPlayer(m)
+                        .padding(.horizontal, m.hPad)
+                        .padding(.bottom, 32 * m.k)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .opacity(isAnimatingIn ? 1 : 0)
-            .scaleEffect(isAnimatingIn ? 1 : 0.97)
         }
-        .environment(\.colorScheme, .dark)
         .onAppear {
             Task { await musicManager.setLyricsDetailOpen(controller.isLyricsView) }
-            desktopWallpaper = Self.loadDesktopWallpaper()
             Task {
                 await musicManager.ensureSpotifyPlayerExtrasLoaded(force: true)
                 await refreshQueueData()
-                await refreshPlaylistData()
             }
         }
         .onChange(of: controller.selectedTab) { _, tab in
@@ -156,14 +216,32 @@ struct LockScreenFullScreenMusicPane: View {
                 if tab == .artist || tab == .playlists {
                     await musicManager.ensureSpotifyPlayerExtrasLoaded(force: false)
                 }
-                if tab == .queue { await refreshQueueData() }
+                if tab == .queue || tab == .nowPlaying { await refreshQueueData() }
                 if tab == .playlists { await refreshPlaylistData() }
             }
         }
         .onDisappear { Task { await musicManager.setLyricsDetailOpen(false) } }
     }
 
+    private var wallpaperBackdrop: some View {
+        ZStack {
+            LockScreenWidgetSurface(shape: Rectangle(), cacheKey: "pane-backdrop")
+            LinearGradient(
+                colors: [.black.opacity(0.3), .black.opacity(0.15), .black.opacity(0.35)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+
+    private var showsMiniPlayer: Bool {
+        controller.selectedTab != .nowPlaying && controller.selectedTab != .lyrics
+    }
+
     private func refreshQueueData() async {
+        musicManager.spotifyPrivateAPI.bootstrapIfNeeded(policy: .onDemand)
         if musicManager.lastKnownBundleID == "com.apple.Music" {
             appleMusicQueueTracks = await musicManager.appleMusic.fetchUpNextTracks()
         } else if musicManager.isPrivateAPIAuthenticated {
@@ -177,999 +255,811 @@ struct LockScreenFullScreenMusicPane: View {
     }
 
     private func refreshPlaylistData() async {
-        if musicManager.lastKnownBundleID == "com.apple.Music" { return }
-        if musicManager.isPrivateAPIAuthenticated, musicManager.spotifyPrivateAPI.nativePlaylists.isEmpty {
-            await musicManager.spotifyPrivateAPI.fetchUserLibrary()
+        isLoadingLibrary = true
+        defer { isLoadingLibrary = false }
+        if isAppleMusic {
+            let apple = musicManager.appleMusic
+            if apple.isMusicKitAuthorized { await apple.refreshPlaylists() }
+            playlists = apple.fetchPlaylists()
+            return
+        }
+        musicManager.spotifyPrivateAPI.bootstrapIfNeeded(policy: .onDemand)
+        if musicManager.isPrivateAPIAuthenticated {
+            if musicManager.spotifyPrivateAPI.nativePlaylists.isEmpty {
+                await musicManager.spotifyPrivateAPI.fetchUserLibrary()
+            }
+            playlists = musicManager.spotifyPrivateAPI.nativePlaylists
+        } else if musicManager.isOfficialAPIAuthenticated {
+            playlists = await musicManager.spotifyOfficialAPI.fetchPlaylists()
         }
     }
 
-    private static func loadDesktopWallpaper() -> NSImage? {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first, let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return nil }
-        return NSImage(contentsOf: url)
+    private var isSpotify: Bool { musicManager.isSpotifyLiveSourceSelected || musicManager.isSpotifySourceActive }
+    private var isAppleMusic: Bool { musicManager.lastKnownBundleID == "com.apple.Music" }
+
+    private var upcomingTracks: [PaneTrack] {
+        if isAppleMusic {
+            return appleMusicQueueTracks.enumerated().map { index, track in
+                PaneTrack(id: "am-\(index)-\(track.id)", title: track.title, subtitle: track.artist, imageURL: track.artworkURL) {
+                    await musicManager.appleMusic.playQueueTrack(track)
+                    await refreshQueueData()
+                }
+            }
+        }
+        if !musicManager.nativeQueue.isEmpty {
+            return musicManager.nativeQueue.enumerated().map { index, track in
+                PaneTrack(
+                    id: "sp-\(index)-\(track.uid)",
+                    title: track.metadata?.title ?? "Unknown Track",
+                    subtitle: track.metadata?.artistName ?? "Unknown Artist",
+                    imageURL: track.metadata?.imageURL
+                )
+            }
+        }
+        return (spotifyQueue?.queue ?? []).enumerated().map { index, track in
+            PaneTrack(
+                id: "web-\(index)-\(track.id)",
+                title: track.name,
+                subtitle: track.artists.map(\.name).joined(separator: ", "),
+                imageURL: track.imageURL
+            )
+        }
     }
 
     // MARK: - Top Bar
 
-    private var topBar: some View {
-        HStack {
-            Button(action: { controller.close() }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(.white.opacity(0.12), in: Circle())
+    private func topBar(_ m: PaneMetrics) -> some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 2 * m.k) {
+                topBarButton("xmark", help: "Close", selected: false, m) { controller.close() }
+                Capsule()
+                    .fill(Color.white.opacity(0.18))
+                    .frame(width: 1, height: 18 * m.k)
+                    .padding(.horizontal, 6 * m.k)
+                ForEach(visibleTabs) { tab in
+                    topBarButton(tab.systemImage, help: tab.title, selected: controller.selectedTab == tab, m) {
+                        controller.selectTab(tab)
+                    }
+                }
             }
-            .buttonStyle(.plain)
+            .padding(4 * m.k)
+            .background(LockScreenWidgetSurface(shape: Capsule(style: .continuous), cacheKey: "pane-tabs"))
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            VStack(spacing: 2) {
-                Text(musicManager.title ?? "Not Playing")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(musicManager.artist ?? "")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .lineLimit(1)
+            if let icon = musicManager.appIcon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 24 * m.k, height: 24 * m.k)
+                    .opacity(0.85)
             }
-
-            Spacer()
-
-            Color.clear.frame(width: 38, height: 38)
         }
     }
 
-    // MARK: - Tab Bar
-
-    private var tabBar: some View {
-        let tabs = visibleTabs
-        return HStack(spacing: 0) {
-            Spacer()
-            HStack(spacing: 2) {
-                ForEach(tabs) { tab in
-                    Button {
-                        if controller.selectedTab == tab, tab == .nowPlaying { controller.close() }
-                        else { controller.selectTab(tab) }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: tab.systemImage)
-                                .font(.system(size: 11, weight: .semibold))
-                            Text(tab.title)
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .background(
-                            controller.selectedTab == tab
-                                ? AnyView(Capsule().fill(.white.opacity(0.18)))
-                                : AnyView(Capsule().fill(Color.clear))
-                        )
-                        .foregroundStyle(controller.selectedTab == tab ? .white : .white.opacity(0.5))
+    private func topBarButton(_ systemName: String, help: String, selected: Bool, _ m: PaneMetrics, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 14 * m.k, weight: .medium))
+                .foregroundStyle(selected ? Color.white : Color.white.opacity(0.55))
+                .frame(width: 34 * m.k, height: 34 * m.k)
+                .background {
+                    if selected {
+                        Circle()
+                            .fill(Color.white.opacity(0.18))
+                            .matchedGeometryEffect(id: "tab", in: tabNamespace)
                     }
-                    .buttonStyle(.plain)
                 }
-            }
-            .padding(3)
-            .background(
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                    )
-            )
-            Spacer()
+                .contentShape(Circle())
         }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 
     private var visibleTabs: [LockScreenMusicTab] {
-        let isSpotify = musicManager.isSpotifyLiveSourceSelected || musicManager.isSpotifySourceActive
         let hasArtist = isSpotify && musicManager.spotifyPrivateAPI.nowPlayingArtist != nil
-        var tabs: [LockScreenMusicTab] = [.nowPlaying]
+        var tabs: [LockScreenMusicTab] = [.nowPlaying, .lyrics]
         if hasArtist { tabs.append(.artist) }
-        tabs.append(.playlists)
-        tabs.append(.queue)
-        tabs.append(.devices)
-        tabs.append(.lyrics)
+        tabs.append(contentsOf: [.queue, .playlists, .devices])
         return tabs
     }
 
     // MARK: - Tab Content
 
     @ViewBuilder
-    private var tabContent: some View {
+    private func tabContent(_ m: PaneMetrics) -> some View {
         ZStack {
             switch controller.selectedTab {
-            case .nowPlaying: nowPlayingTab
-            case .artist: artistTab
-            case .playlists: playlistsTab
-            case .queue: queueTab
-            case .devices: devicesTab
-            case .lyrics: lyricsTab
+            case .nowPlaying: nowPlayingTab(m)
+            case .lyrics: lyricsTab(m)
+            case .artist: artistTab(m)
+            case .playlists: playlistsTab(m)
+            case .queue: queueTab(m)
+            case .devices: devicesTab(m)
             }
         }
-        .transition(.opacity)
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        .id(controller.selectedTab)
     }
 
-    // MARK: - Overview Tab (shows everything)
+    // MARK: - Now Playing
 
-    private var nowPlayingTab: some View {
-        let isSpotify = musicManager.isSpotifyLiveSourceSelected || musicManager.isSpotifySourceActive
-        let api = musicManager.spotifyPrivateAPI
-        let artist = api.nowPlayingArtist
-        let concerts = api.artistConcerts
-        let relatedTracks = api.relatedTracks
-        let similarAlbums = api.similarAlbums
-        let nativePlaylists = musicManager.spotifyPrivateAPI.nativePlaylists
-        let queue = spotifyQueue?.queue ?? []
+    private func nowPlayingTab(_ m: PaneMetrics) -> some View {
+        let upcoming = Array(upcomingTracks.prefix(3))
+        let artist = isSpotify ? musicManager.spotifyPrivateAPI.nowPlayingArtist : nil
+        let moreByArtist = isAppleMusic ? Array(musicManager.appleNowPlaying.moreByArtist.prefix(3)) : []
 
-        return ScrollView(showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 28) {
-                VStack(spacing: 20) {
-                    albumArtwork(size: 260, radius: 28)
-                        .shadow(color: musicManager.accentColor.opacity(0.5), radius: 32, y: 16)
-
-                    VStack(spacing: 6) {
-                        Text(musicManager.title ?? "Not Playing")
-                            .font(.system(size: 34, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-
-                        Text(musicManager.artist ?? "Unknown Artist")
-                            .font(.system(size: 18, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.55))
-                            .lineLimit(1)
-
-                        if let album = musicManager.album, !album.isEmpty, album != musicManager.title {
-                            Text(album)
-                                .font(.system(size: 14, weight: .medium, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.3))
+        return VStack(spacing: 34 * m.k) {
+            HStack(alignment: .center, spacing: 64 * m.k) {
+                VStack(alignment: .leading, spacing: 16 * m.k) {
+                    albumArtwork(size: m.heroArtwork, radius: 36 * m.k)
+                        .shadow(color: .black.opacity(0.35), radius: 30 * m.k, y: 14 * m.k)
+                    if let output = playbackOutput {
+                        HStack(spacing: 8 * m.k) {
+                            Image(systemName: output.icon)
+                                .font(.system(size: 13 * m.k, weight: .medium))
+                            Text("Playing on \(output.name)")
+                                .font(.system(size: 13 * m.k, weight: .medium, design: .rounded))
                                 .lineLimit(1)
                         }
-                    }
-                    .frame(maxWidth: 440)
-
-                    HStack(spacing: 8) {
-                        if let popularity = musicManager.popularity ?? musicManager.fetchedSpotifyPopularity {
-                            statPill(icon: "chart.bar.fill", label: "Popularity", value: "\(popularity)/100", color: musicManager.accentColor)
-                        }
-                        if musicManager.totalDuration > 0 {
-                            let mins = Int(musicManager.totalDuration) / 60
-                            let secs = Int(musicManager.totalDuration) % 60
-                            statPill(icon: "clock.fill", label: "Duration", value: String(format: "%d:%02d", mins, secs), color: .cyan)
-                        }
-                        if isSpotify {
-                            SpotifyNowPlayingExtras()
-                        }
+                        .foregroundStyle(.white.opacity(0.6))
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 8)
+                .frame(width: m.heroArtwork, alignment: .leading)
 
-                HStack(alignment: .top, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 24) {
-                        if let artist {
-                            overviewCard(accent: musicManager.accentColor) {
-                                VStack(alignment: .leading, spacing: 14) {
-                                    HStack(spacing: 14) {
-                                        if let url = artist.headerImageURL ?? artist.avatarURL {
-                                            CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                                                placeholder: { Circle().fill(Color.white.opacity(0.06)) }
-                                                .frame(width: 56, height: 56)
-                                                .clipShape(Circle())
-                                                .overlay(Circle().stroke(musicManager.accentColor.opacity(0.35), lineWidth: 2))
-                                        }
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            HStack(spacing: 6) {
-                                                Text(artist.name)
-                                                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                                                    .foregroundStyle(.white)
-                                                if artist.isVerified {
-                                                    Image(systemName: "checkmark.seal.fill")
-                                                        .font(.system(size: 13))
-                                                        .foregroundStyle(.cyan)
-                                                }
-                                            }
-                                            if let listeners = artist.monthlyListeners ?? artist.followers {
-                                                Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
-                                                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                                                    .foregroundStyle(.white.opacity(0.45))
-                                            }
-                                        }
-                                    }
+                VStack(alignment: .leading, spacing: 0) {
+                    albumLine(m)
 
-                                    if !artist.biography.isEmpty {
-                                        Text(artist.biography)
-                                            .font(.system(size: 13, weight: .regular, design: .rounded))
-                                            .foregroundStyle(.white.opacity(0.55))
-                                            .lineLimit(4)
-                                            .lineSpacing(4)
-                                    }
-                                }
-                            }
-                        }
-
-                        if !relatedTracks.isEmpty {
-                            overviewSection(title: "Related Tracks", icon: "sparkles", accent: .orange) {
-                                VStack(spacing: 6) {
-                                    ForEach(relatedTracks.prefix(5)) { track in
-                                        Button {
-                                            Task { _ = await musicManager.play(trackUri: track.uri, contextUri: nil) }
-                                        } label: {
-                                            HStack(spacing: 10) {
-                                                Image(systemName: "play.circle.fill")
-                                                    .font(.system(size: 14))
-                                                    .foregroundStyle(.white.opacity(0.7))
-                                                VStack(alignment: .leading, spacing: 1) {
-                                                    Text(track.name)
-                                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                                        .foregroundStyle(.white).lineLimit(1)
-                                                    if let name = track.artists.first?.name {
-                                                        Text(name)
-                                                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                                                            .foregroundStyle(.white.opacity(0.35)).lineLimit(1)
-                                                    }
-                                                }
-                                                Spacer()
-                                            }
-                                            .padding(.horizontal, 12).padding(.vertical, 8)
-                                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.05)))
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                        }
-
-                        if !similarAlbums.isEmpty {
-                            overviewSection(title: "Similar Albums", icon: "square.stack.fill", accent: .purple) {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    LazyHStack(spacing: 12) {
-                                        ForEach(similarAlbums.prefix(6)) { album in
-                                            VStack(alignment: .leading, spacing: 5) {
-                                                if let url = album.imageURL {
-                                                    CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                                                        placeholder: { Color.white.opacity(0.05) }
-                                                        .frame(width: 110, height: 110)
-                                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                                }
-                                                Text(album.name)
-                                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                                    .foregroundStyle(.white).lineLimit(1)
-                                                Text(album.artistName)
-                                                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                                                    .foregroundStyle(.white.opacity(0.4)).lineLimit(1)
-                                            }
-                                            .frame(width: 110)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    VStack(alignment: .leading, spacing: 24) {
-                        overviewSection(title: "Up Next", icon: "text.line.first.and.arrowtriangle.forward", accent: .green) {
-                            if queue.isEmpty && musicManager.nativeQueue.isEmpty {
-                                Text("Nothing queued")
-                                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.35))
-                                    .padding(.vertical, 8)
-                            } else if !queue.isEmpty {
-                                VStack(spacing: 2) {
-                                    ForEach(Array(queue.prefix(5).enumerated()), id: \.offset) { index, track in
-                                        HStack(spacing: 10) {
-                                            Text("\(index + 1)")
-                                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                                .foregroundStyle(.white.opacity(0.2))
-                                                .frame(width: 18)
-                                            if let url = track.imageURL {
-                                                CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                                                    placeholder: { Color.white.opacity(0.04) }
-                                                    .frame(width: 36, height: 36)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                            }
-                                            VStack(alignment: .leading, spacing: 1) {
-                                                Text(track.name)
-                                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                                    .foregroundStyle(.white).lineLimit(1)
-                                                Text(track.artists.map(\.name).joined(separator: ", "))
-                                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                                    .foregroundStyle(.white.opacity(0.35)).lineLimit(1)
-                                            }
-                                            Spacer()
-                                        }
-                                        .padding(.vertical, 6)
-                                    }
-                                }
-                            } else {
-                                VStack(spacing: 2) {
-                                    ForEach(Array(musicManager.nativeQueue.prefix(5).enumerated()), id: \.offset) { index, track in
-                                        HStack(spacing: 10) {
-                                            Text("\(index + 1)")
-                                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                                .foregroundStyle(.white.opacity(0.2))
-                                                .frame(width: 18)
-                                            VStack(alignment: .leading, spacing: 1) {
-                                                Text(track.metadata?.title ?? "Unknown")
-                                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                                    .foregroundStyle(.white).lineLimit(1)
-                                                Text(track.metadata?.artistName ?? "Unknown Artist")
-                                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                                    .foregroundStyle(.white.opacity(0.35)).lineLimit(1)
-                                            }
-                                            Spacer()
-                                        }
-                                        .padding(.vertical, 6)
-                                    }
-                                }
-                            }
-                        }
-
-                        if !concerts.isEmpty {
-                            overviewSection(title: "Upcoming Concerts", icon: "ticket.fill", accent: .pink) {
-                                VStack(spacing: 6) {
-                                    ForEach(concerts.prefix(4)) { concert in
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            HStack(spacing: 8) {
-                                                Image(systemName: "ticket.fill")
-                                                    .font(.system(size: 11))
-                                                    .foregroundStyle(.pink)
-                                                Text(concert.title)
-                                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                                    .foregroundStyle(.white).lineLimit(1)
-                                            }
-                                            Text("\(concert.venue), \(concert.city)")
-                                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                                .foregroundStyle(.white.opacity(0.35))
-                                            Text(concert.startDateIsoString)
-                                                .font(.system(size: 10, weight: .regular, design: .monospaced))
-                                                .foregroundStyle(.white.opacity(0.25))
-                                        }
-                                        .padding(10)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.05)))
-                                    }
-                                }
-                            }
-                        }
-
-                        if !nativePlaylists.isEmpty {
-                            overviewSection(title: "Your Playlists", icon: "list.bullet.rectangle", accent: .cyan) {
-                                LazyVGrid(
-                                    columns: [GridItem(.adaptive(minimum: 120, maximum: 140), spacing: 10)],
-                                    spacing: 10
-                                ) {
-                                    ForEach(nativePlaylists.prefix(6)) { playlist in
-                                        Button { controller.present(.playlistDetail(playlist)) } label: {
-                                            VStack(spacing: 5) {
-                                                CachedAsyncImage(url: playlist.imageURL) { $0.resizable().aspectRatio(contentMode: .fill) }
-                                                    placeholder: { Color.white.opacity(0.05) }
-                                                    .frame(width: 120, height: 120)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                                Text(playlist.name)
-                                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                                    .foregroundStyle(.white).lineLimit(1)
-                                            }
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.horizontal, 56)
-            .padding(.bottom, 32)
-        }
-    }
-
-    // MARK: - Overview Helpers
-
-    private func statPill(icon: String, label: String, value: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 10))
-                .foregroundStyle(color)
-            Text(label)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.45))
-            Text(value)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.white.opacity(0.07))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
-        )
-    }
-
-    private func overviewCard<Content: View>(accent: Color, @ViewBuilder content: () -> Content) -> some View {
-        content()
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.white.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-            )
-    }
-
-    private func overviewSection<Content: View>(title: String, icon: String, accent: Color, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                    .foregroundStyle(accent)
-                Text(title)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
-            content()
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                )
-        )
-    }
-
-    private func artistCompactCard(_ artist: SpotifyArtistProfile) -> some View {
-        HStack(spacing: 16) {
-            if let url = artist.headerImageURL ?? artist.avatarURL {
-                CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                    placeholder: { Circle().fill(Color.white.opacity(0.06)) }
-                    .frame(width: 52, height: 52)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(musicManager.accentColor.opacity(0.3), lineWidth: 1.5))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(artist.name)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    if artist.isVerified {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.cyan)
-                    }
-                }
-                if let listeners = artist.monthlyListeners ?? artist.followers {
-                    Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.4))
-                }
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.06)))
-    }
-
-    // MARK: - Lyrics Tab (with artwork)
-
-    private var lyricsTab: some View {
-        HStack(alignment: .center, spacing: 48) {
-            VStack(alignment: .leading, spacing: 18) {
-                albumArtwork(size: 220, radius: 22)
-                    .shadow(color: musicManager.accentColor.opacity(0.35), radius: 24, y: 12)
-
-                VStack(alignment: .leading, spacing: 4) {
                     Text(musicManager.title ?? "Not Playing")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
+                        .font(.system(size: 50 * m.k, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                         .lineLimit(2)
-                    Text(musicManager.artist ?? "Unknown Artist")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .minimumScaleFactor(0.55)
+                        .padding(.top, 10 * m.k)
+
+                    artistLine(artist, m)
+                        .padding(.top, 6 * m.k)
+
+                    statChips(m)
+                        .padding(.top, 18 * m.k)
+
+                    PaneScrubber(k: m.k, style: .hero)
+                        .padding(.top, 28 * m.k)
+
+                    transportControls(m, style: .hero)
+                        .padding(.top, 18 * m.k)
+
+                    if !musicManager.lyrics.isEmpty {
+                        lyricPreview(m)
+                            .padding(.top, 24 * m.k)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if !upcoming.isEmpty || artist != nil || !moreByArtist.isEmpty {
+                HStack(alignment: .top, spacing: 20 * m.k) {
+                    if !upcoming.isEmpty {
+                        upNextCard(upcoming, m)
+                    }
+                    if let artist {
+                        artistCard(artist, m)
+                    } else if !moreByArtist.isEmpty {
+                        moreByCard(moreByArtist, m)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, m.hPad)
+        .padding(.bottom, 36 * m.k)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var playbackOutput: (icon: String, name: String)? {
+        let api = musicManager.spotifyPrivateAPI
+        if isSpotify, let id = api.activePlayerDeviceID,
+           let device = api.devices.first(where: { $0.deviceId == id }) {
+            return (deviceIcon(for: device.deviceType), device.name)
+        }
+        if let airplay = musicManager.airplayDevices.first(where: \.isSelected) {
+            return (airplay.iconName, airplay.name)
+        }
+        let audio = MultiAudioManager.shared
+        if let id = audio.defaultOutputDeviceID,
+           let device = audio.availableOutputDevices.first(where: { $0.id == id }) {
+            return (IconMapper.icon(for: device), device.name)
+        }
+        return nil
+    }
+
+    private func albumLine(_ m: PaneMetrics) -> some View {
+        let details = musicManager.appleNowPlaying
+        let album = musicManager.album.flatMap { $0.isEmpty || $0 == musicManager.title ? nil : $0 }
+        let year = isAppleMusic ? details.releaseDate.map { String(Calendar.current.component(.year, from: $0)) } : nil
+        let label = [album, year].compactMap { $0 }.joined(separator: " · ")
+
+        return HStack(spacing: 10 * m.k) {
+            eyebrow(label.isEmpty ? "Now Playing" : label, m)
+            if isAppleMusic {
+                ForEach(details.audioBadges.prefix(2), id: \.self) { badge in
+                    Label(badge.rawValue, systemImage: badge.systemImage)
+                        .font(.system(size: 11 * m.k, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .padding(.horizontal, 8 * m.k)
+                        .padding(.vertical, 3 * m.k)
+                        .background(Capsule().strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                }
+            }
+        }
+    }
+
+    private func artistLine(_ artist: SpotifyArtistProfile?, _ m: PaneMetrics) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10 * m.k) {
+            Text(musicManager.artist ?? "Unknown Artist")
+                .font(.system(size: 23 * m.k, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(1)
+            if let artist, artist.isVerified {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 15 * m.k))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+        }
+    }
+
+    private func statChips(_ m: PaneMetrics) -> some View {
+        let popularity = musicManager.popularity ?? musicManager.fetchedSpotifyPopularity
+        let details = musicManager.appleNowPlaying
+        let plays: String? = {
+            if isAppleMusic, let count = details.playCount ?? musicManager.applePlayCount, count > 0 {
+                return count == 1 ? "Played once" : "Played \(count) times"
+            }
+            return musicManager.playCount.map { "\($0) plays" }
+        }()
+
+        return HStack(spacing: 8 * m.k) {
+            if let popularity {
+                HStack(spacing: 7 * m.k) {
+                    PopularityMeter(value: popularity, k: m.k)
+                    Text("\(popularity)")
+                        .monospacedDigit()
+                }
+                .modifier(PaneChip(k: m.k))
+            }
+            if let plays {
+                Label(plays, systemImage: "play.circle")
+                    .modifier(PaneChip(k: m.k))
+            }
+            if let genre = details.genreNames.first, isAppleMusic {
+                Label(genre, systemImage: "guitars")
+                    .modifier(PaneChip(k: m.k))
+            }
+            if musicManager.totalDuration > 0 {
+                Label(musicManager.totalDuration.asMinuteSecondClock, systemImage: "clock")
+                    .modifier(PaneChip(k: m.k))
+            }
+        }
+    }
+
+    private func lyricPreview(_ m: PaneMetrics) -> some View {
+        let lyrics = musicManager.lyrics
+        let current = musicManager.currentLyric
+        let index = current.flatMap { line in lyrics.firstIndex { $0.id == line.id } }
+        let next = index.flatMap { lyrics.indices.contains($0 + 1) ? lyrics[$0 + 1] : nil } ?? (current == nil ? lyrics.first : nil)
+
+        return Button { controller.selectTab(.lyrics) } label: {
+            VStack(alignment: .leading, spacing: 4 * m.k) {
+                Text(current?.text.isEmpty == false ? current!.text : "")
+                    .font(.system(size: 21 * m.k, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                if let next, !next.text.isEmpty {
+                    Text(next.text)
+                        .font(.system(size: 16 * m.k, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.45))
                         .lineLimit(1)
                 }
-                .frame(width: 220)
             }
-            .frame(width: 240, alignment: .leading)
-
-            LockScreenMusicPaneLyrics()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.leading, 14 * m.k)
+            .overlay(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.5)).frame(width: 3 * m.k)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .animation(.easeInOut(duration: 0.25), value: current?.id)
         }
-        .padding(.horizontal, 56)
-        .frame(maxWidth: 800)
+        .buttonStyle(.plain)
+        .help("Show Lyrics")
     }
 
-    // MARK: - Artist Tab
-
-    private var artistTab: some View {
-        let api = musicManager.spotifyPrivateAPI
-        return Group {
-            if let artist = api.nowPlayingArtist {
-                VStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        artistHeader(artist)
-                    }
-                    .padding(.horizontal, 56)
-                    .padding(.top, 4)
-
-                    ScrollView(showsIndicators: false) {
-                        LazyVStack(alignment: .leading, spacing: 28) {
-                            if !artist.biography.isEmpty {
-                                artistBiography(artist.biography)
-                            }
-                            if !artist.topCities.isEmpty {
-                                artistCities(artist.topCities)
-                            }
-                            if !artist.merch.isEmpty {
-                                artistMerch(artist.merch)
-                            }
-                            if !api.artistConcerts.isEmpty {
-                                artistConcerts(api.artistConcerts)
-                            }
-                            if !api.similarAlbums.isEmpty {
-                                similarAlbumsGrid(api.similarAlbums)
-                            }
-                            if !api.relatedTracks.isEmpty {
-                                relatedTracksList(api.relatedTracks)
-                            }
-                        }
-                        .padding(.horizontal, 56)
-                        .padding(.bottom, 32)
-                    }
-                    .frame(maxWidth: 800)
+    private func upNextCard(_ tracks: [PaneTrack], _ m: PaneMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 10 * m.k) {
+            HStack {
+                eyebrow("Up Next", m)
+                Spacer()
+                Button { controller.selectTab(.queue) } label: {
+                    Text("See All")
+                        .font(.system(size: 12 * m.k, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.6))
                 }
-            } else {
-                emptyState("No artist info available")
+                .buttonStyle(.plain)
             }
-        }
-    }
-
-    private func artistHeader(_ artist: SpotifyArtistProfile) -> some View {
-        HStack(spacing: 22) {
-            if let url = artist.headerImageURL ?? artist.avatarURL {
-                CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                    placeholder: { Circle().fill(Color.white.opacity(0.06)) }
-                    .frame(width: 100, height: 100)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(musicManager.accentColor.opacity(0.4), lineWidth: 2))
-                    .shadow(color: musicManager.accentColor.opacity(0.25), radius: 16, y: 6)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(artist.name)
-                        .font(.system(size: 28, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
-                    if artist.isVerified {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 17))
-                            .foregroundStyle(.cyan)
-                    }
-                }
-                if let listeners = artist.monthlyListeners ?? artist.followers {
-                    HStack(spacing: 6) {
-                        Image(systemName: "music.mic")
-                            .font(.system(size: 10))
-                            .foregroundStyle(musicManager.accentColor)
-                        Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.5))
-                    }
-                }
-            }
-        }
-    }
-
-    private func artistBiography(_ bio: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Biography", icon: "text.book.closed.fill")
-            Text(bio)
-                .font(.system(size: 14, weight: .regular, design: .rounded))
-                .foregroundStyle(.white.opacity(0.65))
-                .lineLimit(6)
-                .lineSpacing(4)
-        }
-    }
-
-    private func artistCities(_ cities: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Top Cities", icon: "mappin.and.ellipse")
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
-                    ForEach(cities, id: \.self) { city in
-                        Label(city, systemImage: "location.fill")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(Capsule().fill(.white.opacity(0.1)))
-                            .foregroundStyle(.white.opacity(0.75))
-                    }
-                }
-            }
-        }
-    }
-
-    private func artistMerch(_ merch: [SpotifyArtistMerch]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Merchandise", icon: "tag.fill")
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 14) {
-                    ForEach(merch) { item in
-                        VStack(alignment: .leading, spacing: 8) {
-                            if let url = item.imageURL {
-                                CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                                    placeholder: { Color.white.opacity(0.05) }
-                                    .frame(width: 140, height: 140)
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.name)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(2)
-                                if let price = item.price {
-                                    Text(price)
-                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(.white.opacity(0.5))
-                                }
-                            }
-                            .frame(width: 140)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func artistConcerts(_ concerts: [SpotifyArtistConcert]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Upcoming Concerts", icon: "ticket.fill")
-            VStack(spacing: 6) {
-                ForEach(concerts.prefix(6)) { concert in
-                    HStack(spacing: 12) {
-                        Image(systemName: "ticket.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.pink)
-                            .frame(width: 34, height: 34)
-                            .background(Circle().fill(.pink.opacity(0.12)))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(concert.title)
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+            ForEach(tracks) { track in
+                Button { if let play = track.play { Task { await play() } } } label: {
+                    HStack(spacing: 12 * m.k) {
+                        remoteArtwork(track.imageURL, size: 42 * m.k, radius: 9 * m.k)
+                        VStack(alignment: .leading, spacing: 1 * m.k) {
+                            Text(track.title)
+                                .font(.system(size: 15 * m.k, weight: .semibold, design: .rounded))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
-                            Text("\(concert.venue), \(concert.city)")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.4))
-                            Text(concert.startDateIsoString)
-                                .font(.system(size: 11, weight: .regular, design: .monospaced))
-                                .foregroundStyle(.white.opacity(0.3))
+                            Text(track.subtitle)
+                                .font(.system(size: 13 * m.k, weight: .medium, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.55))
+                                .lineLimit(1)
                         }
-                        Spacer()
+                        Spacer(minLength: 0)
                     }
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.04)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(track.play == nil)
+            }
+        }
+        .padding(18 * m.k)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(PaneCardFill(cornerRadius: 24 * m.k))
+    }
+
+    private func artistCard(_ artist: SpotifyArtistProfile, _ m: PaneMetrics) -> some View {
+        let concert = musicManager.spotifyPrivateAPI.artistConcerts.first
+        return Button { controller.selectTab(.artist) } label: {
+            HStack(alignment: .top, spacing: 16 * m.k) {
+                remoteArtwork(artist.avatarURL ?? artist.headerImageURL, size: 64 * m.k, radius: 32 * m.k)
+                VStack(alignment: .leading, spacing: 6 * m.k) {
+                    eyebrow("About the Artist", m)
+                    Text(artist.name)
+                        .font(.system(size: 19 * m.k, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if let listeners = artist.monthlyListeners ?? artist.followers {
+                        Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
+                            .font(.system(size: 13 * m.k, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    if let concert {
+                        Label("\(concert.city) · \(Self.concertDate(concert.startDateIsoString))", systemImage: "ticket")
+                            .font(.system(size: 13 * m.k, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .lineLimit(1)
+                    } else if !artist.biography.isEmpty {
+                        Text(artist.biography)
+                            .font(.system(size: 13 * m.k, weight: .regular, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(18 * m.k)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(PaneCardFill(cornerRadius: 24 * m.k))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func moreByCard(_ songs: [AppleMusicSong], _ m: PaneMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 10 * m.k) {
+            eyebrow("More by \(musicManager.artist ?? "the Artist")", m)
+            ForEach(songs) { song in
+                HStack(spacing: 12 * m.k) {
+                    remoteArtwork(song.artworkURL, size: 42 * m.k, radius: 9 * m.k)
+                    VStack(alignment: .leading, spacing: 1 * m.k) {
+                        Text(song.title)
+                            .font(.system(size: 15 * m.k, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(song.albumTitle ?? song.artistName)
+                            .font(.system(size: 13 * m.k, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
                 }
             }
         }
+        .padding(18 * m.k)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(PaneCardFill(cornerRadius: 24 * m.k))
     }
 
-    private func similarAlbumsGrid(_ albums: [SpotifySimilarAlbum]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Similar Albums", icon: "square.stack.fill")
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 14) {
-                    ForEach(albums.prefix(8)) { album in
-                        VStack(alignment: .leading, spacing: 6) {
-                            if let url = album.imageURL {
-                                CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                                    placeholder: { Color.white.opacity(0.05) }
-                                    .frame(width: 120, height: 120)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    private static let concertInputFormatter = ISO8601DateFormatter()
+    private static let concertOutputFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("MMMd")
+        return formatter
+    }()
+
+    private static func concertDate(_ iso: String) -> String {
+        guard let date = concertInputFormatter.date(from: iso) else { return String(iso.prefix(10)) }
+        return concertOutputFormatter.string(from: date)
+    }
+
+    // MARK: - Lyrics
+
+    private func lyricsTab(_ m: PaneMetrics) -> some View {
+        HStack(alignment: .center, spacing: 72 * m.k) {
+            VStack(alignment: .leading, spacing: 0) {
+                albumArtwork(size: m.lyricsArtwork, radius: 30 * m.k)
+                    .shadow(color: .black.opacity(0.3), radius: 24 * m.k, y: 10 * m.k)
+
+                Text(musicManager.title ?? "Not Playing")
+                    .font(.system(size: 24 * m.k, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.6)
+                    .padding(.top, 22 * m.k)
+                Text(musicManager.artist ?? "Unknown Artist")
+                    .font(.system(size: 17 * m.k, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(1)
+                    .padding(.top, 4 * m.k)
+
+                PaneScrubber(k: m.k, style: .compact)
+                    .padding(.top, 22 * m.k)
+                transportControls(m, style: .compact)
+                    .padding(.top, 14 * m.k)
+            }
+            .frame(width: m.lyricsArtwork)
+
+            PaneLyrics(k: m.k, viewportHeight: m.size.height)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(.leading, m.hPad)
+        .padding(.trailing, m.hPad * 0.6)
+    }
+
+    // MARK: - Artist
+
+    @ViewBuilder
+    private func artistTab(_ m: PaneMetrics) -> some View {
+        let api = musicManager.spotifyPrivateAPI
+        if let artist = api.nowPlayingArtist {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 40 * m.k) {
+                    HStack(spacing: 40 * m.k) {
+                        if let url = artist.avatarURL ?? artist.headerImageURL {
+                            remoteArtwork(url, size: 150 * m.k, radius: 75 * m.k)
+                                .shadow(color: .black.opacity(0.3), radius: 20 * m.k, y: 8 * m.k)
+                        }
+                        VStack(alignment: .leading, spacing: 8 * m.k) {
+                            eyebrow(artist.isVerified ? "Verified Artist" : "Artist", m)
+                            Text(artist.name)
+                                .font(.system(size: 52 * m.k, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.45)
+                            if let listeners = artist.monthlyListeners ?? artist.followers {
+                                Text(listeners.compactFormatted + (artist.monthlyListeners != nil ? " monthly listeners" : " followers"))
+                                    .font(.system(size: 18 * m.k, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.65))
                             }
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(album.name)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.white).lineLimit(1)
-                                Text(album.artistName)
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.45)).lineLimit(1)
-                                if let year = album.year {
-                                    Text("\(year)")
-                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(.white.opacity(0.3))
+                        }
+                    }
+
+                    HStack(alignment: .top, spacing: 28 * m.k) {
+                        if !artist.biography.isEmpty {
+                            paneCard(m, key: "bio") {
+                                cardTitle("About", m)
+                                Text(artist.biography)
+                                    .font(.system(size: 17 * m.k, weight: .regular, design: .rounded))
+                                    .foregroundStyle(.white.opacity(0.78))
+                                    .lineSpacing(5 * m.k)
+                                    .lineLimit(9)
+                            }
+                        }
+                        if !api.artistConcerts.isEmpty || !artist.topCities.isEmpty {
+                            VStack(spacing: 28 * m.k) {
+                                if !api.artistConcerts.isEmpty {
+                                    paneCard(m, key: "concerts") {
+                                        cardTitle("On Tour", m)
+                                        ForEach(api.artistConcerts.prefix(4)) { concert in
+                                            VStack(alignment: .leading, spacing: 2 * m.k) {
+                                                Text(concert.title)
+                                                    .font(.system(size: 16 * m.k, weight: .bold, design: .rounded))
+                                                    .foregroundStyle(.white)
+                                                    .lineLimit(1)
+                                                Text("\(concert.venue) · \(concert.city)")
+                                                    .font(.system(size: 14 * m.k, weight: .medium, design: .rounded))
+                                                    .foregroundStyle(.white.opacity(0.55))
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                    }
+                                }
+                                if !artist.topCities.isEmpty {
+                                    paneCard(m, key: "cities") {
+                                        cardTitle("Top Cities", m)
+                                        ForEach(Array(artist.topCities.prefix(5).enumerated()), id: \.offset) { index, city in
+                                            HStack(spacing: 12 * m.k) {
+                                                Text("\(index + 1)")
+                                                    .font(.system(size: 15 * m.k, weight: .semibold, design: .rounded))
+                                                    .foregroundStyle(.white.opacity(0.35))
+                                                    .frame(width: 22 * m.k, alignment: .leading)
+                                                Text(city)
+                                                    .font(.system(size: 16 * m.k, weight: .semibold, design: .rounded))
+                                                    .foregroundStyle(.white)
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                            .frame(width: 120)
+                            .frame(width: min(440 * m.k, m.size.width * 0.32))
                         }
                     }
-                }
-            }
-        }
-    }
 
-    private func relatedTracksList(_ tracks: [SpotifyRecommendedTrack]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Related Tracks", icon: "sparkles")
-            VStack(spacing: 4) {
-                ForEach(tracks.prefix(8)) { track in
-                    Button {
-                        Task { _ = await musicManager.play(trackUri: track.uri, contextUri: nil) }
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "play.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(musicManager.accentColor.opacity(0.7))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(track.name)
-                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.white).lineLimit(1)
-                                if let artistName = track.artists.first?.name {
-                                    Text(artistName)
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.white.opacity(0.4)).lineLimit(1)
+                    if !api.relatedTracks.isEmpty {
+                        VStack(alignment: .leading, spacing: 16 * m.k) {
+                            sectionTitle("Related Tracks", m)
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16 * m.k), count: 3), spacing: 16 * m.k) {
+                                ForEach(api.relatedTracks.prefix(9)) { track in
+                                    Button { Task { _ = await musicManager.play(trackUri: track.uri, contextUri: nil) } } label: {
+                                        HStack(spacing: 14 * m.k) {
+                                            Image(systemName: "play.fill")
+                                                .font(.system(size: 14 * m.k, weight: .bold))
+                                                .foregroundStyle(.white)
+                                                .frame(width: 38 * m.k, height: 38 * m.k)
+                                                .background(Circle().fill(.white.opacity(0.14)))
+                                            VStack(alignment: .leading, spacing: 2 * m.k) {
+                                                Text(track.name)
+                                                    .font(.system(size: 16 * m.k, weight: .bold, design: .rounded))
+                                                    .foregroundStyle(.white)
+                                                    .lineLimit(1)
+                                                Text(track.artists.first?.name ?? "")
+                                                    .font(.system(size: 13 * m.k, weight: .medium, design: .rounded))
+                                                    .foregroundStyle(.white.opacity(0.55))
+                                                    .lineLimit(1)
+                                            }
+                                            Spacer(minLength: 0)
+                                        }
+                                        .padding(14 * m.k)
+                                        .background(RoundedRectangle(cornerRadius: 18 * m.k, style: .continuous).fill(.white.opacity(0.08)))
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
-                            Spacer()
                         }
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.05)))
                     }
-                    .buttonStyle(.plain)
+
+                    if !api.similarAlbums.isEmpty {
+                        tileRow("Fans Also Like", m, items: Array(api.similarAlbums.prefix(10))) { album in
+                            tile(url: album.imageURL, title: album.name, subtitle: album.artistName, m)
+                        }
+                    }
+
+                    if !artist.merch.isEmpty {
+                        tileRow("Merch", m, items: artist.merch) { item in
+                            tile(url: item.imageURL, title: item.name, subtitle: item.price ?? "", m)
+                        }
+                    }
                 }
+                .padding(.horizontal, m.hPad)
+                .padding(.vertical, 24 * m.k)
             }
+        } else {
+            emptyState("No artist info for this track", icon: "person.crop.circle", m)
         }
     }
 
-    // MARK: - Playlists Tab
+    // MARK: - Library
 
-    private var playlistsTab: some View {
-        let isAppleMusic = musicManager.lastKnownBundleID == "com.apple.Music"
-        let playlists: [SpotifyPlaylist] = {
-            if isAppleMusic { return musicManager.appleMusic.fetchPlaylists() }
-            let native = musicManager.spotifyPrivateAPI.nativePlaylists
-            return native.isEmpty ? [] : native
-        }()
-
-        return Group {
-            if playlists.isEmpty {
-                emptyState("No playlists found")
-            } else {
-                ScrollView(showsIndicators: false) {
+    @ViewBuilder
+    private func playlistsTab(_ m: PaneMetrics) -> some View {
+        let signedIn = isAppleMusic
+            ? musicManager.appleMusic.isMusicKitAuthorized
+            : musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated
+        if playlists.isEmpty && isLoadingLibrary {
+            ProgressView().controlSize(.large).frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if playlists.isEmpty {
+            emptyState(
+                signedIn ? "No playlists found" : (isAppleMusic ? "Allow Apple Music access to see your library" : "Sign in to Spotify to see your library"),
+                icon: "music.note.list",
+                m
+            )
+        } else {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 24 * m.k) {
+                    headline("Your Library", detail: "\(playlists.count) playlists", m)
                     LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 160, maximum: 180), spacing: 14)],
-                        spacing: 14
+                        columns: [GridItem(.adaptive(minimum: 190 * m.k, maximum: 260 * m.k), spacing: 28 * m.k)],
+                        alignment: .leading,
+                        spacing: 30 * m.k
                     ) {
                         ForEach(playlists) { playlist in
                             Button { controller.present(.playlistDetail(playlist)) } label: {
-                                VStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 10 * m.k) {
                                     CachedAsyncImage(url: playlist.imageURL) { $0.resizable().aspectRatio(contentMode: .fill) }
                                         placeholder: {
                                             ZStack {
-                                                Color.white.opacity(0.05)
+                                                Color.white.opacity(0.08)
                                                 Image(systemName: "music.note.list")
-                                                    .font(.system(size: 28, weight: .light))
-                                                    .foregroundStyle(.white.opacity(0.2))
+                                                    .font(.system(size: 36 * m.k, weight: .light))
+                                                    .foregroundStyle(.white.opacity(0.35))
                                             }
                                         }
-                                        .aspectRatio(1, contentMode: .fill)
-                                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(playlist.name)
-                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                            .foregroundStyle(.white)
-                                            .lineLimit(2)
-                                        Text(playlist.owner.displayName)
-                                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                                            .foregroundStyle(.white.opacity(0.4))
-                                            .lineLimit(1)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 2)
+                                        .aspectRatio(1, contentMode: .fit)
+                                        .clipShape(RoundedRectangle(cornerRadius: 22 * m.k, style: .continuous))
+                                        .shadow(color: .black.opacity(0.3), radius: 16 * m.k, y: 8 * m.k)
+                                    Text(playlist.name)
+                                        .font(.system(size: 17 * m.k, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white)
+                                        .lineLimit(1)
+                                    Text(playlist.owner.displayName)
+                                        .font(.system(size: 14 * m.k, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.white.opacity(0.55))
+                                        .lineLimit(1)
                                 }
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.horizontal, 56)
-                    .padding(.bottom, 32)
                 }
+                .padding(.horizontal, m.hPad)
+                .padding(.vertical, 24 * m.k)
             }
         }
     }
 
-    // MARK: - Queue Tab
+    // MARK: - Queue
 
-    private var queueTab: some View {
-        let isAppleMusic = musicManager.lastKnownBundleID == "com.apple.Music"
+    private func queueTab(_ m: PaneMetrics) -> some View {
+        let tracks = upcomingTracks
+        let signedIn = isAppleMusic || musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated
         return Group {
-            if isAppleMusic {
-                appleMusicQueueContent
-            } else {
-                if musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated {
-                    spotifyQueueContent
+            paneCard(m, key: "queue", padding: 28 * m.k) {
+                headline("Up Next", detail: tracks.isEmpty ? nil : "\(tracks.count) songs", m)
+                if !signedIn {
+                    emptyState("Sign in to Spotify to see your queue", icon: "person.crop.circle.badge.questionmark", m)
+                } else if tracks.isEmpty {
+                    emptyState("Nothing queued", icon: "text.line.first.and.arrowtriangle.forward", m)
                 } else {
-                    emptyState("Sign in to Spotify to see your queue")
-                }
-            }
-        }
-    }
-
-    private var spotifyQueueContent: some View {
-        let nativeQueue = musicManager.nativeQueue
-        let officialQueue = spotifyQueue?.queue ?? []
-        let hasNative = !nativeQueue.isEmpty
-        let hasOfficial = !officialQueue.isEmpty
-
-        return Group {
-            if hasNative {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(nativeQueue.enumerated()), id: \.offset) { index, track in
-                            trackRow(
-                                index: index + 1,
-                                title: track.metadata?.title ?? "Unknown Track",
-                                subtitle: track.metadata?.artistName ?? "Unknown Artist",
-                                imageURL: track.metadata?.imageURL
-                            )
-                        }
-                    }
-                    .padding(.bottom, 32)
-                }
-            } else if hasOfficial {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(officialQueue.enumerated()), id: \.offset) { index, track in
-                            trackRow(
-                                index: index + 1,
-                                title: track.name,
-                                subtitle: track.artists.map(\.name).joined(separator: ", "),
-                                imageURL: track.imageURL
-                            )
-                        }
-                    }
-                    .padding(.bottom, 32)
-                }
-            } else {
-                emptyState("Queue is empty")
-            }
-        }
-    }
-
-    private var appleMusicQueueContent: some View {
-        return Group {
-            if appleMusicQueueTracks.isEmpty {
-                emptyState("Queue is empty")
-            } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(appleMusicQueueTracks.enumerated()), id: \.offset) { index, track in
-                            trackRow(
-                                index: index + 1,
-                                title: track.title,
-                                subtitle: track.artist,
-                                imageURL: nil
-                            )
-                        }
-                    }
-                    .padding(.bottom, 32)
-                }
-            }
-        }
-    }
-
-    private func trackRow(index: Int, title: String, subtitle: String, imageURL: URL?) -> some View {
-        HStack(spacing: 12) {
-            Text("\(index)")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.25))
-                .frame(width: 24)
-
-            if let url = imageURL {
-                CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
-                    placeholder: { Color.white.opacity(0.04) }
-                    .frame(width: 40, height: 40)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .lineLimit(1)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 56)
-        .padding(.vertical, 8)
-        .id(index)
-    }
-
-    // MARK: - Devices Tab
-
-    private var devicesTab: some View {
-        let isSpotify = musicManager.isSpotifyLiveSourceSelected || musicManager.isSpotifySourceActive
-        let isAppleMusic = musicManager.lastKnownBundleID == "com.apple.Music"
-        let devices: [SpotifyNativeDevice] = isSpotify ? musicManager.spotifyPrivateAPI.devices : []
-        let activeID = musicManager.spotifyPrivateAPI.activePlayerDeviceID
-        let isLoggedIn = musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated
-
-        return Group {
-            if isAppleMusic || (!isLoggedIn && !isSpotify) || devices.isEmpty {
-                DevicesView(
-                    navigationStack: $dummyNavigationStack,
-                    audioHubSection: .constant(.system),
-                    isLockScreenMode: true,
-                    preferSystemTab: true
-                )
-                .padding(.horizontal, 40)
-            } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 8) {
-                        sectionHeader("Spotify Connect", icon: "hifispeaker.2.fill")
-                            .padding(.horizontal, 56)
-
-                        ForEach(Array(devices.sorted { d1, d2 in
-                            (d1.deviceId == activeID) == (d2.deviceId == activeID) ? d1.deviceId < d2.deviceId : d1.deviceId == activeID
-                        }), id: \.deviceId) { device in
-                            let isActive = device.deviceId == activeID
-                            HStack(spacing: 12) {
-                                Image(systemName: deviceIcon(for: device.deviceType))
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(isActive ? .green : .white.opacity(0.4))
-                                    .frame(width: 36)
-
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(device.name)
-                                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                        .foregroundStyle(isActive ? .green : .white)
-                                        .lineLimit(1)
-                                    Text(device.deviceType.capitalized)
-                                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                                        .foregroundStyle(.white.opacity(0.35))
-                                }
-                                Spacer()
-                                if isActive {
-                                    Text("Active")
-                                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.green)
-                                        .padding(.horizontal, 8).padding(.vertical, 3)
-                                        .background(Capsule().fill(.green.opacity(0.15)))
-                                } else {
-                                    Button("Transfer") {
-                                        Task { _ = await musicManager.spotifyPrivateAPI.transferPlayback(to: device.deviceId) }
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(spacing: 4 * m.k) {
+                            ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                                Button { if let play = track.play { Task { await play() } } } label: {
+                                    HStack(spacing: 18 * m.k) {
+                                        Text("\(index + 1)")
+                                            .font(.system(size: 15 * m.k, weight: .semibold, design: .rounded))
+                                            .foregroundStyle(.white.opacity(0.35))
+                                            .frame(width: 30 * m.k)
+                                        remoteArtwork(track.imageURL, size: 58 * m.k, radius: 12 * m.k)
+                                        VStack(alignment: .leading, spacing: 3 * m.k) {
+                                            Text(track.title)
+                                                .font(.system(size: 17 * m.k, weight: .semibold, design: .rounded))
+                                                .foregroundStyle(.white)
+                                                .lineLimit(1)
+                                            Text(track.subtitle)
+                                                .font(.system(size: 15 * m.k, weight: .medium, design: .rounded))
+                                                .foregroundStyle(.white.opacity(0.55))
+                                                .lineLimit(1)
+                                        }
+                                        Spacer(minLength: 0)
                                     }
-                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                    .padding(.horizontal, 10).padding(.vertical, 4)
-                                    .background(Capsule().fill(.white.opacity(0.1)))
-                                    .foregroundStyle(.white.opacity(0.75))
-                                    .buttonStyle(.plain)
+                                    .padding(.vertical, 8 * m.k)
+                                    .padding(.horizontal, 10 * m.k)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(track.play == nil)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .padding(.horizontal, m.hPad)
+        .padding(.vertical, 24 * m.k)
+    }
+
+    // MARK: - Devices
+
+    private func devicesTab(_ m: PaneMetrics) -> some View {
+        let api = musicManager.spotifyPrivateAPI
+        let activeID = api.activePlayerDeviceID
+        let connect = api.devices
+            .filter { $0.deviceId != api.controllerDeviceID }
+            .sorted { ($0.deviceId == activeID ? 0 : 1, $0.name) < ($1.deviceId == activeID ? 0 : 1, $1.name) }
+
+        return ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 26 * m.k) {
+                headline("Play On", detail: nil, m)
+
+                if isSpotify, !connect.isEmpty {
+                    deviceSection("Spotify Connect", key: "connect", m) {
+                        ForEach(connect, id: \.deviceId) { device in
+                            let isActive = device.deviceId == activeID
+                            deviceTile(
+                                icon: deviceIcon(for: device.deviceType),
+                                name: device.name,
+                                detail: isActive ? "Playing" : device.deviceType.capitalized,
+                                isActive: isActive,
+                                m
+                            ) {
+                                guard !isActive else { return }
+                                Task { _ = await api.transferPlayback(to: device.deviceId) }
+                            }
+                        }
+                    }
+                } else if isSpotify, !officialDevices.isEmpty {
+                    deviceSection("Spotify Connect", key: "connect", m) {
+                        ForEach(officialDevices, id: \.self) { device in
+                            deviceTile(
+                                icon: deviceIcon(for: device.type),
+                                name: device.name,
+                                detail: device.isActive ? "Playing" : device.type.capitalized,
+                                isActive: device.isActive,
+                                m
+                            ) {
+                                guard !device.isActive, let id = device.id else { return }
+                                Task { _ = await musicManager.spotifyOfficialAPI.transferPlayback(to: id) }
+                            }
+                        }
+                    }
+                }
+
+                if !musicManager.airplayDevices.isEmpty {
+                    deviceSection("AirPlay", key: "airplay", m) {
+                        ForEach(musicManager.airplayDevices) { device in
+                            deviceTile(
+                                icon: device.iconName,
+                                name: device.name,
+                                detail: device.isSelected ? "Connected" : "AirPlay",
+                                isActive: device.isSelected,
+                                m
+                            ) {
+                                Task {
+                                    _ = await musicManager.switchToAirPlayDevice(device)
+                                    try? await Task.sleep(for: .seconds(1))
+                                    await musicManager.updateAirPlayDevices()
                                 }
                             }
-                            .padding(.horizontal, 56)
-                            .padding(.vertical, 7)
                         }
                     }
-                    .padding(.bottom, 32)
                 }
+
+                PaneMacOutputs(m: m)
+            }
+            .padding(.horizontal, m.hPad)
+            .padding(.vertical, 24 * m.k)
+        }
+        .task {
+            api.bootstrapIfNeeded(policy: .onDemand)
+            if musicManager.isPrivateAPIAuthenticated {
+                try? await api.refreshPlayerAndDeviceState()
+            } else if musicManager.isOfficialAPIAuthenticated {
+                officialDevices = await musicManager.spotifyOfficialAPI.fetchDevices()
+            }
+            await musicManager.updateAirPlayDevices()
+        }
+    }
+
+    private func deviceSection<Content: View>(_ title: String, key: String, _ m: PaneMetrics, @ViewBuilder content: () -> Content) -> some View {
+        paneCard(m, key: "devices-\(key)", padding: 18 * m.k) {
+            eyebrow(title, m)
+            LazyVGrid(columns: PaneDeviceTile.columns(m), alignment: .leading, spacing: 10 * m.k) {
+                content()
             }
         }
+    }
+
+    private func deviceTile(icon: String, name: String, detail: String, isActive: Bool, _ m: PaneMetrics, action: @escaping () -> Void) -> some View {
+        PaneDeviceTile(icon: icon, name: name, detail: detail, isActive: isActive, m: m, action: action)
     }
 
     private func deviceIcon(for type: String) -> String {
@@ -1186,71 +1076,238 @@ struct LockScreenFullScreenMusicPane: View {
         }
     }
 
-    // MARK: - Shared Views
+    // MARK: - Mini Player
 
-    @ViewBuilder
-    private func albumArtwork(size: CGFloat, radius: CGFloat) -> some View {
-        Group {
-            if let cover = musicManager.artwork ?? musicManager.appIcon {
-                Image(nsImage: cover)
-                    .resizable().aspectRatio(contentMode: .fill)
-            } else {
-                ZStack {
-                    Color.white.opacity(0.06)
-                    Image(systemName: "music.note")
-                        .font(.system(size: size * 0.28, weight: .light))
-                        .foregroundStyle(.white.opacity(0.3))
+    private func miniPlayer(_ m: PaneMetrics) -> some View {
+        HStack(spacing: 20 * m.k) {
+            albumArtwork(size: 58 * m.k, radius: 12 * m.k)
+            VStack(alignment: .leading, spacing: 2 * m.k) {
+                Text(musicManager.title ?? "Not Playing")
+                    .font(.system(size: 17 * m.k, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(musicManager.artist ?? "")
+                    .font(.system(size: 14 * m.k, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+            .frame(width: 260 * m.k, alignment: .leading)
+
+            PaneScrubber(k: m.k, style: .compact)
+                .frame(maxWidth: .infinity)
+
+            transportControls(m, style: .mini)
+        }
+        .padding(.horizontal, 20 * m.k)
+        .padding(.vertical, 14 * m.k)
+        .frame(maxWidth: 1240 * m.k)
+        .background(LockScreenWidgetSurface(
+            shape: RoundedRectangle(cornerRadius: 28 * m.k, style: .continuous),
+            cacheKey: "pane-mini"
+        ))
+    }
+
+    // MARK: - Transport
+
+    private enum TransportStyle { case hero, compact, mini }
+
+    private func transportControls(_ m: PaneMetrics, style: TransportStyle) -> some View {
+        let playSize: CGFloat = switch style { case .hero: 72; case .compact: 56; case .mini: 46 }
+        let skipSize: CGFloat = switch style { case .hero: 26; case .compact: 21; case .mini: 18 }
+        let sideSize: CGFloat = switch style { case .hero: 18; case .compact: 15; case .mini: 15 }
+        let spacing: CGFloat = switch style { case .hero: 26; case .compact: 16; case .mini: 14 }
+        let repeatIcon = musicManager.repeatState == .track ? "repeat.1" : "repeat"
+
+        return HStack(spacing: spacing * m.k) {
+            if style != .mini {
+                toggleIcon("shuffle", size: sideSize * m.k, isOn: musicManager.shuffleState) {
+                    Task { await musicManager.toggleShuffle() }
+                }
+            }
+            iconButton("backward.fill", size: skipSize * m.k) { Task { await musicManager.previousTrack() } }
+
+            Button {
+                Task { musicManager.isPlaying ? await musicManager.pause() : await musicManager.play() }
+            } label: {
+                Image(systemName: musicManager.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: playSize * 0.36 * m.k, weight: .bold))
+                    .foregroundStyle(.white)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: playSize * m.k, height: playSize * m.k)
+                    .background(LockScreenWidgetSurface(shape: Circle(), cacheKey: "pane-play-\(style)"))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+
+            iconButton("forward.fill", size: skipSize * m.k) { Task { await musicManager.nextTrack() } }
+            if style != .mini {
+                toggleIcon(repeatIcon, size: sideSize * m.k, isOn: musicManager.repeatState != .off) {
+                    Task { await musicManager.cycleRepeatMode() }
+                }
+            }
+            if style == .hero {
+                Spacer(minLength: 0)
+                iconButton(musicManager.isLiked ? "heart.fill" : "heart", size: 22 * m.k, tint: musicManager.isLiked ? .pink : .white) {
+                    Task { await musicManager.toggleLike() }
                 }
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
     }
 
-    private func sectionHeader(_ title: String, icon: String) -> some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon)
-                .font(.system(size: 13))
-                .foregroundStyle(musicManager.accentColor)
-            Text(title)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
+    private func iconButton(_ systemName: String, size: CGFloat, tint: Color = .white, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: size * 1.9, height: size * 1.9)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggleIcon(_ systemName: String, size: CGFloat, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size, weight: .bold))
+                .foregroundStyle(isOn ? Color.black.opacity(0.85) : .white.opacity(0.7))
+                .frame(width: size * 2, height: size * 2)
+                .background(Circle().fill(isOn ? Color.white.opacity(0.9) : Color.clear))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func glassIconButton(_ systemName: String, size: CGFloat, key: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size * 0.34, weight: .bold))
                 .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(LockScreenWidgetSurface(shape: Circle(), cacheKey: "pane-\(key)"))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Building Blocks
+
+    @ViewBuilder
+    private func albumArtwork(size: CGFloat, radius: CGFloat) -> some View {
+        MusicArtworkImage(image: musicManager.artwork, size: size)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+
+    private func remoteArtwork(_ url: URL?, size: CGFloat, radius: CGFloat) -> some View {
+        CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) }
+            placeholder: { Color.white.opacity(0.08) }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+
+    private func eyebrow(_ text: String, _ m: PaneMetrics) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 12 * m.k, weight: .semibold, design: .rounded))
+            .tracking(1.6 * m.k)
+            .foregroundStyle(.white.opacity(0.55))
+            .lineLimit(1)
+    }
+
+    private func headline(_ title: String, detail: String?, _ m: PaneMetrics) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14 * m.k) {
+            Text(title)
+                .font(.system(size: 32 * m.k, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 17 * m.k, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            Spacer(minLength: 0)
         }
     }
 
-    private func emptyState(_ text: String) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "music.note")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.white.opacity(0.15))
+    private func sectionTitle(_ title: String, _ m: PaneMetrics) -> some View {
+        Text(title)
+            .font(.system(size: 22 * m.k, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+    }
+
+    private func cardTitle(_ title: String, _ m: PaneMetrics) -> some View {
+        Text(title)
+            .font(.system(size: 18 * m.k, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .padding(.bottom, 2 * m.k)
+    }
+
+    private func paneCard<Content: View>(
+        _ m: PaneMetrics,
+        key: String,
+        padding: CGFloat? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14 * m.k) {
+            content()
+        }
+        .padding(padding ?? 26 * m.k)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(PaneCardFill(cornerRadius: 30 * m.k))
+    }
+
+    private func tileRow<Item: Identifiable, Tile: View>(
+        _ title: String,
+        _ m: PaneMetrics,
+        items: [Item],
+        @ViewBuilder tile: @escaping (Item) -> Tile
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 16 * m.k) {
+            sectionTitle(title, m)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 22 * m.k) {
+                    ForEach(items) { tile($0) }
+                }
+            }
+        }
+    }
+
+    private func tile(url: URL?, title: String, subtitle: String, _ m: PaneMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 8 * m.k) {
+            remoteArtwork(url, size: 190 * m.k, radius: 20 * m.k)
+                .shadow(color: .black.opacity(0.3), radius: 14 * m.k, y: 6 * m.k)
+            Text(title)
+                .font(.system(size: 16 * m.k, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Text(subtitle)
+                .font(.system(size: 13 * m.k, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(1)
+        }
+        .frame(width: 190 * m.k, alignment: .leading)
+    }
+
+    private func emptyState(_ text: String, icon: String, _ m: PaneMetrics) -> some View {
+        VStack(spacing: 14 * m.k) {
+            Image(systemName: icon)
+                .font(.system(size: 52 * m.k, weight: .light))
+                .foregroundStyle(.white.opacity(0.35))
             Text(text)
-                .font(.system(size: 16, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.3))
+                .font(.system(size: 22 * m.k, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.55))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Overlay
 
-    @ViewBuilder private func overlayPanel(for overlay: LockScreenMusicPaneOverlay) -> some View {
+    @ViewBuilder private func overlayPanel(for overlay: LockScreenMusicPaneOverlay, _ m: PaneMetrics) -> some View {
         ZStack {
-            Color.black.opacity(0.55).ignoresSafeArea().onTapGesture { controller.dismissOverlay() }
+            Color.black.opacity(0.35).ignoresSafeArea().onTapGesture { controller.dismissOverlay() }
             VStack(spacing: 0) {
                 HStack {
-                    Button(action: { controller.dismissOverlay() }) {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.white.opacity(0.14), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    Text(overlayTitle(for: overlay))
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
                     Spacer()
+                    glassIconButton("xmark", size: 38 * m.k, key: "overlay-close") { controller.dismissOverlay() }
                 }
-                .padding(20)
+                .padding([.top, .horizontal], 20 * m.k)
 
                 switch overlay {
                 case .playlistDetail(let playlist):
@@ -1261,88 +1318,79 @@ struct LockScreenFullScreenMusicPane: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .frame(maxWidth: 700, maxHeight: min(screenSize.height * 0.75, 660))
-            .background(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                    )
-            )
-            .padding(.horizontal, 40)
-            .padding(.bottom, 44)
+            .frame(maxWidth: min(1180 * m.k, m.size.width - m.hPad * 2), maxHeight: m.size.height * 0.8)
+            .background(LockScreenWidgetSurface(shape: RoundedRectangle(cornerRadius: 36 * m.k, style: .continuous), cacheKey: "pane-sheet"))
         }
     }
+}
 
-    private func overlayTitle(for overlay: LockScreenMusicPaneOverlay) -> String {
-        switch overlay {
-        case .playlistDetail(let p): p.name
-        case .loginPrompt: "Connect Spotify"
-        }
-    }
+// MARK: - Scrubber
 
-    // MARK: - Background
+private struct PaneScrubber: View {
+    enum Style { case hero, compact }
 
-    private var ambientBackground: some View {
-        GeometryReader { geo in
-            ZStack {
-                (desktopWallpaper.map { AnyView(Image(nsImage: $0).resizable().aspectRatio(contentMode: .fill)) }
-                    ?? AnyView(musicManager.accentColor))
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .blur(radius: 64, opaque: true)
-                    .clipped()
-                if let image = musicManager.artwork ?? musicManager.appIcon {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .blur(radius: 48, opaque: true)
-                        .saturation(1.35)
-                        .opacity(0.45)
-                }
-                RadialGradient(
-                    colors: [musicManager.leftGradientColor.opacity(0.72), musicManager.accentColor.opacity(0.42), musicManager.rightGradientColor.opacity(0.18), Color.black.opacity(0.55)],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: max(geo.size.width, geo.size.height)
+    var musicManager: MusicManager { .shared }
+    let k: CGFloat
+    let style: Style
+    @State private var dragProgress: Double?
+    @State private var isHovering = false
+
+    var body: some View {
+        let barHeight = (style == .hero ? 9 : 6) * k * (isHovering || dragProgress != nil ? 1.6 : 1)
+        let timeSize = (style == .hero ? 15 : 12) * k
+
+        let trajectory = musicManager.playbackTrajectory
+
+        VStack(spacing: 8 * k) {
+            GeometryReader { geo in
+                LayerProgressBar(
+                    motion: dragProgress.map { LinearProgressMotion(progress: $0) } ?? trajectory.progressMotion,
+                    colors: [.white],
+                    trackColor: Color.white.opacity(0.22),
+                    barHeight: barHeight,
+                    catchUpDuration: dragProgress == nil ? 0.5 : 0
                 )
-                LinearGradient(colors: [.black.opacity(0.08), .black.opacity(0.42)], startPoint: .top, endPoint: .bottom)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            dragProgress = min(max(Double(value.location.x / geo.size.width), 0), 1)
+                        }
+                        .onEnded { value in
+                            let target = min(max(Double(value.location.x / geo.size.width), 0), 1) * musicManager.totalDuration
+                            dragProgress = nil
+                            if target.isFinite, musicManager.totalDuration > 0 {
+                                Task { await musicManager.seek(to: target) }
+                            }
+                        }
+                )
+            }
+            .frame(height: 22 * k)
+            .onHover { hovering in withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isHovering = hovering } }
+
+            TimelineView(trajectory.clockSchedule) { context in
+                let duration = musicManager.totalDuration
+                let elapsed = dragProgress.map { $0 * duration } ?? trajectory.elapsed(at: context.date)
+                HStack {
+                    Text(elapsed.asMinuteSecondClock)
+                    Spacer()
+                    Text("-\(max(0, duration - elapsed).asMinuteSecondClock)")
+                }
+                .font(.system(size: timeSize, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.6))
             }
         }
     }
 }
 
-// MARK: - Dock
+// MARK: - Lyrics
 
-private struct LockScreenMusicDock: View {
-    @Binding var navigationStack: [NotchWidgetMode]
-    @ObservedObject var navigationManager: LockScreenNavigationManager
-    @EnvironmentObject var settings: SettingsModel
-    @EnvironmentObject var musicManager: MusicManager
-    var body: some View {
-        MusicPlayerView(navigationStack: $navigationStack, isLockScreenMode: true, showArtworkSection: false)
-            .environmentObject(navigationManager)
-            .padding(.horizontal, 20).padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(musicManager.accentColor.opacity(0.06))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                            )
-                    )
-            )
-            .shadow(color: .black.opacity(0.25), radius: 20, y: 10)
-            .frame(maxWidth: 600)
-    }
-}
+private struct PaneLyrics: View {
+    var musicManager: MusicManager { .shared }
+    let k: CGFloat
+    let viewportHeight: CGFloat
 
-// MARK: - Lyrics View
-
-private struct LockScreenMusicPaneLyrics: View {
-    @EnvironmentObject var musicManager: MusicManager
     var body: some View {
         TimelineView(KaraokeFillSchedule(
             referenceDate: Date(),
@@ -1351,43 +1399,181 @@ private struct LockScreenMusicPaneLyrics: View {
                 ? KaraokeFillSchedule.eventWindows(for: musicManager.lyrics)
                 : []
         )) { context in
-            let activeLyricIDs = Set(
-                musicManager.activeLyricIndices(at: context.date).compactMap { index in
-                    musicManager.lyrics.indices.contains(index) ? musicManager.lyrics[index].id : nil
-                }
-            )
+            let activeIndices = musicManager.activeLyricIndices(at: context.date)
+                .filter { musicManager.lyrics.indices.contains($0) }
+            let activeIDs = Set(activeIndices.map { musicManager.lyrics[$0].id })
+            let focusID = activeIndices.first.map { musicManager.lyrics[$0].id }
             let elapsed = musicManager.lyricsElapsedTime(at: context.date)
 
             if musicManager.lyrics.isEmpty {
-                Text("Lyrics aren't available.")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.3))
+                Text("Lyrics aren't available for this song.")
+                    .font(.system(size: 30 * k, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.4))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 24) {
-                        ForEach(musicManager.lyrics) { lyric in
-                            let isActive = activeLyricIDs.contains(lyric.id)
-
-                            WordSyncedLyricText(
-                                lyric: lyric,
-                                elapsedTime: elapsed,
-                                isActive: isActive,
-                                highlightColor: .white,
-                                inactiveColor: .white
-                            )
-                                .font(.system(
-                                    size: isActive ? 36 : 26,
-                                    weight: .bold,
-                                    design: .rounded
-                                ))
-                                .opacity(isActive ? 1 : 0.28)
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(alignment: .leading, spacing: 24 * k) {
+                            ForEach(musicManager.lyrics) { lyric in
+                                let isActive = activeIDs.contains(lyric.id)
+                                WordSyncedLyricText(
+                                    lyric: lyric,
+                                    elapsedTime: elapsed,
+                                    isActive: isActive,
+                                    highlightColor: .white,
+                                    inactiveColor: .white
+                                )
+                                .font(.system(size: 38 * k, weight: .bold, design: .rounded))
+                                .opacity(isActive ? 1 : 0.35)
+                                .scaleEffect(isActive ? 1 : 0.96, anchor: .leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture { Task { await musicManager.seek(to: lyric.timestamp) } }
+                                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: isActive)
+                                .id(lyric.id)
+                            }
+                        }
+                        .padding(.vertical, viewportHeight * 0.3)
+                    }
+                    .onAppear { if let focusID { proxy.scrollTo(focusID, anchor: UnitPoint(x: 0, y: 0.38)) } }
+                    .onChange(of: focusID) { _, id in
+                        guard let id else { return }
+                        withAnimation(.spring(response: 0.6, dampingFraction: 0.9)) {
+                            proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: 0.38))
                         }
                     }
                 }
                 .mask(
-                    LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .top, endPoint: .bottom)
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black, location: 0.16),
+                            .init(color: .black, location: 0.8),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 )
+            }
+        }
+    }
+}
+
+// MARK: - Devices
+
+private struct PaneDeviceTile: View {
+    let icon: String
+    let name: String
+    let detail: String
+    let isActive: Bool
+    let m: PaneMetrics
+    let action: () -> Void
+
+    static func columns(_ m: PaneMetrics) -> [GridItem] {
+        [GridItem(.adaptive(minimum: 230 * m.k, maximum: 360 * m.k), spacing: 10 * m.k)]
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14 * m.k) {
+                Image(systemName: icon)
+                    .font(.system(size: 19 * m.k, weight: .medium))
+                    .frame(width: 42 * m.k, height: 42 * m.k)
+                    .background(Circle().fill(isActive ? Color.black.opacity(0.1) : Color.white.opacity(0.1)))
+                VStack(alignment: .leading, spacing: 2 * m.k) {
+                    Text(name)
+                        .font(.system(size: 15 * m.k, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                    Text(detail)
+                        .font(.system(size: 12 * m.k, weight: .medium, design: .rounded))
+                        .opacity(0.6)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isActive ? Color.black.opacity(0.85) : .white)
+            .padding(.horizontal, 12 * m.k)
+            .frame(height: 66 * m.k)
+            .background(
+                RoundedRectangle(cornerRadius: 18 * m.k, style: .continuous)
+                    .fill(isActive ? Color.white.opacity(0.9) : Color.white.opacity(0.07))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PaneMacOutputs: View {
+    @ObservedObject private var audio = MultiAudioManager.shared
+    let m: PaneMetrics
+
+    var body: some View {
+        if !audio.availableOutputDevices.isEmpty {
+            VStack(alignment: .leading, spacing: 14 * m.k) {
+                Text("THIS MAC")
+                    .font(.system(size: 12 * m.k, weight: .semibold, design: .rounded))
+                    .tracking(1.6 * m.k)
+                    .foregroundStyle(.white.opacity(0.55))
+                LazyVGrid(columns: PaneDeviceTile.columns(m), alignment: .leading, spacing: 10 * m.k) {
+                    ForEach(audio.availableOutputDevices) { device in
+                        let selected = audio.selectedOutputDeviceIDs.contains(device.id)
+                        let active = selected || (audio.selectedOutputDeviceIDs.isEmpty && device.id == audio.defaultOutputDeviceID)
+                        PaneDeviceTile(
+                            icon: IconMapper.icon(for: device),
+                            name: device.name,
+                            detail: active ? "Playing" : "Output",
+                            isActive: active,
+                            m: m
+                        ) {
+                            if selected { audio.selectedOutputDeviceIDs.remove(device.id) }
+                            else { audio.selectedOutputDeviceIDs.insert(device.id) }
+                        }
+                    }
+                }
+            }
+            .padding(18 * m.k)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(PaneCardFill(cornerRadius: 30 * m.k))
+        }
+    }
+}
+
+private struct PaneCardFill: View {
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        shape
+            .fill(Color.white.opacity(0.08))
+            .overlay(shape.strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
+    }
+}
+
+private struct PaneChip: ViewModifier {
+    let k: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 13 * k, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.8))
+            .padding(.horizontal, 11 * k)
+            .padding(.vertical, 6 * k)
+            .background(Capsule().fill(Color.white.opacity(0.1)))
+    }
+}
+
+private struct PopularityMeter: View {
+    let value: Int
+    let k: CGFloat
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2 * k) {
+            ForEach(0..<5, id: \.self) { bar in
+                Capsule()
+                    .fill(Color.white.opacity(value > bar * 20 ? 0.9 : 0.25))
+                    .frame(width: 3 * k, height: (5 + CGFloat(bar) * 2.2) * k)
             }
         }
     }

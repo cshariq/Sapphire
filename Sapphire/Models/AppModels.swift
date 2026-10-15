@@ -39,7 +39,7 @@ enum NotchWidgetMode: Hashable {
     case musicArtistDetail(uri: String, name: String)
     case musicAlbumDetail(uri: String, name: String)
 
-    case nearDrop
+    case nearbyTransfer
     case fileShelf
     case fileShelfLanding
     case fileActionPreview
@@ -47,6 +47,7 @@ enum NotchWidgetMode: Hashable {
     case multiAudio
     case multiAudioDeviceAdjust(AudioDevice)
     case multiAudioEQ(AudioDevice)
+    case earbudControls(AudioDevice)
     case multiAudioAppEQ(bundleID: String, appName: String)
     case multiAudioApp8D(bundleID: String, appName: String)
     case multiAudioAppSurround(bundleID: String, appName: String)
@@ -59,6 +60,10 @@ enum NotchWidgetMode: Hashable {
     case storageDetailView
     case continuityDetail
     case continuityActivityDetail
+    case fileProgressDetail
+    case appActivityDetail
+    case devDashboard
+    case devActivityDetail
     case agentS
     case blipHub
     case circleToSearch
@@ -106,7 +111,7 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(30)
             hasher.combine(uri)
             hasher.combine(name)
-        case .nearDrop:
+        case .nearbyTransfer:
             hasher.combine(10)
         case .fileShelf:
             hasher.combine(11)
@@ -121,6 +126,9 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(device)
         case .multiAudioEQ(let device):
             hasher.combine(16)
+            hasher.combine(device)
+        case .earbudControls(let device):
+            hasher.combine(40)
             hasher.combine(device)
         case .musicApiKeysMissing:
             hasher.combine(17)
@@ -140,6 +148,14 @@ enum NotchWidgetMode: Hashable {
             hasher.combine(37)
         case .continuityActivityDetail:
             hasher.combine(38)
+        case .fileProgressDetail:
+            hasher.combine(41)
+        case .appActivityDetail:
+            hasher.combine(42)
+        case .devDashboard:
+            hasher.combine(43)
+        case .devActivityDetail:
+            hasher.combine(44)
         case .multiAudioAppEQ:
             hasher.combine(21)
         case .multiAudioApp8D(let bundleID, let appName):
@@ -204,8 +220,8 @@ enum LiveActivityContent: Equatable {
         switch (lhs, rhs) {
         case (.none, .none):
             return true
-        case let (.full(_, lhsId, _), .full(_, rhsId, _)):
-            return lhsId == rhsId
+        case let (.full(_, lhsId, lhsRadius), .full(_, rhsId, rhsRadius)):
+            return lhsId == rhsId && lhsRadius == rhsRadius
         case let (.standard(data: lhsData, id: lhsId), .standard(data: rhsData, id: rhsId)):
             return lhsId == rhsId && lhsData == rhsData
         default:
@@ -277,6 +293,7 @@ enum StandardActivityData: Equatable {
     case music(bottom: MusicBottomContentType)
     case intelligenceAgent(status: String, stepTitle: String, current: Int, total: Int)
     case devActivity(task: DevTask, additionalCount: Int)
+    case appActivity(activity: AppActivity, additionalCount: Int)
     case weather(data: ProcessedWeatherData)
     case calendar(event: EKEvent)
     case battery(state: BatteryState, style: BatteryNotificationStyle, timeRemaining: String?, systemState: BatterySystemState)
@@ -293,11 +310,12 @@ enum StandardActivityData: Equatable {
     case audioSwitch(event: AudioSwitchEvent)
     case geminiLive(payload: GeminiPayload)
     case microphone(payload: MicrophonePayload)
-    case nearDrop(payload: NearDropPayload)
+    case nearbyTransfer(payload: NearbyTransferPayload)
     case hud(type: HUDType)
     case reminder(reminder: EKReminder)
     case lockScreen
     case unlocked
+    case capsLock
     case updateAvailable(version: String)
     case stats(payload: StatsPayload)
     case sports(payload: SportsPayload, bottom: SportsBottomContentType = .none)
@@ -324,10 +342,12 @@ enum StandardActivityData: Equatable {
         case let (.audioSwitch(a), .audioSwitch(b)): return a == b
         case let (.geminiLive(a), .geminiLive(b)): return a == b
         case let (.microphone(a), .microphone(b)): return a == b
-        case let (.nearDrop(a), .nearDrop(b)): return a == b
+        case let (.appActivity(a, c1), .appActivity(b, c2)): return a == b && c1 == c2
+        case let (.nearbyTransfer(a), .nearbyTransfer(b)): return a == b
         case let (.hud(a), .hud(b)): return a == b
         case (.lockScreen, .lockScreen): return true
         case (.unlocked, .unlocked): return true
+        case (.capsLock, .capsLock): return true
         case let (.updateAvailable(a), .updateAvailable(b)): return a == b
         case let (.stats(a), .stats(b)): return a == b
         case let (.sports(a, bottomA), .sports(b, bottomB)): return a == b && bottomA == bottomB
@@ -340,11 +360,11 @@ enum StandardActivityData: Equatable {
     }
 }
 
-enum NearDropTransferState: Equatable, Hashable { case waitingForConsent, inProgress, finished, failed(String) }
-struct NearDropPayload: Identifiable, Hashable {
+enum NearbyTransferState: Equatable, Hashable { case waitingForConsent, inProgress, finished, failed(String) }
+struct NearbyTransferPayload: Identifiable, Hashable {
     let id: String, device: RemoteDeviceInfo, transfer: TransferMetadata, destinationURLs: [URL]
-    var state: NearDropTransferState = .waitingForConsent; var progress: Double?
-    static func == (lhs: NearDropPayload, rhs: NearDropPayload) -> Bool { lhs.id == rhs.id && lhs.state == rhs.state && lhs.progress == rhs.progress }
+    var state: NearbyTransferState = .waitingForConsent; var progress: Double?
+    static func == (lhs: NearbyTransferPayload, rhs: NearbyTransferPayload) -> Bool { lhs.id == rhs.id && lhs.state == rhs.state && lhs.progress == rhs.progress }
     func hash(into hasher: inout Hasher) { hasher.combine(id); hasher.combine(state); hasher.combine(progress) }
 }
 
@@ -394,8 +414,30 @@ struct LyricLine: Identifiable, Hashable {
     let background: [LyricWord]
     let agent: String?
     let songPart: String?
+    let romanization: String?
 
     var hasWordTiming: Bool { !words.isEmpty }
+
+    func replacing(
+        timestamp: TimeInterval? = nil,
+        endTimestamp: TimeInterval?? = nil,
+        words: [LyricWord]? = nil,
+        background: [LyricWord]? = nil,
+        text: String? = nil
+    ) -> LyricLine {
+        LyricLine(
+            id: id,
+            text: text ?? self.text,
+            timestamp: timestamp ?? self.timestamp,
+            endTimestamp: endTimestamp ?? self.endTimestamp,
+            words: words ?? self.words,
+            translatedText: translatedText,
+            background: background ?? self.background,
+            agent: agent,
+            songPart: songPart,
+            romanization: romanization
+        )
+    }
 
     var hasReconstructibleWordTiming: Bool {
         hasWordTiming && words.map(\.text).joined() == text
@@ -417,7 +459,8 @@ struct LyricLine: Identifiable, Hashable {
         translatedText: String? = nil,
         background: [LyricWord] = [],
         agent: String? = nil,
-        songPart: String? = nil
+        songPart: String? = nil,
+        romanization: String? = nil
     ) {
         self.id = id
         self.text = text
@@ -428,6 +471,7 @@ struct LyricLine: Identifiable, Hashable {
         self.background = background
         self.agent = agent
         self.songPart = songPart
+        self.romanization = romanization
     }
 }
 

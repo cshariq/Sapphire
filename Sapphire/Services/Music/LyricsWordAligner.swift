@@ -19,6 +19,7 @@ enum LyricsWordAligner {
         let totalWords: Int
         let alignedLines: Int
         let lyricLines: Int
+        var matchedTokens: [UUID: Set<Int>] = [:]
 
         var confidence: Double {
             totalWords == 0 ? 0 : Double(matchedWords) / Double(totalWords)
@@ -44,6 +45,7 @@ enum LyricsWordAligner {
         var lyricLines = 0
         var output: [LyricLine] = []
         output.reserveCapacity(lines.count)
+        var matchedTokens: [UUID: Set<Int>] = [:]
 
         for (index, line) in lines.enumerated() {
             let tokens = tokenize(line.text)
@@ -79,18 +81,9 @@ enum LyricsWordAligner {
 
             var matches: [Int: RecognizedWord] = [:]
             for pair in pairs { matches[pair.word] = candidates[pair.candidate] }
+            matchedTokens[line.id] = Set(pairs.map(\.word))
             let words = assignTimes(tokens: tokens, keys: keys, matches: matches, lineStart: lineStart, lineEnd: lineEnd)
-            output.append(LyricLine(
-                id: line.id,
-                text: line.text,
-                timestamp: line.timestamp,
-                endTimestamp: line.endTimestamp,
-                words: words,
-                translatedText: line.translatedText,
-                background: line.background,
-                agent: line.agent,
-                songPart: line.songPart
-            ))
+            output.append(line.replacing(words: words))
         }
 
         return Alignment(
@@ -98,7 +91,8 @@ enum LyricsWordAligner {
             matchedWords: matchedWords,
             totalWords: totalWords,
             alignedLines: alignedLines,
-            lyricLines: lyricLines
+            lyricLines: lyricLines,
+            matchedTokens: matchedTokens
         )
     }
 
@@ -132,7 +126,10 @@ enum LyricsWordAligner {
     }
 
     static func matchKey(_ text: String) -> String {
-        let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        var folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        if folded.unicodeScalars.contains(where: { (0x3400...0x9FFF).contains($0.value) || (0xF900...0xFAFF).contains($0.value) }) {
+            folded = folded.applyingTransform(StringTransform("Hant-Hans"), reverse: false) ?? folded
+        }
         return String(String.UnicodeScalarView(folded.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }))
     }
 

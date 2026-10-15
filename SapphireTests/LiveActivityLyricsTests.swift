@@ -25,12 +25,14 @@ struct LiveActivityLyricsTests {
         isPlaying: Bool = true,
         setting: Bool = true,
         appAllowed: Bool = true,
+        hiddenByFullScreenApp: Bool = false,
         currentLyric: LyricLine?
     ) -> LiveActivityLyricsPolicy.Decision {
         LiveActivityLyricsPolicy.decide(
             isPlaying: isPlaying,
             showLyricsInLiveActivity: setting,
             lyricsAllowedForActiveApp: appAllowed,
+            isHiddenByFullScreenApp: hiddenByFullScreenApp,
             currentLyric: currentLyric
         )
     }
@@ -51,10 +53,33 @@ struct LiveActivityLyricsTests {
         #expect(decide(currentLyric: LyricLine(text: "  ", timestamp: 0)) == .hide(.blankLine))
     }
 
+    @Test("Hides the lyrics section when a full-screen app covers the notch display")
+    func fullScreenAppHidesLyricsSection() {
+        #expect(decide(hiddenByFullScreenApp: true, currentLyric: Self.wordSyncedLine) == .hide(.hiddenByFullScreenApp))
+    }
+
     @Test("A translation makes an otherwise blank line displayable")
     func translationIsDisplayable() {
         let line = LyricLine(text: " ", timestamp: 0, translatedText: "Hola")
         #expect(decide(currentLyric: line) == .show(line))
+    }
+
+    @Test("A short pause between lines keeps the line before it; a long one does not")
+    func shortPausesKeepThePreviousLine() {
+        let first = LyricLine(text: "One", timestamp: 1, endTimestamp: 2)
+        let second = LyricLine(text: "Two", timestamp: 3, endTimestamp: 4)
+        let third = LyricLine(text: "Three", timestamp: 8, endTimestamp: 9)
+        let lyrics = [first, second, third]
+        func bridged(_ time: TimeInterval) -> LyricLine? {
+            LiveActivityLyricsPolicy.lineBridgingGap(in: lyrics, at: time)
+        }
+
+        #expect(bridged(0.5) == nil)
+        #expect(bridged(2.5) == first)
+        #expect(bridged(4.5) == nil)
+        #expect(bridged(9.5) == nil)
+        #expect(bridged(1.999) == first)
+        #expect(bridged(3.001) == second)
     }
 
     // MARK: Playback tick
@@ -126,11 +151,44 @@ struct LiveActivityLyricsTests {
     // MARK: Word fill
 
     @Test("A word fills over its own duration")
-    func wordFillFraction() {
-        #expect(KaraokeWordView.fillFraction(elapsed: 0.9, start: 1, fillEnd: 2) == 0)
-        #expect(abs(KaraokeWordView.fillFraction(elapsed: 1.25, start: 1, fillEnd: 2) - 0.25) < 1e-9)
-        #expect(KaraokeWordView.fillFraction(elapsed: 2.5, start: 1, fillEnd: 2) == 1)
-        #expect(KaraokeWordView.fillFraction(elapsed: 1.1, start: 1, fillEnd: nil) == 1)
+    func wordFillWindows() {
+        let line = LyricLine(
+            text: "a b c",
+            timestamp: 1,
+            endTimestamp: 4,
+            words: [
+                LyricWord(text: "a ", timestamp: 1, endTimestamp: 1.5),
+                LyricWord(text: "b ", timestamp: 2),
+                LyricWord(text: "c", timestamp: 3),
+            ]
+        )
+        #expect(KaraokeTickerTimeline(line: line).fills == [
+            .init(start: 1, end: 1.5),
+            .init(start: 2, end: 3),
+            .init(start: 3, end: 4),
+        ])
+
+        let unended = LyricLine(text: "a", timestamp: 1, words: [LyricWord(text: "a", timestamp: 1)])
+        #expect(KaraokeTickerTimeline(line: unended).fills == [.init(start: 1, end: 1)])
+    }
+
+    @Test("The ticker centres a word once it and every word before it have started")
+    func tickerSteps() {
+        let line = LyricLine(
+            text: "a b c d e",
+            timestamp: 1,
+            words: [
+                LyricWord(text: "a ", timestamp: 1),
+                LyricWord(text: "b ", timestamp: 2),
+                LyricWord(text: "c ", timestamp: 2),
+                LyricWord(text: "d ", timestamp: 1.5),
+                LyricWord(text: "e", timestamp: 3),
+            ]
+        )
+        #expect(KaraokeTickerTimeline(line: line).steps == [
+            .init(time: 2, word: 3),
+            .init(time: 3, word: 4),
+        ])
     }
 
     @Test("Missing word ends fall back to the next word's start, then the line end")
@@ -163,10 +221,36 @@ struct LiveActivityLyricsTests {
 
         let gaps = zip(dates, dates.dropFirst()).map { $1.timeIntervalSince($0) }
         #expect(gaps.allSatisfy { $0 > 0 })
-        #expect(abs(gaps[0] - 0.5) < 1e-9)
-        #expect(dates.contains { abs($0.timeIntervalSince(reference) - 2.0) < 1e-9 })
-        #expect(dates.contains { abs($0.timeIntervalSince(reference) - 3.0) < 1e-9 })
-        #expect(gaps.last == KaraokeFillSchedule.idleInterval)
+        let landing = KaraokeFillSchedule.landingDelay
+        let expected = [
+            0, landing, 0.5 + landing, 2 + landing, 3 + landing,
+            3 + landing + KaraokeFillSchedule.idleInterval
+        ]
+        let offsets = dates.map { $0.timeIntervalSince(reference) }
+        #expect(zip(offsets, expected).allSatisfy { abs($0 - $1) < 1e-9 })
+    }
+
+    @Test("Fill schedule entries read back at or just after their boundary")
+    func fillScheduleLandsAfterBoundaries() throws {
+        let anchor = PlaybackTimingAnchor(
+            elapsedAtSample: 37.218934,
+            sampleEpochTime: 1_792_000_000.123457,
+            rate: 1
+        )
+        let referenceDate = Date(timeIntervalSince1970: anchor.sampleEpochTime + 0.734)
+        let boundaries = (1...400).map { Double(38_000 + $0 * 137) / 1000 }
+        let schedule = KaraokeFillSchedule(
+            referenceDate: referenceDate,
+            referenceElapsed: anchor.elapsed(at: referenceDate),
+            windows: boundaries.map { $0...$0 }
+        )
+        var entries = schedule.entries(from: referenceDate, mode: .normal)
+        _ = entries.next()
+        for boundary in boundaries {
+            let next = entries.next()
+            let elapsed = anchor.elapsed(at: try #require(next))
+            #expect(elapsed >= boundary && elapsed < boundary + 0.002)
+        }
     }
 
     // MARK: LRCLIB format

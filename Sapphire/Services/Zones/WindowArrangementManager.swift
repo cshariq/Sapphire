@@ -14,7 +14,7 @@ class WindowArrangementManager {
     private let settings = SettingsModel.shared
 
     func activate(plane: Plane) {
-        guard let layout = (LayoutTemplate.allTemplates + settings.settings.customSnapLayouts).first(where: { $0.id == plane.layoutID }) else {
+        guard let layout = (LayoutTemplate.allTemplates + settings.current.customSnapLayouts).first(where: { $0.id == plane.layoutID }) else {
             print("[WindowArrangementManager] Error: Could not find layout with ID \(plane.layoutID) for plane '\(plane.name)'.")
             return
         }
@@ -63,7 +63,7 @@ class WindowArrangementManager {
 
                     do {
                         print("[WindowArrangementManager] Launching \(appInfo.bundleID)...")
-                        let app = try await NSWorkspace.shared.launchApplication(at: url, options: .async, configuration: [:])
+                        let app = try NSWorkspace.shared.launchApplication(at: url, options: .async, configuration: [:])
 
                         if await self.waitForWindow(for: app, timeout: 5.0) {
                             print("[WindowArrangementManager] Window for \(appInfo.bundleID) is ready.")

@@ -16,6 +16,7 @@ enum LiveActivityLyricsPolicy {
         case notPlaying = "not playing"
         case settingOff = "Show Lyrics in Live Activity is off"
         case disallowedForActiveApp = "lyrics are hidden for the active app"
+        case hiddenByFullScreenApp = "lyrics overlap a full-screen app"
         case noCurrentLine = "no current line (lyrics not loaded, or before/between lines)"
         case blankLine = "current line is blank"
     }
@@ -24,15 +25,40 @@ enum LiveActivityLyricsPolicy {
         isPlaying: Bool,
         showLyricsInLiveActivity: Bool,
         lyricsAllowedForActiveApp: Bool,
+        isHiddenByFullScreenApp: Bool = false,
         currentLyric: LyricLine?
     ) -> Decision {
         guard isPlaying else { return .hide(.notPlaying) }
         guard showLyricsInLiveActivity else { return .hide(.settingOff) }
         guard lyricsAllowedForActiveApp else { return .hide(.disallowedForActiveApp) }
+        guard !isHiddenByFullScreenApp else { return .hide(.hiddenByFullScreenApp) }
         guard let currentLyric else { return .hide(.noCurrentLine) }
         let text = currentLyric.translatedText ?? currentLyric.text
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .hide(.blankLine) }
         return .show(currentLyric)
+    }
+
+    static let bridgedGap: TimeInterval = 1.5
+
+    static func lineBridgingGap(
+        in lyrics: [LyricLine],
+        at time: TimeInterval,
+        maxGap: TimeInterval = bridgedGap
+    ) -> LyricLine? {
+        var previous: LyricLine?
+        var nextStart: TimeInterval?
+        for line in lyrics where line.timestamp.isFinite {
+            if line.timestamp <= time {
+                if previous.map({ line.timestamp >= $0.timestamp }) ?? true { previous = line }
+            } else if nextStart.map({ line.timestamp < $0 }) ?? true {
+                nextStart = line.timestamp
+            }
+        }
+        guard let previous else { return nil }
+        if let end = previous.endTimestamp, time < end { return previous }
+        guard let nextStart else { return nil }
+        let gap = nextStart - (previous.endTimestamp ?? nextStart)
+        return gap <= maxGap ? previous : nil
     }
 }
 

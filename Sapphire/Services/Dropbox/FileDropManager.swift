@@ -41,6 +41,8 @@ struct ConversionTask: Identifiable, Equatable {
     var targetFormat: ConversionFormat
     var status: Status = .inProgress
     var progress: Double = 0.0
+    var outputURL: URL?
+    var errorMessage: String?
 
     enum Status {
         case inProgress, done, failed
@@ -78,29 +80,17 @@ class FileDropManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        DownloadMonitor.shared.tasksPublisher
+        FileConversionManager.shared.completionPublisher
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] downloads in
-                self?.updateBrowserDownloads(downloads.map {
-                    FileTransferTask(
-                        fileURL: $0.fileURL,
-                        fileName: $0.fileName,
-                        destinationURL: $0.fileURL,
-                        currentSize: $0.currentBytes,
-                        totalSize: $0.totalBytes > 0 ? $0.totalBytes : nil,
-                        speed: $0.downloadSpeed ?? 0,
-                        lastChangeDate: $0.startTime,
-                        isComplete: $0.isComplete,
-                        sourceType: .browserDownload
-                    )
-                })
+            .sink { [weak self] (taskID, result) in
+                self?.finishConversion(taskID: taskID, result: result)
             }
             .store(in: &cancellables)
 
-        UniversalFileTransferManager.shared.tasksPublisher
+        FileProgressTracker.shared.$transfers
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] transferTasks in
-                self?.updateUniversalTransfers(newTasks: transferTasks)
+            .sink { [weak self] transfers in
+                self?.updateTrackedTransfers(transfers)
             }
             .store(in: &cancellables)
 
@@ -114,9 +104,9 @@ class FileDropManager: ObservableObject {
         SettingsModel.shared.changes(of: \.fileProgressLiveActivityEnabled)
             .sink { isEnabled in
                 if isEnabled {
-                    DownloadMonitor.shared.startMonitoring()
+                    FileProgressTracker.shared.start()
                 } else {
-                    DownloadMonitor.shared.stopMonitoring()
+                    FileProgressTracker.shared.stop()
                 }
             }
             .store(in: &cancellables)
@@ -130,8 +120,8 @@ class FileDropManager: ObservableObject {
             Task { @MainActor in self?.addDownloadedFileToShelf(url) }
         }
 
-        if SettingsModel.shared.settings.fileProgressLiveActivityEnabled {
-            DownloadMonitor.shared.startMonitoring()
+        if SettingsModel.shared.current.fileProgressLiveActivityEnabled {
+            FileProgressTracker.shared.start()
         }
     }
 
@@ -192,15 +182,27 @@ class FileDropManager: ObservableObject {
         }
     }
 
-    func updateBrowserDownloads(_ downloads: [FileTransferTask]) {
-        print("[FDM] Received updateBrowserDownloads with \(downloads.count) tasks from DownloadMonitor.")
-        syncUniversalTasks(newTasks: downloads, sourceType: .browserDownload, keepDuration: 30.0)
-    }
-
-    private func updateUniversalTransfers(newTasks: [FileTransferTask]) {
-        let finderTasks = newTasks.filter { $0.sourceType == .finder }
-        print("[FDM] Processing \(finderTasks.count) Finder transfers from UFTM.")
-        syncUniversalTasks(newTasks: finderTasks, sourceType: .finder, keepDuration: 30.0)
+    private func updateTrackedTransfers(_ transfers: [TrackedTransfer]) {
+        func task(_ t: TrackedTransfer, _ source: FileTransferTask.FileTransferSource) -> FileTransferTask {
+            FileTransferTask(
+                fileURL: t.fileURL,
+                fileName: t.fileName,
+                destinationURL: t.fileURL,
+                currentSize: t.completedBytes,
+                totalSize: t.totalBytes,
+                speed: t.throughput ?? 0,
+                lastChangeDate: t.startedAt,
+                isComplete: t.isFinished || t.isFailed,
+                status: t.isFinished ? .finished : .inProgress,
+                sourceType: source,
+                app: t.app,
+                timeRemaining: t.timeRemaining
+            )
+        }
+        let copies = transfers.filter { $0.operation == .copy || $0.operation == .move }
+        let downloads = transfers.filter { $0.operation != .copy && $0.operation != .move }
+        syncUniversalTasks(newTasks: downloads.map { task($0, .browserDownload) }, sourceType: .browserDownload, keepDuration: 0.5)
+        syncUniversalTasks(newTasks: copies.map { task($0, .finder) }, sourceType: .finder, keepDuration: 0.5)
     }
 
     func updateExternalTask(_ task: FileTransferTask?, sourceType: FileTransferTask.FileTransferSource) {
@@ -230,6 +232,7 @@ class FileDropManager: ObservableObject {
 
         for taskData in newTasks {
             let taskID = "universal-\(taskData.id)"
+            if let timer = taskDismissalTimers.removeValue(forKey: taskID) { timer.invalidate() }
             if let index = updatedTasks.firstIndex(where: { $0.id == taskID }) {
                 updatedTasks[index] = .universalTransfer(taskData)
             } else {
@@ -272,13 +275,28 @@ class FileDropManager: ObservableObject {
             return false
         }) else { return }
 
-        if case .fileConversion(var task) = tasks[index] {
+        if case .fileConversion(var task) = tasks[index], task.status == .inProgress {
             task.progress = progress
-            if progress >= 1.0 {
-                task.status = .done
-            }
             tasks[index] = .fileConversion(task)
         }
+    }
+
+    private func finishConversion(taskID: UUID, result: Result<URL, Error>) {
+        guard let index = tasks.firstIndex(where: {
+            if case .fileConversion(let task) = $0, task.id == taskID { return true }
+            return false
+        }), case .fileConversion(var task) = tasks[index] else { return }
+        switch result {
+        case .success(let url):
+            task.status = .done
+            task.progress = 1
+            task.outputURL = url
+        case .failure(let error):
+            task.status = .failed
+            task.errorMessage = error.localizedDescription
+        }
+        tasks[index] = .fileConversion(task)
+        scheduleTaskDismissal(for: tasks[index].id, after: task.status == .failed ? 10 : 6)
     }
 
     func addTransfer(_ transferInfo: TransferProgressInfo) {

@@ -106,9 +106,9 @@ struct IconMapper {
         (["nest mini", "nest audio", "nest wifi point"], "homepod.mini", false),
         (["nest hub"], "homepod", false),
 
-        (["galaxy buds 3 pro"], "airpods.pro", true),
-        (["galaxy buds 3"], "airpods.gen4", true),
-        (["galaxy buds live", "galaxy buds2 pro", "galaxy buds2", "galaxy buds pro", "galaxy buds+", "galaxy buds fe", "galaxy buds"], "earbuds.stemless", true),
+        (["galaxy buds 3 pro", "galaxy buds 4 pro", "buds4 pro", "buds3 pro"], "airpods.pro", true),
+        (["galaxy buds 3", "galaxy buds 4", "buds4", "buds3"], "airpods.gen4", true),
+        (["galaxy buds live", "galaxy buds2 pro", "galaxy buds2", "galaxy buds pro", "galaxy buds+", "galaxy buds fe", "galaxy buds", "buds"], "earbuds.stemless", true),
 
         (["wh", "wf", "sony headphones"], "airpods.max", true),
         (["linkbuds s", "linkbuds"], "earbuds.in.ear", true),

@@ -30,7 +30,9 @@ class BatteryStatsViewModel: ObservableObject {
         var powerAdapterInfo: PowerAdapterInfo?
     }
 
-    @Published private var snapshot = Snapshot()
+    private static var lastSnapshot = Snapshot()
+
+    @Published private var snapshot = BatteryStatsViewModel.lastSnapshot
 
     var batteryLevel: Int { snapshot.batteryLevel }
     var isCharging: Bool { snapshot.isCharging }
@@ -147,6 +149,7 @@ class BatteryStatsViewModel: ObservableObject {
         update(&next)
         guard next != snapshot else { return }
         snapshot = next
+        Self.lastSnapshot = next
     }
 
     private func formatTime(minutes: Int?) -> String {

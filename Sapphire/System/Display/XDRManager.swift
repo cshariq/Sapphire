@@ -14,28 +14,15 @@ class BrightnessManager {
     static let shared = BrightnessManager()
 
     var brightnessTechnique: BrightnessTechnique?
-    var screens: [NSScreen] = []
-    var xdrScreens: [NSScreen] = []
-    var enabled: Bool = false
+    private(set) var xdrScreens: [NSScreen] = []
+    private(set) var enabled: Bool = false
 
     private var cancellables = Set<AnyCancellable>()
+    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    private var screenUpdateWorkItem: DispatchWorkItem?
 
     private init() {
         setBrightnessTechnique()
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleScreenParameters(notification:)),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(screensWake(notification:)),
-            name: NSWorkspace.screensDidWakeNotification,
-            object: nil
-        )
 
         SettingsModel.shared.brightnessPublisher
             .removeDuplicates()
@@ -43,24 +30,24 @@ class BrightnessManager {
                 self?.brightnessTechnique?.adjustBrightness()
             }
             .store(in: &cancellables)
-
-        screens = getXDRDisplays()
     }
 
     func activate() {
-        if !enabled {
-            self.enabled = true
-            self.enableExtraBrightness()
-            print("[BrightnessManager] XDR Brightness Activated")
-        }
+        guard !enabled else { return }
+        enabled = true
+        xdrScreens = getXDRDisplays()
+        installObservers()
+        enableExtraBrightness()
+        print("[BrightnessManager] XDR Brightness Activated")
     }
 
     func deactivate() {
-        if enabled {
-            self.enabled = false
-            self.brightnessTechnique?.disable()
-            print("[BrightnessManager] XDR Brightness Deactivated")
-        }
+        guard enabled else { return }
+        enabled = false
+        removeObservers()
+        brightnessTechnique?.disable()
+        xdrScreens = []
+        print("[BrightnessManager] XDR Brightness Deactivated")
     }
 
     func setBrightnessTechnique() {
@@ -68,55 +55,69 @@ class BrightnessManager {
         brightnessTechnique = GammaTechnique()
     }
 
-    @objc func handleScreenParameters(notification: Notification) {
-        handlePotentialScreenUpdate()
+    private func installObservers() {
+        guard observers.isEmpty else { return }
+        let center = NotificationCenter.default
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        observers.append((center, center.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleScreenUpdate() }
+        }))
+        observers.append((workspaceCenter, workspaceCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let technique = self?.brightnessTechnique, technique.isEnabled else { return }
+                technique.adjustBrightness()
+            }
+        }))
     }
 
-    @objc func screensWake(notification: Notification) {
-        if let brightnessTechnique = brightnessTechnique, brightnessTechnique.isEnabled {
+    private func removeObservers() {
+        observers.forEach { $0.center.removeObserver($0.token) }
+        observers.removeAll()
+        screenUpdateWorkItem?.cancel()
+        screenUpdateWorkItem = nil
+    }
+
+    private func scheduleScreenUpdate() {
+        screenUpdateWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.screenUpdateWorkItem = nil
+                self?.handlePotentialScreenUpdate()
+            }
+        }
+        screenUpdateWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: item)
+    }
+
+    func handlePotentialScreenUpdate() {
+        guard enabled else { return }
+        let newXdrScreens = getXDRDisplays()
+        let changedScreens = Self.layoutKey(newXdrScreens) != Self.layoutKey(xdrScreens)
+        xdrScreens = newXdrScreens
+
+        guard let brightnessTechnique else { return }
+        if newXdrScreens.isEmpty {
+            brightnessTechnique.screenUpdate(screens: [])
+        } else if !brightnessTechnique.isEnabled {
+            enableExtraBrightness()
+        } else if changedScreens {
+            print("[BrightnessManager] XDR screen setup changed")
+            brightnessTechnique.screenUpdate(screens: newXdrScreens)
+        } else {
             brightnessTechnique.adjustBrightness()
         }
     }
 
-    func handlePotentialScreenUpdate() {
-        let newScreens = NSScreen.screens
-        let newXdrDisplays = getXDRDisplays()
-        var changedScreens = newScreens.count != screens.count || newXdrDisplays.count != xdrScreens.count
-        if !changedScreens {
-            for screen in screens {
-                let sameScreen = newScreens.filter({$0.displayId == screen.displayId }).first
-                if sameScreen?.frame.origin != screen.frame.origin {
-                    changedScreens = true;
-                    break
-                }
-            }
-        }
-
-        if changedScreens {
-            print("[BrightnessManager] Screen setup changed")
-            screens = newScreens
-            xdrScreens = newXdrDisplays
-        }
-
-        guard enabled else { return }
-
-        if !newScreens.isEmpty {
-            if let brightnessTechnique = brightnessTechnique {
-                if !brightnessTechnique.isEnabled {
-                    self.enableExtraBrightness()
-                } else if changedScreens {
-                    brightnessTechnique.screenUpdate(screens: xdrScreens)
-                } else {
-                    brightnessTechnique.adjustBrightness()
-                }
-            }
-        } else {
-            self.brightnessTechnique?.disable()
-        }
+    private static func layoutKey(_ screens: [NSScreen]) -> [String] {
+        screens.map { "\($0.displayId ?? 0)@\($0.frame.origin.x),\($0.frame.origin.y)" }
     }
 
     private func enableExtraBrightness() {
-        let maxBrightness = SettingsModel.shared.settings.xdrBrightnessLevel
+        let maxBrightness = SettingsModel.shared.current.xdrBrightnessLevel
         let safeBrightness = max(1.0, min(maxBrightness, SettingsModel.shared.brightness))
 
         if safeBrightness != SettingsModel.shared.brightness {

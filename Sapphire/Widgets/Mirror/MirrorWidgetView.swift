@@ -9,7 +9,7 @@ import SwiftUI
 
 struct MirrorWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @ObservedObject private var camera = MirrorCameraManager.shared
 
     var body: some View {
@@ -61,11 +61,21 @@ struct MirrorWidgetView: View {
         .contextMenu {
             if camera.isLive {
                 Button("Stop Camera") { camera.stop() }
+            } else if camera.isPending {
+                Button("Cancel") { camera.stop() }
             } else if camera.isDenied {
                 Button("Open Camera Privacy Settings") { camera.openSystemPrivacySettings() }
             }
+            if camera.cameras.count > 1 {
+                Menu("Camera") {
+                    MirrorCameraMenuItems(camera: camera)
+                }
+            }
         }
         .animation(.easeInOut(duration: 0.25), value: camera.isLive)
+        .onDisappear {
+            camera.cancelPendingStart()
+        }
     }
 
     private var stopButton: some View {
@@ -104,7 +114,7 @@ struct MirrorWidgetView: View {
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.white.opacity(0.9))
             }
-            Text(camera.isDenied ? "Camera Denied" : (camera.isError ? "Unavailable" : "Tap to Start"))
+            Text(camera.isDenied ? "Camera Denied" : (camera.isError ? "Unavailable" : (camera.isPending ? "Starting…" : "Tap to Start")))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(MaterialChartPalette.onSurfaceVariant)
         }

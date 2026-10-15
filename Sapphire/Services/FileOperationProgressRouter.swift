@@ -17,14 +17,14 @@ final class FileOperationProgressRouter {
         ArchiveExtractor.shared.$currentTransferTask
             .receive(on: DispatchQueue.main)
             .sink { task in
-                Self.route(task, sourceType: .archiveExtraction, displayMode: SettingsModel.shared.settings.archiveProgressDisplay)
+                Self.route(task, sourceType: .archiveExtraction, displayMode: SettingsModel.shared.current.archiveProgressDisplay)
             }
             .store(in: &cancellables)
 
         DMGInstallerManager.shared.$currentTransferTask
             .receive(on: DispatchQueue.main)
             .sink { task in
-                Self.route(task, sourceType: .dmgInstall, displayMode: SettingsModel.shared.settings.dmgInstallerProgressDisplay)
+                Self.route(task, sourceType: .dmgInstall, displayMode: SettingsModel.shared.current.dmgInstallerProgressDisplay)
             }
             .store(in: &cancellables)
     }

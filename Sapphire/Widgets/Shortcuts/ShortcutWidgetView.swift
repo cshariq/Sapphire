@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ShortcutWidgetView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     private let rows: [GridItem] = Array(repeating: .init(.flexible(), spacing: 0), count: 3)
     private let widgetHeight: CGFloat = 90

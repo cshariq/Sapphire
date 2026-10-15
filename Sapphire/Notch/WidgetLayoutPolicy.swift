@@ -28,6 +28,7 @@ enum WidgetLayoutPolicy {
         case .agent: return 0
         case .focusSession: return 190
         case .storage: return 210
+        case .dev: return 200
         }
     }
 
@@ -37,9 +38,21 @@ enum WidgetLayoutPolicy {
 
     static func availableBarWidth(for screen: NSScreen? = nil) -> CGFloat {
         let targetScreen = screen ?? CursorPosition.targetNotchScreen() ?? NSScreen.main
-        let screenWidth = targetScreen?.frame.width ?? 1440
-        let adj = NotchConfiguration.screenWidthAdjustment(for: targetScreen)
-        return max(360, screenWidth * 0.72 - headerIconReserve * adj)
+        return availableBarWidth(forScreenWidth: targetScreen?.frame.width ?? 1440)
+    }
+
+    static func availableBarWidth(forScreenWidth screenWidth: CGFloat) -> CGFloat {
+        max(360, screenWidth * 0.72 - headerIconReserve)
+    }
+
+    static func availableBarWidth(notchDisplayWidth: CGFloat) -> CGFloat {
+        notchDisplayWidth > 0 ? availableBarWidth(forScreenWidth: notchDisplayWidth) : availableBarWidth()
+    }
+
+    static func availableBarWidthForSettings(settings: Settings, screens: [NSScreen] = NSScreen.screens) -> CGFloat {
+        let notchScreens = NotchScreens.screens(for: settings, among: screens)
+        guard let widest = notchScreens.map(\.frame.width).max() else { return availableBarWidth() }
+        return availableBarWidth(forScreenWidth: widest)
     }
 
     static func totalWidth(for widgets: [WidgetType], showDividers: Bool) -> CGFloat {

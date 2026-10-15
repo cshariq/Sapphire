@@ -15,8 +15,8 @@ struct SettingsSidebarGroup: Identifiable {
 
 extension SettingsSection {
     static let sidebarGroups: [SettingsSidebarGroup] = [
-        .init(title: "General", sections: [.general, .keyboardShortcuts, .bluetoothUnlock, .intelligence, .neardrop, .continuity]),
-        .init(title: "Notch", sections: [.appearance, .widgets, .liveActivities, .lockScreen, .notifications, .hud]),
+        .init(title: "General", sections: (SettingsAssistant.isSupported ? [.overview] : []) + [.general, .keyboardShortcuts, .bluetoothUnlock, .intelligence, .nearbyShare, .continuity]),
+        .init(title: "Notch", sections: [.appearance, .widgets, .liveActivities, .appActivities, .fileProgress, .lockScreen, .notifications, .hud]),
         .init(title: "Widgets & Content", sections: [.music, .weather, .calendar, .sports, .finance, .battery, .audio, .bluetooth, .shortcuts, .fileShelf, .notes, .clipboard, .mirror, .caffeine]),
         .init(title: "System & Utilities", sections: [.systemEnhance, .snapZones, .dockLayouts, .mediaOptimizer, .mouse, .monitoring, .devActivity, .emoji, .archives, .apps, .storage]),
         .init(title: "Focus & Security", sections: [.eyeBreak, .focusSession, .appLock]),
@@ -222,6 +222,14 @@ fileprivate struct SidebarRowView: View {
         HStack(spacing: 12) {
             Image(systemName: section.systemImage).font(.system(size: 11, weight: .bold)).foregroundStyle(.white).frame(width: 22, height: 22).background(LinearGradient(colors: section.iconGradientColors, startPoint: .topLeading, endPoint: .bottomTrailing).opacity(0.8)).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             Text(section.label).font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+            if section.isBeta {
+                Text("BETA")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1.5)
+                    .background(Color.orange.opacity(0.18), in: Capsule())
+            }
             Spacer()
             if isPremiumLocked {
                 Image(systemName: "lock.fill")

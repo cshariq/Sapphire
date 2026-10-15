@@ -10,7 +10,7 @@ import Cocoa
 import AudioToolbox
 import IOKit.hidsystem
 
-// MARK: - Bridged Types from Ice
+// MARK: - Bridged Types
 internal typealias CGSConnectionID = Int32
 internal typealias CGSSpaceID = UInt64
 internal typealias CGError = Int32
@@ -36,7 +36,7 @@ internal struct CGSSpaceMask: OptionSet {
     static let allVisibleSpaces: CGSSpaceMask = [.includesVisible, .allSpaces]
 }
 
-// MARK: - CGSConnection Functions (from Ice)
+// MARK: - CGSConnection Functions
 @_silgen_name("CGSMainConnectionID")
 internal func CGSMainConnectionID() -> CGSConnectionID
 
@@ -56,14 +56,14 @@ internal func CGSSetConnectionProperty(
     _ value: CFTypeRef
 ) -> CGError
 
-// MARK: - CGSEvent Functions (from Ice)
+// MARK: - CGSEvent Functions
 @_silgen_name("CGSEventIsAppUnresponsive")
 internal func CGSEventIsAppUnresponsive(
     _ cid: CGSConnectionID,
     _ psn: inout ProcessSerialNumber
 ) -> Bool
 
-// MARK: - CGSSpace Functions (from Ice)
+// MARK: - CGSSpace Functions
 @_silgen_name("CGSGetActiveSpace")
 internal func CGSGetActiveSpace(_ cid: CGSConnectionID) -> CGSSpaceID
 
@@ -80,7 +80,7 @@ internal func CGSSpaceGetType(
     _ sid: CGSSpaceID
 ) -> CGSSpaceType
 
-// MARK: - CGSWindow Functions (from Ice)
+// MARK: - CGSWindow Functions
 @_silgen_name("CGSGetWindowList")
 internal func CGSGetWindowList(
     _ cid: CGSConnectionID,
@@ -238,6 +238,19 @@ public final class CGSSpace {
         }
     }
 
+    public func reassert(_ window: NSWindow) {
+        if !windows.contains(window) {
+            windows.insert(window)
+            return
+        }
+        guard connectionID != 0, window.windowNumber > 0 else { return }
+        CGSAddWindowsToSpaces(connectionID, [window.windowNumber] as NSArray, [self.identifier] as NSArray)
+    }
+
+    public func removeAllWindows() {
+        windows.removeAll()
+    }
+
     public init(level: Int = Int(CGWindowLevelForKey(.normalWindow))) {
         self.connectionID = _CGSDefaultConnection()
         let flag = 0x1
@@ -288,16 +301,20 @@ struct SystemControl {
         Self.keyboardManager.setBrightness(clampedLevel)
     }
 
+    private static let lastKnownVolumeLock = NSLock()
+    nonisolated(unsafe) private static var lastKnownVolume: Float = 0.5
+
     static func getVolume() -> Float {
-        guard let deviceID = getDefaultOutputDeviceID() else {
-            let scriptSource = "output volume of (get volume settings)"
-            var error: NSDictionary?
-            if let result = AppleScriptRunner.execute(scriptSource, error: &error),
-               error == nil {
-                return Float(result.int32Value) / 100.0
-            }
-            return 0.5
+        guard let volume = readOutputVolume() else {
+            lastKnownVolumeLock.lock(); defer { lastKnownVolumeLock.unlock() }
+            return lastKnownVolume
         }
+        lastKnownVolumeLock.lock(); lastKnownVolume = volume; lastKnownVolumeLock.unlock()
+        return volume
+    }
+
+    private static func readOutputVolume() -> Float? {
+        guard let deviceID = getDefaultOutputDeviceID() else { return nil }
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyVolumeScalar,
             mScope: kAudioObjectPropertyScopeOutput,
@@ -308,17 +325,17 @@ struct SystemControl {
         if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &volume) == noErr {
             return volume
         }
-        address.mElement = 0
-        if AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &volume) == noErr {
+        size = UInt32(MemoryLayout<Float>.size)
+        var virtualMain = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+            mScope: kAudioObjectPropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        if AudioHardwareServiceHasProperty(deviceID, &virtualMain),
+           AudioHardwareServiceGetPropertyData(deviceID, &virtualMain, 0, nil, &size, &volume) == noErr {
             return volume
         }
-        let scriptSource = "output volume of (get volume settings)"
-        var error: NSDictionary?
-        if let result = AppleScriptRunner.execute(scriptSource, error: &error),
-           error == nil {
-            return Float(result.int32Value) / 100.0
-        }
-        return 0.5
+        return nil
     }
 
     private static func getDefaultOutputDeviceID() -> AudioDeviceID? {
@@ -344,12 +361,19 @@ struct SystemControl {
                 mScope: kAudioObjectPropertyScopeOutput,
                 mElement: kAudioObjectPropertyElementMain
             )
-            var size = UInt32(MemoryLayout<Float>.size)
+            let size = UInt32(MemoryLayout<Float>.size)
             if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &volumeValue) == noErr {
+                lastKnownVolumeLock.lock(); lastKnownVolume = cleanLevel; lastKnownVolumeLock.unlock()
                 return
             }
-            address.mElement = 0
-            if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &volumeValue) == noErr {
+            var virtualMain = AudioObjectPropertyAddress(
+                mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+                mScope: kAudioObjectPropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioHardwareServiceHasProperty(deviceID, &virtualMain),
+               AudioHardwareServiceSetPropertyData(deviceID, &virtualMain, 0, nil, size, &volumeValue) == noErr {
+                lastKnownVolumeLock.lock(); lastKnownVolume = cleanLevel; lastKnownVolumeLock.unlock()
                 return
             }
         }
@@ -409,7 +433,7 @@ struct SystemControl {
                 mScope: kAudioObjectPropertyScopeOutput,
                 mElement: kAudioObjectPropertyElementMain
             )
-            var size = UInt32(MemoryLayout<UInt32>.size)
+            let size = UInt32(MemoryLayout<UInt32>.size)
             if AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, &value) == noErr {
                 return
             }

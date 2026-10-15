@@ -143,12 +143,16 @@ private struct DevActivityElapsedLabel: View {
     let startedAt: Date
     let tint: Color
 
+    private static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold)
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(DevTaskFormatting.elapsed(context.date.timeIntervalSince(startedAt)))
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tint.opacity(0.95))
-                .contentTransition(.numericText())
+            LayerNumericText(
+                text: DevTaskFormatting.elapsed(context.date.timeIntervalSince(startedAt)),
+                font: Self.font,
+                color: NSColor(tint.opacity(0.95))
+            )
+            .textBaseline()
         }
         .frame(minWidth: 34, alignment: .trailing)
     }

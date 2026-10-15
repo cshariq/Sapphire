@@ -154,7 +154,6 @@ final class PillHUDController: ObservableObject {
         p.sharingType = settings.settings.hideFromScreenSharing ? .none : .readOnly
 
         let view = PillHUDView()
-            .environmentObject(settings)
             .environmentObject(hudManager)
         let hosting = NSHostingView(rootView: view)
         hosting.autoresizingMask = [.width, .height]
@@ -226,7 +225,7 @@ final class PillHUDController: ObservableObject {
 }
 
 struct PillHUDView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @EnvironmentObject var hudManager: SystemHUDManager
 
     var body: some View {

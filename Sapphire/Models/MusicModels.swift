@@ -405,6 +405,23 @@ struct PlayerState: Decodable {
         queueRevision = flex.decodeFlexString(camel: "queueRevision", snake: "queue_revision")
     }
 
+    func pausedCopy(at now: Date = Date()) -> PlayerState {
+        PlayerState(
+            track: track,
+            isPlaying: false,
+            isPaused: true,
+            timestamp: Int64(now.timeIntervalSince1970 * 1000),
+            positionAsOfTimestamp: realtimePositionMilliseconds(at: now) ?? positionAsOfTimestamp,
+            duration: duration,
+            options: options,
+            prevTracks: prevTracks,
+            nextTracks: nextTracks,
+            contextUri: contextUri,
+            playOrigin: playOrigin,
+            queueRevision: queueRevision
+        )
+    }
+
     func realtimePositionMilliseconds(at now: Date = Date()) -> Int? {
         guard let sampleMs = positionAsOfTimestamp, let timestamp else { return nil }
         let paused = (isPaused == true) || (isPlaying == false)
@@ -457,6 +474,32 @@ struct PlayerState: Decodable {
             uri = try container.decodeIfPresent(String.self, forKey: .uri) ?? ""
             uid = try container.decodeIfPresent(String.self, forKey: .uid) ?? UUID().uuidString
             metadata = try container.decodeIfPresent(Metadata.self, forKey: .metadata)
+        }
+
+        var isLocalFile: Bool { uri.hasPrefix("spotify:local:") }
+
+        func withLocalFileMetadataFilled() -> Track {
+            guard isLocalFile else { return self }
+            let parts = uri.dropFirst("spotify:local:".count)
+                .split(separator: ":", omittingEmptySubsequences: false)
+                .map { String($0).replacingOccurrences(of: "+", with: " ").removingPercentEncoding ?? String($0) }
+            func part(_ index: Int) -> String? {
+                guard index < parts.count else { return nil }
+                let value = parts[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                return value.isEmpty ? nil : value
+            }
+            func blank(_ value: String?) -> Bool {
+                value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+            }
+            var filled = metadata ?? Metadata(
+                title: nil, albumTitle: nil, artistName: nil, artistUri: nil,
+                imageUrl: nil, imageSmallUrl: nil, imageLargeUrl: nil, imageXlargeUrl: nil,
+                contextUri: nil, hidden: nil
+            )
+            if blank(filled.artistName) { filled.artistName = part(0) }
+            if blank(filled.albumTitle) { filled.albumTitle = part(1) }
+            if blank(filled.title) { filled.title = part(2) }
+            return Track(uri: uri, uid: uid, metadata: filled)
         }
 
         struct Metadata: Decodable, Hashable {

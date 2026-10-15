@@ -158,18 +158,20 @@ struct TidalSearchHit {
 // MARK: - Manager
 
 @MainActor
-class TidalAPIManager: ObservableObject {
+@Observable
+class TidalAPIManager {
     static let shared = TidalAPIManager()
 
-    @Published var isAuthenticated = false
-    @Published var hasApiKeys = false
-    @Published var userProfile: TidalUser?
+    var isAuthenticated = false
+    var hasApiKeys = false
+    var userProfile: TidalUser?
+    var loginError: String?
 
-    private var accessToken: String?
-    private var refreshToken: String?
-    private var accessTokenExpiresAt: Date?
-    private var clientId = ""
-    private var clientSecret = ""
+    @ObservationIgnored private var accessToken: String?
+    @ObservationIgnored private var refreshToken: String?
+    @ObservationIgnored private var accessTokenExpiresAt: Date?
+    @ObservationIgnored private var clientId = ""
+    @ObservationIgnored private var clientSecret = ""
     private let redirectURI = "sapphire://callback"
     private let baseURL = "https://openapi.tidal.com/v2"
     private let tokenURL = "https://auth.tidal.com/v1/oauth2/token"
@@ -180,8 +182,9 @@ class TidalAPIManager: ObservableObject {
         "collection.read", "collection.write", "playlists.read", "playlists.write"
     ]
 
-    private var refreshTask: Task<Bool, Never>?
-    private var pkceCodeVerifier: String?
+    @ObservationIgnored private var refreshTask: Task<Bool, Never>?
+    @ObservationIgnored private var pkceCodeVerifier: String?
+    @ObservationIgnored private var pendingState: String?
 
     private init() {
         updateCredentials()
@@ -235,7 +238,10 @@ class TidalAPIManager: ObservableObject {
         }
 
         let verifier = Self.generateCodeVerifier()
+        let state = Self.generateCodeVerifier()
         self.pkceCodeVerifier = verifier
+        self.pendingState = state
+        self.loginError = nil
 
         var components = URLComponents(string: authorizeURL)!
         components.queryItems = [
@@ -245,6 +251,7 @@ class TidalAPIManager: ObservableObject {
             URLQueryItem(name: "scope", value: Self.authorizationScopes.joined(separator: " ")),
             URLQueryItem(name: "code_challenge", value: Self.codeChallenge(for: verifier)),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "state", value: state),
         ]
         return components.url
     }
@@ -256,13 +263,17 @@ class TidalAPIManager: ObservableObject {
 
     func cancelLogin() {
         pkceCodeVerifier = nil
+        pendingState = nil
     }
 
     func handleRedirect(url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
-              let code = components.queryItems?.first(where: { $0.name == "code" })?.value else {
+              let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
+              let pendingState,
+              components.queryItems?.first(where: { $0.name == "state" })?.value == pendingState else {
             return
         }
+        self.pendingState = nil
         Task { await self.exchangeCodeForToken(code: code) }
     }
 
@@ -289,6 +300,7 @@ class TidalAPIManager: ObservableObject {
     private func exchangeCodeForToken(code: String) async {
         guard let verifier = pkceCodeVerifier else {
             print("[TidalAPIManager] Token exchange failed: missing PKCE verifier.")
+            loginError = "The login expired. Please try again."
             return
         }
         var request = URLRequest(url: URL(string: tokenURL)!)
@@ -304,8 +316,11 @@ class TidalAPIManager: ObservableObject {
         request.httpBody = body.query?.data(using: .utf8)
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        await consumeTokenResponse(from: request, storingRefreshToken: true)
+        let succeeded = await consumeTokenResponse(from: request, storingRefreshToken: true, signsOutOnInvalidGrant: false)
         self.pkceCodeVerifier = nil
+        if !succeeded {
+            loginError = "TIDAL accepted the login but did not issue a token. Check the Client ID, Client Secret and that the redirect URI is sapphire://callback."
+        }
     }
 
     private var isAccessTokenValid: Bool {
@@ -356,14 +371,15 @@ class TidalAPIManager: ObservableObject {
     }
 
     @discardableResult
-    private func consumeTokenResponse(from request: URLRequest, storingRefreshToken: Bool) async -> Bool {
+    private func consumeTokenResponse(from request: URLRequest, storingRefreshToken: Bool, signsOutOnInvalidGrant: Bool = true) async -> Bool {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
                 let errorBody = String(data: data, encoding: .utf8) ?? "No response body"
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
                 print("[TidalAPIManager] Token request failed (\(statusCode)): \(errorBody)")
-                if let errorResponse = try? JSONDecoder().decode(TokenErrorResponse.self, from: data),
+                if signsOutOnInvalidGrant,
+                   let errorResponse = try? JSONDecoder().decode(TokenErrorResponse.self, from: data),
                    errorResponse.error == "invalid_grant" {
                     logout()
                 }
@@ -380,6 +396,7 @@ class TidalAPIManager: ObservableObject {
                 UserDefaults.standard.set(newRefresh, forKey: "tidalRefreshToken")
             }
             self.isAuthenticated = true
+            self.loginError = nil
             await fetchUserProfile()
             return true
         } catch {
@@ -404,8 +421,9 @@ class TidalAPIManager: ObservableObject {
     // MARK: - User
 
     func fetchUserProfile() async {
-        guard isAuthenticated else { return }
+        guard isAuthenticated, userProfile == nil else { return }
 
+        await fetchUser(id: "me")
         if userProfile == nil, let userID = Self.userIDFromToken(accessToken) {
             await fetchUser(id: userID)
         }
@@ -419,7 +437,11 @@ class TidalAPIManager: ObservableObject {
         while segment.count % 4 != 0 { segment += "=" }
         guard let payloadData = Data(base64Encoded: segment) else { return nil }
         guard let payload = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else { return nil }
-        return payload["sub"] as? String
+        for key in ["uid", "sub"] {
+            if let id = payload[key] as? String, !id.isEmpty { return id }
+            if let id = payload[key] as? NSNumber { return id.stringValue }
+        }
+        return nil
     }
 
     func fetchUser(id: String) async {

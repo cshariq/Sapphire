@@ -74,6 +74,11 @@ final class LiveWallpaperManager {
         let scaling: WallpaperScaling
     }
 
+    private struct OptimizationKey: Hashable {
+        let media: WallpaperMedia
+        let target: WallpaperVideoTarget
+    }
+
     private let policy = LiveWallpaperPlaybackPolicy()
     private let desktop = DesktopLiveWallpaperController()
     private let lockScreen = LockScreenLiveWallpaperController()
@@ -84,8 +89,12 @@ final class LiveWallpaperManager {
     private var screenObserver: NSObjectProtocol?
     private var stillTask: Task<Void, Never>?
     private var requestedStill: StillRequest?
+    private var optimizedURLs: [OptimizationKey: URL] = [:]
+    private var optimizationTasks: [OptimizationKey: Task<Void, Never>] = [:]
+    private var failedOptimizations: Set<OptimizationKey> = []
     private var isStarted = false
     private var isLocked = false
+    private var isCoveredByMusicPane = false
 
     private init() {
         policy.onChange = { [weak self] reasons in
@@ -150,6 +159,8 @@ final class LiveWallpaperManager {
         stillTask?.cancel()
         stillTask = nil
         requestedStill = nil
+        optimizationTasks.values.forEach { $0.cancel() }
+        optimizationTasks.removeAll()
         desktop.tearDown()
         lockScreen.hide(animated: false)
         nativeLockScreen.shutdown()
@@ -181,10 +192,21 @@ final class LiveWallpaperManager {
 
         applySystemWallpaper(plan.systemWallpaper, configured: [desktopMedia, lockMedia].compactMap { $0 })
 
+        let target = WallpaperVideoTarget.current
+        let desktopVideo = playableMedia(for: plan.desktopVideo, target: target)
+        let lockVideo = playableMedia(for: plan.lockScreenVideo, target: target)
+        let wanted = Set([plan.desktopVideo, plan.lockScreenVideo].compactMap { $0 }.map {
+            OptimizationKey(media: $0, target: target)
+        })
+        for (key, task) in optimizationTasks where !wanted.contains(key) {
+            task.cancel()
+            optimizationTasks[key] = nil
+        }
+
         if isLocked {
-            if let lockVideo = plan.lockScreenVideo,
+            if let lockVideo,
                plan.shouldShowLockScreenOverlay(
-                   nativeWallpaperInstalled: nativeLockScreen.isInstalled(for: lockVideo)
+                   nativeWallpaperInstalled: nativeLockScreen.isInstalled(for: plan.lockScreenVideo)
                ) {
                 lockScreen.show(lockVideo, options: .init(scaling: configuration.scaling))
             } else {
@@ -192,14 +214,14 @@ final class LiveWallpaperManager {
             }
             desktop.setSessionLocked(true)
             desktop.show(
-                plan.desktopVideo,
+                desktopVideo,
                 scaling: configuration.scaling,
                 playbackMode: configuration.playbackMode
             )
         } else {
             desktop.setSessionLocked(false)
             desktop.show(
-                plan.desktopVideo,
+                desktopVideo,
                 scaling: configuration.scaling,
                 playbackMode: configuration.playbackMode
             )
@@ -209,6 +231,38 @@ final class LiveWallpaperManager {
             lockScreen.prepare(nil)
         }
         applyPlaybackPolicy()
+    }
+
+    private func playableMedia(for media: WallpaperMedia?, target: WallpaperVideoTarget) -> WallpaperMedia? {
+        guard let media, media.isVideo else { return media }
+        let key = OptimizationKey(media: media, target: target)
+        if let url = optimizedURLs[key] {
+            return url == media.url ? media : WallpaperMedia(url: url, kind: .video)
+        }
+        guard optimizationTasks[key] == nil, !failedOptimizations.contains(key) else { return media }
+
+        optimizationTasks[key] = Task { [weak self] in
+            let result: URL?
+            do {
+                result = try await WallpaperVideoOptimizer.shared.playableURL(for: media.url, target: target)
+            } catch {
+                if !Task.isCancelled {
+                    NSLog("[LiveWallpaper] Couldn't optimize \(media.url.lastPathComponent): \(error.localizedDescription)")
+                }
+                result = nil
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.optimizationTasks[key] = nil
+            guard let result else {
+                self.failedOptimizations.insert(key)
+                return
+            }
+            self.optimizedURLs[key] = result
+            if result != media.url {
+                self.refresh()
+            }
+        }
+        return media
     }
 
     private func applySystemWallpaper(_ media: WallpaperMedia?, configured: [WallpaperMedia]) {
@@ -224,6 +278,7 @@ final class LiveWallpaperManager {
             SystemWallpaperOverride.shared.restore()
             Task.detached(priority: .background) {
                 WallpaperAssetStore.prunePosters(keeping: configured)
+                WallpaperVideoOptimizer.prune(keepingSources: configured.filter(\.isVideo).map(\.url))
             }
             return
         }
@@ -242,6 +297,7 @@ final class LiveWallpaperManager {
                     _ = await WallpaperAssetStore.stillImageURL(for: media)
                 }
                 WallpaperAssetStore.prunePosters(keeping: configured)
+                WallpaperVideoOptimizer.prune(keepingSources: configured.filter(\.isVideo).map(\.url))
             }
         }
     }
@@ -253,13 +309,19 @@ final class LiveWallpaperManager {
     private func applyPlaybackPolicy(
         _ reasons: Set<LiveWallpaperPlaybackPolicy.Reason>? = nil
     ) {
-        let suspended = Self.shouldSuspendPlayback(
+        let suspended = isCoveredByMusicPane || Self.shouldSuspendPlayback(
             for: reasons ?? policy.reasons,
             isLocked: isLocked,
             mode: configuration.playbackMode
         )
         LiveWallpaperVideoSource.setSuspended(suspended)
         lockScreen.setSuspended(suspended)
+    }
+
+    func setCoveredByLockScreenMusicPane(_ covered: Bool) {
+        guard covered != isCoveredByMusicPane else { return }
+        isCoveredByMusicPane = covered
+        applyPlaybackPolicy()
     }
 
     nonisolated static func shouldSuspendPlayback(

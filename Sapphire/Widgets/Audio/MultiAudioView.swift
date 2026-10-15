@@ -14,13 +14,11 @@ struct MultiAudioView: View {
 
     private var panelSize: CGSize {
         let screen = CursorPosition.targetNotchScreen() ?? NSScreen.main
-        let widthAdj = NotchConfiguration.screenWidthAdjustment(for: screen)
-        let heightAdj = NotchConfiguration.screenHeightAdjustment(for: screen)
         let screenWidth = screen?.frame.width ?? 1512
         let visibleHeight = screen?.visibleFrame.height ?? 800
         return CGSize(
-            width: min(850 * widthAdj, screenWidth * 0.88),
-            height: min(420 * heightAdj, visibleHeight * 0.52)
+            width: min(850, screenWidth * 0.88),
+            height: min(420, visibleHeight * 0.52)
         )
     }
 
@@ -174,9 +172,16 @@ struct AppSectionView: View {
     @StateObject private var store = MainMenuPerAppVolumeStore()
     @ObservedObject private var audioManager = MultiAudioManager.shared
 
+    private var arrangedApps: [MainMenuRunningAppItem] {
+        let byID = Dictionary(store.runningApps.map { ($0.bundleID, $0) }, uniquingKeysWith: { first, _ in first })
+        return audioManager.appOrdering.arrange(store.runningApps.map(\.bundleID)).compactMap { byID[$0] }
+    }
+
     var body: some View {
+        let apps = arrangedApps
+        let visibleIDs = apps.map(\.bundleID)
         VStack(spacing: 8) {
-            ForEach(store.runningApps) { app in
+            ForEach(apps) { app in
                 AppControlCard(
                     app: app,
                     volume: store.volume(for: app.bundleID),
@@ -188,8 +193,18 @@ struct AppSectionView: View {
                     isRecentlyActive: app.isRecentlyActive,
                     isCurrentlyOutputting: app.isCurrentlyOutputting,
                     isEightDAudioEnabled: audioManager.eightDAudioSettings(for: app.bundleID).enabled,
-                    isSurroundAudioEnabled: audioManager.surroundAudioSettings(for: app.bundleID).enabled
+                    isSurroundAudioEnabled: audioManager.surroundAudioSettings(for: app.bundleID).enabled,
+                    route: audioManager.route(for: app.bundleID),
+                    outputs: audioManager.availableOutputDevices,
+                    onRoute: { audioManager.setRoute($0, for: app.bundleID) },
+                    isPinned: audioManager.appOrdering.isPinned(app.bundleID),
+                    onPin: { audioManager.togglePin(app.bundleID) },
+                    onMove: { audioManager.move(app.bundleID, offset: $0, visible: visibleIDs) },
+                    onHide: { audioManager.hideApp(app.bundleID) }
                 )
+            }
+            if !audioManager.appOrdering.hidden.isEmpty {
+                HiddenAppsMenu(hidden: audioManager.appOrdering.hidden, names: store.namesByBundleID)
             }
         }
         .padding(.horizontal, 20)
@@ -211,6 +226,13 @@ fileprivate struct AppControlCard: View {
     var isCurrentlyOutputting: Bool = false
     var isEightDAudioEnabled: Bool = false
     var isSurroundAudioEnabled: Bool = false
+    var route: String? = nil
+    var outputs: [AudioDevice] = []
+    var onRoute: (String?) -> Void = { _ in }
+    var isPinned: Bool = false
+    var onPin: () -> Void = {}
+    var onMove: (Int) -> Void = { _ in }
+    var onHide: () -> Void = {}
 
     private var statusText: String {
         if isMuted { return "Muted" }
@@ -232,12 +254,19 @@ fileprivate struct AppControlCard: View {
                 Image(nsImage: icon).resizable().frame(width: 25, height: 25).cornerRadius(5)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(app.name).font(.system(size: 11, weight: .bold)).lineLimit(1)
+                HStack(spacing: 3) {
+                    if isPinned {
+                        Image(systemName: "pin.fill").font(.system(size: 7, weight: .bold)).foregroundStyle(.secondary)
+                    }
+                    Text(app.name).font(.system(size: 11, weight: .bold)).lineLimit(1)
+                }
                 Text(statusText).font(.system(size: 8, weight: .semibold)).foregroundStyle(statusColor)
             }.frame(width: 80, alignment: .leading)
 
             AppVolumeSlider(volume: volume, onVolumeChange: onVolumeChange)
                 .frame(height: 30)
+
+            AppRouteMenu(route: route, outputs: outputs, onRoute: onRoute)
 
             SmallIconButton(icon: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill", active: isMuted) { onMute(isMuted) }
             SmallIconButton(icon: "slider.vertical.3", active: false) { navigationStack.append(.multiAudioAppEQ(bundleID: app.bundleID, appName: app.name)) }
@@ -266,6 +295,82 @@ fileprivate struct AppControlCard: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(isCurrentlyOutputting ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
         )
+        .contextMenu {
+            Button(isPinned ? "Unpin" : "Pin to Top", action: onPin)
+            Button("Move Up") { onMove(-1) }
+            Button("Move Down") { onMove(1) }
+            Divider()
+            Button("Hide from Mixer", action: onHide)
+        }
+    }
+}
+
+fileprivate struct AppRouteMenu: View {
+    let route: String?
+    let outputs: [AudioDevice]
+    let onRoute: (String?) -> Void
+
+    private var routeIsConnected: Bool {
+        guard let route else { return false }
+        return outputs.contains { $0.uid == route }
+    }
+
+    var body: some View {
+        Menu {
+            Button {
+                onRoute(nil)
+            } label: {
+                if route == nil { Label("Mixer Output", systemImage: "checkmark") } else { Text("Mixer Output") }
+            }
+            Divider()
+            ForEach(outputs) { device in
+                Button {
+                    onRoute(device.uid)
+                } label: {
+                    if route == device.uid { Label(device.name, systemImage: "checkmark") } else { Text(device.name) }
+                }
+            }
+            if route != nil, !routeIsConnected {
+                Divider()
+                Text("Saved device is disconnected")
+            }
+        } label: {
+            Image(systemName: route == nil ? "hifispeaker" : (routeIsConnected ? "arrow.triangle.branch" : "exclamationmark.triangle"))
+                .font(.system(size: 11, weight: .bold))
+                .frame(width: 32, height: 32)
+                .background(route == nil ? Color.white.opacity(0.08) : Color.accentColor)
+                .foregroundColor(route == nil ? .primary : .white)
+                .clipShape(Circle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Output device for this app")
+    }
+}
+
+fileprivate struct HiddenAppsMenu: View {
+    let hidden: Set<String>
+    let names: [String: String]
+    @ObservedObject private var audioManager = MultiAudioManager.shared
+
+    var body: some View {
+        Menu {
+            ForEach(hidden.sorted(), id: \.self) { bundleID in
+                Button("Show \(names[bundleID] ?? bundleID)") { audioManager.unhideApp(bundleID) }
+            }
+            Divider()
+            Button("Show All") { audioManager.unhideAllApps() }
+        } label: {
+            Label(hidden.count == 1 ? "1 hidden app" : "\(hidden.count) hidden apps", systemImage: "eye.slash")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 6)
     }
 }
 
@@ -282,10 +387,11 @@ fileprivate struct AppVolumeSlider: View {
 
     var body: some View {
         BoldPillSlider(
-            label: "Volume",
+            label: localValue > 100.5 ? "Boost" : "Volume",
             value: $localValue,
-            range: 0...100,
-            specifier: "%.0f%%"
+            range: 0...Double(PerAppAudioController.maxVolume * 100),
+            specifier: "%.0f%%",
+            tint: localValue > 100.5 ? .orange : .accentColor
         )
         .onChange(of: localValue) { _, newValue in
             onVolumeChange(newValue / 100.0)
@@ -322,6 +428,9 @@ struct DeviceSectionView: View {
                             },
                             onAdjust: { navigationStack.append(.multiAudioDeviceAdjust(device)) },
                             onEQ: { navigationStack.append(.multiAudioEQ(device)) },
+                            onEarbuds: EarbudControlManager.shared.supports(device)
+                                ? { navigationStack.append(.earbudControls(device)) }
+                                : nil,
                             volumeBinding: Binding(
                                 get: { audioManager.deviceSettings[device.id]?.volume ?? 1.0 },
                                 set: { var s = audioManager.deviceSettings[device.id] ?? AudioDeviceSettings(); s.volume = $0; audioManager.updateSettings(for: device.id, settings: s) }
@@ -336,13 +445,19 @@ struct DeviceSectionView: View {
                     Text("INPUTS").font(.system(size: 11, weight: .black)).foregroundStyle(.secondary).tracking(1.2).padding(.horizontal, 4)
                     VStack(spacing: 8) {
                         ForEach(audioManager.availableInputDevices) { device in
+                            let isDefault = device.id == audioManager.currentInputDeviceID
                             DeviceControlCard(
-                                device: device, isActive: false, isExplicitlySelected: false, onSelect: {},
+                                device: device,
+                                isActive: isDefault,
+                                isExplicitlySelected: isDefault && audioManager.preferredInputUID == device.uid,
+                                onSelect: { audioManager.selectInputDevice(device) },
                                 onAdjust: { navigationStack.append(.multiAudioDeviceAdjust(device)) }, onEQ: {},
                                 volumeBinding: Binding(
-                                    get: { Double(audioManager.getInputVolume(for: device.id)) },
+                                    get: { Double(audioManager.inputVolumes[device.id] ?? 1.0) },
                                     set: { audioManager.setInputVolume(Float($0), for: device.id) }
-                                )
+                                ),
+                                isMicMuted: audioManager.areAllInputsMuted || audioManager.isInputMuted(for: device.id),
+                                isInputRow: true
                             )
                         }
                     }
@@ -362,9 +477,11 @@ fileprivate struct DeviceControlCard: View {
     let onSelect: () -> Void
     let onAdjust: () -> Void
     let onEQ: () -> Void
+    var onEarbuds: (() -> Void)? = nil
     let volumeBinding: Binding<Double>
+    var isMicMuted: Bool = false
+    var isInputRow: Bool = false
 
-    @State private var isMicMuted: Bool = false
     @State private var internalGain: Double = 0.0
 
     var body: some View {
@@ -386,40 +503,37 @@ fileprivate struct DeviceControlCard: View {
                     if abs(nv/100.0 - volumeBinding.wrappedValue) > 0.01 { volumeBinding.wrappedValue = nv/100.0 }
                 }
 
+            if isInputRow {
+                SmallIconButton(icon: isMicMuted ? "mic.slash.fill" : "mic.fill", active: isMicMuted, destructive: isMicMuted) {
+                    MultiAudioManager.shared.setAllInputMutes(!isMicMuted)
+                }
+            }
             SmallIconButton(icon: "slider.vertical.3", active: false, action: onAdjust)
             if device.isOutput { SmallIconButton(icon: "waveform.path.ecg", active: false, action: onEQ) }
+            if device.isOutput, let onEarbuds {
+                SmallIconButton(icon: "headphones", active: false, action: onEarbuds)
+            }
         }
         .padding(.vertical, 15).padding(.horizontal, 12)
         .background(RoundedRectangle(cornerRadius: 16).fill(getBg()))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(getBorder(), lineWidth: isExplicitlySelected ? 1.5 : 1))
         .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture {
-            if device.isOutput { onSelect() }
-            else {
-                let next = !MultiAudioManager.shared.areAllInputsMuted
-                MultiAudioManager.shared.setAllInputMutes(next)
-                isMicMuted = next
-            }
-        }
+        .onTapGesture { onSelect() }
         .onAppear { sync() }
-        .onReceive(MultiAudioManager.shared.objectWillChange) { _ in sync() }
+        .onChange(of: volumeBinding.wrappedValue) { _, _ in sync() }
     }
 
     private func sync() {
-        if device.isInput {
-            isMicMuted = MultiAudioManager.shared.areAllInputsMuted
-                || MultiAudioManager.shared.isInputMuted(for: device.id)
-        }
         let hw = volumeBinding.wrappedValue * 100.0
         if abs(internalGain - hw) > 1.0 { internalGain = hw }
     }
 
     private func getIcon() -> String { device.isOutput ? "hifispeaker.2.fill" : (isMicMuted ? "mic.slash.fill" : "mic.fill") }
-    private func getColor() -> Color { device.isOutput ? (isActive ? .accentColor : .primary.opacity(0.8)) : (isMicMuted ? .red : .primary.opacity(0.8)) }
-    private func getSubtitle() -> String { device.isOutput ? (isActive ? "Active Channel" : "Standby") : (isMicMuted ? "Muted" : "Microphone") }
+    private func getColor() -> Color { device.isOutput ? (isActive ? .accentColor : .primary.opacity(0.8)) : (isMicMuted ? .red : (isActive ? .accentColor : .primary.opacity(0.8))) }
+    private func getSubtitle() -> String { device.isOutput ? (isActive ? "Active Channel" : "Standby") : (isMicMuted ? "Muted" : (isActive ? "System Input" : "Microphone")) }
     private func getSubtitleColor() -> Color { device.isOutput ? (isActive ? .accentColor.opacity(0.8) : .secondary) : (isMicMuted ? .red.opacity(0.8) : .secondary) }
-    private func getBg() -> Color { device.isOutput ? (isActive ? Color.accentColor.opacity(0.08) : Color.white.opacity(0.05)) : (isMicMuted ? Color.red.opacity(0.08) : Color.white.opacity(0.05)) }
-    private func getBorder() -> Color { device.isOutput ? (isExplicitlySelected ? .accentColor : (isActive ? .accentColor.opacity(0.4) : .clear)) : (isMicMuted ? .red.opacity(0.4) : .clear) }
+    private func getBg() -> Color { device.isOutput ? (isActive ? Color.accentColor.opacity(0.08) : Color.white.opacity(0.05)) : (isMicMuted ? Color.red.opacity(0.08) : (isActive ? Color.accentColor.opacity(0.08) : Color.white.opacity(0.05))) }
+    private func getBorder() -> Color { device.isOutput ? (isExplicitlySelected ? .accentColor : (isActive ? .accentColor.opacity(0.4) : .clear)) : (isMicMuted ? .red.opacity(0.4) : (isExplicitlySelected ? .accentColor : (isActive ? .accentColor.opacity(0.4) : .clear))) }
 }
 
 // MARK: - Reusable UI
@@ -462,6 +576,9 @@ fileprivate struct MainMenuRunningAppItem: Identifiable, Equatable {
 @MainActor
 fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
     @Published var runningApps: [MainMenuRunningAppItem] = []
+    var namesByBundleID: [String: String] {
+        Dictionary(runningApps.map { ($0.bundleID, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
     private var workspaceObservers: [NSObjectProtocol] = []
     private var appObservers: [NSObjectProtocol] = []
     private var recentExpiryWorkItem: DispatchWorkItem?
@@ -471,10 +588,10 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
         refreshRunningApps()
         let workspaceCenter = NSWorkspace.shared.notificationCenter
         workspaceObservers.append(workspaceCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshRunningApps() }
+            DispatchQueue.main.async { self?.refreshRunningApps() }
         })
         workspaceObservers.append(workspaceCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshRunningApps() }
+            DispatchQueue.main.async { self?.refreshRunningApps() }
         })
 
         let appCenter = NotificationCenter.default
@@ -498,16 +615,23 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
         appObservers.forEach(appCenter.removeObserver)
     }
 
+    private static var iconCache: [String: NSImage] = [:]
+
+    private static func icon(for bundleID: String, pid: pid_t) -> NSImage? {
+        if let cached = iconCache[bundleID] { return cached }
+        let icon = NSRunningApplication(processIdentifier: pid)?.icon
+        if let icon { iconCache[bundleID] = icon }
+        return icon
+    }
+
     func refreshRunningApps() {
         let audio = MultiAudioManager.shared
         let activeAudio = audio.activeAudioBundleIDs()
         let now = Date()
-        let existingIcons = Dictionary(uniqueKeysWithValues: runningApps.map { ($0.bundleID, $0.icon) })
-
-        let refreshedApps = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular }
-            .compactMap { application -> MainMenuRunningAppItem? in
-                guard let bundleID = application.bundleIdentifier,
+        let refreshedApps = RunningApps.shared.infoByPID()
+            .filter { $0.value.isRegular }
+            .compactMap { pid, info -> MainMenuRunningAppItem? in
+                guard let bundleID = info.bundleID,
                       bundleID != Bundle.main.bundleIdentifier else { return nil }
                 let lastActivityDate = audio.lastAudioActivityDate(for: bundleID)
                 let isRecentlyActive = lastActivityDate.map {
@@ -515,8 +639,8 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
                 } ?? false
                 return MainMenuRunningAppItem(
                     bundleID: bundleID,
-                    name: application.localizedName ?? "Unknown App",
-                    icon: existingIcons[bundleID] ?? application.icon,
+                    name: info.name ?? "Unknown App",
+                    icon: Self.icon(for: bundleID, pid: pid),
                     isRecentlyActive: isRecentlyActive,
                     isCurrentlyOutputting: activeAudio.contains(bundleID),
                     lastActivityDate: lastActivityDate

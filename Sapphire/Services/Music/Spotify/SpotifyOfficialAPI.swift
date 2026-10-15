@@ -10,22 +10,23 @@ import AppKit
 import Combine
 
 @MainActor
-class SpotifyOfficialAPIManager: ObservableObject {
+@Observable
+class SpotifyOfficialAPIManager {
     static let shared = SpotifyOfficialAPIManager()
 
-    @Published var isAuthenticated = false
-    @Published var userProfile: UserProfile?
-    @Published var isPremiumUser = false
-    @Published var hasApiKeys = false
+    var isAuthenticated = false
+    var userProfile: UserProfile?
+    var isPremiumUser = false
+    var hasApiKeys = false
 
-    private var accessToken: String?
-    private var refreshToken: String?
-    private var accessTokenExpiresAt: Date?
-    private var clientId = ""
-    private var clientSecret = ""
+    @ObservationIgnored private var accessToken: String?
+    @ObservationIgnored private var refreshToken: String?
+    @ObservationIgnored private var accessTokenExpiresAt: Date?
+    @ObservationIgnored private var clientId = ""
+    @ObservationIgnored private var clientSecret = ""
     private let redirectURI = "sapphire://callback"
 
-    private var refreshTask: Task<Bool, Never>?
+    @ObservationIgnored private var refreshTask: Task<Bool, Never>?
 
     private init() {
         updateCredentials()
@@ -321,6 +322,13 @@ class SpotifyOfficialAPIManager: ObservableObject {
         let body = TransferPlaybackBody(device_ids: [deviceId], play: true)
         guard let bodyData = try? JSONEncoder().encode(body) else { return .failure(reason: "Encoding failed") }
         let success: Bool? = await makeAPIRequest(url: url, method: "PUT", body: bodyData)
+        return success == true ? .success : .failure(reason: "API request failed")
+    }
+
+    func resume() async -> PlaybackResult {
+        guard isPremiumUser else { return .requiresPremium }
+        guard let url = URL(string: "https://api.spotify.com/v1/me/player/play") else { return .failure(reason: "Invalid URL") }
+        let success: Bool? = await makeAPIRequest(url: url, method: "PUT", body: nil)
         return success == true ? .success : .failure(reason: "API request failed")
     }
 

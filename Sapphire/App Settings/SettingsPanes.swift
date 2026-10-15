@@ -34,12 +34,15 @@ struct SettingsDetailView: View {
     @ViewBuilder
     private func settingsPane(for selectedSection: SettingsSection?) -> some View {
         switch selectedSection {
+        case .overview: OverviewSettingsView()
         case .general: GeneralSettingsView()
         case .systemEnhance: SystemEnhanceSettingsView()
         case .apps: AppsSettingsView()
         case .storage: StorageSettingsView()
         case .widgets: WidgetsSettingsView()
         case .liveActivities: LiveActivitiesSettingsView()
+        case .appActivities: AppActivitiesSettingsView()
+        case .fileProgress: FileProgressSettingsView()
         case .appearance: AppearanceSettingsView()
         case .lockScreen: LockScreenSettingsView()
         case .bluetoothUnlock: ProximityUnlockSettingsView()
@@ -51,7 +54,7 @@ struct SettingsDetailView: View {
         case .bluetooth: BluetoothSettingsView()
         case .hud: HUDSettingsView()
         case .notifications: NotificationsSettingsView()
-        case .neardrop: NeardropSettingsView()
+        case .nearbyShare: NearbyShareSettingsView()
         case .continuity: ContinuitySettingsView()
         case .fileShelf: FileShelfSettingsView()
         case .notes: NotesSettingsView()
@@ -283,13 +286,17 @@ struct NotchAppearanceEditorView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
-                .frame(width: 310)
+                .fixedSize()
             }
             .padding()
 
-            if appearance.mode == .liquidGlass || appearance.mode == .custom {
+            if appearance.mode == .liquidGlass || (appearance.mode == .custom && appearance.liquidGlassLook) {
                 Divider().padding(.leading, 20)
-                LiquidGlassStylePickerRow(selection: $appearance.liquidGlassStyle)
+                LiquidGlassOptionsEditor(
+                    options: $appearance.liquidGlassOptions,
+                    defaults: .notchDefault,
+                    showsCornerRadius: false
+                )
             }
 
             if appearance.mode == .default {
@@ -420,7 +427,7 @@ struct NotchAppearanceEditorView: View {
 }
 
 struct SystemEnhanceSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
@@ -435,8 +442,8 @@ struct SystemEnhanceSettingsView: View {
                     PremiumFeatureView(feature: .windowsPreview) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text("App Switching").font(.headline).padding([.top, .horizontal])
-                            ToggleRow(title: "Window Switcher", description: "Replace the switcher with a keyboard-driven, window-aware overlay. Hold the shortcut and press Tab to cycle, arrows to move, Q to quit an app, W to close a window.", isOn: $settings.settings.systemEnhanceAltTabEnabled)
-                            if settings.settings.systemEnhanceAltTabEnabled {
+                            ToggleRow(title: "Window Switcher", description: "Replace the switcher with a keyboard-driven, window-aware overlay. Hold the shortcut and press Tab to cycle, arrows to move, Q to quit an app, W to close a window.", isOn: $settings.settings.systemEnhanceWindowSwitcherEnabled)
+                            if settings.settings.systemEnhanceWindowSwitcherEnabled {
                                 Divider().padding(.leading, 20)
                                 HStack { Text("Activate With"); Spacer(); Picker("", selection: Binding(
                                     get: { settings.settings.systemEnhanceSwitcherActivation.rawValue },
@@ -460,8 +467,10 @@ struct SystemEnhanceSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Input Behavior").font(.headline).padding([.top, .horizontal])
-                    ToggleRow(title: "Paste as Plain Text", description: "Remove text formatting when using Command-V.", isOn: $settings.settings.systemEnhancePasteAsPlainTextEnabled)
+                    ToggleRow(title: "Paste as Plain Text", description: "Paste without formatting using its own shortcut.", isOn: $settings.settings.systemEnhancePasteAsPlainTextEnabled)
                     if settings.settings.systemEnhancePasteAsPlainTextEnabled {
+                        Divider().padding(.leading, 20)
+                        PlainTextPasteShortcutRow()
                         Divider().padding(.leading, 20)
                         ToggleRow(title: "Remove Links", description: "Strip web addresses from pasted text.", isOn: $settings.settings.systemEnhancePasteAsPlainStripLinks)
                         Divider().padding(.leading, 20)
@@ -498,38 +507,7 @@ struct SystemEnhanceSettingsView: View {
                     Text("Quit & Close Protection").font(.headline).padding([.top, .horizontal])
                     ToggleRow(title: "Protect Quit and Close Shortcuts", description: "Require a hold, a double press, or an extra modifier for ⌘Q and ⌘W. Enabled for every app by default.", isOn: $settings.settings.systemEnhanceQuitProtectionEnabled)
                     if settings.settings.systemEnhanceQuitProtectionEnabled {
-                        Divider().padding(.leading, 20)
-                        ToggleRow(title: "Protect ⌘Q (Quit)", description: "Require confirmation before the app quits.", isOn: $settings.settings.systemEnhanceQuitProtectionProtectQuit)
-                        Divider().padding(.leading, 20)
-                        ToggleRow(title: "Protect ⌘W (Close Window)", description: "Require confirmation before a window closes.", isOn: $settings.settings.systemEnhanceQuitProtectionProtectClose)
-                        Divider().padding(.leading, 20)
-                        HStack { Text("Protection Mode"); Spacer(); Picker("", selection: Binding(
-                            get: { settings.settings.systemEnhanceQuitProtectionMode.rawValue },
-                            set: { settings.settings.systemEnhanceQuitProtectionMode = SEQuitProtectionMode(rawValue: $0) ?? .hold }
-                        )) {
-                            Text("Hold the Shortcut").tag(SEQuitProtectionMode.hold.rawValue)
-                            Text("Double Press").tag(SEQuitProtectionMode.doublePress.rawValue)
-                            Text("Require Extra Modifier").tag(SEQuitProtectionMode.extraModifier.rawValue)
-                        }.labelsHidden().frame(width: 200) }.padding()
-                        if settings.settings.systemEnhanceQuitProtectionMode == .hold {
-                            Divider().padding(.leading, 20)
-                            CustomSliderRowView(label: "Hold Duration", value: $settings.settings.systemEnhanceQuitProtectionHoldInterval, range: 0.4...3, specifier: "%.2fs").padding(.horizontal)
-                        }
-                        if settings.settings.systemEnhanceQuitProtectionMode == .doublePress {
-                            Divider().padding(.leading, 20)
-                            CustomSliderRowView(label: "Double Press Window", value: $settings.settings.systemEnhanceQuitProtectionDoublePressInterval, range: 0.2...1.5, specifier: "%.2fs").padding(.horizontal)
-                        }
-                        if settings.settings.systemEnhanceQuitProtectionMode == .extraModifier {
-                            Divider().padding(.leading, 20)
-                            HStack { Text("Extra Modifier"); Spacer(); Picker("", selection: Binding(
-                                get: { settings.settings.systemEnhanceQuitProtectionExtraModifier.rawValue },
-                                set: { settings.settings.systemEnhanceQuitProtectionExtraModifier = SEQuitProtectionExtraModifier(rawValue: $0) ?? .option }
-                            )) {
-                                Text("⌥ Option").tag(SEQuitProtectionExtraModifier.option.rawValue)
-                                Text("⌃ Control").tag(SEQuitProtectionExtraModifier.control.rawValue)
-                                Text("⇧ Shift").tag(SEQuitProtectionExtraModifier.shift.rawValue)
-                            }.labelsHidden().frame(width: 140) }.padding()
-                        }
+                        SEQuitProtectionRulesView()
                         Divider().padding(.leading, 20)
                         Text("Apps with protected ⌘Q/⌘W:")
                             .font(.subheadline)
@@ -547,6 +525,19 @@ struct SystemEnhanceSettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Green Button Maximize").font(.headline).padding([.top, .horizontal])
                     ToggleRow(title: "Maximize in Current Space", description: "The green traffic-light button fills the screen without creating a new Space; clicking it again restores the window.", isOn: $settings.settings.systemEnhanceGreenMaximizeEnabled)
+                    if settings.settings.systemEnhanceGreenMaximizeEnabled {
+                        Divider().padding(.leading, 20)
+                        Text("Apps where the green button maximizes (⌥-click always keeps the system behavior):")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                        AppTogglesListView(
+                            isEnabled: { app in $settings.settings.systemEnhanceGreenMaximizeExcludedApps.membership(of: app.id).negated },
+                            showSearch: true
+                        )
+                        .padding(.horizontal)
+                        .padding(.bottom, 12)
+                    }
                 }.modifier(SettingsContainerModifier())
             }.padding(25)
         }
@@ -554,7 +545,7 @@ struct SystemEnhanceSettingsView: View {
 }
 
 private struct SystemEnhanceHingeAnimationSettingsCard: View {
-    @EnvironmentObject private var settings: SettingsEditingSession
+    @EditingSettings private var settings: SettingsEditingSession
     @ObservedObject private var lidAngleSensor = LidAngleSensor.shared
     @ObservedObject private var permissionsManager = PermissionsManager.shared
 
@@ -566,12 +557,52 @@ private struct SystemEnhanceHingeAnimationSettingsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            Text("Lid Hinge Animation").font(.headline).padding([.top, .horizontal])
+            ToggleRow(
+                title: "Animate When Closing the Lid",
+                description: "Dim and blur the display as the lid closes past the activation angle, following the hinge.",
+                isOn: $settings.settings.systemEnhanceHingeAnimationEnabled
+            )
+            if settings.settings.systemEnhanceHingeAnimationEnabled {
+                Divider().padding(.leading, 20)
+                SettingsDetailRow(title: "Current Lid Angle") {
+                    Text(currentLidAngleText).monospacedDigit()
+                }
+                Divider().padding(.leading, 20)
+                CustomSliderRowView(
+                    label: "Activation Angle",
+                    value: $settings.settings.systemEnhanceHingeAnimationActivationAngle,
+                    range: 45...140,
+                    specifier: "%.0f°"
+                )
+                Divider().padding(.leading, 20)
+                CustomSliderRowView(
+                    label: "Intensity",
+                    value: $settings.settings.systemEnhanceHingeAnimationIntensity,
+                    range: 0.5...1.5,
+                    specifier: "%.2f×"
+                )
+                Divider().padding(.leading, 20)
+                CustomSliderRowView(
+                    label: "Maximum Blur",
+                    value: $settings.settings.systemEnhanceHingeAnimationBlur,
+                    range: 0...180,
+                    specifier: "%.0f pt"
+                )
+            }
+        }
+        .modifier(SettingsContainerModifier())
+        .onAppear {
+            lidAngleSensor.acquire(.systemEnhanceSettingsPreview)
+        }
+        .onDisappear {
+            lidAngleSensor.release(.systemEnhanceSettingsPreview)
         }
     }
 }
 
 struct AppsSettingsView: View {
-    @EnvironmentObject private var settingsModel: SettingsEditingSession
+    @EditingSettings private var settingsModel: SettingsEditingSession
     @ObservedObject private var installedUpdates = InstalledAppUpdatesChecker.shared
     @StateObject private var appModel = InstalledAppsViewModel()
     @State private var selectedTab: AppsTab = .updates
@@ -656,7 +687,7 @@ struct AppsSettingsView: View {
         .onAppear {
             if settingsModel.settings.installedAppUpdatesEnabled,
                installedUpdates.entries.isEmpty {
-                installedUpdates.checkInBackgroundIfNeeded(force: true)
+                installedUpdates.checkInBackgroundIfNeeded(force: true, announce: false)
             }
         }
         .onChange(of: selectedTab) { _, tab in
@@ -769,7 +800,6 @@ struct AppsSettingsView: View {
                 .controlSize(.small)
                 .disabled(
                     installedUpdates.isChecking
-                        || installedUpdates.updatingBundleID != nil
                         || !settingsModel.settings.installedAppUpdatesEnabled
                 )
             }
@@ -810,6 +840,8 @@ struct AppsSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            InstalledAppUpdatesBatchBar(checker: installedUpdates)
 
             LazyVStack(spacing: 0) {
                 if snapshot.filteredEntries.isEmpty {
@@ -931,7 +963,7 @@ struct AppsSettingsView: View {
                                     .lineLimit(1)
                             }
                             Spacer()
-                            if installedUpdates.updatingBundleID == app.bundleIdentifier {
+                            if installedUpdates.isBusy(app.bundleIdentifier) {
                                 HStack(spacing: 6) {
                                     ProgressView().controlSize(.small)
                                     Text("Updating…")
@@ -1084,7 +1116,11 @@ private struct AppUninstallReviewSheet: View {
                                                     .foregroundStyle(.secondary)
                                                     .lineLimit(1)
                                                     .truncationMode(.middle)
-                                                if artifact.confidence != .exact {
+                                                if artifact.requiresAuthorization, !artifact.isApplication {
+                                                    Text("Requires administrator access; remove manually")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.secondary)
+                                                } else if artifact.confidence != .exact {
                                                     Text(artifact.confidence.explanation)
                                                         .font(.caption2)
                                                         .foregroundStyle(.orange)
@@ -1094,7 +1130,7 @@ private struct AppUninstallReviewSheet: View {
                                             if artifact.requiresAuthorization {
                                                 Image(systemName: "lock.fill")
                                                     .foregroundStyle(.secondary)
-                                                    .help("Administrator access may be required")
+                                                    .help("Requires administrator access; Sapphire cannot remove this item")
                                             }
                                             Text(artifact.formattedSize)
                                                 .font(.caption.monospacedDigit())
@@ -1102,7 +1138,11 @@ private struct AppUninstallReviewSheet: View {
                                         }
                                     }
                                     .toggleStyle(.checkbox)
-                                    .disabled(artifact.isApplication || model.isRemoving)
+                                    .disabled(
+                                        artifact.isApplication
+                                            || model.isRemoving
+                                            || artifact.requiresAuthorization
+                                    )
                                     .padding(.vertical, 7)
                                     if artifact.id != artifacts.last?.id { Divider().padding(.leading, 24) }
                                 }
@@ -1191,6 +1231,8 @@ private struct InstalledAppUpdateRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            InstalledAppUpdateSelectionToggle(checker: checker, entry: entry)
+
             CachedAppIconView(url: entry.url, size: 36, cornerRadius: 8)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -1261,7 +1303,7 @@ private struct InstalledAppUpdateRowView: View {
         switch entry.status {
         case .updateAvailable:
             HStack(spacing: 8) {
-                if checker.updatingBundleID == entry.id {
+                if checker.isBusy(entry.id) {
                     ProgressView()
                         .controlSize(.small)
                     Text("Upgrading…")
@@ -1275,6 +1317,7 @@ private struct InstalledAppUpdateRowView: View {
                     .controlSize(.small)
                 }
                 Menu {
+                    InstalledAppUpdateSkipMenuItems(checker: checker, entry: entry)
                     Button("Ignore this app") { checker.setIgnored(true, for: entry.id) }
                     if case .updateAvailable(_, _, let pageURL, _, _) = entry.status, let pageURL {
                         Button(checker.isAppStoreEntry(entry) ? "Open in App Store" : "Open update page") {
@@ -1291,6 +1334,7 @@ private struct InstalledAppUpdateRowView: View {
             }
         case .checking, .upToDate:
             Menu {
+                InstalledAppUpdateSkipMenuItems(checker: checker, entry: entry)
                 Button("Check again") { checker.checkAgain(entryID: entry.id) }
                 Button("Ignore this app") { checker.setIgnored(true, for: entry.id) }
             } label: {
@@ -1549,7 +1593,7 @@ private struct PieSlicePath: Shape {
 }
 
 struct GeneralSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @State private var showingCustomConfig = false
     @ObservedObject private var appFetcher = SystemAppFetcher.shared
 
@@ -1622,61 +1666,6 @@ struct GeneralSettingsView: View {
                         description: "Prevent hover, click, and swipe from expanding the notch while the Mac is locked.",
                         isOn: $settings.settings.preventNotchExpandWhenLocked
                     )
-                    Divider().padding(.leading, 20)
-
-                    HStack {
-                        Text("Show Notch On")
-                        Spacer()
-                        Picker("", selection: $settings.settings.notchDisplayTarget) {
-                            ForEach(NotchDisplayTarget.allCases) { target in
-                                Text(target.displayName).tag(target)
-                            }
-                        }.labelsHidden().frame(width: 200)
-                    }.padding()
-
-                    Text("Choose which display Sapphire should attach to when multiple screens are connected.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal)
-                        .padding(.bottom)
-
-                    Divider().padding(.leading, 20)
-
-                    ToggleRow(
-                        title: "Floating Island on Notchless Displays",
-                        description: "Use a rounded island separated from the top edge on Macs and displays without a hardware notch.",
-                        isOn: $settings.settings.floatingIslandOnNotchlessDisplays
-                    )
-
-                    if settings.settings.floatingIslandOnNotchlessDisplays {
-                        Divider().padding(.leading, 20)
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Island Top Offset")
-                                Text("Distance from the top edge on notchless displays.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            DeferredValueEditor(value: $settings.settings.floatingIslandTopOffset.asDouble) { draft, onEditingChanged in
-                                HStack(spacing: 8) {
-                                    Slider(
-                                        value: draft,
-                                        in: 0...40,
-                                        step: 1,
-                                        onEditingChanged: onEditingChanged
-                                    )
-                                    .frame(width: 150)
-                                    .accessibilityLabel("Island Top Offset")
-                                    Text("\(Int(draft.wrappedValue)) pt")
-                                        .monospacedDigit()
-                                        .frame(width: 42, alignment: .trailing)
-                                }
-                            }
-                        }
-                        .padding()
-                    }
-
                 }
 
                 SettingsCard(title: "Widget Transitions", description: "Control the visual effects when switching between widgets inside the expanded notch.") {
@@ -1794,6 +1783,11 @@ struct GeneralSettingsView: View {
                     ReorderableVStack(items: $settings.settings.notchButtonOrder) { buttonType in
                         NotchButtonRowView(buttonType: buttonType)
                     }
+
+                    if settings.settings.notchButtonOrder.contains(.spacer) {
+                        Divider().padding(.horizontal)
+                        NotchBarSpacerWidthRow()
+                    }
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -1847,7 +1841,9 @@ struct GeneralSettingsView: View {
     private func descriptionForCurrentProfile() -> String {
         switch settings.settings.animationProfile {
         case .snappy:
-            return "The default. A quick and responsive feel with minimal bounce."
+            return "A quick and responsive feel with minimal bounce."
+        case .fluid:
+            return "The default. Content grows out of the notch with the shape, blurring into focus as it lands."
         case .bouncy:
             return "A playful and energetic animation with noticeable bounce."
         case .calm:
@@ -2089,8 +2085,8 @@ struct CustomNotchConfigView: View {
 }
 
 struct FileShelfSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
-    @ObservedObject private var continuity = ContinuityManager.shared
+    @EditingSettings var settings: SettingsEditingSession
+    private var continuity: ContinuityManager { .shared }
 
     var body: some View {
         ScrollView {
@@ -2151,14 +2147,14 @@ struct FileShelfSettingsView: View {
     private var deviceDestinationDescription: String {
         let count = continuity.peers.count
         if count == 0 {
-            return "Show a same-size card for your paired Continuity devices. Pair a device in Continuity settings to make it available."
+            return "Drop files onto your paired Continuity phone from the File Shelf. Pair a device in Continuity settings first."
         }
-        return "Show all \(count) paired \(count == 1 ? "device" : "devices") in an adaptive, same-size sharing card. Offline devices stay visible."
+        return "Drop files onto any of your \(count) paired Continuity \(count == 1 ? "device" : "devices") from the File Shelf. Offline devices stay visible."
     }
 }
 
 struct NotesSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
@@ -2220,7 +2216,7 @@ struct NotesSettingsView: View {
 }
 
 struct ClipboardSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @State private var historyCount = 0
     @ObservedObject private var shortcutRecorder = GlobalShortcutRecorder.shared
     @ObservedObject private var clipboardPickerManager = ClipboardPickerManager.shared
@@ -2364,14 +2360,14 @@ struct ClipboardSettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ToggleRow(
                         title: "Unlimited History",
-                        description: "Keep every clipboard item Sapphire captures with no retention cap.",
+                        description: "Keep every item, with no item or storage limit.",
                         isOn: $settings.settings.clipboardHistoryUnlimited
                     )
                     .onChange(of: settings.settings.clipboardHistoryUnlimited) { _, unlimited in
                         if unlimited {
                             settings.settings.clipboardHistoryLimit = 0
                         } else if settings.settings.clipboardHistoryLimit <= 0 {
-                            settings.settings.clipboardHistoryLimit = 40
+                            settings.settings.clipboardHistoryLimit = ClipboardHistoryBudget.defaultItemLimit
                         }
                     }
 
@@ -2384,10 +2380,18 @@ struct ClipboardSettingsView: View {
                                 get: { Double(max(4, settings.settings.clipboardHistoryLimit)) },
                                 set: { settings.settings.clipboardHistoryLimit = Int($0.rounded()) }
                             ),
-                            range: 4...200,
+                            range: 4...Double(ClipboardHistoryBudget.itemLimitRange.upperBound),
                             specifier: "%.0f items"
                         )
+
+                        Divider().padding(.leading, 20)
+
+                        ClipboardStorageLimitRow()
                     }
+
+                    Divider().padding(.leading, 20)
+
+                    ClipboardIgnoredAppsRow()
 
                     Divider().padding(.leading, 20)
 
@@ -2516,6 +2520,20 @@ struct ClipboardSettingsView: View {
                                     description: "Clean as soon as a link is copied. Turn off to only clean from the picker.",
                                     isOn: $settings.settings.clipboardCleanURLAutoClean
                                 )
+
+                                Divider().padding(.leading, 20)
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Clean Link on Clipboard")
+                                        Text("Strip tracking parameters from the link you copied last, right now.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    Button("Clean Now") { CleanURLManager.shared.cleanClipboardLinkNow() }
+                                        .buttonStyle(.bordered)
+                                }
+                                .padding()
                             }
                         }
                     }
@@ -2634,7 +2652,7 @@ struct ClipboardSettingsView: View {
 }
 
 struct MirrorSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
@@ -2696,7 +2714,7 @@ struct MirrorSettingsView: View {
 }
 
 struct CaffeineSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
@@ -2708,7 +2726,7 @@ struct CaffeineSettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ToggleRow(
                         title: "Show Caffeinate in Notch Bar",
-                        description: "Add a caffeinate toggle to the expanded notch header.",
+                        description: "Add a caffeinate toggle to the expanded notch header. Turning this off also stops caffeinate from turning on by itself for tasks, apps, power or displays.",
                         isOn: $settings.settings.caffeinateEnabled
                     )
 
@@ -2756,6 +2774,8 @@ struct CaffeineSettingsView: View {
 
                 CaffeineAutoTaskSettingsView()
 
+                KeepAwakeTriggerSettingsView()
+
                 LidAngleCaffeineSettingsView()
             }
             .padding(25)
@@ -2765,7 +2785,7 @@ struct CaffeineSettingsView: View {
 }
 
 struct WidgetsSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
 
     private var enabledWidgetCount: Int {
@@ -2792,6 +2812,7 @@ struct WidgetsSettingsView: View {
                     Divider().padding(.leading, 20)
                     ToggleRow(title: "Hide Music Widget", description: "Hide music widget if no media is playing", isOn: $settings.settings.hideMusicWidgetWhenNotPlaying)
                     ToggleRow(title: "Hide Paused Spotify Song", description: "Hide the music widget when Spotify is paused and no other system media is playing", isOn: $settings.settings.hideMusicWidgetWhenSpotifyPausedAndIdle)
+                    ToggleRow(title: "Hide Spotify When App Is Closed", description: "For logged-in Spotify accounts, hide the music widget when Spotify is not running on this Mac and Spotify is the only media source.", isOn: $settings.settings.hideSpotifyWidgetWhenAppClosed)
                     ToggleRow(title: "Persist Music Widget", description: "Keep the music widget visible with the last track even when playback is paused or stopped", isOn: $settings.settings.persistMusicWidgetWhenPaused)
                 }
                 .modifier(SettingsContainerModifier())
@@ -2840,7 +2861,7 @@ struct WidgetsSettingsView: View {
 }
 
 struct LiveActivitiesSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @State private var availableSensors: [any Sensor_p] = []
 
@@ -2869,19 +2890,12 @@ struct LiveActivitiesSettingsView: View {
             get: { currentPersistentActivity },
             set: { newValue in
                 guard currentPersistentActivity != newValue else { return }
-                var updated = settings.settings
+                var updated = settings.settings.value
                 updated.showPersistentStatsLiveActivity = (newValue == .stats)
                 updated.showPersistentBatteryLiveActivity = (newValue == .battery)
                 updated.showPersistentWeatherLiveActivity = (newValue == .weather)
-                settings.settings = updated
+                settings.settings.value = updated
             }
-        )
-    }
-
-    private func hideInFullScreenBinding(for type: LiveActivityType) -> Binding<Bool> {
-        return Binding(
-            get: { settings.settings.hideActivitiesInFullScreen[type.rawValue, default: false] },
-            set: { settings.settings.hideActivitiesInFullScreen[type.rawValue] = $0 }
         )
     }
 
@@ -2928,24 +2942,35 @@ struct LiveActivitiesSettingsView: View {
                         isOn: $settings.settings.hideLiveActivityWhenSourceActive
                     )
                     Divider().padding(.leading, 20)
-                    ToggleRow(title: "Hide All in Full Screen", description: "Automatically hide all live activities when an app is in full screen.", isOn: $settings.settings.hideLiveActivityInFullScreen)
-
-                    DisclosureGroup("Advanced: Hide Specific Activities in Full Screen") {
-                        VStack(spacing: 0) {
-                            ForEach(LiveActivityType.allCases) { activityType in
-                                Toggle(activityType.displayName, isOn: hideInFullScreenBinding(for: activityType))
-                                    .padding(.vertical, 8)
+                    ToggleRow(
+                        title: "Keep Transient Activities Compact on Hover",
+                        description: "Do not expand the notch from hover while a transient live activity is showing. Persistent activities, Music, Weather, Stats, and Developer Activity are exempt.",
+                        isOn: $settings.settings.suppressHoverExpansionForTransientLiveActivities
+                    )
+                    Divider().padding(.leading, 20)
+                    ToggleRow(
+                        title: "Show Other Activities Beside the Notch",
+                        description: "When more than one live activity is running, the ones after the first appear as small bubbles next to the notch, like the Dynamic Island. Click a bubble to open it.",
+                        isOn: $settings.settings.showLiveActivitySatellites
+                    )
+                    if settings.settings.showLiveActivitySatellites {
+                        Divider().padding(.leading, 20)
+                        HStack {
+                            SettingsRowLabel(
+                                title: "Activities Beside the Notch",
+                                description: "The most bubbles that show at once. The first two sit on either side of the notch; more line up further out."
+                            )
+                            Spacer()
+                            Stepper(value: $settings.settings.liveActivitySatelliteLimit, in: 1...5) {
+                                Text("\(settings.settings.liveActivitySatelliteLimit)")
+                                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
                             }
                         }
-                        .padding(.top, 10)
+                        .padding()
                     }
-                    .padding()
-                    .disabled(settings.settings.hideLiveActivityInFullScreen)
-                    .opacity(settings.settings.hideLiveActivityInFullScreen ? 0.5 : 1.0)
 
                 }
                 .modifier(SettingsContainerModifier())
-                .animation(.default, value: settings.settings.hideLiveActivityInFullScreen)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Persistent Activity").font(.headline).padding([.top, .horizontal])
@@ -3051,6 +3076,10 @@ struct LiveActivitiesSettingsView: View {
         }
         .onAppear {
             availableSensors = StatsManager.shared.allSensors
+            StatsManager.shared.requestSensorCatalog()
+        }
+        .onReceive(StatsManager.shared.$allSensors.dropFirst()) { catalog in
+            availableSensors = catalog
         }
         .onDisappear {
             availableSensors = []
@@ -3170,7 +3199,7 @@ fileprivate struct SensorSelectionView: View {
 }
 
 struct ShortcutsSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @StateObject private var fetcher = ShortcutsFetcher()
     @State private var searchText: String = ""
 
@@ -3759,7 +3788,7 @@ struct BatteryInfoSettingsView: View {
 }
 
 struct LockScreenSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @State private var notchsettingsHaveChanged: Bool = false
 
     var body: some View {
@@ -3984,26 +4013,17 @@ struct LockScreenSettingsView: View {
 
                     ToggleRow(
                         title: "Liquid Glass Effect",
-                        description: "Apply a shiny, glass-like effect to the lock screen's background.",
+                        description: "Put the lock screen's widgets on native Liquid Glass.",
                         isOn: $settings.settings.lockScreenLiquidGlassLook
                     )
 
                     if settings.settings.lockScreenLiquidGlassLook {
                         Divider().padding(.leading, 20)
-                        LiquidGlassStylePickerRow(selection: $settings.settings.lockScreenLiquidGlassStyle)
-
-                        Divider().padding(.leading, 20)
-
-                        ToggleRow(
-                            title: "Frosted Overlay",
-                            description: "Layer frosted liquid glass on top of the base glass for a denser, more opaque look.",
-                            isOn: $settings.settings.lockScreenFrostedOverLiquidGlass
-                        )
+                        LiquidGlassOptionsEditor(options: $settings.settings.lockScreenGlass)
                     }
                 }
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: settings.settings.lockScreenLiquidGlassLook)
-                .animation(.default, value: settings.settings.lockScreenFrostedOverLiquidGlass)
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Notch Bar").font(.headline).padding([.top, .horizontal])
@@ -4031,7 +4051,7 @@ struct LockScreenSettingsView: View {
     }
 
     private var wallpaperConfiguration: LiveWallpaperConfiguration {
-        LiveWallpaperConfiguration(settings: settings.settings)
+        LiveWallpaperConfiguration(settings: settings.settings.value)
     }
 
     private var hasVideoWallpaper: Bool {
@@ -4140,7 +4160,7 @@ private struct WallpaperFileRow: View {
 }
 
 struct SnapZonesSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var appFetcher = SystemAppFetcher.shared
 
     @State private var layoutToEdit: SnapLayout?
@@ -4499,9 +4519,9 @@ struct SnapZonesSettingsView: View {
 
     // MARK: - Helper Functions
     private func modifySettings(_ modification: (inout Settings) -> Void) {
-        var newSettings = settings.settings
+        var newSettings = settings.settings.value
         modification(&newSettings)
-        settings.settings = newSettings
+        settings.settings.value = newSettings
     }
 
     private func saveLayout(_ savedLayout: SnapLayout) { modifySettings { settings in if let index = settings.customSnapLayouts.firstIndex(where: { $0.id == savedLayout.id }) { settings.customSnapLayouts[index] = savedLayout } else { settings.customSnapLayouts.append(savedLayout) } } }
@@ -4990,7 +5010,7 @@ fileprivate struct AppPickerView: View {
 }
 
 struct NotificationsSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
@@ -5149,7 +5169,7 @@ struct NotificationsSettingsView: View {
 }
 
 struct ProximityUnlockSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var authManager = AuthenticationManager.shared
 
     @State private var showPasswordPrompt = false
@@ -5288,7 +5308,7 @@ struct ProximityUnlockSettingsView: View {
             FindDeviceByDistanceWizard()
         }
         .sheet(isPresented: $isCalibratingRSSI) {
-            CalibrateRSSIView().environmentObject(settings)
+            CalibrateRSSIView().environment(settings)
         }
         .onAppear {
             authManager.fetchRegisteredFaces()
@@ -5325,10 +5345,10 @@ struct ProximityUnlockSettingsView: View {
                     Button("Change") { showPasswordPrompt = true }
                     Button("Remove", role: .destructive) {
                         authManager.removePassword()
-                        var updated = settings.settings
+                        var updated = settings.settings.value
                         updated.bluetoothUnlockEnabled = false
                         updated.faceIDUnlockEnabled = false
-                        settings.settings = updated
+                        settings.settings.value = updated
                     }
                 }.padding([.horizontal, .bottom])
             } else {
@@ -5516,6 +5536,17 @@ struct ProximityUnlockSettingsView: View {
                 specifier: "%.0f sec"
             )
             Text("Stops Face ID scanning when your face isn't recognized for this long.")
+                .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 8)
+            Divider().padding(.horizontal)
+            Text("Performance").font(.subheadline).bold().padding([.horizontal, .top])
+            ToggleRow(
+                title: "Keep Models in Memory",
+                description: "Keep the face recognition and liveness models loaded between unlocks so Face ID recognizes you from the first camera frame.",
+                isOn: $settings.settings.faceIDKeepModelsInMemory
+            )
+            Text(settings.settings.faceIDKeepModelsInMemory
+                 ? "Uses about 150–180 MB more memory. Recognition starts about 0.3 s sooner on each unlock, and up to 2 s sooner when macOS has dropped its model cache (after a restart, update, or memory pressure). Released automatically if memory runs critically low."
+                 : "Models load when Face ID starts and are freed when it ends, saving about 150–180 MB. Each unlock waits about 0.3 s for the models to load, up to 2 s when macOS has dropped its model cache.")
                 .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 8)
         }
     }
@@ -5858,7 +5889,7 @@ fileprivate struct FindDeviceByDistanceWizard: View {
 
 fileprivate struct CalibrateRSSIView: View {
     @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var authManager = AuthenticationManager.shared
 
     @State private var wizardStep = 1
@@ -5992,10 +6023,10 @@ fileprivate struct CalibrateRSSIView: View {
                 Spacer()
 
                 Button("Apply Settings") {
-                    var updated = settings.settings
+                    var updated = settings.settings.value
                     updated.bluetoothUnlockUnlockRSSI = suggestedUnlock
                     updated.bluetoothUnlockLockRSSI = suggestedLock
-                    settings.settings = updated
+                    settings.settings.value = updated
                     dismiss()
                 }.buttonStyle(.borderedProminent)
             }
@@ -6078,6 +6109,17 @@ struct FanControlSectionView: View {
                     if fan.id != fanManager.fans.last?.id {
                         Divider().padding(.leading, 20)
                     }
+                }
+                if fanManager.hasNonAutomaticFans {
+                    HStack {
+                        Text("Fans return to automatic when Sapphire quits.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Reset All to Automatic") { fanManager.resetAllFansToAutomatic() }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding()
                 }
             }
         }
@@ -6416,7 +6458,7 @@ struct CalibrationView: View {
 }
 
 struct LidAngleCaffeineSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var lidAngleSensor = LidAngleSensor.shared
 
     private var caffeineTriggerAngleBinding: Binding<Double> {
@@ -8023,7 +8065,7 @@ struct PowerRow: View {
 }
 
 struct BatteryConfigurationView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @EnvironmentObject var powerStateController: PowerStateController
     @StateObject private var helperManager = HelperManager.shared
     @ObservedObject private var calibrationManager = CalibrationManager.shared
@@ -8052,7 +8094,7 @@ struct BatteryConfigurationView: View {
             .padding(.horizontal, 25).padding(.bottom, 25)
         }
         .sheet(isPresented: $showingScheduleSheet) {
-            ScheduleView().environmentObject(settings)
+            ScheduleView().environment(settings)
         }
     }
 
@@ -8072,7 +8114,27 @@ struct BatteryConfigurationView: View {
     @ViewBuilder private var coreFeaturesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Battery Management Features").font(.headline).padding([.top, .horizontal])
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+                InfoContainer(
+                    text: "Due to changes on macOS 27 charge limiting may not work for some users. If a limit is set, Sapphire will fallback to adapter mode (which cuts power from the adapter) when the limit is reach in order to enforce it. This method is under beta and may not always work, especially when the device is asleep.",
+                    iconName: "exclamationmark.triangle.fill",
+                    color: .orange
+                )
+                .padding([.horizontal, .top])
+            }
             CustomSliderRowView(label: "Charge Limit", value: Binding(get: { Double(settings.settings.batteryChargeLimit) }, set: { settings.settings.batteryChargeLimit = Int($0) }), range: 50...100, specifier: "%.0f %%")
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Pause Charging",
+                description: "Manually stop charging while plugged in. Turn off to resume normal charging rules (limit, sailing mode, etc.).",
+                isOn: Binding(
+                    get: { settings.settings.manualChargePaused },
+                    set: { paused in
+                        settings.settings.manualChargePaused = paused
+                        BatteryManager.shared.enableCharging(!paused)
+                    }
+                )
+            )
             Divider().padding(.leading, 20)
             ToggleRow(title: "Sailing Mode", description: "Prevents battery wear from constant micro-charging cycles when plugged in for long periods. Charging will pause at the limit and only resume when the battery drops by a set amount.", isOn: $settings.settings.sailingModeEnabled)
             if settings.settings.sailingModeEnabled {
@@ -8137,7 +8199,7 @@ struct BatteryConfigurationView: View {
 }
 
 struct OneTimeDischargeView: View {
-    @EnvironmentObject private var settings: SettingsEditingSession
+    @EditingSettings private var settings: SettingsEditingSession
     @StateObject private var batteryMonitor = BatteryMonitor.shared
 
     private var dischargeProgress: Double {
@@ -8234,7 +8296,7 @@ private enum SettingsDurationFormatter {
 
 struct ScheduleView: View {
     @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var scheduleManager = ScheduleManager.shared
     @State private var showingAddTask = false
 
@@ -8273,7 +8335,7 @@ struct ScheduleView: View {
         }
         .padding(30).frame(minWidth: 500, minHeight: 600)
         .sheet(isPresented: $showingAddTask) {
-            AddTaskView().environmentObject(settings)
+            AddTaskView().environment(settings)
         }
     }
 }
@@ -8309,7 +8371,7 @@ struct TaskRowView: View {
 
 struct AddTaskView: View {
     @Environment(\.dismiss) var dismiss
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var fanManager = FanManager.shared
     @State private var newTask = ScheduledTask()
 
@@ -8379,7 +8441,7 @@ struct AddTaskView: View {
 }
 
 struct HUDSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var hudCustomColorBinding: Binding<Color> {
         Binding(
@@ -8676,9 +8738,37 @@ struct HUDSettingsView: View {
                     Divider().padding(.leading, 20)
 
                     CustomSliderRowView(label: "Slider step", value: Binding(get: { Double(settings.settings.brightnessliderstep) }, set: { settings.settings.brightnessliderstep = Int($0) }), range: 1...10, specifier: "%.0f")
-                        .padding(.bottom, 10)
                         .disabled(!settings.settings.enableBrightnessHUD)
                         .opacity(settings.settings.enableBrightnessHUD ? 1.0 : 0.5)
+
+                    Divider().padding(.leading, 20)
+
+                    HStack(spacing: 12) {
+                        SettingsRowLabel(
+                            title: "Brightness Key Steps",
+                            description: "How far each brightness key press moves. Smaller steps give finer control."
+                        )
+                        Spacer(minLength: 8)
+                        Picker("Brightness Key Steps", selection: $settings.settings.brightnessKeyStep) {
+                            ForEach(BrightnessKeyStep.allCases) { step in
+                                Text(step.displayName).tag(step)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    .padding()
+
+                    Divider().padding(.leading, 20)
+
+                    ToggleRow(
+                        title: "Extra Dimming",
+                        description: "Let external monitors go darker than their lowest backlight setting. The bottom quarter of the range dims the picture in software.",
+                        isOn: $settings.settings.displayExtraDimming
+                    )
+
+                    SoftwareDimmingRows()
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -8745,7 +8835,7 @@ struct HUDSettingsView: View {
 }
 
 struct MusicSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     @State private var isPrivateApiLoading = false
     @State private var privateApiError: String?
@@ -8754,14 +8844,27 @@ struct MusicSettingsView: View {
     @State private var officialDisplayName: String?
     @State private var isTidalAuth = false
     @State private var tidalDisplayName: String?
+    @State private var tidalLoginError: String?
+    @State private var isShowingTidalLogin = false
     @State private var loginChallenge: LoginChallengeDetails?
-    @State private var showTidalLogin = false
+    @AppStorage("musicSettingsSelectedTab") private var selectedTab: MusicSettingsTab = .general
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                Text("Music").font(.largeTitle.bold()).padding(.bottom)
+                Text("Music").font(.largeTitle.bold())
 
+                Picker("Music section", selection: $selectedTab) {
+                    ForEach(MusicSettingsTab.allCases) { tab in
+                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .padding(.bottom, 4)
+
+                switch selectedTab {
+                case .general:
                 VStack(spacing: 0) {
                     HStack {
                         Text("Media Source")
@@ -8791,6 +8894,26 @@ struct MusicSettingsView: View {
                     .modifier(SettingsContainerModifier())
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Default Music App")
+                        Spacer()
+                        Picker("", selection: $settings.settings.defaultMusicPlayer) {
+                            ForEach(DefaultMusicPlayer.allCases) { player in
+                                Text(player.displayName)
+                                    .tag(player)
+                                    .disabled(!player.isAppInstalled && player.webURL == nil)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                    }
+                    .padding()
+                    Divider().padding(.leading, 20)
+                    HStack { Text("Open detailed Music widget on live activity click"); Spacer(); SettingsSwitch(isOn: $settings.settings.musicOpenOnClick) }.padding()
+                }
+                .modifier(SettingsContainerModifier())
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Gestures").font(.headline).padding([.top, .horizontal])
@@ -8837,24 +8960,9 @@ struct MusicSettingsView: View {
                 }
                 .modifier(SettingsContainerModifier())
 
+                RequiredPermissionsView(section: .music)
+                case .player:
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("Default Music App")
-                        Spacer()
-                        Picker("", selection: $settings.settings.defaultMusicPlayer) {
-                            ForEach(DefaultMusicPlayer.allCases) { player in
-                                Text(player.displayName)
-                                    .tag(player)
-                                    .disabled(!player.isAppInstalled && player.webURL == nil)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 150)
-                    }
-                    .padding()
-                    Divider().padding(.leading, 20)
-                    HStack { Text("Open detailed Music widget on live activity click"); Spacer(); SettingsSwitch(isOn: $settings.settings.musicOpenOnClick) }.padding()
-                    Divider().padding(.leading, 20)
                     HStack { Text("Waveform is volume sensitive"); Spacer(); SettingsSwitch(isOn: $settings.settings.musicWaveformIsVolumeSensitive) }.padding()
                     Divider().padding(.leading, 20)
                     Text("Waveform Appearance").font(.headline).padding([.top, .horizontal])
@@ -8865,6 +8973,82 @@ struct MusicSettingsView: View {
                     CustomSliderRowView(label: "Number of Bars", value: Binding(get: { Double(settings.settings.waveformBarCount) }, set: { settings.settings.waveformBarCount = Int($0) }), range: 3...6, specifier: "%.0f")
                     Divider().padding(.leading, 20)
                     CustomSliderRowView(label: "Bar Thickness", value: $settings.settings.waveformBarThickness, range: 1...5, specifier: "%.0f pt")
+                    Divider().padding(.leading, 20)
+                    Text("Live Activity").font(.headline).padding([.top, .horizontal])
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Right-side track info")
+                        Text("Show title and artist next to the album art. Phone only is the default — Mac music keeps the compact waveform.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("", selection: $settings.settings.musicLiveActivityRightTextMode) {
+                            ForEach(MusicLiveActivityRightTextMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                    }
+                    .padding()
+                    .onAppear {
+                        if settings.settings.musicLiveActivityRightTextMode != .always,
+                           settings.settings.musicLiveActivityWaveformMode == .off {
+                            settings.settings.musicLiveActivityWaveformMode = .continuityOff
+                        }
+                    }
+                    .onChange(of: settings.settings.musicLiveActivityRightTextMode) { _, mode in
+                        if mode != .always, settings.settings.musicLiveActivityWaveformMode == .off {
+                            settings.settings.musicLiveActivityWaveformMode = .continuityOff
+                        }
+                    }
+                    Divider().padding(.leading, 20)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Waveform")
+                        Text("Hide on phone is the default. Turning the waveform off entirely is available when right-side track info is Always.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker(
+                            "",
+                            selection: Binding(
+                                get: { settings.settings.musicLiveActivityWaveformMode },
+                                set: { newValue in
+                                    if newValue == .off && settings.settings.musicLiveActivityRightTextMode != .always {
+                                        settings.settings.musicLiveActivityWaveformMode = .continuityOff
+                                    } else {
+                                        settings.settings.musicLiveActivityWaveformMode = newValue
+                                    }
+                                }
+                            )
+                        ) {
+                            ForEach(
+                                MusicLiveActivityWaveformMode.allCases.filter {
+                                    $0 != .off || settings.settings.musicLiveActivityRightTextMode == .always
+                                }
+                            ) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                    }
+                    .padding()
+                    Divider().padding(.leading, 20)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Waveform style")
+                            Text("Classic is the bar waveform. Continuity is the SF Symbol used by the old phone media activity.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $settings.settings.musicLiveActivityWaveformStyle) {
+                            ForEach(MusicLiveActivityWaveformStyle.allCases) { style in
+                                Text(style.displayName).tag(style)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+                    .padding()
                 }
                 .modifier(SettingsContainerModifier())
 
@@ -8879,95 +9063,101 @@ struct MusicSettingsView: View {
                     ToggleRow(title: "Enable track info on Hover", description: "Hover over the album art in the live activity to see the song title.", isOn: $settings.settings.enableQuickPeekOnHover)
                     Divider().padding(.leading, 20)
                     ToggleRow(title: "Show track info on Track Change", description: "Briefly show the song title when a new track begins.", isOn: $settings.settings.showQuickPeekOnTrackChange)
-                    Divider().padding(.leading, 20)
-                    ToggleRow(title: "Show popularity of track in music player", description: "Requires a spotify login", isOn: $settings.settings.showPopularityInMusicPlayer)
-                    Divider().padding(.leading, 20)
-                    ToggleRow(title: "Prefer airplay over spotify devices", description: "Default to airplay devices when spotify isn't running and spotify is authenticated", isOn: $settings.settings.preferAirPlayOverSpotify)
                 }.modifier(SettingsContainerModifier())
+                case .features:
+                MusicPlayerFeaturesCard(isSpotifyAvailable: isPrivateAuth)
+                case .accounts:
+                AppleMusicAccountCard()
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Spotify (Private API)").font(.headline).padding([.horizontal, .top])
-                    InfoContainer(text: "WARNING: This method uses Spotify’s internal APIs to unlock standard and additional features for both Premium and non-Premium users. Use at your own risk, usage may be subject to Spotify’s Terms of Service.", iconName: "exclamationmark.triangle.fill", color: .yellow).padding(.horizontal)
-                    InfoContainer(text: "Sapphire is a Connect controller only, audio always plays on the Spotify desktop app or another speaker.", iconName: "hifispeaker", color: .blue).padding(.horizontal)
-                    Divider().padding(.horizontal, 20)
-                    if isPrivateAuth {
-                        VStack(spacing: 0) {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                                Text("Logged in via Private API")
-                                Spacer()
-                                Button("Log Out", role: .destructive) { MusicManager.shared.spotifyPrivateAPI.logout() }
-                            }.padding()
-
-                            Divider().padding(.leading, 20)
-
-                            ToggleRow(title: "Skip Ads", description: "When Spotify desktop on this Mac plays an ad, relaunch it in the background, then resume via Spotify Connect.", isOn: $settings.settings.skipSpotifyAd)
-                            ToggleRow(title: "Show Spotify Tab", description: "When another app is playing, show a Spotify source tab so you can switch medias. Hidden while Spotify itself is the main media source.", isOn: $settings.settings.showSpotifySourceTab)
-                                .disabled(!isPrivateAuth)
-                            ToggleRow(title: "Live Canvas Video", description: "Show looping Spotify Canvas video behind the artwork when available. Turn off to always use the album thumbnail.", isOn: $settings.settings.spotifyCanvasLiveVideo)
-                                .disabled(!isPrivateAuth)
-                            ToggleRow(title: "Artist Profile", description: "Show the artist avatar, verified check, and monthly listeners instead of plain artist text.", isOn: $settings.settings.spotifyShowArtistProfile)
-                                .disabled(!isPrivateAuth)
-                            ToggleRow(title: "Next Song", description: "Show the upcoming track from the queue under the now-playing title during the last 10 seconds of the song.", isOn: $settings.settings.spotifyShowNextSong)
-                                .disabled(!isPrivateAuth)
-                            ToggleRow(title: "Next Song Album Art", description: "Show album art beside the upcoming track in the live activity.", isOn: $settings.settings.spotifyShowNextSongAlbumArt)
-                                .disabled(!isPrivateAuth || !settings.settings.spotifyShowNextSong)
-                            ToggleRow(title: "Suggested Songs", description: "Show related song chips you can play from the music player.", isOn: $settings.settings.spotifyShowSuggestedSongs)
-                                .disabled(!isPrivateAuth)
-                            ToggleRow(title: "Concert Tickets", description: "Show a compact tickets button when nearby concerts are available for the artist.", isOn: $settings.settings.spotifyShowConcertTickets)
-                                .disabled(!isPrivateAuth)
-                            ToggleRow(title: "Account Badge", description: "Show the Premium / Free account badge next to the track title.", isOn: $settings.settings.spotifyShowAccountBadge)
-                                .disabled(!isPrivateAuth)
-                        }
-                    } else {
-                        VStack(spacing: 12) {
-                            if let error = privateApiError {
-                                Text(error).font(.caption).foregroundColor(.red)
+                    HStack {
+                        Text("Spotify").font(.headline)
+                        Spacer()
+                        Picker("", selection: $settings.settings.spotifyAPIMode) {
+                            ForEach(SpotifyAPIMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
                             }
-                            if isPrivateApiLoading {
-                                ProgressView().frame(maxWidth: .infinity, alignment: .center)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(width: 220)
+                    }
+                    .padding([.horizontal, .top])
+
+                    switch settings.settings.spotifyAPIMode {
+                    case .privateAPI:
+                        InfoContainer(text: "WARNING: This method uses Spotify’s internal APIs to unlock standard and additional features for both Premium and non-Premium users. Use at your own risk, usage may be subject to Spotify’s Terms of Service.", iconName: "exclamationmark.triangle.fill", color: .yellow).padding(.horizontal)
+                        InfoContainer(text: "Sapphire is a Connect controller only, audio always plays on the Spotify desktop app or another speaker.", iconName: "hifispeaker", color: .blue).padding(.horizontal)
+                        if isOfficialAuth {
+                            Text("You are also signed in with the Official API.").font(.caption).foregroundColor(.secondary).padding(.horizontal)
+                        }
+                        Divider().padding(.horizontal, 20)
+                        if isPrivateAuth {
+                            VStack(spacing: 0) {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                                    Text("Logged in via Private API")
+                                    Spacer()
+                                    Button("Log Out", role: .destructive) { MusicManager.shared.spotifyPrivateAPI.logout() }
+                                }.padding()
+                                Divider().padding(.leading, 20)
+                                ToggleRow(title: "Skip Ads", description: "When Spotify desktop on this Mac plays an ad, relaunch it in the background, then resume via Spotify Connect.", isOn: $settings.settings.skipSpotifyAd)
+                                ToggleRow(title: "Show Spotify Tab", description: "When another app is playing, show a Spotify source tab so you can switch medias. Hidden while Spotify itself is the main media source.", isOn: $settings.settings.showSpotifySourceTab)
+                                    .disabled(!isPrivateAuth)
+                                ToggleRow(title: "Live Canvas Video", description: "Show looping Spotify Canvas video behind the artwork when available. Turn off to always use the album thumbnail.", isOn: $settings.settings.spotifyCanvasLiveVideo)
+                                    .disabled(!isPrivateAuth)
+                            }
+                        } else {
+                            VStack(spacing: 12) {
+                                if let error = privateApiError {
+                                    Text(error).font(.caption).foregroundColor(.red)
+                                }
+                                if isPrivateApiLoading {
+                                    ProgressView().frame(maxWidth: .infinity, alignment: .center)
+                                } else {
+                                    Button("Log In via Private API") { handlePrivateApiLogin() }
+                                        .buttonStyle(.borderedProminent).tint(.accentColor)
+                                }
+                            }.padding()
+                        }
+                    case .officialAPI:
+                        InfoContainer(text: "The Private API provides significantly more features and is better supported. The Official API only covers basic playback and device switching, and needs your own developer app.", iconName: "exclamationmark.triangle.fill", color: .yellow).padding(.horizontal)
+                        if isPrivateAuth {
+                            Text("You are also signed in with the Private API.").font(.caption).foregroundColor(.secondary).padding(.horizontal)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Spotify API Credentials").font(.system(size: 14, weight: .medium))
+                            Text("Register your app at developer.spotify.com and copy these values here. The redirect URI is: sapphire://callback").font(.caption).foregroundColor(.secondary).padding(.bottom, 4)
+                            Text("Client ID").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8))
+                            SecureField("Enter your Client ID", text: Binding(
+                                get: { APIKeyManager.shared.spotifyClientId },
+                                set: { APIKeyManager.shared.spotifyClientId = $0 }
+                            )).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
+                            Text("Client Secret").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8)).padding(.top, 5)
+                            SecureField("Enter your Client Secret", text: Binding(
+                                get: { APIKeyManager.shared.spotifyClientSecret },
+                                set: { APIKeyManager.shared.spotifyClientSecret = $0 }
+                            )).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
+                        }.padding().padding(.top, 5)
+                        Text("Log in here to enable official features like device switching for Premium users.").font(.caption).foregroundColor(.secondary).padding(.horizontal)
+                        Divider().padding(.horizontal, 20)
+                        HStack {
+                            if isOfficialAuth {
+                                HStack { Image(systemName: "checkmark.circle.fill").foregroundColor(.green); Text(officialDisplayName.map { "Logged in as \($0)" } ?? "Logged in") }
+                                Spacer()
+                                Button("Log Out", role: .destructive) { MusicManager.shared.spotifyOfficialAPI.logout() }
                             } else {
-                                Button("Log In via Private API") { handlePrivateApiLogin() }
-                                    .buttonStyle(.borderedProminent).tint(.accentColor)
+                                Text("Not logged in.").foregroundColor(.secondary)
+                                Spacer()
+                                Button("Log In") { MusicManager.shared.spotifyOfficialAPI.login() }
                             }
                         }.padding()
                     }
                 }
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: isPrivateAuth)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Spotify (Official API)").font(.headline).padding([.horizontal, .top])
-VStack(alignment: .leading, spacing: 8) {
-                        Text("Spotify API Credentials").font(.system(size: 14, weight: .medium))
-                        Text("Register your app at developer.spotify.com and copy these values here. The redirect URI is: sapphire://callback").font(.caption).foregroundColor(.secondary).padding(.bottom, 4)
-                        Text("Client ID").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8))
-                        SecureField("Enter your Client ID", text: Binding(
-                            get: { APIKeyManager.shared.spotifyClientId },
-                            set: { APIKeyManager.shared.spotifyClientId = $0 }
-                        )).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
-                        Text("Client Secret").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.8)).padding(.top, 5)
-                        SecureField("Enter your Client Secret", text: Binding(
-                            get: { APIKeyManager.shared.spotifyClientSecret },
-                            set: { APIKeyManager.shared.spotifyClientSecret = $0 }
-                        )).textFieldStyle(.plain).padding(8).background(Color.black.opacity(0.2)).clipShape(RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
-                    }.padding().padding(.top, 5)
-                    Text("Log in here to enable official features like device switching for Premium users. This is the standard, recommended login method.").font(.caption).foregroundColor(.secondary).padding(.horizontal)
-                    Divider().padding(.horizontal, 20)
-                    HStack {
-                        if isOfficialAuth, let name = officialDisplayName {
-                            HStack { Image(systemName: "checkmark.circle.fill").foregroundColor(.green); Text("Logged in as \(name)") }
-                            Spacer()
-                            Button("Log Out", role: .destructive) { MusicManager.shared.spotifyOfficialAPI.logout() }
-                        } else {
-                            Text("Not logged in.").foregroundColor(.secondary)
-                            Spacer()
-                            Button("Log In") { MusicManager.shared.spotifyOfficialAPI.login() }
-                        }
-                    }.padding()
-                }
-                .modifier(SettingsContainerModifier())
                 .animation(.default, value: isOfficialAuth)
+                .animation(.default, value: settings.settings.spotifyAPIMode)
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("TIDAL").font(.headline).padding([.horizontal, .top])
@@ -8988,24 +9178,40 @@ VStack(alignment: .leading, spacing: 8) {
                     Text("Log in here to enable TIDAL features like catalog search and syncing liked tracks and playlists. Requires a TIDAL developer account (third-party access tier).").font(.caption).foregroundColor(.secondary).padding(.horizontal)
                     Divider().padding(.horizontal, 20)
                     HStack {
-                        if isTidalAuth, let name = tidalDisplayName {
-                            HStack { Image(systemName: "checkmark.circle.fill").foregroundColor(.green); Text("Logged in as \(name)") }
+                        if isTidalAuth {
+                            HStack { Image(systemName: "checkmark.circle.fill").foregroundColor(.green); Text(tidalDisplayName.map { "Logged in as \($0)" } ?? "Logged in") }
                             Spacer()
                             Button("Log Out", role: .destructive) { MusicManager.shared.tidalAPI.logout() }
                         } else {
                             Text("Not logged in.").foregroundColor(.secondary)
                             Spacer()
-                            Button("Log In") { showTidalLogin = true }
+                            Button("Log In") { isShowingTidalLogin = true }
                         }
                     }.padding()
+                    if !isTidalAuth, let tidalLoginError {
+                        Text(tidalLoginError).font(.caption).foregroundColor(.red).padding([.horizontal, .bottom])
+                    }
                 }
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: isTidalAuth)
 
+                VStack(spacing: 0) {
+                    ToggleRow(title: "Prefer airplay over spotify devices", description: "Default to airplay devices when spotify isn't running and spotify is authenticated", isOn: $settings.settings.preferAirPlayOverSpotify)
+                }.modifier(SettingsContainerModifier())
+                case .lyrics:
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Lyrics").font(.headline).padding([.top, .horizontal])
                     ToggleRow(title: "Show Lyrics in Live Activity", description: "Display synchronized lyrics when available.", isOn: $settings.settings.showLyricsInLiveActivity)
                     if settings.settings.showLyricsInLiveActivity {
+                        Divider().padding(.leading, 20)
+                        ToggleRow(
+                            title: "Hide Lyrics in Full Screen",
+                            description: "Hide the lyrics line while an app is full screen, on every display. Set it per display in Appearance → Displays.",
+                            isOn: Binding(
+                                get: { settings.settings.hideLyricsInFullScreen },
+                                set: { settings.settings.value.setHideLyricsInFullScreenOnAllDisplays($0) }
+                            )
+                        )
                         Divider().padding(.leading, 20)
                         ToggleRow(title: "Enable Translation", description: "Automatically translate non-English lyrics.", isOn: $settings.settings.enableLyricTranslation)
                         HStack {
@@ -9017,26 +9223,9 @@ VStack(alignment: .leading, spacing: 8) {
                             Text("Lyric Delay"); Spacer()
                             let offset = settings.settings.lyricOffset
                             let label = offset == 0 ? "On time" : String(format: "%+.1fs", offset)
-                            if #available(macOS 13.0, *) {
-                                Text(label).font(.caption).foregroundColor(.secondary)
-                                Stepper("", value: $settings.settings.lyricOffset, in: -5.0...5.0, step: 0.1)
-                                    .labelsHidden()
-                            } else {
-                                DeferredValueEditor(value: $settings.settings.lyricOffset) { draft, onEditingChanged in
-                                    HStack(spacing: 8) {
-                                        Slider(
-                                            value: draft,
-                                            in: -5.0...5.0,
-                                            step: 0.1,
-                                            label: { Text("Lyric Delay") },
-                                            onEditingChanged: onEditingChanged
-                                        )
-                                        let draftOffset = draft.wrappedValue
-                                        let draftLabel = draftOffset == 0 ? "On time" : String(format: "%+.1fs", draftOffset)
-                                        Text(draftLabel).font(.caption).foregroundColor(.secondary).frame(width: 80, alignment: .trailing)
-                                    }
-                                }
-                            }
+                            Text(label).font(.caption).foregroundColor(.secondary)
+                            Stepper("", value: $settings.settings.lyricOffset, in: -5.0...5.0, step: 0.1)
+                                .labelsHidden()
                         }.padding()
                         if #available(macOS 26.0, *) {
                             Divider().padding(.leading, 20)
@@ -9061,24 +9250,30 @@ VStack(alignment: .leading, spacing: 8) {
                         )
                     }.modifier(SettingsContainerModifier()).transition(.opacity.combined(with: .move(edge: .top)))
                 }
-
-                RequiredPermissionsView(section: .music)
+                }
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 syncMusicAuthState()
             }
-            .onReceive(MusicManager.shared.$isPrivateAPIAuthenticated) { isPrivateAuth = $0 }
-            .onReceive(MusicManager.shared.$isOfficialAPIAuthenticated) { isOfficialAuth = $0 }
-            .onReceive(MusicManager.shared.$isTidalAPIAuthenticated) { isTidalAuth = $0 }
-            .onReceive(MusicManager.shared.tidalAPI.$userProfile) { profile in
+            .onReceive(MusicManager.shared.valuePublisher(\.isPrivateAPIAuthenticated)) { isPrivateAuth = $0 }
+            .onReceive(MusicManager.shared.valuePublisher(\.isOfficialAPIAuthenticated)) { isOfficialAuth = $0 }
+            .onReceive(MusicManager.shared.valuePublisher(\.isTidalAPIAuthenticated)) { isTidalAuth = $0 }
+            .onReceive(MusicManager.shared.tidalAPI.valuePublisher(\.userProfile)) { profile in
                 tidalDisplayName = profile?.username
             }
-            .onReceive(MusicManager.shared.spotifyOfficialAPI.$userProfile) { profile in
+            .onReceive(MusicManager.shared.tidalAPI.valuePublisher(\.loginError)) { tidalLoginError = $0 }
+            .onReceive(MusicManager.shared.spotifyOfficialAPI.valuePublisher(\.userProfile)) { profile in
                 officialDisplayName = profile?.displayName
             }
-            .onReceive(SpotifyPrivateAPIManager.shared.$loginChallenge) { loginChallenge = $0 }
+            .onReceive(SpotifyPrivateAPIManager.shared.valuePublisher(\.loginChallenge)) { loginChallenge = $0 }
+        }
+        .sheet(isPresented: $isShowingTidalLogin) {
+            TidalLoginWebView(
+                onComplete: { isShowingTidalLogin = false },
+                onCancel: { isShowingTidalLogin = false }
+            )
         }
         .sheet(item: $loginChallenge) { _ in
             SpotifyLoginWebView(
@@ -9094,12 +9289,6 @@ VStack(alignment: .leading, spacing: 8) {
                 }
             )
         }
-        .sheet(isPresented: $showTidalLogin) {
-            TidalLoginWebView(
-                onComplete: { showTidalLogin = false },
-                onCancel: { showTidalLogin = false }
-            )
-        }
     }
 
     private func syncMusicAuthState() {
@@ -9110,7 +9299,11 @@ VStack(alignment: .leading, spacing: 8) {
         isTidalAuth = music.isTidalAPIAuthenticated
         tidalDisplayName = music.tidalAPI.userProfile?.username
         officialDisplayName = music.spotifyOfficialAPI.userProfile?.displayName
+        tidalLoginError = music.tidalAPI.loginError
         loginChallenge = music.spotifyPrivateAPI.loginChallenge
+        if isOfficialAuth, !isPrivateAuth, settings.settings.spotifyAPIMode == .privateAPI {
+            settings.settings.spotifyAPIMode = .officialAPI
+        }
     }
 
     private func handlePrivateApiLogin() {
@@ -9139,12 +9332,12 @@ VStack(alignment: .leading, spacing: 8) {
 
 fileprivate struct MusicLongPressActionPickerRow: View {
     let target: MusicLongPressTarget
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var selection: Binding<MusicLongPressAction> {
         Binding(
-            get: { target.defaultAction(in: settings.settings) },
-            set: { settings.settings.setLongPressAction($0, for: target) }
+            get: { target.defaultAction(in: settings.settings.value) },
+            set: { settings.settings.value.setLongPressAction($0, for: target) }
         )
     }
 
@@ -9167,7 +9360,7 @@ fileprivate struct MusicLongPressActionPickerRow: View {
 
 fileprivate struct PlayerButtonSettingsRow: View {
     let buttonType: MusicPlayerButtonType
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var isEnabledBinding: Binding<Bool> {
         switch buttonType {
@@ -9199,7 +9392,7 @@ fileprivate struct PlayerButtonSettingsRow: View {
 }
 
 struct WeatherSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
@@ -9248,7 +9441,7 @@ struct WeatherSettingsView: View {
 }
 
 struct CalendarSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var isLastEnabledWidget: Bool {
         settings.settings.calendarWidgetEnabled && settings.settings.enabledWidgetTypes.count <= 1
@@ -9258,7 +9451,7 @@ struct CalendarSettingsView: View {
         !settings.settings.calendarWidgetEnabled && !WidgetLayoutPolicy.canFit(
             .calendar,
             in: settings.settings.enabledWidgetTypes,
-            availableWidth: WidgetLayoutPolicy.availableBarWidth(),
+            availableWidth: WidgetLayoutPolicy.availableBarWidthForSettings(settings: settings.settings.value),
             showDividers: settings.settings.showDividersBetweenWidgets,
             bypassSpaceLimit: settings.settings.bypassWidgetSpaceLimit
         )
@@ -9426,7 +9619,7 @@ struct EyeBreakRecommendationsView: View {
 }
 
 struct EyeBreakSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var eyeBreakManager = EyeBreakManager.shared
     @State private var showingRecommendationsSheet = false
 
@@ -9474,15 +9667,23 @@ struct EyeBreakSettingsView: View {
                     .font(.headline)
                 Spacer()
 
-                if eyeBreakManager.isBreakTime {
+                if eyeBreakManager.isPausedForGameMode {
+                    Text("Paused for Game Mode")
+                        .foregroundColor(.orange)
+                        .padding(6)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(6)
+                } else if eyeBreakManager.isBreakTime {
                     Text("Break in Progress")
                         .foregroundColor(.blue)
                         .padding(6)
                         .background(Color.blue.opacity(0.1))
                         .cornerRadius(6)
                 } else {
-                    Text("\(eyeBreakManager.timeUntilNextBreak.asMinuteSecondClock) until next break")
-                        .foregroundColor(.secondary)
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text("\(eyeBreakManager.secondsUntilNextBreak.asMinuteSecondClock) until next break")
+                            .foregroundColor(.secondary)
+                    }
                 }
             }.padding(15)
 
@@ -9644,6 +9845,14 @@ struct EyeBreakSettingsView: View {
             Divider().padding(.leading, 20)
 
             ToggleRow(
+                title: "Pause during Game Mode",
+                description: "Pause reminders and sounds while macOS Game Mode is active.",
+                isOn: $settings.settings.eyeBreakPauseDuringGameMode
+            )
+
+            Divider().padding(.leading, 20)
+
+            ToggleRow(
                 title: "Show Activity Graph",
                 description: "Display a visual graph of your work and break intervals.",
                 isOn: $settings.settings.showEyeBreakGraph
@@ -9658,7 +9867,7 @@ struct EyeBreakSettingsView: View {
             Text("Activity Statistics").font(.headline).padding([.top, .horizontal])
             if settings.settings.showEyeBreakGraph {
                 EyeBreakGraphView(summaries: eyeBreakManager.dailySummaries)
-                    .environmentObject(settings)
+                    .environment(settings)
                     .padding([.horizontal, .bottom])
                     .transition(.opacity)
             } else {
@@ -9718,7 +9927,7 @@ struct EyeBreakSettingsView: View {
 
 struct EyeBreakGraphView: View {
     let summaries: [EyeBreakDailySummary]
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @State private var selectedDayName: String?
 
     private var selectedSummary: EyeBreakDailySummary? {
@@ -9988,7 +10197,7 @@ struct DailySummaryCard: View {
 }
 
 struct BluetoothSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
@@ -10023,8 +10232,8 @@ struct BluetoothSettingsView: View {
     }
 }
 
-struct NeardropSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+struct NearbyShareSettingsView: View {
+    @EditingSettings var settings: SettingsEditingSession
 
     @State private var downloadPath: String = ""
     @State private var isPathValid: Bool = true
@@ -10044,7 +10253,7 @@ struct NeardropSettingsView: View {
                             Text("Enable Nearby Share")
                                 .font(.system(size: 14, weight: .medium))
                             Spacer()
-                            SettingsSwitch(isOn: $settings.settings.neardropEnabled)
+                            SettingsSwitch(isOn: $settings.settings.nearbyShareEnabled)
                         }
                         .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
 
@@ -10063,7 +10272,7 @@ struct NeardropSettingsView: View {
                                     .font(.system(size: 14, weight: .medium))
                                     .foregroundStyle(.white)
 
-                                TextField("My Mac", text: $settings.settings.neardropDeviceDisplayName)
+                                TextField("My Mac", text: $settings.settings.nearbyShareDeviceDisplayName)
                                     .textFieldStyle(.plain)
                                     .padding(.vertical, 8)
                                     .padding(.horizontal, 12)
@@ -10072,7 +10281,7 @@ struct NeardropSettingsView: View {
                                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2), lineWidth: 1))
                                     .foregroundStyle(.white)
                                     .font(.system(size: 13))
-                                    .disabled(!settings.settings.neardropEnabled)
+                                    .disabled(!settings.settings.nearbyShareEnabled)
                             }
 
                             VStack(alignment: .leading, spacing: 8) {
@@ -10085,7 +10294,7 @@ struct NeardropSettingsView: View {
                                         .textFieldStyle(.plain)
                                         .foregroundStyle(.white)
                                         .font(.system(size: 13))
-                                        .disabled(!settings.settings.neardropEnabled)
+                                        .disabled(!settings.settings.nearbyShareEnabled)
 
                                     Image(systemName: isPathValid ? "checkmark.circle.fill" : "xmark.circle.fill")
                                         .foregroundColor(isPathValid ? .green : .red)
@@ -10104,23 +10313,23 @@ struct NeardropSettingsView: View {
                             }
                         }
                         .padding([.horizontal, .bottom], 20)
-                        .opacity(settings.settings.neardropEnabled ? 1.0 : 0.5)
+                        .opacity(settings.settings.nearbyShareEnabled ? 1.0 : 0.5)
 
                         Rectangle().fill(Color.white.opacity(0.2)).frame(height: 1).padding(.horizontal, 20)
 
                         HStack {
                             Text("Open detailed AirDrop widget on live activity click")
                             Spacer()
-                            Toggle("", isOn: $settings.settings.neardropOpenOnClick)
+                            Toggle("", isOn: $settings.settings.nearbyShareOpenOnClick)
                                 .labelsHidden().toggleStyle(.switch)
                         }
                         .padding()
-                        .disabled(!settings.settings.neardropEnabled)
-                        .opacity(settings.settings.neardropEnabled ? 1.0 : 0.5)
+                        .disabled(!settings.settings.nearbyShareEnabled)
+                        .opacity(settings.settings.nearbyShareEnabled ? 1.0 : 0.5)
 
                     }
                     .modifier(SettingsContainerModifier())
-                    .animation(.easeInOut, value: settings.settings.neardropEnabled)
+                    .animation(.easeInOut, value: settings.settings.nearbyShareEnabled)
 
                     SettingsCard(title: "Swipe Actions", description: "Customize what happens when you swipe a file drop row left or right. Share only applies to File Shelf items.") {
 
@@ -10143,32 +10352,30 @@ struct NeardropSettingsView: View {
                         )
                     }
                 }
-                OpenBubblesActivationView()
-
             }
             .padding(25)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
-                self.downloadPath = settings.settings.neardropDownloadLocationPath
+                self.downloadPath = settings.settings.nearbyShareDownloadLocationPath
             }
             .onChange(of: downloadPath) { _, newValue in
                 self.isPathValid = validate(path: newValue)
             }
-            .onChange(of: settings.settings.neardropEnabled) {
+            .onChange(of: settings.settings.nearbyShareEnabled) {
                 settingsHaveChanged = true
             }
-            .onChange(of: settings.settings.neardropDeviceDisplayName) {
+            .onChange(of: settings.settings.nearbyShareDeviceDisplayName) {
                 settingsHaveChanged = true
             }
             .animation(.spring(), value: settingsHaveChanged)
 
-            RequiredPermissionsView(section: .neardrop)
+            RequiredPermissionsView(section: .nearbyShare)
         }
     }
 
     private func validateAndSavePath() {
         if validate(path: downloadPath) {
-            settings.settings.neardropDownloadLocationPath = downloadPath
+            settings.settings.nearbyShareDownloadLocationPath = downloadPath
         }
     }
 
@@ -10186,7 +10393,7 @@ struct AboutSettingsView: View {
         return formatter
     }()
 
-    @EnvironmentObject var settingsModel: SettingsEditingSession
+    @EditingSettings var settingsModel: SettingsEditingSession
     @ObservedObject private var updateChecker = UpdateChecker.shared
     @ObservedObject private var permissionsManager = PermissionsManager.shared
     @ObservedObject private var debugMode = DebugMode.shared
@@ -10199,7 +10406,7 @@ struct AboutSettingsView: View {
     @State private var debugTapResetTask: Task<Void, Never>?
 
     private var displayedReleaseChannel: ReleaseChannel {
-        ReleaseChannelPolicy.displayedChannel(for: settingsModel.settings)
+        ReleaseChannelPolicy.displayedChannel(for: settingsModel.settings.value)
     }
 
     private var releaseChannelBinding: Binding<ReleaseChannel> {
@@ -10310,7 +10517,7 @@ struct AboutSettingsView: View {
                 Text("© 2025 Shariq Charolia. All rights reserved.").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .center).padding(.top, 20)
             }.padding(25).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
-                ReleaseChannelPolicy.reconcileStoredPreference(&settingsModel.settings)
+                ReleaseChannelPolicy.reconcileStoredPreference(&settingsModel.settings.value)
                 settingsModel.commitNow()
                 updateChecker.checkForUpdatesMatchingCurrentChannel()
             }
@@ -10895,7 +11102,7 @@ struct ModernChannelSwitcher: View {
 fileprivate struct NotchButtonRowView: View {
     let buttonType: NotchButtonType
 
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var permissionsManager = PermissionsManager.shared
 
     private var isEnabledBinding: Binding<Bool> {
@@ -10922,6 +11129,7 @@ fileprivate struct NotchButtonRowView: View {
         case .focusSession: return $settings.settings.focusSessionIconEnabled
         case .caffeine: return $settings.settings.caffeinateEnabled
         case .battery: return $settings.settings.batteryEstimatorEnabled
+        case .continuity: return $settings.settings.continuityShowPhoneBattery
         case .multiAudio: return $settings.settings.showMultiAudioIcon
         case .pin: return $settings.settings.pinEnabled
         }
@@ -10970,17 +11178,82 @@ fileprivate struct NotchButtonRowView: View {
     }
 }
 
+fileprivate struct NotchBarSpacerWidthRow: View {
+    @EditingSettings var settings: SettingsEditingSession
+
+    private var widthBinding: Binding<Double> {
+        Binding<Double>(
+            get: { Double(settings.settings.notchBarSpacerWidth) },
+            set: { newValue in
+                settings.settings.notchBarSpacerWidth = NotchBarSpacerPolicy.sanitizedWidth(CGFloat(newValue))
+            }
+        )
+    }
+
+    private var isAutomatic: Bool {
+        !NotchBarSpacerPolicy.hasFixedWidth(settings.settings.notchBarSpacerWidth)
+    }
+
+    var body: some View {
+        HStack(spacing: 18) {
+            HStack {
+                Image(systemName: "space")
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: 30)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Center Spacer Width")
+                        .font(.system(size: 14, weight: .medium))
+                    Text(isAutomatic
+                         ? "Automatic: the spacer grows with the bar but is never narrower than the notch."
+                         : "Fixed gap between the left and right notch bar items, never narrower than the notch.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 6) {
+                Slider(value: widthBinding, in: Double(NotchBarSpacerPolicy.widthRange.lowerBound)...Double(NotchBarSpacerPolicy.widthRange.upperBound))
+                    .frame(width: 180)
+
+                TextField("Width", value: widthBinding, format: .number.precision(.fractionLength(0)))
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 62)
+                    .multilineTextAlignment(.trailing)
+
+                Text("pt")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Button {
+                settings.settings.notchBarSpacerWidth = NotchBarSpacerPolicy.automaticWidth
+            } label: {
+                Label("Reset", systemImage: "arrow.counterclockwise")
+                    .font(.callout)
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.accentColor)
+            .disabled(isAutomatic)
+            .help("Revert to the automatic spacer width")
+        }
+        .padding(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
+    }
+}
+
 struct AppearanceSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 40) {
                 Text("Appearance")
                     .font(.largeTitle.bold())
-                PerDisplayNotchSettingsView()
-                NotchAppearanceEditorView(appearance: $settings.settings.notchWidgetAppearance, title: "Expanded Notch Appearance")
-                NotchAppearanceEditorView(appearance: $settings.settings.notchLiveActivityAppearance, title: "Collapsed Notch Appearance")
+                DisplaySettingsView()
+                NotchAppearanceDisplaySection()
                 MenuBarHidingSettingsView()
                 MenuBarProfilesSettingsView()
                 MenuBarAppearanceSettingsView()
@@ -10993,178 +11266,8 @@ struct AppearanceSettingsView: View {
     }
 }
 
-struct PerDisplayNotchSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
-
-    private var connectedScreens: [NSScreen] {
-        NSScreen.screens
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Per-Display Overrides").font(.title2.bold())
-                Text("Customize notch size and inactive-hiding for each display individually. Changes here override the global settings for the selected display.").font(.caption).foregroundColor(.secondary)
-            }
-
-            if connectedScreens.isEmpty {
-                Text("No displays detected.")
-                    .foregroundColor(.secondary)
-                    .padding()
-                    .modifier(SettingsContainerModifier())
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(connectedScreens, id: \.displayIdentifier) { screen in
-                        perDisplayRow(for: screen)
-                        if screen.displayIdentifier != connectedScreens.last?.displayIdentifier {
-                            Divider().padding(.leading, 20)
-                        }
-                    }
-                }
-                .modifier(SettingsContainerModifier())
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func perDisplayRow(for screen: NSScreen) -> some View {
-        let displayID = screen.displayIdentifier
-        let isBuiltIn = CGDisplayIsBuiltin(screen.displayID) != 0
-        let hasOverride = settings.settings.perDisplayNotchSize[displayID] != nil
-        let resolvedConfig = ResolvedNotchConfiguration(from: settings.settings, screen: screen)
-        let actualWidth = resolvedConfig.universalWidth
-        let actualHeight = resolvedConfig.universalHeight
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: isBuiltIn ? "laptopcomputer" : "display")
-                    .foregroundColor(.secondary)
-                Text(screen.displayLabel)
-                    .font(.headline)
-                if isBuiltIn { Text("Built-in").font(.caption).foregroundColor(.secondary) }
-                Spacer()
-            }
-
-            HStack(spacing: 18) {
-                sizeControl(
-                    label: "Width",
-                    value: perDisplayWidthBinding(displayID: displayID, defaultValue: actualWidth),
-                    range: 80...400,
-                    hasOverride: hasOverride
-                )
-                sizeControl(
-                    label: "Height",
-                    value: perDisplayHeightBinding(displayID: displayID, defaultValue: actualHeight),
-                    range: 10...80,
-                    hasOverride: hasOverride
-                )
-                Button {
-                    settings.settings.perDisplayNotchSize.removeValue(forKey: displayID)
-                } label: {
-                    Label("Reset", systemImage: "arrow.counterclockwise")
-                        .font(.callout)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
-                .disabled(!hasOverride)
-                .help("Clear per-display size override; revert to automatic size")
-            }
-
-            Toggle("Hide notch when inactive (this display)", isOn: perDisplayInactiveBinding(for: displayID))
-                .font(.callout)
-        }
-        .padding()
-    }
-
-    private func perDisplayWidthBinding(displayID: String, defaultValue: CGFloat) -> Binding<Double> {
-        Binding<Double>(
-            get: {
-                if let override = settings.settings.perDisplayNotchSize[displayID], override.width > 0 {
-                    return Double(override.width)
-                }
-                return Double(defaultValue)
-            },
-            set: { newValue in
-                var override = settings.settings.perDisplayNotchSize[displayID] ?? NotchSizeOverride()
-                override.width = CGFloat(newValue)
-                settings.settings.perDisplayNotchSize[displayID] = override
-            }
-        )
-    }
-
-    private func perDisplayHeightBinding(displayID: String, defaultValue: CGFloat) -> Binding<Double> {
-        Binding<Double>(
-            get: {
-                if let override = settings.settings.perDisplayNotchSize[displayID], override.height > 0 {
-                    return Double(override.height)
-                }
-                return Double(defaultValue)
-            },
-            set: { newValue in
-                var override = settings.settings.perDisplayNotchSize[displayID] ?? NotchSizeOverride()
-                override.height = CGFloat(newValue)
-                settings.settings.perDisplayNotchSize[displayID] = override
-            }
-        )
-    }
-
-    private func sizeControl(label: String, value: Binding<Double>, range: ClosedRange<Double>, hasOverride: Bool) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: true, vertical: false)
-                .lineLimit(1)
-            TextField(label, value: value, format: .number.precision(.fractionLength(0)))
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 62)
-                .multilineTextAlignment(.trailing)
-            VStack(spacing: 0) {
-                Button {
-                    value.wrappedValue = min(range.upperBound, value.wrappedValue + 1)
-                } label: {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 9, weight: .bold))
-                        .frame(width: 16, height: 9)
-                }
-                .buttonStyle(.plain)
-                .help("Increase \(label)")
-
-                Button {
-                    value.wrappedValue = max(range.lowerBound, value.wrappedValue - 1)
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .frame(width: 16, height: 9)
-                }
-                .buttonStyle(.plain)
-                .help("Decrease \(label)")
-            }
-            Text("pt")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            if !hasOverride {
-                Text("auto")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .help("Automatic size; editing creates a per-display override")
-            }
-        }
-    }
-
-    private func perDisplayInactiveBinding(for displayID: String) -> Binding<Bool> {
-        Binding<Bool>(
-            get: {
-                settings.settings.perDisplayHideNotchWhenInactive[displayID]
-                    ?? settings.settings.hideNotchWhenInactive
-            },
-            set: { newValue in
-                settings.settings.perDisplayHideNotchWhenInactive[displayID] = newValue
-            }
-        )
-    }
-}
-
 struct MenuBarHidingSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -11178,6 +11281,20 @@ struct MenuBarHidingSettingsView: View {
             }.modifier(SettingsContainerModifier())
 
             if settings.settings.menuBarEnabled {
+                if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 {
+                    HStack(alignment: .center, spacing: 12) {
+                        InfoContainer(text: "Sapphire's menu bar icons need Sapphire to be allowed under System Settings → Menu Bar → Allow in the Menu Bar. If the control item never appears, check that switch.", iconName: "menubar.rectangle", color: .blue)
+                        Button("Open Menu Bar Settings…") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.bordered).controlSize(.small)
+                    }
+                    .padding()
+                    .modifier(SettingsContainerModifier())
+                }
+
                 VStack(alignment: .leading, spacing: 0) {
 
                     Text("Control Item Icons").font(.headline).padding([.top, .horizontal])
@@ -11193,16 +11310,26 @@ struct MenuBarHidingSettingsView: View {
                     }
                 }.modifier(SettingsContainerModifier())
 
-                VStack(alignment: .leading, spacing: 0) {
-                    InfoContainer(text: "To customize the shown icons, right click on the menu bar and select 'Edit Menu Bar Items'. The icons placed in between the dot and expansion icon will always be shown, the icons placed in between the two dots will be hidden when the menu is collapsed, and the icons after the dot will always be hidden.", iconName: "info.circle", color: Color.mint).padding()
+                if MenuBarAgentHost.isActive && MenuBarVisibilityRestrictor.isUsable {
+                    MenuBarLayoutEditorView()
+                } else if MenuBarAgentHost.isActive && MenuBarVisibilityRestrictor.isAvailable {
+                    InfoContainer(text: "Sapphire hides items with macOS's own menu bar controls only when it is installed in the Applications folder. This copy runs from elsewhere, so it falls back to stretching the divider up to the app menus.", iconName: "exclamationmark.triangle", color: .orange)
+                        .padding()
+                        .modifier(SettingsContainerModifier())
+                }
 
-                    Image("MenubarDemo")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 480)
-                        .cornerRadius(10)
-                        .padding(.horizontal)
-                        .padding(.top, 8)
+                VStack(alignment: .leading, spacing: 0) {
+                    if !(MenuBarAgentHost.isActive && MenuBarVisibilityRestrictor.isUsable) {
+                        InfoContainer(text: "To customize the shown icons, right click on the menu bar and select 'Edit Menu Bar Items'. The icons placed in between the dot and expansion icon will always be shown, the icons placed in between the two dots will be hidden when the menu is collapsed, and the icons after the dot will always be hidden.", iconName: "info.circle", color: Color.mint).padding()
+
+                        Image("MenubarDemo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 480)
+                            .cornerRadius(10)
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                    }
 
                     Text("Show Hidden Items").font(.headline).padding([.top, .horizontal])
                     ToggleRow(title: "Show on Click", description: "Show hidden items when clicking empty menu bar space", isOn: $settings.settings.showOnClick)
@@ -11218,7 +11345,17 @@ struct MenuBarHidingSettingsView: View {
                         .padding(.horizontal, 60)
                         .padding(.bottom, 8)
                     }
+                    Divider().padding(.leading, 20)
+                    ToggleRow(title: "Show on Scroll or Swipe", description: "Scroll up or swipe in an empty part of the menu bar to show hidden items; scroll down to hide them", isOn: $settings.settings.showOnScroll)
+                    if settings.settings.showOnClick && settings.settings.enableAlwaysHiddenSection {
+                        Divider().padding(.leading, 20)
+                        ToggleRow(title: "Double-Click for Always-Hidden Items", description: "A second click on empty menu bar space also shows the always-hidden section. The first click still shows hidden items right away", isOn: $settings.settings.showAlwaysHiddenOnDoubleClick)
+                    }
+                    Divider().padding(.leading, 20)
+                    ToggleRow(title: "Hide App Menus When Crowded", description: "When shown items would run into the app's menus or the notch, temporarily swap the menus out until the items hide again", isOn: $settings.settings.hideAppMenusWhenShowingItems)
                 }.modifier(SettingsContainerModifier())
+
+                MenuBarHotkeysSettingsSection()
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Auto-Rehide").font(.headline).padding([.top, .horizontal])
@@ -11228,11 +11365,18 @@ struct MenuBarHidingSettingsView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Rehide Strategy").font(.subheadline).foregroundColor(.secondary)
                             Picker("", selection: $settings.settings.rehideStrategy) {
-                                Text("Smart (when mouse leaves)").tag("smart"); Text("Timed").tag("timed")
+                                Text("Smart (when mouse leaves)").tag("smart"); Text("Timed").tag("timed"); Text("App Change").tag("focusedApp")
                             }.pickerStyle(.segmented).padding(.horizontal)
                         }.padding()
                         if settings.settings.rehideStrategy == "timed" {
                             CustomSliderRowView(label: "Hide After", value: $settings.settings.tempShowInterval, range: 1.0...30.0, specifier: "%.1fs")
+                        }
+                        if settings.settings.rehideStrategy != "focusedApp" {
+                            Divider().padding(.leading, 20)
+                            CustomSliderRowView(label: "Keep Opened Items", value: $settings.settings.menuBarKeepOpenedItemsDelay, range: 0...30, specifier: "%.0fs")
+                            Text("After a revealed item's menu closes, keep items shown this long before rehiding, so a stray click doesn't send the item away. 0 rehides at once.")
+                                .font(.caption).foregroundColor(.secondary)
+                                .padding(.horizontal).padding(.bottom, 10)
                         }
                     }
                 }.modifier(SettingsContainerModifier()).animation(.default, value: settings.settings.autoRehide || settings.settings.rehideStrategy == "timed")
@@ -11251,10 +11395,87 @@ struct MenuBarHidingSettingsView: View {
     }
 }
 
+// MARK: - Menu Bar Hotkeys
+
+private struct MenuBarHotkeysSettingsSection: View {
+    @EditingSettings var settings: SettingsEditingSession
+    @ObservedObject private var shortcutRecorder = GlobalShortcutRecorder.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Hotkeys & Zen Mode").font(.headline).padding([.top, .horizontal])
+            Text("Zen mode hides every section and pauses hover, click, scroll and profile reveals until you turn it off. Clicking the control item also ends it.")
+                .font(.caption).foregroundColor(.secondary).padding(.horizontal).padding(.bottom, 8)
+            recorderRow(title: "Toggle Hidden Items", identifier: "menuBarToggleHiddenShortcut", shortcut: $settings.settings.menuBarToggleHiddenShortcut)
+            Divider().padding(.leading, 20)
+            recorderRow(title: "Toggle Always-Hidden Items", identifier: "menuBarToggleAlwaysHiddenShortcut", shortcut: $settings.settings.menuBarToggleAlwaysHiddenShortcut)
+            Divider().padding(.leading, 20)
+            recorderRow(title: "Search Menu Bar Items", identifier: "menuBarSearchShortcut", shortcut: $settings.settings.menuBarSearchShortcut)
+            Divider().padding(.leading, 20)
+            recorderRow(title: "Toggle Zen Mode", identifier: "menuBarZenModeShortcut", shortcut: $settings.settings.menuBarZenModeShortcut)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Zen Mode While Presenting", description: "Turn Zen mode on while a display is mirrored or the screen is shared with Screen Sharing, and off again after. A Zen mode you turned on yourself is left alone", isOn: $settings.settings.menuBarAutoZenWhilePresenting)
+            Divider().padding(.leading, 20)
+            ToggleRow(title: "Zen Mode While the Camera Is On", description: "Turn Zen mode on during video calls, while any app uses a camera", isOn: $settings.settings.menuBarAutoZenWhileCameraInUse)
+            Divider().padding(.leading, 20)
+            HStack {
+                Text("Search and open any item, hidden ones included")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Button("Search Items…") { MenuBarSearchPanelController.shared.open() }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
+            .padding()
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private func recorderRow(title: String, identifier: String, shortcut: Binding<KeyboardShortcut>) -> some View {
+        let isRecording = shortcutRecorder.isRecording && shortcutRecorder.recordingIdentifier == identifier
+        let label = shortcut.wrappedValue.key.isEmpty
+            ? "Not Set"
+            : "\(KeyboardShortcutHelper.description(for: shortcut.wrappedValue.modifiers))\(shortcut.wrappedValue.key)"
+        return HStack {
+            Text(title).font(.system(size: 14, weight: .medium))
+            Spacer()
+            if !isRecording {
+                Text(label)
+                    .font(.caption.monospaced())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.07))
+                    .clipShape(Capsule())
+            }
+            Button(isRecording ? "Cancel" : "Record…") {
+                if isRecording {
+                    shortcutRecorder.stopRecording()
+                } else {
+                    shortcutRecorder.startRecording(identifier: identifier) { key, flags in
+                        shortcut.wrappedValue = KeyboardShortcut(key: key, modifiers: flags)
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            if !shortcut.wrappedValue.key.isEmpty && !isRecording {
+                Button {
+                    shortcut.wrappedValue = KeyboardShortcut(key: "", modifiers: [])
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear shortcut")
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+    }
+}
+
 // MARK: - Menu Bar Profiles (Conditional Reveal + Display/Space/Focus Bindings)
 
 struct MenuBarProfilesSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -11283,7 +11504,7 @@ struct MenuBarProfilesSettingsView: View {
 }
 
 private struct MenuBarProfileEditorView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @State private var expandedProfileIDs: Set<UUID> = []
 
     private var profilesBinding: Binding<[MenuBarProfile]> {
@@ -11334,7 +11555,7 @@ private struct MenuBarProfileCardView: View {
     @Binding var profile: MenuBarProfile
     let isExpanded: Bool
     var onExpandedChange: (Bool) -> Void = { _ in }
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -11557,7 +11778,7 @@ private struct MenuBarRevealConditionEditor: View {
 
 private struct MenuBarProfileBindingsSection: View {
     @Binding var profile: MenuBarProfile
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -11622,10 +11843,11 @@ private struct MenuBarDisplayBindingsEditor: View {
                     VStack(spacing: 4) {
                         ForEach(connectedScreens, id: \.displayIdentifier) { screen in
                             let id = screen.displayIdentifier
-                            let isBound = profile.displayBindings.contains { $0.displayIdentifier == id }
+                            let ids = screen.displayIdentifierCandidates
+                            let isBound = profile.displayBindings.contains { ids.contains($0.displayIdentifier) }
                             Button {
                                 if isBound {
-                                    profile.displayBindings.removeAll { $0.displayIdentifier == id }
+                                    profile.displayBindings.removeAll { ids.contains($0.displayIdentifier) }
                                 } else {
                                     profile.displayBindings.append(MenuBarDisplayBinding(displayIdentifier: id, displayLabel: screen.displayLabel))
                                 }
@@ -11754,7 +11976,7 @@ private struct MenuBarFocusBindingsEditor: View {
 }
 
 struct MenuBarAppearanceEditor: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var opacityBinding: Binding<Double> {
         Binding(
@@ -11794,7 +12016,7 @@ struct MenuBarAppearanceEditor: View {
                 Text("Background Style")
                 Spacer()
                 Picker("", selection: $settings.settings.menuBarTintStyle) {
-                    Text("None").tag("none"); Text("Solid").tag("solid"); Text("Gradient").tag("gradient")
+                    Text("None").tag("none"); Text("Solid").tag("solid"); Text("Gradient").tag("gradient"); Text("Adaptive").tag("adaptive")
                 }.labelsHidden().frame(width: 200)
             }.padding()
 
@@ -11802,6 +12024,13 @@ struct MenuBarAppearanceEditor: View {
                 solidColorPicker
             } else if settings.settings.menuBarTintStyle == "gradient" {
                 gradientColorEditor
+            } else if settings.settings.menuBarTintStyle == "adaptive" {
+                Divider().padding(.leading, 20)
+                ToggleRow(
+                    title: "Two-Tone Gradient",
+                    description: "Adaptive tint follows the colours of your wallpaper behind the menu bar. Turn this on to blend its left and right sides instead of using one average colour.",
+                    isOn: $settings.settings.menuBarAdaptiveTintGradient
+                )
             }
 
             Divider().padding(.leading, 20)
@@ -11877,7 +12106,7 @@ struct MenuBarAppearanceEditor: View {
     }
 
     private func resetTintSettings() {
-        var updated = settings.settings
+        var updated = settings.settings.value
         updated.menuBarLiquidGlass = false
         updated.menuBarLiquidGlassStyle = .frosted
         updated.menuBarTintStyle = "none"
@@ -11889,12 +12118,12 @@ struct MenuBarAppearanceEditor: View {
         ]
         updated.menuBarOpacity = 1.0
         updated.menuBarBlur = false
-        settings.settings = updated
+        settings.settings.value = updated
     }
 }
 
 struct MenuBarAppearanceSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var verticalPaddingBinding: Binding<Double> {
         Binding<Double>(
@@ -11953,7 +12182,7 @@ struct MenuBarAppearanceSettingsView: View {
     }
 
     private func resetAllAppearanceSettings() {
-        var updated = settings.settings
+        var updated = settings.settings.value
         updated.menuBarLiquidGlass = false
         updated.menuBarLiquidGlassStyle = .frosted
         updated.menuBarTintStyle = "none"
@@ -11971,12 +12200,12 @@ struct MenuBarAppearanceSettingsView: View {
 
         updated.menuBarShapeStyle = "none"
         updated.menuBarVerticalPadding = 0
-        settings.settings = updated
+        settings.settings.value = updated
     }
 }
 
 struct MenuBarSpacingSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @State private var spacingManager: MenuBarSpacingManager?
 
     private var spacingBinding: Binding<Double> {
@@ -12376,14 +12605,16 @@ struct FocusSessionSettingsView: View {
         var id: String { bundleID }
     }
 
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @StateObject private var shortcutRecorder = GlobalShortcutRecorder.shared
     @StateObject private var ambient = FocusAmbientSoundManager.shared
     @StateObject private var shortcutsCatalog = ShortcutsCatalog.shared
+    @StateObject private var profileStore = FocusProfileStore.shared
     @State private var newBlockedApp: String = ""
     @State private var newBlockedSite: String = ""
     @State private var showingAddSchedule = false
     @State private var appCandidates: [AppCandidate] = []
+    @State private var availableFocusModes: [(id: String, name: String)] = []
 
     nonisolated private static func loadInstalledApps() -> [AppCandidate] {
         InstalledApplications.namesAndBundleIDs().map { AppCandidate(name: $0.name, bundleID: $0.bundleID) }
@@ -12392,18 +12623,22 @@ struct FocusSessionSettingsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
-                Text("Focus Sessions")
+                Text("Focus")
                     .font(.largeTitle.bold())
                     .padding(.bottom)
 
-                streakSection
+                FocusInsightsPanel(manager: FocusSessionManager.shared)
+                    .environmentObject(FocusSessionManager.shared)
+
+                profilesSection
                 durationSection
+                blockingSection
+                socialSection
+                triggersSection
                 schedulingSection
                 liveActivityToggleSection
-                blockingSection
                 environmentSection
                 automationSection
-                historySection
             }
             .padding(25)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -12415,23 +12650,226 @@ struct FocusSessionSettingsView: View {
             }.value
             guard !Task.isCancelled else { return }
             appCandidates = candidates
+            availableFocusModes = MenuBarProfileEngine.fetchAvailableFocusModes()
+                .map { (id: $0.identifier, name: $0.name) }
         }
     }
 
-    private var streakSection: some View {
+    private var profilesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Streaks")
-            Text("Miss a day without breaking your streak by reporting immunity days at least 3 days in advance (unlimited). If a streak still breaks, spend a streak pass to revive it — everyone gets a few free every month by plan.")
+            sectionLabel("Profiles")
+            Text("Each profile has its own timer, blocks, and social filters. Sync activation and settings separately.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 6)
 
-            FocusStreakPanelView(expanded: true)
-                .environmentObject(FocusSessionManager.shared)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(profileStore.profiles) { profile in
+                        Button {
+                            profileStore.select(profile.id)
+                        } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: profile.symbolName)
+                                    .font(.system(size: 18, weight: .semibold))
+                                Text(profile.name)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 88, height: 72)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(profile.id == profileStore.activeProfileID
+                                          ? profile.accentColor.opacity(0.28)
+                                          : Color.primary.opacity(0.06))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(profile.id == profileStore.activeProfileID
+                                                  ? profile.accentColor.opacity(0.8)
+                                                  : Color.clear, lineWidth: 1.5)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Duplicate") {
+                                var copy = profile
+                                copy.id = UUID()
+                                copy.name = profile.name + " Copy"
+                                profileStore.upsert(copy)
+                            }
+                            if profileStore.profiles.count > 1 {
+                                Button("Delete", role: .destructive) {
+                                    profileStore.delete(id: profile.id)
+                                }
+                            }
+                        }
+                    }
+                    Button {
+                        let p = FocusProfile.makeDefault(name: "New Profile", symbol: "sparkles")
+                        profileStore.upsert(p)
+                        profileStore.select(p.id)
+                    } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 44, height: 72)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.06)))
+                    }
+                    .buttonStyle(.plain)
+                }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
+            }
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+
+            HStack {
+                Text("Name")
+                    .font(.system(size: 13))
+                Spacer()
+                TextField("Name", text: Binding(
+                    get: { profileStore.activeProfile.name },
+                    set: { name in profileStore.updateActive { $0.name = name } }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 160)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(
+                title: "Sync start & stop with phone",
+                description: "When this profile starts or ends here, do the same on Android.",
+                isOn: Binding(
+                    get: { profileStore.activeProfile.syncActivation },
+                    set: { v in profileStore.updateActive { $0.syncActivation = v } }
+                )
+            )
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(
+                title: "Sync this profile’s settings",
+                description: "Mirror blocks and social filters. Off = customize each device.",
+                isOn: Binding(
+                    get: { profileStore.activeProfile.syncSettings },
+                    set: { v in profileStore.updateActive { $0.syncSettings = v } }
+                )
+            )
+            Divider().opacity(0.3).padding(.horizontal, 16)
+            ToggleRow(
+                title: "Also sync system Focus / DND",
+                description: "Mirror macOS Focus and Android Do Not Disturb.",
+                isOn: $settings.settings.continuitySyncNotificationMode
+            )
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private var socialSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Social filters")
+            Text("Cut short-form feeds without blocking every app by default.")
+                .font(.caption).foregroundColor(.secondary)
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 4)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 0) {
+                socialChip("Instagram Reels", \.blockInstagramReels)
+                socialChip("Instagram Explore", \.blockInstagramExplore)
+                socialChip("Following only", \.instagramFollowingOnly)
+                socialChip("YouTube Shorts", \.blockYouTubeShorts)
+                socialChip("Facebook Reels", \.blockFacebookReels)
+                socialChip("TikTok", \.blockTikTok)
+                socialChip("Snap Spotlight", \.blockSnapchatSpotlight)
+                socialChip("Short-form web", \.blockShortFormWeb)
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+        }
+        .modifier(SettingsContainerModifier())
+    }
+
+    private func socialChip(_ title: String, _ keyPath: WritableKeyPath<FocusSocialFilters, Bool>) -> some View {
+        let on = profileStore.activeProfile.social[keyPath: keyPath]
+        return Button {
+            profileStore.updateActive { $0.social[keyPath: keyPath].toggle() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(on ? Color.purple : Color.secondary)
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(on ? Color.purple.opacity(0.12) : Color.primary.opacity(0.04))
+            )
+            .padding(6)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func socialToggle(_ title: String, _ keyPath: WritableKeyPath<FocusSocialFilters, Bool>) -> some View {
+        socialChip(title, keyPath)
+    }
+
+    private var triggersSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("Auto-Start Triggers")
+            Text("Start this profile when a macOS Focus mode turns on, or when your phone enters Do Not Disturb.")
+                .font(.caption).foregroundColor(.secondary)
+                .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
+
+            if availableFocusModes.isEmpty {
+                Text("No macOS Focus modes found. Enable Focus Status permission and create modes in System Settings.")
+                    .font(.caption).foregroundColor(.secondary)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+            } else {
+                ForEach(availableFocusModes, id: \.id) { mode in
+                    let selected = profileStore.activeProfile.triggers.macOSFocusModeIDs.contains(mode.id)
+                    ToggleRow(
+                        title: mode.name,
+                        description: "Start this profile when “\(mode.name)” activates",
+                        isOn: Binding(
+                            get: { selected },
+                            set: { on in
+                                profileStore.updateActive { p in
+                                    if on {
+                                        if !p.triggers.macOSFocusModeIDs.contains(mode.id) {
+                                            p.triggers.macOSFocusModeIDs.append(mode.id)
+                                        }
+                                        if !p.triggers.macOSFocusModeNames.contains(mode.name) {
+                                            p.triggers.macOSFocusModeNames.append(mode.name)
+                                        }
+                                    } else {
+                                        p.triggers.macOSFocusModeIDs.removeAll { $0 == mode.id }
+                                        p.triggers.macOSFocusModeNames.removeAll { $0 == mode.name }
+                                    }
+                                }
+                            }
+                        )
+                    )
+                    Divider().opacity(0.3).padding(.horizontal, 16)
+                }
+            }
+
+            ToggleRow(
+                title: "Android Do Not Disturb",
+                description: "Start when the phone enters DND (requires Continuity).",
+                isOn: Binding(
+                    get: { profileStore.activeProfile.triggers.androidDND || profileStore.activeProfile.triggers.syncPeerSystemFocus },
+                    set: { v in
+                        profileStore.updateActive {
+                            $0.triggers.androidDND = v
+                            $0.triggers.syncPeerSystemFocus = v
+                        }
+                    }
+                )
+            )
         }
         .modifier(SettingsContainerModifier())
     }
@@ -12473,7 +12911,7 @@ struct FocusSessionSettingsView: View {
         }
         .modifier(SettingsContainerModifier())
         .sheet(isPresented: $showingAddSchedule) {
-            AddFocusScheduleView().environmentObject(settings)
+            AddFocusScheduleView().environment(settings)
         }
     }
 
@@ -12933,124 +13371,6 @@ struct FocusSessionSettingsView: View {
         }
     }
 
-    private var historySection: some View {
-        let fm = FocusSessionManager.shared
-        return VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Stats & History")
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                statCard(title: "Today", value: FocusSessionManager.format(fm.completedToday), icon: "sun.max.fill", color: .green)
-                statCard(title: "Streak", value: "\(fm.currentStreak)d", icon: "flame.fill", color: .orange)
-                statCard(title: "Sessions", value: "\(fm.totalSessionCountAllTime)", icon: "checkmark.seal.fill", color: .blue)
-                statCard(title: "All Time", value: FocusSessionManager.format(fm.totalFocusTimeAllTime), icon: "clock.fill", color: .purple)
-                statCard(title: "Average", value: FocusSessionManager.format(fm.averageSessionDuration), icon: "gauge.medium", color: .cyan)
-                if let best = fm.bestDay {
-                    statCard(title: "Best Day", value: FocusSessionManager.format(best.seconds), icon: "trophy.fill", color: .yellow)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            let week = fm.weeklyData
-            let maxWeek = max(week.map(\.seconds).max() ?? 1, 1)
-            if week.contains(where: { $0.seconds > 0 }) {
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                Text("Last 7 Days")
-                    .font(.caption.bold())
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                HStack(alignment: .bottom, spacing: 6) {
-                    ForEach(week.indices, id: \.self) { i in
-                        VStack(spacing: 3) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(week[i].seconds > 0 ? Color.green.opacity(0.7) : Color.secondary.opacity(0.15))
-                                .frame(height: max(4, CGFloat(week[i].seconds / maxWeek) * 70))
-                            Text(week[i].label)
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-                .padding(.bottom, 12)
-            }
-
-            if !fm.history.isEmpty {
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                Text("Recent Sessions")
-                    .font(.caption.bold())
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                VStack(spacing: 0) {
-                    ForEach(fm.history.prefix(10)) { session in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(session.finishedAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                if session.completedBlocks > 1 {
-                                    Text("\(session.completedBlocks) blocks")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.secondary.opacity(0.6))
-                                }
-                            }
-                            Spacer()
-                            Text(FocusSessionManager.format(session.actualDuration))
-                                .font(.caption.monospaced().bold())
-                                .foregroundColor(.green)
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 6)
-                        Divider().opacity(0.15).padding(.leading, 16)
-                    }
-                }
-                .padding(.bottom, 8)
-            } else {
-                Text("No completed sessions yet. Start one and stay focused! ")
-                    .font(.caption).foregroundColor(.secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 10)
-            }
-
-            if !fm.history.isEmpty {
-                Divider().opacity(0.3).padding(.horizontal, 16)
-                HStack {
-                    Spacer()
-                    Button("Clear History", role: .destructive) {
-                        fm.clearAllHistory()
-                    }
-                    .font(.caption)
-                    .padding(.trailing, 16).padding(.vertical, 10)
-                }
-            }
-        }
-        .modifier(SettingsContainerModifier())
-    }
-
-    private func statCard(title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(color)
-                Text(title)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-            }
-            Text(value)
-                .font(.system(size: 18, weight: .bold, design: .monospaced))
-                .foregroundColor(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-    }
-
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 14, weight: .semibold))
@@ -13072,7 +13392,7 @@ struct FocusSessionSettingsView: View {
 // MARK: - Scheduled Focus Sessions
 
 private struct FocusScheduleRowView: View {
-    @EnvironmentObject private var settings: SettingsEditingSession
+    @EditingSettings private var settings: SettingsEditingSession
     @Binding var schedule: ScheduledFocusSession
 
     var body: some View {
@@ -13130,7 +13450,7 @@ private struct FocusScheduleRowView: View {
 
 private struct AddFocusScheduleView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var settings: SettingsEditingSession
+    @EditingSettings private var settings: SettingsEditingSession
     private struct WeekdayToken: Identifiable {
         let number: Int
         let label: String

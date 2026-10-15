@@ -46,13 +46,17 @@ public extension NSScreen {
   }
 
   var displayIdentifier: String {
-    if let vendor = vendorNumber, let model = modelNumber {
-      if let serial = serialNumber, serial != 0 {
-        return "v\(vendor)-m\(model)-s\(serial)"
-      }
-      return "v\(vendor)-m\(model)"
-    }
-    return "id-\(displayID)"
+    DisplaySettingsKey.key(
+      vendor: vendorNumber,
+      model: modelNumber,
+      serial: serialNumber,
+      uuid: cgsDisplayIdentifier,
+      displayID: displayID
+    )
+  }
+
+  var displayIdentifierCandidates: [String] {
+    DisplaySettingsKey.candidates(for: displayIdentifier)
   }
 
   var displayLabel: String {
@@ -69,19 +73,63 @@ public extension NSScreen {
     }
 
     defer {
-      assert(IOObjectRelease(servicePortIterator) == KERN_SUCCESS)
+      IOObjectRelease(servicePortIterator)
     }
 
     while case let object = IOIteratorNext(servicePortIterator), object != 0 {
-      let dict = (IODisplayCreateInfoDictionary(object, UInt32(kIODisplayOnlyPreferredName)).takeRetainedValue() as NSDictionary as? [String: AnyObject])!
+      defer { IOObjectRelease(object) }
+      guard let dict = IODisplayCreateInfoDictionary(object, UInt32(kIODisplayOnlyPreferredName))?.takeRetainedValue() as NSDictionary? as? [String: AnyObject] else {
+        continue
+      }
 
       if dict[kDisplayVendorID] as? UInt32 == self.vendorNumber, dict[kDisplayProductID] as? UInt32 == self.modelNumber, dict[kDisplaySerialNumber] as? UInt32 == self.serialNumber {
         if let productName = dict["DisplayProductName"] as? [String: String], let firstKey = Array(productName.keys).first {
-          return productName[firstKey]!
+          return productName[firstKey]
         }
       }
     }
 
+    return nil
+  }
+}
+
+enum DisplaySettingsKey {
+  private static let uuidMarker = "-u"
+
+  static func key(vendor: UInt32?, model: UInt32?, serial: UInt32?, uuid: @autoclosure () -> String?, displayID: CGDirectDisplayID) -> String {
+    guard let vendor, let model else { return "id-\(displayID)" }
+    if let serial, serial != 0 {
+      return "v\(vendor)-m\(model)-s\(serial)"
+    }
+    let base = "v\(vendor)-m\(model)"
+    guard let uuid = uuid(), !uuid.isEmpty else { return base }
+    return base + uuidMarker + uuid
+  }
+
+  static func legacyKey(for key: String) -> String? {
+    guard key.hasPrefix("v"), let range = key.range(of: uuidMarker) else { return nil }
+    let base = String(key[..<range.lowerBound])
+    return base.isEmpty ? nil : base
+  }
+
+  static func candidates(for key: String) -> [String] {
+    [key] + (legacyKey(for: key).map { [$0] } ?? [])
+  }
+
+  static func removeValue<Value>(from dictionary: inout [String: Value], for key: String, connectedKeys: [String]) {
+    dictionary.removeValue(forKey: key)
+    guard let legacy = legacyKey(for: key), let inherited = dictionary[legacy] else { return }
+    for other in connectedKeys where other != key && legacyKey(for: other) == legacy && dictionary[other] == nil {
+      dictionary[other] = inherited
+    }
+    dictionary.removeValue(forKey: legacy)
+  }
+
+  static func value<Value>(in dictionary: [String: Value], for key: String?) -> Value? {
+    guard let key else { return nil }
+    for candidate in candidates(for: key) {
+      if let value = dictionary[candidate] { return value }
+    }
     return nil
   }
 }

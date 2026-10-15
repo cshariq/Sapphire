@@ -101,6 +101,63 @@ fileprivate struct StoragePOSIXFileIdentity: Hashable, Sendable {
     }
 }
 
+struct StorageModificationStamp: Hashable, Sendable {
+    let seconds: Int64
+    let nanoseconds: Int64
+
+    fileprivate init(_ metadata: stat) {
+        seconds = Int64(metadata.st_mtimespec.tv_sec)
+        nanoseconds = Int64(metadata.st_mtimespec.tv_nsec)
+    }
+
+    var date: Date {
+        Date(timeIntervalSince1970: TimeInterval(seconds) + TimeInterval(nanoseconds) / 1_000_000_000)
+    }
+
+    static func read(at url: URL) -> StorageModificationStamp? {
+        StoragePOSIXFileStatus.read(at: url)?.modificationStamp
+    }
+
+    static func matches(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        guard let lhs, let rhs else { return lhs == nil && rhs == nil }
+        return abs(lhs.timeIntervalSinceReferenceDate - rhs.timeIntervalSinceReferenceDate) <= 0.000_001
+    }
+}
+
+fileprivate struct StoragePOSIXFileStatus: Sendable {
+    let identity: StoragePOSIXFileIdentity
+    let modificationStamp: StorageModificationStamp
+    let logicalSize: Int64
+    let linkCount: Int
+    let isRegularFile: Bool
+    let isSymbolicLink: Bool
+    let isDataless: Bool
+
+    init(_ metadata: stat) {
+        identity = StoragePOSIXFileIdentity(metadata)
+        modificationStamp = StorageModificationStamp(metadata)
+        logicalSize = max(0, Int64(metadata.st_size))
+        linkCount = Int(metadata.st_nlink)
+        let fileType = metadata.st_mode & S_IFMT
+        isRegularFile = fileType == S_IFREG
+        isSymbolicLink = fileType == S_IFLNK
+        isDataless = Self.isDataless(metadata)
+    }
+
+    static func isDataless(_ metadata: stat) -> Bool {
+        metadata.st_flags & UInt32(SF_DATALESS) != 0
+    }
+
+    static func read(at url: URL) -> StoragePOSIXFileStatus? {
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return nil }
+            var metadata = stat()
+            guard lstat(path, &metadata) == 0 else { return nil }
+            return StoragePOSIXFileStatus(metadata)
+        }
+    }
+}
+
 fileprivate final class StorageHardLinkRegistry: @unchecked Sendable {
     private let lock = NSLock()
     private var identities = Set<StoragePOSIXFileIdentity>()
@@ -125,21 +182,33 @@ private struct StorageCacheKey: Hashable, Sendable {
 private struct StorageScanRequest: Sendable {
     let url: URL
     let deepScan: Bool
+    var runningBundleIdentifiers: Set<String> = []
 }
 
 private struct StoragePathCategoryContext: Sendable {
+    private static let temporaryDirectoryPath: String = {
+        let path = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .standardizedFileURL.path.lowercased()
+        return path.hasSuffix("/") ? path : path + "/"
+    }()
+
     private var containsTrash = false
     private var containsDownloads = false
     private var containsCaches = false
     private var containsApplicationSupport = false
+    private var depth = 0
+    private var previousComponent = ""
 
     init() {}
 
     init(url: URL) {
         self.init()
-        for component in url.standardizedFileURL.pathComponents {
+        let standardized = url.standardizedFileURL
+        for component in standardized.pathComponents {
             append(component.lowercased())
         }
+        let path = standardized.path.lowercased() + "/"
+        if path.hasPrefix(Self.temporaryDirectoryPath) { containsCaches = true }
     }
 
     func appending(_ lowercasedComponent: String) -> StoragePathCategoryContext {
@@ -163,16 +232,23 @@ private struct StoragePathCategoryContext: Sendable {
         switch lowercasedComponent {
         case ".trash", ".trashes": containsTrash = true
         case "downloads": containsDownloads = true
-        case "caches", "tmp": containsCaches = true
+        case "caches": containsCaches = true
+        case "tmp":
+            if depth == 1 || (depth == 2 && previousComponent == "private") {
+                containsCaches = true
+            }
         case "application support": containsApplicationSupport = true
         default: break
         }
+        depth += 1
+        previousComponent = lowercasedComponent
     }
 }
 
 private struct StorageTraversalContext: Sendable {
     let pathCategory: StoragePathCategoryContext
     let packageCategory: StorageCategory?
+    let isReclaimable: Bool
 }
 
 private struct StorageInsightAccumulator: Sendable {
@@ -328,6 +404,56 @@ private struct StorageDirectorySnapshot: Sendable {
     let reclaimableBytes: Int64
     let issues: [StorageScanIssue]
     var metrics: StorageScanMetrics
+
+    var cacheCost: Int {
+        entries.count
+            + insightEntries.count
+            + recommendations.reduce(0) { $0 + $1.entries.count }
+            + duplicateGroups.reduce(0) { $0 + $1.entries.count }
+            + issues.count
+    }
+
+    func trimmed(toCost maximumCost: Int) -> StorageDirectorySnapshot {
+        var budget = max(0, maximumCost - issues.count)
+        let entryBudget = min(entries.count, budget * 3 / 5)
+        budget -= entryBudget
+        let insightBudget = min(insightEntries.count, budget / 2)
+        budget -= insightBudget
+
+        var keptGroups: [StorageDuplicateGroup] = []
+        var groupCost = 0
+        for group in duplicateGroups where groupCost + group.entries.count <= budget {
+            groupCost += group.entries.count
+            keptGroups.append(group)
+        }
+        budget -= groupCost
+
+        let perRecommendation = budget / max(1, recommendations.count)
+        let keptRecommendations = recommendations.map { recommendation in
+            CleanupRecommendation(
+                category: recommendation.category,
+                description: recommendation.description,
+                potentialSpaceFreed: recommendation.potentialSpaceFreed,
+                actionDescription: recommendation.actionDescription,
+                isAutomatic: recommendation.isAutomatic,
+                entries: Array(recommendation.entries.sorted { $0.size > $1.size }.prefix(perRecommendation))
+            )
+        }
+
+        var trimmedMetrics = metrics
+        trimmedMetrics.isTrimmed = true
+        return StorageDirectorySnapshot(
+            url: url,
+            entries: Array(entries.prefix(entryBudget)),
+            insightEntries: Array(insightEntries.sorted { $0.size > $1.size }.prefix(insightBudget)),
+            recommendations: keptRecommendations,
+            duplicateGroups: keptGroups,
+            categorySizes: categorySizes,
+            reclaimableBytes: reclaimableBytes,
+            issues: issues,
+            metrics: trimmedMetrics
+        )
+    }
 }
 
 private actor StorageSnapshotCache {
@@ -364,11 +490,12 @@ private actor StorageSnapshotCache {
     func store(_ snapshot: StorageDirectorySnapshot, for key: StorageCacheKey) {
         let now = Date()
         purgeExpired(now: now)
-        let cost = snapshot.entries.count
-            + snapshot.insightEntries.count
-            + snapshot.recommendations.reduce(0) { $0 + $1.entries.count }
-            + snapshot.duplicateGroups.reduce(0) { $0 + $1.entries.count }
-            + snapshot.issues.count
+        var snapshot = snapshot
+        var cost = snapshot.cacheCost
+        if cost > maximumCost {
+            snapshot = snapshot.trimmed(toCost: maximumCost)
+            cost = snapshot.cacheCost
+        }
         guard cost <= maximumCost else {
             removeValue(forKey: key)
             return
@@ -450,6 +577,7 @@ private struct StorageChildScanResult: Sendable {
     let logicalBytesVisited: Int64
     let allocatedBytesVisited: Int64
     let wasCancelled: Bool
+    var reclaimableBytes: Int64 = 0
 
     func droppingTransientCollections() -> StorageChildScanResult {
         StorageChildScanResult(
@@ -463,7 +591,8 @@ private struct StorageChildScanResult: Sendable {
             directoriesVisited: directoriesVisited,
             logicalBytesVisited: logicalBytesVisited,
             allocatedBytesVisited: allocatedBytesVisited,
-            wasCancelled: wasCancelled
+            wasCancelled: wasCancelled,
+            reclaimableBytes: reclaimableBytes
         )
     }
 }
@@ -642,14 +771,24 @@ private enum StorageScanner {
         guard rootValues.isDirectory == true else {
             throw StorageScannerError.cannotRead(root, "The selected location is not a folder.")
         }
+        guard !DirectorySize.isPseudoLocation(root) else {
+            throw StorageScannerError.cannotRead(
+                root,
+                "This location is a virtual file system (device nodes, automounts) and holds no files on disk."
+            )
+        }
 
         let children: [URL]
         do {
+            let pseudoMountPaths = DirectorySize.pseudoMountPaths(inside: root)
             children = try fileManager.contentsOfDirectory(
                 at: root,
                 includingPropertiesForKeys: Array(childResourceKeys),
                 options: []
-            )
+            ).filter { child in
+                let path = child.standardizedFileURL.path
+                return !pseudoMountPaths.contains(path) && !DirectorySize.isPseudoRootEntry(path)
+            }
         } catch {
             throw StorageScannerError.cannotRead(root, error.localizedDescription)
         }
@@ -839,10 +978,13 @@ private enum StorageScanner {
         let categorySizes = recursiveCategorySizes
         let recommendations = StorageViewModel.generateRecommendations(
             from: insightEntries,
-            duplicateGroups: duplicateGroups
+            duplicateGroups: duplicateGroups,
+            runningBundleIdentifiers: request.runningBundleIdentifiers
         )
         let reclaimableBytes = reclaimableSpace(
-            categorySizes: categorySizes,
+            deletableCacheAndTrashBytes: completedResults.reduce(Int64(0)) {
+                saturatingAdd($0, $1.reclaimableBytes)
+            },
             duplicateGroups: duplicateGroups
         )
         let duration = max(0, ProcessInfo.processInfo.systemUptime - startedAt)
@@ -947,17 +1089,18 @@ private enum StorageScanner {
             var directoriesVisited = isDirectory ? 1 : 0
 
             let isOtherVolume = nestedMountPaths.contains(child.standardizedFileURL.path)
+            let posixStatus = isOtherVolume ? nil : StoragePOSIXFileStatus.read(at: child)
             let isRepeatedHardLink: Bool
             if !isDirectory,
                !isSymbolicLink,
-               !isOtherVolume,
                metadata.linkCount > 1,
-               let hardLinkIdentity = StoragePOSIXFileIdentity.read(at: child) {
+               let hardLinkIdentity = posixStatus?.identity {
                 isRepeatedHardLink = !hardLinkRegistry.shouldCount(hardLinkIdentity)
             } else {
                 isRepeatedHardLink = false
             }
 
+            var reclaimableBytes: Int64 = 0
             if isRepeatedHardLink {
                 size = 0
                 logicalSize = 0
@@ -986,6 +1129,7 @@ private enum StorageScanner {
                 candidates = measurement.candidates
                 categorySizes = measurement.categorySizes
                 insightEntries = measurement.insightEntries
+                reclaimableBytes = measurement.reclaimableBytes
             } else if isDirectory, !isSymbolicLink, !isOtherVolume {
                 size = 0
                 logicalSize = 0
@@ -1000,13 +1144,16 @@ private enum StorageScanner {
                       !isSymbolicLink,
                       metadata.linkCount <= 1,
                       logical >= minimumDuplicateFileSize,
-                      let candidateIdentity = StoragePOSIXFileIdentity.read(at: child) {
+                      let posixStatus,
+                      posixStatus.isRegularFile,
+                      !posixStatus.isDataless {
                 candidates = [StorageFileCandidate(
                     url: child,
                     logicalSize: logical,
                     allocatedSize: allocated,
                     lastModified: metadata.lastModified,
-                    identity: candidateIdentity
+                    identity: posixStatus.identity,
+                    modificationStamp: posixStatus.modificationStamp
                 )]
             }
 
@@ -1015,6 +1162,7 @@ private enum StorageScanner {
             entry.isPackage = metadata.isPackage
             entry.isSymbolicLink = isSymbolicLink
             entry.lastModified = metadata.lastModified
+            entry.modificationStamp = posixStatus?.modificationStamp
             entry.fileType = child.pathExtension.isEmpty ? nil : child.pathExtension.lowercased()
             entry.resourceIdentifier = identity?.serialized
             entry.category = StorageViewModel.categorize(
@@ -1043,6 +1191,9 @@ private enum StorageScanner {
 
             if !isDirectory {
                 categorySizes[entry.category] = saturatingAdd(categorySizes[entry.category, default: 0], size)
+                if (entry.category == .caches || entry.category == .trash), !entry.isSystemProtected {
+                    reclaimableBytes = saturatingAdd(reclaimableBytes, size)
+                }
                 if !isRepeatedHardLink {
                     var directInsightAccumulator = StorageInsightAccumulator()
                     directInsightAccumulator.merge(insightEntries, limitPerCategory: maximumInsightsPerCategoryPerChild)
@@ -1064,7 +1215,8 @@ private enum StorageScanner {
                 directoriesVisited: directoriesVisited,
                 logicalBytesVisited: logicalSize,
                 allocatedBytesVisited: size,
-                wasCancelled: false
+                wasCancelled: false,
+                reclaimableBytes: reclaimableBytes
             )
         } catch {
             return StorageChildScanResult(
@@ -1193,6 +1345,7 @@ private enum StorageScanner {
                 entry.isDuplicate = true
                 entry.isSystemProtected = StorageDeletionPolicy.isProtectedDuringScan(candidate.url)
                 entry.resourceIdentifier = candidate.identity.serialized
+                entry.modificationStamp = candidate.modificationStamp
                 entry.contentHash = serializedFingerprint
                 return entry
             }
@@ -1291,14 +1444,18 @@ private enum StorageScanner {
     private static func hash(candidate: StorageFileCandidate, mode: StorageHashMode) -> StorageHashOutcome {
         do {
             try Task.checkCancellation()
+            let previousDatalessPolicy = disableDatalessMaterialization()
+            defer { restoreDatalessMaterialization(previousDatalessPolicy) }
             let eligibilityValues = try candidate.url.resourceValues(forKeys: [
-                .linkCountKey,
                 .isUbiquitousItemKey,
                 .ubiquitousItemDownloadingStatusKey
             ])
             let isPlaceholder = eligibilityValues.isUbiquitousItem == true
                 && eligibilityValues.ubiquitousItemDownloadingStatus != .current
-            guard (eligibilityValues.linkCount ?? 1) <= 1, !isPlaceholder else {
+            guard !isPlaceholder,
+                  let openingStatus = StoragePOSIXFileStatus.read(at: candidate.url),
+                  openingStatus.linkCount <= 1,
+                  !openingStatus.isDataless else {
                 return StorageHashOutcome(candidate: candidate, digest: nil, issue: nil)
             }
 
@@ -1345,24 +1502,23 @@ private enum StorageScanner {
                 ])
             }
             let finalValues = try candidate.url.resourceValues(forKeys: [
-                .isSymbolicLinkKey,
-                .fileSizeKey,
-                .contentModificationDateKey,
-                .linkCountKey,
                 .isUbiquitousItemKey,
                 .ubiquitousItemDownloadingStatusKey
             ])
             let finalIsPlaceholder = finalValues.isUbiquitousItem == true
                 && finalValues.ubiquitousItemDownloadingStatus != .current
-            guard (finalValues.linkCount ?? 1) <= 1, !finalIsPlaceholder else {
+            guard let finalStatus = StoragePOSIXFileStatus.read(at: candidate.url) else {
+                throw fileChangedError("The file disappeared while it was being verified.")
+            }
+            guard finalStatus.linkCount <= 1, !finalIsPlaceholder, !finalStatus.isDataless else {
                 return StorageHashOutcome(candidate: candidate, digest: nil, issue: nil)
             }
-            if StoragePOSIXFileIdentity.read(at: candidate.url) != candidate.identity {
+            if finalStatus.identity != candidate.identity {
                 throw fileChangedError("The file was replaced while it was being verified.")
             }
-            if finalValues.isSymbolicLink == true
-                || Int64(finalValues.fileSize ?? -1) != candidate.logicalSize
-                || (candidate.lastModified != nil && finalValues.contentModificationDate != candidate.lastModified) {
+            if !finalStatus.isRegularFile
+                || finalStatus.logicalSize != candidate.logicalSize
+                || finalStatus.modificationStamp != candidate.modificationStamp {
                 throw CocoaError(.fileReadUnknown, userInfo: [
                     NSLocalizedDescriptionKey: "The file changed while it was being verified."
                 ])
@@ -1402,14 +1558,28 @@ private enum StorageScanner {
         CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: description])
     }
 
+    private static func disableDatalessMaterialization() -> Int32? {
+        let previous = getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD)
+        guard previous >= 0,
+              previous != IOPOL_MATERIALIZE_DATALESS_FILES_OFF,
+              setiopolicy_np(
+                IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES,
+                IOPOL_SCOPE_THREAD,
+                IOPOL_MATERIALIZE_DATALESS_FILES_OFF
+              ) == 0 else { return nil }
+        return previous
+    }
+
+    private static func restoreDatalessMaterialization(_ previous: Int32?) {
+        guard let previous else { return }
+        _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, previous)
+    }
+
     private static func reclaimableSpace(
-        categorySizes: [StorageCategory: Int64],
+        deletableCacheAndTrashBytes: Int64,
         duplicateGroups: [StorageDuplicateGroup]
     ) -> Int64 {
-        var total = saturatingAdd(
-            categorySizes[.caches, default: 0],
-            categorySizes[.trash, default: 0]
-        )
+        var total = max(0, deletableCacheAndTrashBytes)
         for group in duplicateGroups {
             for duplicate in group.entries.dropFirst() {
                 guard !duplicate.isSystemProtected else { continue }
@@ -1447,12 +1617,18 @@ private actor StorageScanCoordinator {
     }
 
     private struct InFlight {
+        let key: StorageCacheKey
         let runID: UUID
         let task: Task<StorageDirectorySnapshot, Error>
         var subscribers: [UUID: ProgressHandler]
+        var idleTimer: Task<Void, Never>?
+        var isRetired = false
     }
 
-    private var inFlight: [StorageCacheKey: InFlight] = [:]
+    private static let idleGracePeriod: Duration = .seconds(90)
+
+    private var runs: [UUID: InFlight] = [:]
+    private var activeRunIDs: [StorageCacheKey: UUID] = [:]
 
     func acquire(
         request: StorageScanRequest,
@@ -1460,9 +1636,11 @@ private actor StorageScanCoordinator {
     ) -> Lease {
         let key = StorageCacheKey(url: request.url, deepScan: request.deepScan)
         let subscriberID = UUID()
-        if var existing = inFlight[key] {
+        if let activeRunID = activeRunIDs[key], var existing = runs[activeRunID] {
+            existing.idleTimer?.cancel()
+            existing.idleTimer = nil
             existing.subscribers[subscriberID] = progress
-            inFlight[key] = existing
+            runs[activeRunID] = existing
             return Lease(
                 key: key,
                 subscriberID: subscriberID,
@@ -1474,18 +1652,29 @@ private actor StorageScanCoordinator {
 
         let runID = UUID()
         let task = Task.detached(priority: .utility) {
-            let snapshot = try await StorageScanner.scan(request: request) { update in
-                await StorageScanCoordinator.shared.publish(update, for: key, runID: runID)
+            let outcome: Result<StorageDirectorySnapshot, Error>
+            do {
+                let snapshot = try await StorageScanner.scan(request: request) { update in
+                    await StorageScanCoordinator.shared.publish(update, runID: runID)
+                }
+                try Task.checkCancellation()
+                if await StorageScanCoordinator.shared.shouldCache(runID: runID) {
+                    await StorageSnapshotCache.shared.store(snapshot, for: key)
+                }
+                outcome = .success(snapshot)
+            } catch {
+                outcome = .failure(error)
             }
-            try Task.checkCancellation()
-            await StorageSnapshotCache.shared.store(snapshot, for: key)
-            return snapshot
+            await StorageScanCoordinator.shared.finish(runID: runID)
+            return try outcome.get()
         }
-        inFlight[key] = InFlight(
+        runs[runID] = InFlight(
+            key: key,
             runID: runID,
             task: task,
             subscribers: [subscriberID: progress]
         )
+        activeRunIDs[key] = runID
         return Lease(
             key: key,
             subscriberID: subscriberID,
@@ -1496,22 +1685,73 @@ private actor StorageScanCoordinator {
     }
 
     func release(_ lease: Lease) {
-        guard var existing = inFlight[lease.key], existing.runID == lease.runID else { return }
+        guard var existing = runs[lease.runID] else { return }
         existing.subscribers.removeValue(forKey: lease.subscriberID)
-        guard !existing.subscribers.isEmpty else {
-            existing.task.cancel()
-            inFlight.removeValue(forKey: lease.key)
-            return
+        if existing.subscribers.isEmpty {
+            existing.idleTimer?.cancel()
+            existing.idleTimer = Task { [runID = lease.runID] in
+                try? await Task.sleep(for: Self.idleGracePeriod)
+                guard !Task.isCancelled else { return }
+                await StorageScanCoordinator.shared.cancelIfIdle(runID: runID)
+            }
         }
-        inFlight[lease.key] = existing
+        runs[lease.runID] = existing
     }
 
-    private func publish(
-        _ progress: StorageScanProgress,
-        for key: StorageCacheKey,
-        runID: UUID
-    ) async {
-        guard let existing = inFlight[key], existing.runID == runID else { return }
+    func cancel(_ lease: Lease) {
+        guard var existing = runs[lease.runID] else { return }
+        existing.subscribers.removeValue(forKey: lease.subscriberID)
+        guard existing.subscribers.isEmpty else {
+            runs[lease.runID] = existing
+            return
+        }
+        existing.idleTimer?.cancel()
+        existing.task.cancel()
+        forget(runID: lease.runID)
+    }
+
+    func isRunning(_ key: StorageCacheKey) -> Bool {
+        activeRunIDs[key] != nil
+    }
+
+    func invalidate(affectedBy urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        for (key, runID) in activeRunIDs {
+            let scannedRoot = URL(fileURLWithPath: key.path, isDirectory: true)
+            let overlaps = urls.contains { removed in
+                StorageDeletionPolicy.contains(scannedRoot, removed)
+                    || StorageDeletionPolicy.contains(removed, scannedRoot)
+            }
+            guard overlaps else { continue }
+            activeRunIDs.removeValue(forKey: key)
+            runs[runID]?.isRetired = true
+        }
+    }
+
+    private func shouldCache(runID: UUID) -> Bool {
+        runs[runID].map { !$0.isRetired } ?? false
+    }
+
+    private func cancelIfIdle(runID: UUID) {
+        guard let existing = runs[runID], existing.subscribers.isEmpty else { return }
+        existing.task.cancel()
+        forget(runID: runID)
+    }
+
+    private func finish(runID: UUID) {
+        runs[runID]?.idleTimer?.cancel()
+        forget(runID: runID)
+    }
+
+    private func forget(runID: UUID) {
+        guard let removed = runs.removeValue(forKey: runID) else { return }
+        if activeRunIDs[removed.key] == runID {
+            activeRunIDs.removeValue(forKey: removed.key)
+        }
+    }
+
+    private func publish(_ progress: StorageScanProgress, runID: UUID) async {
+        guard let existing = runs[runID] else { return }
         let subscribers = Array(existing.subscribers.values)
         for subscriber in subscribers {
             await subscriber(progress)
@@ -1581,30 +1821,18 @@ private enum StorageDeletionPolicy {
                 return "The item identity changed after the scan and it was not removed."
             }
         }
-        guard let expectedModificationDate = entry.lastModified,
-              values.contentModificationDate == expectedModificationDate else {
+        let modificationMatches: Bool
+        if let expectedStamp = entry.modificationStamp {
+            modificationMatches = StorageModificationStamp.read(at: entry.url) == expectedStamp
+        } else if let expectedDate = entry.lastModified {
+            modificationMatches = StorageModificationStamp.matches(values.contentModificationDate, expectedDate)
+        } else {
+            modificationMatches = false
+        }
+        guard modificationMatches else {
             return "The item was modified after the scan and it was not removed."
         }
-        if entry.isDirectory, !entry.isSymbolicLink {
-            let measurement = DirectorySize.measure(
-                entry.url,
-                using: FileManager.default,
-                preferAllocated: true,
-                rootVolumeIdentifier: StorageFileIdentity.volumeIdentifier(from: values),
-                rootVolumeURL: values.volume?.standardizedFileURL,
-                ancestorDirectoryIdentities: [],
-                collectCandidates: false,
-                insightLimitPerCategory: 0,
-                isCancelled: { Task.isCancelled }
-            )
-            if measurement.wasCancelled { return "Removal was cancelled before the folder could be revalidated." }
-            if let failure = measurement.failures.first {
-                return "The folder could not be fully revalidated: \(failure.message)"
-            }
-            guard measurement.bytes == entry.size else {
-                return "The folder contents changed after the scan and it was not removed."
-            }
-        } else {
+        if !entry.isDirectory {
             let logicalSize = Int64(max(0, values.fileSize ?? 0))
             let allocatedSize = Int64(max(0, values.totalFileAllocatedSize ?? values.fileSize ?? 0))
             guard logicalSize == entry.logicalSize, allocatedSize == entry.size else {
@@ -1631,6 +1859,10 @@ private enum StorageDeletionPolicy {
             || isStandardHomeFolder(target, home: home) {
             return true
         }
+        if isSensitiveLocation(requested, home: requestedHome)
+            || isSensitiveLocation(target, home: home) {
+            return true
+        }
         if contains(home, target) { return false }
 
         let volumes = URL(fileURLWithPath: "/Volumes", isDirectory: true)
@@ -1646,6 +1878,7 @@ private enum StorageDeletionPolicy {
         let target = url.standardizedFileURL
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
         if target == home || isStandardHomeFolder(target, home: home) { return true }
+        if isSensitiveLocation(target, home: home) { return true }
         if lexicallyContains(home, target) { return false }
 
         let volumes = URL(fileURLWithPath: "/Volumes", isDirectory: true).standardizedFileURL
@@ -1665,6 +1898,66 @@ private enum StorageDeletionPolicy {
         return protectedHomeFolderNames.contains(name)
     }
 
+    private static let lowercasedHomePath = FileManager.default.homeDirectoryForCurrentUser
+        .standardizedFileURL.path.lowercased()
+
+    static func isReclaimableScope(directoryPath: String) -> Bool {
+        let path = directoryPath.lowercased()
+        if path.hasSuffix(".photoslibrary") || path.contains(".photoslibrary/") { return false }
+        let home = lowercasedHomePath
+        if path == home || path.hasPrefix(home + "/") {
+            let relative = path.dropFirst(min(path.count, home.count + 1))
+            return !sensitiveRelativePathPrefixes.contains { prefix in
+                relative == prefix || relative.hasPrefix(prefix + "/")
+            }
+        }
+        return path.hasPrefix("/volumes/")
+    }
+
+    private static let sensitiveRelativePathPrefixes: [String] = sensitiveLibraryPaths.map {
+        (["library"] + $0).joined(separator: "/")
+    }
+
+    private static let sensitiveLibraryPaths: [[String]] = [
+        ["keychains"], ["mail"], ["messages"], ["accounts"], ["cookies"],
+        ["application support", "mobilesync"]
+    ]
+
+    private static let cautionLibraryPaths: [[String]] = [
+        ["containers"], ["group containers"], ["mobile documents"], ["cloudstorage"]
+    ]
+
+    private static let cloudSyncedLibraryPaths: [[String]] = [
+        ["mobile documents"], ["cloudstorage"]
+    ]
+
+    static func isSensitiveLocation(_ url: URL, home: URL? = nil) -> Bool {
+        let standardized = url.standardizedFileURL
+        if standardized.pathComponents.contains(where: { $0.lowercased().hasSuffix(".photoslibrary") }) {
+            return true
+        }
+        return matchesLibraryPaths(sensitiveLibraryPaths, url: standardized, home: home)
+    }
+
+    static func isCautionLocation(_ url: URL) -> Bool {
+        matchesLibraryPaths(cautionLibraryPaths, url: url.standardizedFileURL, home: nil)
+    }
+
+    static func isCloudSyncedLocation(_ url: URL) -> Bool {
+        matchesLibraryPaths(cloudSyncedLibraryPaths, url: url.standardizedFileURL, home: nil)
+    }
+
+    private static func matchesLibraryPaths(_ paths: [[String]], url: URL, home: URL?) -> Bool {
+        let home = (home ?? FileManager.default.homeDirectoryForCurrentUser).standardizedFileURL
+        let homeComponents = home.pathComponents.map { $0.lowercased() }
+        let components = url.pathComponents.map { $0.lowercased() }
+        guard components.count > homeComponents.count + 1,
+              components.prefix(homeComponents.count).elementsEqual(homeComponents),
+              components[homeComponents.count] == "library" else { return false }
+        let relative = components.dropFirst(homeComponents.count + 1)
+        return paths.contains { relative.starts(with: $0) }
+    }
+
     private static func lexicallyContains(_ parent: URL, _ child: URL) -> Bool {
         let parentComponents = parent.standardizedFileURL.pathComponents
         let childComponents = child.standardizedFileURL.pathComponents
@@ -1681,6 +1974,35 @@ private enum StorageDeletionPolicy {
 
     private static func canonical(_ url: URL) -> URL {
         url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+}
+
+private enum StorageCachePolicy {
+    enum Safety: Equatable {
+        case denied
+        case caution
+        case safe
+    }
+
+    private static let deniedOwnerPrefixes: [String] = {
+        var prefixes = [
+            "cloudkit", "com.apple.bird", "com.apple.coreaudio",
+            "com.apple.fontregistry", "com.apple.akd", "com.apple.authkit"
+        ]
+        if let own = Bundle.main.bundleIdentifier?.lowercased(), !own.isEmpty {
+            prefixes.append(own)
+        }
+        return prefixes
+    }()
+
+    static func safety(of url: URL, runningBundleIdentifiers: Set<String>) -> Safety {
+        let components = url.standardizedFileURL.pathComponents.map { $0.lowercased() }
+        guard let cachesIndex = components.firstIndex(of: "caches"),
+              components.index(after: cachesIndex) < components.endIndex else { return .safe }
+        let owner = components[components.index(after: cachesIndex)]
+        if deniedOwnerPrefixes.contains(where: { owner.hasPrefix($0) }) { return .denied }
+        if owner.hasPrefix("com.apple.") || runningBundleIdentifiers.contains(owner) { return .caution }
+        return .safe
     }
 }
 
@@ -1726,6 +2048,7 @@ private struct StorageFileCandidate: Sendable {
     let allocatedSize: Int64
     let lastModified: Date?
     let identity: StoragePOSIXFileIdentity
+    let modificationStamp: StorageModificationStamp
 }
 
 private struct DirectoryScanFailure: Sendable {
@@ -1744,6 +2067,7 @@ enum DirectorySize {
         var candidates: [StorageFileCandidate] = []
         var failures: [DirectoryScanFailure] = []
         var wasCancelled = false
+        var reclaimableBytes: Int64 = 0
     }
 
     static func of(
@@ -1797,7 +2121,8 @@ enum DirectorySize {
             : nil
         var traversalContexts = [StorageTraversalContext(
             pathCategory: rootPathCategory,
-            packageCategory: rootPackageCategory
+            packageCategory: rootPackageCategory,
+            isReclaimable: needsInsights && StorageDeletionPolicy.isReclaimableScope(directoryPath: url.path)
         )]
 
         guard let rootPath = url.withUnsafeFileSystemRepresentation({ path -> UnsafeMutablePointer<CChar>? in
@@ -1911,9 +2236,14 @@ enum DirectorySize {
                                 : .other
                         }
                     }
+                    let isReclaimable = needsInsights
+                        && StorageDeletionPolicy.isReclaimableScope(
+                            directoryPath: String(cString: item.pointee.fts_path)
+                        )
                     traversalContexts.append(StorageTraversalContext(
                         pathCategory: pathCategory,
-                        packageCategory: packageCategory
+                        packageCategory: packageCategory,
+                        isReclaimable: isReclaimable
                     ))
                 } else {
                     measurement.filesVisited += 1
@@ -1943,6 +2273,9 @@ enum DirectorySize {
                         measurement.categorySizes[category, default: 0],
                         countedSize
                     )
+                    if !isDirectory, (category == .caches || category == .trash), parentContext.isReclaimable {
+                        measurement.reclaimableBytes = addingWithoutOverflow(measurement.reclaimableBytes, countedSize)
+                    }
                     if isInspectableFile,
                        StorageInsightAccumulator.shouldIndex(
                         category: category,
@@ -1966,6 +2299,7 @@ enum DirectorySize {
                         insight.isLargeFile = facets.isLargeFile
                         insight.isOldFile = facets.isOldFile
                         insight.lastModified = lastModified
+                        insight.modificationStamp = StorageModificationStamp(metadata)
                         insight.fileType = pathExtension(of: originalName)
                         insightAccumulator.consider(insight, limitPerCategory: insightLimitPerCategory)
                     }
@@ -1976,13 +2310,15 @@ enum DirectorySize {
                       isRegularFile,
                       !isSymbolicLink,
                       metadata.st_nlink <= 1,
-                      logical >= minimumCandidateSize else { return }
+                      logical >= minimumCandidateSize,
+                      !StoragePOSIXFileStatus.isDataless(metadata) else { return }
                 measurement.candidates.append(StorageFileCandidate(
                     url: fileURL(for: item, isDirectory: false),
                     logicalSize: logical,
                     allocatedSize: allocated,
                     lastModified: lastModified,
-                    identity: StoragePOSIXFileIdentity(metadata)
+                    identity: StoragePOSIXFileIdentity(metadata),
+                    modificationStamp: StorageModificationStamp(metadata)
                 ))
             }
         }
@@ -1993,14 +2329,55 @@ enum DirectorySize {
         return measurement
     }
 
-    fileprivate static func nestedMountPaths(inside rootURL: URL) -> Set<String> {
+    fileprivate static let pseudoFileSystemTypes: Set<String> = [
+        "devfs", "fdesc", "autofs", "procfs", "devicefs", "lifs", "mtmfs", "ctlfs", "synthfs", "nullfs"
+    ]
+
+    private static let pseudoRootEntries: Set<String> = ["/dev", "/.vol", "/.file", "/.nofollow", "/.resolve"]
+
+    fileprivate static func isPseudoRootEntry(_ path: String) -> Bool {
+        pseudoRootEntries.contains(path)
+            || pseudoRootEntries.contains { isDescendantPath(path, of: $0) }
+    }
+
+    fileprivate static func isPseudoLocation(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        if isPseudoRootEntry(path) { return true }
+        var fileSystem = statfs()
+        guard statfs(path, &fileSystem) == 0 else { return false }
+        return isPseudoFileSystem(fileSystem)
+    }
+
+    private static func isPseudoFileSystem(_ fileSystem: statfs) -> Bool {
+        pseudoFileSystemTypes.contains(string(fromCharacterTuple: fileSystem.f_fstypename).lowercased())
+    }
+
+    fileprivate static func pseudoMountPaths(inside rootURL: URL) -> Set<String> {
         let traversalRoot = rootURL.standardizedFileURL.path
         return Set(mountedFileSystemSnapshots().lazy.compactMap { fileSystem in
+            guard isPseudoFileSystem(fileSystem) else { return nil }
             let mountPath = mountPointPath(from: fileSystem)
             guard mountPath != traversalRoot,
                   isDescendantPath(mountPath, of: traversalRoot) else { return nil }
             return mountPath
         })
+    }
+
+    fileprivate static func nestedMountPaths(inside rootURL: URL) -> Set<String> {
+        let traversalRoot = rootURL.standardizedFileURL.path
+        return Set(mountedFileSystemSnapshots().lazy.compactMap { fileSystem in
+            guard !isPseudoFileSystem(fileSystem) else { return nil }
+            let mountPath = mountPointPath(from: fileSystem)
+            guard mountPath != traversalRoot,
+                  isDescendantPath(mountPath, of: traversalRoot) else { return nil }
+            return mountPath
+        })
+    }
+
+    private static func string<Tuple>(fromCharacterTuple tuple: Tuple) -> String {
+        withUnsafeBytes(of: tuple) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
     }
 
     private static func sameDeviceMountPaths(
@@ -2055,12 +2432,7 @@ enum DirectorySize {
     }
 
     private static func mountPointPath(from fileSystem: statfs) -> String {
-        var mountName = fileSystem.f_mntonname
-        return withUnsafePointer(to: &mountName) { pointer in
-            pointer.withMemoryRebound(to: CChar.self, capacity: Int(MNAMELEN)) {
-                String(cString: $0)
-            }
-        }
+        string(fromCharacterTuple: fileSystem.f_mntonname)
     }
 
     private static func isDescendantPath(_ candidate: String, of root: String) -> Bool {
@@ -2090,12 +2462,10 @@ enum DirectorySize {
     }
 
     private static func itemName(for entry: UnsafeMutablePointer<FTSENT>) -> String {
-        withUnsafePointer(to: &entry.pointee.fts_name) { pointer in
-            pointer.withMemoryRebound(
-                to: CChar.self,
-                capacity: Int(entry.pointee.fts_namelen) + 1
-            ) { String(cString: $0) }
-        }
+        let pathLength = Int(entry.pointee.fts_pathlen)
+        let nameLength = Int(entry.pointee.fts_namelen)
+        guard let path = entry.pointee.fts_path, nameLength > 0, nameLength <= pathLength else { return "" }
+        return String(cString: path + (pathLength - nameLength))
     }
 
     private static func mayBePackage(name: String) -> Bool {
@@ -2574,7 +2944,7 @@ private enum InstalledAppScanner {
     private static var cacheExpirationTask: Task<Void, Never>?
     private static let cacheLifetime: TimeInterval = 5 * 60
 
-    private let identifierOwnership: AppIdentifierOwnership = .uncertain
+    @Published private(set) var identifierOwnership: AppIdentifierOwnership = .uncertain
 
     deinit {
         scanTask?.cancel()
@@ -2665,18 +3035,26 @@ private enum InstalledAppScanner {
         selectedArtifactIDs = []
         artifactScanTask?.cancel()
         isScanningArtifacts = true
-        let ownership = identifierOwnership
+        identifierOwnership = .uncertain
+        let knownApplications = apps.map { (url: $0.url, bundleID: $0.bundleIdentifier) }
         let owner = WeakReference(self)
         artifactScanTask = Task.detached(priority: .utility) {
+            let ownership = AppUninstaller.identifierOwnership(for: app, knownApplications: knownApplications)
+            guard !Task.isCancelled else { return }
             let found = AppArtifactScanner.scan(app: app, identifierOwnership: ownership)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self = owner.value, self.selectedAppID == app.id else { return }
+                self.identifierOwnership = ownership
                 self.artifacts = found
-                self.selectedArtifactIDs = Set(found.filter { $0.confidence == .exact }.map(\.id))
+                self.selectedArtifactIDs = Set(found.filter(Self.isRecommended).map(\.id))
                 self.isScanningArtifacts = false
             }
         }
+    }
+
+    private static func isRecommended(_ artifact: AppUninstallArtifact) -> Bool {
+        artifact.confidence == .exact && (artifact.isApplication || !artifact.requiresAuthorization)
     }
 
     func cancelArtifactScan() {
@@ -2690,7 +3068,7 @@ private enum InstalledAppScanner {
             selectedArtifactIDs.insert(artifact.id)
             return
         }
-        if selected {
+        if selected, !artifact.requiresAuthorization {
             selectedArtifactIDs.insert(artifact.id)
         } else {
             selectedArtifactIDs.remove(artifact.id)
@@ -2698,17 +3076,19 @@ private enum InstalledAppScanner {
     }
 
     func selectRecommendedArtifacts() {
-        selectedArtifactIDs = Set(artifacts.filter { $0.confidence == .exact }.map(\.id))
+        selectedArtifactIDs = Set(artifacts.filter(Self.isRecommended).map(\.id))
     }
 
     func selectAllArtifacts() {
-        selectedArtifactIDs = Set(artifacts.map(\.id))
+        selectedArtifactIDs = Set(
+            artifacts.filter { $0.isApplication || !$0.requiresAuthorization }.map(\.id)
+        )
     }
 
     func requestRemoval(_ app: InstalledApp) {
         guard !app.isSystem,
               !isRemoving,
-              InstalledAppUpdatesChecker.shared.updatingBundleID != app.bundleIdentifier else { return }
+              !InstalledAppUpdatesChecker.shared.isBusy(app.bundleIdentifier) else { return }
         if selectedAppID != app.id { select(app) }
         pendingRemoval = app
         confirmingRemoval = true
@@ -2746,7 +3126,7 @@ private enum InstalledAppScanner {
                     preserveBundlePreferences: hasAnotherInstalledCopy || !ownershipWasVerifiedExclusive
                 )
                 if hasAnotherInstalledCopy {
-                    if SettingsModel.shared.settings.installedAppUpdatesEnabled {
+                    if SettingsModel.shared.current.installedAppUpdatesEnabled {
                         InstalledAppUpdatesChecker.shared.checkNow()
                     }
                 } else if ownershipWasVerifiedExclusive {
@@ -2862,6 +3242,7 @@ struct StorageEntry: Identifiable, Equatable, Sendable {
     var isDuplicate: Bool = false
     var isSystemProtected: Bool = false
     var resourceIdentifier: String?
+    var modificationStamp: StorageModificationStamp?
     var contentHash: String?
     var scanWarning: String?
 
@@ -2892,6 +3273,9 @@ struct CleanupRecommendation: Identifiable, Sendable {
     let actionDescription: String
     let isAutomatic: Bool
     let entries: [StorageEntry]
+    var safetyOverride: String? = nil
+
+    var safetyLevel: String { safetyOverride ?? category.safetyLevel }
 }
 
 struct ScanResult: Codable, Sendable {
@@ -2964,6 +3348,7 @@ struct StorageScanMetrics: Equatable, Sendable {
     var duplicateFileCount: Int
     var duration: TimeInterval
     var cacheHit: Bool
+    var isTrimmed = false
 }
 
 enum StorageCapacityAccounting {
@@ -3015,7 +3400,7 @@ private struct StorageScanPresentation: Equatable {
     var state: StorageScanState = .idle
 }
 
-private struct StorageCapacityPresentation {
+private struct StorageCapacityPresentation: Sendable {
     var total: Int64 = 0
     var used: Int64 = 0
     var available: Int64 = 0
@@ -3041,7 +3426,9 @@ private struct StoragePresentedScan {
         didSet { invalidateFilteredEntryCaches() }
     }
     @Published private var scanPresentation = StorageScanPresentation()
-    @Published private var capacityPresentation = StorageCapacityPresentation()
+    @Published private var capacityPresentation = StorageCapacityPresentation() {
+        didSet { spaceMapSnapshotCache = nil }
+    }
     @Published private(set) var currentURL = URL(fileURLWithPath: "/")
     @Published private(set) var isLoading = false
 
@@ -3074,7 +3461,10 @@ private struct StoragePresentedScan {
     private var pendingHistoryDeepScanEnabled: Bool?
     private var filteredEntriesCache: [StorageEntry]?
     private var filteredInsightEntriesCache: [StorageEntry]?
+    private var spaceMapSnapshotCache: (maximumItems: Int, snapshot: StorageSpaceMapSnapshot)?
     private var hasValidCapacity = false
+    private var capacityGeneration: UInt64 = 0
+    private var scanLease: StorageScanCoordinator.Lease?
 
     var entries: [StorageEntry] { presentedScan.entries }
     var insightEntries: [StorageEntry] { presentedScan.insightEntries }
@@ -3165,6 +3555,23 @@ private struct StoragePresentedScan {
     private func invalidateFilteredEntryCaches() {
         filteredEntriesCache = nil
         filteredInsightEntriesCache = nil
+        spaceMapSnapshotCache = nil
+    }
+
+    func spaceMapSnapshot(maximumItems: Int) -> StorageSpaceMapSnapshot {
+        if let cached = spaceMapSnapshotCache, cached.maximumItems == maximumItems {
+            return cached.snapshot
+        }
+        let snapshot = StorageSpaceMapSnapshot.make(
+            from: filteredAndSortedEntries,
+            maximumItems: maximumItems,
+            used: used,
+            total: total,
+            deepScanEnabled: deepScanEnabled,
+            entriesSortedBySize: sortBy == .size
+        )
+        spaceMapSnapshotCache = (maximumItems, snapshot)
+        return snapshot
     }
 
     var totalCategorySize: [StorageCategory: Int64] {
@@ -3237,8 +3644,14 @@ private struct StoragePresentedScan {
                 return
             }
             guard !Task.isCancelled else { return }
+            let isRunning = await StorageScanCoordinator.shared.isRunning(key)
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self = owner.value, self.scanGeneration == generation else { return }
+                if isRunning {
+                    self.load(target, force: false)
+                    return
+                }
                 self.isLoading = false
                 self.updateScanPresentation(state: .idle, label: "Ready to scan")
             }
@@ -3247,6 +3660,10 @@ private struct StoragePresentedScan {
 
     func cancelScan() {
         guard isLoading else { return }
+        if let lease = scanLease {
+            scanLease = nil
+            Task { await StorageScanCoordinator.shared.cancel(lease) }
+        }
         scanGeneration &+= 1
         loadTask?.cancel()
         loadTask = nil
@@ -3254,46 +3671,84 @@ private struct StoragePresentedScan {
         updateScanPresentation(state: .cancelled, label: "Scan cancelled")
     }
 
+    func detachScan() {
+        guard isLoading else { return }
+        scanLease = nil
+        scanGeneration &+= 1
+        loadTask?.cancel()
+        loadTask = nil
+        isLoading = false
+        updateScanPresentation(state: .idle, label: "Scan continues in the background")
+    }
+
     func refreshCapacity() {
+        capacityGeneration &+= 1
+        let generation = capacityGeneration
+        let target = currentURL
+        let owner = WeakReference(self)
+        Task.detached(priority: .utility) {
+            let outcome = Self.readCapacity(of: target)
+            await MainActor.run {
+                guard let self = owner.value, self.capacityGeneration == generation else { return }
+                switch outcome {
+                case .success(let presentation):
+                    self.hasValidCapacity = true
+                    self.capacityPresentation = presentation
+                    self.normalizeCurrentScopeHistoryIfNeeded()
+                case .failure(let failure):
+                    self.resetCapacityState(message: failure.message, volumeURL: failure.volumeURL)
+                }
+            }
+        }
+    }
+
+    private struct CapacityReadFailure: Error, Sendable {
+        let message: String
+        let volumeURL: URL?
+    }
+
+    private nonisolated static func readCapacity(
+        of url: URL
+    ) -> Result<StorageCapacityPresentation, CapacityReadFailure> {
         do {
-            let values = try currentURL.resourceValues(forKeys: [
+            var queryURL = url
+            queryURL.removeAllCachedResourceValues()
+            let values = try queryURL.resourceValues(forKeys: [
                 .volumeURLKey,
                 .volumeTotalCapacityKey,
                 .volumeAvailableCapacityKey,
-                .volumeAvailableCapacityForImportantUsageKey
+                .volumeIsReadOnlyKey
             ])
             guard let capacity = values.volumeTotalCapacity,
                   let free = values.volumeAvailableCapacity,
                   capacity > 0 else {
-                resetCapacityState(
+                return .failure(CapacityReadFailure(
                     message: "Storage capacity is unavailable for this location.",
-                    volumeURL: values.volume ?? currentURL
-                )
-                return
+                    volumeURL: values.volume ?? url
+                ))
             }
 
             let total = Int64(capacity)
             let available = min(total, max(0, Int64(free)))
-            let used = max(0, total - available)
-            let availableForImportantUsage: Int64
-            hasValidCapacity = true
-            if let important = values.volumeAvailableCapacityForImportantUsage {
+            var availableForImportantUsage = available
+            if values.volumeIsReadOnly != true,
+               let important = try queryURL.resourceValues(
+                forKeys: [.volumeAvailableCapacityForImportantUsageKey]
+               ).volumeAvailableCapacityForImportantUsage {
                 availableForImportantUsage = min(total, max(available, Int64(important)))
-            } else {
-                availableForImportantUsage = available
             }
-            capacityPresentation = StorageCapacityPresentation(
+            let used = max(0, total - availableForImportantUsage)
+            return .success(StorageCapacityPresentation(
                 total: total,
                 used: used,
                 available: available,
                 availableForImportantUsage: availableForImportantUsage,
-                purgeableBytes: min(used, max(0, availableForImportantUsage - available)),
-                volumeURL: values.volume ?? currentURL,
+                purgeableBytes: max(0, availableForImportantUsage - available),
+                volumeURL: values.volume ?? url,
                 error: nil
-            )
-            normalizeCurrentScopeHistoryIfNeeded()
+            ))
         } catch {
-            resetCapacityState(message: error.localizedDescription)
+            return .failure(CapacityReadFailure(message: error.localizedDescription, volumeURL: nil))
         }
     }
 
@@ -3313,6 +3768,7 @@ private struct StoragePresentedScan {
 
     func open(_ entry: StorageEntry) {
         guard entry.isDirectory, !entry.isPackage, !entry.isSymbolicLink else { return }
+        guard !DirectorySize.isPseudoLocation(entry.url) else { return }
         load(entry.url, force: false)
     }
 
@@ -3369,6 +3825,7 @@ private struct StoragePresentedScan {
             let result = StorageDeletionWorker.moveToTrash(entriesToRemove, within: scope)
             guard !Task.isCancelled else { return }
             await StorageSnapshotCache.shared.invalidate(affectedBy: result.removed)
+            await StorageScanCoordinator.shared.invalidate(affectedBy: result.removed)
             await MainActor.run {
                 guard let self = owner.value else { return }
                 self.isRemoving = false
@@ -3407,10 +3864,25 @@ private struct StoragePresentedScan {
             let (sum, overflow) = partial.addingReportingOverflow(entry.size)
             return overflow ? Int64.max : sum
         }
+        var message: String
         if pendingRemovalEntries.count == 1, let entry = pendingRemovalEntries.first {
-            return "\(entry.name) (\(bytes.formatted(.byteCount(style: .file)))) will be moved to the Trash."
+            message = "\(entry.name) (\(bytes.formatted(.byteCount(style: .file)))) will be moved to the Trash."
+        } else {
+            message = "\(pendingRemovalEntries.count) items (\(bytes.formatted(.byteCount(style: .file)))) will be moved to the Trash."
         }
-        return "\(pendingRemovalEntries.count) items (\(bytes.formatted(.byteCount(style: .file)))) will be moved to the Trash."
+        let cloudSyncedCount = pendingRemovalEntries.filter {
+            StorageDeletionPolicy.isCloudSyncedLocation($0.url)
+        }.count
+        if cloudSyncedCount > 0 {
+            let subject: String
+            if cloudSyncedCount == pendingRemovalEntries.count {
+                subject = pendingRemovalEntries.count == 1 ? "This item syncs" : "These items sync"
+            } else {
+                subject = "\(cloudSyncedCount) of these sync"
+            }
+            message += " \(subject) to the cloud: removal here also removes from iCloud Drive or your cloud storage and from your other devices."
+        }
+        return message
     }
 
     func goUp() {
@@ -3457,6 +3929,10 @@ private struct StoragePresentedScan {
         let deepScan = deepScanEnabled
         let key = StorageCacheKey(url: target, deepScan: deepScan)
         let freshness = Self.scanFreshness
+        let runningBundleIdentifiers = Set(
+            NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier?.lowercased() }
+        )
+        scanLease = nil
         let owner = WeakReference(self)
         loadTask = Task.detached(priority: .utility) {
             if !force,
@@ -3471,7 +3947,11 @@ private struct StoragePresentedScan {
             }
 
             do {
-                let request = StorageScanRequest(url: target, deepScan: deepScan)
+                let request = StorageScanRequest(
+                    url: target,
+                    deepScan: deepScan,
+                    runningBundleIdentifiers: runningBundleIdentifiers
+                )
                 try Task.checkCancellation()
                 let lease = await StorageScanCoordinator.shared.acquire(request: request) { progress in
                     await MainActor.run {
@@ -3482,6 +3962,10 @@ private struct StoragePresentedScan {
                             label: progress.label
                         )
                     }
+                }
+                await MainActor.run {
+                    guard let self = owner.value, self.scanGeneration == generation else { return }
+                    self.scanLease = lease
                 }
                 let scannedSnapshot: StorageDirectorySnapshot
                 do {
@@ -3553,7 +4037,9 @@ private struct StoragePresentedScan {
             state: .completed,
             progress: 1,
             label: snapshot.metrics.cacheHit
-                ? "Loaded cached \(modeName) scan"
+                ? (snapshot.metrics.isTrimmed
+                    ? "Loaded cached \(modeName) scan (largest items only)"
+                    : "Loaded cached \(modeName) scan")
                 : "\(modeName) scan complete"
         )
         if !snapshot.metrics.cacheHit {
@@ -3568,7 +4054,7 @@ private struct StoragePresentedScan {
     ) {
         var updated = scanPresentation
         if let state { updated.state = state }
-        if let progress { updated.progress = min(max(progress, 0), 1) }
+        if let progress { updated.progress = progress.isFinite ? min(max(progress, 0), 1) : 0 }
         if let label { updated.label = label }
         guard updated != scanPresentation else { return }
         scanPresentation = updated
@@ -3576,20 +4062,37 @@ private struct StoragePresentedScan {
 
     fileprivate nonisolated static func generateRecommendations(
         from entries: [StorageEntry],
-        duplicateGroups: [StorageDuplicateGroup]
+        duplicateGroups: [StorageDuplicateGroup],
+        runningBundleIdentifiers: Set<String> = []
     ) -> [CleanupRecommendation] {
         var recommendations: [CleanupRecommendation] = []
         let categories = Dictionary(grouping: entries) { $0.category }
 
-        if let cacheEntries = categories[.caches]?.filter({ !$0.isSystemProtected }), !cacheEntries.isEmpty {
+        var safeCaches: [StorageEntry] = []
+        var cautionCaches: [StorageEntry] = []
+        for entry in categories[.caches] ?? [] where !entry.isSystemProtected {
+            switch StorageCachePolicy.safety(of: entry.url, runningBundleIdentifiers: runningBundleIdentifiers) {
+            case .denied: continue
+            case .caution: cautionCaches.append(entry)
+            case .safe: safeCaches.append(entry)
+            }
+        }
+        let cacheEntries = safeCaches + cautionCaches
+        if !cacheEntries.isEmpty {
             let size = cacheEntries.reduce(Int64(0)) { saturatingAdd($0, $1.size) }
+            let allSafe = cautionCaches.isEmpty
             recommendations.append(CleanupRecommendation(
                 category: .caches,
-                description: "System and app caches can safely be removed",
+                description: allSafe
+                    ? "App caches that can safely be removed"
+                    : "App caches; system caches are rebuilt on demand and running apps may still be using theirs, so review before removing",
                 potentialSpaceFreed: size,
-                actionDescription: "Clear \(cacheEntries.count) cache files",
-                isAutomatic: true,
-                entries: cacheEntries
+                actionDescription: allSafe
+                    ? "Clear \(cacheEntries.count) cache files"
+                    : "Review \(cacheEntries.count) cache files",
+                isAutomatic: allSafe,
+                entries: cacheEntries,
+                safetyOverride: allSafe ? nil : "Caution"
             ))
         }
 
@@ -3618,7 +4121,9 @@ private struct StoragePresentedScan {
             ))
         }
 
-        let oldFiles = entries.filter { $0.matches(.oldFiles) && !$0.isSystemProtected }
+        let oldFiles = entries.filter {
+            $0.matches(.oldFiles) && !$0.isSystemProtected && !StorageDeletionPolicy.isCautionLocation($0.url)
+        }
         if !oldFiles.isEmpty {
             let size = oldFiles.reduce(Int64(0)) { saturatingAdd($0, $1.size) }
             recommendations.append(CleanupRecommendation(

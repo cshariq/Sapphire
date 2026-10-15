@@ -9,7 +9,7 @@ import SwiftUI
 import EventKit
 
 struct TransparentEffect: ViewModifier {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -17,53 +17,7 @@ struct TransparentEffect: ViewModifier {
             content
                 .frame(height: LockScreenConfiguration.infoWidgetPillHeight)
                 .padding(.horizontal, 12)
-                .background(
-                    ZStack {
-                        Capsule(style: .continuous)
-                            .fill(.ultraThinMaterial)
-
-                        Capsule(style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.15),
-                                        Color.white.opacity(0.05),
-                                        Color.white.opacity(0.10)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-
-                        Capsule(style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.28),
-                                        Color.white.opacity(0.08),
-                                        Color.white.opacity(0.18)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 0.8
-                            )
-
-                        Capsule(style: .continuous)
-                            .fill(
-                                RadialGradient(
-                                    colors: [
-                                        Color.white.opacity(0.10),
-                                        Color.clear
-                                    ],
-                                    center: .topLeading,
-                                    startRadius: 0,
-                                    endRadius: 60
-                                )
-                            )
-                    }
-                )
-                .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
+                .background(LockScreenWidgetSurface(shape: Capsule(style: .continuous), cacheKey: "pill"))
         } else {
             content
                 .frame(height: LockScreenConfiguration.infoWidgetPillHeight)
@@ -72,7 +26,7 @@ struct TransparentEffect: ViewModifier {
 }
 
 struct LockScreenInfoWidgetView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     var body: some View {
         HStack(spacing: LockScreenConfiguration.widgetSpacing) {
@@ -121,7 +75,7 @@ struct LockScreenInfoWidgetView: View {
 }
 
 private struct LockScreenWeatherInfoSlot: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @EnvironmentObject private var weatherVM: WeatherActivityViewModel
 
     var body: some View {
@@ -190,7 +144,7 @@ private struct LockScreenWeatherInfoSlot: View {
 }
 
 private struct LockScreenCalendarInfoSlot: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @EnvironmentObject private var calendarService: CalendarService
 
     private var eventID: String {
@@ -232,8 +186,8 @@ private struct LockScreenCalendarInfoSlot: View {
 }
 
 private struct LockScreenMusicInfoSlot: View {
-    @EnvironmentObject private var settings: SettingsModel
-    @EnvironmentObject private var musicWidget: MusicManager
+    @ObservedSettings private var settings: SettingsObserver
+    private var musicWidget: MusicManager { .shared }
 
     var body: some View {
         let shouldShow = musicWidget.isPlaying || (settings.settings.lockScreenShowMusicWhenPaused && musicWidget.title != nil)
@@ -241,16 +195,8 @@ private struct LockScreenMusicInfoSlot: View {
         Group {
             if shouldShow, let title = musicWidget.title {
                 HStack(spacing: LockScreenConfiguration.infoWidgetInternalHSpacing) {
-                    if let cover = musicWidget.artwork ?? musicWidget.appIcon {
-                        Image(nsImage: cover)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(
-                                width: LockScreenConfiguration.infoWidgetMusicArtworkSize,
-                                height: LockScreenConfiguration.infoWidgetMusicArtworkSize
-                            )
-                            .cornerRadius(LockScreenConfiguration.infoWidgetMusicArtworkCornerRadius)
-                    }
+                    MusicArtworkImage(image: musicWidget.artwork, size: LockScreenConfiguration.infoWidgetMusicArtworkSize)
+                        .cornerRadius(LockScreenConfiguration.infoWidgetMusicArtworkCornerRadius)
 
                     VStack(alignment: .leading) {
                         Text(title)
@@ -289,7 +235,7 @@ private struct LockScreenMusicInfoSlot: View {
 }
 
 private struct LockScreenFocusInfoSlot: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @EnvironmentObject private var focusModeManager: FocusModeManager
 
     private let customImageAssetNames: Set<String> = [
@@ -343,7 +289,7 @@ private struct LockScreenFocusInfoSlot: View {
 }
 
 private struct LockScreenBluetoothInfoSlot: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @EnvironmentObject private var bluetoothManager: BluetoothManager
 
     var body: some View {
@@ -377,7 +323,7 @@ private struct LockScreenBluetoothInfoSlot: View {
 }
 
 private struct LockScreenBatteryInfoSlot: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @EnvironmentObject private var batteryMonitor: BatteryMonitor
     @StateObject private var batteryEstimator = BatteryEstimator.shared
 

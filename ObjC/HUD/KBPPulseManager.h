@@ -8,7 +8,7 @@
 
 //
 //  KBPPulseManager.h
-//  KBPulse
+//  Sapphire
 //
 //  Created by EthanRDoesMC on 10/20/21.
 //
@@ -25,7 +25,6 @@ NS_ASSUME_NONNULL_BEGIN
 +(id)sharedInstance;
 +(void)configure;
 +(KeyboardBrightnessClient *)brightnessClient;
-+(NSString *)configurationFile;
 @end
 
 NS_ASSUME_NONNULL_END

@@ -11,7 +11,7 @@ import AppKit
 
 struct MirrorPlayerView: View {
     @Environment(\.navigationStack) var navigationStack
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @ObservedObject private var camera = MirrorCameraManager.shared
 
     var body: some View {
@@ -97,6 +97,10 @@ struct MirrorPlayerView: View {
 
             Spacer(minLength: 8)
 
+            if camera.cameras.count > 1 {
+                cameraPicker
+            }
+
             if camera.isLive {
                 iconButton(systemName: "arrow.left.arrow.right", help: "Flip horizontally") {
                     settings.settings.mirrorFlipHorizontally.toggle()
@@ -131,6 +135,23 @@ struct MirrorPlayerView: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+
+    private var cameraPicker: some View {
+        Menu {
+            MirrorCameraMenuItems(camera: camera)
+        } label: {
+            Image(systemName: "web.camera")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 30, height: 30)
+                .background(.black.opacity(0.28), in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 0.5))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Choose camera")
     }
 
     private var stopButton: some View {
@@ -190,7 +211,7 @@ struct MirrorPlayerView: View {
             }
 
             VStack(spacing: 6) {
-                Text(camera.isDenied ? "Camera Access Denied" : (camera.isError ? "Camera Unavailable" : "Camera Off"))
+                Text(camera.isDenied ? "Camera Access Denied" : (camera.isError ? "Camera Unavailable" : (camera.isPending ? "Starting Camera…" : "Camera Off")))
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                 Text(offlineMessage)
                     .font(.system(size: 12))
@@ -200,17 +221,29 @@ struct MirrorPlayerView: View {
             }
 
             HStack(spacing: 10) {
-                Button {
-                    camera.start()
-                } label: {
-                    Label("Turn On Camera", systemImage: "camera.fill")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                if camera.isPending {
+                    Button {
+                        camera.stop()
+                    } label: {
+                        Label("Cancel", systemImage: "xmark")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.bordered)
+                } else {
+                    Button {
+                        camera.start()
+                    } label: {
+                        Label("Turn On Camera", systemImage: "camera.fill")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(camera.isDenied ? Color.red : Color.indigo)
+                    .disabled(camera.isDenied)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(camera.isDenied ? Color.red : Color.indigo)
-                .disabled(camera.isDenied)
 
                 if camera.isDenied {
                     Button("Open Privacy Settings") {
@@ -234,6 +267,10 @@ struct MirrorPlayerView: View {
             return "Grant camera access in System Settings → Privacy & Security → Camera to use Mirror."
         } else if camera.isError {
             return camera.errorMessage ?? "No suitable camera found or camera in use by another app."
+        } else if camera.status == .requestingPermission {
+            return "Waiting for camera access. Allow Sapphire in the system prompt."
+        } else if camera.isPending {
+            return "Opening the camera…"
         } else {
             return "The camera is off. Turn it on to start a live mirror."
         }
@@ -241,7 +278,7 @@ struct MirrorPlayerView: View {
 }
 
 struct MirrorFullscreenView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @ObservedObject private var camera = MirrorCameraManager.shared
 
     var body: some View {
@@ -343,6 +380,24 @@ struct MirrorFullscreenView: View {
     }
 }
 
+struct MirrorCameraMenuItems: View {
+    @ObservedObject var camera: MirrorCameraManager
+
+    var body: some View {
+        ForEach(camera.cameras) { option in
+            Button {
+                camera.selectCamera(id: option.id)
+            } label: {
+                if option.id == (camera.activeCameraID ?? camera.preferredCameraID) {
+                    Label(option.name, systemImage: "checkmark")
+                } else {
+                    Text(option.name)
+                }
+            }
+        }
+    }
+}
+
 @MainActor
 final class MirrorFullscreenWindowController {
     static let shared = MirrorFullscreenWindowController()
@@ -352,41 +407,44 @@ final class MirrorFullscreenWindowController {
     private init() {}
 
     func present() {
-        if let window, window.isVisible {
-            window.orderFrontRegardless()
-            return
+        let screens = NSScreen.screens
+        guard let index = OCRScreenTextSupport.indexOfScreen(containing: NSEvent.mouseLocation, in: screens.map(\.frame)) else { return }
+        let screen = screens[index]
+
+        let window: NSWindow
+        if let existing = self.window {
+            window = existing
+        } else {
+            window = KeyableWindow(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.level = .screenSaver
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+            window.backgroundColor = .black
+            window.isOpaque = true
+            window.hasShadow = false
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: MirrorFullscreenView())
+            self.window = window
         }
 
-        guard let screen = NSScreen.main else { return }
+        if window.frame != screen.frame {
+            window.setFrame(screen.frame, display: true)
+        }
 
-        let window = KeyableWindow(
-            contentRect: screen.frame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.level = .screenSaver
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        window.backgroundColor = .black
-        window.isOpaque = true
-        window.hasShadow = false
-        window.isReleasedWhenClosed = false
-
-        let hosting = NSHostingView(
-            rootView: MirrorFullscreenView()
-                .environmentObject(SettingsModel.shared)
-        )
-        window.contentView = hosting
-
-        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53 else { return event }
-            self?.dismiss()
-            return nil
+        if escapeMonitor == nil {
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard event.keyCode == 53 else { return event }
+                self?.dismiss()
+                return nil
+            }
         }
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        self.window = window
     }
 
     func dismiss(destroy: Bool = false) {

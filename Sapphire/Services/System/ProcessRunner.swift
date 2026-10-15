@@ -23,30 +23,28 @@ enum ProcessRunner {
     static func runSync(
         executablePath: String,
         arguments: [String],
-        timeout: TimeInterval? = nil
+        timeout: TimeInterval? = nil,
+        environmentOverrides: [String: String?] = [:]
     ) -> Result? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
+        if !environmentOverrides.isEmpty {
+            var environment = ProcessInfo.processInfo.environment
+            for (key, value) in environmentOverrides { environment[key] = value }
+            process.environment = environment
+        }
 
         let stdoutPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = FileHandle.nullDevice
 
-        var collected = Data()
-        let bufferLock = NSLock()
-        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            guard !chunk.isEmpty else { return }
-            bufferLock.lock()
-            collected.append(chunk)
-            bufferLock.unlock()
-        }
+        let collector = PipeCollector(pipe: stdoutPipe)
 
         do {
             try process.run()
         } catch {
-            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            collector.cancel()
             return nil
         }
 
@@ -66,11 +64,7 @@ enum ProcessRunner {
         }
         process.waitUntilExit()
         timeoutItem?.cancel()
-        let tail = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
-        bufferLock.lock()
-        collected.append(tail)
-        bufferLock.unlock()
+        let collected = collector.finish(waitingUpTo: PipeCollector.drainGrace)
 
         return Result(
             stdoutData: collected,
@@ -137,6 +131,7 @@ enum ProcessRunner {
         executableURL: URL,
         arguments: [String],
         timeout: TimeInterval,
+        standardInput: Data? = nil,
         onOutputLine: (@Sendable (String) -> Void)? = nil
     ) async -> CapturedResult {
         await withCheckedContinuation { continuation in
@@ -150,17 +145,18 @@ enum ProcessRunner {
                 task.standardOutput = stdoutPipe
                 task.standardError = stderrPipe
 
+                if let standardInput {
+                    let stdinPipe = Pipe()
+                    task.standardInput = stdinPipe
+                    try? stdinPipe.fileHandleForWriting.write(contentsOf: standardInput)
+                    try? stdinPipe.fileHandleForWriting.close()
+                }
+
                 let stdoutAccumulator = LineAccumulator(onLine: onOutputLine)
                 let stderrAccumulator = LineAccumulator(onLine: onOutputLine)
 
-                if onOutputLine != nil {
-                    stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-                        stdoutAccumulator.append(handle.availableData)
-                    }
-                    stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-                        stderrAccumulator.append(handle.availableData)
-                    }
-                }
+                let stdoutCollector = PipeCollector(pipe: stdoutPipe) { stdoutAccumulator.append($0) }
+                let stderrCollector = PipeCollector(pipe: stderrPipe) { stderrAccumulator.append($0) }
 
                 let semaphore = DispatchSemaphore(value: 0)
                 task.terminationHandler = { _ in semaphore.signal() }
@@ -168,6 +164,8 @@ enum ProcessRunner {
                 do {
                     try task.run()
                 } catch {
+                    stdoutCollector.cancel()
+                    stderrCollector.cancel()
                     continuation.resume(returning: CapturedResult(
                         exitStatus: nil,
                         standardOutput: "",
@@ -188,11 +186,10 @@ enum ProcessRunner {
                     }
                 }
 
-                stdoutPipe.fileHandleForReading.readabilityHandler = nil
-                stderrPipe.fileHandleForReading.readabilityHandler = nil
-
-                stdoutAccumulator.append(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
-                stderrAccumulator.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+                _ = stdoutCollector.finish(waitingUpTo: PipeCollector.drainGrace)
+                _ = stderrCollector.finish(waitingUpTo: PipeCollector.drainGrace)
+                stdoutAccumulator.flush()
+                stderrAccumulator.flush()
 
                 continuation.resume(returning: CapturedResult(
                     exitStatus: task.isRunning ? nil : task.terminationStatus,
@@ -234,10 +231,68 @@ enum ProcessRunner {
             for line in lines { onLine(line) }
         }
 
+        func flush() {
+            lock.lock()
+            let tail = pending
+            pending.removeAll()
+            lock.unlock()
+            guard let onLine, !tail.isEmpty,
+                  let line = String(data: tail, encoding: .utf8), !line.isEmpty else { return }
+            onLine(line)
+        }
+
         var allData: Data {
             lock.lock()
             defer { lock.unlock() }
             return buffer
+        }
+    }
+
+    final class PipeCollector: @unchecked Sendable {
+        static let drainGrace: TimeInterval = 2
+
+        private let handle: FileHandle
+        private let lock = NSLock()
+        private var data = Data()
+        private var reachedEOF = false
+        private let eof = DispatchSemaphore(value: 0)
+        private let onChunk: ((Data) -> Void)?
+
+        init(pipe: Pipe, onChunk: ((Data) -> Void)? = nil) {
+            handle = pipe.fileHandleForReading
+            self.onChunk = onChunk
+            handle.readabilityHandler = { [self] handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                    markEOF()
+                } else {
+                    lock.lock()
+                    data.append(chunk)
+                    lock.unlock()
+                    onChunk?(chunk)
+                }
+            }
+        }
+
+        private func markEOF() {
+            lock.lock()
+            let first = !reachedEOF
+            reachedEOF = true
+            lock.unlock()
+            if first { eof.signal() }
+        }
+
+        func finish(waitingUpTo grace: TimeInterval) -> Data {
+            _ = eof.wait(timeout: .now() + grace)
+            handle.readabilityHandler = nil
+            lock.lock()
+            defer { lock.unlock() }
+            return data
+        }
+
+        func cancel() {
+            handle.readabilityHandler = nil
         }
     }
 }

@@ -1,0 +1,17 @@
+// Extensions.xcconfig
+// Sapphire
+//
+// The camera extension and microphone driver targets build these placeholders in a public
+// checkout. A full checkout also has the private SapphireCameraExtension/ and
+// SapphireAudioDriver/ folders, and each one carries a Private.xcconfig that points the
+// targets at the real sources instead.
+
+SAPPHIRE_CAMERA_INFOPLIST_FILE = PublicExtensionStubs/Camera/Info.plist
+SAPPHIRE_CAMERA_ENTITLEMENTS =
+SAPPHIRE_CAMERA_EXCLUDED_SOURCES = */SapphireCameraExtension/* */Sapphire/Services/Continuity/*
+
+SAPPHIRE_AUDIO_INFOPLIST_FILE = PublicExtensionStubs/AudioDriver/Info.plist
+SAPPHIRE_AUDIO_EXCLUDED_SOURCES = */SapphireAudioDriver/*
+
+#include? "../SapphireCameraExtension/Private.xcconfig"
+#include? "../SapphireAudioDriver/Private.xcconfig"

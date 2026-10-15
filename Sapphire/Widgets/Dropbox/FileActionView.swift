@@ -46,10 +46,16 @@ struct FileActionView: View {
     private var liveItem: ShelfItem { manager.files.first { $0.id == item.id } ?? item }
 
     @State private var isRenaming = false
+    @State private var shareAnchor = ShareAnchor()
     @State private var renameText = ""
     @State private var isConfirmingDelete = false
     @State private var fileMetadata: FileMetadata?
     @State private var availableFormats: [ConversionFormat] = []
+    @State private var optimizeKind: MediaOptimizeKind?
+    @State private var canExtractText = false
+    @State private var isRunningOptimizer = false
+    @State private var optimizerMessage: String?
+    @State private var optimizerFailed = false
     @FocusState private var renameFocused: Bool
 
     private static let dateFormatter: DateFormatter = {
@@ -90,11 +96,20 @@ struct FileActionView: View {
         .task(id: liveItem.storedAt) {
             let url = liveItem.storedAt
             let dateAdded = liveItem.dateAdded
+            let showsOptimizerActions = SettingsModel.shared.current.mediaToolsShowShelfActions
             let loaded = await Task.detached(priority: .utility) {
-                FileMetadata.load(from: url, dateAdded: dateAdded)
+                (
+                    metadata: FileMetadata.load(from: url, dateAdded: dateAdded),
+                    optimizeKind: showsOptimizerActions ? MediaOptimizer.kind(for: url) : nil,
+                    canExtractText: showsOptimizerActions && MediaOptimizer.canOCR(url)
+                )
             }.value
             guard !Task.isCancelled else { return }
-            fileMetadata = loaded
+            fileMetadata = loaded.metadata
+            optimizeKind = loaded.optimizeKind
+            canExtractText = loaded.canExtractText
+            optimizerMessage = nil
+            optimizerFailed = false
             availableFormats = FileConversionManager.shared.availableFormats(for: url)
         }
     }
@@ -125,6 +140,7 @@ struct FileActionView: View {
             quickActions
             metadataSection
             convertSection
+            optimizerSection
             Spacer(minLength: 0)
             footer
         }
@@ -198,6 +214,7 @@ struct FileActionView: View {
             QuickIconAction(systemImage: "square.and.arrow.up", title: "Share") {
                 presentSharePicker()
             }
+            .background(ShareAnchorView(anchor: shareAnchor))
             QuickIconAction(systemImage: "plus.square.on.square", title: "Duplicate") {
                 manager.duplicateFile(item)
             }
@@ -241,6 +258,35 @@ struct FileActionView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var optimizerSection: some View {
+        if optimizeKind != nil || canExtractText {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(optimizerMessage ?? "Optimize")
+                    .font(.caption)
+                    .foregroundColor(optimizerFailed ? .red : .secondary)
+                    .textCase(optimizerMessage == nil ? .uppercase : nil)
+                    .kerning(optimizerMessage == nil ? 0.5 : 0)
+                    .lineLimit(2)
+
+                HStack(spacing: 8) {
+                    if let kind = optimizeKind {
+                        DetailButton(title: kind.actionTitle, systemImage: kind.systemImage, isProminent: false, tint: .primary) {
+                            runOptimize()
+                        }
+                    }
+                    if canExtractText {
+                        DetailButton(title: "Extract Text", systemImage: "text.viewfinder", isProminent: false, tint: .primary) {
+                            runExtractText()
+                        }
+                    }
+                }
+                .disabled(isRunningOptimizer)
+                .opacity(isRunningOptimizer ? 0.5 : 1)
             }
         }
     }
@@ -317,15 +363,89 @@ struct FileActionView: View {
         onDismiss()
     }
 
+    // MARK: Media Optimizer
+
+    private func runOptimize() {
+        guard !isRunningOptimizer else { return }
+        guard PremiumGate.hasAccess(.mediaTools) else {
+            PremiumGate.require(.mediaTools)
+            return
+        }
+        let url = liveItem.storedAt
+        isRunningOptimizer = true
+        optimizerFailed = false
+        optimizerMessage = "Working on \(url.lastPathComponent)…"
+        Task {
+            let outcome = await MediaOptimizerManager.shared.optimizeFile(url)
+            isRunningOptimizer = false
+            switch outcome {
+            case .success(let result):
+                manager.addFiles(from: [result.outputURL])
+                optimizerFailed = false
+                optimizerMessage = "Saved \(result.savedPercent)% (\(ByteFormatter.string(result.savedBytes))) — \(result.outputURL.lastPathComponent) added to the shelf"
+            case .failure(let error):
+                optimizerFailed = true
+                optimizerMessage = error.localizedDescription
+                NSSound.beep()
+            }
+        }
+    }
+
+    private func runExtractText() {
+        guard !isRunningOptimizer else { return }
+        guard PremiumGate.hasAccess(.ocrFeature) else {
+            PremiumGate.require(.ocrFeature)
+            return
+        }
+        let url = liveItem.storedAt
+        isRunningOptimizer = true
+        optimizerFailed = false
+        optimizerMessage = "Reading text in \(url.lastPathComponent)…"
+        Task {
+            let text = await MediaOptimizerManager.shared.recognizeText(in: url)
+            isRunningOptimizer = false
+            guard let text, !text.isEmpty else {
+                optimizerFailed = true
+                optimizerMessage = "No text found in \(url.lastPathComponent)"
+                NSSound.beep()
+                return
+            }
+            NSPasteboard.general.copyString(text)
+            manager.addText(text, named: "\(url.deletingPathExtension().lastPathComponent) Text")
+            optimizerFailed = false
+            optimizerMessage = "Copied \(text.count) characters and added a note to the shelf"
+        }
+    }
+
     private func presentSharePicker() {
         let picker = NSSharingServicePicker(items: [liveItem.storedAt])
-        if let contentView = NSWindow.visibleNotchWindow?.contentView {
+        if let anchor = shareAnchor.view, anchor.window != nil {
+            picker.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        } else if let contentView = NSWindow.visibleNotchWindow?.contentView {
             picker.show(relativeTo: contentView.bounds, of: contentView, preferredEdge: .maxY)
         }
     }
 }
 
 // MARK: - Supporting Views
+
+private final class ShareAnchor {
+    weak var view: NSView?
+}
+
+private struct ShareAnchorView: NSViewRepresentable {
+    let anchor: ShareAnchor
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        anchor.view = nsView
+    }
+}
 
 private struct MetadataRow: View {
     let label: String

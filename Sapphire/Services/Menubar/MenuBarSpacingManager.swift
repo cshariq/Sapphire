@@ -84,7 +84,11 @@ class MenuBarSpacingManager {
     private func refreshMenuBar() async throws {
         try? await Task.sleep(for: .milliseconds(100))
 
-        let pids = Set(MenuBarItemDetector.detectItemsWithInfo().map(\.ownerPID))
+        MenuBarItemCatalog.shared.start()
+        let items = await withCheckedContinuation { continuation in
+            MenuBarItemCatalog.shared.items(maxAge: 0) { continuation.resume(returning: $0) }
+        }
+        let pids = Set(items.map(\.pid))
         var failedApps = [String]()
 
         logger.info("Found \(pids.count) apps with menu bar items to relaunch.")
@@ -94,6 +98,10 @@ class MenuBarSpacingManager {
                   app.bundleIdentifier != "com.apple.controlcenter",
                   app.bundleIdentifier != Bundle.main.bundleIdentifier
             else {
+                continue
+            }
+            guard !Self.isSystemOwned(app.executableURL), !Self.isSystemOwned(app.bundleURL) else {
+                logger.debug("Leaving system-owned '\(app.localizedName ?? "PID \(pid)")' running; it picks up the spacing on its next launch.")
                 continue
             }
 
@@ -118,9 +126,27 @@ class MenuBarSpacingManager {
             }
         }
 
+        if let agent = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.MenuBarAgent").first {
+            logger.debug("Attempting to restart MenuBarAgent.")
+            do {
+                try await signalAppToQuit(agent)
+            } catch {
+                logger.warning("Failed to quit MenuBarAgent: \(error.localizedDescription)")
+                failedApps.append("MenuBarAgent")
+            }
+        }
+
         if !failedApps.isEmpty {
             logger.error("Could not relaunch the following apps: \(failedApps.joined(separator: ", "))")
         }
+    }
+
+    private static let systemPathPrefixes = ["/System/", "/usr/", "/bin/", "/sbin/", "/Library/Apple/"]
+
+    private static func isSystemOwned(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        return systemPathPrefixes.contains { path.hasPrefix($0) }
     }
 
     private func relaunch(_ app: NSRunningApplication) async throws {

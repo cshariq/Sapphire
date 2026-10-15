@@ -26,6 +26,12 @@ class DesktopManager: ObservableObject {
         )
     }
 
+    #if DEBUG
+    func debugSimulateDesktopChange(to number: Int) {
+        currentDesktopNumber = number
+    }
+    #endif
+
     @objc private func activeSpaceDidChange() {
         DispatchQueue.main.async {
             let numbers = CGSHelper.getActiveDesktopNumbers()

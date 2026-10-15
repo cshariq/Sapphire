@@ -7,56 +7,6 @@
 import SwiftUI
 import AppKit
 
-struct NotchActivitySplitLayout: Layout {
-    let centerGap: CGFloat
-
-    struct Measurements {
-        var leading: CGSize = .zero
-        var trailing: CGSize = .zero
-
-        var half: CGFloat { max(leading.width, trailing.width) }
-        var intrinsicHeight: CGFloat { max(leading.height, trailing.height) }
-    }
-
-    func makeCache(subviews: Subviews) -> Measurements { measure(subviews) }
-
-    func updateCache(_ cache: inout Measurements, subviews: Subviews) {
-        cache = measure(subviews)
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Measurements) -> CGSize {
-        CGSize(
-            width: cache.half * 2 + centerGap,
-            height: proposal.height ?? cache.intrinsicHeight
-        )
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Measurements) {
-        guard let leading = subviews.first else { return }
-        leading.place(
-            at: CGPoint(x: bounds.minX, y: bounds.midY),
-            anchor: .leading,
-            proposal: ProposedViewSize(cache.leading)
-        )
-
-        guard subviews.count > 1 else { return }
-        subviews[subviews.count - 1].place(
-            at: CGPoint(x: bounds.maxX, y: bounds.midY),
-            anchor: .trailing,
-            proposal: ProposedViewSize(cache.trailing)
-        )
-    }
-
-    private func measure(_ subviews: Subviews) -> Measurements {
-        var measurements = Measurements()
-        guard let leading = subviews.first else { return measurements }
-        measurements.leading = leading.sizeThatFits(.unspecified)
-        guard subviews.count > 1 else { return measurements }
-        measurements.trailing = subviews[subviews.count - 1].sizeThatFits(.unspecified)
-        return measurements
-    }
-}
-
 struct NotchActivityContentView: View {
     let content: LiveActivityContent
     let config: ResolvedNotchConfiguration
@@ -64,21 +14,61 @@ struct NotchActivityContentView: View {
     let screen: NSScreen?
     @Binding var measuredSize: CGSize
     @Binding var showLyrics: Bool
-    var blurRadius: CGFloat = 0
+    var region: NotchActivityRegionSlot? = nil
 
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
+    @Environment(\.notchRegionRowWidth) private var rowWidth
+    @State private var reservedLyric: LyricLine?
+
+    private var musicBottom: MusicBottomContentType? {
+        guard case .standard(.music(let bottom), _) = content else { return nil }
+        return bottom
+    }
 
     var body: some View {
+        if let region {
+            regionBody(region)
+        } else {
+            wholeBody
+        }
+    }
+
+    @ViewBuilder
+    private func regionBody(_ region: NotchActivityRegionSlot) -> some View {
+        Group {
+            if case .standard(let data, _) = content {
+                switch region {
+                case .leading:
+                    buildLeftView(for: data)
+                case .trailing:
+                    buildRightView(for: data)
+                case .bottom:
+                    if let bottom = getBottomView(for: data) {
+                        bottom
+                            .padding(.bottom, config.activityContentBottomPadding)
+                            .padding(.horizontal, horizontalPadding)
+                            .frame(width: rowWidth, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .fixedSize()
+        .onChange(of: musicBottom, initial: true) { _, bottom in
+            switch bottom {
+            case .lyrics(let line): reservedLyric = line
+            case .peek: break
+            default: reservedLyric = nil
+            }
+        }
+    }
+
+    private var wholeBody: some View {
         Group {
             switch content {
             case .full(let view, _, _):
                 view
                     .padding(.horizontal, config.activityContentHorizontalPadding)
-                    .blur(radius: blurRadius)
-            case .standard(let data, _):
-                standardActivityView(from: data)
-                    .fixedSize()
-            case .none:
+            case .standard, .none:
                 EmptyView()
             }
         }
@@ -89,37 +79,6 @@ struct NotchActivityContentView: View {
         )
     }
 
-    @ViewBuilder
-    private func standardActivityView(from data: StandardActivityData) -> some View {
-        let bottomIsUpNext: Bool = {
-            if case .music(let bottom) = data, case .upNext = bottom { return true }
-            return false
-        }()
-        VStack(alignment: bottomIsUpNext ? .leading : .center, spacing: 0) {
-            let left = buildLeftView(for: data)
-            let right = buildRightView(for: data)
-
-            NotchActivitySplitLayout(centerGap: config.initialSize.width) {
-                ZStack { left }
-                    .blur(radius: blurRadius)
-                ZStack { right }
-                    .blur(radius: blurRadius)
-            }
-            .frame(height: config.initialSize.height)
-            .padding(.horizontal, horizontalPadding)
-
-            if let bottomView = getBottomView(for: data) {
-                VStack {
-                    bottomView
-                        .padding(.bottom, config.activityContentBottomPadding)
-                }
-                .blur(radius: blurRadius)
-                .padding(.horizontal, horizontalPadding)
-            }
-        }
-    }
-
-    // MARK: - Activity View Builders
     private func getBottomView(for data: StandardActivityData) -> AnyView? {
         switch data {
         case .music(let bottomContentType):
@@ -127,7 +86,16 @@ struct NotchActivityContentView: View {
             case .none:
                 return nil
             case .peek(let title, let artist):
-                return AnyView(QuickPeekView(title: title, artist: artist))
+                guard let reservedLyric else {
+                    return AnyView(QuickPeekView(title: title, artist: artist))
+                }
+                return AnyView(
+                    ZStack {
+                        MusicKaraokeActivityTicker(lyric: reservedLyric, config: config, showLyrics: $showLyrics)
+                            .hidden()
+                        QuickPeekView(title: title, artist: artist)
+                    }
+                )
             case .lyrics(let line):
                 let view = MusicKaraokeActivityTicker(
                     lyric: line,
@@ -149,6 +117,7 @@ struct NotchActivityContentView: View {
         case .music: AlbumArtView()
         case .intelligenceAgent: IntelligenceAgentActivityView.left()
         case .devActivity(let task, _): DevActivityLiveActivityView.left(for: task)
+        case .appActivity(let activity, _): AppActivityLiveActivityView.left(for: activity)
         case .weather(let data): WeatherActivityView.left(for: data)
         case .calendar: CalendarProximityActivityView.left()
         case .reminder: ReminderProximityActivityView.left()
@@ -180,9 +149,10 @@ struct NotchActivityContentView: View {
         case .finance(let payload): FinanceLiveActivityView.left(for: payload)
         case .microphone:
             MicrophoneLiveActivityView.left { MicrophoneUsageManager.shared.toggleMute() }
-        case .nearDrop: NearDropCompactActivityView.left()
+        case .nearbyTransfer: NearbyTransferCompactActivityView.left()
         case .hud(let type): SystemHUDSlimActivityView.left(type: type, settings: settings)
         case .lockScreen: LockScreenLiveActivityView.left()
+        case .capsLock: CapsLockLiveActivityView.left()
         case .updateAvailable: UpdateAvailableActivityView.left()
         case .focusSession: FocusSessionActivityView.left()
         case .unlocked: LockScreenLiveActivityView.left()
@@ -193,9 +163,10 @@ struct NotchActivityContentView: View {
     @ViewBuilder
     private func buildRightView(for data: StandardActivityData) -> some View {
         switch data {
-        case .music: WaveformView()
+        case .music: MusicLiveActivityRightView()
         case .intelligenceAgent(let status, let stepTitle, let current, let total): IntelligenceAgentActivityView.right(status: status, stepTitle: stepTitle, current: current, total: total)
         case .devActivity(let task, let additionalCount): DevActivityLiveActivityView.right(for: task, additionalCount: additionalCount)
+        case .appActivity(let activity, let additionalCount): AppActivityLiveActivityView.right(for: activity, additionalCount: additionalCount)
         case .weather(let data): WeatherActivityView.right(for: data)
         case .calendar(let event): CalendarProximityActivityView.right(event: event)
         case .reminder(let reminder): ReminderProximityActivityView.right(reminder: reminder)
@@ -228,9 +199,10 @@ struct NotchActivityContentView: View {
         case .finance(let payload):
             FinanceLiveActivityView.right(for: payload)
         case .microphone: MicrophoneLiveActivityView.right { MicrophoneUsageManager.shared.toggleMute() }
-        case .nearDrop(let payload): NearDropCompactActivityView.right(payload: payload)
-        case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: SettingsModel.shared)
+        case .nearbyTransfer(let payload): NearbyTransferCompactActivityView.right(payload: payload)
+        case .hud(let type): SystemHUDSlimActivityView.right(type: type, settings: settings)
         case .lockScreen: LockScreenLiveActivityView.right()
+        case .capsLock: CapsLockLiveActivityView.right()
         case .updateAvailable(let version): UpdateAvailableActivityView.right(version: version)
         case .focusSession: FocusSessionActivityView.right()
         case .unlocked: LockScreenLiveActivityView.right()
@@ -260,7 +232,7 @@ private struct DesktopActivityRightView: View {
 }
 
 private struct MusicKaraokeActivityTicker: View {
-    @EnvironmentObject private var musicManager: MusicManager
+    private var musicManager: MusicManager { .shared }
 
     let lyric: LyricLine
     let config: ResolvedNotchConfiguration
@@ -270,19 +242,17 @@ private struct MusicKaraokeActivityTicker: View {
         KaraokeLyricTicker(
             lyric: lyric,
             containerWidth: config.lyricsMaxWidth,
-            font: .system(size: config.lyricsFontSize, weight: .semibold, design: .rounded),
+            fontSize: config.lyricsFontSize,
             highlightColor: musicManager.accentColor.opacity(0.9),
             inactiveColor: musicManager.accentColor
         )
         .frame(maxWidth: config.lyricsMaxWidth)
-        .transition(.opacity.animation(.easeInOut(duration: 0.3)))
-        .id("lyric-\(lyric.id.uuidString)")
         .onTapGesture { showLyrics = true }
     }
 }
 
 private struct GeminiActivityRightView: View {
-    @EnvironmentObject private var geminiLiveManager: GeminiLiveManager
+    @Environment(GeminiLiveManager.self) private var geminiLiveManager
 
     let payload: GeminiPayload
 

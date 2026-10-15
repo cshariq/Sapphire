@@ -51,7 +51,7 @@ class GlobalDragManager: ObservableObject {
         guard !isInsideActivationRect else { return }
 
         isInsideActivationRect = true
-        let delay = max(0.05, SettingsModel.shared.settings.snapActivationDelay)
+        let delay = max(0.05, SettingsModel.shared.current.snapActivationDelay)
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self,

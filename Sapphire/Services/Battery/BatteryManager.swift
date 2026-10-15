@@ -57,6 +57,7 @@ private struct BatteryPowerPolicySettings: Equatable {
     let magSafeLEDSetting: MagSafeLEDSetting
     let magSafeGreenAtLimit: Bool
     let magSafeLEDBlinkOnDischarge: Bool
+    let manualChargePaused: Bool
 
     init(_ settings: Settings) {
         chargeLimit = settings.batteryChargeLimit
@@ -75,6 +76,7 @@ private struct BatteryPowerPolicySettings: Equatable {
         magSafeLEDSetting = settings.magSafeLEDSetting
         magSafeGreenAtLimit = settings.magSafeGreenAtLimit
         magSafeLEDBlinkOnDischarge = settings.magSafeLEDBlinkOnDischarge
+        manualChargePaused = settings.manualChargePaused
     }
 }
 
@@ -171,17 +173,20 @@ class PowerStateController: ObservableObject {
                 || (currentSettings.batteryChargeLimit < 100 && batteryState.isCharging)
 
             if shouldInhibit {
-                if isAppleSilicon {
-                    let mode = await batteryManager.currentChargeControlMode()
-                    if mode == .firmware {
-                        if currentSettings.batteryChargeLimit < 100 {
-                            batteryManager.setChargeLimit(currentSettings.batteryChargeLimit)
-                        }
-                    } else {
-                        batteryManager.enableCharging(false)
+                let mode = await batteryManager.currentChargeControlMode()
+                switch mode {
+                case .firmware:
+                    if currentSettings.batteryChargeLimit < 100 {
+                        batteryManager.setChargeLimit(currentSettings.batteryChargeLimit)
                     }
-                } else {
-                    batteryManager.setChargeLimit(currentSettings.batteryChargeLimit)
+                case .adapter:
+                    batteryManager.enableCharging(false)
+                case .legacy, .unsupported:
+                    if isAppleSilicon {
+                        batteryManager.enableCharging(false)
+                    } else {
+                        batteryManager.setChargeLimit(currentSettings.batteryChargeLimit)
+                    }
                 }
             }
         }
@@ -239,7 +244,10 @@ class PowerStateController: ObservableObject {
             var shouldCharge = true
             var currentManagementState: ManagementState = .charging
 
-            if currentSettings.sailingModeEnabled {
+            if currentSettings.manualChargePaused {
+                shouldCharge = false
+                currentManagementState = .inhibited
+            } else if currentSettings.sailingModeEnabled {
                 let sailingLowerBound = currentSettings.batteryChargeLimit - currentSettings.sailingModeLowerLimit
                 if currentCharge >= currentSettings.batteryChargeLimit { shouldCharge = false; currentManagementState = .inhibited }
                 else if currentCharge < sailingLowerBound { shouldCharge = true }
@@ -280,15 +288,24 @@ class PowerStateController: ObservableObject {
                 settings: currentSettings
             )
 
-            if isAppleSilicon {
-                let mode = await batteryManager.currentChargeControlMode()
-                if mode == .firmware {
-                    batteryManager.setChargeLimit(shouldCharge ? 100 : currentSettings.batteryChargeLimit)
+            let mode = await batteryManager.currentChargeControlMode()
+            switch mode {
+            case .firmware:
+                if currentSettings.manualChargePaused {
+                    batteryManager.setChargeLimit(max(50, min(100, currentCharge)))
                 } else {
-                    batteryManager.enableCharging(shouldCharge)
+                    batteryManager.setChargeLimit(shouldCharge ? 100 : currentSettings.batteryChargeLimit)
                 }
-            } else {
-                batteryManager.setChargeLimit(shouldCharge ? 100 : currentSettings.batteryChargeLimit)
+            case .adapter:
+                batteryManager.enableCharging(shouldCharge)
+            case .legacy, .unsupported:
+                if isAppleSilicon {
+                    batteryManager.enableCharging(shouldCharge)
+                } else if currentSettings.manualChargePaused {
+                    batteryManager.setChargeLimit(max(50, min(100, currentCharge)))
+                } else {
+                    batteryManager.setChargeLimit(shouldCharge ? 100 : currentSettings.batteryChargeLimit)
+                }
             }
 
             let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: !shouldCharge)
@@ -397,6 +414,9 @@ class BatteryManager {
     deinit {
         if let helperConnectionObserver {
             NotificationCenter.default.removeObserver(helperConnectionObserver)
+        }
+        if let chargeControlModeObserver {
+            NotificationCenter.default.removeObserver(chargeControlModeObserver)
         }
         if self.batteryService != 0 {
             IOObjectRelease(self.batteryService)
@@ -867,8 +887,18 @@ class BatteryManager {
     }
 
     private var cachedChargeControlMode: ChargeControlMode?
+    private var chargeControlModeObserver: NSObjectProtocol?
 
     func currentChargeControlMode() async -> ChargeControlMode {
+        if chargeControlModeObserver == nil {
+            chargeControlModeObserver = NotificationCenter.default.addObserver(
+                forName: .sapphireHelperConnectionRestored,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.cachedChargeControlMode = nil
+            }
+        }
         if let cached = cachedChargeControlMode { return cached }
         let raw = await withHelperCallback(fallback: -1) { helper, reply in
             helper.getChargeControlMode(reply: reply)

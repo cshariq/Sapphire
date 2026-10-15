@@ -69,12 +69,11 @@ final class NotesManager: ObservableObject {
     @Published private(set) var notes: [QuickNote] = []
 
     private let storageKey = "sapphire.quickNotes"
+    private let saveQueue = DispatchQueue(label: "com.sapphire.notes.save", qos: .utility)
+    private var unreadableStoredData: Data?
 
     private init() {
         load()
-        if notes.isEmpty {
-            notes = [QuickNote(title: "Welcome", body: "Tap to expand and edit your notes.")]
-        }
     }
 
     var pinnedPreview: QuickNote? {
@@ -91,6 +90,9 @@ final class NotesManager: ObservableObject {
 
     func updateNote(_ note: QuickNote) {
         guard let index = notes.firstIndex(where: { $0.id == note.id }) else { return }
+        let current = notes[index]
+        guard current.title != note.title || current.body != note.body
+                || current.rtfData != note.rtfData || current.isDone != note.isDone else { return }
         var updated = note
         updated.updatedAt = Date()
         notes[index] = updated
@@ -119,14 +121,46 @@ final class NotesManager: ObservableObject {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([QuickNote].self, from: data) else { return }
-        notes = decoded
+        guard let data = UserDefaults.standard.data(forKey: storageKey) else {
+            notes = [QuickNote(title: "Welcome", body: "Tap to expand and edit your notes.")]
+            return
+        }
+        guard let elements = try? JSONDecoder().decode([TolerantNote].self, from: data) else {
+            unreadableStoredData = data
+            print("[NotesManager] Saved notes could not be read; they are kept and not overwritten.")
+            return
+        }
+        notes = elements.compactMap(\.note)
+        if notes.count != elements.count {
+            unreadableStoredData = data
+            print("[NotesManager] \(elements.count - notes.count) saved note(s) could not be read; the original data is kept.")
+        }
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(notes) {
-            UserDefaults.standard.set(data, forKey: storageKey)
+        let snapshot = notes
+        let key = storageKey
+        let preserved = unreadableStoredData
+        unreadableStoredData = nil
+        saveQueue.async {
+            if let preserved {
+                let backupKey = "\(key).unreadable-\(Int(Date().timeIntervalSince1970))"
+                UserDefaults.standard.set(preserved, forKey: backupKey)
+            }
+            do {
+                let data = try JSONEncoder().encode(snapshot)
+                UserDefaults.standard.set(data, forKey: key)
+            } catch {
+                print("[NotesManager] Failed to save notes: \(error)")
+            }
         }
+    }
+}
+
+private struct TolerantNote: Decodable {
+    let note: QuickNote?
+
+    init(from decoder: Decoder) throws {
+        note = try? QuickNote(from: decoder)
     }
 }

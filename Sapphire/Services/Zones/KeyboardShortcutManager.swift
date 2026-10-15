@@ -16,11 +16,15 @@ class KeyboardShortcutManager {
     private struct ShortcutRegistrationSettings: Equatable {
         var planes: [Plane]
         var snapZoneShortcuts: [SnapZoneShortcut]
+        var dockLayoutsEnabled: Bool
+        var dockLayoutsPresets: [DockLayout]
         var disabledShortcutIDs: Set<String>
 
         init(_ settings: Settings) {
             planes = settings.planes
             snapZoneShortcuts = settings.snapZoneShortcuts
+            dockLayoutsEnabled = settings.dockLayoutsEnabled
+            dockLayoutsPresets = settings.dockLayoutsPresets
             disabledShortcutIDs = settings.disabledShortcutIDs
         }
 
@@ -29,9 +33,28 @@ class KeyboardShortcutManager {
         }
     }
 
+    struct ExternalShortcut {
+        let identifier: String
+        let shortcut: KeyboardShortcut
+        let perform: @MainActor () -> Void
+    }
+
+    struct ExternalShortcutProvider {
+        let shortcuts: @MainActor (Settings) -> [ExternalShortcut]
+        let reportUnavailable: @MainActor (Set<String>) -> Void
+    }
+
     private enum ShortcutAction {
         case plane(Plane)
         case snapZone(SnapZoneShortcut)
+        case external(ExternalShortcut)
+    }
+
+    private var externalProviders: [String: ExternalShortcutProvider] = [:]
+
+    private struct ShortcutTrigger: Hashable {
+        let keyCode: UInt16
+        let modifiers: UInt64
     }
 
     private var tapToken: GlobalEventTap.Token?
@@ -39,8 +62,9 @@ class KeyboardShortcutManager {
     private var localMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     private var shortcutRecordingObserver: ShortcutRecordingObserver?
+    private var keyboardInputSourceObserver: NSObjectProtocol?
 
-    private nonisolated(unsafe) var registeredShortcuts: [KeyboardShortcut: ShortcutAction] = [:]
+    private nonisolated(unsafe) var registeredShortcuts: [ShortcutTrigger: ShortcutAction] = [:]
     private let cacheLock = NSLock()
     private let triggerLock = NSLock()
     private nonisolated(unsafe) var lastTriggerAt = Date.distantPast
@@ -50,6 +74,16 @@ class KeyboardShortcutManager {
 
     private init() {
         registerTrustAwareness()
+
+        keyboardInputSourceObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.Carbon.TISNotifySelectedKeyboardInputSourceChanged"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.installTap()
+            }
+        }
 
         shortcutRecordingObserver = ShortcutRecordingObserver { [weak self] isRecording in
             MainActor.assumeIsolated {
@@ -90,6 +124,11 @@ class KeyboardShortcutManager {
         installTap(using: ShortcutRegistrationSettings(SettingsModel.shared.settings))
     }
 
+    func registerExternalShortcutProvider(_ provider: ExternalShortcutProvider, named name: String) {
+        externalProviders[name] = provider
+        installTap()
+    }
+
     private func installTap(using settings: ShortcutRegistrationSettings) {
         guard !isAccessibilitySuspended, !isShortcutRecording else { return }
         removeTap()
@@ -103,20 +142,39 @@ class KeyboardShortcutManager {
             }
             : []
 
-        cacheLock.withLock {
-            registeredShortcuts.removeAll()
-
-            for plane in planesWithShortcuts {
-                if let shortcut = plane.shortcut {
-                    registeredShortcuts[shortcut] = .plane(plane)
-                }
+        var registrations: [ShortcutTrigger: ShortcutAction] = [:]
+        for plane in planesWithShortcuts {
+            if let shortcut = plane.shortcut,
+               let trigger = trigger(for: shortcut) {
+                registrations[trigger] = .plane(plane)
             }
-            for mapping in snapZoneShortcuts {
-                registeredShortcuts[mapping.shortcut] = .snapZone(mapping)
+        }
+        for mapping in snapZoneShortcuts {
+            if let trigger = trigger(for: mapping.shortcut) {
+                registrations[trigger] = .snapZone(mapping)
             }
         }
 
-        if planesWithShortcuts.isEmpty && snapZoneShortcuts.isEmpty {
+        let currentSettings = SettingsModel.shared.settings
+        for provider in externalProviders.values {
+            var unavailable = Set<String>()
+            for external in provider.shortcuts(currentSettings) {
+                guard settings.isEnabled(external.identifier),
+                      let trigger = trigger(for: external.shortcut) else { continue }
+                if registrations[trigger] == nil {
+                    registrations[trigger] = .external(external)
+                } else {
+                    unavailable.insert(external.identifier)
+                }
+            }
+            provider.reportUnavailable(unavailable)
+        }
+
+        cacheLock.withLock {
+            registeredShortcuts = registrations
+        }
+
+        if registrations.isEmpty {
             return
         }
 
@@ -173,20 +231,12 @@ class KeyboardShortcutManager {
         }
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let trigger = ShortcutTrigger(
+            keyCode: keyCode,
+            modifiers: significantModifiers(from: event.flags)
+        )
 
-        guard let nsEvent = NSEvent(cgEvent: event) else {
-            return .pass
-        }
-
-        let flags = nsEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-        guard let keyString = KeyCodeTranslator.shared.string(for: keyCode, from: nsEvent) else {
-            return .pass
-        }
-
-        let currentShortcut = KeyboardShortcut(key: keyString, modifiers: flags)
-
-        guard let action = action(for: currentShortcut) else { return .pass }
+        guard let action = action(for: trigger) else { return .pass }
         guard shouldTrigger() else { return .swallow }
 
         perform(action)
@@ -201,23 +251,49 @@ class KeyboardShortcutManager {
         }
 
         let keyCode = UInt16(event.keyCode)
-        guard let keyString = KeyCodeTranslator.shared.string(for: keyCode, from: event) else {
-            return false
-        }
+        let trigger = ShortcutTrigger(
+            keyCode: keyCode,
+            modifiers: significantModifiers(from: event.modifierFlags)
+        )
 
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let currentShortcut = KeyboardShortcut(key: keyString, modifiers: modifiers)
-
-        guard let action = action(for: currentShortcut) else { return false }
+        guard let action = action(for: trigger) else { return false }
         guard shouldTrigger() else { return swallow }
 
         perform(action)
         return swallow
     }
 
-    nonisolated private func action(for shortcut: KeyboardShortcut) -> ShortcutAction? {
+    private func trigger(for shortcut: KeyboardShortcut) -> ShortcutTrigger? {
+        guard let keyCode = KeyCodeTranslator.shared.keyCode(for: shortcut.key) else {
+            return nil
+        }
+        return ShortcutTrigger(
+            keyCode: keyCode,
+            modifiers: significantModifiers(from: shortcut.significantModifiers)
+        )
+    }
+
+    nonisolated private func significantModifiers(from flags: CGEventFlags) -> UInt64 {
+        flags.rawValue & (
+            CGEventFlags.maskCommand.rawValue
+                | CGEventFlags.maskAlternate.rawValue
+                | CGEventFlags.maskControl.rawValue
+                | CGEventFlags.maskShift.rawValue
+        )
+    }
+
+    private func significantModifiers(from flags: NSEvent.ModifierFlags) -> UInt64 {
+        var result: UInt64 = 0
+        if flags.contains(.command) { result |= CGEventFlags.maskCommand.rawValue }
+        if flags.contains(.option) { result |= CGEventFlags.maskAlternate.rawValue }
+        if flags.contains(.control) { result |= CGEventFlags.maskControl.rawValue }
+        if flags.contains(.shift) { result |= CGEventFlags.maskShift.rawValue }
+        return result
+    }
+
+    nonisolated private func action(for trigger: ShortcutTrigger) -> ShortcutAction? {
         cacheLock.withLock {
-            registeredShortcuts[shortcut]
+            registeredShortcuts[trigger]
         }
     }
 
@@ -241,6 +317,9 @@ class KeyboardShortcutManager {
                     ShortcutIdentifier.snapZone(layoutID: mapping.layoutID, zoneID: mapping.zoneID)
                 ) else { return }
                 SnappingManager.snap(layoutID: mapping.layoutID, zoneID: mapping.zoneID)
+            case .external(let external):
+                guard SettingsModel.shared.settings.isShortcutEnabled(external.identifier) else { return }
+                MainActor.assumeIsolated { external.perform() }
             }
         }
     }

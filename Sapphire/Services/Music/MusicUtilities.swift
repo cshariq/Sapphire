@@ -13,12 +13,13 @@ import AVFoundation
 import CoreAudio
 import Accelerate
 import Yams
+import MusicKit
 
 // MARK: - Consolidated from LyricsFetcher.swift
 
 enum LyricsParser {
     private static let maximumLyricsfileBytes = 1_048_576
-    private static let maximumResponseBytes = 4_194_304
+    static let maximumResponseBytes = 4_194_304
     private static let maximumNodeCount = 50_000
     private static let maximumNodeDepth = 64
 
@@ -381,33 +382,83 @@ enum LyricsParser {
 
 class LyricsFetcher {
 
-    func fetchSyncedLyrics(for title: String, artist: String, album: String) async -> [LyricLine]? {
-
+    @concurrent
+    func fetchSyncedLyrics(
+        for title: String,
+        artist: String,
+        album: String,
+        duration: TimeInterval?
+    ) async -> LyricsFetchOutcome {
         var components = URLComponents(string: "https://lrclib.net/api/get")!
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "track_name", value: title),
             URLQueryItem(name: "artist_name", value: artist),
             URLQueryItem(name: "album_name", value: album)
         ]
+        if let seconds = LyricsDurationMatch.requestDuration(duration) {
+            queryItems.append(URLQueryItem(name: "duration", value: String(seconds)))
+        }
+        components.queryItems = queryItems
 
-        guard let url = components.url else { return nil }
+        guard let url = components.url else { return .notFound }
 
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.setValue(Self.lrclibUserAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let started = Date()
+        let data: Data
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            switch status {
+            case 200...299:
+                break
+            case 404:
+                LyricsLog.info("LRCLIB GET '\(title)' / '\(artist)' / '\(album)': not found")
+                return .notFound
+            case 408, 425, 429, 500...599, -1:
+                LyricsLog.error("LRCLIB GET '\(title)' / '\(artist)': HTTP \(status), will retry later")
+                return .failed
+            default:
+                LyricsLog.error("LRCLIB GET '\(title)' / '\(artist)': HTTP \(status)")
+                return .notFound
+            }
+            let limit = LyricsParser.maximumResponseBytes
+            if response.expectedContentLength > Int64(limit) {
+                LyricsLog.error("LRCLIB response for '\(title)' rejected: \(response.expectedContentLength) bytes exceeds limit")
+                return .notFound
+            }
+            var collected = Data()
+            collected.reserveCapacity(max(0, min(Int(response.expectedContentLength), limit)))
+            for try await byte in bytes {
+                collected.append(byte)
+                if collected.count > limit {
+                    LyricsLog.error("LRCLIB response for '\(title)' rejected: body exceeds \(limit) bytes")
+                    return .notFound
+                }
+            }
+            data = collected
             let elapsedMs = Int(Date().timeIntervalSince(started) * 1000)
             LyricsLog.info("LRCLIB GET '\(title)' / '\(artist)' / '\(album)': HTTP \(status), \(data.count) bytes, \(elapsedMs)ms")
-            guard (200...299).contains(status) else { return nil }
-            return LyricsParser.parseLRCLibResponse(data)
         } catch {
             LyricsLog.error("LRCLIB GET '\(title)' / '\(artist)' failed: \(error.localizedDescription)")
-            return nil
+            return .failed
         }
+
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            LyricsLog.error("LRCLIB response for '\(title)' is not a JSON object")
+            return .failed
+        }
+        let resultDuration = (object["duration"] as? NSNumber)?.doubleValue
+        guard LyricsDurationMatch.accepts(expected: duration, actual: resultDuration) else {
+            LyricsLog.info(
+                "LRCLIB result for '\(title)' rejected: \(resultDuration.map { String(format: "%.0f", $0) } ?? "?")s vs playing \(duration.map { String(format: "%.0f", $0) } ?? "?")s"
+            )
+            return .notFound
+        }
+        guard let lines = LyricsParser.parseLRCLibResponse(data) else { return .notFound }
+        return .found(lines)
     }
 
     func detectLanguage(for text: String) async -> String? {
@@ -449,8 +500,9 @@ class LyricsFetcher {
         return nil
     }
 
-    func translate(lyrics: inout [LyricLine], from sourceLanguage: String, to targetLanguage: String) async {
-        guard !lyrics.isEmpty else { return }
+    @discardableResult
+    func translate(lyrics: inout [LyricLine], from sourceLanguage: String, to targetLanguage: String) async -> Bool {
+        guard !lyrics.isEmpty else { return true }
 
         var chunks: [[(index: Int, text: String)]] = []
         var currentChunk: [(index: Int, text: String)] = []
@@ -499,7 +551,8 @@ class LyricsFetcher {
 
         struct AnyCodable: Decodable {}
 
-        await withTaskGroup(of: [(Int, String)].self) { group in
+        var allChunksTranslated = true
+        await withTaskGroup(of: (translated: Bool, lines: [(Int, String)]).self) { group in
             for chunk in chunks {
                 group.addTask {
                     let combinedText = chunk.map { $0.text }.joined(separator: "\n")
@@ -513,7 +566,7 @@ class LyricsFetcher {
                         URLQueryItem(name: "q", value: combinedText)
                     ]
 
-                    guard let url = components.url else { return [] }
+                    guard let url = components.url else { return (false, []) }
 
                     do {
                         let (data, _) = try await URLSession.shared.data(from: url)
@@ -530,16 +583,17 @@ class LyricsFetcher {
                                     results.append((item.index, item.text))
                                 }
                             }
-                            return results
+                            return (translatedLines.count >= chunk.count, results)
                         }
                     } catch {
                     }
-                    return chunk.map { ($0.index, $0.text) }
+                    return (false, chunk.map { ($0.index, $0.text) })
                 }
             }
 
             for await chunkResult in group {
-                for (index, translatedText) in chunkResult {
+                if !chunkResult.translated { allChunksTranslated = false }
+                for (index, translatedText) in chunkResult.lines {
                     lyrics[index].translatedText = translatedText
                 }
             }
@@ -550,6 +604,7 @@ class LyricsFetcher {
                 lyrics[i].translatedText = lyrics[i].text
             }
         }
+        return allChunksTranslated
     }
 
     private static let decoder: JSONDecoder = {
@@ -569,6 +624,73 @@ fileprivate struct PlayCountResponse: Codable {
     let success: Bool
     let playcount: Int?
     let uri: String?
+}
+
+@MainActor
+enum StatsFMPopularity {
+    private struct SearchResponse: Decodable {
+        let items: Items
+        struct Items: Decodable { let tracks: [Track] }
+    }
+
+    private struct Track: Decodable {
+        let name: String
+        let artists: [Artist]
+        let spotifyPopularity: Int?
+        let externalIds: ExternalIDs?
+        struct Artist: Decodable { let name: String }
+        struct ExternalIDs: Decodable { let appleMusic: [String]? }
+    }
+
+    private static var cache: [String: Int] = [:]
+    private static let decoder = JSONDecoder()
+
+    static func popularity(title: String, artist: String, appleMusicID: String? = nil) async -> Int? {
+        let key = "\(title)|\(artist)|\(appleMusicID ?? "")".lowercased()
+        if let cached = cache[key] { return cached }
+
+        var components = URLComponents(string: "https://api.stats.fm/api/v1/search/elastic")
+        components?.queryItems = [
+            URLQueryItem(name: "query", value: baseTitle(title)),
+            URLQueryItem(name: "type", value: "track"),
+            URLQueryItem(name: "limit", value: "50")
+        ]
+        guard let url = components?.url,
+              let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let tracks = try? decoder.decode(SearchResponse.self, from: data).items.tracks else { return nil }
+
+        let titleKey = matchKey(title)
+        let artistKey = matchKey(artist)
+        let matches = tracks.filter { track in
+            let name = matchKey(track.name)
+            guard !name.isEmpty, name == titleKey || name.hasPrefix(titleKey) || titleKey.hasPrefix(name) else { return false }
+            return track.artists.contains { candidate in
+                let key = matchKey(candidate.name)
+                return !key.isEmpty && (artistKey.contains(key) || key.contains(artistKey))
+            }
+        }
+
+        let exact = appleMusicID.flatMap { id in
+            matches.first { $0.externalIds?.appleMusic?.contains(id) == true }
+        }
+        let best = exact?.spotifyPopularity.flatMap { $0 > 0 ? $0 : nil }
+            ?? matches.compactMap(\.spotifyPopularity).max()
+        guard let best, best > 0 else { return nil }
+        if cache.count > 500 { cache.removeAll() }
+        cache[key] = best
+        return best
+    }
+
+    private static func baseTitle(_ value: String) -> String {
+        var text = value.replacingOccurrences(of: "\\s*[\\(\\[][^\\)\\]]*[\\)\\]]", with: "", options: .regularExpression)
+        if let dash = text.range(of: " - ") { text = String(text[..<dash.lowerBound]) }
+        return text.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func matchKey(_ value: String) -> String {
+        String(baseTitle(value).lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
+    }
 }
 
 @MainActor
@@ -1359,14 +1481,19 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
 
     var body: some View {
         Group {
-            if let nsImage = image, url == loadedURL {
+            if let url, AppleMusicArtworkRegistry.isMusicKitURL(url),
+               let artwork = AppleMusicArtworkRegistry.artwork(for: url) {
+                GeometryReader { proxy in
+                    ArtworkImage(artwork, width: proxy.size.width, height: proxy.size.height)
+                }
+            } else if let nsImage = image, url == loadedURL {
                 content(Image(nsImage: nsImage))
             } else {
                 placeholder()
             }
         }
         .task(id: url) {
-            guard let url else {
+            guard let url, !AppleMusicArtworkRegistry.isMusicKitURL(url) else {
                 image = nil
                 loadedURL = nil
                 return

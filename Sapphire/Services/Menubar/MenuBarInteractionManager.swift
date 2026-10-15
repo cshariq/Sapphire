@@ -7,75 +7,108 @@
 
 import Cocoa
 import Combine
+import os
 
 @MainActor
 final class MenuBarInteractionManager {
     static let shared = MenuBarInteractionManager()
 
+    private struct Configuration: Equatable {
+        let showOnClick: Bool
+        let showOnHover: Bool
+        let showOnScroll: Bool
+    }
+
     // MARK: - Monitors
     private var clickToken: UUID?
     private var hoverProbe: MenuBarHoverProbe?
     private var hoverRevealTimer: Timer?
+    private var scrollTapToken: GlobalEventTap.Token?
 
     // MARK: - State
     public var isMonitoring = false
-    private var isSuspended = false
+    private var suspension = MenuBarSuspensionSources()
+    private var isSuspended: Bool { suspension.isSuspended }
     private var disabledUntil: Date?
+    private var lastRevealClick: (time: TimeInterval, location: CGPoint)?
+    private var configuration = Configuration(showOnClick: false, showOnHover: false, showOnScroll: false)
     private var cancellables = Set<AnyCancellable>()
+
+    private nonisolated let scrollState = OSAllocatedUnfairLock(initialState: ScrollState())
+
+    private struct ScrollState {
+        var accumulated: CGFloat = 0
+        var cooldownUntil: UInt64 = 0
+    }
 
     private init() {}
 
     func startMonitoring() {
         guard !isMonitoring else { return }
         isMonitoring = true
-        isSuspended = false
+        MenuBarItemCatalog.shared.start()
         if cancellables.isEmpty {
             SettingsModel.shared.$settings
-                .map { ($0.showOnClick, $0.showOnHover) }
-                .removeDuplicates { $0 == $1 }
+                .map { Configuration(showOnClick: $0.showOnClick, showOnHover: $0.showOnHover, showOnScroll: $0.showOnScroll) }
+                .removeDuplicates()
                 .dropFirst()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] configuration in
                     guard let self, self.isMonitoring else { return }
-                    self.updateMonitors(showOnClick: configuration.0, showOnHover: configuration.1)
+                    self.updateMonitors(configuration)
                 }
                 .store(in: &cancellables)
         }
         let settings = SettingsModel.shared.settings
-        updateMonitors(showOnClick: settings.showOnClick, showOnHover: settings.showOnHover)
+        updateMonitors(Configuration(showOnClick: settings.showOnClick, showOnHover: settings.showOnHover, showOnScroll: settings.showOnScroll))
     }
 
-    func setSuspended(_ suspended: Bool) {
-        guard isSuspended != suspended else { return }
-        isSuspended = suspended
-        if suspended { cancelHoverReveal() }
+    func setSuspended(_ suspended: Bool, by source: ObjectIdentifier) {
+        guard suspension.set(suspended, for: source) else { return }
+        if isSuspended { cancelHoverReveal() }
+        updateScrollTapEnabled()
     }
 
     func stopMonitoring() {
         guard isMonitoring else { return }
         isMonitoring = false
-        isSuspended = false
         stopClickMonitoring()
         stopHoverMonitoring()
+        stopScrollMonitoring()
         cancellables.removeAll()
     }
 
-    private func updateMonitors(showOnClick: Bool, showOnHover: Bool) {
-        if showOnClick && clickToken == nil {
+    private func updateMonitors(_ configuration: Configuration) {
+        self.configuration = configuration
+
+        if configuration.showOnClick && clickToken == nil {
             startClickMonitoring()
-        } else if !showOnClick && clickToken != nil {
+        } else if !configuration.showOnClick && clickToken != nil {
             stopClickMonitoring()
         }
 
-        if showOnHover && hoverProbe == nil {
+        let needsProbe = configuration.showOnHover || configuration.showOnScroll
+        if needsProbe && hoverProbe == nil {
             startHoverMonitoring()
-        } else if !showOnHover && hoverProbe != nil {
+        } else if !needsProbe && hoverProbe != nil {
             stopHoverMonitoring()
+        }
+        if !configuration.showOnHover { cancelHoverReveal() }
+
+        if configuration.showOnScroll && scrollTapToken == nil {
+            startScrollMonitoring()
+        } else if !configuration.showOnScroll && scrollTapToken != nil {
+            stopScrollMonitoring()
         }
     }
 
     func temporarilyDisable(for duration: TimeInterval) {
         disabledUntil = Date().addingTimeInterval(duration)
+    }
+
+    private var revealsAllowed: Bool {
+        guard isMonitoring, !isSuspended, Date() >= (disabledUntil ?? .distantPast) else { return false }
+        return (NSApp.delegate as? AppDelegate)?.statusBarController?.isZenModeActive != true
     }
 
     // MARK: - Click Monitoring
@@ -84,16 +117,16 @@ final class MenuBarInteractionManager {
         guard clickToken == nil else { return }
 
         clickToken = GlobalInputMonitor.shared.onLeftMouseDown { [weak self] in
-            guard let self = self, !self.isSuspended else { return }
-            guard Date() >= (self.disabledUntil ?? .distantPast) else { return }
-
+            guard let self, self.revealsAllowed else { return }
             let location = NSEvent.mouseLocation
-
-            if self.isLocationInMenuBar(location) {
-                if self.isClickInEmptyMenuBarArea(location) {
-                    self.showHiddenItems()
-                }
+            guard self.isLocationInMenuBar(location),
+                  let axPoint = AX.axPoint(fromCocoaPoint: location) else { return }
+            if self.isSecondClickOfDoubleClick(at: location) {
+                self.lastRevealClick = nil
+                (NSApp.delegate as? AppDelegate)?.statusBarController?.showAlwaysHiddenSection()
+                return
             }
+            self.revealIfEmptyMenuBarSpace(at: axPoint, cocoaPoint: location)
         }
     }
 
@@ -102,6 +135,30 @@ final class MenuBarInteractionManager {
             GlobalInputMonitor.shared.remove(token)
             clickToken = nil
         }
+    }
+
+    private func revealIfEmptyMenuBarSpace(at axPoint: CGPoint, cocoaPoint: CGPoint) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = MenuBarHitTest.classify(axPoint: axPoint)
+            guard result != .item else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.revealsAllowed,
+                          MenuBarHitTest.isEmptySpace(result, axPoint: axPoint, cocoaPoint: cocoaPoint) else { return }
+                    self.lastRevealClick = (ProcessInfo.processInfo.systemUptime, cocoaPoint)
+                    self.showHiddenItems()
+                }
+            }
+        }
+    }
+
+    private func isSecondClickOfDoubleClick(at location: CGPoint) -> Bool {
+        guard SettingsModel.shared.current.showAlwaysHiddenOnDoubleClick,
+              let last = lastRevealClick else { return false }
+        let elapsed = ProcessInfo.processInfo.systemUptime - last.time
+        return elapsed <= NSEvent.doubleClickInterval
+            && abs(location.x - last.location.x) <= 6
+            && abs(location.y - last.location.y) <= 6
     }
 
     // MARK: - Hover Monitoring
@@ -119,10 +176,12 @@ final class MenuBarInteractionManager {
         hoverProbe?.stop()
         hoverProbe = nil
         cancelHoverReveal()
+        updateScrollTapEnabled()
     }
 
     private func handleMenuBarHoverChange(_ isInside: Bool) {
-        guard isMonitoring, !isSuspended else { return }
+        updateScrollTapEnabled()
+        guard configuration.showOnHover, isMonitoring, !isSuspended else { return }
         if isInside {
             scheduleHoverReveal()
         } else {
@@ -130,11 +189,13 @@ final class MenuBarInteractionManager {
         }
     }
 
+    private var isMouseButtonHeld: Bool { NSEvent.pressedMouseButtons != 0 }
+
     private func scheduleHoverReveal() {
         cancelHoverReveal()
-        guard Date() >= (disabledUntil ?? .distantPast) else { return }
+        guard revealsAllowed, !isMouseButtonHeld else { return }
 
-        let delay = max(0, SettingsModel.shared.settings.showOnHoverDelay)
+        let delay = max(0, SettingsModel.shared.current.showOnHoverDelay)
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.fireHoverReveal() }
         }
@@ -150,11 +211,80 @@ final class MenuBarInteractionManager {
     private func fireHoverReveal() {
         hoverRevealTimer = nil
 
-        guard isMonitoring, !isSuspended, hoverProbe?.isHovering == true else { return }
-        guard Date() >= (disabledUntil ?? .distantPast) else { return }
+        guard revealsAllowed, hoverProbe?.isHovering == true, !isMouseButtonHeld else { return }
         guard isLocationInMenuBar(NSEvent.mouseLocation) else { return }
 
         showHiddenItems()
+    }
+
+    // MARK: - Scroll / Swipe Monitoring
+
+    private func startScrollMonitoring() {
+        guard scrollTapToken == nil else { return }
+        scrollTapToken = GlobalEventTap.shared.register(
+            name: "MenuBarScrollReveal",
+            mask: 1 << CGEventType.scrollWheel.rawValue,
+            priority: EventTapPriority.observer,
+            enabled: false
+        ) { [weak self] type, event in
+            self?.processScroll(type: type, event: event)
+            return .pass
+        }
+        updateScrollTapEnabled()
+    }
+
+    private func stopScrollMonitoring() {
+        if let scrollTapToken {
+            GlobalEventTap.shared.unregister(scrollTapToken)
+            self.scrollTapToken = nil
+        }
+    }
+
+    private func updateScrollTapEnabled() {
+        guard let scrollTapToken else { return }
+        let armed = configuration.showOnScroll && isMonitoring && !isSuspended && hoverProbe?.isHovering == true
+        GlobalEventTap.shared.setEnabled(scrollTapToken, armed)
+        if !armed { scrollState.withLock { $0.accumulated = 0 } }
+    }
+
+    private nonisolated func processScroll(type: CGEventType, event: CGEvent) {
+        guard type == .scrollWheel, let nsEvent = NSEvent(cgEvent: event) else { return }
+        let delta = (nsEvent.scrollingDeltaX + nsEvent.scrollingDeltaY) / 2
+        let threshold: CGFloat = nsEvent.hasPreciseScrollingDeltas ? 12 : 5
+        let now = DispatchTime.now().uptimeNanoseconds
+
+        let direction: Int = scrollState.withLock { state in
+            guard now >= state.cooldownUntil else { return 0 }
+            state.accumulated += delta
+            guard abs(state.accumulated) >= threshold else { return 0 }
+            let direction = state.accumulated > 0 ? 1 : -1
+            state.accumulated = 0
+            state.cooldownUntil = now + 450_000_000
+            return direction
+        }
+        guard direction != 0 else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.handleScrollGesture(up: direction > 0) }
+        }
+    }
+
+    private func handleScrollGesture(up: Bool) {
+        let location = NSEvent.mouseLocation
+        guard revealsAllowed, isLocationInMenuBar(location),
+              let axPoint = AX.axPoint(fromCocoaPoint: location) else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = MenuBarHitTest.classify(axPoint: axPoint)
+            guard result != .item else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, self.revealsAllowed,
+                          MenuBarHitTest.isEmptySpace(result, axPoint: axPoint, cocoaPoint: location) else { return }
+                    let controller = (NSApp.delegate as? AppDelegate)?.statusBarController
+                    if up { controller?.expand() } else { controller?.collapseFromGesture() }
+                }
+            }
+        }
     }
 
     // MARK: - Helpers
@@ -162,20 +292,32 @@ final class MenuBarInteractionManager {
     private func isLocationInMenuBar(_ loc: CGPoint) -> Bool {
         guard let s = NSScreen.screens.first(where: { NSMouseInRect(loc, $0.frame, false) }) else { return false }
 
-        let menuBarHeight = s.frame.height - s.visibleFrame.height
-        let actualHeight = menuBarHeight > 0 ? menuBarHeight : 24.0
+        let menuBarHeight = NotchDisplayMetrics.menuBarGap(frame: s.frame, visibleFrame: s.visibleFrame)
+        let actualHeight = menuBarHeight > 0 ? min(menuBarHeight, 44) : 24.0
 
         let menuBarRect = CGRect(x: s.frame.origin.x, y: s.frame.maxY - actualHeight, width: s.frame.width, height: actualHeight)
 
         return menuBarRect.contains(loc)
     }
 
-    private func isClickInEmptyMenuBarArea(_ loc: CGPoint) -> Bool {
-        let items = MenuBarItemDetector.detectItems()
-        return !items.contains { $0.frame.contains(loc) }
-    }
-
     private func showHiddenItems() {
         (NSApp.delegate as? AppDelegate)?.statusBarController?.expand()
+    }
+}
+
+struct MenuBarSuspensionSources {
+    private(set) var sources: Set<ObjectIdentifier> = []
+
+    var isSuspended: Bool { !sources.isEmpty }
+
+    @discardableResult
+    mutating func set(_ suspended: Bool, for source: ObjectIdentifier) -> Bool {
+        let wasSuspended = isSuspended
+        if suspended {
+            sources.insert(source)
+        } else {
+            sources.remove(source)
+        }
+        return wasSuspended != isSuspended
     }
 }

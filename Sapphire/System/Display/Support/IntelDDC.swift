@@ -15,7 +15,7 @@ public class IntelDDC {
   var enabled: Bool = false
 
   deinit {
-    assert(IOObjectRelease(self.framebuffer) == KERN_SUCCESS)
+    IOObjectRelease(self.framebuffer)
   }
 
   public init?(for displayId: CGDirectDisplayID, withReplyTransactionType replyTransactionType: IOOptionBits? = nil) {
@@ -129,7 +129,7 @@ public class IntelDDC {
       return nil
     }
     defer {
-      assert(IOObjectRelease(ioIterator) == KERN_SUCCESS)
+      IOObjectRelease(ioIterator)
     }
     while case let ioService = IOIteratorNext(ioIterator), ioService != 0 {
       var serviceProperties: Unmanaged<CFMutableDictionary>?
@@ -193,7 +193,7 @@ public class IntelDDC {
       return nil
     }
     defer {
-      assert(IOObjectRelease(portIterator) == KERN_SUCCESS)
+      IOObjectRelease(portIterator)
     }
     while case let port = IOIteratorNext(portIterator), port != 0 {
       let dict = IODisplayCreateInfoDictionary(port, IOOptionBits(kIODisplayOnlyPreferredName)).takeRetainedValue() as NSDictionary

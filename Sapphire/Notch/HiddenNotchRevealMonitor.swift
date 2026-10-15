@@ -81,8 +81,11 @@ final class HiddenNotchRevealMonitor {
         NotificationCenter.default.post(name: .sapphireRevealHiddenNotch, object: NSNumber(value: displayID))
     }
 
+    private static let maximumZoneDepth: CGFloat = 100
+
     private func isInRevealZone(_ mouse: CGPoint, on screen: NSScreen) -> Bool {
-        let menuBarHeight = max(24, screen.frame.height - screen.visibleFrame.height)
+        guard mouse.y >= screen.frame.maxY - Self.maximumZoneDepth else { return false }
+        let menuBarHeight = NotchDisplayMetrics.current(for: screen).menuBarHeight
         let zoneWidth = min(screen.frame.width, max(640, screen.frame.width * 0.45))
         let zoneHeight = max(menuBarHeight + 28, 56)
         let zone = CGRect(

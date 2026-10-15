@@ -135,7 +135,7 @@ bool preventSleepAssertionsAreActive(void)
 void wakeDisplay(void)
 {
     static IOPMAssertionID assertionID;
-    IOPMAssertionDeclareUserActivity(CFSTR("BLEUnlock"), kIOPMUserActiveLocal, &assertionID);
+    IOPMAssertionDeclareUserActivity(CFSTR("Sapphire Bluetooth Unlock"), kIOPMUserActiveLocal, &assertionID);
 }
 
 void sleepDisplay(void)

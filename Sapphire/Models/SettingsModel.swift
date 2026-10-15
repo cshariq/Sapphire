@@ -23,6 +23,130 @@ public struct NotchSizeOverride: Codable, Equatable {
     var height: CGFloat = 0
 }
 
+struct FloatingIslandStyle: Codable, Equatable {
+    static let sidePaddingRange: ClosedRange<CGFloat> = 0...30
+    static let centerGapRange: ClosedRange<CGFloat> = 0...160
+    static let openCornerRadiusRange: ClosedRange<CGFloat> = 12...60
+    static let openPaddingRange: ClosedRange<CGFloat> = 0...60
+    static let openTopPaddingRange: ClosedRange<CGFloat> = 0...30
+
+    var sidePadding: CGFloat = 9
+    var centerGap: CGFloat = 56
+    var openCornerRadius: CGFloat = 36
+    var openPadding: CGFloat = 14
+    var openTopPadding: CGFloat = 8
+
+    static let legacyDefault: FloatingIslandStyle = {
+        var style = FloatingIslandStyle()
+        style.sidePadding = 10
+        style.centerGap = 40
+        style.openCornerRadius = 38
+        style.openPadding = 6
+        style.openTopPadding = 8
+        return style
+    }()
+    static let legacyTopOffset: CGFloat = 8
+
+    static let previousDefaults: [FloatingIslandStyle] = [
+        legacyDefault,
+        {
+            var style = FloatingIslandStyle()
+            style.sidePadding = 10
+            style.centerGap = 40
+            style.openCornerRadius = 32
+            style.openPadding = 12
+            style.openTopPadding = 8
+            return style
+        }(),
+        {
+            var style = FloatingIslandStyle()
+            style.sidePadding = 9
+            style.centerGap = 56
+            style.openCornerRadius = 40
+            style.openPadding = 16
+            style.openTopPadding = 8
+            return style
+        }(),
+        {
+            var style = FloatingIslandStyle()
+            style.sidePadding = 9
+            style.centerGap = 56
+            style.openCornerRadius = 40
+            style.openPadding = 24
+            style.openTopPadding = 8
+            return style
+        }(),
+        {
+            var style = FloatingIslandStyle()
+            style.sidePadding = 9
+            style.centerGap = 56
+            style.openCornerRadius = 36
+            style.openPadding = 8
+            style.openTopPadding = 8
+            return style
+        }(),
+    ]
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = FloatingIslandStyle()
+        sidePadding = try container.decodeIfPresent(CGFloat.self, forKey: .sidePadding) ?? defaults.sidePadding
+        centerGap = try container.decodeIfPresent(CGFloat.self, forKey: .centerGap) ?? defaults.centerGap
+        openCornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .openCornerRadius) ?? defaults.openCornerRadius
+        openPadding = try container.decodeIfPresent(CGFloat.self, forKey: .openPadding) ?? defaults.openPadding
+        openTopPadding = try container.decodeIfPresent(CGFloat.self, forKey: .openTopPadding) ?? defaults.openTopPadding
+    }
+}
+
+enum FullScreenActivityVisibility: String, Codable, CaseIterable, Identifiable {
+    case showAll
+    case hidePersistent
+    case hideSelected
+    case hideAll
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .showAll: "Show All"
+        case .hidePersistent: "Hide Persistent"
+        case .hideSelected: "Hide Selected"
+        case .hideAll: "Hide All"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .showAll: "Every live activity keeps showing."
+        case .hidePersistent: "Hide long-running activities like music, timers and persistent stats. Short events like HUDs, notifications and Caps Lock still show."
+        case .hideSelected: "Hide only the activities you pick."
+        case .hideAll: "Hide everything, including essentials like the volume and brightness HUD."
+        }
+    }
+}
+
+struct FullScreenBehavior: Codable, Equatable {
+    var activityVisibility: FullScreenActivityVisibility = .showAll
+    var hideNotch: Bool = false
+    var hideLyrics: Bool = true
+
+    init(activityVisibility: FullScreenActivityVisibility = .showAll, hideNotch: Bool = false, hideLyrics: Bool = true) {
+        self.activityVisibility = activityVisibility
+        self.hideNotch = hideNotch
+        self.hideLyrics = hideLyrics
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = FullScreenBehavior()
+        activityVisibility = try container.decodeIfPresent(FullScreenActivityVisibility.self, forKey: .activityVisibility) ?? defaults.activityVisibility
+        hideNotch = try container.decodeIfPresent(Bool.self, forKey: .hideNotch) ?? defaults.hideNotch
+        hideLyrics = try container.decodeIfPresent(Bool.self, forKey: .hideLyrics) ?? defaults.hideLyrics
+    }
+}
+
 public enum StatType: String, Codable, CaseIterable, Identifiable {
     case cpu, ram, gpu, disk, systemPower, batteryPower
 
@@ -53,12 +177,13 @@ public enum StatType: String, Codable, CaseIterable, Identifiable {
 
 // MARK: - Animation Configuration
 enum AnimationProfile: String, Codable, CaseIterable, Identifiable {
-    case snappy, bouncy, calm, custom
+    case snappy, fluid, bouncy, calm, custom
     var id: String { self.rawValue }
 
     var displayName: String {
         switch self {
         case .snappy: "Snappy"
+        case .fluid: "Fluid"
         case .bouncy: "Bouncy"
         case .calm: "Calm"
         case .custom: "Custom"
@@ -276,7 +401,7 @@ enum LockScreenMiniWidgetType: String, Codable, CaseIterable, Identifiable {
     }
 
     static var selectableCases: [LockScreenMiniWidgetType] {
-        return [.weather, .calendar, .music, .battery, .focus, .caffeine, .timer, .bluetooth, .clipboard, .notes, .system]
+        return [.weather, .calendar, .battery, .focus, .caffeine, .timer, .bluetooth, .clipboard, .notes, .system]
     }
 }
 
@@ -379,7 +504,7 @@ enum RestorableNotchMenu: String, Codable, Equatable {
     case notesPlayer
     case clipboardPlayer
     case mirrorPlayer
-    case nearDrop
+    case nearbyTransfer
     case fileShelf
     case multiAudio
     case weatherPlayer
@@ -398,7 +523,7 @@ enum RestorableNotchMenu: String, Codable, Equatable {
         case .notesPlayer: return .notesPlayer
         case .clipboardPlayer: return .clipboardPlayer
         case .mirrorPlayer: return .mirrorPlayer
-        case .nearDrop: return .nearDrop
+        case .nearbyTransfer: return .nearbyTransfer
         case .fileShelf: return .fileShelf
         case .multiAudio: return .multiAudio
         case .weatherPlayer: return .weatherPlayer
@@ -440,7 +565,28 @@ struct NotchAppearanceSettings: Codable, Equatable {
     var enableTransparencyBlur: Bool = true
     var liquidGlassLook: Bool = false
     var liquidGlassStyle: LiquidGlassMaterial = .frosted
+    var liquidGlassTintHex: String = LiquidGlassOptions.notchDefault.tintHex
+    var liquidGlassAppearance: LiquidGlassAppearance = LiquidGlassOptions.notchDefault.appearance
+    var liquidGlassHovered: Bool = false
     var bottomFadeEnabled: Bool = false
+
+    var liquidGlassOptions: LiquidGlassOptions {
+        get {
+            LiquidGlassOptions(
+                material: liquidGlassStyle,
+                tintHex: liquidGlassTintHex,
+                cornerRadius: 0,
+                appearance: liquidGlassAppearance,
+                hovered: liquidGlassHovered
+            )
+        }
+        set {
+            liquidGlassStyle = newValue.material
+            liquidGlassTintHex = newValue.tintHex
+            liquidGlassAppearance = newValue.appearance
+            liquidGlassHovered = newValue.hovered
+        }
+    }
 
     var usesLiquidGlass: Bool { mode == .liquidGlass || liquidGlassLook }
 
@@ -472,6 +618,20 @@ enum MediaSource: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum DockStaticOnlyTransitionPolicy {
+    static func shouldSuppressSuggestedApps(
+        enabled: Bool,
+        showRecents: Bool,
+        suppressionWasStored: Bool
+    ) -> Bool {
+        enabled && showRecents || (!enabled && suppressionWasStored)
+    }
+
+    static func shouldRestoreSuggestedApps(enabled: Bool, suppressionWasStored: Bool) -> Bool {
+        !enabled && suppressionWasStored
+    }
+}
+
 extension Settings {
     var enabledWidgetTypes: [WidgetType] {
         widgetOrder.filter { widget in
@@ -490,6 +650,7 @@ extension Settings {
             case .timer: return timerWidgetEnabled
             case .focusSession: return focusSessionWidgetEnabled
             case .storage: return storageWidgetEnabled
+            case .dev: return devWidgetEnabled
             case .agent: return false
             }
         }
@@ -531,6 +692,13 @@ enum NotchDisplayTarget: String, Codable, CaseIterable, Identifiable {
 enum HUDVisualStyle: String, Codable, CaseIterable, Identifiable {
     case white, color, adaptive
     var id: String { self.rawValue.capitalized }
+}
+
+enum HUDAdaptiveTransitionStyle: String, Codable, CaseIterable, Identifiable {
+    case smooth, thresholds
+
+    var id: String { rawValue }
+    var displayName: String { rawValue.capitalized }
 }
 
 enum NotchBackgroundStyle: String, Codable, CaseIterable, Identifiable {
@@ -809,6 +977,10 @@ enum ShortcutIdentifier {
     static let emojiPicker = "emojiPicker"
     static let focusStart = "focusStart"
     static let ocrScreenshot = "ocrScreenshot"
+    static let menuBarToggleHidden = "menuBarToggleHidden"
+    static let menuBarToggleAlwaysHidden = "menuBarToggleAlwaysHidden"
+    static let menuBarSearch = "menuBarSearch"
+    static let menuBarZenMode = "menuBarZenMode"
 
     static func snapZone(layoutID: UUID, zoneID: UUID) -> String { "snapZone:\(layoutID.uuidString):\(zoneID.uuidString)" }
     static func plane(_ planeID: UUID) -> String { "plane:\(planeID.uuidString)" }
@@ -817,7 +989,7 @@ enum ShortcutIdentifier {
 
 // MARK: - Main Settings Struct
 struct Settings: Codable, Equatable {
-    var animationProfile: AnimationProfile = .snappy
+    var animationProfile: AnimationProfile = .fluid
     var customAnimationConfiguration: CustomizableAnimationConfiguration = .init()
     var widgetSwitchEffect: WidgetSwitchEffect = .smooth
     var widgetSwitchTransition: WidgetSwitchTransition = .slide
@@ -837,6 +1009,13 @@ struct Settings: Codable, Equatable {
 
     var perDisplayNotchSize: [String: NotchSizeOverride] = [:]
     var perDisplayHideNotchWhenInactive: [String: Bool] = [:]
+    var perDisplayFullScreenBehavior: [String: FullScreenBehavior] = [:]
+    var perDisplayShowNotch: [String: Bool] = [:]
+    var perDisplayFloatingIsland: [String: Bool] = [:]
+    var perDisplayFloatingIslandTopOffset: [String: CGFloat] = [:]
+    var perDisplayFloatingIslandStyle: [String: FloatingIslandStyle] = [:]
+    var perDisplayNotchWidgetAppearance: [String: NotchAppearanceSettings] = [:]
+    var perDisplayNotchLiveActivityAppearance: [String: NotchAppearanceSettings] = [:]
 
     var useCustomNotchConfiguration: Bool = false
     var customNotchConfiguration: CustomizableNotchConfiguration = .init()
@@ -846,7 +1025,7 @@ struct Settings: Codable, Equatable {
     var lockScreenShowMainWidget: Bool = false
     var lockScreenMainWidgets: [LockScreenMainWidgetType] = [.weather]
     var lockScreenShowMiniWidgets: Bool = true
-    var lockScreenMiniWidgets: [LockScreenMiniWidgetType] = [.music]
+    var lockScreenMiniWidgets: [LockScreenMiniWidgetType] = []
     var lockScreenShowNotch: Bool = true
     var lockScreenCustomWallpaperEnabled: Bool = false
     var lockScreenCustomWallpaperPath: String? = nil
@@ -861,15 +1040,14 @@ struct Settings: Codable, Equatable {
     var lockScreenLiveWallpaperIdleDelay: Double = 8
     var lockScreenLiveActivityEnabled: Bool = true
     var lockScreenLiquidGlassLook: Bool = true
-    var lockScreenLiquidGlassStyle: LiquidGlassMaterial = .widgets
-    var lockScreenFrostedOverLiquidGlass: Bool = true
+    var lockScreenGlass: LiquidGlassOptions = .lockScreenDefault
     var lockScreenShowInfoWidgetBackgrounds: Bool = true
     var lockScreenShowMusicWhenPaused: Bool = true
     var lockScreenWeatherInfo: [WeatherInfoType] = [.temperature]
     var lockScreenBatteryInfo: [BatteryInfoType] = [.batteryIcon, .percentage, .statusText]
     var notchWidgetAppearance: NotchAppearanceSettings = .init()
     var systemEnhanceDockPreviewsEnabled: Bool = false
-    var systemEnhanceAltTabEnabled: Bool = false
+    var systemEnhanceWindowSwitcherEnabled: Bool = false
     var systemEnhanceSwitcherActivationRaw: String = "both"
     var systemEnhanceSwitcherIncludeOtherSpaces: Bool = false
     var systemEnhanceCalendarIntegrationEnabled: Bool = false
@@ -886,6 +1064,7 @@ struct Settings: Codable, Equatable {
     var systemEnhancePasteAsPlainStripLinks: Bool = false
     var systemEnhancePasteAsPlainStripEmojis: Bool = false
     var systemEnhancePasteAsPlainStripListMarkers: Bool = false
+    var systemEnhancePasteAsPlainShortcut: KeyboardShortcut = KeyboardShortcut(key: "V", modifiers: [.command, .option, .shift])
 
     // MARK: - Hinge-driven desktop animation
 
@@ -945,10 +1124,15 @@ struct Settings: Codable, Equatable {
     var systemEnhanceQuitProtectionHoldInterval: Double = 1.2
     var systemEnhanceQuitProtectionDoublePressInterval: Double = 0.5
     var systemEnhanceQuitProtectionExcludedApps: [String] = []
+    var systemEnhanceQuitProtectionCloseModeRaw: String = ""
+    var systemEnhanceQuitProtectionCloseHoldInterval: Double = 1.2
+    var systemEnhanceQuitProtectionCloseDoublePressInterval: Double = 0.5
+    var systemEnhanceQuitProtectionShowHUD: Bool = true
 
     // MARK: - Green button maximize (Vorssaint-style)
 
     var systemEnhanceGreenMaximizeEnabled: Bool = false
+    var systemEnhanceGreenMaximizeExcludedApps: [String] = []
 
     var notchLiveActivityAppearance: NotchAppearanceSettings = .init()
     var launchAtLogin: Bool = true
@@ -956,11 +1140,15 @@ struct Settings: Codable, Equatable {
     var hapticFeedbackEnabled: Bool = true
     var googleAnalyticsEnabled: Bool = true
     var hideFromScreenSharing: Bool = false
-    var notchDisplayTarget: NotchDisplayTarget = .macbookDisplay
-    var floatingIslandOnNotchlessDisplays: Bool = false
-    var floatingIslandTopOffset: CGFloat = 8
+    var notchDisplayTarget: NotchDisplayTarget = .allDisplays
+    var floatingIslandOnNotchlessDisplays: Bool = true
+    var floatingIslandTopOffset: CGFloat = 3
+    var floatingIslandStyle = FloatingIslandStyle()
     var expandOnHover: Bool = false
     var expandOnHoverDelay: TimeInterval = 0.0
+    var suppressHoverExpansionForTransientLiveActivities: Bool = false
+    var showLiveActivitySatellites: Bool = true
+    var liveActivitySatelliteLimit: Int = 2
     var capsLockHorizontalLockEnabled: Bool = false
     var capsLockHorizontalLockAppStates: [String: Bool] = [:]
     var launchpadEnabled: Bool = false
@@ -994,7 +1182,8 @@ struct Settings: Codable, Equatable {
 
     var installedAppUpdatesEnabled: Bool = false
     var installedAppUpdateNotificationsEnabled: Bool = false
-    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .focusSession, .spacer, .battery, .multiAudio, .caffeine, .pin]
+    var notchButtonOrder: [NotchButtonType] = [.settings, .fileShelf, .notes, .clipboard, .intelligence, .focusSession, .spacer, .continuity, .battery, .multiAudio, .caffeine, .pin]
+    var notchBarSpacerWidth: CGFloat = NotchBarSpacerPolicy.automaticWidth
     var circleToSearchEnabled: Bool = true
     var circleToSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "C", modifiers: [.control, .shift])
     var circleToSearchBrowserEngine: CircleSearchBrowserEngine = .google
@@ -1002,8 +1191,7 @@ struct Settings: Codable, Equatable {
     // MARK: - Per-display resolution helpers
 
     func resolvedNotchWidth(forDisplayID displayID: String?) -> CGFloat {
-        if let displayID,
-           let override = perDisplayNotchSize[displayID],
+        if let override = DisplaySettingsKey.value(in: perDisplayNotchSize, for: displayID),
            override.width > 0 {
             return override.width
         }
@@ -1011,8 +1199,7 @@ struct Settings: Codable, Equatable {
     }
 
     func resolvedNotchHeight(forDisplayID displayID: String?) -> CGFloat {
-        if let displayID,
-           let override = perDisplayNotchSize[displayID],
+        if let override = DisplaySettingsKey.value(in: perDisplayNotchSize, for: displayID),
            override.height > 0 {
             return override.height
         }
@@ -1020,10 +1207,126 @@ struct Settings: Codable, Equatable {
     }
 
     func resolvedHideNotchWhenInactive(forDisplayID displayID: String?) -> Bool {
-        if let displayID, let perDisplay = perDisplayHideNotchWhenInactive[displayID] {
+        if let perDisplay = DisplaySettingsKey.value(in: perDisplayHideNotchWhenInactive, for: displayID) {
             return perDisplay
         }
         return hideNotchWhenInactive
+    }
+
+    var defaultFullScreenBehavior: FullScreenBehavior {
+        FullScreenBehavior(
+            activityVisibility: fullScreenActivityVisibility,
+            hideNotch: hideNotchInFullScreen,
+            hideLyrics: hideLyricsInFullScreen
+        )
+    }
+
+    func resolvedFloatingIsland(forDisplayID displayID: String?) -> Bool {
+        if let perDisplay = DisplaySettingsKey.value(in: perDisplayFloatingIsland, for: displayID) {
+            return perDisplay
+        }
+        return floatingIslandOnNotchlessDisplays
+    }
+
+    func resolvedNotchWidgetAppearance(forDisplayID displayID: String?) -> NotchAppearanceSettings {
+        DisplaySettingsKey.value(in: perDisplayNotchWidgetAppearance, for: displayID) ?? notchWidgetAppearance
+    }
+
+    func resolvedNotchLiveActivityAppearance(forDisplayID displayID: String?) -> NotchAppearanceSettings {
+        DisplaySettingsKey.value(in: perDisplayNotchLiveActivityAppearance, for: displayID) ?? notchLiveActivityAppearance
+    }
+
+    func hasAppearanceOverride(forDisplayID displayID: String?) -> Bool {
+        DisplaySettingsKey.value(in: perDisplayNotchWidgetAppearance, for: displayID) != nil
+            || DisplaySettingsKey.value(in: perDisplayNotchLiveActivityAppearance, for: displayID) != nil
+    }
+
+    mutating func applyAppearanceToAllDisplays(from displayID: String) {
+        notchWidgetAppearance = resolvedNotchWidgetAppearance(forDisplayID: displayID)
+        notchLiveActivityAppearance = resolvedNotchLiveActivityAppearance(forDisplayID: displayID)
+        perDisplayNotchWidgetAppearance = [:]
+        perDisplayNotchLiveActivityAppearance = [:]
+    }
+
+    func resolvedFloatingIslandStyle(forDisplayID displayID: String?) -> FloatingIslandStyle {
+        if let perDisplay = DisplaySettingsKey.value(in: perDisplayFloatingIslandStyle, for: displayID) {
+            return perDisplay
+        }
+        return floatingIslandStyle
+    }
+
+    func resolvedFloatingIslandTopOffset(forDisplayID displayID: String?) -> CGFloat {
+        if let perDisplay = DisplaySettingsKey.value(in: perDisplayFloatingIslandTopOffset, for: displayID) {
+            return perDisplay
+        }
+        return floatingIslandTopOffset
+    }
+
+    mutating func applyDisplaySettingsToAllDisplays(from displayID: String, includeFloatingIsland: Bool = false) {
+        let size = DisplaySettingsKey.value(in: perDisplayNotchSize, for: displayID)
+        let hideWhenInactive = resolvedHideNotchWhenInactive(forDisplayID: displayID)
+        let fullScreen = resolvedFullScreenBehavior(forDisplayID: displayID)
+        let floatingIsland = resolvedFloatingIsland(forDisplayID: displayID)
+        let islandTopOffset = resolvedFloatingIslandTopOffset(forDisplayID: displayID)
+        let islandStyle = resolvedFloatingIslandStyle(forDisplayID: displayID)
+
+        if let size {
+            if size.width > 0 { notchWidth = size.width }
+            if size.height > 0 { notchHeight = size.height }
+        }
+        hideNotchWhenInactive = hideWhenInactive
+        fullScreenActivityVisibility = fullScreen.activityVisibility
+        hideNotchInFullScreen = fullScreen.hideNotch
+        hideLyricsInFullScreen = fullScreen.hideLyrics
+        if includeFloatingIsland {
+            floatingIslandOnNotchlessDisplays = floatingIsland
+            floatingIslandTopOffset = islandTopOffset
+            floatingIslandStyle = islandStyle
+            perDisplayFloatingIsland = [:]
+            perDisplayFloatingIslandTopOffset = [:]
+            perDisplayFloatingIslandStyle = [:]
+        }
+
+        perDisplayNotchSize = [:]
+        perDisplayHideNotchWhenInactive = [:]
+        perDisplayFullScreenBehavior = [:]
+    }
+
+    mutating func setHideLyricsInFullScreenOnAllDisplays(_ hide: Bool) {
+        hideLyricsInFullScreen = hide
+        for key in perDisplayFullScreenBehavior.keys {
+            perDisplayFullScreenBehavior[key]?.hideLyrics = hide
+        }
+    }
+
+    mutating func applyDisplayDefaultToAllDisplays(_ key: String) {
+        switch key {
+        case "notchWidth":
+            for id in perDisplayNotchSize.keys { perDisplayNotchSize[id]?.width = notchWidth }
+        case "notchHeight":
+            for id in perDisplayNotchSize.keys { perDisplayNotchSize[id]?.height = notchHeight }
+        case "hideNotchWhenInactive":
+            for id in perDisplayHideNotchWhenInactive.keys { perDisplayHideNotchWhenInactive[id] = hideNotchWhenInactive }
+        case "hideNotchInFullScreen":
+            for id in perDisplayFullScreenBehavior.keys { perDisplayFullScreenBehavior[id]?.hideNotch = hideNotchInFullScreen }
+        case "fullScreenActivityVisibility":
+            for id in perDisplayFullScreenBehavior.keys { perDisplayFullScreenBehavior[id]?.activityVisibility = fullScreenActivityVisibility }
+        case "hideLyricsInFullScreen":
+            setHideLyricsInFullScreenOnAllDisplays(hideLyricsInFullScreen)
+        case "floatingIslandOnNotchlessDisplays":
+            for id in perDisplayFloatingIsland.keys { perDisplayFloatingIsland[id] = floatingIslandOnNotchlessDisplays }
+        case "floatingIslandTopOffset":
+            for id in perDisplayFloatingIslandTopOffset.keys { perDisplayFloatingIslandTopOffset[id] = floatingIslandTopOffset }
+        default:
+            break
+        }
+    }
+
+    func resolvedFullScreenBehavior(forDisplayID displayID: String?) -> FullScreenBehavior {
+        if let perDisplay = DisplaySettingsKey.value(in: perDisplayFullScreenBehavior, for: displayID) {
+            return perDisplay
+        }
+        return defaultFullScreenBehavior
     }
 
     // MARK: - Legacy migration shims (read-only computed, not persisted)
@@ -1045,7 +1348,7 @@ struct Settings: Codable, Equatable {
     var lastNotchNavigationStack: [RestorableNotchMenu]? = nil
     var showDividersBetweenWidgets: Bool = false
     var bypassWidgetSpaceLimit: Bool = false
-    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .focusSession, .battery, .timer, .shortcuts, .notes, .clipboard, .mirror]
+    var widgetOrder: [WidgetType] = [.music, .weather, .sports, .finance, .calendar, .focusSession, .battery, .timer, .shortcuts, .notes, .clipboard, .mirror, .shopify, .storage, .dev, .agent]
     var musicWidgetEnabled: Bool = true
     var weatherWidgetEnabled: Bool = true
     var sportsWidgetEnabled: Bool = false
@@ -1061,10 +1364,13 @@ struct Settings: Codable, Equatable {
     var mirrorRotationMode: MirrorRotationMode = .auto
     var notesOpenOnClick: Bool = true
     var clipboardOpenOnClick: Bool = true
-    var clipboardHistoryLimit: Int = 0
+    var clipboardHistoryLimit: Int = ClipboardHistoryBudget.defaultItemLimit
     var clipboardMonitoringEnabled: Bool = true
-    var clipboardHistoryUnlimited: Bool = true
+    var clipboardHistoryUnlimited: Bool = false
     var clipboardIgnoreConcealedItems: Bool = true
+    var clipboardHistoryStorageLimitMB: Int = ClipboardHistoryBudget.defaultStorageLimitMB
+    var clipboardHistoryRetentionVersion: Int = 1
+    var clipboardIgnoredAppBundleIDs: [String] = ClipboardIgnoredApps.defaultBundleIDs
     var clipboardPickerEnabled: Bool = false
     var clipboardPickerShortcut: KeyboardShortcut = KeyboardShortcut(key: "V", modifiers: [.command, .shift])
 
@@ -1119,7 +1425,7 @@ struct Settings: Codable, Equatable {
     var mouseFocusFollowsEnabled: Bool = false
     var mouseFocusFollowsDelay: Double = 0.5
     var mouseExtraClickFilterEnabled: Bool = false
-    var mouseExtraClickFilterInterval: Double = 0.08
+    var mouseExtraClickFilterInterval: Double = 0.04
     var keyboardDebounceEnabled: Bool = false
     var keyboardDebounceInterval: Double = 0.045
     var superKeyEnabled: Bool = false
@@ -1127,6 +1433,14 @@ struct Settings: Codable, Equatable {
     var superKeyComboRaw: String = "hyper"
     var superKeyTapActionRaw: String = "none"
     var mouseExcludedAppBundleIDs: [String] = []
+    var mouseLinearScrollEnabled: Bool = false
+    var mouseLinearScrollLines: Double = 3
+    var mouseHorizontalScrollModifierRaw: String = "none"
+    var mouseSmoothScrollEnabled: Bool = false
+    var mouseSmoothScrollSpeed: Double = 1.0
+    var mouseSmoothScrollResponse: Double = 0.5
+    var superKeyExcludedAppBundleIDs: [String] = []
+    var keyboardDebounceKeyIntervals: [String: Double] = [:]
 
     // MARK: - Monitoring (Vorssaint-style)
 
@@ -1140,6 +1454,10 @@ struct Settings: Codable, Equatable {
     var monitoringAlertMemoryPressureEnabled: Bool = true
     var monitoringAlertLowDiskEnabled: Bool = true
     var monitoringAlertDiskThresholdGB: Double = 10
+    var monitoringAlertTemperatureEnabled: Bool = false
+    var monitoringAlertTemperatureThreshold: Double = 95
+    var monitoringAlertLowBatteryEnabled: Bool = false
+    var monitoringAlertLowBatteryThreshold: Double = 15
 
     var archiveExtractorEnabled: Bool = false
     var archiveExtractionMode: ArchiveExtractionMode = .smart
@@ -1154,6 +1472,7 @@ struct Settings: Codable, Equatable {
     var dmgInstallerReplaceNewerVersions: Bool = true
     var dmgInstallerReplaceWithoutPrompting: Bool = false
     var dmgInstallerProgressDisplay: FileOperationProgressDisplay = .liveActivity
+    var dmgInstallerOfferOnManualMount: Bool = false
     var timerWidgetEnabled: Bool = false
     var batteryWidgetEnabled: Bool = true
     var focusSessionWidgetEnabled: Bool = true
@@ -1161,7 +1480,11 @@ struct Settings: Codable, Equatable {
     var storageOpenOnClick: Bool = true
     var selectedShortcuts: [ShortcutInfo] = []
     var liveActivityOrder: [LiveActivityType] = LiveActivityType.allCases
+    var capsLockLiveActivityEnabled: Bool = true
     var musicLiveActivityEnabled: Bool = true
+    var musicLiveActivityRightTextMode: MusicLiveActivityRightTextMode = .continuityOnly
+    var musicLiveActivityWaveformMode: MusicLiveActivityWaveformMode = .continuityOff
+    var musicLiveActivityWaveformStyle: MusicLiveActivityWaveformStyle = .classic
     var weatherLiveActivityEnabled: Bool = true
     var calendarLiveActivityEnabled: Bool = true
     var remindersLiveActivityEnabled: Bool = true
@@ -1217,6 +1540,16 @@ struct Settings: Codable, Equatable {
     var appLockPanicKeyEnabled: Bool = true
     var fileShelfLiveActivityEnabled: Bool = true
     var fileProgressLiveActivityEnabled: Bool = false
+    var appActivitiesEnabled: Bool = true
+    var appActivitiesDisabled: Set<String> = []
+    var appActivityRestoreFocus: Bool = true
+    var fileProgressDisabledApps: Set<String> = []
+    var fileProgressShowSpeed: Bool = true
+    var fileProgressShowTimeRemaining: Bool = true
+    var fileProgressKeepFinishedSeconds: Double = 6
+    var fileProgressAddFinishedToShelf: Bool = false
+    var fileProgressOpenOnClick: Bool = true
+    var fileProgressExtraFolders: [String] = []
 
     var microphoneLiveActivityEnabled: Bool = true
     var microphoneLiveActivityBehavior: MicrophoneLiveActivityBehavior = .iconAndGesture
@@ -1320,6 +1653,11 @@ struct Settings: Codable, Equatable {
 
         let allNotchButtons = NotchButtonType.allCases
         notchButtonOrder = notchButtonOrder.filter { allNotchButtons.contains($0) }.deduplicated()
+        if !notchButtonOrder.contains(.continuity) {
+            if let batteryIndex = notchButtonOrder.firstIndex(of: .battery) {
+                notchButtonOrder.insert(.continuity, at: batteryIndex)
+            }
+        }
         let missingNotchButtons = allNotchButtons.filter { !notchButtonOrder.contains($0) }
         if !missingNotchButtons.isEmpty {
             if let spacerIndex = notchButtonOrder.firstIndex(of: .spacer) {
@@ -1352,7 +1690,9 @@ struct Settings: Codable, Equatable {
 
     var swipeActionSettings: SwipeActionSettings = .init()
     var swipeToDismissLiveActivity: Bool = true
-    var hideLiveActivityInFullScreen: Bool = false
+    var fullScreenActivityVisibility: FullScreenActivityVisibility = .showAll
+    var hideNotchInFullScreen: Bool = false
+    var hideLyricsInFullScreen: Bool = true
     var hideActivitiesInFullScreen: [String: Bool] = [:]
     var showPersistentStatsLiveActivity: Bool = false
     var showPersistentBatteryLiveActivity: Bool = false
@@ -1393,6 +1733,7 @@ struct Settings: Codable, Equatable {
         set { APIKeyManager.shared.spotifyClientSecret = newValue }
     }
     var skipSpotifyAd: Bool = false
+    var spotifyAPIMode: SpotifyAPIMode = .privateAPI
     var defaultMusicPlayer: DefaultMusicPlayer = .appleMusic
     var showLyricsInLiveActivity: Bool = false
     var enableLyricTranslation: Bool = true
@@ -1410,6 +1751,7 @@ struct Settings: Codable, Equatable {
     var showPopularityInMusicPlayer: Bool = true
     var hideMusicWidgetWhenNotPlaying: Bool = false
     var hideMusicWidgetWhenSpotifyPausedAndIdle: Bool = false
+    var hideSpotifyWidgetWhenAppClosed: Bool = false
     var persistMusicWidgetWhenPaused: Bool = true
     var preferAirPlayOverSpotify: Bool = true
     var spotifyCanvasLiveVideo: Bool = true
@@ -1426,6 +1768,12 @@ struct Settings: Codable, Equatable {
     var hudShowFunctionName: Bool = false
     var hudVisualStyle: HUDVisualStyle = .adaptive
     var hudCustomColor: CodableColor? = CodableColor(color: .accentColor)
+    var hudAdaptiveTransitionStyle: HUDAdaptiveTransitionStyle = .smooth
+    var hudAdaptiveColor1: CodableColor = CodableColor(color: .cyan)
+    var hudAdaptiveColor2: CodableColor = CodableColor(color: .purple)
+    var hudAdaptiveColor3: CodableColor = CodableColor(color: .pink)
+    var hudAdaptiveThreshold1: Double = 0.49
+    var hudAdaptiveThreshold2: Double = 0.74
     var enableVolumeHUD: Bool = true
     var volumeHUDStyle: HUDStyle = .default
     var volumeHUDShowDots: Bool = false
@@ -1446,6 +1794,8 @@ struct Settings: Codable, Equatable {
     var volumesliderstep: Int = 6
     var volumesliderstepByDevice: [String: Int] = [:]
     var brightnessliderstep: Int = 6
+    var brightnessKeyStep: BrightnessKeyStep = .full
+    var displayExtraDimming: Bool = false
 
     var effectiveVolumeHUDStyle: HUDStyle { volumeHUDShowDots ? .dots : volumeHUDStyle }
     var effectiveBrightnessHUDStyle: HUDStyle { brightnessHUDShowDots ? .dots : brightnessHUDStyle }
@@ -1483,6 +1833,7 @@ struct Settings: Codable, Equatable {
     var dischargeToLimitEnabled: Bool = false
     var oneTimeDischargeEnabled: Bool = false
     var oneTimeDischargeTarget: Int = 20
+    var manualChargePaused: Bool = false
     var disableSleepUntilChargeLimit: Bool = false
     var lowPowerMode: LowPowerMode = .never
     var scheduledTasks: [ScheduledTask] = []
@@ -1515,6 +1866,7 @@ struct Settings: Codable, Equatable {
     var faceIDSpoofLockDuration: Double = 3.0
     var faceIDAntiSpoofAcceptThreshold: Double = 0.50
     var faceIDMismatchTimeout: Double = 30.0
+    var faceIDKeepModelsInMemory: Bool = true
     var bluetoothUnlockWakeOnProximity: Bool = true
     var bluetoothUnlockWakeWithoutUnlocking: Bool = false
     var bluetoothUnlockPauseMusicOnLock: Bool = false
@@ -1534,10 +1886,10 @@ struct Settings: Codable, Equatable {
     var parcelTrackingEnabled: Bool = true
     var parcelLiveActivityEnabled: Bool = true
     var otpLiveActivityEnabled: Bool = true
-    var neardropEnabled: Bool = true
-    var neardropDeviceDisplayName: String = Host.current().localizedName ?? "My Mac"
-    var neardropDownloadLocationPath: String = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.path
-    var neardropOpenOnClick: Bool = true
+    var nearbyShareEnabled: Bool = true
+    var nearbyShareDeviceDisplayName: String = Host.current().localizedName ?? "My Mac"
+    var nearbyShareDownloadLocationPath: String = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!.path
+    var nearbyShareOpenOnClick: Bool = true
 
     // MARK: Android ⇄ Mac Continuity (see Sapphire/Services/Continuity)
     var continuityEnabled: Bool = false
@@ -1551,6 +1903,7 @@ struct Settings: Codable, Equatable {
     var continuityExternalLiveActivities: Bool = true
     var continuityPhoneMediaInMusicPlayer: Bool = true
     var continuityPhoneMediaLiveActivityEnabled: Bool = true
+    var continuityPhoneMediaLyricsInLiveActivity: Bool = false
     var continuityHandoffToPhone: Bool = true
     var continuityCameraSystemDevice: Bool = true
     var continuityMic: Bool = true
@@ -1558,7 +1911,7 @@ struct Settings: Codable, Equatable {
     var continuityHandoffExperimentalApps: Bool = false
     var continuityBlockIPhoneMirroring: Bool = false
     var continuitySyncNotificationMode: Bool = true
-    var continuitySyncFocusSessionStatus: Bool = false
+    var continuitySyncFocusSessionStatus: Bool = true
     var continuitySyncFocusSessionSettings: Bool = false
     var continuitySyncFocus: Bool = true
     var continuityMediaControls: Bool = true
@@ -1572,25 +1925,28 @@ struct Settings: Codable, Equatable {
     var continuitySketch: Bool = true
     var continuityMirroring: Bool = true
     var continuitySidecar: Bool = false
+    var continuityAskDeviceForMirrorExtend: Bool = true
     var continuityUniversalControl: Bool = false
     var continuityUniversalControlEdge: String = "right"
+    var continuityUniversalControlNativeInput: Bool = true
     var continuityAudioCast: Bool = true
     var continuityWidgets: Bool = true
     var continuitySMS: Bool = false
     var continuityHotspotDataLink: Bool = false
-    var continuityPhotoAutoSync: Bool = false
+    var continuityPhotoAutoSync: Bool = true
     var continuityPhotoAutoAlbumId: String = ""
     var continuityFinderPhotoAlbum: Bool = false
     var continuityFinderDisk: Bool = false
     var continuityEarbudHandoff: Bool = true
+    var continuityEarbudPrioritizeLatest: Bool = true
     var continuityCloudflareRelay: Bool = true
-    var continuityRemoteAccess: Bool = false
+    var continuityRemoteAccess: Bool = true
 
     var clickToOpenFileShelf: Bool = true
     var hoverToOpenFileShelf: Bool = true
     var removeFileFromShelfAfterDrag: Bool = false
     var fileShelfAirDropDestinationEnabled: Bool = false
-    var fileShelfDeviceDestinationsEnabled: Bool = false
+    var fileShelfDeviceDestinationsEnabled: Bool = true
     var launchpadLayout: [[LaunchpadPageItem]] = []
     var weatherUseCelsius: Bool = false
     var weatherUseMetricSystem: Bool = false
@@ -1601,6 +1957,7 @@ struct Settings: Codable, Equatable {
     var eyeBreakWorkInterval: Double = 20
     var eyeBreakBreakDuration: Double = 20
     var eyeBreakSoundAlerts: Bool = true
+    var eyeBreakPauseDuringGameMode: Bool = false
     var showEyeBreakGraph: Bool = true
     var clickToShowTimerView: Bool = true
     var sleepInClamshell: Bool = true
@@ -1611,6 +1968,11 @@ struct Settings: Codable, Equatable {
     var caffeinateAutoDuringTasks: Bool = false
     var caffeinateAutoTaskGrace: Double = 120
     var caffeinateAutoTaskKinds: Set<String> = ["ai", "build"]
+    var caffeinateWhileAppsRun: Bool = false
+    var caffeinateTriggerAppBundleIDs: [String] = []
+    var caffeinateWhileOnACPower: Bool = false
+    var caffeinateWhileExternalDisplay: Bool = false
+    var caffeinatePauseTriggersWhenLocked: Bool = false
 
     // MARK: - Developer Activity
 
@@ -1619,6 +1981,8 @@ struct Settings: Codable, Equatable {
     var devActivityDetectIDEAgents: Bool = true
     var devActivitySensitivity: Double = 1.0
     var devActivityHighPriority: Bool = false
+    var devActivityOpenOnClick: Bool = true
+    var devWidgetEnabled: Bool = false
     var lidAnglePauseMediaEnabled: Bool = false
     var lidAnglePauseMediaTrigger: Double = 18.0
     var lidAngleMuteAudioEnabled: Bool = false
@@ -1644,6 +2008,18 @@ struct Settings: Codable, Equatable {
     var showSectionDividers: Bool = true
     var enableAlwaysHiddenSection: Bool = true
     var controlItemIconStyle: ControlItemIconStyle = .chevron
+    var showOnScroll: Bool = true
+    var hideAppMenusWhenShowingItems: Bool = false
+    var showAlwaysHiddenOnDoubleClick: Bool = false
+    var menuBarUseHiddenItemsBar: Bool = false
+    var menuBarKeepOpenedItemsDelay: TimeInterval = 0
+    var menuBarAutoZenWhilePresenting: Bool = false
+    var menuBarAutoZenWhileCameraInUse: Bool = false
+    var menuBarToggleHiddenShortcut: KeyboardShortcut = KeyboardShortcut(key: "", modifiers: [])
+    var menuBarToggleAlwaysHiddenShortcut: KeyboardShortcut = KeyboardShortcut(key: "", modifiers: [])
+    var menuBarSearchShortcut: KeyboardShortcut = KeyboardShortcut(key: "", modifiers: [])
+    var menuBarZenModeShortcut: KeyboardShortcut = KeyboardShortcut(key: "", modifiers: [])
+    var menuBarAdaptiveTintGradient: Bool = false
 
     var menuBarTintStyle: String = "none"
     var menuBarSolidColor: CodableColor = CodableColor(color: .blue)
@@ -1858,10 +2234,18 @@ enum SettingsPersistence {
         decodeDictionaryTolerantly(dictionary)
     }
 
+    static func decodeStrictly(_ dictionary: [String: Any]) -> Settings? {
+        decodeFromJSONDictionary(dictionary)
+    }
+
     static func decodeFromPayload(_ data: Data) -> Settings? {
+        decodeFromPayloadReportingTolerance(data)?.settings
+    }
+
+    static func decodeFromPayloadReportingTolerance(_ data: Data) -> (settings: Settings, decodedTolerantly: Bool)? {
         if var settings = try? decoder.decode(Settings.self, from: data) {
             settings.normalizeCollectionOrders()
-            return settings
+            return (settings, false)
         }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -1872,7 +2256,7 @@ enum SettingsPersistence {
         } else {
             settingsDictionary = object
         }
-        return decodeFromDictionary(settingsDictionary)
+        return decodeFromDictionary(settingsDictionary).map { ($0, true) }
     }
 
     // MARK: - Tolerant decoding
@@ -1885,6 +2269,9 @@ enum SettingsPersistence {
         }
         migrateLegacyGlassIntensity(in: &dictionary, from: "lockScreenLiquidGlassIntensity", to: "lockScreenLiquidGlassStyle")
         migrateLegacyGlassIntensity(in: &dictionary, from: "menuBarLiquidGlassIntensity", to: "menuBarLiquidGlassStyle")
+        migrateLockScreenGlassStyle(in: &dictionary)
+        migrateFullScreenVisibility(in: &dictionary)
+        migrateClipboardHistoryRetention(in: &dictionary)
         for key in ["notchWidgetAppearance", "notchLiveActivityAppearance"] {
             guard var appearance = dictionary[key] as? [String: Any] else { continue }
             migrateLegacyGlassIntensity(in: &appearance, from: "liquidGlassIntensity", to: "liquidGlassStyle")
@@ -1941,6 +2328,17 @@ enum SettingsPersistence {
         applyCompatibleEntries(entries[midpoint...], to: &merged, droppedKeys: &droppedKeys)
     }
 
+    private static func migrateClipboardHistoryRetention(in dictionary: inout [String: Any]) {
+        guard dictionary["clipboardHistoryRetentionVersion"] == nil else { return }
+        if dictionary["clipboardHistoryUnlimited"] == nil {
+            dictionary["clipboardHistoryUnlimited"] = true
+        }
+        if dictionary["clipboardHistoryLimit"] == nil {
+            dictionary["clipboardHistoryLimit"] = 0
+        }
+        dictionary["clipboardHistoryRetentionVersion"] = 1
+    }
+
     private static func migrateLegacyGlassIntensity(
         in dictionary: inout [String: Any],
         from legacyKey: String,
@@ -1950,6 +2348,29 @@ enum SettingsPersistence {
               dictionary[styleKey] == nil,
               let intensity = legacyValue as? Double else { return }
         dictionary[styleKey] = LiquidGlassMaterial.migrating(fromLegacyIntensity: intensity).rawValue
+    }
+
+    private static func migrateFullScreenVisibility(in dictionary: inout [String: Any]) {
+        let legacyHideAll = dictionary.removeValue(forKey: "hideLiveActivityInFullScreen") as? Bool
+        guard dictionary["fullScreenActivityVisibility"] == nil else { return }
+        let hidesSome = (dictionary["hideActivitiesInFullScreen"] as? [String: Bool])?.values.contains(true) ?? false
+        let visibility: FullScreenActivityVisibility = legacyHideAll == true ? .hideAll : (hidesSome ? .hideSelected : .showAll)
+        dictionary["fullScreenActivityVisibility"] = visibility.rawValue
+    }
+
+    private static func migrateLockScreenGlassStyle(in dictionary: inout [String: Any]) {
+        let legacyStyle = dictionary.removeValue(forKey: "lockScreenLiquidGlassStyle") as? String
+        dictionary.removeValue(forKey: "lockScreenFrostedOverLiquidGlass")
+        guard dictionary["lockScreenGlass"] == nil,
+              let legacyStyle,
+              legacyStyle != LiquidGlassMaterial.widgets.rawValue,
+              let material = LiquidGlassMaterial(rawValue: legacyStyle) else { return }
+        var options = LiquidGlassOptions.lockScreenDefault
+        options.material = material
+        if let data = try? JSONEncoder().encode(options),
+           let object = try? JSONSerialization.jsonObject(with: data) {
+            dictionary["lockScreenGlass"] = object
+        }
     }
 
     private static func decodeFromJSONDictionary(_ dictionary: [String: Any]) -> Settings? {
@@ -2033,6 +2454,12 @@ struct EventHandlingSettingsSnapshot {
     let mouseExtraClickFilterEnabled: Bool
     let mouseExtraClickFilterInterval: Double
     let mouseExcludedAppBundleIDs: Set<String>
+    let mouseLinearScrollEnabled: Bool
+    let mouseLinearScrollLines: Double
+    let mouseHorizontalScrollModifierRaw: String
+    let mouseSmoothScrollEnabled: Bool
+    let mouseSmoothScrollSpeed: Double
+    let mouseSmoothScrollResponse: Double
 
     let systemEnhanceGreenMaximizeEnabled: Bool
     let systemEnhanceQuitProtectionEnabled: Bool
@@ -2043,6 +2470,10 @@ struct EventHandlingSettingsSnapshot {
     let systemEnhanceQuitProtectionExcludedApps: Set<String>
     let systemEnhanceQuitProtectionMode: SEQuitProtectionMode
     let systemEnhanceQuitProtectionExtraModifier: SEQuitProtectionExtraModifier
+    let systemEnhanceQuitProtectionCloseModeRaw: String
+    let systemEnhanceQuitProtectionCloseHoldInterval: Double
+    let systemEnhanceQuitProtectionCloseDoublePressInterval: Double
+    let systemEnhanceQuitProtectionShowHUD: Bool
     let systemEnhanceDockClicksEnabled: Bool
     let systemEnhanceDockClicksAllAppsEnabled: Bool
     let systemEnhanceDockClicksSelectedApps: Set<String>
@@ -2062,6 +2493,8 @@ struct EventHandlingSettingsSnapshot {
     let superKeyKey: SESuperKeyKey
     let superKeyCombo: SESuperKeyCombo
     let superKeyTapAction: SESuperKeyTapAction
+    let superKeyExcludedAppBundleIDs: Set<String>
+    let keyboardDebounceKeyIntervals: [UInt16: TimeInterval]
 
     static func hasSameInputs(_ lhs: Settings, _ rhs: Settings) -> Bool {
         hasSameClipboardInputs(lhs, rhs)
@@ -2098,6 +2531,12 @@ struct EventHandlingSettingsSnapshot {
             && lhs.mouseExtraClickFilterEnabled == rhs.mouseExtraClickFilterEnabled
             && lhs.mouseExtraClickFilterInterval == rhs.mouseExtraClickFilterInterval
             && lhs.mouseExcludedAppBundleIDs == rhs.mouseExcludedAppBundleIDs
+            && lhs.mouseLinearScrollEnabled == rhs.mouseLinearScrollEnabled
+            && lhs.mouseLinearScrollLines == rhs.mouseLinearScrollLines
+            && lhs.mouseHorizontalScrollModifierRaw == rhs.mouseHorizontalScrollModifierRaw
+            && lhs.mouseSmoothScrollEnabled == rhs.mouseSmoothScrollEnabled
+            && lhs.mouseSmoothScrollSpeed == rhs.mouseSmoothScrollSpeed
+            && lhs.mouseSmoothScrollResponse == rhs.mouseSmoothScrollResponse
     }
 
     private static func hasSameSystemEnhanceInputs(_ lhs: Settings, _ rhs: Settings) -> Bool {
@@ -2110,6 +2549,10 @@ struct EventHandlingSettingsSnapshot {
             && lhs.systemEnhanceQuitProtectionExcludedApps == rhs.systemEnhanceQuitProtectionExcludedApps
             && lhs.systemEnhanceQuitProtectionMode == rhs.systemEnhanceQuitProtectionMode
             && lhs.systemEnhanceQuitProtectionExtraModifier == rhs.systemEnhanceQuitProtectionExtraModifier
+            && lhs.systemEnhanceQuitProtectionCloseModeRaw == rhs.systemEnhanceQuitProtectionCloseModeRaw
+            && lhs.systemEnhanceQuitProtectionCloseHoldInterval == rhs.systemEnhanceQuitProtectionCloseHoldInterval
+            && lhs.systemEnhanceQuitProtectionCloseDoublePressInterval == rhs.systemEnhanceQuitProtectionCloseDoublePressInterval
+            && lhs.systemEnhanceQuitProtectionShowHUD == rhs.systemEnhanceQuitProtectionShowHUD
             && lhs.systemEnhanceDockClicksEnabled == rhs.systemEnhanceDockClicksEnabled
             && lhs.systemEnhanceDockClicksAllAppsEnabled == rhs.systemEnhanceDockClicksAllAppsEnabled
             && lhs.systemEnhanceDockClicksSelectedApps == rhs.systemEnhanceDockClicksSelectedApps
@@ -2124,6 +2567,8 @@ struct EventHandlingSettingsSnapshot {
             && lhs.superKeyKey == rhs.superKeyKey
             && lhs.superKeyCombo == rhs.superKeyCombo
             && lhs.superKeyTapAction == rhs.superKeyTapAction
+            && lhs.superKeyExcludedAppBundleIDs == rhs.superKeyExcludedAppBundleIDs
+            && lhs.keyboardDebounceKeyIntervals == rhs.keyboardDebounceKeyIntervals
     }
 
     init(settings: Settings) {
@@ -2158,6 +2603,12 @@ struct EventHandlingSettingsSnapshot {
         mouseExtraClickFilterEnabled = settings.mouseExtraClickFilterEnabled
         mouseExtraClickFilterInterval = settings.mouseExtraClickFilterInterval
         mouseExcludedAppBundleIDs = Set(settings.mouseExcludedAppBundleIDs)
+        mouseLinearScrollEnabled = settings.mouseLinearScrollEnabled
+        mouseLinearScrollLines = settings.mouseLinearScrollLines
+        mouseHorizontalScrollModifierRaw = settings.mouseHorizontalScrollModifierRaw
+        mouseSmoothScrollEnabled = settings.mouseSmoothScrollEnabled
+        mouseSmoothScrollSpeed = settings.mouseSmoothScrollSpeed
+        mouseSmoothScrollResponse = settings.mouseSmoothScrollResponse
 
         systemEnhanceGreenMaximizeEnabled = settings.systemEnhanceGreenMaximizeEnabled
         systemEnhanceQuitProtectionEnabled = settings.systemEnhanceQuitProtectionEnabled
@@ -2168,6 +2619,10 @@ struct EventHandlingSettingsSnapshot {
         systemEnhanceQuitProtectionExcludedApps = Set(settings.systemEnhanceQuitProtectionExcludedApps)
         systemEnhanceQuitProtectionMode = settings.systemEnhanceQuitProtectionMode
         systemEnhanceQuitProtectionExtraModifier = settings.systemEnhanceQuitProtectionExtraModifier
+        systemEnhanceQuitProtectionCloseModeRaw = settings.systemEnhanceQuitProtectionCloseModeRaw
+        systemEnhanceQuitProtectionCloseHoldInterval = settings.systemEnhanceQuitProtectionCloseHoldInterval
+        systemEnhanceQuitProtectionCloseDoublePressInterval = settings.systemEnhanceQuitProtectionCloseDoublePressInterval
+        systemEnhanceQuitProtectionShowHUD = settings.systemEnhanceQuitProtectionShowHUD
         systemEnhanceDockClicksEnabled = settings.systemEnhanceDockClicksEnabled
         systemEnhanceDockClicksAllAppsEnabled = settings.systemEnhanceDockClicksAllAppsEnabled
         systemEnhanceDockClicksSelectedApps = Set(settings.systemEnhanceDockClicksSelectedApps)
@@ -2180,11 +2635,17 @@ struct EventHandlingSettingsSnapshot {
         superKeyKey = settings.superKeyKey
         superKeyCombo = settings.superKeyCombo
         superKeyTapAction = settings.superKeyTapAction
+        superKeyExcludedAppBundleIDs = Set(settings.superKeyExcludedAppBundleIDs)
+        var debounceIntervals = [UInt16: TimeInterval](minimumCapacity: settings.keyboardDebounceKeyIntervals.count)
+        for (key, interval) in settings.keyboardDebounceKeyIntervals {
+            if let keyCode = UInt16(key) { debounceIntervals[keyCode] = interval }
+        }
+        keyboardDebounceKeyIntervals = debounceIntervals
     }
 }
 
 // MARK: - SettingsModel Class
-class SettingsModel: ObservableObject {
+final class SettingsModel: ObservableObject {
     static let shared = SettingsModel()
 
     private(set) var revision: UInt64 = 0
@@ -2205,13 +2666,20 @@ class SettingsModel: ObservableObject {
         snapshotLock.unlock()
     }
 
-    @Published var settings: Settings = Settings() {
-        didSet {
-            if !EventHandlingSettingsSnapshot.hasSameInputs(oldValue, settings) {
-                publishSnapshot(settings)
+    private(set) var current = Settings()
+
+    @StoredThenPublished var settings: Settings = Settings() {
+        willSet {
+            if !EventHandlingSettingsSnapshot.hasSameInputs(current, newValue) {
+                publishSnapshot(newValue)
             }
+            current = newValue
             revision &+= 1
+        }
+        didSet {
+            SettingsObserver.shared.fieldTracker.didChange(from: oldValue, to: settings)
             guard !isApplyingLoadedSettings else { return }
+            noteUserChangeWhileHoldingNewerPayload()
             if settings.volumeHUDSoundEnabled != oldValue.volumeHUDSoundEnabled {
                 SystemSoundFeedback.isVolumeChangeFeedbackEnabled = settings.volumeHUDSoundEnabled
             }
@@ -2237,6 +2705,7 @@ class SettingsModel: ObservableObject {
 
     // MARK: High-frequency runtime state
     private static let brightnessKey = "runtime.brightness"
+    static let animationProfileKey = "sapphire.settings.animationProfile"
     private static let notchNavigationStackKey = "runtime.lastNotchNavigationStack"
 
     private let brightnessChanges = PassthroughSubject<Float, Never>()
@@ -2273,6 +2742,15 @@ class SettingsModel: ObservableObject {
 
     private var lastPersistedRevision: UInt64?
 
+    private var isSettingsWriter = true
+    private var hasSettingsPeers = false
+    private var instanceGuard: SettingsInstanceGuard?
+
+    private var lastWrittenPayload: Data?
+    private var presetsInFile: [DockLayout]?
+
+    private var isHoldingNewerPayload = false
+
     private init() {
         settingsAccessQueue.setSpecific(key: settingsAccessQueueKey, value: 1)
         let saveTimer = DispatchSource.makeTimerSource(queue: settingsAccessQueue)
@@ -2284,7 +2762,8 @@ class SettingsModel: ObservableObject {
         self.saveTimer = saveTimer
 
         _ = APIKeyManager.shared
-        var loaded = Self.readSettingsFromStorage()
+        let stored = Self.readSettingsFromStorage()
+        var loaded = stored.settings
         loaded.normalizeCollectionOrders()
         loaded.volumeHUDSoundEnabled = SystemSoundFeedback.isVolumeChangeFeedbackEnabled
         isApplyingLoadedSettings = true
@@ -2296,11 +2775,47 @@ class SettingsModel: ObservableObject {
             .flatMap { try? JSONDecoder().decode([RestorableNotchMenu].self, from: $0) }
             ?? loaded.lastNotchNavigationStack
 
+        lastWrittenPayload = stored.payload
+        presetsInFile = stored.presetsInFile
+        let instanceGuard = SettingsInstanceGuard(
+            onRoleChange: { [weak self] old, new in self?.instanceRoleChanged(from: old, to: new) },
+            onPeerPersisted: { [weak self] in self?.reloadAfterPeerWrite() }
+        )
+        self.instanceGuard = instanceGuard
+        isSettingsWriter = instanceGuard.role.isWriter
+        hasSettingsPeers = instanceGuard.role.hasPeers
+
+        let plan = SettingsLaunchPlan.make(for: stored.assessment)
+        isHoldingNewerPayload = plan.holdUntilUserChange
+        if plan.holdUntilUserChange {
+            print("[SettingsModel] Settings were saved by a newer Sapphire (schema \(stored.assessment.storedSchemaVersion ?? 1) > \(SettingsPayloadFormat.currentSchemaVersion)). Keeping them untouched until a setting is changed here; unknown keys use defaults in memory.")
+        } else if stored.assessment.decodedTolerantly {
+            print("[SettingsModel] Stored settings needed a tolerant decode; backing up the original payload before rewriting it.")
+        }
+        if !plan.persistNow {
+            markPersisted(revision: revision)
+        }
+
         let initialSettings = settings
         let initialRevision = revision
+        let originalPayload = plan.backUpOriginal ? stored.payload : nil
+        let loadedFromPayload = stored.assessment.loadedFromPayload
+        let decodedTolerantly = stored.assessment.decodedTolerantly
         settingsAccessQueue.async { [weak self] in
             guard let self else { return }
-            if self.persistSettingsUnlocked(initialSettings, revision: initialRevision) {
+            guard self.mayWriteSettings().mayWrite else {
+                self.markPersisted(revision: initialRevision)
+                return
+            }
+            if let originalPayload, SettingsPayloadBackups.save(originalPayload) == nil, decodedTolerantly {
+                self.markPersisted(revision: initialRevision)
+                return
+            }
+            var persisted = false
+            if plan.persistNow {
+                persisted = self.persistSettingsUnlocked(initialSettings, revision: initialRevision)
+            }
+            if persisted || loadedFromPayload {
                 SettingsPersistence.removeImportedSettingsSnapshots()
             }
         }
@@ -2321,14 +2836,66 @@ class SettingsModel: ObservableObject {
         }
     }
 
-    private static func readSettingsFromStorage() -> Settings {
+    private struct StoredSettingsLoad {
+        var settings: Settings
+        var payload: Data?
+        var assessment: SettingsLoadAssessment
+        var presetsInFile: [DockLayout]?
+    }
+
+    static func restoreAnimationProfileAfterOlderBuild(
+        _ settings: inout Settings,
+        assessment: SettingsLoadAssessment,
+        defaults: UserDefaults
+    ) {
+        guard assessment.loadedFromPayload,
+              (assessment.storedSchemaVersion ?? 1) < SettingsPayloadFormat.currentSchemaVersion,
+              settings.animationProfile == .snappy,
+              let raw = defaults.string(forKey: animationProfileKey),
+              let saved = AnimationProfile(rawValue: raw),
+              saved != settings.animationProfile else { return }
+        print("[SettingsModel] An older Sapphire reset the animation profile; restoring \(saved.rawValue).")
+        settings.animationProfile = saved
+    }
+
+    static func adoptFluidAnimationProfile(_ settings: inout Settings) {
+        guard settings.animationProfile == .snappy else { return }
+        settings.animationProfile = .fluid
+    }
+
+    static func adoptRedesignedFloatingIsland(_ settings: inout Settings) {
+        guard settings.floatingIslandTopOffset == FloatingIslandStyle.legacyTopOffset else { return }
+        let current = Settings()
+        if !settings.floatingIslandOnNotchlessDisplays, settings.perDisplayFloatingIsland.isEmpty {
+            settings.floatingIslandOnNotchlessDisplays = current.floatingIslandOnNotchlessDisplays
+        }
+        settings.floatingIslandTopOffset = current.floatingIslandTopOffset
+        adoptCurrentFloatingIslandStyle(&settings)
+    }
+
+    static func adoptCurrentFloatingIslandStyle(_ settings: inout Settings) {
+        guard FloatingIslandStyle.previousDefaults.contains(settings.floatingIslandStyle) else { return }
+        settings.floatingIslandStyle = Settings().floatingIslandStyle
+    }
+
+    private static func readSettingsFromStorage() -> StoredSettingsLoad {
         SettingsPersistence.purgeLegacyAPIKeyUserDefaults()
         let defaults = UserDefaults.standard
 
         var loaded: Settings
-        if let payload = defaults.data(forKey: SettingsPersistence.payloadKey),
-           let decoded = SettingsPersistence.decodeFromPayload(payload) {
-            loaded = decoded
+        var assessment = SettingsLoadAssessment(
+            loadedFromPayload: false,
+            storedSchemaVersion: nil,
+            decodedTolerantly: false,
+            migratedOnLoad: false
+        )
+        let storedPayload = defaults.data(forKey: SettingsPersistence.payloadKey)
+        if let storedPayload,
+           let decoded = SettingsPersistence.decodeFromPayloadReportingTolerance(storedPayload) {
+            loaded = decoded.settings
+            assessment.loadedFromPayload = true
+            assessment.storedSchemaVersion = SettingsPayloadFormat.schemaVersion(of: storedPayload)
+            assessment.decodedTolerantly = decoded.decodedTolerantly
         } else if let snapshot = SettingsPersistence.loadImportedSettingsSnapshot() {
             loaded = snapshot
         } else if let merged = decodeSettingsFromUserDefaults(defaults) {
@@ -2336,6 +2903,8 @@ class SettingsModel: ObservableObject {
         } else {
             loaded = Settings()
         }
+        Self.restoreAnimationProfileAfterOlderBuild(&loaded, assessment: assessment, defaults: defaults)
+        let asDecoded = loaded
 
         if defaults.object(forKey: "musicLongPressActionsMigratedV2") == nil {
             loaded.musicLongPressPrevious = .none
@@ -2375,7 +2944,37 @@ class SettingsModel: ObservableObject {
             defaults.set(true, forKey: "hingeAnimationDuoTuningV2")
         }
 
-        return loaded
+        if defaults.object(forKey: "fluidAnimationProfileV1") == nil {
+            Self.adoptFluidAnimationProfile(&loaded)
+            defaults.set(true, forKey: "fluidAnimationProfileV1")
+        }
+
+        if defaults.object(forKey: "notchlessFloatingIslandV1") == nil {
+            Self.adoptRedesignedFloatingIsland(&loaded)
+            defaults.set(true, forKey: "notchlessFloatingIslandV1")
+        }
+        if defaults.object(forKey: "notchlessFloatingIslandV5") == nil {
+            Self.adoptCurrentFloatingIslandStyle(&loaded)
+            defaults.set(true, forKey: "notchlessFloatingIslandV5")
+        }
+
+        loaded.normalizeCollectionOrders()
+        let migrated = loaded != asDecoded
+
+        var presetsInFile: [DockLayout]?
+        if case .loaded(let presets) = DockLayoutPresetFile.load() {
+            presetsInFile = presets
+        }
+        let inlinePresets = loaded.dockLayoutsPresets
+        loaded.dockLayoutsPresets = DockLayoutPresetFile.merged(file: presetsInFile, payload: inlinePresets)
+        assessment.migratedOnLoad = migrated || !inlinePresets.isEmpty
+
+        return StoredSettingsLoad(
+            settings: loaded,
+            payload: assessment.loadedFromPayload ? storedPayload : nil,
+            assessment: assessment,
+            presetsInFile: presetsInFile
+        )
     }
 
     private static func decodeSettingsFromUserDefaults(_ defaults: UserDefaults) -> Settings? {
@@ -2472,21 +3071,125 @@ class SettingsModel: ObservableObject {
 
     @discardableResult
     private func persistSettingsUnlocked(_ settingsToPersist: Settings, revision persistedRevision: UInt64) -> Bool {
+        let permission = mayWriteSettings()
+        guard permission.mayWrite else { return false }
+
         var settingsToSave = settingsToPersist
         if Thread.isMainThread {
             settingsToSave.normalizeCollectionOrders()
         }
 
-        guard let payload = try? SettingsPersistence.encoder.encode(settingsToSave) else {
+        var wroteSomething = false
+        let presets = settingsToSave.dockLayoutsPresets
+        if presets == presetsInFile || (presets.isEmpty && presetsInFile == nil) {
+            settingsToSave.dockLayoutsPresets = []
+        } else if DockLayoutPresetFile.write(presets, previouslyLoaded: presetsInFile != nil) {
+            presetsInFile = presets
+            settingsToSave.dockLayoutsPresets = []
+            wroteSomething = true
+        }
+
+        guard let encoded = try? SettingsPersistence.encoder.encode(settingsToSave) else {
             print("[SettingsModel] Failed to encode settings payload.")
             return false
         }
-        defaults.set(payload, forKey: SettingsPersistence.payloadKey)
+        let payload = SettingsPayloadFormat.stamped(encoded)
+        if payload != lastWrittenPayload {
+            defaults.set(payload, forKey: SettingsPersistence.payloadKey)
+            lastWrittenPayload = payload
+            wroteSomething = true
+        }
+        let profile = settingsToSave.animationProfile.rawValue
+        if defaults.string(forKey: Self.animationProfileKey) != profile {
+            defaults.set(profile, forKey: Self.animationProfileKey)
+        }
+        if wroteSomething, permission.hasPeers {
+            instanceGuard?.postDidPersist()
+        }
 
+        markPersisted(revision: persistedRevision)
+        return true
+    }
+
+    private func markPersisted(revision persistedRevision: UInt64) {
         persistenceStateLock.lock()
         lastPersistedRevision = persistedRevision
         persistenceStateLock.unlock()
-        return true
+    }
+
+    private func mayWriteSettings() -> (mayWrite: Bool, hasPeers: Bool) {
+        persistenceStateLock.lock()
+        defer { persistenceStateLock.unlock() }
+        return (isSettingsWriter, hasSettingsPeers)
+    }
+
+    private func hasUnsavedChanges() -> Bool {
+        persistenceStateLock.lock()
+        defer { persistenceStateLock.unlock() }
+        return pendingSave != nil || lastPersistedRevision != revision
+    }
+
+    // MARK: Newer-schema hold and other running copies
+
+    private func noteUserChangeWhileHoldingNewerPayload() {
+        guard isHoldingNewerPayload else { return }
+        isHoldingNewerPayload = false
+        print("[SettingsModel] A setting changed; saving over the newer build's settings (the original is in \(SettingsPayloadBackups.directoryURL.path)).")
+    }
+
+    private func instanceRoleChanged(from old: SettingsInstanceGuard.Role, to new: SettingsInstanceGuard.Role) {
+        if old.isWriter && !new.isWriter {
+            flushPendingSave()
+        }
+        persistenceStateLock.lock()
+        isSettingsWriter = new.isWriter
+        hasSettingsPeers = new.hasPeers
+        persistenceStateLock.unlock()
+
+        if !old.isWriter && new.isWriter {
+            if hasUnsavedChanges() {
+                print("[SettingsModel] Now the settings writer; saving the changes made while read-only.")
+                flushPendingSave()
+            } else {
+                reloadFromStorage(reason: "became the settings writer")
+            }
+        }
+    }
+
+    private func reloadAfterPeerWrite() {
+        guard !hasUnsavedChanges() else {
+            print("[SettingsModel] Another Sapphire saved settings, but this copy has unsaved changes; keeping this copy's.")
+            return
+        }
+        reloadFromStorage(reason: "another Sapphire saved settings")
+    }
+
+    private func reloadFromStorage(reason: String) {
+        settingsAccessQueue.async { [weak self] in
+            guard let self else { return }
+            CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication)
+            guard let payload = self.defaults.data(forKey: SettingsPersistence.payloadKey),
+                  var decoded = SettingsPersistence.decodeFromPayload(payload) else { return }
+            var presetsInFile: [DockLayout]?
+            if case .loaded(let presets) = DockLayoutPresetFile.load() {
+                presetsInFile = presets
+            }
+            decoded.dockLayoutsPresets = DockLayoutPresetFile.merged(file: presetsInFile, payload: decoded.dockLayoutsPresets)
+            self.lastWrittenPayload = payload
+            self.presetsInFile = presetsInFile
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.hasUnsavedChanges() else { return }
+                var reloaded = decoded
+                reloaded.volumeHUDSoundEnabled = self.current.volumeHUDSoundEnabled
+                guard reloaded != self.current else { return }
+                print("[SettingsModel] Reloading settings: \(reason).")
+                self.isApplyingLoadedSettings = true
+                self.settings = reloaded
+                self.isApplyingLoadedSettings = false
+                self.markPersisted(revision: self.revision)
+                self.applyIntelligenceRuntimePreferences(from: reloaded)
+            }
+        }
     }
 
     private func persistedRevision() -> UInt64? {
@@ -2531,6 +3234,7 @@ class SettingsModel: ObservableObject {
         updated.capsLockHorizontalLockAppStates.removeValue(forKey: bundleIdentifier)
         updated.emojiDisabledAppBundleIDs.remove(bundleIdentifier)
         updated.mouseExcludedAppBundleIDs.removeAll { $0 == bundleIdentifier }
+        updated.superKeyExcludedAppBundleIDs.removeAll { $0 == bundleIdentifier }
         updated.focusBlockedApps.remove(bundleIdentifier)
         updated.focusAllowedApps.remove(bundleIdentifier)
         updated.appLockProtectedApps.remove(bundleIdentifier)
@@ -2584,7 +3288,7 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, battery, timer, focusSession, storage, agent
+    case weather, calendar, shortcuts, music, sports, finance, shopify, notes, clipboard, mirror, battery, timer, focusSession, storage, dev, agent
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
@@ -2602,17 +3306,110 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
         case .timer: return "Timer"
         case .focusSession: return "Focus"
         case .storage: return "Storage"
+        case .dev: return "Dev"
         case .agent: return "Agent"
         }
     }
 }
 
+enum MusicLiveActivityRightTextMode: String, Codable, CaseIterable, Identifiable, Equatable {
+    case off
+    case continuityOnly
+    case always
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .continuityOnly: return "Phone only"
+        case .always: return "Always"
+        }
+    }
+}
+
+enum MusicLiveActivityWaveformMode: String, Codable, CaseIterable, Identifiable, Equatable {
+    case off
+    case continuityOff
+    case always
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .continuityOff: return "Hide on phone"
+        case .always: return "Always"
+        }
+    }
+}
+
+enum SpotifyAPIMode: String, Codable, CaseIterable, Identifiable, Equatable {
+    case privateAPI
+    case officialAPI
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .privateAPI: return "Private API"
+        case .officialAPI: return "Official API"
+        }
+    }
+}
+
+enum MusicLiveActivityWaveformStyle: String, Codable, CaseIterable, Identifiable, Equatable {
+    case classic
+    case continuity
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .classic: return "Classic"
+        case .continuity: return "Continuity"
+        }
+    }
+}
+
+enum MusicLiveActivityChromePolicy {
+    static func resolvedWaveformMode(
+        waveformMode: MusicLiveActivityWaveformMode,
+        rightTextMode: MusicLiveActivityRightTextMode
+    ) -> MusicLiveActivityWaveformMode {
+        if waveformMode == .off, rightTextMode != .always {
+            return .continuityOff
+        }
+        return waveformMode
+    }
+
+    static func showsRightText(mode: MusicLiveActivityRightTextMode, isPhoneMedia: Bool) -> Bool {
+        switch mode {
+        case .off: return false
+        case .always: return true
+        case .continuityOnly: return isPhoneMedia
+        }
+    }
+
+    static func showsWaveform(
+        mode: MusicLiveActivityWaveformMode,
+        rightTextMode: MusicLiveActivityRightTextMode,
+        isPhoneMedia: Bool
+    ) -> Bool {
+        switch resolvedWaveformMode(waveformMode: mode, rightTextMode: rightTextMode) {
+        case .off: return false
+        case .always: return true
+        case .continuityOff: return !isPhoneMedia
+        }
+    }
+}
+
 enum LiveActivityType: String, Codable, CaseIterable, Identifiable, Equatable {
-    case fileShelf, eyeBreak, focus, desktop, battery, timers, calendar, reminders, weather, music, fileProgress, stats, microphone, devActivity, sports, finance
+    case capsLock, fileShelf, eyeBreak, focus, desktop, battery, timers, calendar, reminders, weather, music, fileProgress, stats, microphone, devActivity, sports, finance
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .reminders: "Reminders"; case .timers: "Timers"; case .battery: "Battery"; case .eyeBreak: "Eye Break"; case .desktop: "Desktop"; case .focus: "Focus"; case .fileShelf: "File Shelf"; case .fileProgress: "File Progress"; case .stats: "Stats"; case .microphone: "Microphone"; case .devActivity: "Dev Activity"; case .sports: "Sports"; case .finance: "Finance"
+        case .capsLock: "Caps Lock"; case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .reminders: "Reminders"; case .timers: "Timers"; case .battery: "Battery"; case .eyeBreak: "Eye Break"; case .desktop: "Desktop"; case .focus: "Focus"; case .fileShelf: "File Shelf"; case .fileProgress: "File Progress"; case .stats: "Stats"; case .microphone: "Microphone"; case .devActivity: "Dev Activity"; case .sports: "Sports"; case .finance: "Finance"
         }
     }
 }
@@ -2853,12 +3650,12 @@ enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
 }
 
 enum NotchButtonType: String, Codable, Identifiable, Equatable {
-    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, focusSession, caffeine, spacer, multiAudio, battery, pin
+    case settings, fileShelf, notes, clipboard, intelligence, intelligenceLive, focusSession, caffeine, spacer, multiAudio, continuity, battery, pin
     var id: String { self.rawValue }
 
     static let allCases: [NotchButtonType] = [
         .settings, .fileShelf, .notes, .clipboard, .intelligence,
-        .focusSession, .caffeine, .spacer, .multiAudio, .battery, .pin,
+        .focusSession, .caffeine, .spacer, .multiAudio, .continuity, .battery, .pin,
     ]
 
     var displayName: String {
@@ -2867,7 +3664,7 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
         case .intelligence: "Blip"; case .intelligenceLive: "Gemini";
         case .focusSession: "Focus";
         case .caffeine: "Caffeinate"; case .spacer: "Spacer";
-        case .multiAudio: "Multi-Audio (Beta)"; case .battery: "Battery"; case .pin: "Pin"
+        case .multiAudio: "Multi-Audio (Beta)"; case .continuity: "Phone"; case .battery: "Battery"; case .pin: "Pin"
         }
     }
 
@@ -2877,7 +3674,7 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
         case .intelligence: "sparkle"; case .intelligenceLive: "waveform";
         case .focusSession: "moon.fill";
         case .caffeine: "cup.and.saucer"; case .spacer: "space";
-        case .multiAudio: "hifispeaker.and.homepod.mini.fill"; case .battery: "battery.100"; case .pin: "pin"
+        case .multiAudio: "hifispeaker.and.homepod.mini.fill"; case .continuity: "iphone"; case .battery: "battery.100"; case .pin: "pin"
         }
     }
 }
@@ -3029,7 +3826,7 @@ extension UTType {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, systemEnhance, apps, storage, widgets, liveActivities, appearance, lockScreen, bluetoothUnlock, shortcuts, keyboardShortcuts, snapZones, audio, battery, bluetooth, hud, notifications, neardrop, continuity, fileShelf, notes, clipboard, emoji, mouse, monitoring, devActivity, archives, mirror, caffeine, music, weather, calendar, eyeBreak, focusSession, appLock, intelligence, sports, finance, dockLayouts, mediaOptimizer, about
+    case overview, general, systemEnhance, apps, storage, widgets, liveActivities, appActivities, fileProgress, appearance, lockScreen, bluetoothUnlock, shortcuts, keyboardShortcuts, snapZones, audio, battery, bluetooth, hud, notifications, nearbyShare, continuity, fileShelf, notes, clipboard, emoji, mouse, monitoring, devActivity, archives, mirror, caffeine, music, weather, calendar, eyeBreak, focusSession, appLock, intelligence, sports, finance, dockLayouts, mediaOptimizer, about
 
     var id: String { self.rawValue }
 
@@ -3048,6 +3845,13 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         }
     }
 
+    var isBeta: Bool {
+        switch self {
+        case .continuity, .appActivities, .fileProgress: true
+        default: false
+        }
+    }
+
     var minimumRequiredTier: SubscriptionTier? {
         guard let requiredPremiumFeature else { return nil }
         return SubscriptionFeatureCatalog.minimumTier(for: requiredPremiumFeature)
@@ -3060,12 +3864,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var shortDescription: String {
         switch self {
+        case .overview: "Ask about any setting, get suggestions, and change the most-used settings."
         case .general: "Core app behavior, launch options, animations, and notch controls."
         case .systemEnhance: "Window previews, app switching, dock controls, and display behavior."
         case .apps: "Review installed applications, inspect bundle details, and safely move unwanted apps to Trash."
         case .storage: "Find large folders and reclaim space with transparent, user-approved cleanup."
         case .widgets: "Choose which widgets appear in the notch and how they are ordered."
         case .liveActivities: "Control which live activities can surface and auto-expand in the notch."
+        case .appActivities: "Live activities and controls for Zoom, Google Meet, Teams, Slack, Discord, FaceTime, recorders and more."
+        case .fileProgress: "Download, copy and AirDrop progress per app — Safari, Chrome, Edge, Firefox, Finder and others."
         case .appearance: "Tune the notch look, materials, colors, and layout styling."
         case .lockScreen: "Configure Sapphire content and behavior while your Mac is locked."
         case .bluetoothUnlock: "Set up proximity-based authentication and trusted device behavior."
@@ -3077,7 +3884,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .bluetooth: "Bluetooth device integrations, visibility, and connection behavior."
         case .hud: "Heads-up display overlays for volume, brightness, keyboard, and media feedback."
         case .notifications: "Choose which system notifications Sapphire mirrors or enhances."
-        case .neardrop: "Nearby sharing preferences, transfers, and device discovery options."
+        case .nearbyShare: "Nearby sharing preferences, transfers, and device discovery options."
         case .continuity: "Pair an Android phone for clipboard, notifications, media, battery, and Instant Hotspot."
         case .fileShelf: "Manage temporary file storage, drag targets, and shelf behavior."
         case .notes: "Quick notes widget, click-to-expand behavior, and notch bar access."
@@ -3093,7 +3900,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .weather: "Weather widget data sources, units, and location-based behavior."
         case .calendar: "Calendar and reminder integrations shown in widgets and live activities."
         case .eyeBreak: "Break reminders, timing, and focus nudges for healthier screen habits."
-        case .focusSession: "Session-style focus mode with timers, app/website blocking, and session history."
+        case .focusSession: "Session-style Focus Profiles with timers, app/website blocking, social filters, triggers, and cross-device sync."
         case .appLock: "Lock apps behind Touch ID or password — blur overlays, idle/sleep auto-lock, and auto-close."
         case .intelligence: "Sapphire Blip — Mac agent with memory, skills, tools, and computer use."
         case .sports: "Sports widget settings, favorite teams selection, and scoreboard configurations."
@@ -3107,12 +3914,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var searchTokens: [String] {
         switch self {
+        case .overview: ["overview", "assistant", "ask", "ai", "apple intelligence", "suggest", "quick", "notch size", "full screen", "inactive"]
         case .general: ["startup", "login", "animation", "notch", "system", "behavior", "analytics", "google", "privacy", "tracking", "telemetry", "swipe", "hide", "lock"]
         case .systemEnhance: ["dock", "preview", "previews", "alt tab", "cmd tab", "window", "switcher", "calendar", "compact", "layout", "lock dock", "monitor", "paste", "plain text", "formatting", "running apps", "hide apps", "static only", "hinge", "lid", "angle", "fold", "folding", "animation", "iphone duo"]
         case .apps: ["apps", "applications", "uninstall", "cleaner", "appcleaner", "bundle", "extensions", "startup", "update", "updates", "check for updates", "upgrade", "version", "new version", "auto update", "release"]
         case .storage: ["storage", "disk", "space", "large files", "cache", "cleanup", "daisy disk", "scanner"]
         case .widgets: ["widget", "widgets", "reorder", "layout"]
         case .liveActivities: ["live", "activity", "activities", "dynamic", "focus"]
+        case .appActivities: ["zoom", "meet", "google meet", "teams", "slack", "huddle", "discord", "facetime", "webex", "meeting", "call", "mute", "recording", "voice memos", "quicktime", "handbrake"]
+        case .fileProgress: ["download", "downloads", "progress", "copy", "transfer", "chrome", "safari", "edge", "firefox", "airdrop", "finder"]
         case .appearance: ["theme", "appearance", "style", "glass", "color", "material"]
         case .lockScreen: ["lock", "screen", "locked"]
         case .bluetoothUnlock: ["authentication", "unlock", "proximity", "trusted", "device"]
@@ -3124,7 +3934,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .bluetooth: ["bluetooth", "devices", "connections"]
         case .hud: ["hud", "overlay", "volume", "brightness", "media", "pill", "position", "edge", "side"]
         case .notifications: ["notifications", "alerts", "imessage", "facetime", "airdrop"]
-        case .neardrop: ["nearby", "share", "drop", "transfer"]
+        case .nearbyShare: ["nearby", "share", "drop", "transfer"]
         case .continuity: ["android", "continuity", "phone", "kde connect", "handoff", "universal clipboard", "instant hotspot", "notification mirroring", "phone link"]
         case .fileShelf: ["file", "shelf", "drag", "drop", "storage", "remove"]
         case .notes: ["notes", "note", "memo", "quick note"]
@@ -3133,7 +3943,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mouse: ["mouse", "trackpad", "scroll", "scrolling", "acceleration", "pointer", "cursor", "buttons", "remap", "remapping", "linearmouse", "linear mouse", "natural scrolling", "wheel", "sensitivity", "speed", "invert", "modifier", "back", "forward"]
         case .monitoring: ["monitor", "readout", "menu bar", "cpu", "ram", "memory", "network", "speed", "alerts", "notifications", "disk", "space", "pressure", "usage", "stats"]
         case .devActivity: ["dev", "developer", "ai", "agent", "agents", "build", "builds", "compile", "compiling", "terminal", "command", "task", "tasks", "progress", "claude", "codex", "cursor", "antigravity", "copilot", "devin", "windsurf", "gemini", "aider", "xcode", "android studio", "gradle", "npm", "cargo", "make", "iterm", "warp", "ghostty", "caffeinate", "awake"]
-        case .archives: ["archive", "unarchive", "extract", "extractor", "unarchiver", "zip", "unzip", "rar", "7z", "7-zip", "tar", "gzip", "bzip2", "xz", "compressed", "password", "encrypted", "iso", "cpio", "uncompress", "dmg", "disk image", "install", "mount", "unmount", "eject", "trash", "cleanup", "easy dmg", "easydmg"]
+        case .archives: ["archive", "unarchive", "extract", "extractor", "unarchiver", "zip", "unzip", "rar", "7z", "7-zip", "tar", "gzip", "bzip2", "xz", "compressed", "password", "encrypted", "iso", "cpio", "uncompress", "dmg", "disk image", "install", "mount", "unmount", "eject", "trash", "cleanup"]
         case .mirror: ["mirror", "camera", "camera feed", "selfie", "webcam"]
         case .caffeine: ["caffeinate", "caffeine", "sleep", "awake", "clamshell", "lid", "timeout", "timer"]
         case .music: ["music", "media", "spotify", "playback"]
@@ -3172,30 +3982,33 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .general: "General"; case .systemEnhance: "System Enhance"; case .apps: "Apps"; case .storage: "Storage"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .keyboardShortcuts: "Keyboard Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .neardrop: "Nearby Share"; case .continuity: "Android Continuity"; case .fileShelf: "File Shelf"; case .notes: "Notes";        case .clipboard: "Clipboard"; case .emoji: "Emoji"; case .mouse: "Mouse"; case .monitoring: "Monitoring"; case .devActivity: "Dev Activity"; case .archives: "Archives & DMG"; case .mirror: "Mirror"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather";        case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .focusSession: "Focus Sessions"; case .appLock: "App Lock"; case .intelligence: "Blip"; case .sports: "Sports"; case .finance: "Finance"; case .dockLayouts: "Dock"; case .mediaOptimizer: "Media Optimizer"; case .about: "About"
+        case .overview: "Overview"; case .general: "General"; case .systemEnhance: "System Enhance"; case .apps: "Apps"; case .storage: "Storage"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appActivities: "App Activities"; case .fileProgress: "File Progress"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .keyboardShortcuts: "Keyboard Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .nearbyShare: "Nearby Share"; case .continuity: "Continuity"; case .fileShelf: "File Shelf"; case .notes: "Notes";        case .clipboard: "Clipboard"; case .emoji: "Emoji"; case .mouse: "Mouse"; case .monitoring: "Monitoring"; case .devActivity: "Dev Activity"; case .archives: "Archives & DMG"; case .mirror: "Mirror"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather";        case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .focusSession: "Focus Sessions"; case .appLock: "App Lock"; case .intelligence: "Blip"; case .sports: "Sports"; case .finance: "Finance"; case .dockLayouts: "Dock"; case .mediaOptimizer: "Media Optimizer"; case .about: "About"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .general: "gear"; case .systemEnhance: "macwindow.on.rectangle"; case .apps: "square.stack.3d.up.fill"; case .storage: "internaldrive.fill"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .keyboardShortcuts: "keyboard"; case .snapZones: "uiwindow.split.2x1"; case .audio: "waveform"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .neardrop: "shareplay"; case .continuity: "iphone.gen3.radiowaves.left.and.right"; case .fileShelf: "tray.full.fill"; case .notes: "note.text";        case .clipboard: "list.clipboard"; case .emoji: "face.smiling"; case .mouse: "computermouse.fill"; case .monitoring: "gauge.with.dots.needle.50percent"; case .devActivity: "hammer.circle.fill"; case .archives: "archivebox.fill"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill";        case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .focusSession: "moon.fill"; case .appLock: "lock.shield.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .dockLayouts: "dock.rectangle"; case .mediaOptimizer: "photo"; case .about: "info.circle"
+        case .overview: "sparkles"; case .general: "gear"; case .systemEnhance: "macwindow.on.rectangle"; case .apps: "square.stack.3d.up.fill"; case .storage: "internaldrive.fill"; case .widgets: "square.grid.2x2.fill"; case .liveActivities: "timer"; case .appActivities: "video.bubble.fill"; case .fileProgress: "arrow.down.circle.fill"; case .appearance: "paintpalette"; case .lockScreen: "lock.fill"; case .bluetoothUnlock: "lock.laptopcomputer"; case .shortcuts: "square.grid.3x1.below.line.grid.1x2"; case .keyboardShortcuts: "keyboard"; case .snapZones: "uiwindow.split.2x1"; case .audio: "waveform"; case .battery: "battery.100"; case .bluetooth: "macbook.and.ipad"; case .hud: "macwindow.on.rectangle"; case .notifications: "bell"; case .nearbyShare: "shareplay"; case .continuity: "iphone.gen3.radiowaves.left.and.right"; case .fileShelf: "tray.full.fill"; case .notes: "note.text";        case .clipboard: "list.clipboard"; case .emoji: "face.smiling"; case .mouse: "computermouse.fill"; case .monitoring: "gauge.with.dots.needle.50percent"; case .devActivity: "hammer.circle.fill"; case .archives: "archivebox.fill"; case .mirror: "camera.fill"; case .caffeine: "cup.and.saucer.fill"; case .music: "music.note"; case .weather: "cloud.sun.fill";        case .calendar: "calendar"; case .eyeBreak: "eye.fill"; case .focusSession: "moon.fill"; case .appLock: "lock.shield.fill"; case .intelligence: "sparkle"; case .sports: "sportscourt"; case .finance: "chart.line.uptrend.xyaxis"; case .dockLayouts: "dock.rectangle"; case .mediaOptimizer: "photo"; case .about: "info.circle"
         }
     }
 
     var iconBackgroundColor: Color {
         switch self {
-        case .general: .black; case .systemEnhance: .blue; case .apps: .purple; case .storage: .orange; case .widgets: .gray; case .liveActivities: .cyan; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .keyboardShortcuts: .purple; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .neardrop: .blue; case .continuity: .green; case .fileShelf: .orange; case .notes: .yellow;        case .clipboard: .mint; case .emoji: .indigo; case .mouse: .teal; case .monitoring: .green; case .devActivity: .purple; case .archives: .brown; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue;        case .calendar: .red; case .eyeBreak: .teal; case .focusSession: .purple; case .appLock: .red; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .dockLayouts: .cyan; case .mediaOptimizer: .orange; case .about: .blue
+        case .overview: .purple; case .general: .black; case .systemEnhance: .blue; case .apps: .purple; case .storage: .orange; case .widgets: .gray; case .liveActivities: .cyan; case .appActivities: .green; case .fileProgress: .blue; case .appearance: .indigo; case .lockScreen: .red; case .bluetoothUnlock: .indigo; case .shortcuts: .orange; case .keyboardShortcuts: .purple; case .snapZones: .blue; case .audio: .red; case .battery: .green; case .bluetooth: .blue; case .hud: .indigo; case .notifications: .red; case .nearbyShare: .blue; case .continuity: .green; case .fileShelf: .orange; case .notes: .yellow;        case .clipboard: .mint; case .emoji: .indigo; case .mouse: .teal; case .monitoring: .green; case .devActivity: .purple; case .archives: .brown; case .mirror: .indigo; case .caffeine: .brown; case .music: .pink; case .weather: .blue;        case .calendar: .red; case .eyeBreak: .teal; case .focusSession: .purple; case .appLock: .red; case .intelligence: .mint; case .sports: .green; case .finance: .green; case .dockLayouts: .cyan; case .mediaOptimizer: .orange; case .about: .blue
         }
     }
 
     var iconGradientColors: [Color] {
         switch self {
+        case .overview: return [Color(hue: 0.78, saturation: 0.45, brightness: 0.90), Color(hue: 0.62, saturation: 0.55, brightness: 0.70)]
         case .general: return [.black, .gray]
         case .systemEnhance: return [Color(hue: 0.52, saturation: 0.34, brightness: 0.82), Color(hue: 0.52, saturation: 0.48, brightness: 0.56)]
         case .apps: return [Color(hue: 0.58, saturation: 0.38, brightness: 0.88), Color(hue: 0.58, saturation: 0.52, brightness: 0.64)]
         case .storage: return [Color(hue: 0.09, saturation: 0.42, brightness: 0.82), Color(hue: 0.09, saturation: 0.54, brightness: 0.57)]
         case .widgets: return [.gray, .blue]
         case .liveActivities: return [.cyan, .green]
+        case .appActivities: return [.green, .teal]
+        case .fileProgress: return [.blue, .cyan]
         case .appearance: return [Color(hue: 0.70, saturation: 0.38, brightness: 0.86), Color(hue: 0.70, saturation: 0.52, brightness: 0.60)]
         case .lockScreen: return [Color(hue: 0.98, saturation: 0.48, brightness: 0.88), Color(hue: 0.98, saturation: 0.60, brightness: 0.62)]
         case .bluetoothUnlock: return [.indigo, .teal]
@@ -3207,7 +4020,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .bluetooth: return [.blue, .cyan]
         case .hud: return [.indigo, .cyan]
         case .notifications: return [.red, .pink]
-        case .neardrop: return [Color(hue: 0.56, saturation: 0.44, brightness: 0.88), Color(hue: 0.56, saturation: 0.58, brightness: 0.62)]
+        case .nearbyShare: return [Color(hue: 0.56, saturation: 0.44, brightness: 0.88), Color(hue: 0.56, saturation: 0.58, brightness: 0.62)]
         case .continuity: return [Color(hue: 0.38, saturation: 0.42, brightness: 0.84), Color(hue: 0.38, saturation: 0.56, brightness: 0.58)]
         case .fileShelf: return [.orange, .brown]
         case .notes: return [Color(hue: 0.13, saturation: 0.48, brightness: 0.93), Color(hue: 0.13, saturation: 0.60, brightness: 0.69)]

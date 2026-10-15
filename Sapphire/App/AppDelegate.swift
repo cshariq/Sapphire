@@ -38,6 +38,13 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
     override var canBecomeKey: Bool { isFocusable }
     override var canBecomeMain: Bool { isFocusable }
 
+    override var isKeyWindow: Bool { isFocusable ? super.isKeyWindow : true }
+    override var isMainWindow: Bool { isFocusable ? super.isMainWindow : true }
+    @objc func hasKeyAppearance() -> Bool { true }
+    @objc func hasMainAppearance() -> Bool { true }
+    @objc func _hasActiveAppearance() -> Bool { true }
+    @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
+
     override init(
         contentRect: NSRect,
         styleMask style: NSWindow.StyleMask,
@@ -71,9 +78,143 @@ final class DynamicFocusWindow: NSPanel, NSWindowDelegate {
     func setMouseEventHandlingEnabled(_ isEnabled: Bool = false) {
         ignoresMouseEvents = !isEnabled
     }
+
+    override func accessibilitySubrole() -> NSAccessibility.Subrole? { .unknown }
+
+    private(set) var isNotchHidden = false
+
+    var monitorsTornDown = false
+
+    func setNotchHidden(_ hidden: Bool) {
+        guard hidden != isNotchHidden else { return }
+        isNotchHidden = hidden
+        if hidden {
+            orderOut(nil)
+        } else {
+            showIfAllowed()
+        }
+    }
+
+    private(set) var isDisplayDetached = false
+
+    func setDisplayDetached(_ detached: Bool) {
+        guard detached != isDisplayDetached else { return }
+        isDisplayDetached = detached
+        if detached {
+            orderOut(nil)
+        } else {
+            showIfAllowed()
+        }
+    }
+
+    private func showIfAllowed() {
+        guard !isNotchHidden, !isDisplayDetached else { return }
+        (NSApp.delegate as? AppDelegate)?.reassertNotchSpaceMembership(self)
+        alphaValue = 1
+        orderFrontRegardless()
+    }
+
+    var onDisplayConfigurationChange: (() -> Void)?
+
+    var onTeardown: (() -> Void)?
+
+    private(set) lazy var hostSizer = NotchHostWindowSizer(window: self)
+
+    private let pointerTrackingClients = NSHashTable<NSView>.weakObjects()
+
+    func registerPointerTrackingClient(_ view: some PointerTrackingGated) {
+        pointerTrackingClients.add(view)
+        view.setPointerTrackingEnabled(!ignoresMouseEvents)
+    }
+
+    func unregisterPointerTrackingClient(_ view: some PointerTrackingGated) {
+        pointerTrackingClients.remove(view)
+    }
+
+    override var ignoresMouseEvents: Bool {
+        didSet {
+            if ignoresMouseEvents != oldValue {
+                for case let client as PointerTrackingGated in pointerTrackingClients.allObjects {
+                    client.setPointerTrackingEnabled(!ignoresMouseEvents)
+                }
+                if ignoresMouseEvents { dropMouseMovedListener() }
+            }
+            updateCursorRectGate()
+        }
+    }
+
+    private func dropMouseMovedListener() {
+        guard let ivar = class_getInstanceVariable(NSWindow.self, "_trackingAreaManager"),
+              let manager = object_getIvar(self, ivar) as? NSObject else { return }
+        let selector = NSSelectorFromString("_removeMouseMovedListener:")
+        guard let method = class_getInstanceMethod(NSWindow.self, selector),
+              method_getTypeEncoding(method).map({ String(cString: $0) }) == "v24@0:8@16" else { return }
+        typealias Remove = @convention(c) (NSWindow, Selector, AnyObject) -> Void
+        unsafeBitCast(method_getImplementation(method), to: Remove.self)(self, selector, manager)
+    }
+
+    private func updateCursorRectGate() {
+        guard areCursorRectsEnabled == ignoresMouseEvents else { return }
+        if ignoresMouseEvents { disableCursorRects() } else { enableCursorRects() }
+    }
+
+    var onMouseUp: (() -> Void)?
+
+    private static let eventsDroppedWhileIgnoringMouse: Set<NSEvent.EventType> = [
+        .mouseMoved, .mouseEntered, .mouseExited, .cursorUpdate,
+    ]
+
+    private static let edgeClampedMouseEvents: Set<NSEvent.EventType> = [
+        .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+        .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+        .otherMouseDown, .otherMouseUp, .otherMouseDragged,
+    ]
+
+    private func clampedToTopEdge(_ event: NSEvent) -> NSEvent {
+        guard Self.edgeClampedMouseEvents.contains(event.type), let height = contentView?.bounds.height else {
+            return event
+        }
+        let inside = height - 0.5
+        let location = event.locationInWindow
+        guard location.y > inside else { return event }
+        return NSEvent.mouseEvent(
+            with: event.type,
+            location: NSPoint(x: location.x, y: inside),
+            modifierFlags: event.modifierFlags,
+            timestamp: event.timestamp,
+            windowNumber: event.windowNumber,
+            context: nil,
+            eventNumber: event.eventNumber,
+            clickCount: event.clickCount,
+            pressure: event.pressure
+        ) ?? event
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if ignoresMouseEvents, Self.eventsDroppedWhileIgnoringMouse.contains(event.type) { return }
+        let event = clampedToTopEdge(event)
+        #if DEBUG
+        if event.type == .leftMouseDown || event.type == .leftMouseUp, let root = contentView?.superview {
+            var chain: [String] = []
+            var view = root.hitTest(event.locationInWindow)
+            while let v = view { chain.append(String(describing: type(of: v)).prefix(40).description); view = v.superview }
+            os_log(.error, "CLICK-TRACE window %{public}@ loc=%{public}@ frame=%{public}@ hit=%{public}@",
+                   event.type == .leftMouseDown ? "down" : "up", NSStringFromPoint(event.locationInWindow), NSStringFromRect(frame), chain.joined(separator: " < "))
+        }
+        #endif
+        super.sendEvent(event)
+        switch event.type {
+        case .leftMouseUp, .rightMouseUp, .otherMouseUp:
+            onMouseUp?()
+        default:
+            break
+        }
+    }
 }
 
-final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+final class PassthroughHostingView<Content: View>: NSHostingView<Content>, PointerTrackingGated {
+    private lazy var trackingGate = PointerTrackingGate(view: self)
+
     required init(rootView: Content) {
         super.init(rootView: rootView)
         sizingOptions = []
@@ -83,6 +224,37 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        (window as? DynamicFocusWindow)?.unregisterPointerTrackingClient(self)
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window = window as? DynamicFocusWindow {
+            window.registerPointerTrackingClient(self)
+        } else {
+            setPointerTrackingEnabled(true)
+        }
+    }
+
+    override func addTrackingArea(_ trackingArea: NSTrackingArea) {
+        guard trackingGate.shouldInstall(trackingArea) else { return }
+        super.addTrackingArea(trackingArea)
+    }
+
+    override func removeTrackingArea(_ trackingArea: NSTrackingArea) {
+        trackingGate.didRemove(trackingArea)
+        super.removeTrackingArea(trackingArea)
+    }
+
+    func setPointerTrackingEnabled(_ enabled: Bool) {
+        trackingGate.setOpen(enabled) { super.addTrackingArea($0) }
+    }
+
+    override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
+    override var safeAreaRect: NSRect { bounds }
 }
 
 @MainActor
@@ -94,6 +266,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     public var notchWindows: [NSWindow] = []
     private var cgsSpace: CGSSpace?
+    private static let notchSpaceLevel = Int(CGWindowLevelForKey(.statusWindow))
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var lyricsWindow: NSWindow?
@@ -104,6 +277,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var sessionObserversInstalled = false
     private var networkPathSatisfied: Bool?
     private var pendingAllocatorRelief: DispatchWorkItem?
+    private var isPresentingSapphireVMLaunchFailure = false
+    private let performanceLaunchStart = (
+        date: Date(),
+        uptime: ProcessInfo.processInfo.systemUptime
+    )
 
     private lazy var lockScreenManager = LockScreenManager.shared
     private lazy var lidAngleAutomationManager = LidAngleAutomationManager.shared
@@ -173,7 +351,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     var interactionManager: MenuBarInteractionManager?
 
     func addWindowToNotchSpace(_ window: NSWindow) {
-        if cgsSpace == nil { cgsSpace = CGSSpace() }
+        if cgsSpace == nil { cgsSpace = CGSSpace(level: Self.notchSpaceLevel) }
         cgsSpace?.windows.insert(window)
     }
 
@@ -197,6 +375,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var networkMonitor: NWPathMonitor?
     private var previouslyFrontmostApp: NSRunningApplication?
     private var didActivateForNotchFocus = false
+    private weak var focusedNotchWindow: DynamicFocusWindow?
 
     lazy var liveActivityManager: LiveActivityManager = LiveActivityManager(
         systemHUDManager: systemHUDManager,
@@ -231,6 +410,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         guard !Self.isRunningUnitTests else { return }
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURL),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
         RemoteViewCrashGuardInstall()
 
         AX.installGlobalMessagingTimeout()
@@ -240,37 +425,71 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         guard !Self.isRunningUnitTests else { return }
+        let launchMode = StartupHealthMarker.shared.beginLaunch()
         GlobalEventTap.shared.installTrustAwareness()
         AccessibilityTrustMonitor.shared.start()
+        SystemMutationRecovery.restoreAfterUnexpectedExit()
 
         SapphireStandardMenu.installIfNeeded()
+        ContinuityServicesProvider.shared.install()
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleHelperConnectionLost),
             name: .sapphireHelperConnectionLost,
             object: nil
         )
-        SapphireAnalytics.bootstrap()
-        SapphireBrowserIntegration.shared.start()
+        SapphireAnalytics.scheduleBootstrap(after: 8)
+        if launchMode == .normal {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                FaceIDModelManager.shared.applyResidencyPolicy()
+            }
+        }
+        let launchStartDate = performanceLaunchStart.date
+        let launchDuration = ProcessInfo.processInfo.systemUptime - performanceLaunchStart.uptime
+        SapphireAnalytics.whenReady {
+            SapphirePerformance.recordTrace(
+                name: "macos_app_start",
+                startTime: launchStartDate,
+                duration: launchDuration,
+                attributes: [
+                    "platform": "macos",
+                    "lifecycle": "did_finish_launching"
+                ]
+            )
+        }
+        if launchMode == .normal {
+            SapphireBrowserIntegration.shared.start()
+        }
+        SandboxIntegration.shared.start()
+        _ = FocusProfileStore.shared
+        FocusTriggerEngine.shared.start()
+        CaffeineManager.shared.bootstrap()
 
-        NearbyConnectionManager.shared.deviceDisplayName = settingsModel.settings.neardropDeviceDisplayName
+        NearbyConnectionManager.shared.deviceDisplayName = settingsModel.current.nearbyShareDeviceDisplayName
         observeSettings()
 
-        if ProcessInfo.processInfo.environment["PERFMON"] == "1" || UserDefaults.standard.bool(forKey: "enablePerfMonitor") {
+        if launchMode == .normal,
+           ProcessInfo.processInfo.environment["PERFMON"] == "1" || UserDefaults.standard.bool(forKey: "enablePerfMonitor") {
             ProcessCPUMonitor.shared.startPeriodicReporting(interval: 60)
             print("[PerfMon] CPU performance monitor enabled. Report logs every 60s.")
         }
 
         Task {
-            await SubscriptionManager.shared.bootstrap()
-            await MainActor.run {
+            var didRoute = false
+            await SubscriptionManager.shared.bootstrap(onCachedAccessReady: { [weak self] in
+                guard let self else { return }
+                if BetaEntitlementRuntime.isBetaBuild, !self.hasConfirmedBetaAccess { return }
+                didRoute = true
                 self.routeAfterLaunch()
-            }
+            })
+            if !didRoute { self.routeAfterLaunch() }
         }
+        StartupHealthMarker.shared.scheduleHealthyCheckpoint()
     }
 
     @discardableResult
     private func routeAfterLaunch() -> Bool {
+        SapphireAnalytics.scheduleBootstrap(after: 1)
         if OnboardingLaunchPolicy.shouldShowOnboarding {
             showOnboardingWindow()
             return false
@@ -293,6 +512,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func observeSettings() {
         settingsModel.$settings
+            .map { [$0.faceIDKeepModelsInMemory, $0.faceIDUnlockEnabled, $0.hasRegisteredFaceID] }
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { _ in FaceIDModelManager.shared.applyResidencyPolicy() }
+            .store(in: &cancellables)
+
+        settingsModel.$settings
             .map(\.googleAnalyticsEnabled)
             .dropFirst()
             .removeDuplicates()
@@ -300,14 +527,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             .store(in: &cancellables)
 
         settingsModel.$settings
-            .map(\.neardropDeviceDisplayName)
+            .map(\.nearbyShareDeviceDisplayName)
             .dropFirst()
             .removeDuplicates()
             .sink { NearbyConnectionManager.shared.deviceDisplayName = $0 }
             .store(in: &cancellables)
 
         settingsModel.$settings
-            .map(\.neardropEnabled)
+            .map(\.nearbyShareEnabled)
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] enabled in
@@ -323,7 +550,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         settingsModel.$settings
             .map(\.launchAtLogin)
             .removeDuplicates()
-            .sink { [weak self] in self?.toggleLaunchAtLogin(isOn: $0) }
+            .sink { isOn in
+                DispatchQueue.global(qos: .utility).async { Self.toggleLaunchAtLogin(isOn: isOn) }
+            }
             .store(in: &cancellables)
 
         settingsModel.$settings
@@ -355,6 +584,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         self.statusBarController = StatusBarController()
                         self.interactionManager = MenuBarInteractionManager.shared
                         self.interactionManager?.startMonitoring()
+                        MenuBarHotkeyMonitor.shared.start()
                     }
                 } else {
                     self.interactionManager?.stopMonitoring()
@@ -366,7 +596,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             .store(in: &cancellables)
 
         settingsModel.$settings
-            .map(\.notchDisplayTarget)
+            .map { NotchScreenSelection(target: $0.notchDisplayTarget, perDisplay: $0.perDisplayShowNotch) }
             .dropFirst()
             .removeDuplicates()
             .receive(on: RunLoop.main)
@@ -428,13 +658,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         UpdateChecker.shared.stopPeriodicChecks()
 
+        cancelNotchDisplayRefresh()
         for window in notchWindows {
-            cgsSpace?.windows.remove(window)
-            window.orderOut(nil)
-            window.contentView = nil
-            window.close()
+            destroyNotchWindow(window)
         }
         notchWindows.removeAll()
+        cgsSpace?.removeAllWindows()
         cgsSpace = nil
 
         settingsWindow?.orderOut(nil)
@@ -542,8 +771,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 height: visibleFrame.height
             )
             window.setContentSize(size)
-            window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
-            let hostingView = FocusableHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() }).environmentObject(settingsModel).environmentObject(musicManager))
+            window.sharingType = settingsModel.current.hideFromScreenSharing ? .none : .readOnly
+            let hostingView = FocusableHostingView(rootView: OnboardingView(onComplete: { self.onboardingDidComplete() }))
             hostingView.wantsLayer = true
             hostingView.layer?.backgroundColor = NSColor.clear.cgColor
             window.contentView = hostingView
@@ -557,6 +786,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func onboardingDidComplete() {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        LaunchAtLoginReconciler.reconcile(wanted: settingsModel.current.launchAtLogin, isUserChange: true) { isOn in
+            Self.adoptLaunchAtLogin(isOn)
+        }
         SapphireAnalytics.logEvent("onboarding_completed")
         onboardingWindow?.orderOut(nil)
         onboardingWindow = nil
@@ -585,7 +817,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     self?.dismissBetaBlockerAndContinue()
                 }
             })
-                .environmentObject(settingsModel)
         )
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
@@ -602,7 +833,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         Task {
             await SubscriptionManager.shared.bootstrap()
-            await MainActor.run { self.routeAfterLaunch() }
+            _ = await MainActor.run { self.routeAfterLaunch() }
         }
     }
 
@@ -620,9 +851,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         transitionToAgentApp()
 
+        FanManager.resumeAfterSuspension()
         HelperManager.shared.installIfNeeded()
 
+        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         createNotchWindow()
+        archiveExtractor.reconcileDefaultHandlerIfNeeded()
+        dmgInstallerManager.reconcileDefaultHandlerIfNeeded()
         _ = circleToSearchManager
         _ = systemEnhanceWindowRegistry
         systemEnhanceDockPreviewController.start()
@@ -660,8 +895,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         superKeyManager.start()
         menuBarReadoutsManager.start()
         systemAlertsManager.start()
-        DevActivityMonitor.shared.start()
-        LiveWallpaperManager.shared.start()
+        if StartupHealthMarker.shared.isRecoveryLaunch {
+            print("[AppDelegate] Recovery launch: Live Wallpaper and agent activity detection stay off until the next launch.")
+        } else {
+            DevActivityMonitor.shared.start()
+        }
+        AppActivityMonitor.shared.bootstrap()
+        if !StartupHealthMarker.shared.isRecoveryLaunch {
+            LiveWallpaperManager.shared.start()
+        }
         _ = archiveExtractor
         _ = keyboardShortcutManager
         _ = plainTextPasteManager
@@ -671,18 +913,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         _ = lidAngleAutomationManager
         setupStatusBarItem()
         initializeBackgroundServices()
-        if settingsModel.settings.menuBarEnabled {
+        EarbudControlManager.shared.activate()
+        if settingsModel.current.menuBarEnabled {
             if statusBarController == nil {
                 statusBarController = StatusBarController()
                 interactionManager = MenuBarInteractionManager.shared
                 interactionManager?.startMonitoring()
+                MenuBarHotkeyMonitor.shared.start()
             }
         }
 
         SystemControl.configureKeyboardBacklight()
-        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURL), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         setupSessionObservers()
-        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSubscriptionPaywallRequest(_:)), name: .subscriptionPaywallRequested, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleSubscriptionSessionRevoked(_:)), name: .subscriptionSessionRevoked, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleAccountPaneOpened), name: .sapphireOpenAccountPane, object: nil)
@@ -692,10 +934,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         continuityManager.startIfEnabled()
         UpdateChecker.shared.startPeriodicChecks(interval: 5 * 60 * 60)
         InstalledAppUpdatesChecker.shared.applySettings(
-            installedAppUpdatesEnabled: settingsModel.settings.installedAppUpdatesEnabled,
-            notificationsEnabled: settingsModel.settings.installedAppUpdateNotificationsEnabled
+            installedAppUpdatesEnabled: settingsModel.current.installedAppUpdatesEnabled,
+            notificationsEnabled: settingsModel.current.installedAppUpdateNotificationsEnabled
         )
-        if settingsModel.settings.launchpadEnabled {
+        if settingsModel.current.launchpadEnabled {
             setupLaunchpad()
         }
 
@@ -705,7 +947,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func requestScreenRecordingForSystemEnhanceIfNeeded() {
         let settings = settingsModel.settings
-        let needsWindowCapture = settings.systemEnhanceDockPreviewsEnabled || settings.systemEnhanceAltTabEnabled
+        let needsWindowCapture = settings.systemEnhanceDockPreviewsEnabled || settings.systemEnhanceWindowSwitcherEnabled
         let needsHingeCapture = settings.systemEnhanceHingeAnimationEnabled && LidAngleSensor.shared.isAvailable
         guard needsWindowCapture || needsHingeCapture else { return }
         guard needsHingeCapture || PermissionsManager.shared.accessibilityStatus == .granted else { return }
@@ -741,20 +983,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func startNearbyShareIfNeeded() {
-        guard isMainAppRunning, settingsModel.settings.neardropEnabled else { return }
+        guard isMainAppRunning, settingsModel.current.nearbyShareEnabled else { return }
         NearbyConnectionManager.shared.becomeVisible()
     }
 
     private func initializeBackgroundServices() {
         guard backgroundInitializationTask == nil else { return }
+        let warmUp = !StartupHealthMarker.shared.isRecoveryLaunch
         backgroundInitializationTask = Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
             await MainActor.run { self.initializeCoreManagers() }
+            guard warmUp else { return }
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                _ = IOBluetoothDevice.pairedDevices()
-            }
             _ = await self.batteryManager.getBatteryTemperature()
         }
     }
@@ -824,7 +1065,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var helperHasConnectedThisSession = false
 
     @objc private func systemDidWake(notification: NSNotification) {
-        scheduleNotchDisplayRefresh()
+        notchDisplaysDidWake()
         batteryManager.reconnectHelper()
         HelperManager.shared.checkIfRunning(force: true)
 
@@ -844,20 +1085,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @objc private func displayDidSleep(notification: NSNotification) {
         AuthenticationManager.shared.handleDisplayWillSleep()
+        notchDisplaysDidSleep()
+        if isScreenLocked {
+            LockScreenMusicPaneController.shared.reset()
+            lockScreenManager.hideAndDestroyWindows(animated: false)
+        }
     }
 
     @objc private func displayDidWake(notification: NSNotification) {
         AuthenticationManager.shared.handleDisplayDidWake()
-        scheduleNotchDisplayRefresh()
+        notchDisplaysDidWake()
         onDisplayWake()
-    }
-
-    private func scheduleNotchDisplayRefresh() {
-        guard isMainAppRunning else { return }
-        notchScreenRefreshRetryWorkItem?.cancel()
-        notchScreenRefreshGeneration += 1
-        let generation = notchScreenRefreshGeneration
-        refreshNotchScreens(generation: generation, attempt: 0)
+        if isScreenLocked {
+            showLockScreenWidgets()
+        }
     }
 
     @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
@@ -934,13 +1175,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         lockScreenState.isAuthenticating = false
         lockScreenState.faceIDRequiresPassword = false
         lockScreenState.isCaffeineActive = caffeineManager.isActive
-        lockScreenState.isFaceIDEnabled = settingsModel.settings.faceIDUnlockEnabled &&
-                                          settingsModel.settings.hasRegisteredFaceID &&
+        lockScreenState.isFaceIDEnabled = settingsModel.current.faceIDUnlockEnabled &&
+                                          settingsModel.current.hasRegisteredFaceID &&
                                           authManager.isFaceIDAllowedAtCurrentLocation()
 
-        lockScreenState.isBluetoothUnlockEnabled = settingsModel.settings.bluetoothUnlockEnabled
+        lockScreenState.isBluetoothUnlockEnabled = settingsModel.current.bluetoothUnlockEnabled
 
-        if settingsModel.settings.lockScreenLiveActivityEnabled {
+        if settingsModel.current.lockScreenLiveActivityEnabled {
             liveActivityManager.startLockScreenActivity()
         }
 
@@ -955,7 +1196,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             weatherActivityViewModel.fetch()
         }
 
-        if settingsModel.settings.lockScreenShowNotch {
+        if settingsModel.current.lockScreenShowNotch {
             for window in notchWindows {
                 lockScreenManager.delegateWindow(window)
             }
@@ -963,10 +1204,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         LiveWallpaperManager.shared.screenDidLock()
 
+        showLockScreenWidgets()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func showLockScreenWidgets() {
         guard let mainScreen = NSScreen.main else { return }
         var widgetConfigs: [LockScreenManager.LockScreenWidgetConfig] = []
 
-        if settingsModel.settings.lockScreenShowInfoWidget {
+        if settingsModel.current.lockScreenShowInfoWidget {
             widgetConfigs.append(.init(
                 id: "infoWidget",
                 initialSize: .zero,
@@ -974,10 +1220,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             ) { manager, initialFrame, screen in
                 manager.displayView(
                     LockScreenInfoWidgetView()
-                        .environmentObject(self.settingsModel)
                         .environmentObject(self.weatherActivityViewModel)
                         .environmentObject(self.calendarService)
-                        .environmentObject(self.musicManager)
                         .environmentObject(self.focusModeManager)
                         .environmentObject(self.bluetoothManager)
                         .environmentObject(self.batteryMonitor)
@@ -991,8 +1235,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             })
         }
 
-        if settingsModel.settings.lockScreenShowMainWidget &&
-           !settingsModel.settings.lockScreenMainWidgets.isEmpty {
+        if settingsModel.current.lockScreenShowMainWidget &&
+           !settingsModel.current.lockScreenMainWidgets.isEmpty {
             widgetConfigs.append(.init(
                 id: "mainWidgetContainer",
                 initialSize: .zero,
@@ -1000,8 +1244,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             ) { manager, initialFrame, screen in
                 manager.displayView(
                     LockScreenMainWidgetContainerView()
-                        .environmentObject(self.settingsModel)
-                        .environmentObject(self.musicManager)
                         .environmentObject(self.calendarService)
                         .environmentObject(BatteryStatusManager.shared)
                         .environmentObject(self.focusModeManager)
@@ -1017,8 +1259,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             })
         }
 
-        if settingsModel.settings.lockScreenShowMiniWidgets &&
-           !settingsModel.settings.lockScreenMiniWidgets.isEmpty {
+        if settingsModel.current.lockScreenShowMiniWidgets &&
+           !settingsModel.current.lockScreenMiniWidgets.isEmpty {
             widgetConfigs.append(.init(
                 id: "miniWidgets",
                 initialSize: .zero,
@@ -1026,10 +1268,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             ) { manager, initialFrame, screen in
                 manager.displayView(
                     LockScreenMiniWidgetView()
-                        .environmentObject(self.settingsModel)
                         .environmentObject(self.weatherActivityViewModel)
                         .environmentObject(self.calendarService)
-                        .environmentObject(self.musicManager)
                         .environmentObject(self.batteryMonitor)
                         .environmentObject(self.bluetoothManager)
                         .environmentObject(self.batteryEstimator)
@@ -1051,9 +1291,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             windowLevel: .mainMenu + 4
         ) { manager, initialFrame, screen in
             manager.displayView(
-                LockScreenFullScreenMusicPane()
-                    .environmentObject(self.settingsModel)
-                    .environmentObject(self.musicManager),
+                LockScreenFullScreenMusicPane(),
                 withId: "fullScreenMusicPane",
                 initialFrame: initialFrame,
                 positioner: manager.calculateFullScreenMusicFrame(size:screen:),
@@ -1063,10 +1301,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         })
 
         lockScreenManager.setupAndShowWindows(configs: widgetConfigs, on: mainScreen)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func screenIsUnlocked() {
+        lockScreenManager.hideAndDestroyWindows()
+
         LiveWallpaperManager.shared.screenDidUnlock()
 
         LockScreenMusicPaneController.shared.reset()
@@ -1082,14 +1321,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         authManager.cancelPendingPasswordInjection(reason: "screen unlocked")
 
-        lockScreenManager.hideAndDestroyWindows()
         liveActivityManager.finishLockScreenActivity()
 
-        if let cgsSpace {
-            for window in notchWindows {
-                lockScreenManager.removeWindow(window)
-                cgsSpace.windows.insert(window)
-                window.orderFront(nil)
+        for window in notchWindows {
+            lockScreenManager.removeWindow(window)
+            reassertNotchSpaceMembership(window)
+            if (window as? DynamicFocusWindow)?.isNotchHidden != true {
+                window.orderFrontRegardless()
             }
         }
     }
@@ -1100,10 +1338,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         lockScreenState.isAuthenticating = true
         lockScreenState.faceIDRequiresPassword = false
 
-        if settingsModel.settings.bluetoothUnlockEnabled {
+        if settingsModel.current.bluetoothUnlockEnabled {
             authManager.startBluetoothAuthentication()
         }
-        if settingsModel.settings.faceIDUnlockEnabled && settingsModel.settings.hasRegisteredFaceID {
+        if settingsModel.current.faceIDUnlockEnabled && settingsModel.current.hasRegisteredFaceID {
             authManager.refreshFaceIDLocation { [weak self] in
                 guard let self, self.isScreenLocked, self.isAuthenticating else { return }
                 self.lockScreenState.isFaceIDEnabled = self.authManager.isFaceIDAllowedAtCurrentLocation()
@@ -1112,14 +1350,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    #if DEBUG
+    func debugSimulateLockScreen(_ locked: Bool) {
+        if locked {
+            lockScreenState.isUnlocked = false
+            lockScreenState.isAuthenticating = false
+            lockScreenState.faceIDRequiresPassword = false
+            lockScreenState.isCaffeineActive = caffeineManager.isActive
+            lockScreenState.isFaceIDEnabled = true
+            lockScreenState.isBluetoothUnlockEnabled = settingsModel.current.bluetoothUnlockEnabled
+            liveActivityManager.startLockScreenActivity()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                self.lockScreenState.isAuthenticating = true
+            }
+        } else {
+            lockScreenState.isUnlocked = true
+            lockScreenState.isAuthenticating = false
+            liveActivityManager.finishLockScreenActivity()
+        }
+    }
+    #endif
+
     func markFaceIDRequiresPassword() {
         lockScreenState.faceIDRequiresPassword = true
     }
 
     func refreshFaceIDLocationAvailability() {
         guard isScreenLocked else { return }
-        lockScreenState.isFaceIDEnabled = settingsModel.settings.faceIDUnlockEnabled &&
-                                          settingsModel.settings.hasRegisteredFaceID &&
+        lockScreenState.isFaceIDEnabled = settingsModel.current.faceIDUnlockEnabled &&
+                                          settingsModel.current.hasRegisteredFaceID &&
                                           authManager.isFaceIDAllowedAtCurrentLocation()
     }
 
@@ -1136,11 +1395,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         return false
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if isMainAppRunning {
+            openSettingsWindow()
+        } else if let onboardingWindow {
+            UtilityWindowPresenter.present(onboardingWindow)
+        } else if let betaBlockerWindow {
+            UtilityWindowPresenter.present(betaBlockerWindow)
+        } else {
+            routeAfterLaunch()
+        }
+        return false
+    }
+
     func applicationWillTerminate(_ aNotification: Notification) {
+        StartupHealthMarker.shared.markCleanExit()
         mouseControlManager.restoreSystemSettings()
         settingsModel.flushPendingSave()
         NearbyConnectionManager.shared.becomeInvisible()
         continuityManager.stop()
+        SandboxIntegration.shared.stop()
         BatteryManager.shared.stopSleepBatteryLogging()
         cleanupNotchWindow()
 
@@ -1156,6 +1430,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
+        cgsSpace?.removeAllWindows()
         cgsSpace = nil
         NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification, object: nil)
         backgroundInitializationTask?.cancel()
@@ -1177,15 +1452,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func cleanupNotchWindow() {
-        screenParametersDebounceTimer?.invalidate()
-        screenParametersDebounceTimer = nil
-        notchScreenRefreshRetryWorkItem?.cancel()
-        notchScreenRefreshRetryWorkItem = nil
+        cancelNotchDisplayRefresh()
 
         for window in notchWindows {
-            cgsSpace?.windows.remove(window)
-            window.orderOut(nil)
-            window.close()
+            destroyNotchWindow(window)
         }
         notchWindows.removeAll()
     }
@@ -1193,6 +1463,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - File Handling (DMG Installer & Archives)
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard !Self.isRunningUnitTests else { return }
+        if !isMainAppRunning, let other = DefaultFileHandler.otherRunningInstance(), let otherURL = other.bundleURL {
+            appDelegateLog.info("Forwarding \(urls.count, privacy: .public) opened file(s) to the running Sapphire instance (pid \(other.processIdentifier, privacy: .public))")
+            NSWorkspace.shared.open(urls, withApplicationAt: otherURL, configuration: NSWorkspace.OpenConfiguration()) { _, _ in
+                DispatchQueue.main.async { exit(0) }
+            }
+            return
+        }
         let dmgURLs = urls.filter { $0.pathExtension.lowercased() == "dmg" }
         let archiveURLs = urls.filter { !dmgURLs.contains($0) && ArchiveExtractor.isArchiveURL($0) }
         let layoutURLs = urls.filter { !dmgURLs.contains($0) && !archiveURLs.contains($0) && $0.pathExtension.lowercased() == "sapphiredocklayout" }
@@ -1213,14 +1491,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard
             let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
             let url = URL(string: urlString),
-            url.scheme == "sapphire"
+            url.scheme?.lowercased() == "sapphire"
         else { return }
         if url.host == "android-widgets" {
-            continuityManager.openWidgets()
+            let focus = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "id" }?.value.flatMap(Int.init)
+            continuityManager.openWidgets(focus: focus)
+            return
+        }
+        if url.host?.lowercased() == "writedata" {
+            AccessoryBatteryStore.writeData()
+            return
+        }
+        if url.host?.lowercased() == "vm" {
+            guard SandboxIntegration.validatedDestinationURL(for: url) != nil else {
+                return
+            }
+            if !SandboxIntegration.shared.forwardValidatedDeepLink(url) {
+                presentSapphireVMLaunchFailureIfNeeded()
+            }
             return
         }
         musicManager.spotifyOfficialAPI.handleRedirect(url: url)
         musicManager.tidalAPI.handleRedirect(url: url)
+    }
+
+    private func presentSapphireVMLaunchFailureIfNeeded() {
+        guard !isPresentingSapphireVMLaunchFailure else { return }
+        isPresentingSapphireVMLaunchFailure = true
+
+        HelperAlertPresenter.presentModal(
+            messageText: "Sapphire VM Isn’t Available",
+            informativeText: "Sapphire couldn’t open this virtual machine link. Make sure the standalone Sapphire VM app is installed, then try again.",
+            alertStyle: .warning,
+            buttonTitles: ["OK"]
+        ) { [weak self] _ in
+            self?.isPresentingSapphireVMLaunchFailure = false
+        }
     }
 
     // MARK: - Status Bar Item (Launchpad / Main Toggle)
@@ -1237,7 +1544,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func setupStatusBarItem() {
-        if isMainAppRunning && settingsModel.settings.launchpadEnabled {
+        if isMainAppRunning && settingsModel.current.launchpadEnabled {
             if statusItem == nil {
                 statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
                 statusItem?.autosaveName = "SapphireMainStatusItem"
@@ -1261,7 +1568,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @objc private func showLaunchpadAction() {
-        if launchpadWindowController == nil && settingsModel.settings.launchpadEnabled {
+        if launchpadWindowController == nil && settingsModel.current.launchpadEnabled {
             setupLaunchpad()
         }
         launchpadWindowController?.showLaunchpad()
@@ -1269,7 +1576,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func setupLaunchpad() {
         guard isMainAppRunning,
-              settingsModel.settings.launchpadEnabled,
+              settingsModel.current.launchpadEnabled,
               launchpadWindowController == nil,
               !isLaunchpadSetupPending else { return }
         isLaunchpadSetupPending = true
@@ -1278,7 +1585,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             guard let self else { return }
             defer { self.isLaunchpadSetupPending = false }
             guard self.isMainAppRunning,
-                  self.settingsModel.settings.launchpadEnabled,
+                  self.settingsModel.current.launchpadEnabled,
                   self.launchpadWindowController == nil else { return }
             self.launchpadWindowController = LaunchpadWindowController()
             self.launchpadGestureMonitor.onShowLaunchpad = { [weak self] in
@@ -1319,10 +1626,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             return
         }
 
-        let targetDisplayIDs = Set(targetScreens.compactMap { displayID(for: $0) })
+        let orderedTargetIDs = targetScreens.compactMap { displayID(for: $0) }
+        let targetDisplayIDs = Set(orderedTargetIDs)
         guard !targetDisplayIDs.isEmpty else { return }
-
-        cleanupNotchWindows(excluding: targetDisplayIDs)
 
         var seenDisplayIDs: Set<CGDirectDisplayID> = []
         notchWindows = notchWindows.filter { window in
@@ -1330,54 +1636,53 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 return true
             }
             if seenDisplayIDs.contains(windowDisplayID) {
-                cgsSpace?.windows.remove(window)
-                window.orderOut(nil)
-                window.contentView = nil
-                window.close()
+                destroyNotchWindow(window)
                 return false
             }
             seenDisplayIDs.insert(windowDisplayID)
             return true
         }
 
+        let plan = NotchDisplayRefreshPolicy.plan(
+            windowDisplays: notchWindows.compactMap { ($0 as? DynamicFocusWindow)?.displayID },
+            targets: orderedTargetIDs
+        )
+        for move in plan.moves {
+            guard let window = notchWindows.first(where: { ($0 as? DynamicFocusWindow)?.displayID == move.from })
+                as? DynamicFocusWindow else { continue }
+            appDelegateLog.info("Moving notch window from display \(move.from, privacy: .public) to \(move.to, privacy: .public)")
+            window.displayID = move.to
+        }
+
+        cleanupNotchWindows(excluding: targetDisplayIDs)
+
         for screen in targetScreens {
             guard let screenDisplayID = displayID(for: screen) else { continue }
             let existing = notchWindows.first { ($0 as? DynamicFocusWindow)?.displayID == screenDisplayID }
             if let existing {
-                existing.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+                existing.sharingType = settingsModel.current.hideFromScreenSharing ? .none : .readOnly
                 syncNotchWindowFrame(existing, to: screen)
+                (existing as? DynamicFocusWindow)?.setDisplayDetached(false)
                 continue
             }
 
             createNotchWindowForScreen(screen)
         }
 
+        for move in plan.moves {
+            let moved = notchWindows.first { ($0 as? DynamicFocusWindow)?.displayID == move.to } as? DynamicFocusWindow
+            moved?.onDisplayConfigurationChange?()
+        }
+
         scheduleLiveActivityStart()
     }
 
     private func targetNotchScreens() -> [NSScreen] {
-        let settings = settingsModel.settings
-        switch settings.notchDisplayTarget {
-        case .macbookDisplay:
-            if let target = NSScreen.screens.first(where: { screen in
-                guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-                    return false
-                }
-                return CGDisplayIsBuiltin(displayID) != 0
-            }) {
-                return [target]
-            }
-            let mainDisplayID = CGMainDisplayID()
-            return NSScreen.screens.filter { displayID(for: $0) == mainDisplayID }
-        case .mainDisplay:
-            let mainDisplayID = CGMainDisplayID()
-            return NSScreen.screens.filter { displayID(for: $0) == mainDisplayID }
-        case .allDisplays:
-            return NSScreen.screens
-        }
+        NotchScreens.screens(for: settingsModel.settings)
     }
 
     private func syncNotchWindowFrame(_ window: NSWindow, to screen: NSScreen) {
+        if let window = window as? DynamicFocusWindow, window.hostSizer.reapply(on: screen) { return }
         let screenFrame = screen.frame
         let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings, screen: screen)
         let paddedWidth = ceil(screenFrame.width)
@@ -1399,18 +1704,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         window.setFrame(targetRect, display: true, animate: false)
         window.contentView?.frame = NSRect(origin: .zero, size: targetRect.size)
+        (window.contentView as? NotchStageContainerView)?.setStageSize(targetRect.size)
     }
 
     private func createNotchWindowForScreen(_ screen: NSScreen) {
-        let screenFrame = screen.frame
         let initialConfig = ResolvedNotchConfiguration(from: settingsModel.settings, screen: screen)
-        let paddedWidth = ceil(screenFrame.width)
-        let paddedHeight = ceil(max(initialConfig.initialSize.height + initialConfig.topInset + initialConfig.topBuffer + 24, screenFrame.height * 0.42))
-        let rect = NSRect(
-            x: screenFrame.minX,
-            y: screenFrame.maxY - paddedHeight,
-            width: paddedWidth,
-            height: paddedHeight
+        let initialExtent = NotchHostWindowExtent(
+            isFull: false,
+            notchSize: initialConfig.initialSize,
+            notchTopOffset: initialConfig.topInset - initialConfig.topBuffer,
+            collapsedHeight: initialConfig.initialSize.height,
+            fullBandInset: initialConfig.topInset + initialConfig.topBuffer
+        )
+        let rect = NotchHostWindowSizer.frame(for: initialExtent, on: screen)
+        let stageSize = NotchHostWindowSizer.stageSize(
+            current: nil,
+            extent: initialExtent,
+            windowSize: rect.size,
+            screenFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            scale: screen.backingScaleFactor
         )
 
         let window = DynamicFocusWindow(
@@ -1425,50 +1738,102 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.displayID = displayID(for: screen) ?? 0
         window.level = .statusBar
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        window.hidesOnDeactivate = false
+        window.isReleasedWhenClosed = false
+        window.animationBehavior = .none
+        window.isMovable = false
+        window.isMovableByWindowBackground = false
         window.setMouseEventHandlingEnabled()
-        window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+        window.sharingType = settingsModel.current.hideFromScreenSharing ? .none : .readOnly
 
-        if cgsSpace == nil { cgsSpace = CGSSpace() }
+        if cgsSpace == nil { cgsSpace = CGSSpace(level: Self.notchSpaceLevel) }
         cgsSpace?.windows.insert(window)
+        if isScreenLocked, settingsModel.current.lockScreenShowNotch {
+            lockScreenManager.delegateWindow(window)
+        }
 
-        let controllerView = NotchController(notchWindow: window, timerManager: timerManager)
+        let controllerView = NotchController(
+            notchWindow: window,
+            initialConfiguration: initialConfig,
+            timerManager: timerManager,
+            widgetEnvironment: { [weak self] view in
+                guard let self else { return view }
+                return AnyView(self.applyNotchEnvironment(to: view))
+            }
+        )
         let container = ZStack(alignment: .top) {
             controllerView
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .ignoresSafeArea()
 
-        let hosting = PassthroughHostingView(
-            rootView: container
-                .environmentObject(lockScreenState)
-                .environmentObject(systemHUDManager)
-                .environmentObject(musicManager)
-                .environmentObject(liveActivityManager)
-                .environmentObject(audioDeviceManager)
-                .environmentObject(bluetoothManager)
-                .environmentObject(notificationManager)
-                .environmentObject(desktopManager)
-                .environmentObject(focusModeManager)
-                .environmentObject(eyeBreakManager)
-                .environmentObject(timerManager)
-                .environmentObject(focusSessionManager)
-                .environmentObject(contentPickerHelper)
-                .environmentObject(geminiLiveManager)
-                .environmentObject(settingsModel)
-                .environmentObject(activeAppMonitor)
-                .environmentObject(batteryEstimator)
-                .environmentObject(DragStateManager.shared)
-                .environmentObject(calendarService)
-                .environmentObject(intelligenceViewModel)
-        )
-        hosting.frame = NSRect(origin: .zero, size: rect.size)
-        hosting.autoresizingMask = [.width, .height]
+        let hosting = PassthroughHostingView(rootView: applyNotchEnvironment(to: container))
+        hosting.frame = NSRect(origin: .zero, size: stageSize)
         hosting.sizingOptions = []
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
-        window.contentView = hosting
-        window.orderFront(nil)
+        window.contentView = NotchStageContainerView(
+            frame: NSRect(origin: .zero, size: rect.size),
+            stageView: hosting,
+            stageSize: stageSize
+        )
+        window.contentView?.layoutSubtreeIfNeeded()
+        if !window.isNotchHidden, !window.isDisplayDetached { window.orderFrontRegardless() }
 
         notchWindows.append(window)
+    }
+
+    private func destroyNotchWindow(_ window: NSWindow) {
+        if let window = window as? DynamicFocusWindow {
+            window.onTeardown?()
+            window.onTeardown = nil
+            window.onDisplayConfigurationChange = nil
+            window.hostSizer.onFrameChange = nil
+        }
+        if focusedNotchWindow === window { focusedNotchWindow = nil }
+        lockScreenManager.removeWindow(window)
+        cgsSpace?.windows.remove(window)
+        window.orderOut(nil)
+        window.contentView = nil
+        window.close()
+    }
+
+    func reassertNotchSpaceMembership(_ window: NSWindow) {
+        guard notchWindows.contains(where: { $0 === window }) else { return }
+        if isScreenLocked, settingsModel.current.lockScreenShowNotch {
+            lockScreenManager.delegateWindow(window)
+            return
+        }
+        if cgsSpace == nil { cgsSpace = CGSSpace(level: Self.notchSpaceLevel) }
+        cgsSpace?.reassert(window)
+    }
+
+    private func notifyNotchDisplayConfigurationChanged() {
+        for case let window as DynamicFocusWindow in notchWindows {
+            window.onDisplayConfigurationChange?()
+        }
+    }
+
+    private func applyNotchEnvironment<V: View>(to view: V) -> some View {
+        view
+            .environmentObject(lockScreenState)
+            .environmentObject(systemHUDManager)
+            .environment(liveActivityManager)
+            .environmentObject(audioDeviceManager)
+            .environmentObject(bluetoothManager)
+            .environmentObject(notificationManager)
+            .environmentObject(desktopManager)
+            .environmentObject(focusModeManager)
+            .environmentObject(eyeBreakManager)
+            .environmentObject(timerManager)
+            .environmentObject(focusSessionManager)
+            .environmentObject(contentPickerHelper)
+            .environment(geminiLiveManager)
+            .environmentObject(activeAppMonitor)
+            .environmentObject(batteryEstimator)
+            .environmentObject(DragStateManager.shared)
+            .environmentObject(calendarService)
+            .environmentObject(intelligenceViewModel)
     }
 
     private func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
@@ -1482,10 +1847,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
             let shouldKeep = windowDisplayID != 0 && targetScreenIDs.contains(windowDisplayID)
             if !shouldKeep {
-                cgsSpace?.windows.remove(window)
-                window.orderOut(nil)
-                window.contentView = nil
-                window.close()
+                destroyNotchWindow(window)
             }
             return shouldKeep
         }
@@ -1501,8 +1863,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    func makeNotchWindowFocusable() {
-        guard let window = notchWindows.first as? DynamicFocusWindow else { return }
+    func makeNotchWindowFocusable(_ requester: NSWindow? = nil) {
+        guard let window = notchFocusTarget(requester) else { return }
+        if let previous = focusedNotchWindow, previous !== window {
+            if previous.isKeyWindow { previous.resignKey() }
+            previous.isFocusable = false
+        }
+        focusedNotchWindow = window
         if previouslyFrontmostApp == nil {
             let currentFrontmost = NSWorkspace.shared.frontmostApplication
             if currentFrontmost?.bundleIdentifier != Bundle.main.bundleIdentifier {
@@ -1515,10 +1882,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.makeKeyAndOrderFront(nil)
     }
 
-    func revertNotchWindowFocus() {
-        guard let window = notchWindows.first as? DynamicFocusWindow else { return }
-        if window.isKeyWindow { window.resignKey() }
-        window.isFocusable = false
+    func revertNotchWindowFocus(_ requester: NSWindow? = nil) {
+        let window = (requester as? DynamicFocusWindow) ?? focusedNotchWindow
+        if let window {
+            if window.isKeyWindow { window.resignKey() }
+            window.isFocusable = false
+            if focusedNotchWindow === window { focusedNotchWindow = nil }
+        }
+        if let focusedNotchWindow, focusedNotchWindow.isFocusable { return }
         if NSApp.activationPolicy() != .accessory {
             NSApp.setActivationPolicy(.accessory)
         }
@@ -1530,34 +1901,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         previouslyFrontmostApp = nil
     }
 
+    private func notchFocusTarget(_ requester: NSWindow?) -> DynamicFocusWindow? {
+        let windows = notchWindows.compactMap { $0 as? DynamicFocusWindow }
+        if let requester = requester as? DynamicFocusWindow, windows.contains(where: { $0 === requester }) {
+            return requester
+        }
+        let displayID = NotchDisplayTargeting.display(
+            requested: nil,
+            pointer: NotchDisplayTargeting.pointerDisplayID,
+            notchDisplays: windows.map(\.displayID)
+        )
+        return windows.first { $0.displayID == displayID } ?? windows.first
+    }
+
     func attachAuxiliaryNotchWindow(_ window: NSWindow) {
-        if cgsSpace == nil { cgsSpace = CGSSpace() }
+        if cgsSpace == nil { cgsSpace = CGSSpace(level: Self.notchSpaceLevel) }
         cgsSpace?.windows.insert(window)
     }
 
     func detachAuxiliaryNotchWindow(_ window: NSWindow) {
         cgsSpace?.windows.remove(window)
-    }
-
-    func updateNotchHostWindowHeight(requiredContentHeight: CGFloat) {
-        for window in notchWindows {
-            let targetScreen = window.screen ?? CursorPosition.targetNotchScreen()
-            guard let targetScreen else { continue }
-
-            let config = ResolvedNotchConfiguration(from: settingsModel.settings, screen: targetScreen)
-            let baselineHeight = max(
-                config.initialSize.height + config.topInset + config.topBuffer + 24,
-                targetScreen.frame.height * 0.42
-            )
-            let desiredHeight = max(baselineHeight, requiredContentHeight + config.topInset + config.topBuffer + 36)
-            let paddedHeight = min(ceil(desiredHeight), targetScreen.visibleFrame.height)
-            var frame = window.frame
-            let newY = targetScreen.frame.maxY - paddedHeight
-            guard abs(frame.height - paddedHeight) > 2 || abs(frame.origin.y - newY) > 2 else { continue }
-            frame.origin.y = newY
-            frame.size.height = paddedHeight
-            window.setFrame(frame, display: false, animate: false)
-        }
     }
 
     // MARK: - Settings Window
@@ -1633,11 +1996,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         window.isOpaque = false
         window.hasShadow = true
         window.isReleasedWhenClosed = false
-        window.sharingType = settingsModel.settings.hideFromScreenSharing ? .none : .readOnly
+        window.sharingType = settingsModel.current.hideFromScreenSharing ? .none : .readOnly
 
         let root = LyricsDetachedWindowView()
-            .environmentObject(musicManager)
-            .environmentObject(settingsModel)
 
         let hosting = FocusableHostingView(rootView: root)
         window.contentView = hosting
@@ -1720,50 +2081,141 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @objc func screenParametersChanged(notification: Notification) {
-        screenParametersDebounceTimer?.invalidate()
-        notchScreenRefreshRetryWorkItem?.cancel()
-        notchScreenRefreshGeneration += 1
-        let generation = notchScreenRefreshGeneration
+        resyncNotchWindowsToDisplays()
+        scheduleNotchDisplayRefresh()
+    }
 
-        screenParametersDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            self.refreshNotchScreens(generation: generation, attempt: 0)
+    private func resyncNotchWindowsToDisplays() {
+        guard isMainAppRunning else { return }
+        let screens = NSScreen.screens
+        for case let window as DynamicFocusWindow in notchWindows where window.displayID != 0 {
+            if let screen = screens.first(where: { $0.displayID == window.displayID }) {
+                if !NotchHostWindowSizer.isPlaced(window.frame, onScreen: screen.frame) {
+                    window.hostSizer.reapply(on: screen)
+                }
+                window.setDisplayDetached(false)
+            } else {
+                window.setDisplayDetached(true)
+            }
         }
     }
 
-    private func refreshNotchScreens(generation: Int, attempt: Int) {
-        guard isMainAppRunning, generation == notchScreenRefreshGeneration else { return }
+    private var areNotchDisplaysAsleep = false
+
+    private func notchDisplaysDidSleep() {
+        areNotchDisplaysAsleep = true
+        cancelNotchDisplayRefresh()
+    }
+
+    private func notchDisplaysDidWake() {
+        areNotchDisplaysAsleep = false
+        scheduleNotchDisplayRefresh()
+    }
+
+    private func cancelNotchDisplayRefresh() {
+        screenParametersDebounceTimer?.invalidate()
+        screenParametersDebounceTimer = nil
+        notchScreenRefreshRetryWorkItem?.cancel()
+        notchScreenRefreshRetryWorkItem = nil
+        notchScreenRefreshGeneration += 1
+    }
+
+    private func scheduleNotchDisplayRefresh() {
+        cancelNotchDisplayRefresh()
+        guard isMainAppRunning, !areNotchDisplaysAsleep else { return }
+        let generation = notchScreenRefreshGeneration
+        screenParametersDebounceTimer = Timer.scheduledTimer(
+            withTimeInterval: NotchDisplayRefreshPolicy.debounce,
+            repeats: false
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.screenParametersDebounceTimer = nil
+                self.readNotchDisplaysUntilStable(generation: generation, previous: nil, reads: 0)
+            }
+        }
+    }
+
+    private func scheduleNotchRefreshStep(after delay: TimeInterval, _ step: @escaping @MainActor () -> Void) {
+        notchScreenRefreshRetryWorkItem?.cancel()
+        let workItem = DispatchWorkItem { MainActor.assumeIsolated { step() } }
+        notchScreenRefreshRetryWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func isCurrentNotchRefresh(_ generation: Int) -> Bool {
+        isMainAppRunning && !areNotchDisplaysAsleep && generation == notchScreenRefreshGeneration
+    }
+
+    private func currentNotchDisplaySnapshot() -> NotchDisplayRefreshPolicy.Snapshot {
+        NotchDisplayRefreshPolicy.Snapshot(
+            displays: NSScreen.screens.map { .init(id: $0.displayID, frame: $0.frame) },
+            targets: targetNotchScreens().map(\.displayID)
+        )
+    }
+
+    private func readNotchDisplaysUntilStable(
+        generation: Int,
+        previous: NotchDisplayRefreshPolicy.Snapshot?,
+        reads: Int
+    ) {
+        guard isCurrentNotchRefresh(generation) else { return }
+        let current = currentNotchDisplaySnapshot()
+        switch NotchDisplayRefreshPolicy.step(previous: previous, current: current, reads: reads + 1) {
+        case .apply:
+            refreshNotchScreens(generation: generation, attempt: 0, isSettlePass: false)
+        case .readAgain:
+            scheduleNotchRefreshStep(after: NotchDisplayRefreshPolicy.stabilityInterval) { [weak self] in
+                self?.readNotchDisplaysUntilStable(generation: generation, previous: current, reads: reads + 1)
+            }
+        case .skip:
+            notchScreenRefreshRetryWorkItem = nil
+        }
+    }
+
+    private func refreshNotchScreens(generation: Int, attempt: Int, isSettlePass: Bool) {
+        guard isCurrentNotchRefresh(generation) else { return }
+        guard !NSScreen.screens.isEmpty else { return }
 
         createNotchWindow()
+        notifyNotchDisplayConfigurationChanged()
 
-        let hasResolvedTarget = !targetNotchScreens().isEmpty
-        guard !hasResolvedTarget, attempt < 12 else {
+        if targetNotchScreens().isEmpty, attempt < 12 {
+            scheduleNotchRefreshStep(after: 0.5) { [weak self] in
+                self?.refreshNotchScreens(generation: generation, attempt: attempt + 1, isSettlePass: isSettlePass)
+            }
+            return
+        }
+        guard !isSettlePass else {
             notchScreenRefreshRetryWorkItem = nil
             return
         }
-
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.refreshNotchScreens(generation: generation, attempt: attempt + 1)
+        scheduleNotchRefreshStep(after: NotchDisplayRefreshPolicy.settleDelay) { [weak self] in
+            self?.refreshNotchScreens(generation: generation, attempt: 0, isSettlePass: true)
         }
-        notchScreenRefreshRetryWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
     }
 
     // MARK: - Launch at Login
 
-    private func toggleLaunchAtLogin(isOn: Bool) {
-        let service = SMAppService.mainApp
-        do {
-            if isOn {
-                guard service.status != .enabled, service.status != .requiresApproval else { return }
-                try service.register()
-            } else {
-                guard service.status != .notRegistered, service.status != .notFound else { return }
-                try service.unregister()
-            }
-        } catch {
-            print("[AppDelegate] Failed to update launch at login status: \(error)")
+    private nonisolated static let launchAtLoginFirstCheck = OSAllocatedUnfairLock(initialState: true)
+
+    private nonisolated static func toggleLaunchAtLogin(isOn: Bool) {
+        let isLaunchCheck = launchAtLoginFirstCheck.withLock { first in
+            defer { first = false }
+            return first
         }
+        LaunchAtLoginReconciler.reconcile(wanted: isOn, isUserChange: !isLaunchCheck) { adopted in
+            adoptLaunchAtLogin(adopted)
+        }
+    }
+
+    @MainActor
+    private static func adoptLaunchAtLogin(_ isOn: Bool) {
+        let model = SettingsModel.shared
+        guard model.current.launchAtLogin != isOn else { return }
+        var settings = model.settings
+        settings.launchAtLogin = isOn
+        model.settings = settings
     }
 
     // MARK: - Window Sharing
@@ -1803,23 +2255,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         try? task.run()
     }
 
-    // MARK: - NearDrop Transfers
+    // MARK: - Nearby Share Transfers
 
     func obtainUserConsent(for transfer: TransferMetadata, from device: RemoteDeviceInfo, fileURLs: [URL]) {
         DispatchQueue.main.async {
-            self.liveActivityManager.startNearDropActivity(transfer: transfer, device: device, fileURLs: fileURLs)
+            self.liveActivityManager.startNearbyTransferActivity(transfer: transfer, device: device, fileURLs: fileURLs)
         }
     }
 
     func incomingTransfer(id: String, didUpdateProgress progress: Double) {
         DispatchQueue.main.async {
-            self.liveActivityManager.updateNearDropProgress(id: id, progress: progress)
+            self.liveActivityManager.updateNearbyTransferProgress(id: id, progress: progress)
         }
     }
 
     func incomingTransfer(id: String, didFinishWith error: Error?) {
         DispatchQueue.main.async {
-            self.liveActivityManager.finishNearDropTransfer(id: id, error: error)
+            self.liveActivityManager.finishNearbyTransfer(id: id, error: error)
         }
     }
 
@@ -1837,13 +2289,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let accepted = response.actionIdentifier == "ACCEPT"
             NearbyConnectionManager.shared.submitUserConsent(transferID: transferID, accept: accepted)
             if accepted {
-                liveActivityManager.updateNearDropState(to: .inProgress)
+                liveActivityManager.updateNearbyTransferState(to: .inProgress)
             } else {
-                liveActivityManager.clearNearDropActivity()
+                liveActivityManager.clearNearbyTransferActivity()
             }
         }
 
         let info = response.notification.request.content.userInfo
+        if info["continuitySMS"] as? Bool == true {
+            continuityManager.messagesBridge.handleNotificationResponse(response)
+            completionHandler()
+            return
+        }
+        if info["continuityCall"] as? Bool == true {
+            continuityManager.callsBridge.handleNotificationResponse(response)
+            completionHandler()
+            return
+        }
         if info["continuityHandoff"] as? Bool == true {
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier
                 || response.actionIdentifier == ContinuityHandoffBridge.openActionID {
@@ -1885,4 +2347,9 @@ class KeyablePanel: NSPanel {
 class KeyableNonMainPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+private struct NotchScreenSelection: Equatable {
+    let target: NotchDisplayTarget
+    let perDisplay: [String: Bool]
 }

@@ -14,7 +14,11 @@ final class MusicWidgetVisibilityTests: XCTestCase {
             hideWhenNotPlaying: true,
             isPlaying: false,
             hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false
+            isSpotifyPausedWithNoOtherPlayback: false,
+            hideSpotifyWhenAppClosed: false,
+            isLoggedIntoSpotify: false,
+            isSpotifyOnlySource: false,
+            isSpotifyAppRunning: true
         ))
 
         XCTAssertTrue(MusicWidgetVisibilityPolicy.shouldShow(
@@ -22,7 +26,11 @@ final class MusicWidgetVisibilityTests: XCTestCase {
             hideWhenNotPlaying: true,
             isPlaying: true,
             hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false
+            isSpotifyPausedWithNoOtherPlayback: false,
+            hideSpotifyWhenAppClosed: false,
+            isLoggedIntoSpotify: false,
+            isSpotifyOnlySource: false,
+            isSpotifyAppRunning: true
         ))
     }
 
@@ -32,7 +40,11 @@ final class MusicWidgetVisibilityTests: XCTestCase {
             hideWhenNotPlaying: false,
             isPlaying: false,
             hidePausedSpotifyWhenIdle: true,
-            isSpotifyPausedWithNoOtherPlayback: true
+            isSpotifyPausedWithNoOtherPlayback: true,
+            hideSpotifyWhenAppClosed: false,
+            isLoggedIntoSpotify: false,
+            isSpotifyOnlySource: false,
+            isSpotifyAppRunning: true
         ))
     }
 
@@ -42,7 +54,11 @@ final class MusicWidgetVisibilityTests: XCTestCase {
             hideWhenNotPlaying: false,
             isPlaying: true,
             hidePausedSpotifyWhenIdle: false,
-            isSpotifyPausedWithNoOtherPlayback: false
+            isSpotifyPausedWithNoOtherPlayback: false,
+            hideSpotifyWhenAppClosed: false,
+            isLoggedIntoSpotify: false,
+            isSpotifyOnlySource: false,
+            isSpotifyAppRunning: true
         ))
     }
 
@@ -100,6 +116,39 @@ final class MusicWidgetVisibilityTests: XCTestCase {
 
     func testPhoneMediaLiveActivityIsEnabledByDefault() {
         XCTAssertTrue(Settings().continuityPhoneMediaLiveActivityEnabled)
+    }
+
+    func testPhoneMediaLyricsInLiveActivityAreDisabledByDefault() {
+        XCTAssertFalse(Settings().continuityPhoneMediaLyricsInLiveActivity)
+    }
+
+    func testMusicLiveActivityChromeDefaultsFavorContinuityTextWithoutPhoneWaveform() {
+        let settings = Settings()
+        XCTAssertEqual(settings.musicLiveActivityRightTextMode, .continuityOnly)
+        XCTAssertEqual(settings.musicLiveActivityWaveformMode, .continuityOff)
+        XCTAssertEqual(settings.musicLiveActivityWaveformStyle, .classic)
+
+        XCTAssertFalse(MusicLiveActivityChromePolicy.showsRightText(mode: settings.musicLiveActivityRightTextMode, isPhoneMedia: false))
+        XCTAssertTrue(MusicLiveActivityChromePolicy.showsRightText(mode: settings.musicLiveActivityRightTextMode, isPhoneMedia: true))
+        XCTAssertTrue(MusicLiveActivityChromePolicy.showsWaveform(mode: settings.musicLiveActivityWaveformMode, rightTextMode: settings.musicLiveActivityRightTextMode, isPhoneMedia: false))
+        XCTAssertFalse(MusicLiveActivityChromePolicy.showsWaveform(mode: settings.musicLiveActivityWaveformMode, rightTextMode: settings.musicLiveActivityRightTextMode, isPhoneMedia: true))
+    }
+
+    func testWaveformOffIsClampedUnlessRightTextIsAlways() {
+        XCTAssertEqual(
+            MusicLiveActivityChromePolicy.resolvedWaveformMode(waveformMode: .off, rightTextMode: .continuityOnly),
+            .continuityOff
+        )
+        XCTAssertEqual(
+            MusicLiveActivityChromePolicy.resolvedWaveformMode(waveformMode: .off, rightTextMode: .always),
+            .off
+        )
+        XCTAssertFalse(
+            MusicLiveActivityChromePolicy.showsWaveform(mode: .off, rightTextMode: .always, isPhoneMedia: false)
+        )
+        XCTAssertTrue(
+            MusicLiveActivityChromePolicy.showsRightText(mode: .always, isPhoneMedia: false)
+        )
     }
 
     func testAndroidMediaStateAcceptsMissingOptionalCapabilities() throws {

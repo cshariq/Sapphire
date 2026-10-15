@@ -85,7 +85,7 @@ public final class SubscriptionManager: ObservableObject {
     public func isFeatureEnabled(_ feature: AppFeature) -> Bool { SubscriptionAccess.hasAccess(to: feature) }
     public func applyLicensedTier(_ tier: SubscriptionTier) {}
     public func intelligenceDailyRunLimit() -> Int { 8 }
-    public func bootstrap() async {}
+    public func bootstrap(onCachedAccessReady: (@MainActor () -> Void)? = nil) async { await onCachedAccessReady?() }
     public func validateSubscriptionStatus() async {}
 }
 

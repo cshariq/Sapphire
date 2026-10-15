@@ -81,10 +81,39 @@ final class DockLayoutsManager {
     func importLayoutFiles(at urls: [URL]) {}
 }
 
+enum MediaOptimizeKind: String {
+    case image, pdf, video, audio
+    var actionTitle: String { "" }
+    var systemImage: String { "" }
+}
+
+struct MediaOptimizeResult: Equatable {
+    let sourceURL: URL
+    let outputURL: URL
+    let kind: MediaOptimizeKind
+    let originalBytes: Int64
+    let optimizedBytes: Int64
+    var savedBytes: Int64 { 0 }
+    var savedPercent: Int { 0 }
+}
+
+enum MediaOptimizeError: LocalizedError, Equatable {
+    case premiumRequired
+    var errorDescription: String? { premiumDefaultMessage(for: .mediaTools) }
+}
+
+enum MediaOptimizer {
+    static func kind(for url: URL) -> MediaOptimizeKind? { nil }
+    static func canOCR(_ url: URL) -> Bool { false }
+}
+
+@MainActor
 final class MediaOptimizerManager {
     static let shared = MediaOptimizerManager()
     private init() {}
     func start() {}
+    func optimizeFile(_ url: URL) async -> Result<MediaOptimizeResult, MediaOptimizeError> { .failure(.premiumRequired) }
+    func recognizeText(in url: URL) async -> String? { nil }
 }
 
 final class EmojiShortcutManager {
@@ -113,6 +142,7 @@ final class CleanURLManager {
     private init() {}
     func start() {}
     func stopPolling() {}
+    func cleanClipboardLinkNow() {}
 }
 
 final class FinderCutPasteManager {

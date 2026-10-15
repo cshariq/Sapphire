@@ -33,18 +33,18 @@ class BatteryEstimator: ObservableObject {
 
     private func update(with state: BatteryState?) {
         guard let state = state else {
-            self.estimatedTimeRemaining = nil
+            setEstimate(nil)
             return
         }
 
-        self.batteryLevel = state.level
-        self.isCharging = state.isCharging
+        if batteryLevel != state.level { batteryLevel = state.level }
+        if isCharging != state.isCharging { isCharging = state.isCharging }
 
         guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef],
               let powerSource = sources.first,
               let info = IOPSGetPowerSourceDescription(snapshot, powerSource)?.takeUnretainedValue() as? [String: AnyObject] else {
-            self.estimatedTimeRemaining = nil
+            setEstimate(nil)
             return
         }
 
@@ -53,14 +53,18 @@ class BatteryEstimator: ObservableObject {
         let isCharged = info[kIOPSIsChargedKey] as? Bool ?? false
 
         if isCharged {
-            self.estimatedTimeRemaining = "Charged"
+            setEstimate("Charged")
         } else if state.isCharging, timeToFull > 0 {
-            self.estimatedTimeRemaining = "\(formatTime(minutes: timeToFull))"
+            setEstimate("\(formatTime(minutes: timeToFull))")
         } else if !state.isCharging, timeToEmpty > 0 {
-            self.estimatedTimeRemaining = "\(formatTime(minutes: timeToEmpty))"
+            setEstimate("\(formatTime(minutes: timeToEmpty))")
         } else {
-            self.estimatedTimeRemaining = ""
+            setEstimate("")
         }
+    }
+
+    private func setEstimate(_ value: String?) {
+        if estimatedTimeRemaining != value { estimatedTimeRemaining = value }
     }
 
     private func formatTime(minutes: Int) -> String {

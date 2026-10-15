@@ -1,6 +1,6 @@
 //
 //  HTKMultitouchActuator.m
-//  HapticKey
+//  Sapphire
 //
 //  Created by Yoshimasa Niwa on 12/3/17.
 //  Copyright © 2017 Yoshimasa Niwa. All rights reserved.

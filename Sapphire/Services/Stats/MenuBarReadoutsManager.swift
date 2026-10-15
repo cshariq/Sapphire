@@ -28,14 +28,23 @@ private struct MenuBarReadoutsConfiguration: Equatable {
 final class MenuBarReadoutsManager {
     static let shared = MenuBarReadoutsManager()
 
+    private static let networkInterval: TimeInterval = 1
+    private static let networkMaximumGap: TimeInterval = 3
+
     private var settingsCancellables = Set<AnyCancellable>()
     private var isStarted = false
+    private var configuration: MenuBarReadoutsConfiguration?
 
     private var statusItem: NSStatusItem?
     private var statsCancellable: AnyCancellable?
     private var networkTimer: Timer?
+    private var wakeObserver: NSObjectProtocol?
 
-    private var lastNetworkSample: (received: UInt64, sent: UInt64, date: Date)?
+    private var lastNetworkSample: NetworkRateMath.Sample?
+    private var lastInterfaceCounters: [Int: (received: UInt64, sent: UInt64)]?
+    private var accumulatedReceived: UInt64 = 0
+    private var accumulatedSent: UInt64 = 0
+    private var networkText: String?
 
     private init() {}
 
@@ -53,13 +62,18 @@ final class MenuBarReadoutsManager {
     }
 
     private func apply(_ configuration: MenuBarReadoutsConfiguration) {
-        guard configuration.isEnabled else {
+        guard configuration != self.configuration else { return }
+        self.configuration = configuration
+        guard configuration.isEnabled, configuration.showCPU || configuration.showMemory || configuration.showNetwork else {
             removeStatusItem()
+            self.configuration = configuration
             return
         }
 
         if statusItem == nil {
-            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.isVisible = false
+            statusItem = item
         }
 
         var requiredStats = Set<StatType>()
@@ -67,114 +81,190 @@ final class MenuBarReadoutsManager {
         if configuration.showMemory { requiredStats.insert(.ram) }
         StatsManager.shared.setPolling(for: "MenuBarReadouts", requiredStats: requiredStats)
 
-        statsCancellable = nil
-        if !requiredStats.isEmpty {
+        if requiredStats.isEmpty {
+            statsCancellable = nil
+        } else if statsCancellable == nil {
             statsCancellable = StatsManager.shared.$currentStats
                 .receive(on: RunLoop.main)
                 .sink { [weak self] _ in self?.updateReadout() }
         }
 
-        networkTimer?.invalidate()
-        networkTimer = nil
-        lastNetworkSample = nil
-        if configuration.showNetwork, requiredStats.isEmpty {
-            networkTimer = Timer.scheduledCoalescing(withTimeInterval: 2, repeats: true) { [weak self] _ in
-                self?.updateReadout()
-            }
+        if configuration.showNetwork {
+            startNetworkSampling()
+        } else {
+            stopNetworkSampling()
         }
         updateReadout()
     }
 
     func removeStatusItem() {
+        configuration = nil
         StatsManager.shared.setPolling(for: "MenuBarReadouts", requiredStats: [])
         statsCancellable = nil
-        networkTimer?.invalidate()
-        networkTimer = nil
-        lastNetworkSample = nil
+        stopNetworkSampling()
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
         statusItem = nil
     }
 
+    // MARK: - Network sampling
+
+    private func startNetworkSampling() {
+        guard networkTimer == nil else { return }
+        lastNetworkSample = nil
+        networkText = nil
+        networkTimer = Timer.scheduledCoalescing(withTimeInterval: Self.networkInterval, repeats: true, toleranceFraction: 0.2) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sampleNetwork() }
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.lastNetworkSample = nil }
+        }
+        sampleNetwork()
+    }
+
+    private func stopNetworkSampling() {
+        networkTimer?.invalidate()
+        networkTimer = nil
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
+        wakeObserver = nil
+        lastNetworkSample = nil
+        lastInterfaceCounters = nil
+        networkText = nil
+    }
+
+    private func sampleNetwork() {
+        guard let counters = Self.interfaceByteCounters() else { return }
+        if let previous = lastInterfaceCounters {
+            for (index, now) in counters {
+                guard let before = previous[index],
+                      now.received >= before.received,
+                      now.sent >= before.sent else { continue }
+                accumulatedReceived &+= now.received - before.received
+                accumulatedSent &+= now.sent - before.sent
+            }
+        }
+        lastInterfaceCounters = counters
+        let sample = NetworkRateMath.Sample(
+            received: accumulatedReceived,
+            sent: accumulatedSent,
+            uptime: ProcessInfo.processInfo.systemUptime
+        )
+        let rates = NetworkRateMath.rates(from: lastNetworkSample, to: sample, maximumGap: Self.networkMaximumGap)
+        lastNetworkSample = sample
+        guard let rates else { return }
+        let text = "↓\(Self.formatRate(rates.down)) ↑\(Self.formatRate(rates.up))"
+        guard text != networkText else { return }
+        networkText = text
+        updateReadout()
+    }
+
+    // MARK: - Rendering
+
     private func updateReadout() {
-        let settings = SettingsModel.shared.settings
-        guard settings.monitoringMenuBarReadoutsEnabled else { return }
+        guard let configuration, configuration.isEnabled, let statusItem else { return }
 
         var parts: [String] = []
         let stats = StatsManager.shared.currentStats
-        if settings.monitoringReadoutShowCPU, let cpu = stats?.cpu?.totalUsage {
-            parts.append("CPU \(Int((cpu * 100).rounded()))%")
+        if configuration.showCPU, let cpu = stats?.cpu?.totalUsage {
+            parts.append("CPU \(Self.leftPadded("\(Int((cpu * 100).rounded()))", to: 3))%")
         }
-        if settings.monitoringReadoutShowMemory, let memory = stats?.ram {
+        if configuration.showMemory, let memory = stats?.ram, memory.total > 0 {
             let gigabyte = 1024.0 * 1024.0 * 1024.0
-            parts.append(String(
-                format: "RAM %.1f / %.0f GB",
-                memory.used / gigabyte,
-                memory.total / gigabyte
-            ))
+            let used = Self.leftPadded(String(format: "%.1f", memory.used / gigabyte), to: 4)
+            parts.append("RAM \(used) / \(String(format: "%.0f", memory.total / gigabyte)) GB")
         }
-        if settings.monitoringReadoutShowNetwork {
-            let rates = networkRates()
-            if rates.down > 0 || rates.up > 0 {
-                parts.append("↓\(Self.formatRate(rates.down)) ↑\(Self.formatRate(rates.up))")
-            }
+        if configuration.showNetwork, let networkText {
+            parts.append(networkText)
         }
 
-        guard let button = statusItem?.button else { return }
-        if parts.isEmpty {
-            button.title = ""
-        } else {
-            button.title = parts.joined(separator: "  ")
+        let title = parts.joined(separator: "  ")
+        let shouldShow = !title.isEmpty
+        if statusItem.isVisible != shouldShow { statusItem.isVisible = shouldShow }
+        guard shouldShow, let button = statusItem.button else { return }
+        if button.attributedTitle.string != title {
+            button.attributedTitle = NSAttributedString(string: title, attributes: [.font: Self.readoutFont])
         }
-        button.toolTip = "Sapphire readouts — CPU, RAM, network rates"
+        let toolTip = "Sapphire readouts — CPU, RAM, network rates"
+        if button.toolTip != toolTip { button.toolTip = toolTip }
+    }
+
+    private static let readoutFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+
+    private static let figureSpace = "\u{2007}"
+
+    private static func leftPadded(_ text: String, to width: Int) -> String {
+        let missing = width - text.count
+        guard missing > 0 else { return text }
+        return String(repeating: figureSpace, count: missing) + text
     }
 
     private static func formatRate(_ bytesPerSecond: Double) -> String {
+        let value: String
+        let unit: String
         if bytesPerSecond >= 1024 * 1024 {
-            return String(format: "%.1f MB/s", bytesPerSecond / (1024 * 1024))
+            value = String(format: "%.1f", bytesPerSecond / (1024 * 1024))
+            unit = "MB/s"
+        } else if bytesPerSecond >= 1024 {
+            value = String(format: "%.0f", bytesPerSecond / 1024)
+            unit = "KB/s"
+        } else {
+            value = String(format: "%.0f", bytesPerSecond)
+            unit = "B/s"
         }
-        if bytesPerSecond >= 1024 {
-            return String(format: "%.0f KB/s", bytesPerSecond / 1024)
-        }
-        return String(format: "%.0f B/s", bytesPerSecond)
+        return "\(leftPadded(value, to: 5)) \(leftPadded(unit, to: 4))"
     }
 
-    // MARK: - Samplers
+    // MARK: - Interface counters
 
-    private func networkRates() -> (down: Double, up: Double) {
-        var interfaceList: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&interfaceList) == 0, let interfaceList else {
-            return (0, 0)
-        }
-        defer { freeifaddrs(interfaceList) }
+    private static let excludedInterfacePrefixes = [
+        "lo", "gif", "stf", "awdl", "llw", "nan", "utun", "bridge",
+        "ap", "anpi", "p2p", "XHC", "vmenet", "tap", "tun",
+    ]
 
-        var received: UInt64 = 0
-        var sent: UInt64 = 0
-        var pointer: UnsafeMutablePointer<ifaddrs>? = interfaceList
-        while let ifa = pointer {
-            defer { pointer = ifa.pointee.ifa_next }
-            let flags = Int32(ifa.pointee.ifa_flags)
-            guard (flags & IFF_LOOPBACK) == 0,
-                  (flags & IFF_UP) != 0,
-                  ifa.pointee.ifa_addr?.pointee.sa_family == UInt8(AF_LINK) else {
-                continue
+    private static func includesInterface(index: UInt16) -> Bool {
+        var nameBuffer = [CChar](repeating: 0, count: Int(IFNAMSIZ))
+        guard if_indextoname(UInt32(index), &nameBuffer) != nil else { return false }
+        let name = String(cString: nameBuffer)
+        guard !name.isEmpty else { return false }
+        return !excludedInterfacePrefixes.contains { name.hasPrefix($0) }
+    }
+
+    private static func interfaceByteCounters() -> [Int: (received: UInt64, sent: UInt64)]? {
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
+        var length = 0
+        guard sysctl(&mib, UInt32(mib.count), nil, &length, nil, 0) == 0, length > 0 else { return nil }
+        length += 512
+        var buffer = [UInt8](repeating: 0, count: length)
+        guard sysctl(&mib, UInt32(mib.count), &buffer, &length, nil, 0) == 0 else { return nil }
+
+        var counters: [Int: (received: UInt64, sent: UInt64)] = [:]
+        buffer.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            var offset = 0
+            let headerSize = MemoryLayout<if_msghdr>.size
+            while offset + headerSize <= length {
+                let header = base.loadUnaligned(fromByteOffset: offset, as: if_msghdr.self)
+                let messageLength = Int(header.ifm_msglen)
+                guard messageLength > 0, offset + messageLength <= length else { break }
+                if Int32(header.ifm_type) == RTM_IFINFO2,
+                   messageLength >= MemoryLayout<if_msghdr2>.size {
+                    let message = base.loadUnaligned(fromByteOffset: offset, as: if_msghdr2.self)
+                    let flags = Int32(message.ifm_flags)
+                    if (flags & IFF_LOOPBACK) == 0, (flags & IFF_UP) != 0,
+                       includesInterface(index: message.ifm_index) {
+                        counters[Int(message.ifm_index)] = (message.ifm_data.ifi_ibytes, message.ifm_data.ifi_obytes)
+                    }
+                }
+                offset += messageLength
             }
-            if let data = ifa.pointee.ifa_data?.assumingMemoryBound(to: if_data.self).pointee {
-                received += UInt64(data.ifi_ibytes)
-                sent += UInt64(data.ifi_obytes)
-            }
         }
-
-        let now = Date()
-        if let previous = lastNetworkSample {
-            let elapsed = now.timeIntervalSince(previous.date)
-            let down = elapsed > 0 ? Double(received - min(received, previous.received)) / elapsed : 0
-            let up = elapsed > 0 ? Double(sent - min(sent, previous.sent)) / elapsed : 0
-            lastNetworkSample = (received, sent, now)
-            return (max(0, down), max(0, up))
-        }
-        lastNetworkSample = (received, sent, now)
-        return (0, 0)
+        return counters
     }
 }

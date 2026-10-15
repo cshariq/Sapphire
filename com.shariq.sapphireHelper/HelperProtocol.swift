@@ -7,12 +7,15 @@
 
 import Foundation
 
-let SapphireHelperProtocolVersion: Int = 11
+let SapphireHelperProtocolVersion: Int = 13
+
+let SapphireHelperFanLeaseProtocolVersion: Int = 13
 
 public enum ChargeControlMode: Int {
     case unsupported = 0
     case legacy = 1
     case firmware = 2
+    case adapter = 3
 }
 
 @objc(FanInfo)
@@ -52,6 +55,8 @@ public class FanInfo: NSObject, NSSecureCoding, Identifiable {
     func setFanMode(fanIndex: Int, mode: UInt8, reply: @escaping (Error?) -> Void)
     func setFanTargetSpeed(fanIndex: Int, speed: Int, reply: @escaping (Error?) -> Void)
     func setFanToConstantRPM(fanIndex: Int, speed: Int, reply: @escaping (Error?) -> Void)
+    func renewFanLease(reply: @escaping (Bool) -> Void)
+    func releaseFanLease(reply: @escaping (Error?) -> Void)
     func getBatteryTemperature(reply: @escaping (Double) -> Void)
     func getAllSMCKeys(reply: @escaping ([String]) -> Void)
     func getSensorValues(keys: [String], reply: @escaping (NSDictionary) -> Void)

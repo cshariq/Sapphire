@@ -25,6 +25,7 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
         let rule: DevToolRule?
         let isCommandCandidate: Bool
         let isTerminalHost: Bool
+        let isShell: Bool
     }
 
     private struct TraitsKey: Hashable {
@@ -35,7 +36,7 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
     private var traitsCache: [TraitsKey: Traits] = [:]
 
     struct RawTask {
-        let id: String
+        var id: String
         let pid: pid_t
         let tool: DevTool
         let kind: DevTaskKind
@@ -44,14 +45,22 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
         let cpuPercent: Double
         let processStart: Date
         let usesActivitySignal: Bool
-        var groupedBySession: Bool = false
+        var workingDirectory: String? = nil
     }
 
-    func collect(_ configuration: Configuration) -> [RawTask] {
+    struct ScanOutcome {
+        let tasks: [RawTask]
+        let sawDevProcess: Bool
+    }
+
+    private var lastScanSawDevProcess = false
+
+    func collect(_ configuration: Configuration) -> ScanOutcome {
         var processes = scanner.scan()
-        return classify(&processes, configuration: configuration) { [scanner] pids, table in
+        let tasks = classify(&processes, configuration: configuration) { [scanner] pids, table in
             scanner.sampleCPU(for: pids, in: &table)
         }
+        return ScanOutcome(tasks: tasks, sawDevProcess: lastScanSawDevProcess)
     }
 
     func classify(
@@ -85,10 +94,12 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
             }
 
             if detectCommands, traits.isCommandCandidate,
-               terminalHost(of: process, in: processes) != nil {
+               process.isForegroundTerminalJob != false,
+               terminalHost(of: process, in: processes, requiringShell: true) != nil {
                 looseCommands.append(process.pid)
             }
         }
+        lastScanSawDevProcess = !matched.isEmpty || !looseCommands.isEmpty
 
         if traitsCache.count > processes.count {
             traitsCache = traitsCache.filter { processes[$0.key.pid]?.startedAt == $0.key.startedAt }
@@ -130,7 +141,6 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
             let cpu = subtreePids.reduce(0.0) { $0 + (processes[$1]?.cpuPercent ?? 0) }
 
             var workingDirectory: String?
-            var busyBySession = false
 
             switch rule.signal {
             case .presence:
@@ -139,8 +149,9 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
             case .activity(let threshold):
                 workingDirectory = DevProcessScanner.workingDirectory(for: pid)
                 let busyByCPU = cpu >= threshold * sensitivity
-                busyBySession = DevAgentSessionActivity.isActive(
+                let busyBySession = DevAgentSessionActivity.isActive(
                     toolID: rule.tool.id,
+                    pid: pid,
                     workingDirectory: workingDirectory
                 ) == true
                 guard busyByCPU || busyBySession else { continue }
@@ -157,7 +168,7 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
                     cpuPercent: cpu,
                     processStart: process.startedAt,
                     usesActivitySignal: rule.signal.isActivity,
-                    groupedBySession: busyBySession
+                    workingDirectory: workingDirectory
                 )
             )
         }
@@ -210,7 +221,7 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
                     cpuPercent: task.cpuPercent,
                     processStart: task.processStart,
                     usesActivitySignal: task.usesActivitySignal,
-                    groupedBySession: task.groupedBySession
+                    workingDirectory: task.workingDirectory
                 )
                 continue
             }
@@ -233,7 +244,7 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
                 cpuPercent: max(task.cpuPercent, existing.cpuPercent),
                 processStart: mergedStart,
                 usesActivitySignal: mergedUsesActivitySignal,
-                groupedBySession: existing.groupedBySession || task.groupedBySession
+                workingDirectory: existing.workingDirectory ?? task.workingDirectory
             )
         }
 
@@ -243,8 +254,8 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
     private func groupKey(for task: RawTask) -> String? {
         switch task.kind {
         case .ai:
-            guard task.groupedBySession else { return nil }
-            return "ai|\(task.tool.id)|\(task.detail)"
+            guard let directory = task.workingDirectory else { return nil }
+            return "ai|\(task.tool.id)|\(directory)"
         case .build:
             return "build|\(task.tool.id)"
         case .command:
@@ -297,7 +308,8 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
             argumentCount: process.arguments.count,
             rule: DevToolCatalog.rule(for: subject),
             isCommandCandidate: Self.isCommandCandidate(process, subject: subject),
-            isTerminalHost: DevToolCatalog.isTerminalHost(subject)
+            isTerminalHost: DevToolCatalog.isTerminalHost(subject),
+            isShell: DevToolCatalog.isShell(subject)
         )
         traitsCache[key] = traits
         return traits
@@ -306,19 +318,28 @@ nonisolated final class DevActivityScanEngine: @unchecked Sendable {
     private static func isCommandCandidate(_ process: DevProcess, subject: DevMatchSubject) -> Bool {
         guard !DevToolCatalog.isShell(subject) else { return false }
         guard !process.executablePath.isEmpty else { return false }
+        guard !subject.path.containsBytes(".app/contents/") else { return false }
+        guard !DevToolCatalog.isInteractiveClient(process, subject: subject) else { return false }
 
         for fragment in DevToolCatalog.neverEndingFragments where subject.command.containsBytes(fragment) {
             return false
         }
 
-        return !subject.path.containsBytes(".app/contents/")
+        return true
     }
 
-    private func terminalHost(of process: DevProcess, in processes: [pid_t: DevProcess]) -> DevProcess? {
+    private func terminalHost(
+        of process: DevProcess,
+        in processes: [pid_t: DevProcess],
+        requiringShell: Bool = false
+    ) -> DevProcess? {
         var current = processes[process.ppid]
         var hops = 0
+        var sawShell = false
         while let candidate = current, hops < 32 {
-            if traits(for: candidate).isTerminalHost { return candidate }
+            let traits = traits(for: candidate)
+            if traits.isTerminalHost { return !requiringShell || sawShell ? candidate : nil }
+            if traits.isShell { sawShell = true }
             current = processes[candidate.ppid]
             hops += 1
         }

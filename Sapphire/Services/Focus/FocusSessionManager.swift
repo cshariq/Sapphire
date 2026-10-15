@@ -170,13 +170,13 @@ final class FocusSessionManager: ObservableObject {
         blocker.hasPendingUnblockRequest(bundleID: bundleID)
     }
 
-    var focusIntensity: FocusIntensity { settingsModel.settings.focusIntensity }
+    var focusIntensity: FocusIntensity { settingsModel.current.focusIntensity }
 
     func requestProductiveWebsiteAccess(domain: String) -> Bool {
         blocker.requestProductiveWebsiteAccess(domain: domain)
     }
 
-    var canEndSessionEarly: Bool { settingsModel.settings.focusIntensity.canEndSessionEarly }
+    var canEndSessionEarly: Bool { settingsModel.current.focusIntensity.canEndSessionEarly }
 
     var progress: Double {
         progress(at: Date())
@@ -296,14 +296,14 @@ final class FocusSessionManager: ObservableObject {
     // MARK: - Control
 
     func startFocusSession() {
-        plannedFocusDuration = settingsModel.settings.focusSessionDuration
-        plannedBreakDuration = settingsModel.settings.focusBreakDuration
+        plannedFocusDuration = settingsModel.current.focusSessionDuration
+        plannedBreakDuration = settingsModel.current.focusBreakDuration
         beginSession()
     }
 
     func startFocusSession(duration: TimeInterval) {
         plannedFocusDuration = max(1, duration)
-        plannedBreakDuration = settingsModel.settings.focusBreakDuration
+        plannedBreakDuration = settingsModel.current.focusBreakDuration
         beginSession()
     }
 
@@ -401,7 +401,7 @@ final class FocusSessionManager: ObservableObject {
             sessionCompletedBlocks += 1
             recordCompletedSessionIfNeeded()
             blockCount += 1
-            if settingsModel.settings.focusBreakEnabled && plannedBreakDuration > 0 {
+            if settingsModel.current.focusBreakEnabled && plannedBreakDuration > 0 {
                 phase = .onBreak
                 isFocusBlock = false
                 currentBlockIndex = blockCount
@@ -471,7 +471,7 @@ final class FocusSessionManager: ObservableObject {
     }
 
     private func postCompletionNotification(title: String, body: String) {
-        guard settingsModel.settings.focusNotificationsEnabled else { return }
+        guard settingsModel.current.focusNotificationsEnabled else { return }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
@@ -863,13 +863,13 @@ final class FocusSessionManager: ObservableObject {
     // MARK: - Shortcuts automation (focusedOS-style start/stop hooks)
 
     private func runStartAutomationShortcut() {
-        let name = settingsModel.settings.focusStartShortcutName
+        let name = settingsModel.current.focusStartShortcutName
         guard !name.isEmpty else { return }
         runShortcut(named: name)
     }
 
     private func runEndAutomationShortcut() {
-        let name = settingsModel.settings.focusEndShortcutName
+        let name = settingsModel.current.focusEndShortcutName
         guard !name.isEmpty else { return }
         runShortcut(named: name)
     }

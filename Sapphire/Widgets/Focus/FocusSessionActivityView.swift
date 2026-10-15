@@ -5,6 +5,7 @@
 //  Created by Shariq Charolia on 2026-08-25
 //
 
+import AppKit
 import SwiftUI
 
 @MainActor
@@ -74,43 +75,39 @@ private struct FocusSessionActivitySideView: View {
 
 @MainActor
 private struct FocusSessionActivityClockView: View {
-    let focusManager: FocusSessionManager
+    @ObservedObject var focusManager: FocusSessionManager
     let showsTimeInsteadOfRing: Bool
     let ringColors: [Color]
     let mode: FocusStatus
     let displayMode: FocusDisplayMode
 
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            content(at: context.date)
-        }
-    }
+    private static let clockFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
 
     @ViewBuilder
-    private func content(at date: Date) -> some View {
-        let remaining = focusManager.remaining(at: date)
+    var body: some View {
         if showsTimeInsteadOfRing {
-            VStack(alignment: .trailing, spacing: 0) {
-                Text(FocusSessionManager.format(remaining))
-                    .font(.system(size: 13, design: .monospaced).weight(.semibold))
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(.default, value: remaining)
-                Text(subLabel)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(subLabelColor)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                VStack(alignment: .trailing, spacing: 0) {
+                    LayerNumericText(
+                        text: FocusSessionManager.format(focusManager.remaining(at: context.date)),
+                        font: Self.clockFont,
+                        color: TimerActivityView.primaryTextColor
+                    )
+                    Text(subLabel)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(subLabelColor)
+                }
+                .padding(.horizontal, 5)
             }
-            .padding(.horizontal, 5)
         } else {
-            let progress = max(0.001, focusManager.progress(at: date))
-            ProgressRingView(
-                progress: progress,
+            LayerGradientProgressRing(
+                motion: .focusBlock(focusManager, minimum: 0.001),
                 lineWidth: 2.5,
                 trackLineWidth: 5,
-                track: AnyShapeStyle(Color.white.opacity(0.22)),
-                active: AngularGradient(colors: ringColors, center: .center),
-                clampsProgress: false
+                trackColor: Color.white.opacity(0.22),
+                colors: ringColors,
+                catchUpDuration: 0.5
             )
-            .animation(.linear(duration: 0.5), value: progress)
             .frame(width: 18, height: 18)
         }
     }

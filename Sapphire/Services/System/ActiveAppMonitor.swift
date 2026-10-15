@@ -23,7 +23,9 @@ final class WindowDragState: ObservableObject {
     @Published private(set) var isDragging = false
     @Published private(set) var isSnapZoneDismissedForCurrentDrag = false
     @Published private(set) var isSnapZoneBypassModifierPressed = false
+    @Published private(set) var cursorDisplayID: CGDirectDisplayID?
     private var modifierFlagsMonitorToken: UUID?
+    private var dragPollingTimer: Timer?
     private init() {}
 
     func beginDrag(
@@ -32,7 +34,9 @@ final class WindowDragState: ObservableObject {
         isSnapZoneDismissedForCurrentDrag = false
         isDragging = true
         isSnapZoneBypassModifierPressed = bypassModifierIsPressed
+        updateCursorDisplay()
         startModifierFlagsMonitoring()
+        startDragPolling()
     }
 
     func dismissSnapZonesForCurrentDrag() {
@@ -47,9 +51,39 @@ final class WindowDragState: ObservableObject {
 
     func endDrag() {
         stopModifierFlagsMonitoring()
+        dragPollingTimer?.invalidate()
+        dragPollingTimer = nil
         isDragging = false
         isSnapZoneDismissedForCurrentDrag = false
         isSnapZoneBypassModifierPressed = false
+        cursorDisplayID = nil
+    }
+
+    private func startDragPolling() {
+        guard dragPollingTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pollDragState() }
+        }
+        timer.tolerance = 1.0 / 120.0
+        RunLoop.main.add(timer, forMode: .common)
+        dragPollingTimer = timer
+    }
+
+    private func pollDragState() {
+        guard isDragging else { return }
+        guard NSEvent.pressedMouseButtons & 1 != 0 else {
+            endDrag()
+            return
+        }
+        updateCursorDisplay()
+    }
+
+    private func updateCursorDisplay() {
+        let location = NSEvent.mouseLocation
+        let displayID = NSScreen.screens.first(where: { $0.frame.contains(location) })?.displayID
+        if cursorDisplayID != displayID {
+            cursorDisplayID = displayID
+        }
     }
 
     private func startModifierFlagsMonitoring() {
@@ -207,9 +241,9 @@ class ActiveAppMonitor: ObservableObject {
 
     private func updateLyricPermission() {
         let newPermissionState: Bool = {
-            guard settingsModel.settings.showLyricsInLiveActivity else { return false }
+            guard settingsModel.current.showLyricsInLiveActivity else { return false }
             guard let activeBundleID = activeAppBundleID else { return true }
-            if let isAllowed = settingsModel.settings.musicAppStates[activeBundleID] { return isAllowed }
+            if let isAllowed = settingsModel.current.musicAppStates[activeBundleID] { return isAllowed }
             return !isBrowser(activeBundleID)
         }()
         if isLyricsAllowedForActiveApp != newPermissionState {
@@ -252,7 +286,7 @@ class ActiveAppMonitor: ObservableObject {
         teardownAXObserver()
         observedPID = pid
 
-        guard settingsModel.settings.snapOnWindowDragEnabled else { return }
+        guard settingsModel.current.snapOnWindowDragEnabled else { return }
 
         let observer = AXObserverHandle(pid: pid) { _, _ in
             ActiveAppMonitor.shared.handleWindowMoved()

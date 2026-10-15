@@ -42,8 +42,10 @@ class BatteryStatusManager: ObservableObject {
         ledColor: Int? = nil,
         isSleeping: Bool? = nil
     ) {
-        if let managementState { self.currentState.managementState = managementState }
-        if let ledColor { self.currentState.ledColor = ledColor }
-        if let isSleeping { self.currentState.isSleeping = isSleeping }
+        var state = currentState
+        if let managementState { state.managementState = managementState }
+        if let ledColor { state.ledColor = ledColor }
+        if let isSleeping { state.isSleeping = isSleeping }
+        if state != currentState { currentState = state }
     }
 }

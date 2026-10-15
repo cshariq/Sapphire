@@ -340,6 +340,9 @@ final class LidAngleSensor: ObservableObject {
         let rawAngle = Double(rawValue)
 
         updateVelocity(from: rawAngle)
+        let needsEveryTick = activeClients.contains(.hingeAnimation)
+            || activeClients.contains(.hingeAnimationStandby)
+        guard needsEveryTick || rawAngle != angle || tick == 0 else { return }
         angle = rawAngle
         tick &+= 1
     }
@@ -424,6 +427,7 @@ final class LidAngleSensor: ObservableObject {
         }
 
         lastUpdateTime = now
-        velocity = smoothedVelocity
+        if smoothedVelocity < 0.01 { smoothedVelocity = 0 }
+        if velocity != smoothedVelocity { velocity = smoothedVelocity }
     }
 }

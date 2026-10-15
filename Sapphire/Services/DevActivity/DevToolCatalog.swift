@@ -65,17 +65,20 @@ struct DevToolRule {
     }
 
     func matches(_ subject: DevMatchSubject) -> Bool {
+        let executableHit = !subject.isAppBundleExecutable
+            && subject.executableNames.contains { executables.contains($0) }
+        let pathHit = !executableHit && pathFragments.contains { subject.path.containsBytes($0) }
+        if !executableHit, !pathHit, commandFragments.isEmpty { return false }
+
         let command = subject.command
 
         for excluded in excludedFragments where command.containsBytes(excluded) { return false }
         for required in requiredFragments where !command.containsBytes(required) { return false }
 
-        if !subject.isAppBundleExecutable, executables.contains(subject.executableName) {
-            return true
-        }
+        if executableHit || pathHit { return true }
 
-        for fragment in pathFragments where subject.path.containsBytes(fragment) { return true }
-        for fragment in commandFragments where command.containsBytes(fragment) { return true }
+        let scope = subject.isLauncher ? command : subject.commandHead
+        for fragment in commandFragments where scope.containsBytes(fragment) { return true }
 
         return false
     }
@@ -84,14 +87,44 @@ struct DevToolRule {
 struct DevMatchSubject {
     let path: String
     let command: String
+    let commandHead: String
     let executableName: String
+    let executableNames: [String]
     let isAppBundleExecutable: Bool
+    let isLauncher: Bool
+
+    static let commandPrefixLimit = 4096
+    static let commandHeadArguments = 3
 
     init(_ process: DevProcess) {
         path = process.executablePath.lowercased()
-        command = process.commandLine.lowercased()
-        executableName = process.executableName.lowercased()
+        let commandLine = process.commandLine(prefixBytes: Self.commandPrefixLimit)
+        command = (commandLine.utf8.count > Self.commandPrefixLimit
+            ? String(decoding: commandLine.utf8.prefix(Self.commandPrefixLimit), as: UTF8.self)
+            : commandLine).lowercased()
+        var head: [String] = []
+        for (index, argument) in process.arguments.prefix(Self.commandHeadArguments).enumerated() {
+            if index == 0 {
+                head.append((argument as NSString).lastPathComponent)
+            } else if !argument.contains("/"), !argument.contains(where: \.isWhitespace) {
+                head.append(argument)
+            }
+        }
+        commandHead = head.joined(separator: " ").lowercased()
+
+        let pathName = process.executablePath.isEmpty
+            ? "" : (process.executablePath as NSString).lastPathComponent.lowercased()
+        let shortName = process.executablePath.isEmpty ? "" : process.shortName.lowercased()
+        let argumentName = process.arguments.first.map { ($0 as NSString).lastPathComponent.lowercased() } ?? ""
+        var names: [String] = []
+        for name in [pathName, shortName, argumentName] where !name.isEmpty && !names.contains(name) {
+            names.append(name)
+        }
+        executableNames = names
+        executableName = pathName.isEmpty ? shortName : pathName
+
         isAppBundleExecutable = path.containsBytes(".app/contents/macos/")
+        isLauncher = DevToolCatalog.isLauncher(executableName: pathName)
     }
 }
 
@@ -166,6 +199,36 @@ enum DevToolCatalog {
         "tail -f", "journalctl -f", "docker compose up", "ollama serve"
     ]
 
+    static let launcherExecutables: Set<String> = [
+        "node", "bun", "deno", "sh", "zsh", "bash", "npx", "pnpx", "uvx", "uv", "java"
+    ]
+
+    static let interactiveClientExecutables: Set<String> = [
+        "ssh", "mosh", "mosh-client", "psql", "mysql", "sqlite3", "lldb", "gdb", "ollama",
+        "rust-analyzer", "gopls", "clangd", "sourcekit-lsp", "typescript-language-server",
+        "eslint_d", "prettierd", "copilot-language-server"
+    ]
+    static let interactiveClientPrefixes: [String] = ["gitstatusd", "pyright"]
+    static let interactiveClientSuffixes: [String] = ["-language-server"]
+
+    static let replExecutables: Set<String> = ["node", "irb", "bun"]
+
+    static func isLauncher(executableName name: String) -> Bool {
+        launcherExecutables.contains(name) || name.hasPrefix("python")
+    }
+
+    static func isInteractiveClient(_ process: DevProcess, subject: DevMatchSubject) -> Bool {
+        let name = subject.executableName
+        if interactiveClientExecutables.contains(name) { return true }
+        if interactiveClientPrefixes.contains(where: { name.hasPrefix($0) }) { return true }
+        if interactiveClientSuffixes.contains(where: { name.hasSuffix($0) }) { return true }
+
+        if replExecutables.contains(name) || name.hasPrefix("python") {
+            return !process.arguments.dropFirst().contains { !$0.hasPrefix("-") }
+        }
+        return false
+    }
+
     // MARK: - Rules
 
     static let rules: [DevToolRule] = aiRules + buildRules
@@ -174,7 +237,7 @@ enum DevToolCatalog {
         DevToolRule(
             tool: claude, kind: .ai, signal: .activity(threshold: 12),
             executables: ["claude", "claude-code"],
-            pathFragments: ["/claude-code/"],
+            pathFragments: ["/claude-code/", "/share/claude/versions/", "/.claude/local/"],
             commandFragments: ["@anthropic-ai/claude-code"]
         ),
         DevToolRule(

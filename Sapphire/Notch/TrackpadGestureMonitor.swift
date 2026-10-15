@@ -11,33 +11,101 @@ import SwiftUI
 import Combine
 import QuartzCore
 
-class TrackpadGestureHandler {
+final class TrackpadGestureHandler {
     static let shared = TrackpadGestureHandler()
+
+    typealias ClientID = ObjectIdentifier
+
+    private struct Client {
+        var displayID: CGDirectDisplayID?
+        var onSwipe: ((CGFloat, CGFloat) -> Void)?
+        var onTwoFingerTap: (() -> Void)?
+        var onPinch: ((CGFloat) -> Void)?
+        var activatedAt: TimeInterval?
+    }
 
     private var scrollEventMonitor: Any?
     private var rightClickMonitor: Any?
     private var magnifyEventMonitor: Any?
-    private var isMonitoring = false
     private var hasProcessedCurrentGesture = false
 
     private var lastGestureTime: TimeInterval = 0
-    private var monitoringStartTime: TimeInterval = 0
+
+    private var clients: [ClientID: Client] = [:]
+    private var activeOrder: [ClientID] = []
 
     private let gestureDebounceInterval: TimeInterval = 0.7
     private let initialStabilizationPeriod: TimeInterval = 0.3
 
-    var onSwipe: ((CGFloat, CGFloat) -> Void)?
-    var onTwoFingerTap: (() -> Void)?
-    var onPinch: ((CGFloat) -> Void)?
-
     private init() {}
 
-    func startMonitoring() {
-        guard !isMonitoring else { return }
+    // MARK: Clients
 
-        monitoringStartTime = CACurrentMediaTime()
+    func register(
+        _ id: ClientID,
+        displayID: CGDirectDisplayID?,
+        onSwipe: ((CGFloat, CGFloat) -> Void)?,
+        onTwoFingerTap: (() -> Void)?,
+        onPinch: ((CGFloat) -> Void)? = nil
+    ) {
+        var client = clients[id] ?? Client()
+        client.displayID = displayID
+        client.onSwipe = onSwipe
+        client.onTwoFingerTap = onTwoFingerTap
+        client.onPinch = onPinch
+        clients[id] = client
+    }
+
+    func unregister(_ id: ClientID) {
+        clients[id] = nil
+        activeOrder.removeAll { $0 == id }
+        syncMonitors()
+    }
+
+    func setActive(_ isActive: Bool, for id: ClientID) {
+        guard var client = clients[id] else { return }
+        if isActive {
+            guard client.activatedAt == nil else { return }
+            client.activatedAt = CACurrentMediaTime()
+            clients[id] = client
+            activeOrder.append(id)
+            if activeOrder.count == 1 { hasProcessedCurrentGesture = false }
+        } else {
+            guard client.activatedAt != nil else { return }
+            client.activatedAt = nil
+            clients[id] = client
+            activeOrder.removeAll { $0 == id }
+        }
+        syncMonitors()
+    }
+
+    private func routedClient() -> Client? {
+        let active = activeOrder.compactMap { id in clients[id].map { (id: id, displayID: $0.displayID) } }
+        let pointerDisplay: CGDirectDisplayID? = Thread.isMainThread
+            ? MainActor.assumeIsolated { NotchDisplayTargeting.pointerDisplayID }
+            : nil
+        guard let id = TrackpadGestureRouting.route(active: active, pointerDisplay: pointerDisplay) else { return nil }
+        return clients[id]
+    }
+
+    private func isStabilizing(_ client: Client, now: TimeInterval) -> Bool {
+        guard let activatedAt = client.activatedAt else { return true }
+        return now - activatedAt < initialStabilizationPeriod
+    }
+
+    // MARK: Monitors
+
+    private func syncMonitors() {
+        if activeOrder.isEmpty {
+            removeMonitors()
+        } else {
+            installMonitors()
+        }
+    }
+
+    private func installMonitors() {
+        guard scrollEventMonitor == nil else { return }
         hasProcessedCurrentGesture = false
-        isMonitoring = true
 
         scrollEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
             guard let self = self else { return event }
@@ -50,8 +118,7 @@ class TrackpadGestureHandler {
             }
 
             let now = CACurrentMediaTime()
-
-            if now - self.monitoringStartTime < self.initialStabilizationPeriod {
+            guard let client = self.routedClient(), !self.isStabilizing(client, now: now) else {
                 return event
             }
 
@@ -69,8 +136,8 @@ class TrackpadGestureHandler {
                     let dx = event.scrollingDeltaX
                     let dy = event.scrollingDeltaY
 
-                    DispatchQueue.main.async {
-                        self.onSwipe?(dx, dy)
+                    if let onSwipe = client.onSwipe {
+                        DispatchQueue.main.async { onSwipe(dx, dy) }
                     }
 
                     if abs(dx) > abs(dy) {
@@ -92,7 +159,8 @@ class TrackpadGestureHandler {
             guard let self = self else { return event }
 
             let now = CACurrentMediaTime()
-            if now - self.monitoringStartTime < self.initialStabilizationPeriod {
+            guard let client = self.routedClient(), !self.isStabilizing(client, now: now),
+                  let onTwoFingerTap = client.onTwoFingerTap else {
                 return event
             }
 
@@ -100,9 +168,7 @@ class TrackpadGestureHandler {
                 if now - self.lastGestureTime > self.gestureDebounceInterval {
                     self.lastGestureTime = now
 
-                    DispatchQueue.main.async {
-                        self.onTwoFingerTap?()
-                    }
+                    DispatchQueue.main.async { onTwoFingerTap() }
 
                     return nil
                 }
@@ -114,7 +180,8 @@ class TrackpadGestureHandler {
             guard let self = self else { return event }
 
             let now = CACurrentMediaTime()
-            if now - self.monitoringStartTime < self.initialStabilizationPeriod {
+            guard let client = self.routedClient(), !self.isStabilizing(client, now: now),
+                  let onPinch = client.onPinch else {
                 return event
             }
 
@@ -129,9 +196,7 @@ class TrackpadGestureHandler {
                     self.lastGestureTime = now
 
                     let mag = event.magnification
-                    DispatchQueue.main.async {
-                        self.onPinch?(mag)
-                    }
+                    DispatchQueue.main.async { onPinch(mag) }
 
                     return nil
                 }
@@ -145,7 +210,7 @@ class TrackpadGestureHandler {
         }
     }
 
-    func stopMonitoring() {
+    private func removeMonitors() {
         if let scrollMonitor = scrollEventMonitor {
             NSEvent.removeMonitor(scrollMonitor)
             scrollEventMonitor = nil
@@ -161,7 +226,6 @@ class TrackpadGestureHandler {
             magnifyEventMonitor = nil
         }
 
-        isMonitoring = false
         hasProcessedCurrentGesture = false
     }
 }

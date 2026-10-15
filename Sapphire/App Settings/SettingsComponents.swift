@@ -158,10 +158,10 @@ struct WidgetRowView: View {
     let widgetType: WidgetType
     let enabledWidgetCount: Int
     let isPremiumLocked: Bool
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var availableBarWidth: CGFloat {
-        WidgetLayoutPolicy.availableBarWidth()
+        WidgetLayoutPolicy.availableBarWidthForSettings(settings: settings.settings.value)
     }
 
     private var enabledWidgetTypes: [WidgetType] {
@@ -195,6 +195,7 @@ struct WidgetRowView: View {
         case .timer: return $settings.settings.timerWidgetEnabled
         case .focusSession: return $settings.settings.focusSessionWidgetEnabled
         case .storage: return $settings.settings.storageWidgetEnabled
+        case .dev: return $settings.settings.devWidgetEnabled
         case .agent: return .constant(false)
         }
     }
@@ -238,10 +239,11 @@ struct WidgetRowView: View {
 struct LiveActivityRowView: View {
     let activityType: LiveActivityType
     let isPremiumLocked: Bool
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var baseEnabledBinding: Binding<Bool> {
         switch activityType {
+        case .capsLock: return $settings.settings.capsLockLiveActivityEnabled
         case .music: return $settings.settings.musicLiveActivityEnabled
         case .weather: return $settings.settings.weatherLiveActivityEnabled
         case .calendar: return $settings.settings.calendarLiveActivityEnabled
@@ -324,7 +326,7 @@ struct LiveActivityRowView: View {
 
 struct NotificationToggleRowView: View {
     let source: NotificationSource
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
 
     private var isEnabledBinding: Binding<Bool> {
         switch source {
@@ -1016,6 +1018,129 @@ struct LiquidGlassStylePickerRow: View {
         .foregroundStyle(.secondary)
         .help(help)
         .accessibilityLabel(help)
+    }
+}
+
+struct LiquidGlassOptionsEditor: View {
+    @Binding var options: LiquidGlassOptions
+    var radiusRange: ClosedRange<Double> = 8...48
+    var defaults: LiquidGlassOptions = .lockScreenDefault
+    var showsCornerRadius: Bool = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            preview
+                .padding([.horizontal, .top])
+
+            LiquidGlassStylePickerRow(selection: $options.material)
+            Divider().padding(.leading, 20)
+            tintRow
+            if showsCornerRadius {
+                Divider().padding(.leading, 20)
+                radiusRow
+            }
+            Divider().padding(.leading, 20)
+            appearanceRow
+            Divider().padding(.leading, 20)
+            ToggleRow(
+                title: "Hovered State",
+                description: "Use the glass's raised, highlighted state.",
+                isOn: $options.hovered
+            )
+            Divider().padding(.leading, 20)
+            HStack {
+                Spacer()
+                Button("Restore Default Glass") { options = defaults }
+                    .disabled(options == defaults)
+            }
+            .padding()
+        }
+    }
+
+    private var preview: some View {
+        let shape = RoundedRectangle(cornerRadius: showsCornerRadius ? options.cornerRadius : 22, style: .continuous)
+        return ZStack {
+            LinearGradient(
+                colors: [Color(red: 0.95, green: 0.3, blue: 0.55), Color(red: 0.45, green: 0.2, blue: 0.95), Color(red: 0.1, green: 0.55, blue: 0.95)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Circle()
+                .fill(Color.orange.opacity(0.85))
+                .frame(width: 120)
+                .offset(x: -110, y: 30)
+
+            HStack(spacing: 14) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 56, height: 56)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Now Playing").font(.system(size: 15, weight: .bold))
+                    Text("Lock Screen").font(.system(size: 12)).opacity(0.7)
+                }
+                .foregroundStyle(.white)
+                Spacer()
+            }
+            .padding(16)
+            .frame(width: 300)
+            .background(LockScreenLiquidGlass(options: options, shape: shape, cacheKey: "settings-preview"))
+        }
+        .frame(height: 150)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityLabel("Liquid Glass preview")
+    }
+
+    private var tintRow: some View {
+        let hasTint = Binding<Bool>(
+            get: { options.tintColor != nil },
+            set: { enabled in
+                options.tintHex = enabled ? (defaults.tintHex.isEmpty ? "#40FFFFFF" : defaults.tintHex) : ""
+            }
+        )
+        let color = Binding<Color>(
+            get: { Color(nsColor: options.tintColor ?? .clear) },
+            set: { options.tintHex = LiquidGlassOptions.hex(from: NSColor($0)) }
+        )
+        return HStack(spacing: 12) {
+            SettingsRowLabel(title: "Tint", description: hasTint.wrappedValue ? options.tintHex : "No tint over the glass.")
+            Spacer()
+            if hasTint.wrappedValue {
+                ColorPicker("Tint Color", selection: color, supportsOpacity: true)
+                    .labelsHidden()
+            }
+            SettingsSwitch(title: "Tint", isOn: hasTint)
+        }
+        .padding()
+    }
+
+    private var radiusRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                SettingsRowLabel(title: "Corner Radius", description: "How rounded the glass cards are.")
+                Spacer()
+                Text("\(Int(options.cornerRadius.rounded())) pt")
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: $options.cornerRadius, in: radiusRange, step: 1)
+        }
+        .padding()
+    }
+
+    private var appearanceRow: some View {
+        HStack(spacing: 12) {
+            SettingsRowLabel(title: "Appearance", description: "Force light or dark glass, or follow the system.")
+            Spacer()
+            Picker("", selection: $options.appearance) {
+                ForEach([LiquidGlassAppearance.auto, .light, .dark]) { appearance in
+                    Text(appearance.displayName).tag(appearance)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .frame(width: 180)
+        }
+        .padding()
     }
 }
 

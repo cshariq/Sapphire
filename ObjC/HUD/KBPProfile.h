@@ -8,7 +8,7 @@
 
 //
 //  KBPProfile.h
-//  KBPulse
+//  Sapphire
 //
 //  Created by EthanRDoesMC on 10/25/21.
 //
@@ -36,7 +36,6 @@ NS_ASSUME_NONNULL_BEGIN
 -(void)writeToFileURL:(NSURL *)filePath;
 
 +(KBPProfile *)yawnProfile;
-+(void)createYawnJSON;
 
 @end
 

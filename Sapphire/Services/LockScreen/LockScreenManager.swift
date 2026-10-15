@@ -14,7 +14,6 @@ struct LockScreenConfiguration {
 
     // MARK: - General Layout
     static let widgetSpacing: CGFloat = 24
-    static let cornerRadius: CGFloat = 40
     static let backgroundPadding: CGFloat = 17
     static let backgroundStrokeWidth: CGFloat = 1.5
     static let backgroundStrokeBlur: CGFloat = 1
@@ -37,6 +36,20 @@ struct LockScreenConfiguration {
 
     // MARK: - Manager Positioning
     static let spacingMainAboveMini: CGFloat = 24
+    static let spacingBelowClock: CGFloat = 16
+    static let spacingMainBelowInfo: CGFloat = 20
+    static let minimumMainWidgetScale: CGFloat = 0.6
+
+    // MARK: - System Clock
+    private static let legacyClockBottomFraction: CGFloat = 0.23
+    private static let modernClockBottomFraction: CGFloat = 0.31
+
+    static func clockBottomY(on screen: NSScreen) -> CGFloat {
+        let fraction = ProcessInfo.processInfo.isOperatingSystemAtLeast(
+            OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)
+        ) ? modernClockBottomFraction : legacyClockBottomFraction
+        return screen.frame.maxY - screen.frame.height * fraction - spacingBelowClock
+    }
 
     // MARK: - Vertical Insets
     private static let withoutAvatarInset: CGFloat = 130
@@ -64,6 +77,13 @@ struct LockScreenConfiguration {
 private final class UnfocusableWindow: NSWindow {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    override var isKeyWindow: Bool { true }
+    override var isMainWindow: Bool { true }
+    @objc func hasKeyAppearance() -> Bool { true }
+    @objc func hasMainAppearance() -> Bool { true }
+    @objc func _hasActiveAppearance() -> Bool { true }
+    @objc func _hasActiveAppearanceIgnoringKeyFocus() -> Bool { true }
 }
 
 struct SizePreferenceKey: PreferenceKey {
@@ -102,12 +122,24 @@ private struct WidgetSizePreferenceKey: PreferenceKey {
     }
 }
 
+final class LockScreenWidgetScale: ObservableObject {
+    @Published var value: CGFloat = 1
+}
+
 private struct SizeObservingView<Content: View>: View {
     let content: Content
+    let alignment: Alignment
+    let fitsContent: Bool
+    @ObservedObject var scale: LockScreenWidgetScale
     let onSizeChange: (CGSize) -> Void
 
+    @State private var measuredSize: CGSize = .zero
+
     var body: some View {
+        let s = scale.value
+        let isScaled = s < 0.999 && measuredSize != .zero
         content
+            .fixedSize(horizontal: fitsContent, vertical: fitsContent)
             .background(
                 GeometryReader { geometry in
                     Color.clear
@@ -115,8 +147,24 @@ private struct SizeObservingView<Content: View>: View {
                 }
             )
             .onPreferenceChange(WidgetSizePreferenceKey.self) { newSize in
+                measuredSize = newSize
                 DispatchQueue.main.async { onSizeChange(newSize) }
             }
+            .scaleEffect(s, anchor: Self.anchor(for: alignment))
+            .frame(
+                width: isScaled ? measuredSize.width * s : nil,
+                height: isScaled ? measuredSize.height * s : nil,
+                alignment: alignment
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+    }
+
+    private static func anchor(for alignment: Alignment) -> UnitPoint {
+        switch alignment {
+        case .top: return .top
+        case .bottom: return .bottom
+        default: return .center
+        }
     }
 }
 
@@ -148,9 +196,10 @@ public class LockScreenManager {
 
     private var windowShownAt: [String: CFTimeInterval] = [:]
 
-    private var pendingReposition: DispatchWorkItem?
+    private var contentScales: [String: LockScreenWidgetScale] = [:]
 
     private let MAIN_ID = "mainWidgetContainer"
+    private let INFO_ID = "infoWidget"
     private let MINI_ID_PREFIX = "mini"
 
     typealias F_SLSMainConnectionID = @convention(c) () -> Int32
@@ -240,22 +289,41 @@ public class LockScreenManager {
     }
 
     func calculateMainWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
-        let x = screen.visibleFrame.midX - (size.width / 2)
-        let miniWidgetsAreActive = windows.keys.contains { $0.hasPrefix(MINI_ID_PREFIX) }
-
-        if miniWidgetsAreActive, let miniSize = activeMiniSize(), miniSize.height > 10 {
+        let bottomY: CGFloat
+        if windows.keys.contains(where: { $0.hasPrefix(MINI_ID_PREFIX) }),
+           let miniSize = activeMiniSize(), miniSize.height > 10 {
             let miniFrame = calculateMiniWidgetFrame(size: miniSize, screen: screen)
-            let y = miniFrame.maxY + LockScreenConfiguration.spacingMainAboveMini
-            return NSRect(x: x, y: y, width: size.width, height: size.height)
+            bottomY = miniFrame.maxY + LockScreenConfiguration.spacingMainAboveMini
         } else {
-            let bottomInset = LockScreenConfiguration.getBottomInset()
-            let y = screen.visibleFrame.minY + bottomInset
-            return NSRect(x: x, y: y, width: size.width, height: size.height)
+            bottomY = screen.frame.minY + LockScreenConfiguration.getBottomInset()
         }
+
+        let contentHeight = lastMeasuredSizes[MAIN_ID]?.height ?? size.height
+        let available = mainWidgetTopLimit(on: screen) - bottomY
+        var scale: CGFloat = 1
+        if contentHeight > 0, available > 0, contentHeight > available {
+            scale = max(LockScreenConfiguration.minimumMainWidgetScale, available / contentHeight)
+        }
+        if let model = contentScales[MAIN_ID], abs(model.value - scale) > 0.001 {
+            model.value = scale
+        }
+
+        let width = size.width * scale
+        let height = size.height * scale
+        return NSRect(x: screen.frame.midX - width / 2, y: bottomY, width: width, height: height)
+    }
+
+    private func mainWidgetTopLimit(on screen: NSScreen) -> CGFloat {
+        if let info = windows[INFO_ID]?.window, info.contentViewController != nil,
+           let infoSize = lastMeasuredSizes[INFO_ID], infoSize.height > 1 {
+            return calculateInfoWidgetFrame(size: infoSize, screen: screen).minY
+                - LockScreenConfiguration.spacingMainBelowInfo
+        }
+        return LockScreenConfiguration.clockBottomY(on: screen)
     }
 
     func calculateMiniWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
-        let vis = screen.visibleFrame
+        let vis = screen.frame
         let x = vis.midX - (size.width / 2)
         let bottomInset = LockScreenConfiguration.getBottomInset()
         let y = vis.minY + bottomInset
@@ -263,11 +331,9 @@ public class LockScreenManager {
     }
 
     func calculateInfoWidgetFrame(size: CGSize, screen: NSScreen) -> NSRect {
-        let vis = screen.visibleFrame
+        let vis = screen.frame
         let x = vis.midX - (size.width / 2)
-
-        let topInset = vis.height * 0.23
-        let y = vis.maxY - topInset - size.height
+        let y = LockScreenConfiguration.clockBottomY(on: screen) - size.height
 
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
@@ -277,6 +343,19 @@ public class LockScreenManager {
     }
 
     private let FULLSCREEN_MUSIC_ID = "fullScreenMusicPane"
+
+    private static let frameSpringTiming = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
+    private static let frameSpringDuration: TimeInterval = 0.4
+    private static let contentSettleDelay: TimeInterval = 0.5
+
+    private var pendingSettle: [String: DispatchWorkItem] = [:]
+    private var pendingCoverChange: DispatchWorkItem?
+
+    private func contentAlignment(for id: String) -> Alignment {
+        if id == MAIN_ID || id.hasPrefix(MINI_ID_PREFIX) { return .bottom }
+        if id == FULLSCREEN_MUSIC_ID { return .center }
+        return .top
+    }
 
     func displayView<Content: View>(_ view: Content,
                                             withId id: String,
@@ -288,75 +367,62 @@ public class LockScreenManager {
         assert(Thread.isMainThread, "LockScreenManager window creation must run on the main thread")
 
         let gen = generation
+        let controller: NSWindowController
+        let window: NSWindow
 
-        if let existingController = windows[id], let window = existingController.window {
-            let sizeObservingView = SizeObservingView(content: view) { [weak self] newSize in
-                guard let self = self, gen == self.generation, let win = existingController.window else { return }
-                self.handleWidgetSizeChange(newSize, id: id, window: win, screen: screen, positioner: positioner)
-            }
+        if let existingController = windows[id], let existingWindow = existingController.window {
+            controller = existingController
+            window = existingWindow
+        } else {
+            window = UnfocusableWindow(
+                contentRect: initialFrame,
+                styleMask: NSWindow.StyleMask.borderless,
+                backing: NSWindow.BackingStoreType.buffered,
+                defer: false
+            )
+            window.isOpaque = false
+            window.backgroundColor = NSColor.clear
+            window.hasShadow = false
+            window.isExcludedFromWindowsMenu = true
+            window.animationBehavior = .none
+            window.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, .stationary, .ignoresCycle]
 
-            let hostingController = NSHostingController(rootView: sizeObservingView)
-            hostingController.view.wantsLayer = true
-            hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
-
-            window.contentViewController = hostingController
-            window.setFrame(initialFrame, display: false)
-            window.alphaValue = 0
-            window.level = windowLevel
-            window.ignoresMouseEvents = windowIgnoresMouseEvents
-
-            windowShownAt[id] = CACurrentMediaTime()
-
-            RemoteViewCrashGuardRunBlock {
-                window.orderFrontRegardless()
-            }
-            let isFullscreenMusic = id == FULLSCREEN_MUSIC_ID
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = isFullscreenMusic ? 0.28 : 0.32
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                window.animator().alphaValue = 1
-            }
-            return
+            controller = NSWindowController(window: window)
+            windows[id] = controller
+            delegateWindow(window)
+            delegatedWindowIds.insert(id)
         }
 
-        let window = UnfocusableWindow(
-            contentRect: initialFrame,
-            styleMask: NSWindow.StyleMask.borderless,
-            backing: NSWindow.BackingStoreType.buffered,
-            defer: false
-        )
-        window.isOpaque = false
-        window.backgroundColor = NSColor.clear
-        window.hasShadow = false
-        window.level = windowLevel
-        window.isExcludedFromWindowsMenu = true
-        window.animationBehavior = .none
-        window.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, .stationary, .ignoresCycle]
-        window.ignoresMouseEvents = windowIgnoresMouseEvents
+        let scale = contentScales[id] ?? LockScreenWidgetScale()
+        scale.value = 1
+        contentScales[id] = scale
 
-        let controller = NSWindowController(window: window)
-        windows[id] = controller
-        delegateWindow(window)
-        delegatedWindowIds.insert(id)
-        windowShownAt[id] = CACurrentMediaTime()
-
-        let sizeObservingView = SizeObservingView(content: view) { [weak self] newSize in
-            guard let self = self, gen == self.generation, let window = controller.window else { return }
+        let sizeObservingView = SizeObservingView(
+            content: view,
+            alignment: contentAlignment(for: id),
+            fitsContent: id != FULLSCREEN_MUSIC_ID,
+            scale: scale
+        ) { [weak self, weak controller] newSize in
+            guard let self, gen == self.generation, let window = controller?.window else { return }
             self.handleWidgetSizeChange(newSize, id: id, window: window, screen: screen, positioner: positioner)
         }
 
         let hostingController = NSHostingController(rootView: sizeObservingView)
+        hostingController.sizingOptions = []
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
 
-        controller.window?.contentViewController = hostingController
-
-        let isFullscreenMusic = id == FULLSCREEN_MUSIC_ID
+        window.contentViewController = hostingController
         window.setFrame(initialFrame, display: false)
         window.alphaValue = 0
+        window.level = windowLevel
+        window.ignoresMouseEvents = windowIgnoresMouseEvents
+        windowShownAt[id] = CACurrentMediaTime()
+
         RemoteViewCrashGuardRunBlock {
             window.orderFrontRegardless()
         }
+        let isFullscreenMusic = id == FULLSCREEN_MUSIC_ID
         NSAnimationContext.runAnimationGroup { context in
             context.duration = isFullscreenMusic ? 0.28 : 0.32
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -371,30 +437,53 @@ public class LockScreenManager {
                                         positioner: @escaping (CGSize, NSScreen) -> NSRect) {
         guard newSize.width > 0, newSize.height > 0 else { return }
         lastMeasuredSizes[id] = newSize
+        pendingSettle[id]?.cancel()
+        pendingSettle[id] = nil
 
-        let newFrame = positioner(newSize, screen)
-        let isFullscreenMusic = id == FULLSCREEN_MUSIC_ID
-
-        let delta = abs(window.frame.origin.x - newFrame.origin.x)
-            + abs(window.frame.origin.y - newFrame.origin.y)
-            + abs(window.frame.width - newFrame.width)
-            + abs(window.frame.height - newFrame.height)
-        guard delta > 0.5 else { return }
-
+        let settledFrame = positioner(newSize, screen)
         let elapsed = CACurrentMediaTime() - (windowShownAt[id] ?? 0)
-        if elapsed < 0.45 || isFullscreenMusic {
-            window.setFrame(newFrame, display: true)
+
+        if elapsed < 0.45 || id == FULLSCREEN_MUSIC_ID {
+            setFrameIfNeeded(window, settledFrame, animated: false)
         } else {
-            let duration: TimeInterval = delta > 40 ? 0.28 : 0.18
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = duration
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                window.animator().setFrame(newFrame, display: true)
+            let s = max(contentScales[id]?.value ?? 1, 0.01)
+            let coverSize = CGSize(
+                width: max(window.frame.width / s, newSize.width),
+                height: max(window.frame.height / s, newSize.height)
+            )
+            setFrameIfNeeded(window, positioner(coverSize, screen), animated: false)
+
+            if coverSize != newSize {
+                let settle = DispatchWorkItem { [weak self, weak window] in
+                    guard let self, let window else { return }
+                    self.pendingSettle[id] = nil
+                    guard let size = self.lastMeasuredSizes[id] else { return }
+                    self.setFrameIfNeeded(window, positioner(size, screen), animated: false)
+                    if id.hasPrefix(self.MINI_ID_PREFIX) || id == self.INFO_ID { self.repositionMainIfPossible() }
+                }
+                pendingSettle[id] = settle
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.contentSettleDelay, execute: settle)
             }
         }
 
-        if id.hasPrefix(MINI_ID_PREFIX) || id == MAIN_ID {
-            scheduleRepositionMain()
+        if id.hasPrefix(MINI_ID_PREFIX) || id == INFO_ID {
+            repositionMainIfPossible()
+        }
+    }
+
+    private func setFrameIfNeeded(_ window: NSWindow, _ frame: NSRect, animated: Bool) {
+        let current = window.frame
+        let delta = abs(current.minX - frame.minX) + abs(current.minY - frame.minY)
+            + abs(current.width - frame.width) + abs(current.height - frame.height)
+        guard delta > 0.5 else { return }
+        guard animated else {
+            window.setFrame(frame, display: true)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.frameSpringDuration
+            context.timingFunction = Self.frameSpringTiming
+            window.animator().setFrame(frame, display: true)
         }
     }
 
@@ -410,44 +499,37 @@ public class LockScreenManager {
         return nil
     }
 
-    private func scheduleRepositionMain() {
-        pendingReposition?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.repositionMainIfPossible()
-        }
-        pendingReposition = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
-    }
-
     private func repositionMainIfPossible() {
-        pendingReposition = nil
         guard let controller = windows[MAIN_ID],
               let window = controller.window,
               let screen = window.screen else { return }
 
-        let size = lastMeasuredSizes[MAIN_ID] ?? window.frame.size
+        let s = max(contentScales[MAIN_ID]?.value ?? 1, 0.01)
+        let size = lastMeasuredSizes[MAIN_ID]
+            ?? CGSize(width: window.frame.width / s, height: window.frame.height / s)
         let target = calculateMainWidgetFrame(size: size, screen: screen)
-
-        let delta = abs(window.frame.minX - target.minX)
-            + abs(window.frame.minY - target.minY)
-            + abs(window.frame.width - target.width)
-            + abs(window.frame.height - target.height)
-        guard delta > 0.5 else { return }
-
         let elapsed = CACurrentMediaTime() - (windowShownAt[MAIN_ID] ?? 0)
-        if elapsed < 0.45 {
-            window.setFrame(target, display: true)
+        setFrameIfNeeded(window, target, animated: elapsed >= 0.45)
+    }
+
+    func setWidgetWindowsCovered(_ covered: Bool) {
+        let widgets = windows.filter { $0.key != FULLSCREEN_MUSIC_ID }.compactMap { $0.value.window }
+        pendingCoverChange?.cancel()
+        pendingCoverChange = nil
+        if covered {
+            let work = DispatchWorkItem { widgets.forEach { $0.orderOut(nil) } }
+            pendingCoverChange = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
         } else {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.22
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                window.animator().setFrame(target, display: true)
+            for window in widgets where window.contentViewController != nil && !window.isVisible {
+                RemoteViewCrashGuardRunBlock { window.orderFrontRegardless() }
             }
         }
     }
 
     public func hideWindow(withId id: String) {
         guard let controller = windows[id], let window = controller.window else { return }
+        pendingSettle.removeValue(forKey: id)?.cancel()
         lastMeasuredSizes.removeValue(forKey: id)
         windowShownAt.removeValue(forKey: id)
         window.orderOut(nil)
@@ -456,8 +538,10 @@ public class LockScreenManager {
 
     public func hideAndDestroyWindows(animated: Bool = true, fullyDestroy: Bool = false) {
         generation &+= 1
-        pendingReposition?.cancel()
-        pendingReposition = nil
+        pendingSettle.values.forEach { $0.cancel() }
+        pendingSettle.removeAll()
+        pendingCoverChange?.cancel()
+        pendingCoverChange = nil
 
         let visibleWindows = windows.values
             .compactMap { $0.window }

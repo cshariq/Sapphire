@@ -292,6 +292,13 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
     @Published private(set) var isUsingCachedReleaseData = false
     private var downloadTask: URLSessionDownloadTask?
     private var downloadSession: URLSession?
+    private static let metadataSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = true
+        configuration.timeoutIntervalForRequest = 25
+        configuration.timeoutIntervalForResource = 60
+        return URLSession(configuration: configuration)
+    }()
     private var downloadedAssetPath: URL?
     private var pendingDownloadAsset: GitHubReleaseAsset?
     private var pendingDownloadVersion: String?
@@ -471,8 +478,8 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
                     throw UpdateMetadataError.noEligibleAsset
                 }
                 applyStatus(.available(version: latestVersion, asset: asset))
-                if SettingsModel.shared.settings.automaticUpdateChecksEnabled,
-                   SettingsModel.shared.settings.automaticallyDownloadSapphireUpdates {
+                if SettingsModel.shared.current.automaticUpdateChecksEnabled,
+                   SettingsModel.shared.current.automaticallyDownloadSapphireUpdates {
                     downloadUpdate(asset: asset, version: latestVersion)
                 }
             } else {
@@ -543,11 +550,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
 
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.waitsForConnectivity = true
-        configuration.timeoutIntervalForRequest = 25
-        configuration.timeoutIntervalForResource = 60
-        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        let (data, response) = try await Self.metadataSession.data(for: request)
         guard let http = response as? HTTPURLResponse,
               http.url?.scheme == "https",
               http.url?.host?.lowercased() == "api.github.com" else {
@@ -832,7 +835,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
     }
 
     func checkInBackgroundIfNeeded(force: Bool = false) {
-        guard SettingsModel.shared.settings.automaticUpdateChecksEnabled else { return }
+        guard SettingsModel.shared.current.automaticUpdateChecksEnabled else { return }
         switch status {
         case .checking, .downloading, .downloaded, .installing:
             return
@@ -849,11 +852,11 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
         stopPeriodicChecks()
 
         periodicCheckInterval = interval
-        guard SettingsModel.shared.settings.automaticUpdateChecksEnabled else { return }
+        guard SettingsModel.shared.current.automaticUpdateChecksEnabled else { return }
 
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if SettingsModel.shared.settings.automaticallyDownloadSapphireUpdates,
+            if SettingsModel.shared.current.automaticallyDownloadSapphireUpdates,
                case .available(_, let asset) = self.status {
                 self.downloadUpdate(asset: asset)
                 return
@@ -901,7 +904,7 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
     private func scheduleTimerForNextCheck() {
         timer?.invalidate()
         timer = nil
-        guard SettingsModel.shared.settings.automaticUpdateChecksEnabled,
+        guard SettingsModel.shared.current.automaticUpdateChecksEnabled,
               let nextScheduledCheckAt,
               nextScheduledCheckAt > Date() else { return }
 

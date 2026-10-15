@@ -12,7 +12,7 @@ struct MultipleCalendarNotificationView: View {
     let events: [EKEvent]
     let timeUntil: String
 
-    @EnvironmentObject private var liveActivityManager: LiveActivityManager
+    @Environment(LiveActivityManager.self) private var liveActivityManager
 
     var body: some View {
         CalendarNotificationLayout(
@@ -36,7 +36,7 @@ struct MultipleCalendarNotificationView: View {
                     .foregroundStyle(.white.opacity(0.6))
 
                 if let firstEvent = events.first {
-                    Text("Next: \(firstEvent.title)")
+                    Text("Next: \(firstEvent.title ?? "")")
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.48))
                         .lineLimit(1)

@@ -13,7 +13,10 @@ final class MenuBarHoverProbe {
     private var screenObserver: NSObjectProtocol?
     private var onHoverChange: ((Bool) -> Void)?
 
-    var isHovering: Bool { !enteredTrackers.isEmpty }
+    var isHovering: Bool { !enteredTrackers.isEmpty || exitPoll != nil }
+
+    private var exitPoll: Timer?
+    private static let exitPollInterval: TimeInterval = 0.1
 
     func start(onHoverChange: @escaping (Bool) -> Void) {
         guard windows.isEmpty else {
@@ -33,6 +36,7 @@ final class MenuBarHoverProbe {
     }
 
     func stop() {
+        stopExitPoll()
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
             self.screenObserver = nil
@@ -43,12 +47,23 @@ final class MenuBarHoverProbe {
 
     // MARK: - Windows
 
+    private var builtRects: [CGRect] = []
+
     private func rebuildWindows() {
+        let rects = NSScreen.screens.compactMap { menuBarRect(for: $0) }
+        guard rects != builtRects || windows.count != rects.count else { return }
+        if windows.count == rects.count {
+            for (window, rect) in zip(windows, rects) where window.frame != rect {
+                window.setFrame(rect, display: false)
+            }
+            builtRects = rects
+            return
+        }
         let wasHovering = isHovering
         teardownWindows()
+        builtRects = rects
 
-        for screen in NSScreen.screens {
-            guard let rect = menuBarRect(for: screen) else { continue }
+        for rect in rects {
 
             let probe = HoverProbeWindow(
                 level: .statusBar,
@@ -66,6 +81,9 @@ final class MenuBarHoverProbe {
             windows.append(probe)
         }
 
+        if exitPoll != nil {
+            for window in windows { window.orderOut(nil) }
+        }
         if wasHovering && !isHovering { onHoverChange?(false) }
     }
 
@@ -77,12 +95,17 @@ final class MenuBarHoverProbe {
             window.close()
         }
         windows.removeAll()
+        builtRects = []
         enteredTrackers.removeAll()
     }
 
+    private var knownMenuBarHeights: [CGDirectDisplayID: CGFloat] = [:]
+
     private func menuBarRect(for screen: NSScreen) -> CGRect? {
-        let height = screen.frame.height - screen.visibleFrame.height
-        let menuBarHeight = height > 0 ? min(height, 44) : 24
+        let height = NotchDisplayMetrics.menuBarGap(frame: screen.frame, visibleFrame: screen.visibleFrame)
+        let displayID = screen.displayID
+        if height > 0 { knownMenuBarHeights[displayID] = min(height, 44) }
+        let menuBarHeight = knownMenuBarHeights[displayID] ?? 24
         guard menuBarHeight > 0 else { return nil }
         return CGRect(
             x: screen.frame.minX,
@@ -95,6 +118,7 @@ final class MenuBarHoverProbe {
     // MARK: - Crossings
 
     private func handleCrossing(for tracker: HoverTrackingView) {
+        guard exitPoll == nil else { return }
         let wasHovering = isHovering
         let identifier = ObjectIdentifier(tracker)
 
@@ -104,7 +128,36 @@ final class MenuBarHoverProbe {
             enteredTrackers.remove(identifier)
         }
 
+        if !enteredTrackers.isEmpty { startExitPoll() }
         guard wasHovering != isHovering else { return }
         onHoverChange?(isHovering)
+    }
+
+    // MARK: - Exit polling
+
+    private func startExitPoll() {
+        guard exitPoll == nil else { return }
+        enteredTrackers.removeAll()
+        for window in windows { window.orderOut(nil) }
+        let timer = Timer(timeInterval: Self.exitPollInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pollForExit() }
+        }
+        timer.tolerance = Self.exitPollInterval * 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        exitPoll = timer
+    }
+
+    private func pollForExit() {
+        let location = NSEvent.mouseLocation
+        guard !builtRects.contains(where: { $0.contains(location) }) else { return }
+        stopExitPoll()
+        enteredTrackers.removeAll()
+        for window in windows { window.orderFront(nil) }
+        onHoverChange?(false)
+    }
+
+    private func stopExitPoll() {
+        exitPoll?.invalidate()
+        exitPoll = nil
     }
 }

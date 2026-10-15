@@ -60,16 +60,22 @@ class LogReader {
         }
 
         let args: [String]
-        if let start = computeStart(trigger) {
-            setenv("START_TS", start, 1)
+        let startTimestamp = computeStart(trigger)
+        if startTimestamp != nil {
             args = [scriptPath, "mac", "10m"]
         } else {
-            unsetenv("START_TS")
             let win = (trigger == .bootstrap) ? "20m" : (trigger == .wake ? "3m" : "2m")
             args = [scriptPath, "mac", win]
         }
 
-        let out = process(path: "/bin/bash", arguments: args, timeout: 5)
+        let result = ProcessRunner.runSync(
+            executablePath: "/bin/bash",
+            arguments: args,
+            timeout: 5,
+            environmentOverrides: ["START_TS": startTimestamp]
+        )
+        let trimmed = result?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let out: String? = trimmed.isEmpty ? nil : trimmed
         parseAndUpdate(output: out)
         advanceLastTS()
 
@@ -111,7 +117,7 @@ class LogReader {
                 let level = json["level"] as? Int ?? 0
                 let status = (json["status"] as? String == "+") ? 1 : 0
                 if name.isEmpty { name = "\(type) (\(mac))" }
-                AirBatteryModel.updateDevice(BatteryDevice(deviceID: mac, deviceType: type, deviceName: name, batteryLevel: min(100, max(0, level)), isCharging: status, parentName: parent, lastUpdate: Date().timeIntervalSince1970, realUpdate: isoFormatter.date(from: time)?.timeIntervalSince1970 ?? 0.0))
+                AccessoryBatteryStore.updateDevice(BatteryDevice(deviceID: mac, deviceType: type, deviceName: name, batteryLevel: min(100, max(0, level)), isCharging: status, parentName: parent, lastUpdate: Date().timeIntervalSince1970, realUpdate: isoFormatter.date(from: time)?.timeIntervalSince1970 ?? 0.0))
             }
         }
     }
@@ -228,16 +234,6 @@ public func process(path: String, arguments: [String], timeout: Int = 0) -> Stri
     return output.isEmpty ? nil : output
 }
 
-func getMenuBarHeight(for screen: NSScreen? = nil) -> CGFloat {
-    let resolvedScreen = screen ?? {
-        let mouseLocation = NSEvent.mouseLocation
-        return NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
-    }()
-    guard let resolvedScreen else { return 0.0 }
-    return resolvedScreen.frame.height - resolvedScreen.visibleFrame.height
-        - (resolvedScreen.visibleFrame.origin.y - resolvedScreen.frame.origin.y) - 1
-}
-
 func createAlert(level: NSAlert.Style = .warning, title: String, message: String, button1: String, button2: String = "") -> NSAlert {
     let alert = NSAlert()
     alert.messageText = title.local
@@ -323,7 +319,7 @@ func getPowerState() -> iBattery {
     if let internalBattery = internalFinder.getInternalBattery() {
         if let level = internalBattery.charge {
             var ib = iBattery(hasBattery: true, isCharging: internalBattery.isCharging ?? false, isCharged :internalBattery.isCharged ?? false, acPowered: internalBattery.acPowered ?? false, timeLeft: internalBattery.timeLeft, batteryLevel: Int(level))
-            if #available(macOS 12.0, *) { ib.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled }
+            ib.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
             return ib
         }
     }

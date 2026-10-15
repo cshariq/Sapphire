@@ -49,7 +49,7 @@ class NearbyConnection{
     init(connection:NWConnection, id:String) {
         self.connection=connection
         self.id=id
-        self.connectionQueue = DispatchQueue(label: "me.grishka.NearDrop.connection.\(id)", qos: .utility)
+        self.connectionQueue = DispatchQueue(label: "com.cshariq.sapphire.nearby.connection.\(id)", qos: .utility)
         self.connectionQueue.setSpecific(key: Self.queueKey, value: queueToken)
     }
 

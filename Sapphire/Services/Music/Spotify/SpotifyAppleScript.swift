@@ -15,7 +15,7 @@ class SpotifyAppleScriptManager {
     private init() {}
 
     func isAppRunning() -> Bool {
-        return NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.spotify.client" }
+        RunningApps.shared.isRunning("com.spotify.client")
     }
 
     func isPlaying() async -> Bool {

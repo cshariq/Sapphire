@@ -79,10 +79,11 @@ extension EnvironmentValues {
 
 // MARK: - Main View Container
 struct LockScreenMainWidgetContainerView: View {
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @StateObject private var navigationManager = LockScreenNavigationManager()
     @State private var maxMainWidgetHeight: CGFloat = 0
     @State private var dummyStack: [NotchWidgetMode] = []
+    @State private var playerStack: [NotchWidgetMode] = [.musicPlayer]
 
     var body: some View {
         HStack(alignment: .top, spacing: LockScreenConfiguration.widgetSpacing) {
@@ -101,7 +102,6 @@ struct LockScreenMainWidgetContainerView: View {
         }
         .environment(\.lockScreenWidgetHeight, maxMainWidgetHeight > 0 ? maxMainWidgetHeight : nil)
         .environmentObject(navigationManager)
-        .id("main-widget-\(navigationManager.currentView)")
     }
 
     @ViewBuilder
@@ -140,65 +140,43 @@ struct LockScreenMainWidgetContainerView: View {
         }
     }
 
-    @ViewBuilder
     private var musicNavigationHostView: some View {
-        ZStack {
-            switch navigationManager.currentView {
-            case .player:
-                LockScreenView()
-            case .queueAndPlaylists:
-                LockScreenPaddedBackground {
-                    ZStack(alignment: .topLeading) {
-                        QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
-                        LockScreenBackButton()
-                            .padding(.top, 52)
-                            .zIndex(10)
-                    }
-                }
-            case .playlistDetail(let playlist):
-                LockScreenPaddedBackground {
-                    ZStack(alignment: .topLeading) {
-                        PlaylistView(playlist: playlist, isLockScreenMode: true)
-                        LockScreenBackButton()
-                            .padding(.top, 52)
-                            .zIndex(10)
-                    }
-                }
-            case .devices:
-                LockScreenPaddedBackground {
-                    ZStack(alignment: .topLeading) {
-                        QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
-                        LockScreenBackButton()
-                            .padding(.top, 52)
-                            .zIndex(10)
-                    }
-                }
-            case .lyrics:
-                 LockScreenPaddedBackground {
-                    ZStack(alignment: .topLeading) {
-                        LyricsView()
-                        LockScreenBackButton()
-                            .padding(.top, 52)
-                            .zIndex(10)
-                    }
-                }
-            case .loginPrompt:
-                LockScreenPaddedBackground {
-                    ZStack(alignment: .topLeading) {
-                        LoginPromptView(navigationStack: $dummyStack)
-                        LockScreenBackButton()
-                            .padding(.top, 52)
-                            .zIndex(10)
-                    }
+        LockScreenPaddedBackground {
+            ZStack(alignment: .topLeading) {
+                musicPage(for: navigationManager.currentView)
+                    .id(navigationManager.currentView)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+
+                if navigationManager.currentView != .player {
+                    LockScreenBackButton()
+                        .padding(.top, 52)
+                        .zIndex(10)
+                        .transition(.opacity)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func musicPage(for page: LockScreenMusicView) -> some View {
+        switch page {
+        case .player:
+            MusicPlayerView(navigationStack: $playerStack, isLockScreenMode: true)
+        case .queueAndPlaylists, .devices:
+            QueueAndPlaylistsView(navigationStack: $dummyStack, isLockScreenMode: true)
+        case .playlistDetail(let playlist):
+            PlaylistView(playlist: playlist, isLockScreenMode: true)
+        case .lyrics:
+            LyricsView()
+        case .loginPrompt:
+            LoginPromptView(navigationStack: $dummyStack)
         }
     }
 
 }
 
 private struct LockScreenConditionalMusicView<Content: View>: View {
-    @EnvironmentObject private var musicManager: MusicManager
+    private var musicManager: MusicManager { .shared }
 
     let showWhenPaused: Bool
     let content: Content
@@ -236,24 +214,11 @@ struct LockScreenPaddedBackground<Content: View>: View {
 
     @ViewBuilder
     private var backgroundMaterial: some View {
-        LockScreenWidgetSurface(
-            shape: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous),
-            cornerRadius: LockScreenConfiguration.cornerRadius
-        )
+        LockScreenCardSurface()
     }
 }
 
 // MARK: - Specific Widget Views
-struct LockScreenView: View {
-    @State private var dummyNavigationStack: [NotchWidgetMode] = [.musicPlayer]
-
-    var body: some View {
-        LockScreenPaddedBackground {
-            MusicPlayerView(navigationStack: $dummyNavigationStack, isLockScreenMode: true)
-        }
-    }
-}
-
 struct LockScreenWeatherView: View {
     @Environment(\.lockScreenWidgetHeight) private var _lockScreenWidgetHeight: CGFloat?
 
@@ -263,10 +228,7 @@ struct LockScreenWeatherView: View {
             .measureSize()
             .frame(minHeight: _lockScreenWidgetHeight, alignment: .top)
             .background(
-                LockScreenWidgetSurface(
-                    shape: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous),
-                    cornerRadius: LockScreenConfiguration.cornerRadius
-                )
+                LockScreenCardSurface()
             )
     }
 }
@@ -280,10 +242,7 @@ struct LockScreenCalendarView: View {
             .measureSize()
             .frame(minHeight: _lockScreenWidgetHeight, alignment: .top)
             .background(
-                LockScreenWidgetSurface(
-                    shape: RoundedRectangle(cornerRadius: LockScreenConfiguration.cornerRadius, style: .continuous),
-                    cornerRadius: LockScreenConfiguration.cornerRadius
-                )
+                LockScreenCardSurface()
             )
     }
 }

@@ -112,52 +112,54 @@ private actor FileAPICache {
 }
 
 @MainActor
-class SpotifyPrivateAPIManager: ObservableObject {
+@Observable
+class SpotifyPrivateAPIManager {
     static let shared = SpotifyPrivateAPIManager()
 
-    @Published var isLoggedIn = false
-    @Published var loginChallenge: LoginChallengeDetails?
-    @Published var userProfile: SpotifyNativeUserProfile?
-    @Published var profileFollowerCount: Int?
-    @Published var playerState: PlayerState?
-    @Published var devices: [SpotifyNativeDevice] = []
-    @Published public private(set) var activePlayerDeviceID: String?
-    @Published var nativeQueue: [PlayerState.Track] = []
-    @Published var nativePlaylists: [SpotifyPlaylist] = []
-    @Published var librarySortOrders: [UserLibraryResponse.SortOrder] = []
-    @Published var selectedLibrarySortOrderId: String = "Recents"
-    @Published var selectedPlaylist: SpotifyPlaylistDetailsResponse.PlaylistV2?
-    @Published var playlistTrackViewModels: [TrackViewModel] = []
-    @Published var isPlaylistLoading: Bool = false
-    @Published var isPlaylistLoadingMore: Bool = false
-    @Published var playlistHasMore: Bool = false
-    @Published var playlistTotalCount: Int = 0
-    @Published private(set) var playlistTrackIndexByUID: [String: Int] = [:]
-    private var playlistNextOffset: Int = 0
-    private var playlistLoadedURI: String?
+    var isLoggedIn = false
+    var loginChallenge: LoginChallengeDetails?
+    var userProfile: SpotifyNativeUserProfile?
+    var profileFollowerCount: Int?
+    var playerState: PlayerState?
+    var devices: [SpotifyNativeDevice] = []
+    public private(set) var activePlayerDeviceID: String?
+    var nativeQueue: [PlayerState.Track] = []
+    var nativePlaylists: [SpotifyPlaylist] = []
+    var librarySortOrders: [UserLibraryResponse.SortOrder] = []
+    var selectedLibrarySortOrderId: String = "Recents"
+    var selectedPlaylist: SpotifyPlaylistDetailsResponse.PlaylistV2?
+    var playlistTrackViewModels: [TrackViewModel] = []
+    var isPlaylistLoading: Bool = false
+    var isPlaylistLoadingMore: Bool = false
+    var playlistHasMore: Bool = false
+    var playlistTotalCount: Int = 0
+    private(set) var playlistTrackIndexByUID: [String: Int] = [:]
+    @ObservationIgnored private var playlistNextOffset: Int = 0
+    @ObservationIgnored private var playlistLoadedURI: String?
 
-    @Published var accountInfo: SpotifyAccountInfo?
-    @Published var currentCanvas: SpotifyCanvasInfo?
-    @Published var artistConcerts: [SpotifyArtistConcert] = []
-    @Published var playlistRecommendations: [SpotifyRecommendedTrack] = []
-    @Published var recentlyPlayedItems: [SpotifyRecentlyPlayedItem] = []
-    @Published var homeSections: [SpotifyHomeSection] = []
-    @Published var homeGreeting: String?
-    @Published var deviceTransferNotice: String?
-    @Published var smartShuffleAvailable: Bool = false
-    @Published var hasUnreadNotifications: Bool = false
-    @Published var currentPlaylistPermissions: SpotifyPlaylistPermissions?
-    @Published var jamSessionActive: Bool = false
-    @Published var libraryImportEligible: Bool = false
-    @Published var popularReleases: [SpotifyPopularRelease] = []
-    @Published var nowPlayingArtist: SpotifyArtistProfile?
-    @Published var similarAlbums: [SpotifySimilarAlbum] = []
-    @Published var relatedTracks: [SpotifyRecommendedTrack] = []
-    @Published var trackArtistCredits: [SpotifyTrackArtistCredit] = []
-    @Published var isEnhanceLoading: Bool = false
-    @Published var isConnectStreamingSession: Bool = false
-    @Published var isSmartShuffleActive: Bool = false
-    private var deviceTransferNoticeClearTask: Task<Void, Never>?
+    var accountInfo: SpotifyAccountInfo?
+    var currentCanvas: SpotifyCanvasInfo?
+    var artistConcerts: [SpotifyArtistConcert] = []
+    var playlistRecommendations: [SpotifyRecommendedTrack] = []
+    var recentlyPlayedItems: [SpotifyRecentlyPlayedItem] = []
+    var homeSections: [SpotifyHomeSection] = []
+    var homeGreeting: String?
+    var deviceTransferNotice: String?
+    var smartShuffleAvailable: Bool = false
+    var hasUnreadNotifications: Bool = false
+    var currentPlaylistPermissions: SpotifyPlaylistPermissions?
+    var jamSessionActive: Bool = false
+    var libraryImportEligible: Bool = false
+    var popularReleases: [SpotifyPopularRelease] = []
+    var nowPlayingArtist: SpotifyArtistProfile?
+    var similarAlbums: [SpotifySimilarAlbum] = []
+    var relatedTracks: [SpotifyRecommendedTrack] = []
+    var relatedTracksURI: String?
+    var trackArtistCredits: [SpotifyTrackArtistCredit] = []
+    var isEnhanceLoading: Bool = false
+    var isConnectStreamingSession: Bool = false
+    var isSmartShuffleActive: Bool = false
+    @ObservationIgnored private var deviceTransferNoticeClearTask: Task<Void, Never>?
 
     var isControllingConnectPlayback: Bool {
         guard isConnectStreamingSession,
@@ -181,34 +183,34 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     private let cookieManager = CookieManager()
-    var webSocketManager: WebSocketManager?
-    private var stateCancellables = Set<AnyCancellable>()
-    private var sessionCancellables = Set<AnyCancellable>()
+    @ObservationIgnored var webSocketManager: WebSocketManager?
+    @ObservationIgnored private var stateCancellables = Set<AnyCancellable>()
+    @ObservationIgnored private var sessionCancellables = Set<AnyCancellable>()
 
-    internal var openSpotifyClient: CustomTLSClient?
-    internal var spclientClient: CustomTLSClient?
-    internal var apiPartnerClient: CustomTLSClient?
-    internal var clientTokenClient: CustomTLSClient?
-    internal var wwwSpotifyClient: CustomTLSClient?
-    internal var wgSpclientClient: CustomTLSClient?
+    @ObservationIgnored internal var openSpotifyClient: CustomTLSClient?
+    @ObservationIgnored internal var spclientClient: CustomTLSClient?
+    @ObservationIgnored internal var apiPartnerClient: CustomTLSClient?
+    @ObservationIgnored internal var clientTokenClient: CustomTLSClient?
+    @ObservationIgnored internal var wwwSpotifyClient: CustomTLSClient?
+    @ObservationIgnored internal var wgSpclientClient: CustomTLSClient?
 
-    private var accessToken: String?
-    private var accessTokenExpiresAt: Date?
-    private var clientToken: String?
-    private var clientTokenRefreshAt: Date?
-    private var webPlayerClientID: String?
-    private var tokenRefreshTask: Task<Void, Never>?
-    private var softReconnectObserver: AnyCancellable?
+    @ObservationIgnored private var accessToken: String?
+    @ObservationIgnored private var accessTokenExpiresAt: Date?
+    @ObservationIgnored private var clientToken: String?
+    @ObservationIgnored private var clientTokenRefreshAt: Date?
+    @ObservationIgnored private var webPlayerClientID: String?
+    @ObservationIgnored private var tokenRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var softReconnectObserver: AnyCancellable?
 
     func currentAccessToken() -> String? { accessToken }
-    internal var clientVersion: String?
+    @ObservationIgnored internal var clientVersion: String?
 
-    var sessionDeviceID: String?
-    var controllerDeviceID: String?
+    @ObservationIgnored var sessionDeviceID: String?
+    @ObservationIgnored var controllerDeviceID: String?
 
-    private var jsPackURL: String?
-    private var operationHashes: [String: String] = [:]
-    private var playlistTrackUIDByNormalizedURI: [String: String] = [:]
+    @ObservationIgnored private var jsPackURL: String?
+    @ObservationIgnored private var operationHashes: [String: String] = [:]
+    @ObservationIgnored private var playlistTrackUIDByNormalizedURI: [String: String] = [:]
     private let commonUserAgent = SpotifyWebPlayerIdentity.userAgent
 
     private static let webPlayerClientID = "d8a5ed958d274c2e8ee717e6a4b0971d"
@@ -220,20 +222,20 @@ class SpotifyPrivateAPIManager: ObservableObject {
     private let externalClientSecretKey = "spotAPIExternalClientSecret"
     private let preferredSpclientHostKey = "spotAPIPreferredSpclientHost"
 
-    private var queueHydrationTask: Task<Void, Never>?
-    private var queueRefreshTask: Task<Void, Never>?
-    private var libraryFetchTask: Task<Void, Never>?
-    private var reestablishTask: Task<Void, Never>?
-    private var activeSessionAttemptID = UUID()
-    private var lastPlayerStateSignature: PrivatePlayerStateSignature?
-    private var lastQueueHydrationIDs: [String] = []
-    private var nowPlayingHydrationTrackURI: String?
-    private var lastAdSkipAttemptAt: Date?
-    private var isSkippingAd = false
+    @ObservationIgnored private var queueHydrationTask: Task<Void, Never>?
+    @ObservationIgnored private var queueRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var libraryFetchTask: Task<Void, Never>?
+    @ObservationIgnored private var reestablishTask: Task<Void, Never>?
+    @ObservationIgnored private var activeSessionAttemptID = UUID()
+    @ObservationIgnored private var lastPlayerStateSignature: PrivatePlayerStateSignature?
+    @ObservationIgnored private var lastQueueHydrationIDs: [String] = []
+    @ObservationIgnored private var nowPlayingHydrationTrackURI: String?
+    @ObservationIgnored private var lastAdSkipAttemptAt: Date?
+    @ObservationIgnored private var isSkippingAd = false
     private let adSkipCooldown: TimeInterval = 18
 
-    private var bootstrapTask: Task<Void, Never>?
-    private var hasRequestedSessionBootstrap = false
+    @ObservationIgnored private var bootstrapTask: Task<Void, Never>?
+    @ObservationIgnored private var hasRequestedSessionBootstrap = false
 
     enum SessionBootstrapPolicy {
         case automatic
@@ -241,10 +243,11 @@ class SpotifyPrivateAPIManager: ObservableObject {
         case reconnect
     }
 
-    private lazy var apiCache = FileAPICache()
+    @ObservationIgnored private lazy var apiCache = FileAPICache()
 
     private init() {
         setupSubscribers()
+        observeSpotifyDesktopTermination()
     }
 
     func hasPersistedSession() -> Bool {
@@ -256,7 +259,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
 
     private func shouldAutoBootstrapAtLaunch() -> Bool {
         guard hasPersistedSession() else { return false }
-        return SettingsModel.shared.settings.defaultMusicPlayer == .spotify
+        return SettingsModel.shared.current.defaultMusicPlayer == .spotify
     }
 
     func bootstrapIfNeeded(
@@ -291,7 +294,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     private func setupSubscribers() {
-        $playerState
+        valuePublisher(\.playerState)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] playerState in
                 guard let self = self, let playerState = playerState else { return }
@@ -504,7 +507,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
         self.currentPlaylistPermissions = nil
         self.jamSessionActive = false; self.libraryImportEligible = false
         self.popularReleases = []
-        self.nowPlayingArtist = nil; self.similarAlbums = []; self.relatedTracks = []
+        self.nowPlayingArtist = nil; self.similarAlbums = []; self.relatedTracks = []; self.relatedTracksURI = nil
         self.trackArtistCredits = []
         self.isEnhanceLoading = false
         self.isConnectStreamingSession = false
@@ -712,7 +715,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
         }
     }
 
-    private var softReconnectRetryTask: Task<Void, Never>?
+    @ObservationIgnored private var softReconnectRetryTask: Task<Void, Never>?
 
     private func scheduleSoftReconnectRetry(after delay: TimeInterval = 3.0) {
         softReconnectRetryTask?.cancel()
@@ -746,7 +749,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     func skipAd() async {
-        guard SettingsModel.shared.settings.skipSpotifyAd else { return }
+        guard SettingsModel.shared.current.skipSpotifyAd else { return }
         guard !isSkippingAd else { return }
 
         if let last = lastAdSkipAttemptAt, Date().timeIntervalSince(last) < adSkipCooldown {
@@ -1591,7 +1594,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
         try await refreshAccessAndClientTokens(reason: "init")
     }
 
-    private var inFlightTokenRefresh: Task<Bool, Never>?
+    @ObservationIgnored private var inFlightTokenRefresh: Task<Bool, Never>?
 
     @discardableResult
     func refreshTokensIfNeeded(force: Bool = false) async -> Bool {
@@ -2262,7 +2265,7 @@ class SpotifyPrivateAPIManager: ObservableObject {
         _ = try await spclient.post(path: path, jsonBody: payload)
     }
 
-    private var playerStateRefreshTask: Task<Void, Error>?
+    @ObservationIgnored private var playerStateRefreshTask: Task<Void, Error>?
 
     func refreshPlayerAndDeviceState() async throws {
         if let existing = playerStateRefreshTask {
@@ -2434,7 +2437,8 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     private func hydrateNowPlayingIfNeeded(for state: PlayerState) async {
-        guard let sparseTrack = state.track, sparseTrack.metadata?.artistName == nil, !sparseTrack.uri.isEmpty else {
+        guard let sparseTrack = state.track, sparseTrack.metadata?.artistName == nil, !sparseTrack.uri.isEmpty,
+              !sparseTrack.isLocalFile else {
             nowPlayingHydrationTrackURI = nil
             return
         }
@@ -2458,9 +2462,9 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     private func hydrateQueue(from playerState: PlayerState) {
-        let sparseQueue = playerState.nextTracks?.filter {
+        let sparseQueue = prefillingKnownMetadata(playerState.nextTracks?.filter {
             !($0.uri.contains("spotify:delimiter") || ($0.metadata?.hidden == "true"))
-        } ?? []
+        } ?? [])
         let expectedQueueIDs = sparseQueue.map(\.uid)
         let currentQueueIDs = nativeQueue.map(\.uid)
 
@@ -2499,6 +2503,29 @@ class SpotifyPrivateAPIManager: ObservableObject {
                 sparseQueue: sparseQueue,
                 expectedQueueIDs: expectedQueueIDs
             )
+        }
+    }
+
+    private func prefillingKnownMetadata(_ sparseQueue: [PlayerState.Track]) -> [PlayerState.Track] {
+        var known: [String: PlayerState.Track.Metadata] = [:]
+        for track in nativeQueue {
+            guard let metadata = track.metadata, metadata.artistName != nil,
+                  !(metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) else { continue }
+            known[track.uri] = metadata
+        }
+        guard !known.isEmpty else { return sparseQueue }
+        return sparseQueue.map { track in
+            let title = track.metadata?.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard title.isEmpty || track.metadata?.artistName == nil, let cached = known[track.uri] else { return track }
+            var filled = track
+            var metadata = track.metadata ?? cached
+            metadata.title = cached.title
+            metadata.albumTitle = cached.albumTitle
+            metadata.artistName = cached.artistName
+            metadata.artistUri = cached.artistUri
+            metadata.imageUrl = cached.imageUrl
+            filled.metadata = metadata
+            return filled
         }
     }
 
@@ -2603,14 +2630,63 @@ class SpotifyPrivateAPIManager: ObservableObject {
     }
 
     private func applyPlayerStateIfNeeded(_ playerState: PlayerState) {
+        var playerState = playerStateCorrectedForQuitDesktopClient(playerState)
+        if let track = playerState.track, track.isLocalFile {
+            playerState.track = track.withLocalFileMetadataFilled()
+        }
         let signature = PrivatePlayerStateSignature(playerState)
         guard signature != lastPlayerStateSignature else { return }
         lastPlayerStateSignature = signature
         self.playerState = playerState
     }
 
-    private var lastLocalActivationKey: String?
-    private var lastLocalActivationAt: Date = .distantPast
+    // MARK: - Desktop client quit
+
+    @ObservationIgnored private var localDesktopClientDeviceID: String?
+    @ObservationIgnored private var spotifyTerminationObserver: NSObjectProtocol?
+
+    private static let spotifyBundleID = "com.spotify.client"
+
+    private var isSpotifyDesktopRunning: Bool {
+        RunningApps.shared.isRunning(Self.spotifyBundleID)
+    }
+
+    private func playerStateCorrectedForQuitDesktopClient(_ state: PlayerState) -> PlayerState {
+        if isSpotifyDesktopRunning {
+            if state.isActivelyPlaying, isLocalSpotifyActivePlayer, let active = activePlayerDeviceID {
+                localDesktopClientDeviceID = active
+            }
+            return state
+        }
+        guard state.isActivelyPlaying, isPlaybackOnQuitDesktopClient else { return state }
+        return state.pausedCopy()
+    }
+
+    private var isPlaybackOnQuitDesktopClient: Bool {
+        guard let active = activePlayerDeviceID else { return true }
+        return active == localDesktopClientDeviceID
+    }
+
+    private func observeSpotifyDesktopTermination() {
+        spotifyTerminationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == Self.spotifyBundleID else { return }
+            MainActor.assumeIsolated {
+                guard let self, let state = self.playerState,
+                      state.isActivelyPlaying, self.isPlaybackOnQuitDesktopClient else { return }
+                let paused = state.pausedCopy()
+                self.lastPlayerStateSignature = PrivatePlayerStateSignature(paused)
+                self.playerState = paused
+            }
+        }
+    }
+
+    @ObservationIgnored private var lastLocalActivationKey: String?
+    @ObservationIgnored private var lastLocalActivationAt: Date = .distantPast
 
     private func handleLocalPlayerActivationIfNeeded(playerState: PlayerState) {
         guard let selfId = controllerDeviceID else { return }
@@ -4601,10 +4677,15 @@ extension SpotifyPrivateAPIManager {
             await MainActor.run {
                 guard self.playerState?.track?.uri == trackURI else { return }
                 self.publishExtendedState(relatedTracks: tracks)
+                self.relatedTracksURI = trackURI
             }
             return tracks
         } catch {
             print("[SpotifyExtendedAPI] internalLinkRecommenderTrack failed: \(error.localizedDescription)")
+            await MainActor.run {
+                guard self.playerState?.track?.uri == trackURI else { return }
+                self.relatedTracksURI = trackURI
+            }
             return []
         }
     }

@@ -68,7 +68,7 @@ fileprivate enum MusicHubPane: Int, CaseIterable {
 
 struct QueueAndPlaylistsView: View {
     @Binding var navigationStack: [NotchWidgetMode]
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     @State private var selection: Int
     @State private var audioHubSection: MusicAudioHubSection
@@ -85,7 +85,7 @@ struct QueueAndPlaylistsView: View {
     var isLockScreenMode: Bool = false
     private var preferSystemAudioTab: Bool = false
 
-    private var isAppleMusic: Bool { musicManager.lastKnownBundleID == "com.apple.Music" }
+    private var isAppleMusic: Bool { musicManager.isAppleMusicContext }
     private var isSpotifyActive: Bool { musicManager.isSpotifySourceActive }
     private var isLoggedIn: Bool { musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated }
     private var hubPane: MusicHubPane { MusicHubPane(rawValue: selection) ?? .now }
@@ -116,7 +116,7 @@ struct QueueAndPlaylistsView: View {
         self.preferSystemAudioTab = preferSystemAudioTab
 
         let music = MusicManager.shared
-        let canShowSpotify = music.lastKnownBundleID != "com.apple.Music"
+        let canShowSpotify = !music.isAppleMusicContext
             && (music.isPrivateAPIAuthenticated || music.isOfficialAPIAuthenticated)
         let savedSection = MusicAudioHubSection(rawValue: UserDefaults.standard.integer(forKey: MusicAudioHubSection.defaultsKey)) ?? .apps
         let initialSection: MusicAudioHubSection
@@ -332,7 +332,7 @@ struct QueueAndPlaylistsView: View {
 
                 Button {
                     if musicManager.isOfficialAPIAuthenticated {
-                        Task { await musicManager.spotifyOfficialAPI.logout() }
+                        Task { musicManager.spotifyOfficialAPI.logout() }
                     } else {
                         musicManager.spotifyPrivateAPI.logout()
                     }
@@ -365,7 +365,7 @@ struct QueueAndPlaylistsView: View {
 
     private var appleMusicHubPill: some View {
         HStack(spacing: 6) {
-            Image("applemusic_logo")
+            Image("apple_logo")
                 .resizable()
                 .renderingMode(.template)
                 .foregroundStyle(Color(red: 1, green: 0.176, blue: 0.333))
@@ -444,7 +444,9 @@ struct QueueAndPlaylistsView: View {
                 await apple.requestAuthorization()
             }
             if apple.isMusicKitAuthorized {
-                await apple.refreshPlaylists()
+                async let playlists: Void = apple.refreshPlaylists()
+                async let nowPlaying: Void = musicManager.refreshAppleMusicNowPlaying()
+                _ = await (playlists, nowPlaying)
             }
             self.playlists = apple.fetchPlaylists()
             self.appleMusicQueue = await apple.fetchUpNextTracks()
@@ -492,174 +494,363 @@ struct QueueAndPlaylistsView: View {
         }
     }
 
+    private var appleNowPlayingCaption: String? {
+        let details = musicManager.appleNowPlaying
+        let parts = [
+            details.genreNames.first,
+            details.releaseDate.map { String(Calendar.current.component(.year, from: $0)) },
+            details.composer.map { "Written by \($0)" }
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     private var appleMusicNowView: some View {
         HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 14) {
-                    if let artwork = musicManager.artwork {
-                        Image(nsImage: artwork)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 88, height: 88)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .shadow(color: musicManager.accentColor.opacity(0.3), radius: 8, y: 4)
-                    }
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        Color.clear
+                            .frame(height: 0)
+                            .id("apple-now-top")
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(musicManager.title ?? "Not Playing")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                                .lineLimit(2)
-                            Text(musicManager.artist ?? "Apple Music")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            if let album = musicManager.album, !album.isEmpty,
-                               album != musicManager.title {
-                                Text(album)
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.tertiary)
-                                    .lineLimit(1)
-                            }
-                        }
+                        appleNowHeroCard
 
-                        HStack(spacing: 8) {
-                            if let playCount = musicManager.applePlayCount {
-                                PlayCountIndicator(playCount: playCount)
-                            }
-                            if let popularity = musicManager.applePopularity {
-                                PopularityIndicator(popularity: popularity)
-                            }
-                        }
-                        .padding(.top, 2)
-
-                        HStack(spacing: 10) {
-                            Button {
-                                Task {
-                                    await musicManager.toggleLike()
-                                    refreshData()
-                                }
-                            } label: {
-                                Image(systemName: musicManager.isLiked ? "heart.fill" : "heart")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(musicManager.isLiked ? Color.pink : Color.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help(musicManager.isLiked ? "Unlike" : "Love this song")
-
-                            Button {
-                                Task {
-                                    await musicManager.toggleShuffle()
-                                    refreshData()
-                                }
-                            } label: {
-                                Image(systemName: "shuffle")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(musicManager.shuffleState ? musicManager.accentColor : Color.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Shuffle")
-
-                            Button {
-                                Task {
-                                    await musicManager.cycleRepeatMode()
-                                    refreshData()
-                                }
-                            } label: {
-                                Image(systemName: musicManager.repeatState == .track ? "repeat.1" : "repeat")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(musicManager.repeatState != .off ? musicManager.accentColor : Color.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Repeat")
-
-                            Spacer(minLength: 0)
-
-                            Button {
-                                musicManager.appleMusic.revealCurrentTrack()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 11))
-                                    Text("Open")
-                                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                                }
-                                .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Show in Apple Music")
-                        }
-                    }
-                }
-
-                ActionButtonsView(onAction: refreshData, longPressNavigation: hubLongPressNavigation)
-
-                if !musicManager.appleSuggestedTracks.isEmpty {
-                    materialExpressiveCard(title: "More Like This", systemImage: "sparkles", accent: MaterialChartPalette.secondary) {
-                        LazyVStack(spacing: 4) {
-                            ForEach(musicManager.appleSuggestedTracks.prefix(5)) { track in
-                                SuggestedAppleTrackRow(track: track) {
-                                    Task { _ = musicManager.appleMusic.playTrack(persistentID: track.id) }
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            materialExpressiveCard(title: "Up Next", systemImage: "list.bullet", accent: MaterialChartPalette.primary) {
-                if appleMusicQueue.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "music.note.list")
-                            .font(.system(size: 20, weight: .light))
-                            .foregroundStyle(.tertiary)
-                        Text("Nothing queued in Apple Music.")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                } else {
-                    ScrollView(showsIndicators: false) {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(appleMusicQueue) { track in
-                                Button {
-                                    Task {
-                                        _ = musicManager.appleMusic.playTrack(persistentID: track.id)
-                                        refreshData()
-                                    }
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "music.note")
-                                            .font(.system(size: 9))
-                                            .foregroundStyle(.tertiary)
-                                            .frame(width: 14)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(track.title)
-                                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                                .lineLimit(1)
-                                            Text(track.artist)
-                                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
+                        let details = musicManager.appleNowPlaying
+                        if !musicManager.appleSuggestedTracks.isEmpty {
+                            materialExpressiveCard(title: "More by \(details.artist?.name ?? musicManager.artist ?? "This Artist")", systemImage: "sparkles", accent: MaterialChartPalette.secondary) {
+                                LazyVStack(spacing: 4) {
+                                    ForEach(musicManager.appleSuggestedTracks.prefix(6)) { track in
+                                        SuggestedAppleTrackRow(track: track) {
+                                            Task {
+                                                _ = await musicManager.appleMusic.play(song: track, within: musicManager.appleSuggestedTracks)
+                                                refreshData()
+                                            }
                                         }
-                                        Spacer(minLength: 0)
+                                        .contextMenu {
+                                            Button("Play Next") { Task { _ = await musicManager.appleMusic.playNext(songIDs: [track.id]); refreshData() } }
+                                            Button("Play Later") { Task { _ = await musicManager.appleMusic.playLater(songIDs: [track.id]); refreshData() } }
+                                        }
                                     }
-                                    .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
-                        .padding(.bottom, 12)
+
+                        if !details.relatedAlbums.isEmpty {
+                            materialExpressiveCard(title: "Similar Albums", systemImage: "square.stack", accent: MaterialChartPalette.tertiary) {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    LazyHStack(spacing: 12) {
+                                        ForEach(details.relatedAlbums) { album in
+                                            appleNowTile(title: album.title, subtitle: album.artistName, artworkURL: album.artworkURL, circular: false) {
+                                                openAppleMusicDetail(.album(album))
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 2)
+                                }
+                            }
+                        }
+
+                        if !details.similarArtists.isEmpty {
+                            materialExpressiveCard(title: "Similar Artists", systemImage: "person.2.fill", accent: MaterialChartPalette.primary) {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    LazyHStack(spacing: 12) {
+                                        ForEach(details.similarArtists) { artist in
+                                            appleNowTile(title: artist.name, subtitle: nil, artworkURL: artist.artworkURL, circular: true) {
+                                                openAppleMusicDetail(.artist(artist))
+                                            }
+                                        }
+                                    }
+                                    .padding(.horizontal, 2)
+                                }
+                            }
+                        }
+
+                        if details.song != nil {
+                            appleNowAboutCard(details)
+                        }
                     }
+                    .padding(.leading, 4)
+                    .padding(.trailing, 2)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+                .onAppear {
+                    DispatchQueue.main.async { proxy.scrollTo("apple-now-top", anchor: .top) }
                 }
             }
-            .frame(width: 292, alignment: .top)
+            .mask(fadeMask)
+
+            appleUpNextCard
+                .frame(width: 292, alignment: .top)
         }
         .padding(.leading, 2)
+        .task(id: musicManager.title) {
+            appleMusicQueue = await musicManager.appleMusic.fetchUpNextTracks()
+        }
+    }
+
+    private var appleNowHeroCard: some View {
+        let details = musicManager.appleNowPlaying
+        return VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(musicManager.title ?? "Not Playing")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .lineLimit(2)
+                Button {
+                    if let artist = details.artist { openAppleMusicDetail(.artist(artist)) }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(musicManager.artist ?? "Apple Music")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        if details.artist != nil {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(details.artist == nil)
+            }
+
+            HStack(alignment: .center, spacing: 14) {
+                Group {
+                    if let artwork = musicManager.artwork {
+                        Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        ZStack { MaterialChartPalette.surfaceVariant; Image(systemName: "music.note") }
+                    }
+                }
+                .frame(width: 88, height: 88)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 7) {
+                    if let album = musicManager.album, !album.isEmpty, album != musicManager.title {
+                        Button {
+                            if let catalogAlbum = details.album { openAppleMusicDetail(.album(catalogAlbum)) }
+                        } label: {
+                            Label(album, systemImage: "square.stack")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(details.album == nil)
+                    }
+                    if let caption = appleNowPlayingCaption {
+                        Text(caption)
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    if !details.audioBadges.isEmpty {
+                        AppleMusicAudioBadgeRow(badges: details.audioBadges)
+                    }
+                    HStack(spacing: 8) {
+                        if let playCount = musicManager.applePlayCount {
+                            PlayCountIndicator(playCount: playCount)
+                        }
+                        if details.isInLibrary {
+                            Label("In Library", systemImage: "checkmark.circle.fill")
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 12) {
+                appleNowIconButton(musicManager.isLiked ? "heart.fill" : "heart",
+                                   tint: musicManager.isLiked ? .pink : .secondary,
+                                   help: musicManager.isLiked ? "Unfavorite" : "Favorite") {
+                    Task { await musicManager.toggleLike() }
+                }
+                appleNowIconButton("shuffle", tint: musicManager.shuffleState ? musicManager.accentColor : .secondary, help: "Shuffle") {
+                    Task { await musicManager.toggleShuffle(); refreshData() }
+                }
+                appleNowIconButton(musicManager.repeatState == .track ? "repeat.1" : "repeat",
+                                   tint: musicManager.repeatState != .off ? musicManager.accentColor : .secondary,
+                                   help: "Repeat") {
+                    Task { await musicManager.cycleRepeatMode() }
+                }
+                if let songID = details.song?.id, details.hasStation {
+                    appleNowIconButton("dot.radiowaves.left.and.right", tint: .secondary, help: "Start station from this song") {
+                        Task { _ = await musicManager.appleMusic.playSongStation(songID: songID) }
+                    }
+                }
+                if details.song != nil, !details.isInLibrary, !musicManager.appleMusic.isInAppPlaybackActive {
+                    appleNowIconButton("plus.circle", tint: .secondary, help: "Add to Library") {
+                        Task {
+                            if await musicManager.appleMusic.addCurrentTrackToLibrary() {
+                                await musicManager.refreshAppleMusicNowPlaying()
+                            }
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                appleNowIconButton("arrow.up.right.square", tint: .secondary, help: "Show in Apple Music") {
+                    musicManager.appleMusic.revealCurrentTrack()
+                }
+            }
+
+            ActionButtonsView(onAction: refreshData, longPressNavigation: hubLongPressNavigation)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(MaterialChartPalette.cardGradient(for: musicManager.accentColor))
+        )
+    }
+
+    private func appleNowAboutCard(_ details: AppleMusicNowPlayingDetails) -> some View {
+        let rows: [(String, String)] = [
+            details.album.map { ("Album", $0.title) },
+            details.composer.map { ("Written by", $0) },
+            details.genreNames.isEmpty ? nil : ("Genre", details.genreNames.joined(separator: ", ")),
+            details.releaseDate.map { ("Released", $0.formatted(date: .abbreviated, time: .omitted)) },
+            details.lastPlayedDate.map { ("Last played", $0.formatted(.relative(presentation: .named))) },
+            details.libraryAddedDate.map { ("Added", $0.formatted(date: .abbreviated, time: .omitted)) },
+            details.hasLyrics ? ("Lyrics", "Available") : nil
+        ].compactMap { $0 }
+        return materialExpressiveCard(title: "About This Song", systemImage: "info.circle", accent: MaterialChartPalette.tertiary) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(rows, id: \.0) { row in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(row.0)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 72, alignment: .leading)
+                        Text(row.1)
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+        }
+    }
+
+    private var appleUpNextCard: some View {
+        materialExpressiveCard(title: "Up Next", systemImage: "list.bullet", accent: MaterialChartPalette.primary) {
+            if appleMusicQueue.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 20, weight: .light))
+                        .foregroundStyle(.tertiary)
+                    Text("Nothing queued in Apple Music.")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                Spacer(minLength: 0)
+            } else {
+                HStack {
+                    Text("\(appleMusicQueue.count) songs")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    if musicManager.appleMusic.canEditQueue {
+                        Button("Clear") {
+                            Task {
+                                _ = await musicManager.appleMusic.clearUpNext()
+                                appleMusicQueue = await musicManager.appleMusic.fetchUpNextTracks()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(appleMusicQueue) { track in
+                            AppleQueueRow(track: track) {
+                                Task {
+                                    await musicManager.appleMusic.playQueueTrack(track)
+                                    try? await Task.sleep(nanoseconds: 400_000_000)
+                                    appleMusicQueue = await musicManager.appleMusic.fetchUpNextTracks()
+                                }
+                            }
+                            .contextMenu {
+                                Button("Play Now") {
+                                    Task {
+                                        await musicManager.appleMusic.playQueueTrack(track)
+                                        appleMusicQueue = await musicManager.appleMusic.fetchUpNextTracks()
+                                    }
+                                }
+                                if musicManager.appleMusic.canRemove(track) {
+                                    Button("Remove from Up Next") {
+                                        appleMusicQueue.removeAll { $0.id == track.id }
+                                        Task {
+                                            _ = await musicManager.appleMusic.removeFromQueue(track)
+                                            appleMusicQueue = await musicManager.appleMusic.fetchUpNextTracks()
+                                        }
+                                    }
+                                }
+                                if let storeID = track.catalogID {
+                                    Button("Go to Artist") {
+                                        Task {
+                                            if let artist = await musicManager.appleMusic.findArtist(named: track.artist) {
+                                                openAppleMusicDetail(.artist(artist))
+                                            }
+                                        }
+                                    }
+                                    Button("Start Station") { Task { _ = await musicManager.appleMusic.playSongStation(songID: storeID) } }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.bottom, 12)
+                }
+            }
+        }
+    }
+
+    private func appleNowIconButton(_ systemImage: String, tint: Color, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13))
+                .foregroundStyle(tint)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func appleNowTile(title: String, subtitle: String?, artworkURL: URL?, circular: Bool, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            VStack(alignment: circular ? .center : .leading, spacing: 4) {
+                CachedAsyncImage(url: artworkURL) { $0.resizable().aspectRatio(contentMode: .fill) } placeholder: {
+                    ZStack { MaterialChartPalette.surfaceVariant; Image(systemName: circular ? "music.mic" : "square.stack") }
+                }
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: circular ? 36 : 12, style: .continuous))
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 72)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func openAppleMusicDetail(_ route: AppleMusicDetailRoute) {
+        AppleMusicNavigator.shared.pending = route
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+            selection = MusicHubPane.discover.rawValue
+        }
     }
 
     @ViewBuilder
@@ -1381,8 +1572,8 @@ struct QueueAndPlaylistsView: View {
 // MARK: - Subviews
 
 struct ActionButtonsView: View {
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
     let onAction: () -> Void
     var longPressNavigation: MusicLongPressNavigation = .notifications
 
@@ -1400,7 +1591,7 @@ struct ActionButtonsView: View {
     }
 
     private func accessoryHoldHandler(for target: MusicLongPressTarget) -> (() -> Void)? {
-        guard let action = settings.settings.resolvedAccessoryHoldAction(for: target) else { return nil }
+        guard let action = settings.settings.value.resolvedAccessoryHoldAction(for: target) else { return nil }
         return holdFeedback.handler(
             for: action,
             musicManager: musicManager,
@@ -1410,7 +1601,7 @@ struct ActionButtonsView: View {
     }
 
     private func skipHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction? {
-        holdFeedback.skipAction(for: target, settings: settings.settings)
+        holdFeedback.skipAction(for: target, settings: settings.settings.value)
     }
 
     private func skipHoldClosure(for target: MusicLongPressTarget) -> (() -> Void)? {
@@ -1458,7 +1649,7 @@ struct ActionButtonsView: View {
                     },
                     onLongPress: accessoryHoldHandler(for: .playPause),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "playPause") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .playPause),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .playPause),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "playPause"
@@ -1491,7 +1682,7 @@ struct ActionButtonsView: View {
                     onTap: { performAction(musicManager.toggleLike) },
                     onLongPress: accessoryHoldHandler(for: .like),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "like") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .like),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .like),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "like"
@@ -1508,7 +1699,7 @@ struct ActionButtonsView: View {
                     onTap: { performAction(musicManager.toggleShuffle) },
                     onLongPress: accessoryHoldHandler(for: .shuffle),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "shuffle") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .shuffle),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .shuffle),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "shuffle"
@@ -1529,7 +1720,7 @@ struct ActionButtonsView: View {
                     onTap: { performAction(musicManager.cycleRepeatMode) },
                     onLongPress: accessoryHoldHandler(for: .repeatMode),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "repeat") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .repeatMode),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .repeatMode),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "repeat"
@@ -1585,8 +1776,8 @@ struct TrackHoverActionsView: View {
     var uid: String? = nil
     var onAddToQueue: (() -> Void)? = nil
 
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
     @State private var showingPlaylistMenu = false
     @State private var containedPlaylistURIs: Set<String> = []
     @State private var isCheckingMembership = false
@@ -1682,8 +1873,8 @@ struct AddToPlaylistMenuView: View {
     @Binding var isCheckingMembership: Bool
     @Binding var feedbackMessage: String?
 
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
     @State private var feedbackTask: Task<Void, Never>?
 
     var body: some View {
@@ -1767,7 +1958,7 @@ struct AddToPlaylistMenuView: View {
                         trackURIs: [trackURI]
                     )
                     if ok {
-                        await MainActor.run {
+                        _ = await MainActor.run {
                             containedPlaylistURIs.remove(playlist.uri)
                         }
                         showFeedback("Removed from \(playlist.name)")
@@ -1780,7 +1971,7 @@ struct AddToPlaylistMenuView: View {
                         trackURIs: [trackURI]
                     )
                     if ok {
-                        await MainActor.run {
+                        _ = await MainActor.run {
                             containedPlaylistURIs.insert(playlist.uri)
                         }
                         showFeedback("Added to \(playlist.name)")
@@ -1836,7 +2027,7 @@ struct NativeQueueTrackRow: View {
     let track: PlayerState.Track
     var onPlay: (PlaybackResult) -> Void
     @State private var isHovered = false
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
     var body: some View {
         HStack(spacing: 10) {
             Button {
@@ -1926,7 +2117,7 @@ struct QueueTrackRow: View {
     let track: SpotifyTrack
     var onPlay: (PlaybackResult) -> Void
     @State private var isHovered = false
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1999,7 +2190,7 @@ struct NowPlayingInfoView: View {
 }
 
 struct ActiveDeviceView: View {
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
     private var activeDevice: SpotifyNativeDevice? {
         guard let activeID = musicManager.spotifyPrivateAPI.activePlayerDeviceID else { return nil }
         return musicManager.spotifyPrivateAPI.devices.first { $0.deviceId == activeID }
@@ -2132,7 +2323,7 @@ struct RecentlyPlayedCard: View {
 struct PopularReleaseCard: View {
     let release: SpotifyPopularRelease
     let onPlay: (PlaybackResult) -> Void
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     @State private var isHovered = false
 
@@ -2159,7 +2350,7 @@ struct PopularReleaseCard: View {
 struct RecommendedTrackRow: View {
     let track: SpotifyRecommendedTrack
     let onPlay: (PlaybackResult) -> Void
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
     @State private var isHovered = false
 
     var body: some View {
@@ -2377,8 +2568,8 @@ enum MusicAudioHubSection: Int, CaseIterable {
 }
 
 struct DevicesView: View {
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
 
     @Binding var navigationStack: [NotchWidgetMode]
     @Binding var audioHubSection: MusicAudioHubSection
@@ -2400,7 +2591,7 @@ struct DevicesView: View {
     private let lastSelectedTabKey = "lastSelectedDeviceTab"
 
     private var isAppleMusic: Bool {
-        musicManager.lastKnownBundleID == "com.apple.Music"
+        musicManager.isAppleMusicContext
     }
 
     private var isLoggedIn: Bool {
@@ -2461,7 +2652,7 @@ struct DevicesView: View {
                 isLoading = false
             }
         }
-        .onReceive(musicManager.spotifyPrivateAPI.$devices.receive(on: DispatchQueue.main)) { devices in
+        .onReceive(musicManager.spotifyPrivateAPI.valuePublisher(\.devices).receive(on: DispatchQueue.main)) { devices in
             guard !devices.isEmpty else { return }
             spotifyNativeDevices = devices
             if isLoading { isLoading = false }
@@ -2850,7 +3041,7 @@ fileprivate struct AppleMusicDeviceRow: View {
     let onSelect: () -> Void
     @State private var volume: Double
     private let throttler = Throttler(delay: 0.1)
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     init(device: AirPlayDevice, onSelect: @escaping () -> Void) {
         self.device = device
@@ -3117,11 +3308,10 @@ struct PlaylistView: View {
     let playlist: SpotifyPlaylist
     let isLockScreenMode: Bool
 
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject private var navigationManager: LockScreenNavigationManager
+    var musicManager: MusicManager { .shared }
     @Binding var navigationStack: [NotchWidgetMode]
 
-    @ObservedObject private var spotifyPrivateAPI = SpotifyPrivateAPIManager.shared
+    private var spotifyPrivateAPI: SpotifyPrivateAPIManager { .shared }
 
     @State private var viewModels: [TrackViewModel] = []
     @State private var isLoading = false
@@ -3206,6 +3396,10 @@ struct PlaylistView: View {
                                     onAlbum: { openAlbum(viewModel) },
                                     onAddToQueue: {
                                         Task {
+                                            if !playlist.uri.hasPrefix("spotify:"), musicManager.isAppleMusicContext {
+                                                _ = await musicManager.appleMusic.playLater(songIDs: [viewModel.uri])
+                                                return
+                                            }
                                             _ = await musicManager.spotifyPrivateAPI.addToQueue(
                                                 uri: viewModel.uri,
                                                 uid: viewModel.uid,
@@ -3261,7 +3455,7 @@ struct PlaylistView: View {
                 .fill(.ultraThinMaterial.opacity(0.001))
         )
         .task(id: playlist.id) { await loadPlaylistContent() }
-        .onReceive(spotifyPrivateAPI.$playlistTrackViewModels.receive(on: DispatchQueue.main)) { models in
+        .onReceive(spotifyPrivateAPI.valuePublisher(\.playlistTrackViewModels).receive(on: DispatchQueue.main)) { models in
             guard isUsingPrivateAPI else { return }
             viewModels = models
         }
@@ -3316,7 +3510,7 @@ struct PlaylistView: View {
                     tonalButton("Play", systemImage: "play.fill") {
                         Task {
                             if !playlist.uri.hasPrefix("spotify:"),
-                               musicManager.lastKnownBundleID == "com.apple.Music" {
+                               musicManager.isAppleMusicContext {
                                 let ok = musicManager.appleMusic.playPlaylist(persistentID: playlist.id)
                                 handlePlaybackResult(ok ? .success : .failure(reason: "Couldn’t play playlist."))
                             } else {
@@ -3327,7 +3521,7 @@ struct PlaylistView: View {
                     tonalButton("Shuffle", systemImage: "shuffle") {
                         Task {
                             if !playlist.uri.hasPrefix("spotify:"),
-                               musicManager.lastKnownBundleID == "com.apple.Music" {
+                               musicManager.isAppleMusicContext {
                                 let ok = musicManager.appleMusic.playPlaylist(persistentID: playlist.id)
                                 if ok {
                                     musicManager.appleMusic.setShuffle(enabled: true)
@@ -3458,7 +3652,7 @@ struct PlaylistView: View {
         viewModels = []
 
         let isAppleMusicPlaylist = !playlist.uri.hasPrefix("spotify:")
-            && musicManager.lastKnownBundleID == "com.apple.Music"
+            && musicManager.isAppleMusicContext
         if isAppleMusicPlaylist {
             isUsingPrivateAPI = false
             let apple = AppleMusicManager.shared
@@ -3527,7 +3721,7 @@ private struct PlaylistTrackRow: View {
     var onAlbum: () -> Void
     var onAddToQueue: () -> Void
 
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
     @State private var isHovered = false
 
     private static let exactDateFormatter: DateFormatter = {
@@ -3628,7 +3822,7 @@ private struct PlaylistTrackRow: View {
         .onTapGesture {
             Task {
                 if !contextUri.hasPrefix("spotify:"),
-                   musicManager.lastKnownBundleID == "com.apple.Music" {
+                   musicManager.isAppleMusicContext {
                     let ok = musicManager.appleMusic.playTrack(
                         persistentID: viewModel.uri,
                         inPlaylistPersistentID: contextUri
@@ -3649,7 +3843,7 @@ private struct PlaylistTrackRow: View {
             Button("Play") {
                 Task {
                     if !contextUri.hasPrefix("spotify:"),
-                       musicManager.lastKnownBundleID == "com.apple.Music" {
+                       musicManager.isAppleMusicContext {
                         let ok = musicManager.appleMusic.playTrack(
                             persistentID: viewModel.uri,
                             inPlaylistPersistentID: contextUri
@@ -3688,7 +3882,7 @@ struct SpotifyArtistDetailView: View {
     let uri: String
     let name: String
     @Binding var navigationStack: [NotchWidgetMode]
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     @State private var overview: SpotifyArtistOverview?
     @State private var isLoading = true
@@ -3999,7 +4193,7 @@ struct SpotifyAlbumDetailView: View {
     let uri: String
     let name: String
     @Binding var navigationStack: [NotchWidgetMode]
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     @State private var tracks: [SpotifyRecommendedTrack] = []
     @State private var isLoading = true
@@ -4074,7 +4268,7 @@ struct SpotifyMusicSearchView: View {
     var emptyReplacement: (() -> AnyView)? = nil
     var autofocusSearch: Bool = true
 
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     @State private var query = ""
     @State private var suggestions: [SpotifySearchSuggestion] = []
@@ -4364,7 +4558,7 @@ private struct FlowWrap<Item: Hashable, Content: View>: View {
 // MARK: - Consolidated from SpotifyNowPlayingExtras.swift
 
 struct SpotifyNowPlayingExtras: View {
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     private var artist: SpotifyArtistProfile? {
         musicManager.spotifyPrivateAPI.nowPlayingArtist
@@ -4517,7 +4711,7 @@ struct ArtistProfileCard: View {
 struct SimilarAlbumCard: View {
     let album: SpotifySimilarAlbum
     var onPlay: (PlaybackResult) -> Void
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
     @State private var isHovered = false
 
     var body: some View {
@@ -4631,10 +4825,11 @@ struct MerchCard: View {
 
 struct SpotifyCanvasView: View {
     let canvasURL: URL
+    var onReadyForDisplay: (Bool) -> Void = { _ in }
     @StateObject private var model = CanvasPlayerModel()
 
     var body: some View {
-        CanvasPlayerRepresentable(player: model.player)
+        CanvasPlayerRepresentable(player: model.player, onReadyForDisplay: onReadyForDisplay)
             .onAppear { model.play(url: canvasURL) }
             .onChange(of: canvasURL) { _, newURL in
                 model.play(url: newURL)
@@ -4684,25 +4879,34 @@ private final class CanvasPlayerModel: ObservableObject {
 
 private struct CanvasPlayerRepresentable: NSViewRepresentable {
     let player: AVPlayer
+    let onReadyForDisplay: (Bool) -> Void
 
     func makeNSView(context: Context) -> CanvasPlayerNSView {
-        CanvasPlayerNSView(player: player)
+        CanvasPlayerNSView(player: player, onReadyForDisplay: onReadyForDisplay)
     }
 
     func updateNSView(_ nsView: CanvasPlayerNSView, context: Context) {
         nsView.playerLayer.player = player
+        nsView.onReadyForDisplay = onReadyForDisplay
     }
 }
 
 private final class CanvasPlayerNSView: NSView {
     let playerLayer = AVPlayerLayer()
+    var onReadyForDisplay: (Bool) -> Void
+    private var readyObservation: NSKeyValueObservation?
 
-    init(player: AVPlayer) {
+    init(player: AVPlayer, onReadyForDisplay: @escaping (Bool) -> Void) {
+        self.onReadyForDisplay = onReadyForDisplay
         super.init(frame: .zero)
         wantsLayer = true
         playerLayer.player = player
         playerLayer.videoGravity = .resizeAspectFill
         layer?.addSublayer(playerLayer)
+        readyObservation = playerLayer.observe(\.isReadyForDisplay, options: [.initial, .new]) { [weak self] layer, _ in
+            let ready = layer.isReadyForDisplay
+            DispatchQueue.main.async { self?.onReadyForDisplay(ready) }
+        }
     }
 
     @available(*, unavailable)
@@ -4804,120 +5008,306 @@ struct GeminiApiKeysMissingView: View {
     }
 }
 
-// MARK: - Consolidated from AppleMusicSearchView.swift
+// MARK: - Apple Music (native MusicKit): search, discover & detail pages
+
+private enum AppleMusicDetailRoute: Hashable {
+    case artist(AppleMusicArtist)
+    case album(AppleMusicAlbum)
+    case playlist(AppleMusicPlaylist)
+}
+
+@MainActor
+private final class AppleMusicNavigator: ObservableObject {
+    static let shared = AppleMusicNavigator()
+    @Published var pending: AppleMusicDetailRoute?
+}
+
+private struct AppleQueueRow: View {
+    let track: AppleMusicManager.QueueTrack
+    let onTap: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 9) {
+                CachedAsyncImage(url: track.artworkURL) { $0.resizable().aspectRatio(contentMode: .fill) } placeholder: {
+                    ZStack {
+                        Color.white.opacity(0.08)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .frame(width: 30, height: 30)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.title)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                    Text(track.artist)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "play.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(isHovered ? Color.secondary : Color.clear)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(isHovered ? 0.07 : 0))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+}
 
 // MARK: - View Model
 
 @MainActor
-private class AppleMusicSearchViewModel: ObservableObject {
+private final class AppleMusicSearchViewModel: ObservableObject {
     @Published var query = ""
     @Published var results = AppleMusicSearchResults()
-    @Published var charts: [AppleMusicSong] = []
-    @Published var albumCharts: [AppleMusicAlbum] = []
+    @Published var suggestions: [String] = []
+    @Published var isSearching = false
+    @Published var hasSearched = false
+
+    @Published var recommendations: [AppleMusicRecommendationShelf] = []
+    @Published var charts = AppleMusicChartSet()
+    @Published var genres: [AppleMusicGenre] = []
+    @Published var selectedGenre: AppleMusicGenre?
+    @Published var recentContainers: [AppleMusicShelfItem] = []
     @Published var recentlyPlayed: [AppleMusicSong] = []
     @Published var recentlyAdded: [AppleMusicSong] = []
-    @Published var forYou: [AppleMusicPlaylist] = []
+    @Published var mostPlayed: [AppleMusicSong] = []
     @Published var heavyRotation: [AppleMusicAlbum] = []
     @Published var replay = AppleMusicReplaySummary()
-    @Published var suggestions: [String] = []
     @Published var discoverLoaded = false
-    @Published var isSearching = false
-    @Published var errorMessage: String?
-    @Published var hasSearched = false
+    @Published var isLoadingDiscover = false
+
+    @Published var route: [AppleMusicDetailRoute] = []
+    @Published var artistDetail: AppleMusicArtistDetail?
+    @Published var albumDetail: AppleMusicAlbumDetail?
+    @Published var playlistDetail: AppleMusicPlaylistDetail?
+    @Published var isLoadingDetail = false
+
+    @Published var toast: String?
 
     private var searchTask: Task<Void, Never>?
     private var suggestionTask: Task<Void, Never>?
+    private var detailTask: Task<Void, Never>?
+    private var toastTask: Task<Void, Never>?
 
-    func loadDiscover() async {
-        guard !discoverLoaded else { return }
+    private var apple: AppleMusicManager { MusicManager.shared.appleMusic }
+
+    // MARK: Discover
+
+    func loadDiscover(force: Bool = false) async {
+        guard force || !discoverLoaded else { return }
+        guard apple.isMusicKitAuthorized else { return }
         discoverLoaded = true
-        let apple = MusicManager.shared.appleMusic
-        async let c1 = apple.charts()
-        async let a1 = apple.albumCharts()
-        async let r1 = apple.recentlyPlayed()
-        async let ra1 = apple.recentlyAdded()
-        async let f1 = apple.forYouPlaylists()
-        async let h1 = apple.heavyRotationAlbums()
-        async let p1 = apple.latestReplay()
-        let (chartsValue, albumChartsValue, recentValue, recentlyAddedValue, forYouValue, heavyValue, replayValue) =
-            await (c1, a1, r1, ra1, f1, h1, p1)
+        isLoadingDiscover = true
+        async let recs = apple.recommendations()
+        async let chartSet = apple.charts(genreID: selectedGenre?.id)
+        async let genreList = apple.topGenres()
+        async let containers = apple.recentlyPlayedContainers()
+        async let recent = apple.recentlyPlayed()
+        async let added = apple.recentlyAdded()
+        async let top = apple.mostPlayed()
+        async let heavy = apple.heavyRotationAlbums()
+        async let replaySummary = apple.latestReplay()
+        let values = await (recs, chartSet, genreList, containers, recent, added, top, heavy, replaySummary)
         guard !Task.isCancelled else { return }
-        self.charts = chartsValue
-        self.albumCharts = albumChartsValue
-        self.recentlyPlayed = recentValue
-        self.recentlyAdded = recentlyAddedValue
-        self.forYou = forYouValue
-        self.heavyRotation = heavyValue
-        self.replay = replayValue
+        recommendations = values.0
+        charts = values.1
+        genres = values.2
+        recentContainers = values.3
+        recentlyPlayed = values.4
+        recentlyAdded = values.5
+        mostPlayed = values.6
+        heavyRotation = values.7
+        replay = values.8
+        isLoadingDiscover = false
     }
+
+    func selectGenre(_ genre: AppleMusicGenre?) {
+        selectedGenre = genre
+        Task {
+            let set = await apple.charts(genreID: genre?.id)
+            guard selectedGenre == genre else { return }
+            charts = set
+        }
+    }
+
+    var discoverIsEmpty: Bool {
+        recommendations.isEmpty && charts.songs.isEmpty && recentlyPlayed.isEmpty
+            && recentContainers.isEmpty && mostPlayed.isEmpty && replay.topSongs.isEmpty
+    }
+
+    // MARK: Search
 
     func search() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { results = AppleMusicSearchResults(); hasSearched = false; return }
-
+        guard !trimmed.isEmpty else {
+            results = AppleMusicSearchResults()
+            hasSearched = false
+            isSearching = false
+            return
+        }
         searchTask?.cancel()
         isSearching = true
-        errorMessage = nil
-
         searchTask = Task {
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
-
-            let apple = MusicManager.shared.appleMusic
-            if let loaded = await apple.search(trimmed) as AppleMusicSearchResults? {
-                guard !Task.isCancelled else { return }
-                self.results = loaded
-            }
-            self.isSearching = false
-            self.hasSearched = true
+            let loaded = await apple.search(trimmed)
+            guard !Task.isCancelled else { return }
+            results = loaded
+            isSearching = false
+            hasSearched = true
         }
     }
 
     func updateSuggestions() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        suggestionTask?.cancel()
         guard trimmed.count >= 2 else {
             suggestions = []
-            suggestionTask?.cancel()
             return
         }
-        suggestionTask?.cancel()
         suggestionTask = Task {
             try? await Task.sleep(nanoseconds: 180_000_000)
             guard !Task.isCancelled else { return }
-            let loaded = await MusicManager.shared.appleMusic.searchSuggestions(trimmed)
+            let loaded = await apple.searchSuggestions(trimmed)
             guard !Task.isCancelled else { return }
-            self.suggestions = loaded
+            suggestions = loaded
         }
     }
 
-    func play(_ song: AppleMusicSong) {
-        Task {
-            _ = await MusicKitAppleMusicManager.shared.play(songIDs: [song.id])
-            MusicManager.shared.appleMusic.setUpNextFromSearch(self.results.songs)
+    func clearSearch() {
+        query = ""
+        results = AppleMusicSearchResults()
+        suggestions = []
+        hasSearched = false
+    }
+
+    // MARK: Navigation
+
+    func open(_ destination: AppleMusicDetailRoute) {
+        route.append(destination)
+        loadDetail(for: destination)
+    }
+
+    func back() {
+        guard !route.isEmpty else { return }
+        route.removeLast()
+        if let previous = route.last {
+            loadDetail(for: previous)
         }
     }
 
-    func playAlbum(_ album: AppleMusicAlbum) {
+    func openArtist(named name: String) {
         Task {
-            _ = await MusicManager.shared.appleMusic.playAlbum(albumID: album.id)
+            guard let artist = await apple.findArtist(named: name) else {
+                showToast("Couldn’t find \(name) on Apple Music")
+                return
+            }
+            open(.artist(artist))
         }
     }
 
-    func playArtist(_ artist: AppleMusicArtist) {
-        Task {
-            _ = await MusicManager.shared.appleMusic.playArtistTopTracks(artistID: artist.id)
+    private func loadDetail(for destination: AppleMusicDetailRoute) {
+        detailTask?.cancel()
+        artistDetail = nil
+        albumDetail = nil
+        playlistDetail = nil
+        isLoadingDetail = true
+        detailTask = Task {
+            switch destination {
+            case .artist(let artist):
+                let detail = await apple.artistDetail(id: artist.id)
+                guard !Task.isCancelled else { return }
+                artistDetail = detail ?? AppleMusicArtistDetail(artist: artist)
+            case .album(let album):
+                let detail = await apple.albumDetail(id: album.id)
+                guard !Task.isCancelled else { return }
+                albumDetail = detail ?? AppleMusicAlbumDetail(album: album)
+            case .playlist(let playlist):
+                let detail = await apple.playlistDetail(id: playlist.id, isLibrary: playlist.isLibrary)
+                guard !Task.isCancelled else { return }
+                playlistDetail = detail ?? AppleMusicPlaylistDetail(playlist: playlist)
+            }
+            isLoadingDetail = false
         }
     }
 
-    func playPlaylist(_ playlist: AppleMusicPlaylist) {
+    // MARK: Actions
+
+    func perform(_ failure: String, _ operation: @escaping () async -> Bool) {
         Task {
-            _ = await MusicManager.shared.appleMusic.playCatalogPlaylist(playlistID: playlist.id)
+            let ok = await operation()
+            guard !ok else { return }
+            let account = MusicKitAppleMusicManager.shared.account
+            if account.isAuthorized && !account.canPlayCatalogContent {
+                showToast("An Apple Music subscription is needed to play this.")
+            } else {
+                showToast(account.lastError ?? failure)
+            }
         }
+    }
+
+    func play(_ song: AppleMusicSong, in songs: [AppleMusicSong]) {
+        perform("Couldn’t play \(song.title).") { await self.apple.play(song: song, within: songs) }
+    }
+
+    func playNext(_ song: AppleMusicSong) {
+        perform("Couldn’t queue \(song.title).") {
+            let ok = await self.apple.playNext(songIDs: [song.catalogID ?? song.id])
+            if ok { self.showToast("Playing next: \(song.title)") }
+            return ok
+        }
+    }
+
+    func playLater(_ song: AppleMusicSong) {
+        perform("Couldn’t queue \(song.title).") {
+            let ok = await self.apple.playLater(songIDs: [song.catalogID ?? song.id])
+            if ok { self.showToast("Added to queue: \(song.title)") }
+            return ok
+        }
+    }
+
+    func startStation(for song: AppleMusicSong) {
+        perform("No station for \(song.title).") { await self.apple.playSongStation(songID: song.catalogID ?? song.id) }
     }
 
     func addToLibrary(_ song: AppleMusicSong) {
         Task {
-            _ = await MusicManager.shared.appleMusic.addToLibrary(songIDs: [song.id])
+            if await apple.addToLibrary(song: song) {
+                showToast("Added \(song.title) to your library")
+            } else {
+                showToast("Opened in Music — add it from there")
+            }
+        }
+    }
+
+    func copyLink(_ url: URL?) {
+        guard let url else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        showToast("Link copied")
+    }
+
+    func showToast(_ message: String) {
+        toast = message
+        toastTask?.cancel()
+        toastTask = Task {
+            try? await Task.sleep(nanoseconds: 2_600_000_000)
+            guard !Task.isCancelled else { return }
+            toast = nil
         }
     }
 }
@@ -4926,80 +5316,132 @@ private class AppleMusicSearchViewModel: ObservableObject {
 
 struct AppleMusicSearchView: View {
     @Binding var navigationStack: [NotchWidgetMode]
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
     @StateObject private var vm = AppleMusicSearchViewModel()
+    private var musicKit: MusicKitAppleMusicManager { .shared }
+    @ObservedObject private var navigator = AppleMusicNavigator.shared
+
+    private var apple: AppleMusicManager { musicManager.appleMusic }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                TextField("Search Apple Music…", text: $vm.query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .regular, design: .rounded))
-                    .onSubmit { vm.search() }
-                    .onChange(of: vm.query) { _, _ in
-                        vm.search()
-                        vm.updateSuggestions()
-                    }
-                if vm.isSearching {
-                    ProgressView().controlSize(.small)
-                } else if !vm.query.isEmpty {
-                    Button {
-                        vm.query = ""
-                        vm.results = AppleMusicSearchResults()
-                        vm.suggestions = []
-                        vm.hasSearched = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-            )
-
-            Group {
-                if let error = vm.errorMessage {
-                    centeredPlaceholder(systemImage: "wifi.exclamationmark", label: error)
-                } else if vm.isSearching && vm.results.isEmpty {
-                    centeredPlaceholder(systemImage: "magnifyingglass", label: "Searching…")
-                } else if vm.results.isEmpty && vm.hasSearched {
-                    centeredPlaceholder(systemImage: "music.note", label: "No results for \"\(vm.query)\"")
-                } else if !vm.suggestions.isEmpty && vm.query.count >= 2 && vm.results.isEmpty && !vm.hasSearched {
-                    suggestionsList
-                } else if vm.results.isEmpty {
-                    let seed = musicManager.artist ?? ""
-                    if seed.isEmpty && vm.query.isEmpty {
-                        discoverSections
-                    } else {
-                        centeredPlaceholder(
-                            systemImage: "music.quarternote.3",
-                            label: seed.isEmpty ? "Search for songs, artists or albums" : "Discover more like \(seed)"
-                        )
-                        .onAppear {
-                            if !seed.isEmpty && vm.query.isEmpty {
-                                vm.query = seed
-                                vm.search()
-                            }
-                        }
-                    }
-                } else {
-                    resultsList
-                }
+            if let destination = vm.route.last {
+                detailHeader(for: destination)
+                detailContent(for: destination)
+            } else {
+                searchField
+                searchContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .bottom) { toastView }
         .task { await vm.loadDiscover() }
+        .onAppear { consumePendingRoute() }
+        .onChange(of: navigator.pending) { _, _ in consumePendingRoute() }
+        .onChange(of: musicKit.account.authorization) { _, status in
+            guard status == .authorized else { return }
+            Task { await vm.loadDiscover(force: true) }
+        }
     }
+
+    private func consumePendingRoute() {
+        guard let route = navigator.pending else { return }
+        navigator.pending = nil
+        vm.route = []
+        vm.open(route)
+    }
+
+    // MARK: Search field
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+            TextField("Search Apple Music…", text: $vm.query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .onSubmit { vm.search() }
+                .onChange(of: vm.query) { _, _ in
+                    vm.search()
+                    vm.updateSuggestions()
+                }
+            if vm.isSearching {
+                ProgressView().controlSize(.small)
+            } else if !vm.query.isEmpty {
+                Button { vm.clearSearch() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private var searchContent: some View {
+        if !musicKit.account.isAuthorized {
+            accessCard
+        } else if vm.isSearching && vm.results.isEmpty {
+            centeredPlaceholder(systemImage: "magnifyingglass", label: "Searching…")
+        } else if !vm.suggestions.isEmpty && vm.results.isEmpty && !vm.hasSearched {
+            suggestionsList
+        } else if vm.results.isEmpty && vm.hasSearched {
+            centeredPlaceholder(systemImage: "music.note", label: "No results for \"\(vm.query)\"")
+        } else if vm.results.isEmpty {
+            discoverSections
+        } else {
+            resultsList
+        }
+    }
+
+    // MARK: Access
+
+    private var accessCard: some View {
+        let denied = musicKit.account.authorization == .denied || musicKit.account.authorization == .restricted
+        return VStack(spacing: 12) {
+            Image(systemName: "music.note.house.fill")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.pink)
+            Text(denied ? "Apple Music access is off" : "Connect Apple Music")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+            Text(denied
+                 ? "Allow Sapphire under System Settings → Privacy & Security → Media & Apple Music."
+                 : "Browse your library, recommendations and the full catalog, and play without leaving the notch.")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
+            Button {
+                if denied {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Media") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } else {
+                    Task { await apple.requestAuthorization() }
+                }
+            } label: {
+                Text(denied ? "Open Privacy Settings" : "Allow Access")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(Color.pink.opacity(0.85), in: Capsule())
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Suggestions & results
 
     private var suggestionsList: some View {
         ScrollView(showsIndicators: false) {
@@ -5031,52 +5473,128 @@ struct AppleMusicSearchView: View {
 
     private var resultsList: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 8) {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                if let top = vm.results.topResults.first {
+                    resultSection("Top Result", systemImage: "star.fill") {
+                        topResultRow(top)
+                    }
+                }
                 if !vm.results.songs.isEmpty {
                     resultSection("Songs", systemImage: "music.note") {
                         ForEach(vm.results.songs.prefix(8)) { song in
-                            AppleMusicSongRow(song: song) {
-                                vm.play(song)
-                            }
-                            .contextMenu {
-                                Button("Play") { vm.play(song) }
-                                Button("Add to Library") { vm.addToLibrary(song) }
-                            }
+                            songRow(song, in: vm.results.songs)
                         }
                     }
                 }
-                if !vm.results.albums.isEmpty {
-                    resultSection("Albums", systemImage: "square.stack") {
-                        ForEach(vm.results.albums.prefix(6)) { album in
-                            AppleMusicAlbumRow(album: album) {
-                                vm.playAlbum(album)
-                            }
+                if !vm.results.librarySongs.isEmpty {
+                    resultSection("In Your Library", systemImage: "books.vertical.fill") {
+                        ForEach(vm.results.librarySongs) { song in
+                            songRow(song, in: vm.results.librarySongs)
                         }
                     }
                 }
                 if !vm.results.artists.isEmpty {
                     resultSection("Artists", systemImage: "music.mic") {
-                        ForEach(vm.results.artists.prefix(6)) { artist in
-                            AppleMusicArtistRow(artist: artist) {
-                                vm.playArtist(artist)
-                            }
-                        }
+                        tileStrip(vm.results.artists.prefix(10).map { .artist($0) })
+                    }
+                }
+                if !vm.results.albums.isEmpty {
+                    resultSection("Albums", systemImage: "square.stack") {
+                        tileStrip(vm.results.albums.prefix(10).map { .album($0) })
                     }
                 }
                 if !vm.results.playlists.isEmpty {
                     resultSection("Playlists", systemImage: "music.note.list") {
-                        ForEach(vm.results.playlists.prefix(6)) { playlist in
-                            AppleMusicPlaylistRow(playlist: playlist) {
-                                vm.playPlaylist(playlist)
-                            }
-                        }
+                        tileStrip(vm.results.playlists.prefix(10).map { .playlist($0) })
                     }
                 }
-                if vm.results.isEmpty {
-                    centeredPlaceholder(systemImage: "music.note", label: "No results for \"\(vm.query)\"")
+                if !vm.results.stations.isEmpty {
+                    resultSection("Stations", systemImage: "dot.radiowaves.left.and.right") {
+                        tileStrip(vm.results.stations.prefix(10).map { .station($0) })
+                    }
                 }
             }
-            .padding(.bottom, 20)
+            .padding(.bottom, 24)
+        }
+    }
+
+    @ViewBuilder
+    private func topResultRow(_ top: AppleMusicTopResult) -> some View {
+        switch top {
+        case .song(let song): songRow(song, in: vm.results.songs)
+        case .album(let album):
+            AppleMusicAlbumRow(album: album) { vm.open(.album(album)) }
+        case .artist(let artist):
+            AppleMusicArtistRow(artist: artist) { vm.open(.artist(artist)) }
+        case .playlist(let playlist):
+            AppleMusicPlaylistRow(playlist: playlist) { vm.open(.playlist(playlist)) }
+        case .station(let station):
+            AppleMusicMediaTile(item: .station(station), width: 72) {
+                vm.perform("Couldn’t start \(station.name).") { await apple.playStation(stationID: station.id) }
+            }
+        }
+    }
+
+    private func songRow(_ song: AppleMusicSong, in list: [AppleMusicSong]) -> some View {
+        AppleMusicSongRow(song: song) { vm.play(song, in: list) }
+            .contextMenu { songMenu(song, in: list) }
+    }
+
+    @ViewBuilder
+    private func songMenu(_ song: AppleMusicSong, in list: [AppleMusicSong]) -> some View {
+        Button("Play") { vm.play(song, in: list) }
+        Button("Play Next") { vm.playNext(song) }
+        Button("Play Later") { vm.playLater(song) }
+        Divider()
+        Button("Start Station") { vm.startStation(for: song) }
+        Button("Go to Artist") { vm.openArtist(named: song.artistName) }
+        Divider()
+        Button("Add to Library") { vm.addToLibrary(song) }
+        Button("Open in Music") { apple.open(url: song.url) }
+        if song.url != nil {
+            Button("Copy Link") { vm.copyLink(song.url) }
+        }
+    }
+
+    private func tileStrip(_ items: [AppleMusicTileItem], width: CGFloat = 72) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 10) {
+                ForEach(items) { item in
+                    AppleMusicMediaTile(item: item, width: width) { activate(item) }
+                        .contextMenu { tileMenu(item) }
+                }
+            }
+            .padding(.leading, 2)
+        }
+    }
+
+    private func activate(_ item: AppleMusicTileItem) {
+        switch item {
+        case .album(let album): vm.open(.album(album))
+        case .artist(let artist): vm.open(.artist(artist))
+        case .playlist(let playlist): vm.open(.playlist(playlist))
+        case .station(let station):
+            vm.perform("Couldn’t start \(station.name).") { await apple.playStation(stationID: station.id) }
+        }
+    }
+
+    @ViewBuilder
+    private func tileMenu(_ item: AppleMusicTileItem) -> some View {
+        switch item {
+        case .album(let album):
+            Button("Play") { vm.perform("Couldn’t play \(album.title).") { await apple.playAlbum(albumID: album.id) } }
+            Button("Go to Artist") { vm.openArtist(named: album.artistName) }
+            Button("Open in Music") { apple.open(url: album.url) }
+        case .artist(let artist):
+            Button("Play Top Songs") { vm.perform("Couldn’t play \(artist.name).") { await apple.playArtistTopTracks(artistID: artist.id) } }
+            Button("Start Station") { vm.perform("No station for \(artist.name).") { await apple.playArtistStation(artistID: artist.id) } }
+            Button("Open in Music") { apple.open(url: artist.url) }
+        case .playlist(let playlist):
+            Button("Play") { vm.perform("Couldn’t play \(playlist.name).") { await apple.playPlaylist(playlist) } }
+            Button("Shuffle") { vm.perform("Couldn’t play \(playlist.name).") { await apple.playPlaylist(playlist, shuffled: true) } }
+            Button("Open in Music") { apple.open(url: playlist.url) }
+        case .station(let station):
+            Button("Play") { vm.perform("Couldn’t start \(station.name).") { await apple.playStation(stationID: station.id) } }
         }
     }
 
@@ -5094,103 +5612,71 @@ struct AppleMusicSearchView: View {
         }
     }
 
+    // MARK: Discover
+
     private var discoverSections: some View {
         ScrollView(showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 14) {
-                if !vm.forYou.isEmpty {
-                    discoverSection(title: "Made for You", systemImage: "sparkles") {
-                        ForEach(vm.forYou.prefix(5)) { playlist in
-                            AppleMusicPlaylistRow(playlist: playlist) {
-                                Task { _ = await musicManager.appleMusic.playCatalogPlaylist(playlistID: playlist.id) }
-                            }
-                        }
+                if vm.isLoadingDiscover && vm.discoverIsEmpty {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                }
+
+                ForEach(vm.recommendations) { shelf in
+                    discoverSection(title: shelf.title, systemImage: "sparkles", subtitle: shelf.reason) {
+                        shelfStrip(shelf.items)
                     }
                 }
-                if !vm.replay.topSongs.isEmpty {
-                    discoverSection(title: "Your Replay", systemImage: "arrow.clockwise.circle.fill") {
-                        ForEach(vm.replay.topSongs.prefix(6)) { track in
-                            SuggestedAppleTrackRow(track: track) {
-                                Task { _ = musicManager.appleMusic.playTrack(persistentID: track.id) }
-                            }
-                        }
-                    }
-                }
-                if !vm.charts.isEmpty {
-                    discoverSection(title: "Top Charts", systemImage: "chart.bar.fill") {
-                        ForEach(vm.charts.prefix(8)) { track in
-                            SuggestedAppleTrackRow(track: track) {
-                                Task { _ = musicManager.appleMusic.playTrack(persistentID: track.id) }
-                            }
-                        }
-                    }
-                }
-                if !vm.albumCharts.isEmpty {
-                    discoverSection(title: "Top Albums", systemImage: "square.stack.fill") {
-                        ForEach(vm.albumCharts.prefix(6)) { album in
-                            AppleMusicAlbumRow(album: album) {
-                                Task { _ = await musicManager.appleMusic.playAlbum(albumID: album.id) }
-                            }
-                        }
-                    }
-                }
-                if !vm.recentlyPlayed.isEmpty {
+
+                if !vm.recentContainers.isEmpty {
                     discoverSection(title: "Recently Played", systemImage: "clock.fill") {
-                        ForEach(vm.recentlyPlayed.prefix(6)) { track in
-                            SuggestedAppleTrackRow(track: track) {
-                                Task { _ = musicManager.appleMusic.playTrack(persistentID: track.id) }
-                            }
+                        shelfStrip(vm.recentContainers)
+                    }
+                }
+
+                if !vm.recentlyPlayed.isEmpty {
+                    discoverSection(title: "Recent Songs", systemImage: "clock.arrow.circlepath") {
+                        songList(vm.recentlyPlayed, limit: 6)
+                    }
+                }
+
+                if !vm.replay.topSongs.isEmpty {
+                    discoverSection(title: vm.replay.playlistName ?? "Your Replay", systemImage: "arrow.clockwise.circle.fill") {
+                        songList(vm.replay.topSongs, limit: 6)
+                        if !vm.replay.topArtists.isEmpty {
+                            Text("Top artists: " + vm.replay.topArtists.prefix(5).map(\.name).joined(separator: ", "))
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
                         }
                     }
                 }
-                if !vm.recentlyAdded.isEmpty {
-                    discoverSection(title: "Recently Added", systemImage: "plus.circle.fill") {
-                        ForEach(vm.recentlyAdded.prefix(6)) { track in
-                            SuggestedAppleTrackRow(track: track) {
-                                Task { _ = musicManager.appleMusic.playTrack(persistentID: track.id) }
-                            }
-                        }
+
+                if !vm.mostPlayed.isEmpty {
+                    discoverSection(title: "Your Most Played", systemImage: "flame.fill") {
+                        songList(vm.mostPlayed, limit: 6, showPlayCount: true)
                     }
                 }
+
                 if !vm.heavyRotation.isEmpty {
                     discoverSection(title: "Heavy Rotation", systemImage: "repeat") {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 10) {
-                                ForEach(vm.heavyRotation.prefix(8)) { album in
-                                    Button {
-                                        Task { _ = await musicManager.appleMusic.playAlbum(albumID: album.id) }
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            CachedAsyncImage(url: album.artworkURL) { img in
-                                                img.resizable().aspectRatio(contentMode: .fill)
-                                            } placeholder: {
-                                                ZStack {
-                                                    Color.white.opacity(0.08)
-                                                    Image(systemName: "square.stack")
-                                                        .foregroundStyle(.secondary)
-                                                }
-                                            }
-                                            .frame(width: 64, height: 64)
-                                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                                            Text(album.title)
-                                                .font(.system(size: 9, weight: .semibold, design: .rounded))
-                                                .lineLimit(1)
-                                                .frame(width: 64, alignment: .leading)
-                                        }
-                                        .frame(width: 64)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.leading, 2)
-                        }
+                        tileStrip(vm.heavyRotation.map { .album($0) }, width: 64)
                     }
                 }
-                if vm.discoverLoaded && vm.charts.isEmpty && vm.recentlyPlayed.isEmpty && vm.forYou.isEmpty && vm.replay.topSongs.isEmpty {
-                    centeredPlaceholder(
-                        systemImage: "music.quarternote.3",
-                        label: "Search for songs, artists or albums"
-                    )
+
+                chartsSection
+
+                if !vm.recentlyAdded.isEmpty {
+                    discoverSection(title: "Recently Added", systemImage: "plus.circle.fill") {
+                        songList(vm.recentlyAdded, limit: 6)
+                    }
+                }
+
+                if vm.discoverLoaded && !vm.isLoadingDiscover && vm.discoverIsEmpty {
+                    centeredPlaceholder(systemImage: "music.quarternote.3", label: "Search for songs, artists or albums")
+                        .frame(height: 140)
                 }
 
                 appleMusicStatusCard
@@ -5200,20 +5686,83 @@ struct AppleMusicSearchView: View {
         }
     }
 
+    @ViewBuilder
+    private var chartsSection: some View {
+        if !vm.charts.songs.isEmpty || !vm.charts.albums.isEmpty || !vm.genres.isEmpty {
+            discoverSection(title: vm.selectedGenre.map { "Top \($0.name)" } ?? "Top Charts", systemImage: "chart.bar.fill") {
+                if !vm.genres.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            genreChip(nil)
+                            ForEach(vm.genres) { genreChip($0) }
+                        }
+                    }
+                }
+                if !vm.charts.songs.isEmpty {
+                    songList(vm.charts.songs, limit: 8, numbered: true)
+                }
+                if !vm.charts.albums.isEmpty {
+                    tileStrip(vm.charts.albums.prefix(12).map { .album($0) }, width: 64)
+                }
+                let playlists = vm.charts.dailyGlobalTop + vm.charts.cityTop + vm.charts.playlists
+                if !playlists.isEmpty {
+                    tileStrip(playlists.prefix(12).map { .playlist($0) }, width: 64)
+                }
+            }
+        }
+    }
+
+    private func genreChip(_ genre: AppleMusicGenre?) -> some View {
+        let selected = vm.selectedGenre == genre
+        return Button { vm.selectGenre(genre) } label: {
+            Text(genre?.name ?? "All")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(selected ? Color.pink.opacity(0.8) : Color.white.opacity(0.08), in: Capsule())
+                .foregroundStyle(selected ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func shelfStrip(_ items: [AppleMusicShelfItem]) -> some View {
+        tileStrip(items.map(AppleMusicTileItem.init))
+    }
+
+    private func songList(_ songs: [AppleMusicSong], limit: Int, numbered: Bool = false, showPlayCount: Bool = false) -> some View {
+        LazyVStack(spacing: 2) {
+            ForEach(Array(songs.prefix(limit).enumerated()), id: \.element.id) { index, song in
+                HStack(spacing: 6) {
+                    if numbered {
+                        Text("\(index + 1)")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 16)
+                    }
+                    songRow(song, in: songs)
+                    if showPlayCount, let plays = song.playCount {
+                        Text("\(plays) plays")
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+    }
+
     private var appleMusicStatusCard: some View {
-        let api = MusicManager.shared.appleMusicPrivateAPI
-        let devOK = MusicKitTokenStore.hasDeveloperToken
-        let userOK = api.isLoggedIn
-        let symbol = devOK && userOK ? "checkmark.circle.fill" : (devOK ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
-        let tint: Color = devOK && userOK ? .green : (devOK ? .orange : .red)
+        let account = musicKit.account
+        let healthy = account.isAuthorized && account.canPlayCatalogContent && account.lastError == nil
+        let symbol = healthy ? "checkmark.circle.fill" : (account.isAuthorized ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
+        let tint: Color = healthy ? .green : (account.isAuthorized ? .orange : .red)
         return VStack(alignment: .leading, spacing: 4) {
             Label("Apple Music connection", systemImage: symbol)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(tint)
-            Text(api.diagnosticsSummary)
+            Text(apple.diagnosticsSummary)
                 .font(.system(size: 10, weight: .regular, design: .rounded))
                 .foregroundStyle(.secondary)
-                .lineLimit(4)
+                .lineLimit(5)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -5226,13 +5775,22 @@ struct AppleMusicSearchView: View {
     private func discoverSection<Content: View>(
         title: String,
         systemImage: String,
+        subtitle: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(MaterialChartPalette.secondary)
-                .labelStyle(.titleAndIcon)
+            VStack(alignment: .leading, spacing: 2) {
+                Label(title, systemImage: systemImage)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(MaterialChartPalette.secondary)
+                    .labelStyle(.titleAndIcon)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
             content()
         }
         .padding(14)
@@ -5241,6 +5799,298 @@ struct AppleMusicSearchView: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(MaterialChartPalette.surface.opacity(0.45))
         )
+    }
+
+    // MARK: Detail pages
+
+    private func detailHeader(for destination: AppleMusicDetailRoute) -> some View {
+        HStack(spacing: 8) {
+            Button { vm.back() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .bold))
+                    Text(vm.route.count > 1 ? "Back" : "Search")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.white.opacity(0.07), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            Spacer(minLength: 0)
+            if vm.isLoadingDetail {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func detailContent(for destination: AppleMusicDetailRoute) -> some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 14) {
+                switch destination {
+                case .artist(let artist):
+                    artistPage(vm.artistDetail ?? AppleMusicArtistDetail(artist: artist))
+                case .album(let album):
+                    albumPage(vm.albumDetail ?? AppleMusicAlbumDetail(album: album))
+                case .playlist(let playlist):
+                    playlistPage(vm.playlistDetail ?? AppleMusicPlaylistDetail(playlist: playlist))
+                }
+            }
+            .padding(.bottom, 24)
+        }
+    }
+
+    @ViewBuilder
+    private func artistPage(_ detail: AppleMusicArtistDetail) -> some View {
+        let artist = detail.artist
+        detailHero(
+            artworkURL: artist.artworkURL,
+            circular: true,
+            title: artist.name,
+            subtitle: artist.genreNames.first,
+            caption: nil,
+            badges: []
+        ) {
+            pillButton("Play", systemImage: "play.fill", prominent: true) {
+                vm.perform("Couldn’t play \(artist.name).") { await apple.playArtistTopTracks(artistID: artist.id) }
+            }
+            if detail.station != nil {
+                pillButton("Station", systemImage: "dot.radiowaves.left.and.right") {
+                    vm.perform("No station for \(artist.name).") { await apple.playArtistStation(artistID: artist.id) }
+                }
+            }
+            pillButton("Open", systemImage: "arrow.up.right.square") { apple.open(url: artist.url) }
+        }
+        if let bio = detail.bio, !bio.isEmpty {
+            Text(bio.strippingSimpleHTML)
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(4)
+        }
+        if let latest = detail.latestRelease {
+            discoverSection(title: "Latest Release", systemImage: "sparkle") {
+                AppleMusicAlbumRow(album: latest) { vm.open(.album(latest)) }
+            }
+        }
+        if !detail.topSongs.isEmpty {
+            discoverSection(title: "Top Songs", systemImage: "music.note") {
+                songList(detail.topSongs, limit: 10, numbered: true)
+            }
+        }
+        albumShelf("Albums", detail.albums)
+        albumShelf("Singles & EPs", detail.singles)
+        albumShelf("Live Albums", detail.liveAlbums)
+        albumShelf("Compilations", detail.compilations)
+        albumShelf("Appears On", detail.appearsOn)
+        if !detail.featuredPlaylists.isEmpty {
+            discoverSection(title: "Featured Playlists", systemImage: "music.note.list") {
+                tileStrip(detail.featuredPlaylists.map { .playlist($0) })
+            }
+        }
+        if !detail.similarArtists.isEmpty {
+            discoverSection(title: "Similar Artists", systemImage: "person.2.fill") {
+                tileStrip(detail.similarArtists.map { .artist($0) })
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func albumShelf(_ title: String, _ albums: [AppleMusicAlbum]) -> some View {
+        if !albums.isEmpty {
+            discoverSection(title: title, systemImage: "square.stack.fill") {
+                tileStrip(albums.map { .album($0) })
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func albumPage(_ detail: AppleMusicAlbumDetail) -> some View {
+        let album = detail.album
+        let caption = [
+            album.releaseDate.map { String(Calendar.current.component(.year, from: $0)) },
+            detail.genreNames.first,
+            detail.tracks.isEmpty ? nil : "\(detail.tracks.count) songs"
+        ].compactMap { $0 }.joined(separator: " · ")
+        detailHero(
+            artworkURL: album.artworkURL,
+            circular: false,
+            title: album.title,
+            subtitle: album.artistName,
+            caption: caption.isEmpty ? nil : caption,
+            badges: detail.audioBadges,
+            onSubtitleTap: { vm.openArtist(named: album.artistName) }
+        ) {
+            pillButton("Play", systemImage: "play.fill", prominent: true) {
+                vm.perform("Couldn’t play \(album.title).") { await apple.playAlbum(albumID: album.id) }
+            }
+            pillButton("Shuffle", systemImage: "shuffle") {
+                vm.perform("Couldn’t play \(album.title).") {
+                    let ok = await apple.playAlbum(albumID: album.id)
+                    if ok { apple.setShuffle(enabled: true) }
+                    return ok
+                }
+            }
+            pillButton("Open", systemImage: "arrow.up.right.square") { apple.open(url: album.url) }
+        }
+        if !detail.tracks.isEmpty {
+            LazyVStack(spacing: 2) {
+                ForEach(Array(detail.tracks.enumerated()), id: \.element.id) { index, song in
+                    HStack(spacing: 6) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(.tertiary)
+                            .frame(width: 18)
+                        AppleMusicSongRow(song: song) {
+                            vm.perform("Couldn’t play \(song.title).") { await apple.playAlbum(albumID: album.id, startingAt: song.id) }
+                        }
+                        .contextMenu { songMenu(song, in: detail.tracks) }
+                    }
+                }
+            }
+        }
+        if let notes = detail.notes, !notes.isEmpty {
+            Text(notes.strippingSimpleHTML)
+                .font(.system(size: 11, weight: .regular, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(5)
+        }
+        if let footer = [detail.recordLabel, detail.copyright].compactMap({ $0 }).first {
+            Text(footer)
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .foregroundStyle(.tertiary)
+        }
+        albumShelf("Other Versions", detail.otherVersions)
+        albumShelf("You Might Also Like", detail.relatedAlbums)
+        if !detail.appearsOn.isEmpty {
+            discoverSection(title: "Featured On", systemImage: "music.note.list") {
+                tileStrip(detail.appearsOn.map { .playlist($0) })
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func playlistPage(_ detail: AppleMusicPlaylistDetail) -> some View {
+        let playlist = detail.playlist
+        detailHero(
+            artworkURL: playlist.artworkURL,
+            circular: false,
+            title: playlist.name,
+            subtitle: playlist.curatorName,
+            caption: detail.tracks.isEmpty ? playlist.shortDescription : "\(detail.tracks.count) songs",
+            badges: []
+        ) {
+            pillButton("Play", systemImage: "play.fill", prominent: true) {
+                vm.perform("Couldn’t play \(playlist.name).") { await apple.playPlaylist(playlist) }
+            }
+            pillButton("Shuffle", systemImage: "shuffle") {
+                vm.perform("Couldn’t play \(playlist.name).") { await apple.playPlaylist(playlist, shuffled: true) }
+            }
+            if playlist.url != nil {
+                pillButton("Open", systemImage: "arrow.up.right.square") { apple.open(url: playlist.url) }
+            }
+        }
+        if !detail.tracks.isEmpty {
+            LazyVStack(spacing: 2) {
+                ForEach(detail.tracks) { song in
+                    AppleMusicSongRow(song: song) {
+                        vm.perform("Couldn’t play \(song.title).") { await apple.playPlaylist(playlist, startingAt: song.id) }
+                    }
+                    .contextMenu { songMenu(song, in: detail.tracks) }
+                }
+            }
+        }
+        if !detail.featuredArtists.isEmpty {
+            discoverSection(title: "Featured Artists", systemImage: "person.2.fill") {
+                tileStrip(detail.featuredArtists.map { .artist($0) })
+            }
+        }
+        if !detail.moreByCurator.isEmpty {
+            discoverSection(title: "More by \(playlist.curatorName ?? "Curator")", systemImage: "music.note.list") {
+                tileStrip(detail.moreByCurator.map { .playlist($0) })
+            }
+        }
+    }
+
+    private func detailHero<Buttons: View>(
+        artworkURL: URL?,
+        circular: Bool,
+        title: String,
+        subtitle: String?,
+        caption: String?,
+        badges: [AppleMusicAudioBadge],
+        onSubtitleTap: (() -> Void)? = nil,
+        @ViewBuilder buttons: () -> Buttons
+    ) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            CachedAsyncImage(url: artworkURL) { img in
+                img.resizable().aspectRatio(contentMode: .fill)
+            } placeholder: {
+                ZStack {
+                    Color.white.opacity(0.08)
+                    Image(systemName: circular ? "music.mic" : "music.note")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 92, height: 92)
+            .clipShape(RoundedRectangle(cornerRadius: circular ? 46 : 14, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .lineLimit(2)
+                if let subtitle, !subtitle.isEmpty {
+                    Button { onSubtitleTap?() } label: {
+                        Text(subtitle)
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundStyle(onSubtitleTap == nil ? Color.secondary : Color.pink)
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(onSubtitleTap == nil)
+                }
+                if let caption, !caption.isEmpty {
+                    Text(caption)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                }
+                if !badges.isEmpty {
+                    AppleMusicAudioBadgeRow(badges: badges)
+                }
+                HStack(spacing: 6) { buttons() }
+                    .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func pillButton(_ title: String, systemImage: String, prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(prominent ? Color.pink.opacity(0.85) : Color.white.opacity(0.09), in: Capsule())
+                .foregroundStyle(prominent ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Misc
+
+    @ViewBuilder
+    private var toastView: some View {
+        if let toast = vm.toast {
+            Text(toast)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.bottom, 6)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     private func centeredPlaceholder(systemImage: String, label: String) -> some View {
@@ -5254,6 +6104,140 @@ struct AppleMusicSearchView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Apple Music tiles & badges
+
+private enum AppleMusicTileItem: Identifiable, Hashable {
+    case album(AppleMusicAlbum)
+    case artist(AppleMusicArtist)
+    case playlist(AppleMusicPlaylist)
+    case station(AppleMusicStation)
+
+    init(_ shelfItem: AppleMusicShelfItem) {
+        switch shelfItem {
+        case .album(let album): self = .album(album)
+        case .playlist(let playlist): self = .playlist(playlist)
+        case .station(let station): self = .station(station)
+        }
+    }
+
+    var id: String {
+        switch self {
+        case .album(let item): "album:\(item.id)"
+        case .artist(let item): "artist:\(item.id)"
+        case .playlist(let item): "playlist:\(item.id)"
+        case .station(let item): "station:\(item.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .album(let item): item.title
+        case .artist(let item): item.name
+        case .playlist(let item): item.name
+        case .station(let item): item.name
+        }
+    }
+
+    var subtitle: String? {
+        switch self {
+        case .album(let item): item.artistName
+        case .artist: "Artist"
+        case .playlist(let item): item.curatorName
+        case .station(let item): item.isLive ? "Live" : "Station"
+        }
+    }
+
+    var artworkURL: URL? {
+        switch self {
+        case .album(let item): item.artworkURL
+        case .artist(let item): item.artworkURL
+        case .playlist(let item): item.artworkURL
+        case .station(let item): item.artworkURL
+        }
+    }
+
+    var placeholderSymbol: String {
+        switch self {
+        case .album: "square.stack"
+        case .artist: "music.mic"
+        case .playlist: "music.note.list"
+        case .station: "dot.radiowaves.left.and.right"
+        }
+    }
+
+    var isCircular: Bool {
+        if case .artist = self { return true }
+        return false
+    }
+}
+
+private struct AppleMusicMediaTile: View {
+    let item: AppleMusicTileItem
+    let width: CGFloat
+    let onTap: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: item.isCircular ? .center : .leading, spacing: 4) {
+                CachedAsyncImage(url: item.artworkURL) { img in
+                    img.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    ZStack {
+                        Color.white.opacity(0.08)
+                        Image(systemName: item.placeholderSymbol)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: width, height: width)
+                .clipShape(RoundedRectangle(cornerRadius: item.isCircular ? width / 2 : 10, style: .continuous))
+                .scaleEffect(isHovered ? 1.03 : 1)
+
+                Text(item.title)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                if let subtitle = item.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 8, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: width)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+        }
+    }
+}
+
+struct AppleMusicAudioBadgeRow: View {
+    let badges: [AppleMusicAudioBadge]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(badges, id: \.self) { badge in
+                Label(badge.rawValue, systemImage: badge.systemImage)
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .labelStyle(.titleAndIcon)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.09), in: Capsule())
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private extension String {
+    var strippingSimpleHTML: String {
+        replacingOccurrences(of: "<br />", with: "\n")
+            .replacingOccurrences(of: "<br/>", with: "\n")
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
     }
 }
 

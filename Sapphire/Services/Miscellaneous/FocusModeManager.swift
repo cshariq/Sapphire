@@ -8,6 +8,7 @@
 import Foundation
 import Combine
 import AppKit
+import Intents
 
 // MARK: - 1. Public-Facing Data Models & Conversion Logic
 
@@ -63,6 +64,7 @@ class FocusModeManager: NSObject, ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var directoryMonitor: DirectoryMonitor?
+    private var focusStatusObserver: NSObjectProtocol?
     private var refreshTask: Task<Void, Never>?
     private var refreshGeneration: UInt = 0
 
@@ -92,6 +94,18 @@ class FocusModeManager: NSObject, ObservableObject {
             .store(in: &cancellables)
 
         monitor.start()
+
+        focusStatusObserver = NotificationCenter.default.addObserver(
+            forName: .sapphireFocusStatusDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.scheduleFocusRefresh(debounce: false)
+        }
+    }
+
+    func refreshNow() {
+        scheduleFocusRefresh(debounce: false)
     }
 
     private func scheduleFocusRefresh(debounce: Bool = true) {
@@ -116,10 +130,7 @@ class FocusModeManager: NSObject, ObservableObject {
 
             guard let self, !Task.isCancelled, self.refreshGeneration == generation else { return }
             self.refreshTask = nil
-            guard let snapshot else { return }
-            if self.currentStatus != snapshot.status {
-                self.currentStatus = snapshot.status
-            }
+            self.applyResolvedStatus(fileStatus: snapshot?.status)
         }
     }
 
@@ -155,9 +166,43 @@ class FocusModeManager: NSObject, ObservableObject {
         )
     }
 
+    private func applyResolvedStatus(fileStatus: FocusStatus?) {
+        let intentFocused: Bool? = {
+            guard INFocusStatusCenter.default.authorizationStatus == .authorized else { return nil }
+            return INFocusStatusCenter.default.focusStatus.isFocused
+        }()
+
+        let resolved: FocusStatus
+        if let fileStatus, fileStatus.isActive {
+            resolved = fileStatus
+        } else if intentFocused == true {
+            resolved = FocusStatus(
+                name: fileStatus?.name == "None" || fileStatus == nil ? "Focus" : (fileStatus?.name ?? "Focus"),
+                symbolName: fileStatus?.symbolName ?? "moon.fill",
+                isActive: true,
+                identifier: fileStatus?.identifier ?? "com.apple.focus.active",
+                tintColorName: fileStatus?.tintColorName,
+                tintColorNames: fileStatus?.tintColorNames
+            )
+        } else if let fileStatus {
+            resolved = fileStatus
+        } else if intentFocused == false {
+            resolved = .notActive
+        } else {
+            return
+        }
+
+        if currentStatus != resolved {
+            currentStatus = resolved
+        }
+    }
+
     deinit {
         refreshTask?.cancel()
         directoryMonitor?.stop()
+        if let focusStatusObserver {
+            NotificationCenter.default.removeObserver(focusStatusObserver)
+        }
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
     }
@@ -204,4 +249,8 @@ private struct StoreAssertionRecord: Decodable {
 
 private struct AssertionDetails: Decodable {
     let assertionDetailsModeIdentifier: String
+}
+
+extension Notification.Name {
+    static let sapphireFocusStatusDidChange = Notification.Name("INFocusStatusDidChangeNotification")
 }

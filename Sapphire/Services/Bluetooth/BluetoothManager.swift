@@ -33,6 +33,7 @@ class BluetoothManager: NSObject, ObservableObject {
     private var connectionNotification: IOBluetoothUserNotification?
     private var disconnectionNotifications: [String: IOBluetoothUserNotification] = [:]
     private var recentlyConnectedDebounceSet: Set<String> = []
+    private var initialConnectionsUntil = Date().addingTimeInterval(2)
 
     private let magicBattery = MagicBattery.shared
     private let batteryReader = BluetoothBatteryReader.shared
@@ -50,20 +51,14 @@ class BluetoothManager: NSObject, ObservableObject {
             }
         }
 
-        Task {
+        Task { [batteryReader] in
             await batteryReader.refreshAllBatteries()
         }
 
+        initialConnectionsUntil = Date().addingTimeInterval(2)
         self.connectionNotification = IOBluetoothDevice.register(
             forConnectNotifications: self,
             selector: #selector(deviceConnected(_:device:))
-        )
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleAirPodsUpdate(_:)),
-            name: .didUpdateAirPodsBattery,
-            object: nil
         )
 
         AuthenticationManager.shared.$isScanning
@@ -80,44 +75,6 @@ class BluetoothManager: NSObject, ObservableObject {
         NotificationCenter.default.removeObserver(self)
     }
 
-    @objc private func handleAirPodsUpdate(_ notification: Notification) {
-        Task { @MainActor [weak self] in
-            self?.handleAirPodsUpdateOnMain(notification)
-        }
-    }
-
-    @MainActor
-    private func handleAirPodsUpdateOnMain(_ notification: Notification) {
-        guard !isProximityScanActive else { return }
-
-        guard let userInfo = notification.userInfo,
-              let bleName = userInfo["name"] as? String,
-              let level = userInfo["level"] as? Int else {
-            return
-        }
-
-        guard let pairedDevices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice],
-              let classicDevice = pairedDevices.first(where: {
-                  guard let classicName = $0.name else { return false }
-                  let cleanClassic = classicName.replacingOccurrences(of: "(ANC)", with: "").replacingOccurrences(of: " ", with: "").lowercased()
-                  let cleanBLE = bleName.replacingOccurrences(of: "- Find My", with: "").replacingOccurrences(of: "’s", with: "").replacingOccurrences(of: " ", with: "").lowercased()
-                  return cleanBLE.contains(cleanClassic) || cleanClassic.contains(cleanBLE)
-              }) else {
-            return
-        }
-
-        let iconName = IconMapper.icon(for: classicDevice)
-        let deviceState = BluetoothDeviceState(
-            id: classicDevice.addressString,
-            name: classicDevice.name ?? bleName,
-            iconName: iconName,
-            eventType: .connected,
-            batteryLevel: level,
-            isContinuityDevice: isContinuityDevice(name: classicDevice.name ?? bleName)
-        )
-        self.lastEvent = deviceState
-    }
-
     @objc private func deviceConnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
         Task { @MainActor [weak self] in
             self?.handleDeviceConnected(device: device)
@@ -125,7 +82,7 @@ class BluetoothManager: NSObject, ObservableObject {
     }
 
     @MainActor
-    private func handleDeviceConnected(device: IOBluetoothDevice) {
+    private func handleDeviceConnected(device: IOBluetoothDevice, isInitialState: Bool = false) {
         guard !isProximityScanActive else {
             registerForDisconnect(device: device)
             return
@@ -139,7 +96,8 @@ class BluetoothManager: NSObject, ObservableObject {
             self?.recentlyConnectedDebounceSet.remove(address)
         }
 
-        if SettingsModel.shared.settings.bluetoothNotifySound {
+        let alreadyConnected = isInitialState || Date() < initialConnectionsUntil
+        if SettingsModel.shared.current.bluetoothNotifySound, !alreadyConnected {
             if let soundURL = Bundle.main.url(forResource: "head_gestures_double_nod", withExtension: "caf") {
                 NSSound(contentsOf: soundURL, byReference: true)?.play()
             } else {
@@ -205,50 +163,44 @@ class BluetoothManager: NSObject, ObservableObject {
 
     private func findBatteryLevel(for device: IOBluetoothDevice) async -> Int? {
         guard let name = device.name else { return nil }
+        let address = device.addressString
 
-        if device.isMultiBatteryDevice {
-            let l = device.batteryPercentLeft
-            let r = device.batteryPercentRight
-            let valid = [l, r].filter { $0 > 0 && $0 <= 100 }
-            if !valid.isEmpty { return valid.reduce(0, +) / valid.count }
-        } else {
-            if let single = device.batteryPercentSingle as? Int, single > 0 && single <= 100 {
-                return single
-            }
+        if let level = Self.validLevel(fromDeviceProperties: device) { return level }
+
+        if let address {
+            let level = await Task.detached(priority: .utility) {
+                BluetoothBatteryReader.ioRegistryBatteryLevel(forAddress: address)
+            }.value
+            if let level { return level }
         }
 
-        MagicBattery.shared.getIOBTBattery()
-        if let cachedDevice = AirBatteryModel.getByName(name),
-           cachedDevice.batteryLevel > 0 && cachedDevice.batteryLevel <= 100 {
-            return cachedDevice.batteryLevel
-        }
+        if let cached = Self.validCachedLevel(named: name) { return cached }
 
-        await withCheckedContinuation { continuation in
-            SPBluetoothDataModel.shared.refeshData { _ in
-                continuation.resume()
-            } error: {
-                continuation.resume()
-            }
-        }
+        await batteryReader.refreshAllBatteries(maxAge: 30)
 
-        MagicBattery.shared.getIOBTBattery()
-        if let batteryDevice = AirBatteryModel.getByName(name), batteryDevice.batteryLevel > 0 && batteryDevice.batteryLevel <= 100 {
-            print("[BluetoothManager] Found battery level for [\(name)]: \(batteryDevice.batteryLevel)%")
-            return batteryDevice.batteryLevel
-        }
-
-        let sysProfileBatteries = await BluetoothBatteryReader.getSystemProfileBatteries()
-        if let match = sysProfileBatteries.first(where: { $0.name == name }), match.level > 0, match.level <= 100 {
-            print("[BluetoothManager] System profile battery for [\(name)]: \(match.level)%")
+        if let cached = Self.validCachedLevel(named: name) { return cached }
+        let normalized = address.map(BluetoothBatteryReader.normalizedAddress)
+        if let match = batteryReader.systemProfilerBatteries.first(where: {
+            $0.name == name || (normalized != nil && $0.address == normalized && $0.name == $0.baseName)
+        }) {
             return match.level
         }
-
-        await batteryReader.refreshAllBatteries()
-        if let cached = AirBatteryModel.getByName(name), cached.batteryLevel > 0, cached.batteryLevel <= 100 {
-            return cached.batteryLevel
-        }
-
         return nil
+    }
+
+    private static func validLevel(fromDeviceProperties device: IOBluetoothDevice) -> Int? {
+        if device.isMultiBatteryDevice {
+            let valid = [device.batteryPercentLeft, device.batteryPercentRight].filter { $0 > 0 && $0 <= 100 }
+            return valid.isEmpty ? nil : valid.reduce(0, +) / valid.count
+        }
+        let single = device.batteryPercentSingle
+        return single > 0 && single <= 100 ? single : nil
+    }
+
+    private static func validCachedLevel(named name: String) -> Int? {
+        guard let cached = AccessoryBatteryStore.getByName(name),
+              cached.batteryLevel > 0, cached.batteryLevel <= 100 else { return nil }
+        return cached.batteryLevel
     }
 
     private func registerForDisconnect(device: IOBluetoothDevice) {
@@ -278,7 +230,7 @@ class BluetoothManager: NSObject, ObservableObject {
 
         guard let address = device.addressString, let name = device.name else { return }
 
-        if SettingsModel.shared.settings.bluetoothNotifySound {
+        if SettingsModel.shared.current.bluetoothNotifySound {
             if let soundURL = Bundle.main.url(forResource: "jbl_cancel", withExtension: "caf") {
                 NSSound(contentsOf: soundURL, byReference: true)?.play()
             } else {
@@ -302,7 +254,7 @@ class BluetoothManager: NSObject, ObservableObject {
     private func checkForInitiallyConnectedDevices() {
         guard let pairedDevices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else { return }
         for device in pairedDevices where device.isConnected() {
-            handleDeviceConnected(device: device)
+            handleDeviceConnected(device: device, isInitialState: true)
         }
     }
 

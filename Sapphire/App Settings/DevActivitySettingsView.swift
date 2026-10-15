@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct DevActivitySettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var monitor = DevActivityMonitor.shared
 
     private func kindBinding(_ kind: DevTaskKind, keyPath: WritableKeyPath<Settings, Set<String>>) -> Binding<Bool> {
@@ -84,6 +84,22 @@ struct DevActivitySettingsView: View {
                 description: "Rank running work alongside notifications instead of with the ambient readouts, so it shows even while music is playing.",
                 isOn: $settings.settings.devActivityHighPriority
             )
+
+            Divider().padding(.leading, 20)
+
+            ToggleRow(
+                title: "Open Details on Click",
+                description: "Clicking the activity opens what the task is doing: an agent's conversation, a command's terminal output, its processes, and a box to send a message or command back to it.",
+                isOn: $settings.settings.devActivityOpenOnClick
+            )
+
+            Divider().padding(.leading, 20)
+
+            ToggleRow(
+                title: "Dev Widget",
+                description: "A widget in the notch with running work and today's Claude Code, Codex, Cursor, Antigravity and Gemini usage. Click it for the full dashboard and a command runner.",
+                isOn: $settings.settings.devWidgetEnabled
+            )
         }
         .modifier(SettingsContainerModifier())
     }
@@ -103,7 +119,7 @@ struct DevActivitySettingsView: View {
             Divider().padding(.leading, 20)
 
             if monitor.tasks.isEmpty {
-                Text(settings.settings.devActivityEnabled || settings.settings.caffeinateAutoDuringTasks
+                Text(settings.settings.devActivityEnabled || settings.settings.devWidgetEnabled || settings.settings.caffeinateAutoDuringTasks
                      ? "Nothing running. Start a build or send an agent a prompt and it will appear here."
                      : "Detection is off. Turn on the notch activity or auto-caffeinate above to start watching.")
                     .font(.caption)
@@ -220,7 +236,7 @@ enum DevTaskFormatting {
 }
 
 struct CaffeineAutoTaskSettingsView: View {
-    @EnvironmentObject var settings: SettingsEditingSession
+    @EditingSettings var settings: SettingsEditingSession
     @ObservedObject private var monitor = DevActivityMonitor.shared
 
     private var unmonitoredKinds: [DevTaskKind] {
@@ -288,7 +304,7 @@ struct CaffeineAutoTaskSettingsView: View {
 
                 ToggleRow(
                     title: "Terminal Commands",
-                    description: "Off by default — not every long command is worth holding the display on for.",
+                    description: "",
                     isOn: kindBinding(.command)
                 )
 

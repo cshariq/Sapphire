@@ -25,7 +25,7 @@ private func lockScreenFormatTimer(_ seconds: TimeInterval) -> String {
 
 struct LockScreenCaffeineInfoView: View {
     @ObservedObject private var caffeineManager = CaffeineManager.shared
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     var body: some View {
         Group {
@@ -56,7 +56,7 @@ struct LockScreenCaffeineInfoView: View {
 
 struct LockScreenTimerInfoView: View {
     @EnvironmentObject var timerManager: TimerManager
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     var body: some View {
         Group {
@@ -89,7 +89,7 @@ struct LockScreenTimerInfoView: View {
 
 struct LockScreenClockInfoView: View {
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        TimelineView(.everyMinute) { context in
             HStack(spacing: LockScreenConfiguration.infoWidgetGenericHSpacing) {
                 Image(systemName: "clock.fill")
                     .font(.system(size: LockScreenConfiguration.infoWidgetIconFontSize))
@@ -98,14 +98,14 @@ struct LockScreenClockInfoView: View {
                     .monospacedDigit()
             }
             .foregroundColor(.white)
-            .modifier(TransparentEffect())
         }
+        .modifier(TransparentEffect())
     }
 }
 
 struct LockScreenNotesInfoView: View {
     @ObservedObject private var notesManager = NotesManager.shared
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     private var latestTitle: String? {
         notesManager.notes
@@ -148,7 +148,7 @@ struct LockScreenNotesInfoView: View {
 
 struct LockScreenClipboardInfoView: View {
     @ObservedObject private var clipboardManager = ClipboardManager.shared
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     private var latestPreview: String? {
         guard let item = clipboardManager.recentItems.first else { return nil }
@@ -294,7 +294,7 @@ private struct LockScreenTimerClockText: View {
     let fontSize: CGFloat
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
+        TimelineView(.periodic(from: .now, by: timerManager.isRunning ? 1 : 3600)) { _ in
             let displayTime = timerManager.displayTime
             Text(lockScreenFormatTimer(displayTime))
                 .font(.system(size: fontSize, weight: .bold, design: .rounded))

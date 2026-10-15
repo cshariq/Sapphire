@@ -7,6 +7,8 @@
 import AppKit
 import Combine
 import Foundation
+import struct SwiftUI.Path
+import struct SwiftUI.RoundedRectangle
 import XCTest
 @testable import Sapphire
 
@@ -150,7 +152,7 @@ final class InfrastructureUtilitiesTests: XCTestCase {
 
         XCTAssertEqual(session.settings.menuBarBlur, editedBlur)
         XCTAssertEqual(session.settings.showOnHover, runtimeHover)
-        XCTAssertEqual(session.settings, model.settings)
+        XCTAssertEqual(session.settings.value, model.settings)
     }
 
     @MainActor
@@ -174,8 +176,8 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         model.settings = firstCommit
         try? await Task.sleep(nanoseconds: 30_000_000)
 
-        XCTAssertEqual(session.settings, firstCommit)
-        XCTAssertEqual(session.settings, model.settings)
+        XCTAssertEqual(session.settings.value, firstCommit)
+        XCTAssertEqual(session.settings.value, model.settings)
     }
 
     func testHardwareNotchDetectionRequiresSafeAreaAndCentralCutout() {
@@ -208,6 +210,77 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertTrue(LiveActivityType.allCases.contains(.devActivity))
         XCTAssertEqual(ActivityType(from: .devActivity), .devActivity)
         XCTAssertEqual(ActivityType.devActivity.toLiveActivityType(), .devActivity)
+    }
+
+    func testCapsLockLiveActivityParticipatesInOrderingAndIsEnabledByDefault() {
+        XCTAssertTrue(Settings().capsLockLiveActivityEnabled)
+        XCTAssertTrue(LiveActivityType.allCases.contains(.capsLock))
+        XCTAssertEqual(ActivityType(from: .capsLock), .capsLock)
+        XCTAssertEqual(ActivityType.capsLock.toLiveActivityType(), .capsLock)
+    }
+
+    func testExpandedContentSizeHonorsCustomNotchMinimums() {
+        XCTAssertEqual(
+            NotchSizing.expandedContentSize(
+                contentSize: CGSize(width: 180, height: 40),
+                minimumSize: CGSize(width: 260, height: 72)
+            ),
+            CGSize(width: 260, height: 72)
+        )
+        XCTAssertEqual(
+            NotchSizing.expandedContentSize(
+                contentSize: CGSize(width: 180, height: 40),
+                minimumSize: CGSize(width: 120, height: 20),
+                scale: 1.5
+            ),
+            CGSize(width: 270, height: 60)
+        )
+    }
+
+    func testTransientLiveActivitiesCanSuppressHoverExpansion() {
+        XCTAssertFalse(LiveActivityHoverExpansionPolicy.shouldSuppress(activity: .music))
+        XCTAssertFalse(LiveActivityHoverExpansionPolicy.shouldSuppress(activity: .persistentBattery))
+        XCTAssertFalse(LiveActivityHoverExpansionPolicy.shouldSuppress(activity: .weather))
+        XCTAssertFalse(LiveActivityHoverExpansionPolicy.shouldSuppress(activity: .stats))
+        XCTAssertFalse(LiveActivityHoverExpansionPolicy.shouldSuppress(activity: .devActivity))
+        XCTAssertTrue(LiveActivityHoverExpansionPolicy.shouldSuppress(activity: .notification))
+        XCTAssertTrue(LiveActivityHoverExpansionPolicy.shouldSuppress(activity: .audioSwitch))
+    }
+
+    func testSpotifyWidgetVisibilityCanHideClosedLoggedInSpotifySource() {
+        XCTAssertFalse(MusicWidgetVisibilityPolicy.shouldShow(
+            isEnabled: true,
+            hideWhenNotPlaying: false,
+            isPlaying: false,
+            hidePausedSpotifyWhenIdle: false,
+            isSpotifyPausedWithNoOtherPlayback: false,
+            hideSpotifyWhenAppClosed: true,
+            isLoggedIntoSpotify: true,
+            isSpotifyOnlySource: true,
+            isSpotifyAppRunning: false
+        ))
+        XCTAssertTrue(MusicWidgetVisibilityPolicy.shouldShow(
+            isEnabled: true,
+            hideWhenNotPlaying: false,
+            isPlaying: false,
+            hidePausedSpotifyWhenIdle: false,
+            isSpotifyPausedWithNoOtherPlayback: false,
+            hideSpotifyWhenAppClosed: true,
+            isLoggedIntoSpotify: true,
+            isSpotifyOnlySource: true,
+            isSpotifyAppRunning: true
+        ))
+        XCTAssertTrue(MusicWidgetVisibilityPolicy.shouldShow(
+            isEnabled: true,
+            hideWhenNotPlaying: false,
+            isPlaying: false,
+            hidePausedSpotifyWhenIdle: false,
+            isSpotifyPausedWithNoOtherPlayback: false,
+            hideSpotifyWhenAppClosed: true,
+            isLoggedIntoSpotify: true,
+            isSpotifyOnlySource: false,
+            isSpotifyAppRunning: false
+        ))
     }
 
     @MainActor
@@ -244,42 +317,312 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         window.close()
     }
 
-    func testFullScreenActivityVisibilityIsScopedToOneDisplay() {
-        let fullScreenDisplays: Set<CGDirectDisplayID> = [101]
-
-        XCTAssertTrue(FullScreenActivityVisibilityPolicy.shouldHide(
-            activity: .music,
-            on: 101,
-            fullScreenDisplayIDs: fullScreenDisplays,
-            hideAll: true,
-            hiddenActivityTypes: [:]
-        ))
-        XCTAssertFalse(FullScreenActivityVisibilityPolicy.shouldHide(
-            activity: .music,
-            on: 202,
-            fullScreenDisplayIDs: fullScreenDisplays,
-            hideAll: true,
-            hiddenActivityTypes: [:]
-        ))
+    func testFullScreenHideAllIncludesTheHUD() {
+        let behavior = FullScreenBehavior(activityVisibility: .hideAll)
+        XCTAssertTrue(FullScreenActivityVisibilityPolicy.hides(.systemHUD, behavior: behavior, selectedActivityTypes: [:]))
+        XCTAssertTrue(FullScreenActivityVisibilityPolicy.hides(.music, behavior: behavior, selectedActivityTypes: [:]))
+        XCTAssertFalse(FullScreenActivityVisibilityPolicy.hides(.lockScreen, behavior: behavior, selectedActivityTypes: [:]))
     }
 
-    func testSpecificFullScreenActivityVisibilityUsesActivityType() {
-        let hiddenTypes = [LiveActivityType.music.rawValue: true]
+    func testFullScreenHidePersistentKeepsEvents() {
+        let behavior = FullScreenBehavior(activityVisibility: .hidePersistent)
+        XCTAssertTrue(FullScreenActivityVisibilityPolicy.hides(.music, behavior: behavior, selectedActivityTypes: [:]))
+        XCTAssertTrue(FullScreenActivityVisibilityPolicy.hides(.persistentStats, behavior: behavior, selectedActivityTypes: [:]))
+        XCTAssertFalse(FullScreenActivityVisibilityPolicy.hides(.systemHUD, behavior: behavior, selectedActivityTypes: [:]))
+        XCTAssertFalse(FullScreenActivityVisibilityPolicy.hides(.capsLock, behavior: behavior, selectedActivityTypes: [:]))
+        XCTAssertFalse(FullScreenActivityVisibilityPolicy.hides(.timer, behavior: behavior, selectedActivityTypes: [:], isAlerting: true))
+    }
 
-        XCTAssertTrue(FullScreenActivityVisibilityPolicy.shouldHide(
-            activity: .music,
-            on: 101,
-            fullScreenDisplayIDs: [101],
-            hideAll: false,
-            hiddenActivityTypes: hiddenTypes
-        ))
-        XCTAssertFalse(FullScreenActivityVisibilityPolicy.shouldHide(
-            activity: .weather,
-            on: 101,
-            fullScreenDisplayIDs: [101],
-            hideAll: false,
-            hiddenActivityTypes: hiddenTypes
-        ))
+    func testFullScreenHideSelectedUsesActivityType() {
+        let behavior = FullScreenBehavior(activityVisibility: .hideSelected)
+        let selected = [LiveActivityType.music.rawValue: true]
+        XCTAssertTrue(FullScreenActivityVisibilityPolicy.hides(.music, behavior: behavior, selectedActivityTypes: selected))
+        XCTAssertFalse(FullScreenActivityVisibilityPolicy.hides(.weather, behavior: behavior, selectedActivityTypes: selected))
+        XCTAssertFalse(FullScreenActivityVisibilityPolicy.hides(.music, behavior: FullScreenBehavior(), selectedActivityTypes: selected))
+    }
+
+    func testPerDisplayFullScreenBehaviorOverridesTheDefault() {
+        var settings = Settings()
+        settings.fullScreenActivityVisibility = .hidePersistent
+        settings.perDisplayFullScreenBehavior["external"] = FullScreenBehavior(activityVisibility: .showAll, hideNotch: true)
+        XCTAssertEqual(settings.resolvedFullScreenBehavior(forDisplayID: "built-in").activityVisibility, .hidePersistent)
+        XCTAssertEqual(settings.resolvedFullScreenBehavior(forDisplayID: "external"), FullScreenBehavior(activityVisibility: .showAll, hideNotch: true))
+    }
+
+    func testFullScreenBehaviorWithoutHideLyricsKeepsHidingLyrics() throws {
+        let saved = Data(#"{"activityVisibility":"showAll","hideNotch":true}"#.utf8)
+        let behavior = try JSONDecoder().decode(FullScreenBehavior.self, from: saved)
+        XCTAssertTrue(behavior.hideNotch)
+        XCTAssertTrue(behavior.hideLyrics)
+        XCTAssertTrue(Settings().hideLyricsInFullScreen)
+    }
+
+    func testApplyDisplaySettingsToAllDisplaysCopiesOneDisplay() {
+        var settings = Settings()
+        settings.perDisplayNotchSize["a"] = NotchSizeOverride(width: 220, height: 40)
+        settings.perDisplayHideNotchWhenInactive["a"] = true
+        settings.perDisplayFullScreenBehavior["a"] = FullScreenBehavior(activityVisibility: .hideAll, hideNotch: true, hideLyrics: false)
+        settings.perDisplayFullScreenBehavior["b"] = FullScreenBehavior(activityVisibility: .showAll)
+
+        settings.applyDisplaySettingsToAllDisplays(from: "a")
+
+        for display in ["a", "b", "new"] {
+            XCTAssertEqual(settings.resolvedNotchWidth(forDisplayID: display), 220)
+            XCTAssertEqual(settings.resolvedNotchHeight(forDisplayID: display), 40)
+            XCTAssertTrue(settings.resolvedHideNotchWhenInactive(forDisplayID: display))
+            XCTAssertEqual(settings.resolvedFullScreenBehavior(forDisplayID: display), FullScreenBehavior(activityVisibility: .hideAll, hideNotch: true, hideLyrics: false))
+        }
+    }
+
+    func testFloatingIslandIsAPillWhenShortAndRoundedWhenOpen() {
+        let collapsed = CGRect(x: 0, y: 0, width: 180, height: 32)
+        let pill = CustomNotchShape(cornerRadius: 16, bottomCornerRadius: 16, isFloatingIsland: true)
+        XCTAssertEqual(pill.path(in: collapsed).description,
+                       RoundedRectangle(cornerRadius: 16, style: .continuous).path(in: collapsed).description)
+
+        let open = CGRect(x: 0, y: 0, width: 640, height: 300)
+        let card = CustomNotchShape(cornerRadius: 32, bottomCornerRadius: 32, isFloatingIsland: true)
+        XCTAssertEqual(card.path(in: open).description,
+                       RoundedRectangle(cornerRadius: 52, style: .continuous).path(in: open).description)
+        let short = CGRect(x: 0, y: 0, width: 640, height: 120)
+        XCTAssertEqual(card.path(in: short).description,
+                       RoundedRectangle(cornerRadius: 32, style: .continuous).path(in: short).description)
+
+        let preview = CustomNotchShape(cornerRadius: 0, bottomCornerRadius: 0, isFloatingIsland: true)
+        XCTAssertEqual(preview.path(in: short).description,
+                       RoundedRectangle(cornerRadius: CustomNotchShape.floatingIslandExpandedCornerRadius, style: .continuous).path(in: short).description)
+    }
+
+    func testIslandBarDropsOutOfTheCardOnlyOnceItHasGrown() {
+        var shape = CustomNotchShape(cornerRadius: 32, bottomCornerRadius: 32, isFloatingIsland: true)
+        shape.islandBarSize = CGSize(width: 300, height: NotchIslandBar.height)
+        shape.islandBarGap = NotchIslandBar.gap
+        shape.islandCollapsedHeight = 25
+        XCTAssertEqual(shape.islandBarPresence(height: 25), 0)
+        XCTAssertEqual(shape.islandBarPresence(height: 40), 0)
+        XCTAssertEqual(shape.islandBarPresence(height: 200), 1)
+
+        let open = CGRect(x: 0, y: 0, width: 500, height: 200)
+        let path = shape.path(in: open)
+        let barTop = open.maxY - NotchIslandBar.height
+        XCTAssertTrue(path.contains(CGPoint(x: 250, y: barTop - NotchIslandBar.gap - 2)))
+        XCTAssertFalse(path.contains(CGPoint(x: 250, y: barTop - NotchIslandBar.gap / 2)))
+        XCTAssertTrue(path.contains(CGPoint(x: 250, y: barTop + NotchIslandBar.height / 2)))
+        XCTAssertFalse(path.contains(CGPoint(x: 60, y: barTop + NotchIslandBar.height / 2)))
+
+        let closed = CGRect(x: 0, y: 0, width: 140, height: 25)
+        XCTAssertEqual(shape.path(in: closed).description,
+                       RoundedRectangle(cornerRadius: 12.5, style: .continuous).path(in: closed).description)
+    }
+
+    func testSecondIslandRestyleReplacesOnlyEarlierDefaults() {
+        var previous = Settings()
+        previous.floatingIslandStyle = FloatingIslandStyle.previousDefaults[1]
+        SettingsModel.adoptCurrentFloatingIslandStyle(&previous)
+        XCTAssertEqual(previous.floatingIslandStyle, FloatingIslandStyle())
+
+        var custom = Settings()
+        var style = FloatingIslandStyle.previousDefaults[1]
+        style.openPadding = 22
+        custom.floatingIslandStyle = style
+        SettingsModel.adoptCurrentFloatingIslandStyle(&custom)
+        XCTAssertEqual(custom.floatingIslandStyle, style)
+    }
+
+    func testSatelliteBubbleBudsOffTheNotchEnd() {
+        let layout = NotchSatelliteLayout(diameter: 32, gap: 6, centerY: 15)
+        let outline = CGRect(x: 100, y: 0, width: 110, height: 30)
+        let trailing = NotchSatelliteSlot(index: 0)
+        let leading = NotchSatelliteSlot(index: 1)
+        let tucked = layout.rect(slot: trailing, presence: 0, outline: outline)
+        XCTAssertEqual(tucked.midX, outline.maxX - 16, accuracy: 0.001)
+        XCTAssertEqual(tucked.width, 16, accuracy: 0.001)
+        let apart = layout.rect(slot: trailing, presence: 1, outline: outline)
+        XCTAssertEqual(apart.minX, outline.maxX + 6, accuracy: 0.001)
+        XCTAssertEqual(apart.width, 32, accuracy: 0.001)
+        XCTAssertEqual(layout.rect(slot: leading, presence: 1, outline: outline).maxX, outline.minX - 6, accuracy: 0.001)
+        XCTAssertNil(layout.neck(slot: trailing, bubble: apart, anchor: outline))
+
+        var shape = CustomNotchShape(cornerRadius: 15, bottomCornerRadius: 15, isFloatingIsland: true)
+        shape.satelliteLayout = layout
+        XCTAssertFalse(shape.path(in: outline).contains(CGPoint(x: apart.midX, y: apart.midY)))
+        shape.satellites[trailing] = 1
+        XCTAssertTrue(shape.path(in: outline).contains(CGPoint(x: apart.midX, y: apart.midY)))
+        XCTAssertFalse(shape.path(in: outline).contains(CGPoint(x: outline.maxX + 3, y: 15)))
+    }
+
+    func testOuterSatellitesLineUpBeyondTheInnerOnes() {
+        let layout = NotchSatelliteLayout(diameter: 32, gap: 6, centerY: 15)
+        let outline = CGRect(x: 100, y: 0, width: 110, height: 30)
+        XCTAssertEqual(NotchSatelliteSlot.allCases.map(\.isTrailing), [true, false, true, false, true])
+        XCTAssertEqual(NotchSatelliteSlot.allCases.map(\.ring), [0, 0, 1, 1, 2])
+        let inner = layout.restingRect(slot: NotchSatelliteSlot(index: 0), outline: outline)
+        let outer = layout.restingRect(slot: NotchSatelliteSlot(index: 2), outline: outline)
+        XCTAssertEqual(outer.minX, inner.maxX + 6, accuracy: 0.001)
+        let budding = layout.rect(slot: NotchSatelliteSlot(index: 2), presence: 0, outline: outline)
+        XCTAssertEqual(budding.midX, inner.maxX - 16, accuracy: 0.001)
+        let farLeading = layout.restingRect(slot: NotchSatelliteSlot(index: 3), outline: outline)
+        XCTAssertEqual(farLeading.maxX, outline.minX - 2 * 6 - 32, accuracy: 0.001)
+        XCTAssertEqual(layout.reach(count: 1), 38, accuracy: 0.001)
+        XCTAssertEqual(layout.reach(count: 5), 3 * 38, accuracy: 0.001)
+
+        var shape = CustomNotchShape(cornerRadius: 15, bottomCornerRadius: 15, isFloatingIsland: true)
+        shape.satelliteLayout = layout
+        shape.satellites = .showing(5)
+        let path = shape.path(in: outline)
+        for slot in NotchSatelliteSlot.allCases {
+            let rect = layout.restingRect(slot: slot, outline: outline)
+            XCTAssertTrue(path.contains(CGPoint(x: rect.midX, y: rect.midY)), "slot \(slot.index)")
+        }
+        XCTAssertEqual(NotchSatellitePresence.showing(3).count, 3)
+    }
+
+    func testPathsWithDifferentElementsDoNotInterpolate() {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 30)
+        let a = Path(roundedRect: rect, cornerRadius: 10).cgPath
+        let b = Path(roundedRect: rect.insetBy(dx: 5, dy: 0), cornerRadius: 10).cgPath
+        XCTAssertTrue(NotchMorphGeometry.pathsInterpolate([a, b]))
+        XCTAssertFalse(NotchMorphGeometry.pathsInterpolate([a, Path(rect).cgPath]))
+    }
+
+    func testNotchAppearanceCanDifferPerDisplay() {
+        var settings = Settings()
+        var external = settings.notchWidgetAppearance
+        external.opacity = 0.4
+        settings.perDisplayNotchWidgetAppearance["external"] = external
+
+        XCTAssertEqual(settings.resolvedNotchWidgetAppearance(forDisplayID: "external").opacity, 0.4)
+        XCTAssertEqual(settings.resolvedNotchWidgetAppearance(forDisplayID: "built-in"), settings.notchWidgetAppearance)
+        XCTAssertEqual(settings.resolvedNotchLiveActivityAppearance(forDisplayID: "external"), settings.notchLiveActivityAppearance)
+        XCTAssertTrue(settings.hasAppearanceOverride(forDisplayID: "external"))
+        XCTAssertFalse(settings.hasAppearanceOverride(forDisplayID: "built-in"))
+
+        settings.applyAppearanceToAllDisplays(from: "external")
+        XCTAssertEqual(settings.notchWidgetAppearance.opacity, 0.4)
+        XCTAssertTrue(settings.perDisplayNotchWidgetAppearance.isEmpty)
+        XCTAssertEqual(settings.resolvedNotchWidgetAppearance(forDisplayID: "built-in").opacity, 0.4)
+    }
+
+    func testIslandBarKeepsHomeAndDropsTogglesFirst() {
+        var settings = Settings()
+        settings.notchButtonOrder = [.settings, .fileShelf, .notes, .spacer, .battery, .caffeine, .pin]
+        settings.fileShelfIconEnabled = true
+        settings.notesIconEnabled = true
+        settings.batteryEstimatorEnabled = true
+        settings.caffeinateEnabled = true
+        settings.pinEnabled = true
+
+        let roomy = NotchIslandBar.items(settings: settings, navigationDepth: 1, maxWidth: 1000)
+        XCTAssertEqual(roomy, [.home, .separator, .button(.settings), .button(.fileShelf), .button(.notes),
+                               .separator, .button(.battery), .button(.caffeine), .button(.pin)])
+        XCTAssertEqual(NotchIslandBar.width(of: roomy), NotchIslandBar.padding * 2 + 7 * NotchIslandBar.itemWidth + 2 * NotchIslandBar.separatorWidth)
+
+        let tight = NotchIslandBar.items(settings: settings, navigationDepth: 3, maxWidth: 200)
+        XCTAssertEqual(tight.prefix(2), [.back, .home])
+        XCTAssertFalse(tight.contains(.button(.pin)))
+        XCTAssertLessThanOrEqual(NotchIslandBar.width(of: tight), 200)
+        XCTAssertNotEqual(tight.last, .separator)
+    }
+
+    func testIslandBarSelectsTheTabForWhereThePanelIs() {
+        XCTAssertEqual(NotchIslandBar.selection(for: [.defaultWidgets]), .home)
+        XCTAssertEqual(NotchIslandBar.selection(for: [.defaultWidgets, .musicPlayer]), .home)
+        XCTAssertEqual(NotchIslandBar.selection(for: [.defaultWidgets, .fileShelf]), .button(.fileShelf))
+        XCTAssertEqual(NotchIslandBar.selection(for: [.defaultWidgets, .multiAudio, .musicDevices]), .button(.multiAudio))
+        XCTAssertFalse(NotchIslandBar.showsBar(for: .dragActivated))
+    }
+
+    func testNotchlessNotchHasSmallRoundShouldersAndContinuousCorners() {
+        let closed = CGRect(x: 0, y: 0, width: 180, height: 28)
+        let path = CustomNotchShape(cornerRadius: 10, bottomCornerRadius: 10, isNotchless: true).path(in: closed)
+        XCTAssertEqual(path.boundingRect.minX, closed.minX, accuracy: 0.001)
+        XCTAssertEqual(path.boundingRect.maxX, closed.maxX, accuracy: 0.001)
+        XCTAssertEqual(path.boundingRect.maxY, closed.maxY, accuracy: 0.001)
+        XCTAssertTrue(path.contains(CGPoint(x: 3, y: 0.5)))
+        XCTAssertFalse(path.contains(CGPoint(x: 3, y: 3)))
+        XCTAssertFalse(path.contains(CGPoint(x: 5, y: 14)))
+        XCTAssertTrue(path.contains(CGPoint(x: 7, y: 14)))
+        XCTAssertFalse(path.contains(CGPoint(x: 7, y: 27.5)))
+        XCTAssertTrue(path.contains(CGPoint(x: 22, y: 27.5)))
+
+        let open = CGRect(x: 0, y: 0, width: 600, height: 150)
+        let notchless = CustomNotchShape(cornerRadius: 40, bottomCornerRadius: 26, isNotchless: true).path(in: open)
+        XCTAssertFalse(notchless.contains(CGPoint(x: 11, y: 40)))
+        XCTAssertTrue(notchless.contains(CGPoint(x: 13, y: 40)))
+        let hardware = CustomNotchShape(cornerRadius: 40, bottomCornerRadius: 40).path(in: open)
+        XCTAssertFalse(hardware.contains(CGPoint(x: 13, y: 40)))
+    }
+
+    func testRedesignedFloatingIslandReplacesOnlyUntouchedDefaults() {
+        var untouched = Settings()
+        untouched.floatingIslandOnNotchlessDisplays = false
+        untouched.floatingIslandTopOffset = FloatingIslandStyle.legacyTopOffset
+        untouched.floatingIslandStyle = .legacyDefault
+        SettingsModel.adoptRedesignedFloatingIsland(&untouched)
+        XCTAssertTrue(untouched.floatingIslandOnNotchlessDisplays)
+        XCTAssertEqual(untouched.floatingIslandTopOffset, Settings().floatingIslandTopOffset)
+        XCTAssertEqual(untouched.floatingIslandStyle, FloatingIslandStyle())
+
+        var movedIsland = Settings()
+        movedIsland.floatingIslandOnNotchlessDisplays = false
+        movedIsland.floatingIslandTopOffset = 12
+        SettingsModel.adoptRedesignedFloatingIsland(&movedIsland)
+        XCTAssertFalse(movedIsland.floatingIslandOnNotchlessDisplays)
+        XCTAssertEqual(movedIsland.floatingIslandTopOffset, 12)
+
+        var chosePerDisplay = Settings()
+        chosePerDisplay.floatingIslandOnNotchlessDisplays = false
+        chosePerDisplay.floatingIslandTopOffset = FloatingIslandStyle.legacyTopOffset
+        chosePerDisplay.perDisplayFloatingIsland["external"] = false
+        var customStyle = FloatingIslandStyle.legacyDefault
+        customStyle.openPadding = 20
+        chosePerDisplay.floatingIslandStyle = customStyle
+        SettingsModel.adoptRedesignedFloatingIsland(&chosePerDisplay)
+        XCTAssertFalse(chosePerDisplay.floatingIslandOnNotchlessDisplays)
+        XCTAssertFalse(chosePerDisplay.resolvedFloatingIsland(forDisplayID: "external"))
+        XCTAssertEqual(chosePerDisplay.floatingIslandStyle, customStyle)
+    }
+
+    func testApplyToAllCopiesFloatingIslandOnlyFromNotchlessDisplays() {
+        var settings = Settings()
+        settings.perDisplayFloatingIsland["external"] = true
+        settings.perDisplayFloatingIslandTopOffset["external"] = 12
+
+        var fromNotched = settings
+        fromNotched.applyDisplaySettingsToAllDisplays(from: "built-in", includeFloatingIsland: false)
+        XCTAssertTrue(fromNotched.resolvedFloatingIsland(forDisplayID: "external"))
+
+        settings.applyDisplaySettingsToAllDisplays(from: "external", includeFloatingIsland: true)
+        XCTAssertTrue(settings.resolvedFloatingIsland(forDisplayID: "another"))
+        XCTAssertEqual(settings.resolvedFloatingIslandTopOffset(forDisplayID: "another"), 12)
+    }
+
+    func testFloatingIslandStyleDefaultsAndPerDisplayOverride() throws {
+        let partial = try JSONDecoder().decode(FloatingIslandStyle.self, from: Data(#"{"sidePadding":14}"#.utf8))
+        XCTAssertEqual(partial.sidePadding, 14)
+        XCTAssertEqual(partial.centerGap, FloatingIslandStyle().centerGap)
+
+        var settings = Settings()
+        var custom = FloatingIslandStyle()
+        custom.openCornerRadius = 50
+        settings.perDisplayFloatingIslandStyle["external"] = custom
+        XCTAssertEqual(settings.resolvedFloatingIslandStyle(forDisplayID: "external").openCornerRadius, 50)
+        XCTAssertEqual(settings.resolvedFloatingIslandStyle(forDisplayID: "other"), FloatingIslandStyle())
+
+        settings.applyDisplaySettingsToAllDisplays(from: "external", includeFloatingIsland: true)
+        XCTAssertEqual(settings.resolvedFloatingIslandStyle(forDisplayID: "other").openCornerRadius, 50)
+    }
+
+    func testLegacyFullScreenSettingsMigrate() throws {
+        func migrated(_ legacy: [String: Any]) throws -> FullScreenActivityVisibility {
+            var dictionary = try XCTUnwrap(SettingsPersistence.encodeToDictionary(Settings()))
+            dictionary.removeValue(forKey: "fullScreenActivityVisibility")
+            dictionary.merge(legacy) { $1 }
+            return try XCTUnwrap(SettingsPersistence.decodeFromDictionary(dictionary)).fullScreenActivityVisibility
+        }
+        XCTAssertEqual(try migrated(["hideLiveActivityInFullScreen": true]), .hideAll)
+        XCTAssertEqual(try migrated(["hideLiveActivityInFullScreen": false, "hideActivitiesInFullScreen": ["music": true]]), .hideSelected)
+        XCTAssertEqual(try migrated(["hideLiveActivityInFullScreen": false]), .showAll)
     }
 
     @MainActor
@@ -411,7 +754,7 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         let settings = Settings()
 
         XCTAssertFalse(settings.systemEnhanceDockPreviewsEnabled)
-        XCTAssertFalse(settings.systemEnhanceAltTabEnabled)
+        XCTAssertFalse(settings.systemEnhanceWindowSwitcherEnabled)
         XCTAssertFalse(settings.systemEnhanceCalendarIntegrationEnabled)
         XCTAssertFalse(settings.systemEnhanceCompactPreviewEnabled)
         XCTAssertFalse(settings.systemEnhanceEnhancedPreviewsEnabled)
@@ -447,7 +790,7 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertFalse(settings.storageWidgetEnabled)
         XCTAssertFalse(settings.continuityEnabled)
         XCTAssertFalse(settings.fileShelfAirDropDestinationEnabled)
-        XCTAssertFalse(settings.fileShelfDeviceDestinationsEnabled)
+        XCTAssertTrue(settings.fileShelfDeviceDestinationsEnabled)
         XCTAssertFalse(settings.caffeinateAutoDuringTasks)
         XCTAssertFalse(settings.devActivityEnabled)
         XCTAssertFalse(settings.menuBarEnabled)

@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import AppKit
+import Symbols
 import EventKit
 import AVFoundation
 
@@ -184,11 +186,9 @@ struct statsLiveActivityView {
                         }()
 
                         if statType == .systemPower || statType == .batteryPower {
-                             Text(String(format: "%.1fW", value))
-                                .contentTransition(.numericText())
+                            statValueText(String(format: "%.1fW", value))
                         } else {
-                            Text("\(Int(value.isFinite ? (value * 100) : 0))%")
-                                .contentTransition(.numericText())
+                            statValueText("\(Int(value.isFinite ? (value * 100) : 0))%")
                         }
                     }
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -219,9 +219,7 @@ struct statsLiveActivityView {
                     .font(.system(size: 9, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(sensor.formattedValue)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .contentTransition(.numericText())
+                statValueText(sensor.formattedValue)
             }
             .frame(width: 55)
         }
@@ -271,12 +269,29 @@ struct statsLiveActivityView {
                     return sensor.formattedValue
                 }
             }()
-            Text(valueString)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .contentTransition(.numericText())
-                .animation(.easeInOut(duration: 0.4), value: valueString)
-                .frame(minWidth: 50, alignment: .trailing)
+            LayerNumericText(
+                text: valueString,
+                font: singleValueFont,
+                color: TimerActivityView.primaryTextColor,
+                duration: 0.4
+            )
+            .animation(.easeInOut(duration: 0.4), value: valueString)
+            .frame(minWidth: 50, alignment: .trailing)
         }
+    }
+
+    private static func statValueText(_ text: String) -> some View {
+        LayerNumericText(text: text, font: statValueFont, color: statValueColor, duration: 0.4)
+    }
+
+    private static let statValueFont = roundedFont(size: 11, weight: .semibold)
+    private static let singleValueFont = roundedFont(size: 13, weight: .semibold)
+    private static let statValueColor = NSColor.white.withAlphaComponent(0.8)
+
+    private static func roundedFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let base = NSFont.systemFont(ofSize: size, weight: weight)
+        guard let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return NSFont(descriptor: rounded, size: size) ?? base
     }
 }
 
@@ -290,6 +305,7 @@ struct FileProgressLiveActivityView {
             case .finder: iconName = "arrow.right.arrow.left.circle.fill"
             case .archiveExtraction: iconName = "archivebox.fill"
             case .dmgInstall: iconName = "externaldrive.fill.badge.plus"
+            case .continuity: iconName = "iphone"
             case .browserDownload, .manual: iconName = "arrow.down.circle.fill"
             }
         case .airDrop: iconName = "airplayaudio"
@@ -298,12 +314,17 @@ struct FileProgressLiveActivityView {
         case .local: iconName = "doc.fill"
         }
 
-        return ZStack {
+        if case .universalTransfer(let transfer) = task, transfer.app != nil {
+            return AnyView(FileProgressAppGlyph(
+                app: transfer.app, fallbackSymbol: iconName,
+                fraction: transfer.isComplete ? 1 : transfer.progress, size: 22))
+        }
+        return AnyView(ZStack {
             Image(systemName: iconName)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.white)
         }
-        .frame(width: 20, height: 20)
+        .frame(width: 20, height: 20))
     }
 
     static func right(for task: FileTask) -> some View {
@@ -320,9 +341,14 @@ struct FileProgressLiveActivityView {
             case .finder: verb = "Copying..."
             case .archiveExtraction: verb = "Extracting..."
             case .dmgInstall: verb = "Installing..."
+            case .continuity: verb = "Continuity…"
             case .browserDownload, .manual: verb = "Downloading..."
             }
-            if transferTask.sourceType == .finder {
+            if transferTask.app != nil {
+                statusText = FileProgressFormat.status(
+                    percent: progress, speed: transferTask.speed, remaining: transferTask.timeRemaining,
+                    finished: transferTask.isComplete, failed: false, verb: verb)
+            } else if transferTask.sourceType == .finder {
                 statusText = transferTask.speed > 0 ? TransferMetricsFormatter.speed(transferTask.speed) : verb
             } else if let progress {
                 statusText = "\(Int(progress * 100))% • " + (transferTask.speed > 0 ? TransferMetricsFormatter.speed(transferTask.speed) : verb)
@@ -480,25 +506,16 @@ struct FileCircularProgressIndicator: View {
 }
 
 struct AlbumArtView: View {
-    @EnvironmentObject var musicWidget: MusicManager
+    var musicWidget: MusicManager { .shared }
 
     var body: some View {
-        Group {
-            if let image = (musicWidget.artwork ?? musicWidget.appIcon) {
-                Image(nsImage: image)
-                    .resizable()
-            } else {
-                Color.clear
+        MusicArtworkImage(image: musicWidget.artwork, size: 20)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .id(musicWidget.currentTrackArtworkToken)
+            .animation(nil, value: musicWidget.currentTrackArtworkToken)
+            .onHover { isHovering in
+                musicWidget.setAlbumArtHovered(isHovering)
             }
-        }
-        .aspectRatio(contentMode: .fill)
-        .frame(width: 20, height: 20)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .id(musicWidget.currentTrackArtworkToken)
-        .animation(nil, value: musicWidget.currentTrackArtworkToken)
-        .onHover { isHovering in
-            musicWidget.isHoveringAlbumArt = isHovering
-        }
     }
 }
 
@@ -524,7 +541,7 @@ struct MusicUpNextView: View {
     let artist: String?
     let artworkURL: URL?
 
-    @EnvironmentObject private var musicWidget: MusicManager
+    private var musicWidget: MusicManager { .shared }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -568,13 +585,8 @@ struct MusicUpNextView: View {
 
                 Spacer(minLength: 6)
 
-                ProgressRingView(
-                    progress: ringProgress,
-                    lineWidth: 2.5,
-                    active: Color.white
-                )
-                .animation(.linear(duration: 0.4), value: ringProgress)
-                .frame(width: 16, height: 16)
+                LayerProgressRing(motion: ringMotion, lineWidth: 2.5, activeColor: .white)
+                    .frame(width: 16, height: 16)
             }
             .frame(maxWidth: .infinity)
         }
@@ -582,9 +594,19 @@ struct MusicUpNextView: View {
         .transition(.opacity.animation(.easeInOut(duration: 0.3)))
     }
 
-    private var ringProgress: Double {
+    private var ringMotion: LinearProgressMotion {
+        let now = Date()
+        let trajectory = musicWidget.playbackTrajectory
+        let progress = ringProgress(at: now)
+        guard trajectory.isAdvancing, musicWidget.totalDuration > 0, progress < 1 else {
+            return LinearProgressMotion(progress: progress, date: now)
+        }
+        return LinearProgressMotion(progress: progress, date: now, rate: trajectory.rate / 10)
+    }
+
+    private func ringProgress(at date: Date) -> Double {
         guard musicWidget.totalDuration > 0 else { return 0.2 }
-        let remaining = musicWidget.totalDuration - musicWidget.elapsedTime()
+        let remaining = musicWidget.totalDuration - musicWidget.elapsedTime(at: date)
         guard remaining.isFinite && remaining >= 0 else { return 0 }
         let p = (10.0 - remaining) / 10.0
         return max(0.03, min(1.0, p))
@@ -600,7 +622,7 @@ struct MusicUpNextView: View {
 }
 
 struct MusicLyricsView: View {
-    @EnvironmentObject var musicWidget: MusicManager
+    var musicWidget: MusicManager { .shared }
     @Binding var showLyrics: Bool
 
     @State private var lyricText: String?
@@ -1037,9 +1059,10 @@ struct DesktopActivityView {
 }
 
 struct EyeBreakFullActivityView: View {
+    @Environment(\.notchBandHeight) private var notchBandHeight
     @EnvironmentObject var eyeBreakManager: EyeBreakManager
-    @EnvironmentObject var settings: SettingsModel
-    @EnvironmentObject var liveActivityManager: LiveActivityManager
+    @ObservedSettings var settings: SettingsObserver
+    @Environment(LiveActivityManager.self) var liveActivityManager
 
     @State private var isShowing = false
     @State private var skipHovered = false
@@ -1099,7 +1122,6 @@ struct EyeBreakFullActivityView: View {
                             Text("Done")
                             Text(String(format: "(%02d)", Int(eyeBreakManager.timeRemainingInBreak)))
                                 .font(.system(.body, design: .monospaced))
-                                .contentTransition(.numericText(countsDown: true))
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -1117,7 +1139,7 @@ struct EyeBreakFullActivityView: View {
         }
         .padding(.vertical, 15)
         .padding(.horizontal, 25)
-        .padding(.top, NotchConfiguration.universalHeight)
+        .padding(.top, notchBandHeight)
         .frame(width: 380)
         .scaleEffect(isShowing ? 1 : 0.95)
         .opacity(isShowing ? 1 : 0)
@@ -1369,16 +1391,28 @@ struct TimerActivityView {
 
     static func right(timerManager: TimerManager) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
-            let displayTime = timerManager.displayTime
-            Text(displayTime.asStopwatchClock)
-                .font(.system(size: 13, design: .monospaced).weight(.semibold))
-                .contentTransition(.numericText(countsDown: timerManager.activeTimer == .system))
-                .animation(.default, value: Int(displayTime))
+            LayerNumericText(
+                text: timerManager.displayTime.asStopwatchClock,
+                font: clockFont,
+                color: primaryTextColor
+            )
+            .textBaseline()
         }
     }
+
+    private static let clockFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
+
+    static let primaryTextColor: NSColor = {
+        var color = NSColor.white
+        NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
+            color = NSColor.labelColor.usingColorSpace(.sRGB) ?? .white
+        }
+        return color
+    }()
 }
 
 struct TimerFinishedActivityView: View {
+    @Environment(\.notchBandHeight) private var notchBandHeight
     @ObservedObject var timerManager: TimerManager
     let timerID: String
 
@@ -1389,7 +1423,7 @@ struct TimerFinishedActivityView: View {
     var body: some View {
         VStack(spacing: 0) {
             Color.clear
-                .frame(height: NotchConfiguration.initialSize.height)
+                .frame(height: notchBandHeight)
 
             if let timer {
                 VStack(spacing: 14) {
@@ -1403,15 +1437,9 @@ struct TimerFinishedActivityView: View {
                         }
                         .frame(width: 46, height: 46)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Timer")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Text(timer.label)
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                        }
+                        Image(systemName: "timer")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.primary)
 
                         Spacer(minLength: 18)
 
@@ -1480,12 +1508,13 @@ struct ModernNotificationButtonStyle: ButtonStyle {
 }
 
 struct NotificationLiveActivityView: View {
+    @Environment(\.notchBandHeight) private var notchBandHeight
     let payload: NotificationPayload
 
     @Binding var isHovered: Bool
 
     @EnvironmentObject var notificationManager: NotificationManager
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @State private var replyText = ""
     @FocusState private var isTextFieldFocused: Bool
 
@@ -1507,7 +1536,7 @@ struct NotificationLiveActivityView: View {
     var body: some View {
         VStack(spacing: 0) {
             Color.clear
-                .frame(height: NotchConfiguration.initialSize.height)
+                .frame(height: notchBandHeight)
 
             if isIMessage {
                 iMessageView
@@ -1806,6 +1835,94 @@ struct LockScreenLiveActivityView {
     }
 }
 
+private struct CapsLockAnimationView: View {
+    @State private var isUnlocked = false
+
+    var body: some View {
+        NotchSymbolView(
+            systemName: isUnlocked ? "lock.open.fill" : "lock.fill",
+            pointSize: 15,
+            weight: .semibold,
+            color: NSColor.white.withAlphaComponent(0.85),
+            replacesAnimated: true
+        )
+        .onAppear { isUnlocked = true }
+    }
+}
+
+struct NotchSymbolView: NSViewRepresentable {
+    let systemName: String
+    let pointSize: CGFloat
+    var weight: NSFont.Weight = .regular
+    var color: NSColor = .white
+    var replacesAnimated = false
+    var variableColor = false
+
+    final class Coordinator {
+        var systemName = ""
+        var variableColor = false
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSImageView {
+        let view = NSImageView()
+        view.imageScaling = .scaleNone
+        view.setContentCompressionResistancePriority(.required, for: .horizontal)
+        view.setContentCompressionResistancePriority(.required, for: .vertical)
+        view.contentTintColor = color
+        view.image = image(named: systemName)
+        context.coordinator.systemName = systemName
+        if variableColor {
+            view.addSymbolEffect(.variableColor.iterative, options: .repeating)
+            context.coordinator.variableColor = true
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSImageView, context: Context) {
+        if view.contentTintColor != color { view.contentTintColor = color }
+        let coordinator = context.coordinator
+        if coordinator.systemName != systemName, let image = image(named: systemName) {
+            coordinator.systemName = systemName
+            if replacesAnimated {
+                view.setSymbolImage(image, contentTransition: .replace.downUp.byLayer)
+            } else {
+                view.image = image
+            }
+        }
+        if coordinator.variableColor != variableColor {
+            coordinator.variableColor = variableColor
+            if variableColor {
+                view.addSymbolEffect(.variableColor.iterative, options: .repeating)
+            } else {
+                view.removeAllSymbolEffects()
+            }
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSImageView, context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
+    }
+
+    private func image(named name: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight))
+    }
+}
+
+struct CapsLockLiveActivityView {
+    static func left() -> some View {
+        CapsLockAnimationView()
+    }
+
+    static func right() -> some View {
+        Image(systemName: "capslock.fill")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.75))
+    }
+}
+
 struct PowerStateActivityView {
     static func left(for state: BatterySystemState) -> some View {
         let iconName: String
@@ -1848,8 +1965,9 @@ struct PowerStateActivityView {
 }
 
 struct CalibrationActivityView: View {
+    @Environment(\.notchBandHeight) private var notchBandHeight
     @EnvironmentObject var calibrationManager: CalibrationManager
-    @EnvironmentObject var liveActivityManager: LiveActivityManager
+    @Environment(LiveActivityManager.self) var liveActivityManager
     @State private var isShowing = false
 
     var body: some View {
@@ -1889,7 +2007,7 @@ struct CalibrationActivityView: View {
         }
         .padding(.vertical, 15)
         .padding(.horizontal, 25)
-        .padding(.top, NotchConfiguration.universalHeight)
+        .padding(.top, notchBandHeight)
         .frame(width: 380)
         .scaleEffect(isShowing ? 1 : 0.95)
         .opacity(isShowing ? 1 : 0)
@@ -1904,11 +2022,12 @@ struct CalibrationActivityView: View {
 // MARK: - OTP / Parcel smart inbox live activities
 
 struct OTPLiveActivityView: View {
+    @Environment(\.notchBandHeight) private var notchBandHeight
     let event: OTPEvent
     var fromNotification: Bool = false
 
-    @EnvironmentObject var settings: SettingsModel
-    @EnvironmentObject var liveActivityManager: LiveActivityManager
+    @ObservedSettings var settings: SettingsObserver
+    @Environment(LiveActivityManager.self) var liveActivityManager
     @State private var didCopy = false
     @State private var isShowing = false
 
@@ -2017,7 +2136,7 @@ struct OTPLiveActivityView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .padding(.top, NotchConfiguration.universalHeight)
+        .padding(.top, notchBandHeight)
         .frame(minWidth: 340, maxWidth: 400)
         .onAppear {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.72, blendDuration: 0.25)) {
@@ -2032,6 +2151,7 @@ struct OTPLiveActivityView: View {
 }
 
 struct ParcelLiveActivityView: View {
+    @Environment(\.notchBandHeight) private var notchBandHeight
     let parcel: ParcelShipment
 
     var body: some View {
@@ -2086,7 +2206,7 @@ struct ParcelLiveActivityView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .padding(.top, NotchConfiguration.universalHeight)
+        .padding(.top, notchBandHeight)
         .frame(minWidth: 340, maxWidth: 440)
     }
 }

@@ -92,6 +92,8 @@
 	<false/>
 	<key>FirebaseCrashlyticsCollectionEnabled</key>
 	<false/>
+	<key>firebase_performance_collection_enabled</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
@@ -109,6 +111,10 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Sapphire uses the local network to move files, images and screen content between your Mac and your paired Android device.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Sapphire adds photos synced from your phone so they appear in the Photos app.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Sapphire adds photos synced from your phone so they appear in the Photos app.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Needed for gemini live activity</string>
 	<key>NSSystemExtensionPointIdentifier</key>
@@ -193,6 +199,39 @@
 					<string>application/x-rar-compressed</string>
 				</array>
 			</dict>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Take a Photo with Sapphire</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>takePhotoWithSapphire</string>
+			<key>NSPortName</key>
+			<string>Sapphire</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array/>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Scan Documents with Sapphire</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>scanDocumentWithSapphire</string>
+			<key>NSPortName</key>
+			<string>Sapphire</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array/>
 		</dict>
 	</array>
 </dict>

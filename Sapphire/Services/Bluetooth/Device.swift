@@ -435,7 +435,10 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     private func resetSignalTimer() {
-        signalTimer?.invalidate()
+        if let signalTimer, signalTimer.isValid {
+            signalTimer.fireDate = Date().addingTimeInterval(signalTimeout)
+            return
+        }
         signalTimer = Timer(timeInterval: signalTimeout, repeats: false, block: { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor in
@@ -445,6 +448,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             self.scanForPeripherals(withDuplicates: false)
         })
         if let timer = signalTimer {
+            timer.tolerance = 0.5
             RunLoop.main.add(timer, forMode: .common)
         }
     }
@@ -504,7 +508,10 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 self.connectMonitoredPeripheral()
             }
         })
-        if let timer = activeModeTimer { RunLoop.main.add(timer, forMode: .common) }
+        if let timer = activeModeTimer {
+            timer.tolerance = 0.1
+            RunLoop.main.add(timer, forMode: .common)
+        }
     }
 }
 

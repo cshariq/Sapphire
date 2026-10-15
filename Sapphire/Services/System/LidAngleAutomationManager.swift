@@ -47,8 +47,11 @@ final class LidAngleAutomationManager: ObservableObject {
     private var autoSleptDisplay = false
     private var forcedLowPowerMode = false
     private var lowPowerModeWasAlreadyEnabled = false
+    private let journal = SystemMutationJournal.shared
+    private var configuration: LidAngleAutomationSettings
 
     private init() {
+        configuration = LidAngleAutomationSettings(SettingsModel.shared.current)
         sensor.$angle
             .combineLatest(sensor.$isAvailable)
             .receive(on: RunLoop.main)
@@ -59,18 +62,18 @@ final class LidAngleAutomationManager: ObservableObject {
 
         settings.changes(of: LidAngleAutomationSettings.init)
             .sink { [weak self] configuration in
+                self?.configuration = configuration
                 self?.updateSensorRequirement(configuration)
                 self?.evaluate(configuration)
             }
             .store(in: &cancellables)
 
-        let initialConfiguration = LidAngleAutomationSettings(settings.settings)
-        updateSensorRequirement(initialConfiguration)
-        evaluate(initialConfiguration)
+        updateSensorRequirement(configuration)
+        evaluate(configuration)
     }
 
     private func evaluate() {
-        evaluate(LidAngleAutomationSettings(settings.settings))
+        evaluate(configuration)
     }
 
     private func evaluate(_ configuration: LidAngleAutomationSettings) {
@@ -110,6 +113,12 @@ final class LidAngleAutomationManager: ObservableObject {
         let shouldUnmute = autoMutedSystemAudio && sensor.angle > trigger + hysteresis
 
         if shouldMute, !autoMutedSystemAudio, !SystemControl.isMuted() {
+            journal.record(SystemMutationRecord(
+                kind: .lidAutoMute,
+                appliedValue: true,
+                target: SystemMutationRecovery.defaultOutputDeviceUID(),
+                recordedAt: Date()
+            ))
             SystemControl.setMuted(to: true)
             autoMutedSystemAudio = true
             return
@@ -118,8 +127,10 @@ final class LidAngleAutomationManager: ObservableObject {
         if shouldUnmute {
             SystemControl.setMuted(to: false)
             autoMutedSystemAudio = false
+            journal.clear(.lidAutoMute)
         } else if !configuration.muteAudioEnabled {
             autoMutedSystemAudio = false
+            journal.clear(.lidAutoMute)
         }
     }
 
@@ -150,6 +161,7 @@ final class LidAngleAutomationManager: ObservableObject {
         if shouldEnable, !forcedLowPowerMode {
             lowPowerModeWasAlreadyEnabled = powerModeManager.isLowPowerModeEnabled()
             if !lowPowerModeWasAlreadyEnabled {
+                journal.record(SystemMutationRecord(kind: .lowPowerMode, appliedValue: true, target: nil, recordedAt: Date()))
                 powerModeManager.enableLowPowerMode()
             }
             forcedLowPowerMode = true
@@ -162,12 +174,14 @@ final class LidAngleAutomationManager: ObservableObject {
             }
             forcedLowPowerMode = false
             lowPowerModeWasAlreadyEnabled = false
+            journal.clear(.lowPowerMode)
         } else if !configuration.lowPowerModeEnabled {
             if forcedLowPowerMode, !lowPowerModeWasAlreadyEnabled {
                 powerModeManager.disableLowPowerMode()
             }
             forcedLowPowerMode = false
             lowPowerModeWasAlreadyEnabled = false
+            journal.clear(.lowPowerMode)
         }
     }
 
@@ -182,6 +196,7 @@ final class LidAngleAutomationManager: ObservableObject {
             SystemControl.setMuted(to: false)
             autoMutedSystemAudio = false
         }
+        journal.clear(.lidAutoMute)
 
         if autoSleptDisplay {
             (NSApp.delegate as? AppDelegate)?.wakeDisplay()
@@ -193,6 +208,7 @@ final class LidAngleAutomationManager: ObservableObject {
         }
         forcedLowPowerMode = false
         lowPowerModeWasAlreadyEnabled = false
+        journal.clear(.lowPowerMode)
     }
 
     private func updateSensorRequirement(_ settings: LidAngleAutomationSettings) {

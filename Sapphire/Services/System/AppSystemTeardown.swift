@@ -19,6 +19,7 @@ enum AppSystemTeardown {
 
         CaffeineManager.shared.stop()
         LidAngleAutomationManager.shared.releaseForcedSystemChanges()
+        FanManager.releaseFanControlForTermination()
         restoreHelperSleepIfNeeded()
     }
 

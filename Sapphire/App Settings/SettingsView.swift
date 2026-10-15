@@ -10,7 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     private let settings: SettingsModel
     @State private var editingSession: SettingsEditingSession
-    @State private var selectedSection: SettingsSection? = .general
+    @State private var selectedSection: SettingsSection? = SettingsAssistant.isSupported ? .overview : .general
     @State private var showAccountPane = false
 
     init(settings: SettingsModel = .shared) {
@@ -41,8 +41,7 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .environmentObject(settings)
-        .environmentObject(editingSession)
+        .environment(editingSession)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: NotchConfiguration.settingsWindowCornerRadius, style: .continuous))
         .ignoresSafeArea(.container, edges: .top)

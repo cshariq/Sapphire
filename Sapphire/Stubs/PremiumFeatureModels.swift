@@ -46,6 +46,7 @@ final class DMGInstallerManager: ObservableObject {
     func handleOpenURLs(_ urls: [URL]) {}
     static func isDefaultDMGHandler() -> Bool { false }
     static func setAsDefaultDMGHandler() {}
+    static func shadowingCopy() -> URL? { nil }
 }
 
 struct DockLayout: Codable, Equatable, Identifiable {

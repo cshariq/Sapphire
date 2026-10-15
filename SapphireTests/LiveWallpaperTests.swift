@@ -178,6 +178,69 @@ struct LiveWallpaperTests {
         #expect(coverage(screen, [CGRect(x: 1600, y: 0, width: 1600, height: 1000)], 32, 20) == 0)
     }
 
+    @Test("Optimizer leaves efficient videos alone and caps heavy ones")
+    func optimizerPlan() {
+        let display = WallpaperVideoTarget(longEdge: 3024, shortEdge: 1964)
+        let plan = WallpaperVideoOptimizer.plan(for:target:requireHEVCMovie:)
+        let hevc4K60 = WallpaperVideoProfile(
+            codec: kCMVideoCodecType_HEVC, isQuickTimeMovie: true,
+            size: CGSize(width: 3840, height: 2160), frameRate: 60
+        )
+        #expect(plan(hevc4K60, display, false) == nil)
+        #expect(plan(hevc4K60, display, true) == nil)
+
+        var aerial = hevc4K60
+        aerial.frameRate = 240
+        #expect(plan(aerial, display, false) == WallpaperVideoEncodePlan(renderSize: CGSize(width: 3840, height: 2160), frameRate: 60))
+
+        var huge = hevc4K60
+        huge.size = CGSize(width: 7680, height: 4320)
+        let shrunk = plan(huge, display, false)
+        #expect(shrunk?.frameRate == 60)
+        #expect(shrunk.map { $0.renderSize.width >= 3024 && $0.renderSize.height >= 1964 } == true)
+        #expect(shrunk.map { Int($0.renderSize.width) % 2 == 0 && Int($0.renderSize.height) % 2 == 0 } == true)
+
+        var proRes = hevc4K60
+        proRes.codec = kCMVideoCodecType_AppleProRes422
+        #expect(plan(proRes, display, false)?.renderSize == proRes.size)
+
+        var h264 = hevc4K60
+        h264.codec = kCMVideoCodecType_H264
+        h264.isQuickTimeMovie = false
+        #expect(plan(h264, display, false) == nil)
+        #expect(plan(h264, display, true) == WallpaperVideoEncodePlan(renderSize: h264.size, frameRate: 60))
+    }
+
+    @Test("Optimized file names round-trip their encode plan")
+    func optimizerFileSuffix() {
+        let plan = WallpaperVideoEncodePlan(renderSize: CGSize(width: 3840, height: 2160), frameRate: 60)
+        #expect(plan.fileSuffix == "3840x2160@60")
+        #expect(WallpaperVideoEncodePlan(fileSuffix: plan.fileSuffix) == plan)
+        #expect(WallpaperVideoEncodePlan(fileSuffix: "garbage") == nil)
+    }
+
+    @Test("Native lock screen takes over the idle Aerial even when it isn't downloaded")
+    func nativeAerialSlot() {
+        let slot = NativeLockScreenWallpaperInstaller.slotAerialID(selected:downloaded:catalog:)
+        #expect(slot("SELECTED", ["DOWNLOADED"], ["CATALOG"]) == "SELECTED")
+        #expect(slot(nil, ["DOWNLOADED"], ["CATALOG"]) == "DOWNLOADED")
+        #expect(slot(nil, [], ["CATALOG"]) == "CATALOG")
+        #expect(slot("../escape", [], []) == nil)
+        #expect(slot(nil, [], []) == nil)
+    }
+
+    @Test("Idle Aerial selection is read from the Idle presentation, not the desktop")
+    func idleAerialSelection() throws {
+        func choice(_ id: String) throws -> [String: Any] {
+            let configuration = try PropertyListSerialization.data(
+                fromPropertyList: ["selectedID": id, "showAsScreenSaver": true], format: .binary, options: 0
+            )
+            return ["Content": ["Choices": [["Provider": "com.apple.wallpaper.choice.aerials", "Configuration": configuration]]]]
+        }
+        let index: [String: Any] = ["AllSpacesAndDisplays": ["Desktop": try choice("DESKTOP"), "Idle": try choice("IDLE")]]
+        #expect(NativeLockScreenWallpaperInstaller.selectedIdleAerialID(in: index) == "IDLE")
+    }
+
     @Test("Desktop video is above the system wallpaper and below desktop icons")
     @MainActor
     func desktopWindowLevel() {

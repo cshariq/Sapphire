@@ -9,6 +9,7 @@ import Combine
 import AudioToolbox
 import CoreAudio
 import OSLog
+import Accelerate
 
 @MainActor
 final class MicrophoneUsageManager: ObservableObject {
@@ -19,6 +20,7 @@ final class MicrophoneUsageManager: ObservableObject {
     private let amplifierEnabledDefaultsKey = "SapphireMicrophoneAmplifierEnabled"
 
     @Published private(set) var isMicInUse: Bool = false
+    @Published private(set) var inputBundleIDs: Set<String> = []
     @Published private(set) var isMuted: Bool = false
     @Published private(set) var audioLevel: Float = 0.0
     @Published private(set) var peakLevel: Float = 0.0
@@ -44,8 +46,12 @@ final class MicrophoneUsageManager: ObservableObject {
     private var processListListener: AudioObjectPropertyListenerBlock?
     private var currentDefaultInputDeviceID: AudioDeviceID = kAudioObjectUnknown
     private var meteringTap: MicrophoneMeteringTap?
+    private var meteringClientCount = 0
     private var meterResetTask: Task<Void, Never>?
     private var activeBundlesObserver: NSObjectProtocol?
+    private let halQueue = DispatchQueue(label: "com.sapphire.microphone-usage", qos: .utility)
+    private var usageGeneration = 0
+    private var deviceScanGeneration = 0
 
     private init() {
         amplifierEnabled = UserDefaults.standard.object(forKey: amplifierEnabledDefaultsKey) as? Bool ?? false
@@ -62,7 +68,7 @@ final class MicrophoneUsageManager: ObservableObject {
             var addr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
             _ = AudioObjectRemovePropertyListenerBlock(deviceID, &addr, .main, block)
         }
-        meteringTap?.stop()
+        if let meteringTap { halQueue.async { meteringTap.stop() } }
         meterResetTask?.cancel()
         if let activeBundlesObserver {
             NotificationCenter.default.removeObserver(activeBundlesObserver)
@@ -87,20 +93,39 @@ final class MicrophoneUsageManager: ObservableObject {
         if let block = processListListener { AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &listAddr, .main, block) }
     }
 
+    func inputDevicesDidChange() {
+        refreshMonitoredInputDevices()
+    }
+
     private func refreshMonitoredInputDevices() {
-        refreshDefaultInputDevice()
-        let inputDevices = Self.allInputDeviceIDs()
+        deviceScanGeneration += 1
+        let generation = deviceScanGeneration
+        halQueue.async { [weak self] in
+            let defaultInput = Self.readDefaultInputDevice()
+            let inputDevices = Self.allInputDeviceIDs()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.deviceScanGeneration else { return }
+                    self.applyInputDevices(defaultInput: defaultInput, inputDevices: inputDevices)
+                }
+            }
+        }
+    }
+
+    private func applyInputDevices(defaultInput: AudioDeviceID?, inputDevices: [AudioDeviceID]) {
+        if let defaultInput { currentDefaultInputDeviceID = defaultInput }
         let monitored = Set(inputDevices)
         for deviceID in deviceRunningListeners.keys where !monitored.contains(deviceID) { removeRunningListener(for: deviceID) }
         for deviceID in inputDevices where deviceRunningListeners[deviceID] == nil { addRunningListener(for: deviceID) }
         updateMicUsageState()
     }
 
-    private func refreshDefaultInputDevice() {
+    private nonisolated static func readDefaultInputDevice() -> AudioDeviceID? {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var deviceID: AudioDeviceID = kAudioObjectUnknown
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &deviceID) == noErr { currentDefaultInputDeviceID = deviceID }
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &deviceID) == noErr else { return nil }
+        return deviceID
     }
 
     private func addRunningListener(for deviceID: AudioDeviceID) {
@@ -127,10 +152,28 @@ final class MicrophoneUsageManager: ObservableObject {
     }
 
     private func updateMicUsageState() {
-        isMicInUse = Self.anyProcessUsingMicrophone()
-        let muteDeviceID = MultiAudioManager.shared.currentInputDeviceID ?? currentDefaultInputDeviceID
-        let muted = MultiAudioManager.shared.areAllInputsMuted || (muteDeviceID != kAudioObjectUnknown && Self.readInputMuteState(of: muteDeviceID))
-        isMuted = muted
+        usageGeneration += 1
+        let generation = usageGeneration
+        halQueue.async { [weak self] in
+            let users = Self.processesUsingMicrophone()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.usageGeneration else { return }
+                    self.applyMicUsage(users)
+                }
+            }
+        }
+    }
+
+    private func applyMicUsage(_ users: [String?]) {
+        let inUse = !users.isEmpty
+        if isMicInUse != inUse { isMicInUse = inUse }
+        let bundles = Set(users.compactMap { $0 })
+        if bundles != inputBundleIDs { inputBundleIDs = bundles }
+        let audio = MultiAudioManager.shared
+        let muteDeviceID = audio.currentInputDeviceID ?? currentDefaultInputDeviceID
+        let muted = audio.areAllInputsMuted || (muteDeviceID != kAudioObjectUnknown && audio.isInputMuted(for: muteDeviceID))
+        if isMuted != muted { isMuted = muted }
         if !isMicInUse {
             audioLevel = 0
             peakLevel = 0
@@ -139,15 +182,44 @@ final class MicrophoneUsageManager: ObservableObject {
         updateMeteringTap()
     }
 
+    func beginMetering() {
+        meteringClientCount += 1
+        updateMeteringTap()
+    }
+
+    func endMetering() {
+        meteringClientCount = max(0, meteringClientCount - 1)
+        updateMeteringTap()
+    }
+
     private func updateMeteringTap() {
-        meteringTap?.stop()
+        let desiredGain = amplifierEnabled ? amplifierGain : 1.0
+        let shouldRun = meteringClientCount > 0 && currentDefaultInputDeviceID != kAudioObjectUnknown
+        if shouldRun,
+           meteringTap?.deviceID == currentDefaultInputDeviceID,
+           meteringTap?.gain == desiredGain {
+            return
+        }
+        if let previous = meteringTap { halQueue.async { previous.stop() } }
         meteringTap = nil
-        guard isMicInUse, currentDefaultInputDeviceID != kAudioObjectUnknown else { return }
-        let tap = MicrophoneMeteringTap(deviceID: currentDefaultInputDeviceID, gain: amplifierEnabled ? amplifierGain : 1.0) { [weak self] level, peak, clipping in
+        guard shouldRun else {
+            audioLevel = 0
+            peakLevel = 0
+            isClipping = false
+            return
+        }
+        let tap = MicrophoneMeteringTap(deviceID: currentDefaultInputDeviceID, gain: desiredGain) { [weak self] level, peak, clipping in
             Task { @MainActor in self?.publishMeter(level: level, peak: peak, clipping: clipping) }
         }
-        guard tap.start() else { return }
         meteringTap = tap
+        halQueue.async { [weak self] in
+            guard !tap.start() else { return }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if self?.meteringTap === tap { self?.meteringTap = nil }
+                }
+            }
+        }
     }
 
     private func publishMeter(level: Float, peak: Float, clipping: Bool) {
@@ -166,11 +238,15 @@ final class MicrophoneUsageManager: ObservableObject {
 
     func toggleMute() { setMuted(!isMuted) }
     func setMuted(_ muted: Bool) { MultiAudioManager.shared.setAllInputMutes(muted); isMuted = muted }
-    func applyExternalMuteState(_ muted: Bool) { isMuted = muted }
+    func applyExternalMuteState(_ muted: Bool) {
+        usageGeneration += 1
+        isMuted = muted
+    }
 
-    private static func anyProcessUsingMicrophone() -> Bool {
+    private nonisolated static func processesUsingMicrophone() -> [String?] {
         let ourBundleID = Bundle.main.bundleIdentifier
         let ourProcessID = ProcessInfo.processInfo.processIdentifier
+        var users: [String?] = []
         for objectID in allProcessObjectIDs() where processIsRunningInput(objectID) {
             let processID = readProcessID(objectID)
             let bundleID = readProcessBundleID(objectID)
@@ -182,12 +258,12 @@ final class MicrophoneUsageManager: ObservableObject {
                 ownProcessID: ourProcessID,
                 ownBundleID: ourBundleID
             ) else { continue }
-            return true
+            users.append(bundleID)
         }
-        return false
+        return users
     }
 
-    private static func allProcessObjectIDs() -> [AudioObjectID] {
+    private nonisolated static func allProcessObjectIDs() -> [AudioObjectID] {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr, size > 0 else { return [] }
@@ -196,13 +272,13 @@ final class MicrophoneUsageManager: ObservableObject {
         return ids
     }
 
-    private static func processIsRunningInput(_ objectID: AudioObjectID) -> Bool {
+    private nonisolated static func processIsRunningInput(_ objectID: AudioObjectID) -> Bool {
         var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyIsRunningInput, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var running: UInt32 = 0; var size = UInt32(MemoryLayout<UInt32>.size)
         return AudioObjectGetPropertyData(objectID, &address, 0, nil, &size, &running) == noErr && running != 0
     }
 
-    private static func processInputDeviceIDs(_ objectID: AudioObjectID) -> [AudioDeviceID] {
+    private nonisolated static func processInputDeviceIDs(_ objectID: AudioObjectID) -> [AudioDeviceID] {
         var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyDevices, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(objectID, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
@@ -212,7 +288,7 @@ final class MicrophoneUsageManager: ObservableObject {
         return ids
     }
 
-    private static func readProcessID(_ objectID: AudioObjectID) -> pid_t? {
+    private nonisolated static func readProcessID(_ objectID: AudioObjectID) -> pid_t? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyPID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var processID: pid_t = 0
         var size = UInt32(MemoryLayout<pid_t>.size)
@@ -220,7 +296,7 @@ final class MicrophoneUsageManager: ObservableObject {
         return processID
     }
 
-    private static func readProcessBundleID(_ objectID: AudioObjectID) -> String? {
+    private nonisolated static func readProcessBundleID(_ objectID: AudioObjectID) -> String? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyBundleID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var bundleID: Unmanaged<CFString>?
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
@@ -230,18 +306,11 @@ final class MicrophoneUsageManager: ObservableObject {
         return id.isEmpty ? nil : id
     }
 
-    private static func allInputDeviceIDs() -> [AudioDeviceID] {
+    private nonisolated static func allInputDeviceIDs() -> [AudioDeviceID] {
         (CoreAudioDevices.all() ?? []).filter {
             CoreAudioDevices.hasChannels($0, scope: kAudioObjectPropertyScopeInput)
                 && MicrophoneUsageFilter.isMicrophoneInputDevice(name: CoreAudioDevices.name(of: $0))
         }
-    }
-
-    private static func readInputMuteState(of deviceID: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
-        guard AudioObjectHasProperty(deviceID, &address) else { return false }
-        var muted: UInt32 = 0; var size = UInt32(MemoryLayout<UInt32>.size)
-        return AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &muted) == noErr && muted != 0
     }
 }
 
@@ -251,7 +320,15 @@ enum MicrophoneUsageFilter {
         "com.apple.coreaudio", "com.apple.mediaremote", "com.apple.accessibility.heard",
         "com.apple.hearingd", "com.apple.voicebankingd", "com.apple.systemsound",
         "com.apple.speech", "com.apple.dictation", "com.apple.corespeech",
-        "com.apple.CoreSpeech", "com.apple.VoiceControl", "com.apple.voicecontrol"
+        "com.apple.CoreSpeech", "com.apple.VoiceControl", "com.apple.voicecontrol",
+        "com.apple.controlcenter", "com.apple.cmio", "com.apple.mediaanalysisd",
+        "com.apple.universalcontrol", "com.apple.donotdisturb", "com.apple.Focus"
+    ]
+
+    private static let appleUserFacingMicPrefixes = [
+        "com.apple.FaceTime", "com.apple.VoiceMemos", "com.apple.QuickTimePlayerX",
+        "com.apple.PhotoBooth", "com.apple.garageband", "com.apple.musicmemos",
+        "com.apple.MobileSMS", "com.apple.iChat", "com.apple.Safari", "com.apple.WebKit"
     ]
 
     static func shouldCount(
@@ -262,33 +339,39 @@ enum MicrophoneUsageFilter {
         ownBundleID: String?
     ) -> Bool {
         if processID == ownProcessID { return false }
-        if let bundleID {
-            if bundleID == ownBundleID { return false }
-            if ignoredBundleIDPrefixes.contains(where: bundleID.hasPrefix) { return false }
+        guard let bundleID, !bundleID.isEmpty else { return false }
+        if bundleID == ownBundleID { return false }
+        if ignoredBundleIDPrefixes.contains(where: bundleID.hasPrefix) { return false }
+        if bundleID.hasPrefix("com.apple."),
+           !appleUserFacingMicPrefixes.contains(where: bundleID.hasPrefix) {
+            return false
         }
         return inputDeviceNames.contains(where: { isMicrophoneInputDevice(name: $0) })
     }
 
     static func isMicrophoneInputDevice(name: String?) -> Bool {
-        guard let name else { return true }
+        guard let name, !name.isEmpty else { return false }
         return !name.hasPrefix("Sapphire-")
     }
 }
 
-private final class MicrophoneMeteringTap {
+private final class MicrophoneMeteringTap: @unchecked Sendable {
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Sapphire", category: "MicrophoneMeteringTap")
-    private let deviceID: AudioDeviceID
-    private let gain: Float
+    let deviceID: AudioDeviceID
+    let gain: Float
     private let callback: (Float, Float, Bool) -> Void
     private var ioProcID: AudioDeviceIOProcID?
     private var isRunning = false
     private let queue = DispatchQueue(label: "com.sapphire.microphone-meter", qos: .userInteractive)
+    private var accumulator = MeterAccumulator(sampleRate: 48000)
 
     init(deviceID: AudioDeviceID, gain: Float, callback: @escaping (Float, Float, Bool) -> Void) {
         self.deviceID = deviceID; self.gain = gain; self.callback = callback
     }
 
     func start() -> Bool {
+        let sampleRate = MixerEngine.nominalSampleRate(deviceID)
+        queue.sync { accumulator = MeterAccumulator(sampleRate: sampleRate) }
         var proc: AudioDeviceIOProcID?
         let status = AudioDeviceCreateIOProcIDWithBlock(&proc, deviceID, queue) { [weak self] _, inputData, _, _, _ in
             self?.measure(inputData)
@@ -316,23 +399,31 @@ private final class MicrophoneMeteringTap {
 
     private func measure(_ data: UnsafePointer<AudioBufferList>) {
         let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: data))
-        var sum: Float = 0
+        var sumOfSquares: Float = 0
         var peak: Float = 0
-        var count = 0
+        var sampleCount = 0
+        var frameCount = 0
         for buffer in buffers {
             guard let bytes = buffer.mData else { continue }
             let samples = bytes.assumingMemoryBound(to: Float.self)
-            let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
-            for index in 0..<sampleCount {
-                let amplified = samples[index] * gain
-                let magnitude = abs(amplified)
-                sum += magnitude * magnitude
-                peak = max(peak, magnitude)
-            }
-            count += sampleCount
+            let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+            guard count > 0 else { continue }
+            var bufferSum: Float = 0
+            var bufferPeak: Float = 0
+            vDSP_svesq(samples, 1, &bufferSum, vDSP_Length(count))
+            vDSP_maxmgv(samples, 1, &bufferPeak, vDSP_Length(count))
+            sumOfSquares += bufferSum
+            peak = max(peak, bufferPeak)
+            sampleCount += count
+            frameCount = max(frameCount, count / max(1, Int(buffer.mNumberChannels)))
         }
-        guard count > 0 else { return }
-        let rms = min(sqrt(sum / Float(count)) * 2.2, 1.0)
-        callback(rms, min(peak, 1.0), peak >= 0.98)
+        guard let reading = accumulator.add(
+            sumOfSquares: sumOfSquares * gain * gain,
+            peak: peak * gain,
+            sampleCount: sampleCount,
+            frameCount: frameCount
+        ) else { return }
+        let rms = min(reading.rms * 2.2, 1.0)
+        callback(rms, min(reading.peak, 1.0), reading.peak >= 0.98)
     }
 }

@@ -90,8 +90,8 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     private override init() {
         super.init()
         self.ble.delegate = self
-        self.selectedDeviceID = settings.settings.bluetoothUnlockDeviceID
-        self.isEnabled = settings.settings.bluetoothUnlockEnabled
+        self.selectedDeviceID = settings.current.bluetoothUnlockDeviceID
+        self.isEnabled = settings.current.bluetoothUnlockEnabled
         self.isPasswordSet = KeychainManager.shared.load(for: passwordAccount) != nil
         setupBindings()
         setupSettingsObserver()
@@ -127,8 +127,9 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     func startFaceIDAuthentication() {
         let isForAppLock = pendingAppLockFaceIDCompletion != nil
         guard !isUnlockInProgress, !isFaceIDAuthenticating,
-              (isForAppLock || settings.settings.faceIDUnlockEnabled),
-              settings.settings.hasRegisteredFaceID,
+              isForAppLock || !isFaceIDLockedUntilPasswordUnlock,
+              (isForAppLock || settings.current.faceIDUnlockEnabled),
+              settings.current.hasRegisteredFaceID,
               isFaceIDAllowedAtCurrentLocation() else { return }
 
         isFaceIDSessionForAppLock = isForAppLock
@@ -150,7 +151,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func startFaceIDAuthenticationForAppLock(completion: @escaping (FaceIDAuthResult) -> Void) {
-        guard settings.settings.hasRegisteredFaceID else {
+        guard settings.current.hasRegisteredFaceID else {
             completion(.failed)
             return
         }
@@ -173,8 +174,11 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         }
     }
 
+    private var isFaceIDLockedUntilPasswordUnlock = false
+
     private func handleFaceIDSecurityEvent(_ event: FaceIDSecurityEvent) {
         guard isFaceIDAuthenticating else { return }
+        if !isFaceIDSessionForAppLock { isFaceIDLockedUntilPasswordUnlock = true }
         tearDownFaceID()
         (NSApp.delegate as? AppDelegate)?.markFaceIDRequiresPassword()
         switch event {
@@ -225,7 +229,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     private func handleFaceIDLocationChange() {
-        guard settings.settings.faceIDLocationPolicy == .selectedWiFiNetworks else { return }
+        guard settings.current.faceIDLocationPolicy == .selectedWiFiNetworks else { return }
         if !isFaceIDAllowedAtCurrentLocation(), isFaceIDAuthenticating {
             tearDownFaceID()
             setStatusThrottled("Face ID unavailable at this location.")
@@ -235,6 +239,10 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     func handleSystemWakeFaceID() {
         guard isScreenLocked else { return }
+        guard settings.current.faceIDLocationPolicy == .selectedWiFiNetworks else {
+            startFaceIDAuthentication()
+            return
+        }
         refreshFaceIDLocation { [weak self] in
             guard let self, self.isScreenLocked else { return }
             self.startFaceIDAuthentication()
@@ -242,10 +250,13 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func purgeFaceIDAfterUnlock() {
+        isFaceIDLockedUntilPasswordUnlock = false
         if isFaceIDAuthenticating {
             tearDownFaceID()
         }
-        malloc_zone_pressure_relief(nil, 0)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1) {
+            malloc_zone_pressure_relief(nil, 0)
+        }
     }
 
     func stopAllAuthentication() {
@@ -273,11 +284,11 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             return
         }
 
-        if settings.settings.bluetoothUnlockWakeOnProximity || isFaceIDAuthenticating {
+        if settings.current.bluetoothUnlockWakeOnProximity || isFaceIDAuthenticating {
             (NSApp.delegate as? AppDelegate)?.wakeDisplay()
         }
 
-        if settings.settings.bluetoothUnlockWakeWithoutUnlocking && !isFaceIDAuthenticating {
+        if settings.current.bluetoothUnlockWakeWithoutUnlocking && !isFaceIDAuthenticating {
             isUnlockInProgress = false
             return
         }
@@ -403,7 +414,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     func startScan(includeUnnamed: Bool) {
         guard ble.centralMgr.state == .poweredOn else { setStatusThrottled("Bluetooth is off"); return }
-        ble.thresholdRSSI = settings.settings.bluetoothUnlockMinScanRSSI
+        ble.thresholdRSSI = settings.current.bluetoothUnlockMinScanRSSI
         scannedDevices.removeAll()
         ble.devices.removeAll()
         isScanning = true
@@ -464,11 +475,11 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     private func setupBindings() {
         settings.changes(of: { $0.bluetoothUnlockEnabled })
-            .prepend(settings.settings.bluetoothUnlockEnabled)
+            .prepend(settings.current.bluetoothUnlockEnabled)
             .assign(to: \.isEnabled, on: self)
             .store(in: &cancellables)
         settings.changes(of: { $0.bluetoothUnlockDeviceID })
-            .prepend(settings.settings.bluetoothUnlockDeviceID)
+            .prepend(settings.current.bluetoothUnlockDeviceID)
             .assign(to: \.selectedDeviceID, on: self)
             .store(in: &cancellables)
         $isEnabled.combineLatest($selectedDeviceID).sink { [weak self] (enabled, deviceID) in self?.updateMonitoringConfig(enabled: enabled, deviceID: deviceID) }.store(in: &cancellables)
@@ -504,18 +515,16 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     func handleDisplayDidWake() {
         if isFaceIDAuthenticating {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.cameraController?.startAuthentication()
-            }
+            print("[FaceID timing] display wake: resuming session")
+            cameraController?.resumeAfterDisplayWake()
         }
     }
 
     func handleSystemDidWake() {
         guard isFaceIDAuthenticating else { return }
+        print("[FaceID timing] system wake: restarting Face ID")
         tearDownFaceID()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.handleSystemWakeFaceID()
-        }
+        handleSystemWakeFaceID()
     }
 
     func newDevice(device: Device) { updateDevice(device: device) }
@@ -539,8 +548,8 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             guard let rssi = rssi else { self.setStatusThrottled("Searching..."); return }
-            let unlock = self.settings.settings.bluetoothUnlockUnlockRSSI
-            let lock = self.settings.settings.bluetoothUnlockLockRSSI
+            let unlock = self.settings.current.bluetoothUnlockUnlockRSSI
+            let lock = self.settings.current.bluetoothUnlockLockRSSI
             let newStatus: String
 
             if rssi >= unlock { newStatus = "Monitoring (Near)" }
@@ -604,9 +613,9 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
 
     private func handleLock() {
         if !isScreenLocked {
-            if settings.settings.bluetoothUnlockPauseMusicOnLock { Task { await MusicManager.shared.pause() } }
-            settings.settings.bluetoothUnlockUseScreensaver ? startScreenSaver() : (_ = SACLockScreenImmediate())
-            if settings.settings.bluetoothUnlockTurnOffScreenOnLock {
+            if settings.current.bluetoothUnlockPauseMusicOnLock { Task { await MusicManager.shared.pause() } }
+            settings.current.bluetoothUnlockUseScreensaver ? startScreenSaver() : (_ = SACLockScreenImmediate())
+            if settings.current.bluetoothUnlockTurnOffScreenOnLock {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { (NSApp.delegate as? AppDelegate)?.sleepDisplay() }
             }
         }

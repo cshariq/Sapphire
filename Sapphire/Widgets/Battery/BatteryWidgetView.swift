@@ -7,7 +7,7 @@
 import SwiftUI
 
 struct BatteryWidgetView: View {
-    @EnvironmentObject private var settings: SettingsModel
+    @ObservedSettings private var settings: SettingsObserver
     @Environment(\.navigationStack) private var navigationStack
     @StateObject private var stats = BatteryStatsViewModel()
     @State private var statsPollingRequester = "BatteryWidget-\(UUID().uuidString)"
@@ -22,6 +22,12 @@ struct BatteryWidgetView: View {
             isCharging: stats.isCharging
         )
     }
+
+    private static let wattsFont: NSFont = {
+        let base = NSFont.monospacedDigitSystemFont(ofSize: 26, weight: .bold)
+        guard let rounded = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return NSFont(descriptor: rounded, size: 26) ?? base
+    }()
 
     private var temperatureText: String {
         stats.temperature > 0 ? String(format: "%.1f°", stats.temperature) : "--"
@@ -44,12 +50,9 @@ struct BatteryWidgetView: View {
                     color: power.statusColor
                 )
                 HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text(wattsText)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .animation(.easeInOut(duration: 0.3), value: wattsText)
+                    LayerNumericText(text: wattsText, font: Self.wattsFont, color: .white)
+                        .textBaseline()
+                        .accessibilityLabel(Text(wattsText))
                     if power.heroWatts > 0 {
                         Text("W")
                             .font(.system(size: 13, weight: .semibold, design: .rounded))

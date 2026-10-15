@@ -54,6 +54,21 @@ enum AccessibilityPermission {
 
 // MARK: - 3. Runtime trust monitor (event-based)
 
+enum AccessibilityTrustTransition: Equatable {
+    case none
+    case apply
+    case confirmRevocation
+
+    static func onObservation(cached: Bool, observed: Bool) -> AccessibilityTrustTransition {
+        guard cached != observed else { return .none }
+        return observed ? .apply : .confirmRevocation
+    }
+
+    static func onConfirmation(cached: Bool, observed: Bool) -> Bool {
+        cached != observed
+    }
+}
+
 @MainActor
 final class AccessibilityTrustMonitor {
     static let shared = AccessibilityTrustMonitor()
@@ -76,6 +91,7 @@ final class AccessibilityTrustMonitor {
     nonisolated private static let trustState = OSAllocatedUnfairLock(initialState: false)
     var isTrusted: Bool { Self.isCurrentlyTrusted() }
     private var debounceTask: Task<Void, Never>?
+    private var isConfirmingRevocation = false
 
     private init() {
         let initial = AccessibilityPermission.isProcessTrusted
@@ -123,24 +139,38 @@ final class AccessibilityTrustMonitor {
 
     private func scheduleDebouncedRefresh() {
         let current = AccessibilityPermission.isProcessTrusted
-        if current != Self.isCurrentlyTrusted() {
-            if !current {
-                debounceTask?.cancel()
-                refreshTrust()
-                return
-            }
-        }
+        let action = AccessibilityTrustTransition.onObservation(cached: Self.isCurrentlyTrusted(), observed: current)
+        if action == .confirmRevocation, isConfirmingRevocation { return }
         debounceTask?.cancel()
+        isConfirmingRevocation = action == .confirmRevocation
         debounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            self?.refreshTrust()
-            self?.debounceTask = nil
+            guard !Task.isCancelled, let self else { return }
+            self.debounceTask = nil
+            self.isConfirmingRevocation = false
+            switch action {
+            case .confirmRevocation:
+                let confirmed = AccessibilityPermission.isProcessTrusted
+                if AccessibilityTrustTransition.onConfirmation(cached: Self.isCurrentlyTrusted(), observed: confirmed) {
+                    self.applyTrust(confirmed)
+                }
+            case .apply, .none:
+                self.refreshTrust()
+            }
         }
     }
 
     private func refreshTrust() {
         let trusted = AccessibilityPermission.isProcessTrusted
+        guard trusted != Self.isCurrentlyTrusted() else { return }
+        if !trusted {
+            scheduleDebouncedRefresh()
+            return
+        }
+        applyTrust(trusted)
+    }
+
+    private func applyTrust(_ trusted: Bool) {
         guard trusted != Self.isCurrentlyTrusted() else { return }
         Self.trustState.withLock { $0 = trusted }
 
@@ -544,7 +574,145 @@ enum AX {
         return subrole(of: focused) == (kAXSecureTextFieldSubrole as String)
     }
 
+    // MARK: Receive — app menus & windows
+
+    struct MenuItem {
+        let title: String
+        let isEnabled: Bool
+        let element: AXUIElement
+    }
+
+    static func menuItems(pid: pid_t, limit: Int = 600) -> [MenuItem] {
+        let app = application(pid: pid)
+        guard trusted(), let bar = element(kAXMenuBarAttribute as String, of: app) else { return [] }
+        var items: [MenuItem] = []
+        func collect(_ menu: AXUIElement, depth: Int) {
+            for item in children(of: menu) where items.count < limit {
+                if let title = self.title(of: item), !title.isEmpty {
+                    items.append(MenuItem(title: title, isEnabled: bool(kAXEnabledAttribute as String, of: item) ?? true, element: item))
+                }
+                if depth > 0, let submenu = children(of: item).first { collect(submenu, depth: depth - 1) }
+            }
+        }
+        for barItem in children(of: bar).dropFirst() {
+            guard let menu = children(of: barItem).first else { continue }
+            collect(menu, depth: 1)
+        }
+        return items
+    }
+
+    static func windowTitles(pid: pid_t) -> [String] {
+        guard trusted() else { return [] }
+        return elements(kAXWindowsAttribute as String, of: application(pid: pid), limit: 40).compactMap { title(of: $0) }
+    }
+
+    private static func trusted() -> Bool { AccessibilityTrustMonitor.isCurrentlyTrusted() }
+
+    // MARK: Receive — web content (Electron / Chromium / WebKit)
+
+    struct WebArea {
+        let url: URL?
+        let title: String?
+    }
+
+    @discardableResult
+    static func enableWebAccessibility(pid: pid_t) -> Bool {
+        guard trusted() else { return false }
+        let app = application(pid: pid)
+        setMessagingTimeout(0.25, on: app)
+        return set("AXManualAccessibility", to: true, on: app)
+    }
+
+    static func webAccessibilityEnabled(pid: pid_t) -> Bool? {
+        guard trusted() else { return nil }
+        let app = application(pid: pid)
+        setMessagingTimeout(0.25, on: app)
+        return bool("AXManualAccessibility", of: app)
+    }
+
+    @discardableResult
+    static func setWebAccessibility(_ enabled: Bool, pid: pid_t) -> Bool {
+        guard trusted() else { return false }
+        let app = application(pid: pid)
+        setMessagingTimeout(0.25, on: app)
+        return set("AXManualAccessibility", to: enabled, on: app)
+    }
+
+    static func focusedWebArea(pid: pid_t, nodeLimit: Int = 260, depthLimit: Int = 10) -> WebArea? {
+        guard trusted() else { return nil }
+        let app = application(pid: pid)
+        setMessagingTimeout(0.25, on: app)
+        guard let window = focusedWindow(ofApplication: app) ?? mainWindow(ofApplication: app) else { return nil }
+        var queue: [(AXUIElement, Int)] = [(window, 0)]
+        var index = 0
+        while index < queue.count, index < nodeLimit {
+            let (node, depth) = queue[index]
+            index += 1
+            if role(of: node) == "AXWebArea" {
+                return WebArea(url: url("AXURL", of: node), title: title(of: node))
+            }
+            guard depth < depthLimit else { continue }
+            for child in elements(kAXChildrenAttribute as String, of: node, limit: 24) {
+                queue.append((child, depth + 1))
+            }
+        }
+        return nil
+    }
+
+    struct TextSnapshot {
+        var windowTitle: String?
+        var document: String?
+        var fieldValues: [String] = []
+        var texts: [String] = []
+    }
+
+    static func focusedWindowText(pid: pid_t, nodeLimit: Int = 500, textLimit: Int = 80) -> TextSnapshot? {
+        guard trusted() else { return nil }
+        let app = application(pid: pid)
+        setMessagingTimeout(0.25, on: app)
+        guard let window = focusedWindow(ofApplication: app) ?? mainWindow(ofApplication: app) else { return nil }
+        var snapshot = TextSnapshot(windowTitle: title(of: window), document: string(kAXDocumentAttribute as String, of: window))
+        var stack: [(AXUIElement, Int)] = [(window, 0)]
+        var visited = 0
+        while let (node, depth) = stack.popLast(), visited < nodeLimit, snapshot.texts.count < textLimit {
+            visited += 1
+            switch role(of: node) {
+            case "AXTextField", "AXComboBox", "AXSearchField":
+                if let value = string(kAXValueAttribute as String, of: node)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !value.isEmpty {
+                    snapshot.fieldValues.append(value)
+                }
+                continue
+            case "AXStaticText":
+                if let value = string(kAXValueAttribute as String, of: node)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !value.isEmpty {
+                    snapshot.texts.append(value)
+                }
+                continue
+            case "AXButton", "AXRadioButton":
+                if let label = (title(of: node) ?? string(kAXDescriptionAttribute as String, of: node))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty {
+                    let selected = bool(kAXValueAttribute as String, of: node) == true
+                    snapshot.texts.append(selected ? "[\(label)]" : label)
+                }
+                continue
+            default:
+                break
+            }
+            guard depth < 18 else { continue }
+            for child in elements(kAXChildrenAttribute as String, of: node, limit: 40).reversed() {
+                stack.append((child, depth + 1))
+            }
+        }
+        return snapshot
+    }
+
     // MARK: Send — actions & attributes
+
+    @discardableResult
+    static func press(_ item: MenuItem) -> Bool {
+        perform(kAXPressAction as String, on: item.element)
+    }
 
     @discardableResult
     static func perform(_ action: String, on element: AXUIElement) -> Bool {

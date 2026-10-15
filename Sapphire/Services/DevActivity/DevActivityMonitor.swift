@@ -56,9 +56,25 @@ final class DevActivityMonitor: ObservableObject {
 
     private var taskStates: [String: TaskState] = [:]
 
+    private var idsByPID: [pid_t: String] = [:]
+
     private let busyGracePeriod: TimeInterval = 8
 
     private static let scanInterval: TimeInterval = 2.5
+    private static let idleScanInterval: TimeInterval = 10
+    private static let idleScansBeforeBackOff = 5
+    private var idleScans = 0
+
+    private var environmentObservers: [(NotificationCenter, NSObjectProtocol)] = []
+    private var displaysAsleep = false
+    private var screenLocked = false
+    private var systemSleeping = false
+
+    private var isEnvironmentSuspended: Bool {
+        if systemSleeping { return true }
+        guard !settings.current.caffeinateAutoDuringTasks else { return false }
+        return displaysAsleep || screenLocked
+    }
 
     private init() {
         settings.$settings
@@ -67,13 +83,53 @@ final class DevActivityMonitor: ObservableObject {
                     $0.devActivityEnabled,
                     $0.devActivityKinds,
                     $0.devActivitySensitivity,
-                    $0.caffeinateAutoDuringTasks
+                    $0.caffeinateAutoDuringTasks,
+                    $0.devWidgetEnabled
                 )
             }
             .removeDuplicates { $0 == $1 }
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.applySettings() }
             .store(in: &cancellables)
+
+        installEnvironmentObservers()
+    }
+
+    // MARK: - Environment
+
+    private func installEnvironmentObservers() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        observe(workspace, NSWorkspace.screensDidSleepNotification) { $0.displaysAsleep = true }
+        observe(workspace, NSWorkspace.screensDidWakeNotification) { $0.displaysAsleep = false }
+        observe(workspace, NSWorkspace.willSleepNotification) { $0.systemSleeping = true }
+        observe(workspace, NSWorkspace.didWakeNotification) { $0.systemSleeping = false }
+
+        let distributed = DistributedNotificationCenter.default()
+        observe(distributed, Notification.Name("com.apple.screenIsLocked")) { $0.screenLocked = true }
+        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { $0.screenLocked = false }
+    }
+
+    private func observe(
+        _ center: NotificationCenter,
+        _ name: Notification.Name,
+        handler: @escaping @MainActor (DevActivityMonitor) -> Void
+    ) {
+        let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                handler(self)
+                self.applySettings()
+            }
+        }
+        environmentObservers.append((center, token))
+    }
+
+    private var isShownInNotch: Bool {
+        settings.current.devActivityEnabled || settings.current.devWidgetEnabled
+    }
+
+    private var isWanted: Bool {
+        isShownInNotch || settings.current.caffeinateAutoDuringTasks
     }
 
     // MARK: - Lifecycle
@@ -96,13 +152,15 @@ final class DevActivityMonitor: ObservableObject {
         if !tasks.isEmpty { tasks = [] }
         if isBusy { isBusy = false }
         taskStates.removeAll()
+        idsByPID.removeAll()
+        idleScans = 0
     }
 
     private func applySettings() {
         guard hasStarted else { return }
 
-        let wanted = settings.settings.devActivityEnabled || settings.settings.caffeinateAutoDuringTasks
-        guard wanted else {
+        let wanted = isWanted
+        guard wanted, !isEnvironmentSuspended else {
             suspendScanning()
             return
         }
@@ -115,14 +173,18 @@ final class DevActivityMonitor: ObservableObject {
         guard hasStarted else { return }
         timer?.invalidate()
         timer = nil
+        idleScans = 0
         scan()
     }
 
     private func scheduleNextScan() {
         timer?.invalidate()
         let shouldBackOff = NotchRuntimeState.shared.shouldReduceBackgroundWork
-            && !settings.settings.caffeinateAutoDuringTasks
-        let interval = shouldBackOff ? Self.scanInterval * 2 : Self.scanInterval
+            && !settings.current.caffeinateAutoDuringTasks
+        var interval = shouldBackOff ? Self.scanInterval * 2 : Self.scanInterval
+        if idleScans >= Self.idleScansBeforeBackOff || !isShownInNotch {
+            interval = max(interval, Self.idleScanInterval)
+        }
         timer = Timer.scheduledCoalescing(
             withTimeInterval: interval,
             repeats: false,
@@ -140,15 +202,15 @@ final class DevActivityMonitor: ObservableObject {
 
     private func scan() {
         guard hasStarted else { return }
-        let wanted = settings.settings.devActivityEnabled || settings.settings.caffeinateAutoDuringTasks
+        let wanted = isWanted
         guard wanted else { return }
         guard !isScanning else { return }
         isScanning = true
         let generation = scanGeneration
 
-        let enabledKinds = settings.settings.devActivityKinds
-        let sensitivity = settings.settings.devActivitySensitivity
-        let includeIDEAgents = settings.settings.devActivityDetectIDEAgents
+        let enabledKinds = settings.current.devActivityKinds
+        let sensitivity = settings.current.devActivitySensitivity
+        let includeIDEAgents = settings.current.devActivityDetectIDEAgents
 
         let configuration = DevActivityScanEngine.Configuration(
             enabledKinds: enabledKinds,
@@ -166,7 +228,8 @@ final class DevActivityMonitor: ObservableObject {
                     self.applySettings()
                     return
                 }
-                self.publish(found)
+                self.idleScans = found.sawDevProcess ? 0 : self.idleScans + 1
+                self.publish(found.tasks)
                 self.scheduleNextScan()
             }
         }
@@ -174,9 +237,10 @@ final class DevActivityMonitor: ObservableObject {
 
     // MARK: - Publishing
 
-    private func publish(_ raw: [DevActivityScanEngine.RawTask]) {
+    private func publish(_ scanned: [DevActivityScanEngine.RawTask]) {
         let now = Date()
         var states = taskStates
+        let raw = pinIdentities(of: scanned)
 
         for task in raw {
             if var existing = states[task.id] {
@@ -199,6 +263,7 @@ final class DevActivityMonitor: ObservableObject {
             liveIDs.contains(id) || now.timeIntervalSince(state.lastBusy) < busyGracePeriod
         }
         taskStates = states
+        idsByPID = idsByPID.filter { states[$0.value] != nil }
 
         var built: [DevTask] = raw.map { task in
             let state = states[task.id]
@@ -236,6 +301,21 @@ final class DevActivityMonitor: ObservableObject {
             isBusy = busy
             logger.debug("dev activity: \(busy ? "busy" : "idle") (\(built.count) task(s))")
         }
+    }
+
+    private func pinIdentities(of scanned: [DevActivityScanEngine.RawTask]) -> [DevActivityScanEngine.RawTask] {
+        var ids = Set(scanned.map(\.id))
+        var pinned = scanned
+        for index in pinned.indices {
+            let task = pinned[index]
+            if let known = idsByPID[task.pid], known != task.id, !ids.contains(known) {
+                ids.remove(task.id)
+                ids.insert(known)
+                pinned[index].id = known
+            }
+            idsByPID[task.pid] = pinned[index].id
+        }
+        return pinned
     }
 }
 

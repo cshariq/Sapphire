@@ -55,14 +55,14 @@ fileprivate struct SnapZoneViewMetrics {
 struct SnapZonesWidgetView: View {
     let onActiveZoneChange: (SnapZone?) -> Void
     let onHitRegionsChange: ([SnapZoneHitRegion]) -> Void
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
     @State private var activeHover: HoverState?
     @State private var layoutFrames: [UUID: CGRect] = [:]
     @State private var previewUpdateTask: Task<Void, Never>?
     @State private var frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
 
     private var viewConfiguration: SnapZoneViewConfiguration {
-        let current = settings.settings
+        let current = settings.settings.value
         let allAvailableLayouts = LayoutTemplate.allTemplates + current.customSnapLayouts
         let layoutsByID = allAvailableLayouts.reduce(into: [UUID: SnapLayout]()) { result, layout in
             result[layout.id] = layout
@@ -110,7 +110,7 @@ struct SnapZonesWidgetView: View {
                     .frame(width: metrics.itemWidth, height: metrics.itemHeight + metrics.labelHeight)
                     .preference(
                         key: LayoutFramePreferenceKey.self,
-                        value: [layout.id: geometry.frame(in: .global)]
+                        value: [layout.id: geometry.frame(in: .notchDrag)]
                     )
                 }
                 .frame(width: metrics.itemWidth, height: metrics.itemHeight + metrics.labelHeight)
@@ -300,6 +300,7 @@ fileprivate struct SnapLayoutItemView: View {
                         )
                 }
             }
+            .frame(width: itemWidth, height: itemHeight)
 
             Text(layout.name)
                 .font(.system(size: 10))

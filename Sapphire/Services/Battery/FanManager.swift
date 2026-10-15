@@ -92,42 +92,58 @@ struct TemperatureSensor: Identifiable, Hashable {
 @MainActor
 class FanManager: ObservableObject {
     static let shared = FanManager()
+    private static weak var liveInstance: FanManager?
 
     @Published var fans: [FanInfo] = []
     @Published private(set) var sensors: [TemperatureSensor] = []
     @Published private(set) var fanModes: [Int: FanControlMode] = [:]
 
-    private var updateTimer: Timer?
-    private enum AppliedFanCommand: Equatable {
-        case automatic
-        case constant(Int)
-        case target(Int)
-    }
-    private var lastAppliedFanCommands: [Int: AppliedFanCommand] = [:]
+    private static let monitorInterval: TimeInterval = 3
+    private static let heartbeatInterval: TimeInterval = 2
+    private static let missingReadingLimit = 3
+
+    private enum LeaseSupport { case unknown, probing, supported, unsupported }
+
+    private var monitorTimer: Timer?
+    private var heartbeatTimer: Timer?
+    private var leaseSupport: LeaseSupport = .unknown
+    private var heartbeatInFlight = false
+    private var leaseActivity: NSObjectProtocol?
+    private var uiVisibilityCount = 0
+    private var curveStates: [Int: FanCurvePolicy.State] = [:]
+    private var missingReadings: [Int: Int] = [:]
+    private var curveFansOnAutomatic: Set<Int> = []
     private var notificationObservers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
     private var updateInFlight = false
     private var hardwareRefreshInFlight = false
     private var restoredPersistedModes = false
-    private var fanCommandTasks: [Int: Task<Void, Never>] = [:]
+    private var fanCommands = FanCommandSlots()
     private var acceptedFanless = false
+    private(set) var isSuspended = false
 
-    private var needsControlLoop: Bool {
-        fanModes.values.contains {
-            switch $0 {
-            case .sensor, .customCurve: return true
-            case .auto, .constant: return false
-            }
+    private var configuredForcedFanIDs: [Int] {
+        fans.map(\.id).filter { id in
+            if case .auto = fanModes[id] ?? .auto { return false }
+            return true
         }
     }
+
+    private var forcedFanIDs: [Int] {
+        isSuspended ? [] : configuredForcedFanIDs
+    }
+
+    private var hasForcedFans: Bool { !forcedFanIDs.isEmpty }
+
+    private var needsMonitoring: Bool { uiVisibilityCount > 0 || hasForcedFans }
 
     private init() {
         loadPersistedModes()
         registerHelperObservers()
         registerSleepWakeObservers()
+        Self.liveInstance = self
         Task {
             await refreshHardwareState()
-            refreshPollingState()
         }
     }
 
@@ -137,32 +153,43 @@ class FanManager: ObservableObject {
     }
 
     func beginPolling() {
+        uiVisibilityCount += 1
+        refreshPollingState()
         Task { await refreshHardwareState() }
     }
 
     func endPolling() {
-        if !needsControlLoop { stopMonitoring() }
+        uiVisibilityCount = max(0, uiVisibilityCount - 1)
+        refreshPollingState()
     }
 
     private func refreshPollingState() {
-        if needsControlLoop {
-            startMonitoring(interval: 3.0)
+        if needsMonitoring {
+            startMonitoring()
         } else {
             stopMonitoring()
         }
+        refreshLeaseState()
     }
 
     private func registerHelperObservers() {
         let center = NotificationCenter.default
         notificationObservers = [
             center.addObserver(forName: .sapphireHelperConnectionRestored, object: nil, queue: .main) { [weak self] _ in
-                Task { await self?.refreshHardwareState(forceRediscovery: true) }
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.leaseSupport = .unknown
+                    guard !self.isSuspended else { return }
+                    await self.refreshHardwareState(forceRediscovery: true)
+                }
             },
             center.addObserver(forName: .sapphireHelperConnectionLost, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
-                    self?.acceptedFanless = false
-                    self?.restoredPersistedModes = false
-                    self?.lastAppliedFanCommands.removeAll()
+                    guard let self else { return }
+                    self.acceptedFanless = false
+                    self.restoredPersistedModes = false
+                    self.leaseSupport = .unknown
+                    self.resetAppliedState()
                 }
             }
         ]
@@ -172,7 +199,11 @@ class FanManager: ObservableObject {
         let center = NSWorkspace.shared.notificationCenter
         workspaceObservers = [
             center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-                Task { await self?.refreshHardwareState() }
+                Task { @MainActor in
+                    guard let self, !self.isSuspended else { return }
+                    await self.refreshHardwareState()
+                    self.reapplyActiveModes()
+                }
             }
         ]
     }
@@ -189,9 +220,9 @@ class FanManager: ObservableObject {
         await initializeFans()
         await initializeSensors()
 
-        if !restoredPersistedModes {
+        if !restoredPersistedModes, !isSuspended, !fans.isEmpty {
             restoredPersistedModes = true
-            restorePersistedModes()
+            reapplyActiveModes()
         }
         refreshPollingState()
     }
@@ -203,7 +234,7 @@ class FanManager: ObservableObject {
         guard fanCount > 0 else {
             acceptedFanless = true
             fans = []
-            lastAppliedFanCommands.removeAll()
+            resetAppliedState()
             return
         }
 
@@ -222,7 +253,7 @@ class FanManager: ObservableObject {
         if fanArray.isEmpty {
             acceptedFanless = true
             fans = []
-            lastAppliedFanCommands.removeAll()
+            resetAppliedState()
             return
         }
 
@@ -233,6 +264,7 @@ class FanManager: ObservableObject {
         guard let helper = getHelper() else { return }
 
         let availableKeys = Set(await helper.getAllSMCKeys())
+        guard !availableKeys.isEmpty else { return }
         var foundSensors: [TemperatureSensor] = []
 
         for (key, _) in SensorNameMap.knownSensors where availableKeys.contains(key) {
@@ -246,174 +278,241 @@ class FanManager: ObservableObject {
             }
         }
 
+        let previousValues = Dictionary(sensors.map { ($0.key, $0.value) }, uniquingKeysWith: { first, _ in first })
         sensors = foundSensors
             .reduce(into: [TemperatureSensor]()) { result, sensor in
                 if !result.contains(where: { $0.key == sensor.key }) {
+                    var sensor = sensor
+                    sensor.value = previousValues[sensor.key] ?? 0
                     result.append(sensor)
                 }
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private func startMonitoring(interval: TimeInterval = 3.0) {
-        if let updateTimer, updateTimer.isValid, abs(updateTimer.timeInterval - interval) < 0.01 {
-            return
-        }
-        updateTimer?.invalidate()
-        updateTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+    // MARK: - Monitoring loop
+
+    private func startMonitoring() {
+        guard monitorTimer == nil else { return }
+        monitorTimer = Timer.scheduledCoalescing(withTimeInterval: Self.monitorInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateData() }
-        }
-        if let updateTimer {
-            RunLoop.main.add(updateTimer, forMode: .common)
         }
         updateData()
     }
 
     private func stopMonitoring() {
-        updateTimer?.invalidate()
-        updateTimer = nil
+        monitorTimer?.invalidate()
+        monitorTimer = nil
+    }
+
+    private var controlSensorKeys: Set<String> {
+        Set(forcedFanIDs.compactMap { id -> String? in
+            switch fanModes[id] {
+            case .sensor(let key, _, _), .customCurve(let key, _): return key
+            default: return nil
+            }
+        })
     }
 
     private func updateData() {
-        guard !updateInFlight else { return }
+        guard !updateInFlight, needsMonitoring else { return }
         updateInFlight = true
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { updateInFlight = false }
             guard let helper = getHelper() else { return }
 
-            let currentSensors = sensors
-            let controlSensorKeys = Set(fanModes.values.compactMap { mode -> String? in
-                switch mode {
-                case .sensor(let key, _, _), .customCurve(let key, _): return key
-                case .auto, .constant: return nil
+            let keys = uiVisibilityCount > 0 ? Set(sensors.map(\.key)) : controlSensorKeys
+            var readings: [String: Double] = [:]
+            if !keys.isEmpty {
+                let values = await helper.getSensorValues(keys: Array(keys))
+                for key in keys {
+                    guard let number = values[key] as? NSNumber else { continue }
+                    let value = number.doubleValue
+                    if value.isFinite, value > 0 { readings[key] = value }
                 }
-            })
-            guard !controlSensorKeys.isEmpty else { return }
-            let sensorValues = await helper.getSensorValues(keys: Array(controlSensorKeys))
-
-            for sensor in currentSensors where controlSensorKeys.contains(sensor.key) {
-                guard let value = sensorValues[sensor.key] as? NSNumber else { continue }
-                let newValue = value.doubleValue
-                if newValue >= 0, let currentIndex = self.sensors.firstIndex(where: { $0.key == sensor.key }) {
-                    self.sensors[currentIndex].value = newValue
+                var updated = sensors
+                var changed = false
+                for index in updated.indices {
+                    if let value = readings[updated[index].key], updated[index].value != value {
+                        updated[index].value = value
+                        changed = true
+                    }
                 }
+                if changed { sensors = updated }
             }
 
-            applyActiveControlModes()
+            await refreshCurrentRPMs(helper: helper)
+            applyCurveModes(readings: readings)
         }
-
     }
 
-    private func shouldApply(_ command: AppliedFanCommand, to fanID: Int) -> Bool {
-        guard lastAppliedFanCommands[fanID] != command else { return false }
-        lastAppliedFanCommands[fanID] = command
-        return true
+    private func refreshCurrentRPMs(helper: HelperProtocol) async {
+        let snapshot = fans
+        guard !snapshot.isEmpty else { return }
+        var refreshed: [Int: FanInfo] = [:]
+        for fan in snapshot {
+            if let info = await helper.getFanInfo(fanIndex: fan.id) {
+                refreshed[fan.id] = info
+            }
+        }
+        var changed = false
+        let updated = fans.map { fan -> FanInfo in
+            guard let info = refreshed[fan.id], info.currentRPM != fan.currentRPM else { return fan }
+            changed = true
+            return FanInfo(id: fan.id, name: fan.name, minRPM: fan.minRPM, maxRPM: fan.maxRPM, currentRPM: info.currentRPM)
+        }
+        if changed { fans = updated }
     }
 
-    private func applyActiveControlModes() {
+    private func curvePoints(for fan: FanInfo, mode: FanControlMode) -> (sensorKey: String, points: [FanCurvePoint])? {
+        switch mode {
+        case .sensor(let key, let minTemp, let maxTemp):
+            return (key, [
+                FanCurvePoint(temperature: minTemp, rpm: fan.minRPM),
+                FanCurvePoint(temperature: maxTemp, rpm: fan.maxRPM)
+            ])
+        case .customCurve(let key, let points):
+            return (key, points)
+        case .auto, .constant:
+            return nil
+        }
+    }
+
+    private func applyCurveModes(readings: [String: Double]) {
+        guard !isSuspended else { return }
         for fan in fans {
-            guard let mode = fanModes[fan.id] else { continue }
-            switch mode {
-            case .auto:
+            guard !fanCommands.isRunning(fan.id),
+                  let mode = fanModes[fan.id],
+                  let curve = curvePoints(for: fan, mode: mode) else { continue }
+
+            guard let temperature = readings[curve.sensorKey] else {
+                let misses = (missingReadings[fan.id] ?? 0) + 1
+                missingReadings[fan.id] = misses
+                if misses >= Self.missingReadingLimit, !curveFansOnAutomatic.contains(fan.id) {
+                    curveFansOnAutomatic.insert(fan.id)
+                    curveStates[fan.id]?.appliedRPM = nil
+                    let fanID = fan.id
+                    Task { await self.getHelper()?.setFanMode(fanIndex: fanID, mode: 0) }
+                }
                 continue
-            case .constant(let rpm):
-                guard shouldApply(.constant(rpm), to: fan.id) else { continue }
-                Task { await getHelper()?.setFanToConstantRPM(fanIndex: fan.id, speed: rpm) }
-            case .sensor(let sensorKey, let minTemp, let maxTemp):
-                applyLinearCurve(
-                    fan: fan,
-                    sensorKey: sensorKey,
-                    points: [
-                        FanCurvePoint(temperature: minTemp, rpm: fan.minRPM),
-                        FanCurvePoint(temperature: maxTemp, rpm: fan.maxRPM)
-                    ]
-                )
-            case .customCurve(let sensorKey, let points):
-                applyLinearCurve(fan: fan, sensorKey: sensorKey, points: points)
+            }
+            missingReadings[fan.id] = 0
+
+            var state = curveStates[fan.id] ?? FanCurvePolicy.State()
+            let target = FanCurvePolicy.nextTarget(
+                state: &state,
+                temperature: temperature,
+                points: curve.points,
+                minRPM: fan.minRPM,
+                maxRPM: fan.maxRPM
+            )
+            curveStates[fan.id] = state
+            guard let target else { continue }
+
+            let fanID = fan.id
+            let wasOnAutomatic = curveFansOnAutomatic.remove(fanID) != nil
+            Task { @MainActor [weak self] in
+                guard let self, !self.isSuspended, let helper = self.getHelper() else { return }
+                let ok = wasOnAutomatic
+                    ? await helper.setFanToConstantRPM(fanIndex: fanID, speed: target)
+                    : await helper.setFanTargetSpeed(fanIndex: fanID, speed: target)
+                if !ok {
+                    self.curveStates[fanID]?.appliedRPM = nil
+                    self.curveFansOnAutomatic.insert(fanID)
+                }
             }
         }
     }
 
-    private func applyLinearCurve(fan: FanInfo, sensorKey: String, points: [FanCurvePoint]) {
-        guard let sensor = sensors.first(where: { $0.key == sensorKey }) else { return }
-        let sortedPoints = points.sorted { $0.temperature < $1.temperature }
-        guard sortedPoints.count >= 2 else { return }
-
-        let currentTemp = sensor.value
-        var targetRPM = fan.minRPM
-
-        if currentTemp <= Double(sortedPoints[0].temperature) {
-            targetRPM = sortedPoints[0].rpm
-        } else if currentTemp >= Double(sortedPoints[sortedPoints.count - 1].temperature) {
-            targetRPM = sortedPoints[sortedPoints.count - 1].rpm
-        } else {
-            for index in 0..<(sortedPoints.count - 1) {
-                let lower = sortedPoints[index]
-                let upper = sortedPoints[index + 1]
-                let lowerTemp = Double(lower.temperature)
-                let upperTemp = Double(upper.temperature)
-                guard currentTemp >= lowerTemp, currentTemp <= upperTemp else { continue }
-                let progress = (currentTemp - lowerTemp) / max(upperTemp - lowerTemp, 1)
-                targetRPM = lower.rpm + Int(progress * Double(upper.rpm - lower.rpm))
-                break
-            }
-        }
-
-        targetRPM = max(fan.minRPM, min(fan.maxRPM, targetRPM))
-        guard shouldApply(.target(targetRPM), to: fan.id) else { return }
-        Task { await getHelper()?.setFanTargetSpeed(fanIndex: fan.id, speed: targetRPM) }
-    }
+    // MARK: - Modes
 
     func setFanMode(for fanID: Int, to mode: FanControlMode) {
         guard fans.contains(where: { $0.id == fanID }) else { return }
         guard fanModes[fanID] != mode else { return }
         fanModes[fanID] = mode
-        lastAppliedFanCommands[fanID] = nil
         persistModes()
         refreshPollingState()
         applyFanMode(fanID: fanID, mode: mode)
     }
 
+    private func resetAppliedState() {
+        for id in curveStates.keys { curveStates[id]?.appliedRPM = nil }
+        missingReadings.removeAll()
+        curveFansOnAutomatic.removeAll()
+    }
+
+    private func reapplyActiveModes() {
+        resetAppliedState()
+        for fanID in forcedFanIDs {
+            guard let mode = fanModes[fanID] else { continue }
+            applyFanMode(fanID: fanID, mode: mode)
+        }
+    }
+
     private func applyFanMode(fanID: Int, mode: FanControlMode) {
-        fanCommandTasks[fanID]?.cancel()
-        fanCommandTasks[fanID] = Task { @MainActor [weak self] in
+        guard !isSuspended else { return }
+        curveStates[fanID] = nil
+        missingReadings[fanID] = nil
+        curveFansOnAutomatic.remove(fanID)
+        let commandID = fanCommands.reserve(fanID)
+        let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { fanCommandTasks[fanID] = nil }
+            defer { fanCommands.finish(fanID, commandID: commandID) }
             guard let helper = getHelper() else { return }
 
             switch mode {
             case .auto:
-                lastAppliedFanCommands[fanID] = .automatic
                 await helper.setFanMode(fanIndex: fanID, mode: 0)
             case .constant(let rpm):
-                lastAppliedFanCommands[fanID] = .constant(rpm)
                 await helper.setFanToConstantRPM(fanIndex: fanID, speed: rpm)
-            case .sensor(_, _, _):
-                let minRPM = fans.first(where: { $0.id == fanID })?.minRPM ?? 2000
-                lastAppliedFanCommands[fanID] = .constant(minRPM)
-                await helper.setFanToConstantRPM(fanIndex: fanID, speed: minRPM)
-            case .customCurve(_, let points):
-                let startRPM = points.sorted { $0.temperature < $1.temperature }.first?.rpm
-                    ?? fans.first(where: { $0.id == fanID })?.minRPM
-                    ?? 2000
-                lastAppliedFanCommands[fanID] = .constant(startRPM)
-                await helper.setFanToConstantRPM(fanIndex: fanID, speed: startRPM)
+            case .sensor, .customCurve:
+                guard let fan = fans.first(where: { $0.id == fanID }),
+                      let curve = curvePoints(for: fan, mode: mode) else { return }
+                let values = await helper.getSensorValues(keys: [curve.sensorKey])
+                guard !Task.isCancelled else { return }
+                let reading = (values[curve.sensorKey] as? NSNumber)?.doubleValue ?? 0
+                guard reading.isFinite, reading > 0 else {
+                    curveFansOnAutomatic.insert(fanID)
+                    await helper.setFanMode(fanIndex: fanID, mode: 0)
+                    return
+                }
+                var state = FanCurvePolicy.State()
+                guard let target = FanCurvePolicy.nextTarget(
+                    state: &state,
+                    temperature: reading,
+                    points: curve.points,
+                    minRPM: fan.minRPM,
+                    maxRPM: fan.maxRPM
+                ) else { return }
+                let ok = await helper.setFanToConstantRPM(fanIndex: fanID, speed: target)
+                guard !Task.isCancelled else { return }
+                if ok {
+                    curveStates[fanID] = state
+                } else {
+                    state.appliedRPM = nil
+                    curveStates[fanID] = state
+                    curveFansOnAutomatic.insert(fanID)
+                }
             }
         }
+        fanCommands.attach(task, to: fanID, commandID: commandID)
     }
 
     func getMode(for fanID: Int) -> FanControlMode {
         fanModes[fanID] ?? .auto
     }
 
-    func markAllFansAutomatic() {
-        for fan in fans {
+    func resetAllFansToAutomatic() {
+        for fan in fans where getMode(for: fan.id) != .auto {
             fanModes[fan.id] = .auto
+            applyFanMode(fanID: fan.id, mode: .auto)
         }
         persistModes()
         refreshPollingState()
     }
+
+    var hasNonAutomaticFans: Bool { hasForcedFans }
 
     static func defaultCurvePoints(for fan: FanInfo) -> [FanCurvePoint] {
         let midRPM = fan.minRPM + ((fan.maxRPM - fan.minRPM) / 2)
@@ -424,19 +523,129 @@ class FanManager: ObservableObject {
         ]
     }
 
-    private func loadPersistedModes() {
-        let stored = SettingsModel.shared.settings.fanControlModes
-        fanModes = stored.reduce(into: [:]) { result, entry in
-            guard let fanID = Int(entry.key) else { return }
-            result[fanID] = entry.value.toMode()
+    // MARK: - Lease
+
+    private func refreshLeaseState() {
+        guard hasForcedFans, leaseSupport != .unsupported else {
+            heartbeatTimer?.invalidate()
+            heartbeatTimer = nil
+            endLeaseActivity()
+            return
+        }
+        beginLeaseActivity()
+        if heartbeatTimer == nil {
+            heartbeatTimer = Timer.scheduledCoalescing(withTimeInterval: Self.heartbeatInterval, repeats: true, toleranceFraction: 0.05) { [weak self] _ in
+                Task { @MainActor in self?.sendHeartbeat() }
+            }
+        }
+        sendHeartbeat()
+    }
+
+    private func beginLeaseActivity() {
+        guard leaseActivity == nil else { return }
+        leaseActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "Holding manual fan control"
+        )
+    }
+
+    private func endLeaseActivity() {
+        if let leaseActivity { ProcessInfo.processInfo.endActivity(leaseActivity) }
+        leaseActivity = nil
+    }
+
+    private func sendHeartbeat() {
+        guard hasForcedFans, !heartbeatInFlight else { return }
+        switch leaseSupport {
+        case .unsupported:
+            heartbeatTimer?.invalidate()
+            heartbeatTimer = nil
+            endLeaseActivity()
+            return
+        case .probing:
+            return
+        case .unknown:
+            probeLeaseSupport()
+            return
+        case .supported:
+            break
+        }
+        guard let helper = getHelper() else { return }
+        heartbeatInFlight = true
+        Task { @MainActor [weak self] in
+            let holdsForcedState = await helper.renewFanLease()
+            guard let self else { return }
+            self.heartbeatInFlight = false
+            guard holdsForcedState == false,
+                  self.hasForcedFans,
+                  self.fanCommands.isEmpty else { return }
+            let fansNeedingForce = self.forcedFanIDs.filter { !self.curveFansOnAutomatic.contains($0) }
+            guard !fansNeedingForce.isEmpty else { return }
+            self.reapplyActiveModes()
         }
     }
 
-    private func restorePersistedModes() {
-        for fan in fans {
-            guard let mode = fanModes[fan.id] else { continue }
-            if case .auto = mode { continue }
-            applyFanMode(fanID: fan.id, mode: mode)
+    private func probeLeaseSupport() {
+        leaseSupport = .probing
+        Task { @MainActor [weak self] in
+            let version = await XPCClient.shared.helperProtocolVersion(timeout: 2)
+            guard let self, self.leaseSupport == .probing else { return }
+            guard let version else {
+                self.leaseSupport = .unknown
+                return
+            }
+            self.leaseSupport = version >= SapphireHelperFanLeaseProtocolVersion ? .supported : .unsupported
+            if self.leaseSupport == .supported { self.sendHeartbeat() }
+        }
+    }
+
+    static func releaseFanControlForTermination() {
+        guard let manager = liveInstance else { return }
+        let wasSuspended = manager.isSuspended
+        let forced = manager.configuredForcedFanIDs
+        manager.isSuspended = true
+        manager.heartbeatTimer?.invalidate()
+        manager.heartbeatTimer = nil
+        manager.stopMonitoring()
+        manager.fanCommands.cancelAll()
+        manager.endLeaseActivity()
+        manager.resetAppliedState()
+        guard !wasSuspended, !forced.isEmpty, let helper = manager.getHelper() else { return }
+
+        let group = DispatchGroup()
+        if manager.leaseSupport == .supported {
+            group.enter()
+            helper.releaseFanLease { _ in group.leave() }
+        } else {
+            for fanID in forced {
+                group.enter()
+                helper.setFanMode(fanIndex: fanID, mode: 0) { _ in group.leave() }
+            }
+        }
+        _ = group.wait(timeout: .now() + 1.0)
+    }
+
+    static func resumeAfterSuspension() {
+        guard let manager = liveInstance, manager.isSuspended else { return }
+        manager.isSuspended = false
+        manager.restoredPersistedModes = false
+        manager.leaseSupport = .unknown
+        Task { @MainActor in
+            await manager.refreshHardwareState(forceRediscovery: true)
+            guard !manager.isSuspended, !manager.restoredPersistedModes, !manager.fans.isEmpty else { return }
+            manager.restoredPersistedModes = true
+            manager.reapplyActiveModes()
+            manager.refreshPollingState()
+        }
+    }
+
+    // MARK: - Persistence
+
+    private func loadPersistedModes() {
+        let stored = SettingsModel.shared.current.fanControlModes
+        fanModes = stored.reduce(into: [:]) { result, entry in
+            guard let fanID = Int(entry.key) else { return }
+            result[fanID] = entry.value.toMode()
         }
     }
 
@@ -484,21 +693,30 @@ extension HelperProtocol {
         }
     }
 
-    func setFanMode(fanIndex: Int, mode: UInt8) async {
-        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: ()) { finish in
-            setFanMode(fanIndex: fanIndex, mode: mode) { _ in finish(()) }
+    @discardableResult
+    func setFanMode(fanIndex: Int, mode: UInt8) async -> Bool {
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: false) { finish in
+            setFanMode(fanIndex: fanIndex, mode: mode) { finish($0 == nil) }
         }
     }
 
-    func setFanTargetSpeed(fanIndex: Int, speed: Int) async {
-        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: ()) { finish in
-            setFanTargetSpeed(fanIndex: fanIndex, speed: speed) { _ in finish(()) }
+    @discardableResult
+    func setFanTargetSpeed(fanIndex: Int, speed: Int) async -> Bool {
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: false) { finish in
+            setFanTargetSpeed(fanIndex: fanIndex, speed: speed) { finish($0 == nil) }
         }
     }
 
-    func setFanToConstantRPM(fanIndex: Int, speed: Int) async {
-        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: ()) { finish in
-            setFanToConstantRPM(fanIndex: fanIndex, speed: speed) { _ in finish(()) }
+    @discardableResult
+    func setFanToConstantRPM(fanIndex: Int, speed: Int) async -> Bool {
+        await withTimeoutReply(seconds: HelperAsyncTimeout.seconds, default: false) { finish in
+            setFanToConstantRPM(fanIndex: fanIndex, speed: speed) { finish($0 == nil) }
+        }
+    }
+
+    func renewFanLease() async -> Bool? {
+        await withTimeoutReply(seconds: 3, default: nil as Bool?) { finish in
+            renewFanLease { finish($0) }
         }
     }
 
@@ -529,5 +747,38 @@ private func withTimeoutReply<T>(
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds) {
             finish(defaultValue)
         }
+    }
+}
+
+struct FanCommandSlots {
+    private var tasks: [Int: (id: UInt64, task: Task<Void, Never>?)] = [:]
+    private var lastID: UInt64 = 0
+
+    var isEmpty: Bool { tasks.isEmpty }
+
+    func isRunning(_ fanID: Int) -> Bool { tasks[fanID] != nil }
+
+    mutating func reserve(_ fanID: Int) -> UInt64 {
+        tasks[fanID]?.task?.cancel()
+        lastID &+= 1
+        tasks[fanID] = (lastID, nil)
+        return lastID
+    }
+
+    mutating func attach(_ task: Task<Void, Never>, to fanID: Int, commandID: UInt64) {
+        guard tasks[fanID]?.id == commandID else {
+            task.cancel()
+            return
+        }
+        tasks[fanID] = (commandID, task)
+    }
+
+    mutating func finish(_ fanID: Int, commandID: UInt64) {
+        if tasks[fanID]?.id == commandID { tasks[fanID] = nil }
+    }
+
+    mutating func cancelAll() {
+        tasks.values.forEach { $0.task?.cancel() }
+        tasks.removeAll()
     }
 }

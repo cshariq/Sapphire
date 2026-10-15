@@ -16,7 +16,7 @@ extension Notification.Name {
     public static let sapphireNearbyFileDownloaded = Notification.Name("SapphireNearbyFileDownloaded")
 }
 
-public enum NearDropUserAction {
+public enum NearbyTransferUserAction {
     case save
     case open
     case copy
@@ -380,7 +380,7 @@ public class NearbyConnectionManager: NSObject, ObservableObject, NetServiceDele
         activeConnections.removeValue(forKey: connection.id)
     }
 
-    public func submitUserConsent(transferID: String, accept: Bool, action: NearDropUserAction = .save) {
+    public func submitUserConsent(transferID: String, accept: Bool, action: NearbyTransferUserAction = .save) {
         print("[NCM] User consent for transfer \(transferID): \(accept ? "Accepted" : "Rejected") with action \(action)")
         activeConnections[transferID]?.submitUserConsent(accepted: accept, action: action)
         guard let index = transfers.firstIndex(where: { $0.id == transferID }) else {

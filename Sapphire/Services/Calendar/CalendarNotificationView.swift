@@ -16,6 +16,7 @@ struct CalendarNotificationLayout<Details: View>: View {
     let onSnooze: () -> Void
     let details: Details
 
+    @Environment(\.notchBandHeight) private var notchBandHeight
     @State private var isShowing = false
 
     init(
@@ -88,7 +89,7 @@ struct CalendarNotificationLayout<Details: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 15)
-        .padding(.top, NotchConfiguration.universalHeight)
+        .padding(.top, notchBandHeight)
         .frame(width: 390)
         .scaleEffect(isShowing ? 1 : 0.97)
         .opacity(isShowing ? 1 : 0)
@@ -127,7 +128,7 @@ struct CalendarNotificationView: View {
     let event: EKEvent
     let timeUntil: String
 
-    @EnvironmentObject private var liveActivityManager: LiveActivityManager
+    @Environment(LiveActivityManager.self) private var liveActivityManager
 
     var body: some View {
         CalendarNotificationLayout(

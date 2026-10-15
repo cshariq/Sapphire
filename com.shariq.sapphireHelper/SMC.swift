@@ -319,6 +319,30 @@ public class SMC {
         #endif
     }
 
+    public func isFanForced(_ id: Int) -> Bool? {
+        var modeVal = SMCVal_t(fanModeKey(id))
+        if read(&modeVal) == kIOReturnSuccess, modeVal.dataSize > 0 {
+            return modeVal.bytes[0] == UInt8(FanMode.forced.rawValue)
+        }
+        #if !arch(arm64)
+        if let mask = readFanForceMask() {
+            return mask & (1 << UInt16(id)) != 0
+        }
+        #endif
+        return nil
+    }
+
+    public func clearFanTestFlagIfSet() {
+        #if arch(arm64)
+        var ftstVal = SMCVal_t("Ftst")
+        guard read(&ftstVal) == kIOReturnSuccess, ftstVal.dataSize > 0, ftstVal.bytes[0] != 0 else { return }
+        ftstVal.bytes[0] = 0
+        if !writeWithRetry(ftstVal, maxAttempts: 5) {
+            logger.error("Failed to clear Ftst after releasing fan control.")
+        }
+        #endif
+    }
+
     private func setForceFanMode(for fanIndex: Int, enabled: Bool) -> kern_return_t {
         guard let currentMask = readFanForceMask() else {
             logger.warning("Could not read the 'FS! ' key. This Mac might not support it. Skipping this step.")

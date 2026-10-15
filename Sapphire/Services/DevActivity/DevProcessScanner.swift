@@ -18,12 +18,34 @@ struct DevProcess {
 
     var cpuPercent: Double = 0
 
+    var ttyDevice: dev_t? = nil
+    var processGroup: pid_t? = nil
+    var terminalProcessGroup: pid_t? = nil
+
+    static let noDevice: dev_t = -1
+
+    var hasControllingTerminal: Bool? { ttyDevice.map { $0 != Self.noDevice } }
+
+    var isForegroundTerminalJob: Bool? {
+        guard let hasControllingTerminal, let processGroup, let terminalProcessGroup else { return nil }
+        return hasControllingTerminal && processGroup == terminalProcessGroup
+    }
+
     var executableName: String {
         executablePath.isEmpty ? shortName : (executablePath as NSString).lastPathComponent
     }
 
-    var commandLine: String {
-        arguments.isEmpty ? executablePath : arguments.joined(separator: " ")
+    var commandLine: String { commandLine(prefixBytes: .max) }
+
+    func commandLine(prefixBytes: Int) -> String {
+        guard !arguments.isEmpty else { return executablePath }
+        var joined = ""
+        for argument in arguments {
+            if !joined.isEmpty { joined.append(" ") }
+            joined.append(argument)
+            if joined.utf8.count >= prefixBytes { break }
+        }
+        return joined
     }
 
     var elapsed: TimeInterval { Date().timeIntervalSince(startedAt) }
@@ -40,7 +62,14 @@ nonisolated final class DevProcessScanner {
         let shortName: String
         let executablePath: String
         let arguments: [String]
+        var failedReads = 0
+
+        var isEmpty: Bool { executablePath.isEmpty && arguments.isEmpty }
     }
+
+    private static let maxFailedIdentityReads = 3
+
+    private static let zombieState: UInt8 = 5
 
     private struct CPUSample {
         let cumulativeNanos: UInt64
@@ -50,17 +79,26 @@ nonisolated final class DevProcessScanner {
     private var identityCache: [CacheKey: CachedIdentity] = [:]
     private var cpuSamples: [CacheKey: CPUSample] = [:]
     private let uid = getuid()
-    private lazy var argumentBuffer = [CChar](repeating: 0, count: argMax)
-    private var argMax: Int = {
+    private var processTable: [kinfo_proc] = []
+    private let argumentBuffer: UnsafeMutablePointer<CChar>
+    private let argMax: Int
+
+    init() {
         var value: Int32 = 0
         var size = MemoryLayout<Int32>.size
         var mib: [Int32] = [CTL_KERN, KERN_ARGMAX]
-        guard sysctl(&mib, 2, &value, &size, nil, 0) == 0, value > 0 else { return 256 * 1024 }
-        return Int(value)
-    }()
+        argMax = (sysctl(&mib, 2, &value, &size, nil, 0) == 0 && value > 0) ? Int(value) : 256 * 1024
+        argumentBuffer = .allocate(capacity: argMax)
+        argumentBuffer.initialize(repeating: 0, count: argMax)
+    }
+
+    deinit {
+        argumentBuffer.deallocate()
+    }
 
     func scan() -> [pid_t: DevProcess] {
-        guard let table = readProcessTable() else { return [:] }
+        guard let count = readProcessTable() else { return [:] }
+        let table = processTable[0..<count]
 
         var result: [pid_t: DevProcess] = [:]
         result.reserveCapacity(table.count)
@@ -69,6 +107,7 @@ nonisolated final class DevProcessScanner {
 
         for entry in table {
             guard entry.kp_eproc.e_ucred.cr_uid == uid else { continue }
+            guard entry.kp_proc.p_stat != Self.zombieState else { continue }
 
             let pid = entry.kp_proc.p_pid
             guard pid > 0 else { continue }
@@ -82,16 +121,17 @@ nonisolated final class DevProcessScanner {
 
             let shortName = Self.shortName(from: entry.kp_proc.p_comm)
             let identity: CachedIdentity
-            if let cached = identityCache[key],
-               cached.shortName == shortName,
-               !cached.executablePath.isEmpty || !cached.arguments.isEmpty {
+            let cached = identityCache[key].flatMap { $0.shortName == shortName ? $0 : nil }
+            if let cached, !cached.isEmpty || cached.failedReads >= Self.maxFailedIdentityReads {
                 identity = cached
             } else {
-                identity = CachedIdentity(
+                var fresh = CachedIdentity(
                     shortName: shortName,
                     executablePath: Self.executablePath(for: pid),
                     arguments: arguments(for: pid)
                 )
+                if fresh.isEmpty { fresh.failedReads = (cached?.failedReads ?? 0) + 1 }
+                identity = fresh
                 identityCache[key] = identity
             }
 
@@ -103,7 +143,10 @@ nonisolated final class DevProcessScanner {
                     timeIntervalSince1970: Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000
                 ),
                 executablePath: identity.executablePath,
-                arguments: identity.arguments
+                arguments: identity.arguments,
+                ttyDevice: entry.kp_eproc.e_tdev,
+                processGroup: entry.kp_eproc.e_pgid,
+                terminalProcessGroup: entry.kp_eproc.e_tpgid
             )
         }
 
@@ -140,7 +183,7 @@ nonisolated final class DevProcessScanner {
 
     // MARK: - Kernel reads
 
-    private func readProcessTable() -> [kinfo_proc]? {
+    private func readProcessTable() -> Int? {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
         var size = 0
         guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return nil }
@@ -150,46 +193,49 @@ nonisolated final class DevProcessScanner {
         for attempt in 0..<3 {
             let extraEntries = 64 << attempt
             let capacity = max(1, minimumBytes / stride + extraEntries)
-            var table = [kinfo_proc](repeating: kinfo_proc(), count: capacity)
-            var actual = capacity * stride
-            if sysctl(&mib, 4, &table, &actual, nil, 0) == 0 {
-                return Array(table.prefix(actual / stride))
+            if processTable.count < capacity {
+                processTable.append(
+                    contentsOf: repeatElement(kinfo_proc(), count: capacity - processTable.count)
+                )
+            }
+            var actual = processTable.count * stride
+            if sysctl(&mib, 4, &processTable, &actual, nil, 0) == 0 {
+                return actual / stride
             }
             guard errno == ENOMEM else { return nil }
-            minimumBytes = max(actual, capacity * stride)
+            minimumBytes = max(actual, processTable.count * stride)
         }
         return nil
     }
 
     private func arguments(for pid: pid_t) -> [String] {
-        var size = argumentBuffer.count
+        var size = argMax
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
-        guard sysctl(&mib, 3, &argumentBuffer, &size, nil, 0) == 0,
+        guard sysctl(&mib, 3, argumentBuffer, &size, nil, 0) == 0,
               size > MemoryLayout<Int32>.size else {
             return []
         }
-        let buffer = argumentBuffer
 
         var argc: Int32 = 0
-        memcpy(&argc, buffer, MemoryLayout<Int32>.size)
+        memcpy(&argc, argumentBuffer, MemoryLayout<Int32>.size)
         guard argc > 0 else { return [] }
 
-        return buffer.withUnsafeBufferPointer { pointer -> [String] in
-            guard let base = pointer.baseAddress else { return [] }
-            var cursor = MemoryLayout<Int32>.size
+        let base = UnsafePointer(argumentBuffer)
+        var cursor = MemoryLayout<Int32>.size
 
-            while cursor < size, base[cursor] != 0 { cursor += 1 }
-            while cursor < size, base[cursor] == 0 { cursor += 1 }
+        while cursor < size, base[cursor] != 0 { cursor += 1 }
+        while cursor < size, base[cursor] == 0 { cursor += 1 }
 
-            var parsed: [String] = []
-            parsed.reserveCapacity(Int(argc))
-            while parsed.count < Int(argc), cursor < size {
-                let argument = String(cString: base + cursor)
-                parsed.append(argument)
-                cursor += argument.utf8.count + 1
-            }
-            return parsed
+        var parsed: [String] = []
+        parsed.reserveCapacity(Int(argc))
+        while parsed.count < Int(argc), cursor < size {
+            let length = strnlen(base + cursor, size - cursor)
+            parsed.append(
+                String(decoding: UnsafeRawBufferPointer(start: base + cursor, count: length), as: UTF8.self)
+            )
+            cursor += length + 1
         }
+        return parsed
     }
 
     private static func executablePath(for pid: pid_t) -> String {

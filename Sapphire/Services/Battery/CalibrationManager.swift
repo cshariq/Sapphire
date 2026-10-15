@@ -64,9 +64,9 @@ class CalibrationManager: ObservableObject {
         }
 
         print("[CalibrationManager] Starting calibration cycle.")
-        originalChargeLimit = settings.settings.batteryChargeLimit
+        originalChargeLimit = settings.current.batteryChargeLimit
 
-        if settings.settings.preventSleepDuringCalibration {
+        if settings.current.preventSleepDuringCalibration {
             caffeineManager.start(forcePreventSleepInClamshell: true)
         }
 
@@ -180,15 +180,18 @@ class CalibrationManager: ObservableObject {
     private func restoreChargePolicy() {
         let limit = originalChargeLimit
         Task { @MainActor in
-            if batteryManager.isAppleSilicon {
-                let mode = await batteryManager.currentChargeControlMode()
-                if mode == .firmware {
-                    batteryManager.setChargeLimit(limit)
-                } else {
-                    batteryManager.enableCharging(true)
-                }
-            } else {
+            let mode = await batteryManager.currentChargeControlMode()
+            switch mode {
+            case .firmware:
                 batteryManager.setChargeLimit(limit)
+            case .adapter:
+                batteryManager.enableCharging(true)
+            case .legacy, .unsupported:
+                if batteryManager.isAppleSilicon {
+                    batteryManager.enableCharging(true)
+                } else {
+                    batteryManager.setChargeLimit(limit)
+                }
             }
         }
     }

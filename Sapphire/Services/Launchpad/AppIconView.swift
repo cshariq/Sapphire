@@ -126,7 +126,7 @@ class LaunchpadViewModel: ObservableObject {
     func fetchApps() { appFetcher.fetchApps() }
 
     private func synchronizeLayout() {
-        let savedLayout = settingsModel.settings.launchpadLayout
+        let savedLayout = settingsModel.current.launchpadLayout
         if savedLayout.isEmpty {
             let defaultItems = allApps.map { LaunchpadPageItem.app(LaunchpadItem(appBundleID: $0.id)) }
             self.pages = stride(from: 0, to: defaultItems.count, by: appsPerPage).map { Array(defaultItems[$0..<min($0 + appsPerPage, defaultItems.count)]) }
@@ -147,7 +147,7 @@ class LaunchpadViewModel: ObservableObject {
 
     private func saveLayout() {
         let layout = pages.map { $0.filter { $0.id != dropPlaceholderID } }
-        guard settingsModel.settings.launchpadLayout != layout else { return }
+        guard settingsModel.current.launchpadLayout != layout else { return }
         settingsModel.settings.launchpadLayout = layout
     }
 

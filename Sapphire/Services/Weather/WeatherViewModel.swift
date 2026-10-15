@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 import CoreLocation
 import Combine
 
@@ -46,6 +47,13 @@ class WeatherViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var refreshTimer: Timer?
     private var automaticRefreshEnabled = false
+    private var powerObservers: [(NotificationCenter, NSObjectProtocol)] = []
+    private var isAsleep = false
+    private var isLocked = false
+    private var resumeFetchTask: Task<Void, Never>?
+
+    nonisolated static let refreshInterval: TimeInterval = 60 * 10
+    private static let resumeFetchDelay: Duration = .seconds(5)
 
     @Published private var state = WeatherViewState()
 
@@ -124,8 +132,8 @@ class WeatherViewModel: ObservableObject {
     }
 
     private func updateUI(with data: ProcessedWeatherData) {
-        let useCelsius = settingsModel.settings.weatherUseCelsius
-        let useMetricSystem = settingsModel.settings.weatherUseMetricSystem
+        let useCelsius = settingsModel.current.weatherUseCelsius
+        let useMetricSystem = settingsModel.current.weatherUseMetricSystem
 
         state = WeatherViewState(
             weatherData: data,
@@ -158,7 +166,7 @@ class WeatherViewModel: ObservableObject {
             return
         }
 
-        let useMetricSystem = settingsModel.settings.weatherUseMetricSystem
+        let useMetricSystem = settingsModel.current.weatherUseMetricSystem
         let message: String
         if let weatherError = error as? WeatherServiceError {
             message = weatherError.localizedDescription
@@ -194,14 +202,79 @@ class WeatherViewModel: ObservableObject {
         automaticRefreshEnabled = isEnabled
 
         if isEnabled {
+            installPowerObservers()
             if weatherData == nil { fetch() }
-            refreshTimer = Timer.scheduledCoalescing(withTimeInterval: 60 * 10, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.fetch() }
-            }
+            startRefreshTimer()
         } else {
-            refreshTimer?.invalidate()
-            refreshTimer = nil
+            removePowerObservers()
+            stopRefreshTimer()
         }
+    }
+
+    private var isPaused: Bool { isAsleep || isLocked }
+
+    private func startRefreshTimer() {
+        guard refreshTimer == nil, automaticRefreshEnabled, !isPaused else { return }
+        refreshTimer = Timer.scheduledCoalescing(withTimeInterval: Self.refreshInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.fetch() }
+        }
+    }
+
+    private func stopRefreshTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        resumeFetchTask?.cancel()
+        resumeFetchTask = nil
+    }
+
+    nonisolated static func shouldRefreshOnResume(lastUpdated: Date?, now: Date, interval: TimeInterval = refreshInterval) -> Bool {
+        guard let lastUpdated else { return true }
+        return now.timeIntervalSince(lastUpdated) >= interval || now < lastUpdated
+    }
+
+    private func pauseForPowerState() {
+        stopRefreshTimer()
+    }
+
+    private func resumeAfterPowerState() {
+        guard automaticRefreshEnabled, !isPaused else { return }
+        startRefreshTimer()
+        guard Self.shouldRefreshOnResume(lastUpdated: lastUpdated, now: Date()) else { return }
+        resumeFetchTask?.cancel()
+        resumeFetchTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.resumeFetchDelay)
+            guard !Task.isCancelled, let self, self.automaticRefreshEnabled, !self.isPaused else { return }
+            self.resumeFetchTask = nil
+            self.fetch()
+        }
+    }
+
+    private func installPowerObservers() {
+        guard powerObservers.isEmpty else { return }
+        let workspace = NSWorkspace.shared.notificationCenter
+        let distributed = DistributedNotificationCenter.default()
+
+        func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handler: @escaping @MainActor (WeatherViewModel) -> Void) {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    handler(self)
+                }
+            }
+            powerObservers.append((center, token))
+        }
+
+        observe(workspace, NSWorkspace.willSleepNotification) { $0.isAsleep = true; $0.pauseForPowerState() }
+        observe(workspace, NSWorkspace.didWakeNotification) { $0.isAsleep = false; $0.resumeAfterPowerState() }
+        observe(distributed, Notification.Name("com.apple.screenIsLocked")) { $0.isLocked = true; $0.pauseForPowerState() }
+        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { $0.isLocked = false; $0.resumeAfterPowerState() }
+    }
+
+    private func removePowerObservers() {
+        for (center, token) in powerObservers { center.removeObserver(token) }
+        powerObservers.removeAll()
+        isAsleep = false
+        isLocked = false
     }
 
     private func gradientColors(for iconCode: Int) -> [Color] {

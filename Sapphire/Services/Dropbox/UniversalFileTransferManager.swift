@@ -21,6 +21,8 @@ struct FileTransferTask: Identifiable, Equatable {
     var isComplete: Bool = false
     var status: Status = .inProgress
     var sourceType: FileTransferSource = .manual
+    var app: FileProgressApp?
+    var timeRemaining: TimeInterval?
 
     enum Status { case inProgress, finished }
 
@@ -30,6 +32,7 @@ struct FileTransferTask: Identifiable, Equatable {
         case finder
         case archiveExtraction
         case dmgInstall
+        case continuity
     }
 
     var progress: Double? {

@@ -137,7 +137,7 @@ public class Debouncer {
 }
 
 public func haptic(strength: HapticFeedbackType = .strong) {
-    if SettingsModel.shared.settings.hapticFeedbackEnabled {
+    if SettingsModel.shared.current.hapticFeedbackEnabled {
         HapticManager.shared.perform(strength)
     }
 }
@@ -204,6 +204,7 @@ struct SeekButton: View {
     @State private var repeatTimer: Timer?
     @State private var tapIsEligible = false
     @State private var didFireLongPress = false
+    @State private var tapCount = 0
 
     private var isForward: Bool {
         systemName.contains("forward")
@@ -259,12 +260,14 @@ struct SeekButton: View {
                     if didFireLongPress {
                         onHoldEnded?()
                     } else if tapIsEligible {
+                        tapCount += 1
                         onTap()
                     }
                     didFireLongPress = false
                 }
             }
             .contentTransition(.symbolEffect(.replace))
+            .notchDirectionalNudge(trigger: tapCount, direction: isForward ? 1 : -1)
             .blur(radius: (isPressing && !didFireLongPress) ? 3 : 0)
             .scaleEffect(isPressing ? 0.92 : 1.0)
             .opacity((isPressing && !didFireLongPress) ? 0.85 : 1.0)
@@ -298,17 +301,21 @@ struct InteractiveProgressBar: View {
     var gradient: Gradient
     var onSeek: (Double) -> Void
     var onDragChanged: ((Double) -> Void)? = nil
+    var rate: Double = 0
     @State private var isDragging = false
     @State private var dragValue: Double = 0.0
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 10)
-                Rectangle().fill(LinearGradient(gradient: gradient, startPoint: .leading, endPoint: .trailing)).frame(width: geometry.size.width * CGFloat(isDragging ? dragValue : value), height: 10)
-            }
-            .clipShape(Capsule())
-            .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            LayerProgressBar(
+                motion: isDragging
+                    ? LinearProgressMotion(progress: dragValue)
+                    : LinearProgressMotion(progress: value, rate: rate),
+                colors: gradient.stops.map(\.color),
+                trackColor: Color.secondary.opacity(0.3),
+                catchUpDuration: isDragging ? 0 : 0.5
+            )
+            .frame(width: geometry.size.width, height: geometry.size.height)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0).onChanged { gestureValue in
                 if !isDragging { isDragging = true; dragValue = value }
@@ -321,7 +328,6 @@ struct InteractiveProgressBar: View {
                 value = finalProgress
                 isDragging = false
             })
-            .animation(isDragging ? .none : .linear(duration: 0.5), value: value)
         }
     }
 }

@@ -21,6 +21,7 @@ final class PerAppAudioController {
     }
 
     nonisolated static let changeKindUserInfoKey = "kind"
+    nonisolated static let maxVolume: Float = 2.0
 
     private let volumeDefaultsKey = "SapphirePerAppVolumeMap"
     private let muteDefaultsKey = "SapphirePerAppMuteMap"
@@ -40,10 +41,17 @@ final class PerAppAudioController {
     }
 
     func hasAdjustments(for bundleID: String) -> Bool {
-        if volumeMap[bundleID] != nil && volumeMap[bundleID] != 1.0 { return true }
+        if let volume = volumeMap[bundleID], !Self.isUnity(volume) { return true }
         if muteMap[bundleID] == true { return true }
         if hasEqualizerAdjustment(for: bundleID) { return true }
         return false
+    }
+
+    private static func isUnity(_ volume: Double) -> Bool { abs(volume - 1.0) < 0.005 }
+
+    func adjustedBundleIDs() -> Set<String> {
+        Set(volumeMap.keys).union(muteMap.keys).union(eqMap.keys).union(eqBassMap.keys)
+            .filter { hasAdjustments(for: $0) }
     }
 
     func hasEqualizerAdjustment(for bundleID: String) -> Bool {
@@ -56,7 +64,8 @@ final class PerAppAudioController {
     }
 
     func setVolume(_ value: Double, for bundleID: String) {
-        let clamped = min(max(value, 0.0), 1.0)
+        var clamped = min(max(value, 0.0), Double(Self.maxVolume))
+        if Self.isUnity(clamped) { clamped = 1.0 }
         guard volume(for: bundleID) != clamped else { return }
         let previouslyNeededTap = hasAdjustments(for: bundleID)
         volumeMap[bundleID] = clamped

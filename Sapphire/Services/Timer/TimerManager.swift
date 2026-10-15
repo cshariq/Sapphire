@@ -16,21 +16,50 @@ enum ActiveTimerType {
     case none, stopwatch, system
 }
 
+enum TimerDeadlineClock {
+    static func now() -> TimeInterval {
+        TimeInterval(clock_gettime_nsec_np(CLOCK_MONOTONIC)) / 1_000_000_000
+    }
+
+    static func remaining(until deadline: TimeInterval, now: TimeInterval) -> TimeInterval {
+        max(0, deadline - now)
+    }
+
+    static func delayUntilNext(_ deadlines: [TimeInterval], now: TimeInterval) -> TimeInterval? {
+        deadlines.min().map { max(0, $0 - now) }
+    }
+}
+
 struct SapphireTimer: Equatable, Identifiable {
     let id: String
     var label: String
     var state: ActiveTimerType
     var remainingTimeOnLastUpdate: TimeInterval
     var fireDate: Date?
+    var deadline: TimeInterval?
 
     var remainingTime: TimeInterval {
-        guard state == .system, let fireDate else {
-            return max(0, remainingTimeOnLastUpdate)
+        guard state == .system else { return max(0, remainingTimeOnLastUpdate) }
+        if let deadline {
+            return TimerDeadlineClock.remaining(until: deadline, now: TimerDeadlineClock.now())
         }
+        guard let fireDate else { return max(0, remainingTimeOnLastUpdate) }
         return max(0, fireDate.timeIntervalSinceNow)
     }
 
     var isRunning: Bool { state == .system }
+
+    mutating func arm(remaining: TimeInterval) {
+        remainingTimeOnLastUpdate = remaining
+        fireDate = Date().addingTimeInterval(remaining)
+        deadline = TimerDeadlineClock.now() + remaining
+    }
+
+    mutating func disarm(remaining: TimeInterval) {
+        remainingTimeOnLastUpdate = remaining
+        fireDate = nil
+        deadline = nil
+    }
 }
 
 private struct StoredSapphireTimer: Codable {
@@ -49,13 +78,18 @@ private struct StoredSapphireTimer: Codable {
     }
 
     var asSapphireTimer: SapphireTimer {
-        SapphireTimer(
+        var timer = SapphireTimer(
             id: id,
             label: label,
             state: stateRaw == 3 ? .system : .none,
             remainingTimeOnLastUpdate: remaining,
-            fireDate: fireDate
+            fireDate: fireDate,
+            deadline: nil
         )
+        if timer.isRunning, let fireDate {
+            timer.deadline = TimerDeadlineClock.now() + fireDate.timeIntervalSinceNow
+        }
+        return timer
     }
 }
 
@@ -123,6 +157,14 @@ class TimerManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var logStreamProcess: Process?
     private var pipe: Pipe?
+    private var logStreamStdin: Pipe?
+    private var logStreamStartedAt: TimeInterval = 0
+    private var logStreamRestartAttempts = 0
+    private var logStreamRestartWorkItem: DispatchWorkItem?
+    private var isClockAppRunning = false
+    private var systemObservers: [(NotificationCenter, NSObjectProtocol)] = []
+    private static let clockBundleIdentifier = "com.apple.clock"
+    private static var didReapOrphanedLogStreams = false
     private var primaryTimerID: String?
     private var displayedTimerID: String?
     private var syncGeneration = 0
@@ -131,12 +173,12 @@ class TimerManager: ObservableObject {
     private let maxLogRecordBytes = 1_048_576
     private var logSyncPending = false
     private var alarmSound: NSSound?
-    private var sapphireTimerSaveURL: URL {
+    private lazy var sapphireTimerSaveURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Sapphire", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("sapphire-timers.json")
-    }
+    }()
 
     init() {
         Publishers.CombineLatest3($activeTimers, $activeStopwatches, $sapphireTimers)
@@ -150,11 +192,14 @@ class TimerManager: ObservableObject {
 
         loadSapphireTimers()
         syncStateWithPlist()
-        startSystemTimerMonitoring()
+        installSystemObservers()
+        refreshClockAppRunningState()
     }
 
     deinit {
         plistSyncWorkItem?.cancel()
+        logStreamRestartWorkItem?.cancel()
+        for (center, token) in systemObservers { center.removeObserver(token) }
         stopSystemTimerMonitoring()
         completionTimer?.invalidate()
         alarmSound?.stop()
@@ -166,13 +211,15 @@ class TimerManager: ObservableObject {
     @discardableResult
     func startSapphireTimer(duration: TimeInterval, label: String? = nil) -> String? {
         guard duration > 0 else { return nil }
-        let timer = SapphireTimer(
+        var timer = SapphireTimer(
             id: UUID().uuidString,
             label: label ?? "Timer",
             state: .system,
             remainingTimeOnLastUpdate: duration,
-            fireDate: Date().addingTimeInterval(duration)
+            fireDate: nil,
+            deadline: nil
         )
+        timer.arm(remaining: duration)
         sapphireTimers.append(timer)
         persistSapphireTimers()
         scheduleCompletionNotification(for: timer)
@@ -184,8 +231,7 @@ class TimerManager: ObservableObject {
         guard let index = sapphireTimers.firstIndex(where: { $0.id == id }) else { return }
         let remaining = sapphireTimers[index].remainingTime
         sapphireTimers[index].state = .none
-        sapphireTimers[index].remainingTimeOnLastUpdate = remaining
-        sapphireTimers[index].fireDate = nil
+        sapphireTimers[index].disarm(remaining: remaining)
         removeCompletionNotification(for: id)
         persistSapphireTimers()
         selectTimerToDisplay()
@@ -198,7 +244,7 @@ class TimerManager: ObservableObject {
             return
         }
         sapphireTimers[index].state = .system
-        sapphireTimers[index].fireDate = Date().addingTimeInterval(sapphireTimers[index].remainingTimeOnLastUpdate)
+        sapphireTimers[index].arm(remaining: sapphireTimers[index].remainingTimeOnLastUpdate)
         scheduleCompletionNotification(for: sapphireTimers[index])
         persistSapphireTimers()
         selectTimerToDisplay()
@@ -209,7 +255,7 @@ class TimerManager: ObservableObject {
         let extendedRemaining = sapphireTimers[index].remainingTime + 60
         sapphireTimers[index].remainingTimeOnLastUpdate = extendedRemaining
         if sapphireTimers[index].state == .system {
-            sapphireTimers[index].fireDate = Date().addingTimeInterval(extendedRemaining)
+            sapphireTimers[index].arm(remaining: extendedRemaining)
             scheduleCompletionNotification(for: sapphireTimers[index])
         }
         persistSapphireTimers()
@@ -376,22 +422,146 @@ class TimerManager: ObservableObject {
         selectTimerToDisplay()
     }
 
+    // MARK: - System (Clock app) monitoring
+
+    private static let logStreamWrapperScript = """
+    stream_pid=$$
+    exec 3<&0
+    ( while read -r line <&3; do :; done; kill -TERM "$stream_pid" 2>/dev/null ) >/dev/null 2>&1 &
+    exec /usr/bin/log stream --predicate "$1" --style ndjson </dev/null 3<&-
+    """
+    private static let logStreamPredicate = "subsystem == \"com.apple.mobiletimer.logging\" AND (process == \"Clock\" OR process == \"timed\")"
+
+    static func needsLogStream(clockAppRunning: Bool, hasRunningSystemTimer: Bool, hasRunningStopwatch: Bool) -> Bool {
+        clockAppRunning || hasRunningSystemTimer || hasRunningStopwatch
+    }
+
+    static func logStreamRestartDelay(attempt: Int) -> TimeInterval {
+        min(60, pow(2, Double(max(0, min(attempt, 6)))))
+    }
+
+    private func updateLogStreamDemand() {
+        let needed = Self.needsLogStream(
+            clockAppRunning: isClockAppRunning,
+            hasRunningSystemTimer: activeTimers.contains { $0.state == .system },
+            hasRunningStopwatch: activeStopwatches.contains { $0.state == .stopwatch }
+        )
+        if needed {
+            if logStreamProcess == nil, logStreamRestartWorkItem == nil {
+                startSystemTimerMonitoring()
+            }
+        } else {
+            logStreamRestartWorkItem?.cancel()
+            logStreamRestartWorkItem = nil
+            logStreamRestartAttempts = 0
+            stopSystemTimerMonitoring()
+        }
+    }
+
+    private func installSystemObservers() {
+        let workspace = NSWorkspace.shared.notificationCenter
+
+        func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handler: @escaping (TimerManager, Notification) -> Void) {
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                guard let self else { return }
+                handler(self, note)
+            }
+            systemObservers.append((center, token))
+        }
+
+        observe(workspace, NSWorkspace.didWakeNotification) { manager, _ in
+            manager.scheduleNextCompletionTimer()
+        }
+        observe(NotificationCenter.default, .NSSystemClockDidChange) { manager, _ in
+            manager.realignWallClockFireDates()
+        }
+        observe(workspace, NSWorkspace.didLaunchApplicationNotification) { manager, note in
+            guard Self.isClockApp(note) else { return }
+            manager.isClockAppRunning = true
+            manager.syncStateWithPlist()
+            manager.updateLogStreamDemand()
+        }
+        observe(workspace, NSWorkspace.didTerminateApplicationNotification) { manager, note in
+            guard Self.isClockApp(note) else { return }
+            manager.isClockAppRunning = false
+            manager.syncStateWithPlist()
+            manager.updateLogStreamDemand()
+        }
+    }
+
+    private static func isClockApp(_ note: Notification) -> Bool {
+        (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier == clockBundleIdentifier
+    }
+
+    private func refreshClockAppRunningState() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let running = !NSRunningApplication.runningApplications(withBundleIdentifier: Self.clockBundleIdentifier).isEmpty
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isClockAppRunning = running
+                self.updateLogStreamDemand()
+            }
+        }
+    }
+
+    private func realignWallClockFireDates() {
+        var changed = false
+        for index in sapphireTimers.indices where sapphireTimers[index].isRunning {
+            let remaining = sapphireTimers[index].remainingTime
+            sapphireTimers[index].fireDate = Date().addingTimeInterval(remaining)
+            scheduleCompletionNotification(for: sapphireTimers[index])
+            changed = true
+        }
+        if changed { persistSapphireTimers() }
+        scheduleNextCompletionTimer()
+    }
+
+    private static func reapOrphanedLogStreamsOnce() {
+        guard !didReapOrphanedLogStreams else { return }
+        didReapOrphanedLogStreams = true
+        DispatchQueue.global(qos: .utility).async {
+            guard let result = ProcessRunner.runSync(
+                executablePath: "/bin/ps",
+                arguments: ["-axo", "pid=,ppid=,uid=,command="],
+                timeout: 5
+            ), result.succeeded else { return }
+            let uid = getuid()
+            for line in result.stdout.split(separator: "\n") {
+                let fields = line.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
+                guard fields.count == 4,
+                      let pid = pid_t(fields[0]), fields[1] == "1",
+                      uid_t(fields[2]) == uid,
+                      fields[3].hasPrefix("/usr/bin/log stream"),
+                      fields[3].contains("com.apple.mobiletimer.logging") else { continue }
+                kill(pid, SIGTERM)
+            }
+        }
+    }
+
     private func startSystemTimerMonitoring() {
         guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in self?.startSystemTimerMonitoring() }
             return
         }
         guard logStreamProcess == nil else { return }
+        Self.reapOrphanedLogStreamsOnce()
+        logStreamRestartWorkItem = nil
         logReadBuffer.removeAll(keepingCapacity: true)
 
         let newPipe = Pipe()
+        let stdinPipe = Pipe()
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/log")
-        process.arguments = ["stream", "--predicate", "subsystem == \"com.apple.mobiletimer.logging\" AND (process == \"Clock\" OR process == \"timed\")", "--style", "ndjson"]
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", Self.logStreamWrapperScript, "sapphire-timer-log", Self.logStreamPredicate]
         process.standardOutput = newPipe
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = stdinPipe
         newPipe.fileHandleForReading.readabilityHandler = { [weak self, weak process] fileHandle in
             let data = fileHandle.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else {
+                fileHandle.readabilityHandler = nil
+                return
+            }
             DispatchQueue.main.async {
                 guard let self, let process, self.logStreamProcess === process else { return }
                 self.parseLogOutput(from: data)
@@ -404,7 +574,9 @@ class TimerManager: ObservableObject {
         }
 
         pipe = newPipe
+        logStreamStdin = stdinPipe
         logStreamProcess = process
+        logStreamStartedAt = TimerDeadlineClock.now()
 
         DispatchQueue.global(qos: .utility).async { [weak self, weak process] in
             guard let process else { return }
@@ -421,27 +593,52 @@ class TimerManager: ObservableObject {
     }
 
     private func stopSystemTimerMonitoring() {
-        let process = logStreamProcess
-        process?.terminationHandler = nil
+        guard let process = logStreamProcess else { return }
+        process.terminationHandler = nil
         pipe?.fileHandleForReading.readabilityHandler = nil
+        try? logStreamStdin?.fileHandleForWriting.close()
         logStreamProcess = nil
         pipe = nil
+        logStreamStdin = nil
         logReadBuffer.removeAll(keepingCapacity: false)
-        if process?.isRunning == true {
-            process?.terminate()
+        Self.terminate(process)
+    }
+
+    private static func terminate(_ process: Process) {
+        DispatchQueue.global(qos: .utility).async {
+            guard process.isRunning else { return }
+            let pid = process.processIdentifier
+            process.terminate()
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) {
+                guard process.isRunning else { return }
+                kill(pid, SIGKILL)
+            }
         }
     }
 
     private func handleLogStreamExit(_ process: Process) {
         guard logStreamProcess === process else { return }
         pipe?.fileHandleForReading.readabilityHandler = nil
+        try? logStreamStdin?.fileHandleForWriting.close()
         logStreamProcess = nil
         pipe = nil
+        logStreamStdin = nil
         logReadBuffer.removeAll(keepingCapacity: true)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.startSystemTimerMonitoring()
+        if TimerDeadlineClock.now() - logStreamStartedAt > 30 {
+            logStreamRestartAttempts = 0
         }
+        let delay = Self.logStreamRestartDelay(attempt: logStreamRestartAttempts)
+        logStreamRestartAttempts += 1
+
+        logStreamRestartWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.logStreamRestartWorkItem = nil
+            self.updateLogStreamDemand()
+        }
+        logStreamRestartWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func parseLogOutput(from data: Data) {
@@ -548,6 +745,7 @@ class TimerManager: ObservableObject {
         self.displayedTimerID = newTimerID
         self.activeTimer = newTimerID != nil ? newActiveTimerType : .none
         scheduleNextCompletionTimer()
+        updateLogStreamDemand()
     }
 
     // MARK: - Sapphire Timer Completion
@@ -558,8 +756,7 @@ class TimerManager: ObservableObject {
             guard sapphireTimers[index].state == .system,
                   sapphireTimers[index].remainingTime <= 0 else { continue }
             sapphireTimers[index].state = .none
-            sapphireTimers[index].remainingTimeOnLastUpdate = 0
-            sapphireTimers[index].fireDate = nil
+            sapphireTimers[index].disarm(remaining: 0)
             didFinishTimer = true
             beginRinging(for: sapphireTimers[index])
         }
@@ -649,13 +846,10 @@ class TimerManager: ObservableObject {
         completionTimer?.invalidate()
         completionTimer = nil
 
-        guard let fireDate = sapphireTimers.lazy
-            .filter({ $0.isRunning })
-            .compactMap(\.fireDate)
-            .min()
-        else { return }
-
-        let interval = fireDate.timeIntervalSinceNow
+        let deadlines = sapphireTimers.filter(\.isRunning).compactMap(\.deadline)
+        guard let interval = TimerDeadlineClock.delayUntilNext(deadlines, now: TimerDeadlineClock.now()) else {
+            return
+        }
         guard interval > 0 else {
             checkSapphireTimerCompletion()
             return

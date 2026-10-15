@@ -8,7 +8,7 @@
 
 //
 //  KBPProfile.m
-//  KBPulse
+//  Sapphire
 //
 //  Created by EthanRDoesMC on 10/25/21.
 //
@@ -82,12 +82,6 @@
 
     slowFadeProfile.animations = @[ fadeInAnimation, fadeOutAnimation, /*delayAnimation*/ ];
     return slowFadeProfile;
-}
-
-+(void)createYawnJSON {
-    KBPProfile * slowFadeProfile = [KBPProfile yawnProfile];
-    [NSFileManager.defaultManager createDirectoryAtURL:[[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask][0] URLByAppendingPathComponent:@"/KBPulse/"] withIntermediateDirectories:true attributes:nil error:nil];
-    [slowFadeProfile writeToFileURL:[[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask][0] URLByAppendingPathComponent:@"/KBPulse/Yawn.json"]];
 }
 
 @end

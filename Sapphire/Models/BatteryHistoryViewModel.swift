@@ -67,7 +67,7 @@ class BatteryHistoryViewModel: ObservableObject {
         let generation = fetchGeneration
         isLoading = true
         Task(priority: .utility) {
-            let logs = logger.readLogFile().sorted { $0.timestamp < $1.timestamp }
+            let logs = await logger.readLogFile().sorted { $0.timestamp < $1.timestamp }
 
             await MainActor.run {
                 guard generation == self.fetchGeneration else { return }

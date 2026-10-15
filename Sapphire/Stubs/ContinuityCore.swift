@@ -55,6 +55,8 @@ struct ContinuityConnectivitySnapshot: Equatable {
     var phoneCharging = false
     var phoneNetwork: ContinuityNetworkKind?
     var phoneSSID: String?
+    var phoneSignalLevel: Int = 0
+    var phoneCarrier: String?
     var rssi: Int?
     var isRelayed = false
 
@@ -71,11 +73,12 @@ struct ContinuityPairedPeer: Codable, Equatable, Identifiable {
 }
 
 @MainActor
-final class ContinuityPeer: ObservableObject, Identifiable {
+@Observable
+final class ContinuityPeer: Identifiable {
     nonisolated let record: ContinuityPairedPeer
     nonisolated var id: String { record.id }
-    @Published var linkState: ContinuityLinkState = .offline
-    @Published var capabilities: Set<ContinuityCapability> = []
+    var linkState: ContinuityLinkState = .offline
+    var capabilities: Set<ContinuityCapability> = []
 
     init(record: ContinuityPairedPeer) {
         self.record = record
@@ -198,11 +201,14 @@ final class ContinuityHandoffBridge {
 }
 
 @MainActor
-final class ContinuityManager: ObservableObject {
+@Observable
+final class ContinuityManager {
     static let shared = ContinuityManager()
 
-    @Published private(set) var peers: [ContinuityPeer] = []
-    @Published private(set) var connectivity: ContinuityConnectivitySnapshot = .none
+    private(set) var peers: [ContinuityPeer] = []
+    private(set) var connectivity: ContinuityConnectivitySnapshot = .none
+    var connectedPeer: ContinuityPeer? { nil }
+    var activePeerID: String? { nil }
 
     let notificationBridge = ContinuityNotificationBridge()
     let liveActivityBridge = ContinuityExternalActivityBridge()
@@ -217,6 +223,16 @@ final class ContinuityManager: ObservableObject {
     func sendFiles(_ urls: [URL], toPeerID peerID: String) {}
     func dismissNotificationOnPhone(peerID: String, key: String) {}
     func invokeNotificationAction(peerID: String, key: String, actionId: String, replyText: String?) {}
+    func takePhoto() {}
+    func scanDocument() {}
+    func setActivePeer(id: String) {}
+    func unpair(peerID: String) {}
+}
+
+@MainActor
+final class ContinuityServicesProvider: NSObject {
+    static let shared = ContinuityServicesProvider()
+    func install() {}
 }
 
 struct ContinuityNotchDetailView: View {

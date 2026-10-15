@@ -13,17 +13,16 @@ import Accelerate
 import CoreImage
 import CryptoKit
 import Darwin
+import IOKit
 
-// MARK: - ️ FACE ID TUNING CONFIGURATION
+// MARK: - FACE ID TUNING CONFIGURATION
 
 enum FaceIDConfig {
-    static var antiSpoofCropMultiplier: CGFloat = 1.35
+    static var antiSpoofVisionBoxScale: CGFloat = 1.256
+    static var antiSpoofVisionBoxShiftUp: CGFloat = 0.114
 
-    static var antiSpoofVerticalShift: CGFloat = 0.0
-
-    static var useUnencryptedINT8TestModel: Bool = false
-
-    static var livenessBaseThreshold: Float = 0.55
+    static var livenessWindow: Int = 10
+    static var livenessFallbackLogitThreshold: Float = -0.42
     static var requiredConsecutiveFrames: Int = 3
     static var unlockIdentityThreshold: Float = 0.48
 
@@ -35,11 +34,10 @@ enum FaceIDConfig {
 // MARK: - App State & Enums
 
 enum RegistrationStep: Equatable {
-    case scanning, askExtended, finalizing
+    case scanning, finalizing
     var instruction: String {
         switch self {
         case .scanning: return "Look straight at the camera to begin."
-        case .askExtended: return "Basic registration complete."
         case .finalizing: return "Securing your face profile..."
         }
     }
@@ -144,6 +142,13 @@ struct FaceIDDebugger {
 
 // MARK: - Anti-Spoof Result & Quality Gate
 
+enum FaceIDTiming {
+    static func mark(_ event: String, since start: Date?) {
+        guard let start else { return }
+        print(String(format: "[FaceID timing] %@ +%.0f ms", event, Date().timeIntervalSince(start) * 1000))
+    }
+}
+
 struct AntiSpoofResult {
     let isReal: Bool
     let rawScore: Float
@@ -206,7 +211,6 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     @Published var registrationProgress: Double = 0.0
     @Published var holdProgress: Double = 0.0
     @Published var registrationPoseCaptured: Set<String> = []
-    @Published var isExtendedPhase = false
 
     let captureSession = AVCaptureSession()
     private let videoDataOutput = AVCaptureVideoDataOutput()
@@ -237,14 +241,13 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     private var isProcessingFrame = false
     private var profileForRegistration: String?
 
-    private var embeddingWindow: [[Float]] = []
+    private var embeddingWindow: [FaceAuthEmbedding] = []
     private var poseBucketSamples: [FacePoseBucket: [[Float]]] = [:]
 
     private var accumulatedEmbeddings: [[Float]] = []
     private let framesPerPose = 4
 
-    private let coreOrder: [FacePoseBucket] = [.center, .left, .right]
-    private let extendedOrder: [FacePoseBucket] = [.up, .down, .tiltLeft, .tiltRight, .closer, .farther]
+    private let poseOrder: [FacePoseBucket] = [.center, .left, .right]
 
     private func targetCount(for bucket: FacePoseBucket) -> Int {
         switch bucket {
@@ -258,6 +261,8 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     private let embeddingWindowSize = 1
 
     private var sessionStartDate: Date?
+    private var didLogFirstFrame = false
+    private var didLogFirstFace = false
     private var lastLogTime: TimeInterval = 0
     private var frameCounter: Int = 0
 
@@ -266,6 +271,17 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     private var mismatchStart: Date?
     private var lastLivenessResult: AntiSpoofResult?
     var onSecurityEvent: ((FaceIDSecurityEvent) -> Void)?
+
+    private lazy var faceRectanglesRequest = VNDetectFaceRectanglesRequest()
+    private var lastFaceSeenAt: CFTimeInterval = 0
+    private var lastIdleProbeAt: CFTimeInterval = 0
+
+    private enum IdleSampling {
+        static let faceGrace: CFTimeInterval = 1.5
+        static let probeInterval: CFTimeInterval = 0.2
+        static let deepIdleAfter: CFTimeInterval = 15
+        static let deepIdleProbeInterval: CFTimeInterval = 0.5
+    }
 
     private lazy var faceLandmarksRequest: VNDetectFaceLandmarksRequest = {
         let r = VNDetectFaceLandmarksRequest()
@@ -287,17 +303,36 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         }
     }
 
+    private var cameraAttempts = 0
+
+    private func preferredCamera() -> AVCaptureDevice? {
+        if let builtIn = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) ??
+                         AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .unspecified) {
+            return builtIn
+        }
+        let lidOpenOnLaptop = Self.isClamshellClosed == false
+        return (lidOpenOnLaptop && cameraAttempts < 6) ? nil : AVCaptureDevice.default(for: .video)
+    }
+
+    private static var isClamshellClosed: Bool? {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != 0 else { return nil }
+        defer { IOObjectRelease(root) }
+        return IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? Bool
+    }
+
     private func configureSessionIfNeeded() {
         guard !hasCameraInput else { return }
+
+        guard let device = preferredCamera(),
+              let input = try? AVCaptureDeviceInput(device: device) else {
+            return
+        }
 
         captureSession.beginConfiguration()
         defer { captureSession.commitConfiguration() }
         captureSession.sessionPreset = .hd1280x720
-
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) ?? AVCaptureDevice.default(for: .video),
-              let input = try? AVCaptureDeviceInput(device: device) else {
-            return
-        }
 
         if captureSession.canAddInput(input) {
             captureSession.addInput(input)
@@ -353,7 +388,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         if transport != DeviceTransportType.builtIn,
            transport != DeviceTransportType.airPlay,
            transport != DeviceTransportType.virtual,
-           let manual = SettingsModel.shared.settings.mirrorRotationMode.angle {
+           let manual = SettingsModel.shared.current.mirrorRotationMode.angle {
             angle = manual
         } else {
             angle = autoAngle
@@ -395,8 +430,15 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
     private func configureAndStartIfPossible() {
         configureSessionIfNeeded()
-        guard hasCameraInput, !captureSession.isRunning else { return }
+        guard hasCameraInput else {
+            cameraAttempts += 1
+            guard cameraAttempts < 20, isAuthenticating || isRegistrationMode else { return }
+            sessionQueue.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.configureAndStartIfPossible() }
+            return
+        }
+        guard !captureSession.isRunning else { return }
         captureSession.startRunning()
+        FaceIDTiming.mark("camera running", since: sessionStartDate)
     }
 
     private func notifyCameraUnavailable() {
@@ -409,16 +451,6 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     func stopCameraSession() {
         sessionQueue.async {
             if self.captureSession.isRunning { self.captureSession.stopRunning() }
-        }
-    }
-
-    func stopCameraSessionSynchronously() {
-        if isOnSessionQueue {
-            if captureSession.isRunning { captureSession.stopRunning() }
-        } else {
-            sessionQueue.sync {
-                if self.captureSession.isRunning { self.captureSession.stopRunning() }
-            }
         }
     }
 
@@ -485,7 +517,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         faceIDDevice = nil
         stopCameraSession()
         FaceIDDataStore.shared.teardownBuffers()
-        FaceIDModelManager.shared.unloadModels()
+        FaceIDModelManager.shared.sessionEnded()
     }
 
     func startAuthentication() {
@@ -499,7 +531,10 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         clearSpoofStart = nil
         mismatchStart = nil
         sessionStartDate = Date()
+        didLogFirstFrame = false
+        didLogFirstFace = false
         lastLogTime = 0
+        lastFaceSeenAt = CACurrentMediaTime()
 
         FaceIDModelManager.shared.prewarm()
 
@@ -510,10 +545,19 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         startCameraSession()
     }
 
+    func resumeAfterDisplayWake() {
+        guard isAuthenticating else { return }
+        sessionStartDate = Date()
+        didLogFirstFrame = false
+        didLogFirstFace = false
+        lastFaceSeenAt = CACurrentMediaTime()
+        FaceIDModelManager.shared.prewarm()
+        startCameraSession()
+    }
+
     func startRegistration(forProfile name: String) {
         isRegistrationMode = true
         isAuthenticating = false
-        isExtendedPhase = false
         profileForRegistration = name
         poseBucketSamples.removeAll()
         accumulatedEmbeddings.removeAll()
@@ -537,30 +581,16 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     func cancelCurrentOperation() {
         isAuthenticating = false
         isRegistrationMode = false
-        stopCameraSessionSynchronously()
-        FaceIDDataStore.shared.teardownBuffers()
-        FaceIDModelManager.shared.unloadModels()
+        sessionQueue.async {
+            if self.captureSession.isRunning { self.captureSession.stopRunning() }
+            FaceIDDataStore.shared.teardownBuffers()
+            DispatchQueue.main.async { FaceIDModelManager.shared.sessionEnded() }
+        }
         DispatchQueue.main.async {
             self.holdProgress = 0.0
             self.appState = .idle
         }
     }
-
-    func acceptExtendedRegistration() {
-        isExtendedPhase = true
-        accumulatedEmbeddings.removeAll()
-        let activeOrder = coreOrder + extendedOrder
-        let totalNeeded = activeOrder.reduce(0) { $0 + targetCount(for: $1) }
-        let totalCurrent = activeOrder.reduce(0) { $0 + (poseBucketSamples[$1]?.count ?? 0) }
-
-        DispatchQueue.main.async {
-            self.holdProgress = 0.0
-            self.registrationProgress = Double(totalCurrent) / Double(totalNeeded)
-            self.appState = .registering(.scanning)
-        }
-    }
-
-    func skipExtendedRegistration() { finalizeRegistration() }
 
     private func finalizeRegistration() {
         guard let profile = profileForRegistration else { return }
@@ -589,13 +619,28 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         isProcessingFrame = true
         defer { isProcessingFrame = false }
 
-        if case .registering(let step) = appState, step == .askExtended { return }
-
         frameCounter += 1
+        if !didLogFirstFrame { didLogFirstFrame = true; FaceIDTiming.mark("first frame", since: sessionStartDate) }
 
         guard frameCounter > FaceIDConfig.sensorWarmupFramesToDrop else { return }
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+
+        if !isRegistrationMode {
+            let now = CACurrentMediaTime()
+            let idleFor = now - lastFaceSeenAt
+            if idleFor > IdleSampling.faceGrace {
+                let interval = idleFor > IdleSampling.deepIdleAfter
+                    ? IdleSampling.deepIdleProbeInterval
+                    : IdleSampling.probeInterval
+                guard now - lastIdleProbeAt >= interval else { return }
+                lastIdleProbeAt = now
+                try? handler.perform([faceRectanglesRequest])
+                guard faceRectanglesRequest.results?.isEmpty == false else { return }
+            }
+            lastFaceSeenAt = now
+        }
+
         try? handler.perform([faceLandmarksRequest])
 
         guard let obs = faceLandmarksRequest.results?.first else {
@@ -610,6 +655,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         }
 
         if let quality = obs.faceCaptureQuality, quality < 0.10 { return }
+        if !didLogFirstFace { didLogFirstFace = true; FaceIDTiming.mark("first face", since: sessionStartDate) }
         DispatchQueue.main.async { self.smoothedBoundingBox = obs.boundingBox }
 
         if isRegistrationMode {
@@ -653,7 +699,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     // MARK: - Registration Flow
 
     private func handleRegistration(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
-        let activeOrder = isExtendedPhase ? (coreOrder + extendedOrder) : coreOrder
+        let activeOrder = poseOrder
 
         guard let currentTarget = activeOrder.first(where: { (poseBucketSamples[$0]?.count ?? 0) < targetCount(for: $0) }) else {
             checkRegistrationComplete()
@@ -683,13 +729,13 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                 guard AntiSpoofQualityGate.passes(observation: observation, pixelBuffer: pixelBuffer) else { return }
 
                 let debugTag = FaceIDConfig.enableDebugImageCapture ? "enroll_f\(frameCounter)" : nil
-                if false && SettingsModel.shared.settings.faceIDAntiSpoofEnabled,
+                if false && SettingsModel.shared.current.faceIDAntiSpoofEnabled,
                    let spoof = FaceIDModelManager.shared.evaluateAntiSpoof(
                     pixelBuffer: pixelBuffer,
                     observation: observation,
                     debugTag: debugTag
                 ) {
-                    if spoof.rawScore < FaceIDConfig.livenessBaseThreshold {
+                    if spoof.logit <= FaceIDModelManager.shared.livenessLogitThreshold {
                         DispatchQueue.main.async { self.userInstruction = "Live face required — photo detected." }
                         return
                     }
@@ -747,53 +793,57 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     }
 
     private func checkRegistrationComplete() {
-        let activeOrder = isExtendedPhase ? (coreOrder + extendedOrder) : coreOrder
+        let activeOrder = poseOrder
         let isComplete = activeOrder.allSatisfy { (poseBucketSamples[$0]?.count ?? 0) >= targetCount(for: $0) }
         guard isComplete else { return }
-
-        if !isExtendedPhase {
-            DispatchQueue.main.async {
-                self.holdProgress = 0.0
-                self.appState = .registering(.askExtended)
-                self.userInstruction = "Basic setup complete."
-            }
-        } else {
-            finalizeRegistration()
-        }
+        finalizeRegistration()
     }
 
     // MARK: - Authentication Flow (Strict Synchronized 3-Frame Gate)
+
+    private func stopForSecurityEvent(_ event: FaceIDSecurityEvent) {
+        guard isAuthenticating else { return }
+        isAuthenticating = false
+        cleanupFaceIDResources()
+        DispatchQueue.main.async { self.appState = .idle }
+        onSecurityEvent?(event)
+    }
 
     private func handleAuthentication(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer) {
         let yaw = observation.yaw?.doubleValue ?? 0
         let pitch = getPitch(from: observation)
         if abs(yaw) > 0.45 || abs(pitch) > 0.40 { return }
 
-        let activeThreshold: Float = FaceIDConfig.livenessBaseThreshold
+        let activeThreshold: Float = FaceIDModelManager.shared.livenessLogitThreshold
 
-        var frameIsReal = true
+        let antiSpoofEnabled = SettingsModel.shared.current.faceIDAntiSpoofEnabled
+        var frameIsReal = !antiSpoofEnabled
         var spoofResult: AntiSpoofResult?
 
         let debugTag = FaceIDConfig.enableDebugImageCapture ? "auth_f\(frameCounter)" : nil
 
-        if SettingsModel.shared.settings.faceIDAntiSpoofEnabled,
+        if antiSpoofEnabled, let unavailable = FaceIDModelManager.shared.livenessUnavailableReason {
+            DispatchQueue.main.async { self.userInstruction = unavailable }
+        }
+
+        if antiSpoofEnabled,
            let liveness = FaceIDModelManager.shared.evaluateAntiSpoof(
             pixelBuffer: pixelBuffer,
             observation: observation,
             debugTag: debugTag
         ) {
-            livenessHistory.append(liveness.rawScore)
-            if livenessHistory.count > 6 { livenessHistory.removeFirst() }
+            livenessHistory.append(liveness.logit)
+            if livenessHistory.count > FaceIDConfig.livenessWindow { livenessHistory.removeFirst() }
 
-            let smoothLiveness = livenessHistory.reduce(0, +) / Float(livenessHistory.count)
+            let meanLogit = livenessHistory.reduce(0, +) / Float(livenessHistory.count)
 
-            frameIsReal = (smoothLiveness >= activeThreshold)
+            frameIsReal = (meanLogit > activeThreshold)
 
             spoofResult = AntiSpoofResult(
                 isReal: frameIsReal,
                 rawScore: liveness.rawScore,
-                smoothScore: smoothLiveness,
-                logit: liveness.logit
+                smoothScore: 1.0 / (1.0 + exp(-meanLogit)),
+                logit: meanLogit
             )
             lastLivenessResult = spoofResult
 
@@ -802,7 +852,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                 if clearSpoofStart == nil { clearSpoofStart = now }
                 if let start = clearSpoofStart, now.timeIntervalSince(start) >= 2.5 {
                     print("[FaceID Security] Sustained spoof detected — locking Face ID.")
-                    self.onSecurityEvent?(.spoofLocked)
+                    stopForSecurityEvent(.spoofLocked)
                     return
                 }
                 DispatchQueue.main.async { self.userInstruction = "Checking liveness…" }
@@ -836,7 +886,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         }
 
         let livenessScores = spoofResult?.scoreLine ?? "REAL: -%"
-        let thresholdTag = "[Thresh: \(Int(activeThreshold * 100))%]"
+        let thresholdTag = "[Thresh: \(Int((100 / (1 + exp(-activeThreshold))).rounded()))%]"
         let now = Date().timeIntervalSinceReferenceDate
         if now - lastLogTime > 0.30 {
             lastLogTime = now
@@ -849,7 +899,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
             if mismatchStart == nil { mismatchStart = nowDate }
             if let start = mismatchStart, nowDate.timeIntervalSince(start) >= 6.0 {
                 print("[FaceID] Mismatch timeout reached.")
-                self.onSecurityEvent?(.mismatchTimeout)
+                stopForSecurityEvent(.mismatchTimeout)
                 return
             }
             DispatchQueue.main.async {
@@ -863,6 +913,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         if verifiedConsecutiveFrames >= FaceIDConfig.requiredConsecutiveFrames {
             let matchPct = Int((score * 100).rounded())
             print("[FaceID] Unlocked | Match: \(matchPct)% | \(livenessScores) | Streak: 3/3")
+            FaceIDTiming.mark("unlocked", since: sessionStartDate)
             self.isAuthenticating = false
             self.cleanupFaceIDResources()
 
@@ -878,10 +929,26 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
 // MARK: - Data Store & Model Interface
 
+enum FaceInputOrder: String, Codable {
+    case rgb, bgr
+}
+
+typealias FaceAuthEmbedding = [FaceInputOrder: [Float]]
+
 final class FaceIDDataStore {
     static let shared = FaceIDDataStore()
-    private var profiles: [String: [[Float]]] = [:]
-    private var globalCentroid: [Float] = []
+
+    private struct Profile: Codable {
+        var prints: [[Float]]
+        var order: FaceInputOrder
+    }
+    private struct StoredProfiles: Codable {
+        var version = 2
+        var profiles: [String: Profile]
+    }
+
+    private var profiles: [String: Profile] = [:]
+    private var centroids: [FaceInputOrder: [Float]] = [:]
 
     private let secureFileURL: URL
     let ciContext = CIContext(options: [
@@ -909,13 +976,14 @@ final class FaceIDDataStore {
 
     func deleteProfile(name: String) {
         profiles.removeValue(forKey: name)
+        updateCentroids()
         saveDatabase()
         if profiles.isEmpty { DispatchQueue.main.async { SettingsModel.shared.settings.hasRegisteredFaceID = false } }
     }
 
     func register(faceprints: [[Float]], forProfile name: String) {
-        profiles[name] = faceprints
-        globalCentroid = Self.averageEmbeddings(faceprints)
+        profiles[name] = Profile(prints: faceprints, order: .rgb)
+        updateCentroids()
         saveDatabase()
         DispatchQueue.main.async { SettingsModel.shared.settings.hasRegisteredFaceID = true }
     }
@@ -928,25 +996,29 @@ final class FaceIDDataStore {
         ciContext.clearCaches()
     }
 
-    func verify(currentEmbedding: [Float]) -> Float {
+    func verify(currentEmbedding: FaceAuthEmbedding) -> Float {
         guard !profiles.isEmpty else { return 0 }
         var maxScore: Float = 0
         var centroidScore: Float = 0
 
-        for (_, prints) in profiles {
-            for (_, p) in prints.enumerated() {
-                let sim = Self.cosineSimilarity(currentEmbedding, p)
+        for (_, profile) in profiles {
+            guard let current = currentEmbedding[profile.order] else { continue }
+            for p in profile.prints {
+                let sim = Self.cosineSimilarity(current, p)
                 if sim > maxScore { maxScore = sim }
             }
         }
-        if !globalCentroid.isEmpty {
-            centroidScore = Self.cosineSimilarity(currentEmbedding, globalCentroid)
+        for (order, centroid) in centroids {
+            guard let current = currentEmbedding[order] else { continue }
+            centroidScore = max(centroidScore, Self.cosineSimilarity(current, centroid))
         }
         return (maxScore * 0.85) + (centroidScore * 0.15)
     }
 
-    func generateAuthEmbedding(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer, tag: String? = nil, checkSharpness: Bool = true) -> [Float]? {
-        guard let faceImg = FaceAligner.alignFace(pixelBuffer: pixelBuffer, observation: observation, size: 112) else { return nil }
+    func generateAuthEmbedding(observation: VNFaceObservation, pixelBuffer: CVPixelBuffer, tag: String? = nil, checkSharpness: Bool = true) -> FaceAuthEmbedding? {
+        let orders = Set(profiles.values.map(\.order))
+        guard !orders.isEmpty,
+              let faceImg = FaceAligner.alignFace(pixelBuffer: pixelBuffer, observation: observation, size: 112) else { return nil }
 
         bufferLock.lock()
         defer { bufferLock.unlock() }
@@ -961,9 +1033,14 @@ final class FaceIDDataStore {
 
         FaceAligner.normalizeFaceExposure(pixels: &facePixels, size: 112)
         FaceAligner.applyCLAHE(pixels: &facePixels, size: 112)
-        FaceAligner.fillInputArray(array: fArr, from: &facePixels, size: 112, flipped: false, normMode: .arcFace)
 
-        return FaceIDModelManager.shared.predictEmbeddingOnly(embeddingArray: fArr)
+        var result: FaceAuthEmbedding = [:]
+        for order in orders {
+            FaceAligner.fillInputArray(array: fArr, from: &facePixels, size: 112, flipped: false, order: order)
+            guard let embedding = FaceIDModelManager.shared.predictEmbeddingOnly(embeddingArray: fArr) else { return nil }
+            result[order] = embedding
+        }
+        return result
     }
 
     func generateEnrollmentEmbedding(for observation: VNFaceObservation, from pixelBuffer: CVPixelBuffer, tag: String? = nil, checkSharpness: Bool = true) -> [Float]? {
@@ -983,10 +1060,19 @@ final class FaceIDDataStore {
 
         FaceAligner.normalizeFaceExposure(pixels: &facePixels, size: 112)
         FaceAligner.applyCLAHE(pixels: &facePixels, size: 112)
-        FaceAligner.fillInputArray(array: fArr, from: &facePixels, size: 112, flipped: false, normMode: .arcFace)
-        FaceAligner.fillInputArray(array: fArrFlipped, from: &facePixels, size: 112, flipped: true, normMode: .arcFace)
+        FaceAligner.fillInputArray(array: fArr, from: &facePixels, size: 112, flipped: false, order: .rgb)
+        FaceAligner.fillInputArray(array: fArrFlipped, from: &facePixels, size: 112, flipped: true, order: .rgb)
 
         return FaceIDModelManager.shared.predictEmbeddingTTA(original: fArr, flipped: fArrFlipped)
+    }
+
+    static func averageEmbeddings(_ embeddings: [FaceAuthEmbedding]) -> FaceAuthEmbedding {
+        guard let first = embeddings.first else { return [:] }
+        var out: FaceAuthEmbedding = [:]
+        for order in first.keys {
+            out[order] = averageEmbeddings(embeddings.compactMap { $0[order] })
+        }
+        return out
     }
 
     static func averageEmbeddings(_ embeddings: [[Float]]) -> [Float] {
@@ -1007,24 +1093,31 @@ final class FaceIDDataStore {
         return v.map { $0 / n }
     }
 
+    private func updateCentroids() {
+        centroids = [:]
+        for order in Set(profiles.values.map(\.order)) {
+            centroids[order] = Self.averageEmbeddings(profiles.values.filter { $0.order == order }.flatMap(\.prints))
+        }
+    }
+
     private func saveDatabase() {
-        guard let d = try? JSONEncoder().encode(profiles), let e = CryptoManager.shared.encrypt(data: d) else { return }
+        guard let d = try? JSONEncoder().encode(StoredProfiles(profiles: profiles)),
+              let e = CryptoManager.shared.encrypt(data: d) else { return }
         try? e.write(to: secureFileURL, options: .atomic)
     }
 
     private func loadDatabase() {
-        guard let e = try? Data(contentsOf: secureFileURL), let d = CryptoManager.shared.decrypt(data: e),
-              let p = try? JSONDecoder().decode([String: [[Float]]].self, from: d) else { return }
-        profiles = p
-        globalCentroid = Self.averageEmbeddings(Array(profiles.values.flatMap { $0 }))
+        guard let e = try? Data(contentsOf: secureFileURL), let d = CryptoManager.shared.decrypt(data: e) else { return }
+        if let stored = try? JSONDecoder().decode(StoredProfiles.self, from: d) {
+            profiles = stored.profiles
+        } else if let legacy = try? JSONDecoder().decode([String: [[Float]]].self, from: d) {
+            profiles = legacy.mapValues { Profile(prints: $0, order: .bgr) }
+        }
+        updateCentroids()
     }
 }
 
 // MARK: - Fast Image Pre-Processor
-
-enum TensorNormalization {
-    case arcFace
-}
 
 struct FaceAligner {
     private static let canonical112: [CGPoint] = [
@@ -1106,9 +1199,10 @@ struct FaceAligner {
                       .cropped(to: CGRect(x: 0, y: 0, width: size, height: size))
     }
 
-    static func fillInputArray(array: MLMultiArray, from pixels: inout [UInt8], size: Int, flipped: Bool, normMode: TensorNormalization) {
+    static func fillInputArray(array: MLMultiArray, from pixels: inout [UInt8], size: Int, flipped: Bool, order: FaceInputOrder) {
         let ptr = array.dataPointer.assumingMemoryBound(to: Float32.self)
         let plane = size * size
+        let (rPlane, bPlane) = order == .rgb ? (0, 2 * plane) : (2 * plane, 0)
 
         pixels.withUnsafeBufferPointer { px in
             for y in 0..<size {
@@ -1123,9 +1217,9 @@ struct FaceAligner {
 
                     let idx = rowOffset + x
 
-                    ptr[0 * plane + idx] = (b - 0.5) / 0.5
-                    ptr[1 * plane + idx] = (g - 0.5) / 0.5
-                    ptr[2 * plane + idx] = (r - 0.5) / 0.5
+                    ptr[rPlane + idx] = (r - 0.5) / 0.5
+                    ptr[plane + idx] = (g - 0.5) / 0.5
+                    ptr[bPlane + idx] = (b - 0.5) / 0.5
                 }
             }
         }
@@ -1279,6 +1373,11 @@ final class FaceIDModelManager {
     private let lock = NSLock()
     private let modelLoadingQueue = DispatchQueue(label: "com.sapphire.modelLoadingQueue", qos: .userInitiated)
 
+    private static let idleTimeout: TimeInterval = 20
+    private var lastUse = DispatchTime.now()
+    private var idleTimer: DispatchSourceTimer?
+    private var generation = 0
+
     private var embeddingModel: MLModel?
     private var embeddingInputName: String = ""
     private var embeddingOutputName: String = ""
@@ -1286,18 +1385,26 @@ final class FaceIDModelManager {
     private var livenessModel: MLModel?
     private var livenessInputName: String = "colorImage"
     private var livenessOutputName: String = "liveness_logit"
+    private(set) var livenessCropScale: CGFloat = 1.5
+    private(set) var livenessLogitThreshold: Float = FaceIDConfig.livenessFallbackLogitThreshold
 
     private var isCurrentlyLoading = false
     private var sharedAntiSpoofBuffer: CVPixelBuffer?
 
-    private let persistentCacheModelURL: URL = {
-        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("com.sapphire.faceid", isDirectory: true)
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        return cacheDir.appendingPathComponent("PassiveLiveness.mlmodelc", isDirectory: true)
-    }()
+    private static let livenessModelName = "PassiveLiveness_v4_ANE"
+    private static var didPurgeLegacyModelCopies = false
+
+    private(set) var livenessUnavailableReason: String?
+    private var livenessRetryAfter = Date.distantPast
+
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
 
     private init() {}
+
+    private var keepsModelsResident: Bool {
+        let settings = SettingsModel.shared.settings
+        return settings.faceIDKeepModelsInMemory && settings.faceIDUnlockEnabled && settings.hasRegisteredFaceID
+    }
 
     func prewarm() {
         modelLoadingQueue.async { [weak self] in
@@ -1305,115 +1412,184 @@ final class FaceIDModelManager {
         }
     }
 
+    @MainActor
+    func applyResidencyPolicy() {
+        if keepsModelsResident {
+            installMemoryPressureHandler()
+            prewarm()
+        } else if !AuthenticationManager.shared.isFaceIDSessionActive {
+            unloadModels()
+        }
+    }
+
+    func sessionEnded() {
+        if !keepsModelsResident { unloadModels() }
+    }
+
+    @MainActor
+    private func installMemoryPressureHandler() {
+        guard memoryPressureSource == nil else { return }
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: .critical, queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !AuthenticationManager.shared.isFaceIDSessionActive else { return }
+                print("[FaceID Model Manager] Critical memory pressure: releasing kept models")
+                self.unloadModels()
+            }
+        }
+        memoryPressureSource = source
+        source.resume()
+    }
+
     func unloadModels() {
         lock.lock()
         defer { lock.unlock() }
+        unloadLocked()
+    }
+
+    private func unloadLocked() {
+        generation += 1
         embeddingModel = nil
         embeddingInputName = ""
         embeddingOutputName = ""
-        livenessModel = nil
         sharedAntiSpoofBuffer = nil
+        idleTimer?.cancel()
+        idleTimer = nil
+    }
+
+    private func markUsedLocked() {
+        lastUse = .now()
+        guard idleTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: modelLoadingQueue)
+        timer.schedule(deadline: .now() + Self.idleTimeout, repeating: .never, leeway: .seconds(1))
+        timer.setEventHandler { [weak self, weak timer] in
+            guard let self else { return }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            if self.keepsModelsResident {
+                timer?.cancel()
+                if self.idleTimer === timer { self.idleTimer = nil }
+                return
+            }
+            let idleNanos = DispatchTime.now().uptimeNanoseconds - self.lastUse.uptimeNanoseconds
+            let timeoutNanos = UInt64(Self.idleTimeout * 1e9)
+            if idleNanos >= timeoutNanos {
+                self.unloadLocked()
+            } else {
+                timer?.schedule(deadline: .now() + .nanoseconds(Int(timeoutNanos - idleNanos)),
+                                repeating: .never, leeway: .seconds(1))
+            }
+        }
+        idleTimer = timer
+        timer.resume()
     }
 
     private func loadModelsIfNeeded() {
         lock.lock()
-        if isCurrentlyLoading || (embeddingModel != nil && livenessModel != nil) {
+        let needEmbedding = embeddingModel == nil
+        let needLiveness = livenessModel == nil && Date() >= livenessRetryAfter
+        if isCurrentlyLoading || (!needEmbedding && !needLiveness) {
             lock.unlock()
             return
         }
         isCurrentlyLoading = true
+        let startGeneration = generation
+        let livenessResident = livenessModel != nil
         lock.unlock()
 
-        let cfg = MLModelConfiguration()
-        cfg.computeUnits = .all
-
-        if embeddingModel == nil {
-            let loaded = self.loadModelWithIO("ArcFace", preferredOutput: "embedding") ??
-                         self.loadModelWithIO("ModernFace", preferredOutput: "embedding") ??
-                         self.loadModelWithIO("FaceEmbedding", preferredOutput: "embedding")
-            lock.lock()
-            if let (model, input, output) = loaded {
-                self.embeddingModel = model
-                self.embeddingInputName = input
-                self.embeddingOutputName = output
-            }
-            lock.unlock()
-        }
-
-        if livenessModel == nil {
-            self.loadLivenessModel(cfg: cfg)
-        }
+        let loadStart = Date()
+        purgeLegacyModelCopies()
+        let embedding = needEmbedding ? (self.loadModelWithIO("ArcFace", preferredOutput: "embedding") ??
+                                         self.loadModelWithIO("ModernFace", preferredOutput: "embedding") ??
+                                         self.loadModelWithIO("FaceEmbedding", preferredOutput: "embedding")) : nil
+        let embeddingMs = Date().timeIntervalSince(loadStart) * 1000
+        let liveness = needLiveness ? self.loadLivenessModel() : nil
 
         lock.lock()
+        defer { lock.unlock() }
         isCurrentlyLoading = false
-        lock.unlock()
+        guard generation == startGeneration else { return }
+        if let (model, input, output) = embedding {
+            self.embeddingModel = model
+            self.embeddingInputName = input
+            self.embeddingOutputName = output
+        }
+        if needLiveness && liveness == nil {
+            if keepsModelsResident && livenessRetryAfter != .distantFuture {
+                modelLoadingQueue.asyncAfter(deadline: .now() + 30) { [weak self] in self?.loadModelsIfNeeded() }
+            }
+        }
+        if let (model, meta) = liveness {
+            self.livenessUnavailableReason = nil
+            self.livenessModel = model
+            self.resolveLivenessIONames(model: model)
+            if let s = meta["crop_scale"].flatMap(Double.init) { self.livenessCropScale = CGFloat(s) }
+            if let t = meta["thr_default"].flatMap(Float.init) { self.livenessLogitThreshold = t }
+            print("[FaceID Model Manager] Loaded \(Self.livenessModelName) (crop x\(livenessCropScale), logit threshold \(livenessLogitThreshold))")
+        }
+        if embedding != nil || liveness != nil { markUsedLocked() }
+        print(String(format: "[FaceID timing] models loaded in %.0f ms (embedding %@, liveness %@)",
+                     Date().timeIntervalSince(loadStart) * 1000,
+                     needEmbedding ? String(format: "%.0f ms", embeddingMs) : "resident",
+                     needLiveness ? String(format: "%.0f ms", Date().timeIntervalSince(loadStart) * 1000 - embeddingMs) : (livenessResident ? "resident" : "backing off")))
     }
 
-    private func loadLivenessModel(cfg: MLModelConfiguration) {
-        if FaceIDConfig.useUnencryptedINT8TestModel {
-            if let testURL = locateResource(name: "PassiveLiveness_INT8", ext: "mlpackage") ??
-                             locateResource(name: "PassiveLiveness_INT8", ext: "mlmodelc") {
+    private func loadLivenessModel() -> (MLModel, [String: String])? {
+        let name = FaceIDModelManager.livenessModelName
 
-                var targetURL = testURL
-                if testURL.pathExtension == "mlpackage" {
-                    if let compiled = try? MLModel.compileModel(at: testURL) {
-                        targetURL = compiled
-                    }
-                }
+        let livenessCfg = MLModelConfiguration()
+        livenessCfg.computeUnits = .all
 
-                if let loaded = try? MLModel(contentsOf: targetURL, configuration: cfg) {
-                    lock.lock()
-                    self.livenessModel = loaded
-                    self.resolveLivenessIONames(model: loaded)
-                    lock.unlock()
-                    print("[FaceID Model Manager]  Successfully loaded test model: PassiveLiveness_INT8")
-                    return
-                } else {
-                    print("[FaceID Model Manager] ️ Failed loading test model at: \(targetURL.path)")
-                }
-            } else {
-                print("[FaceID Model Manager] ️ Could not find PassiveLiveness_INT8 in app bundle resources.")
+        var result: Result<MLModel, Error>
+        if let encryptedURL = Bundle.main.url(forResource: name, withExtension: "mlmodelc") {
+            result = Self.loadSynchronously { done in
+                MLModel.load(contentsOf: encryptedURL, configuration: livenessCfg, completionHandler: done)
             }
+        } else {
+            result = .failure(CocoaError(.fileNoSuchFile))
         }
 
-        if FileManager.default.fileExists(atPath: persistentCacheModelURL.path) {
-            if let loaded = try? MLModel(contentsOf: persistentCacheModelURL, configuration: cfg) {
-                lock.lock()
-                self.livenessModel = loaded
-                self.resolveLivenessIONames(model: loaded)
-                lock.unlock()
-                return
+        switch result {
+        case .success(let loaded):
+            return (loaded, loaded.modelDescription.metadata[.creatorDefinedKey] as? [String: String] ?? [:])
+        case .failure(let error):
+            print("[FaceID Model Manager] Could not load \(name): \(error). Face ID won't unlock while anti-spoofing is on.")
+            let reason: String
+            let retryAfter: Date
+            switch (error as? MLModelError)?.code {
+            case .modelDecryptionKeyFetch:
+                reason = "Go online once so Apple can unlock spoof protection. Face ID itself runs only on this Mac."
+                retryAfter = Date().addingTimeInterval(5)
+            case .modelDecryption:
+                reason = "Face ID spoof protection couldn't start. Restart your Mac to restore it; use your password for now."
+                retryAfter = .distantFuture
+            default:
+                reason = "Face ID spoof protection is unavailable. Use your password."
+                retryAfter = Date().addingTimeInterval(5)
             }
+            lock.lock(); livenessUnavailableReason = reason; livenessRetryAfter = retryAfter; lock.unlock()
+            return nil
         }
+    }
 
-        if let encURL = locateResource(name: "PassiveLiveness", ext: "enc") {
-            if let extractedURL = decryptAndExtractToPersistentCache(encURL: encURL) {
-                if let loaded = try? MLModel(contentsOf: extractedURL, configuration: cfg) {
-                    lock.lock()
-                    self.livenessModel = loaded
-                    self.resolveLivenessIONames(model: loaded)
-                    lock.unlock()
-                    return
-                }
-            }
-        }
+    private static func loadSynchronously(_ start: (@escaping (Result<MLModel, Error>) -> Void) -> Void) -> Result<MLModel, Error> {
+        var result: Result<MLModel, Error> = .failure(CocoaError(.featureUnsupported))
+        let done = DispatchSemaphore(value: 0)
+        start { result = $0; done.signal() }
+        done.wait()
+        return result
+    }
 
-        let possibleNames = [
-            "PassiveLivenessM4Pro",
-            "PassiveLiveness_w1.25_ep08_FP16",
-            "PassiveLiveness_w1.25_ep10_INT8",
-            "PassiveLiveness_w1.5_ep10_INT8"
-        ]
-        for name in possibleNames {
-            if let url = locateResource(name: name, ext: "mlmodelc") ?? locateResource(name: name, ext: "mlpackage") {
-                if let loaded = try? MLModel(contentsOf: url, configuration: cfg) {
-                    lock.lock()
-                    self.livenessModel = loaded
-                    self.resolveLivenessIONames(model: loaded)
-                    lock.unlock()
-                    return
-                }
-            }
+    private func purgeLegacyModelCopies() {
+        guard !Self.didPurgeLegacyModelCopies else { return }
+        Self.didPurgeLegacyModelCopies = true
+        let fm = FileManager.default
+        guard let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
+        try? fm.removeItem(at: caches.appendingPathComponent("com.sapphire.faceid", isDirectory: true))
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: "faceID.purgedE5Cache.v1"), let bundleID = Bundle.main.bundleIdentifier {
+            try? fm.removeItem(at: caches.appendingPathComponent(bundleID).appendingPathComponent("com.apple.e5rt.e5bundlecache"))
+            defaults.set(true, forKey: "faceID.purgedE5Cache.v1")
         }
     }
 
@@ -1432,7 +1608,7 @@ final class FaceIDModelManager {
                 while let fileURL = enumerator?.nextObject() as? URL {
                     if fileURL.pathExtension.lowercased() == ext.lowercased() {
                         let baseName = fileURL.deletingPathExtension().lastPathComponent.lowercased()
-                        if baseName == name.lowercased() || baseName.contains("passiveliveness") || baseName.contains("liveness") {
+                        if baseName == name.lowercased() {
                             return fileURL
                         }
                     }
@@ -1440,52 +1616,6 @@ final class FaceIDModelManager {
             }
         }
         return nil
-    }
-
-    private func decryptAndExtractToPersistentCache(encURL: URL) -> URL? {
-        guard let encData = try? Data(contentsOf: encURL), encData.count > 28 else { return nil }
-
-        let nonceData = encData.prefix(12)
-        let ciphertext = encData.dropFirst(12)
-
-        do {
-            let key = ModelSecurity.encryptionKey
-            let nonce = try AES.GCM.Nonce(data: nonceData)
-            let sealedBox = try AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext.dropLast(16), tag: ciphertext.suffix(16))
-            let decryptedZipData = try AES.GCM.open(sealedBox, using: key)
-
-            let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-
-            let tempZip = tempDir.appendingPathComponent("model.zip")
-            try decryptedZipData.write(to: tempZip)
-
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            process.arguments = ["-q", tempZip.path, "-d", tempDir.path]
-            try process.run()
-            process.waitUntilExit()
-            try? FileManager.default.removeItem(at: tempZip)
-
-            let enumerator = FileManager.default.enumerator(at: tempDir, includingPropertiesForKeys: nil)
-            var extractedModelURL: URL?
-            while let fileURL = enumerator?.nextObject() as? URL {
-                if fileURL.pathExtension == "mlmodelc" || fileURL.pathExtension == "mlpackage" {
-                    extractedModelURL = fileURL
-                    break
-                }
-            }
-
-            guard let sourceURL = extractedModelURL else { return nil }
-
-            try? FileManager.default.removeItem(at: persistentCacheModelURL)
-            try FileManager.default.moveItem(at: sourceURL, to: persistentCacheModelURL)
-            try? FileManager.default.removeItem(at: tempDir)
-
-            return persistentCacheModelURL
-        } catch {
-            return nil
-        }
     }
 
     private func resolveLivenessIONames(model: MLModel) {
@@ -1542,24 +1672,37 @@ final class FaceIDModelManager {
         let dstHeight = CVPixelBufferGetHeight(destBuffer)
         let dstRowBytes = CVPixelBufferGetBytesPerRow(destBuffer)
 
-        let x = max(0, min(srcWidth - 1, Int(cropRect.origin.x)))
-        let y = max(0, min(srcHeight - 1, Int(cropRect.origin.y)))
-        let w = max(1, min(srcWidth - x, Int(cropRect.size.width)))
-        let h = max(1, min(srcHeight - y, Int(cropRect.size.height)))
+        var dstAll = vImage_Buffer(
+            data: dstBase,
+            height: vImagePixelCount(dstHeight),
+            width: vImagePixelCount(dstWidth),
+            rowBytes: dstRowBytes
+        )
+        let black: [UInt8] = [0, 0, 0, 255]
+        guard vImageBufferFill_ARGB8888(&dstAll, black, vImage_Flags(kvImageNoFlags)) == kvImageNoError else { return false }
 
-        let srcStart = srcBase.advanced(by: y * srcRowBytes + x * 4)
+        let inside = cropRect.intersection(CGRect(x: 0, y: 0, width: srcWidth, height: srcHeight))
+        guard !inside.isNull, inside.width >= 1, inside.height >= 1 else { return false }
+
+        let x = Int(inside.minX.rounded(.down)), y = Int(inside.minY.rounded(.down))
+        let w = max(1, min(srcWidth - x, Int(inside.width.rounded()))), h = max(1, min(srcHeight - y, Int(inside.height.rounded())))
+
+        let kx = CGFloat(dstWidth) / cropRect.width, ky = CGFloat(dstHeight) / cropRect.height
+        let dx = max(0, min(dstWidth - 1, Int(((inside.minX - cropRect.minX) * kx).rounded())))
+        let dy = max(0, min(dstHeight - 1, Int(((inside.minY - cropRect.minY) * ky).rounded())))
+        let dw = max(1, min(dstWidth - dx, Int((inside.width * kx).rounded())))
+        let dh = max(1, min(dstHeight - dy, Int((inside.height * ky).rounded())))
 
         var srcVImage = vImage_Buffer(
-            data: srcStart,
+            data: srcBase.advanced(by: y * srcRowBytes + x * 4),
             height: vImagePixelCount(h),
             width: vImagePixelCount(w),
             rowBytes: srcRowBytes
         )
-
         var dstVImage = vImage_Buffer(
-            data: dstBase,
-            height: vImagePixelCount(dstHeight),
-            width: vImagePixelCount(dstWidth),
+            data: dstBase.advanced(by: dy * dstRowBytes + dx * 4),
+            height: vImagePixelCount(dh),
+            width: vImagePixelCount(dw),
             rowBytes: dstRowBytes
         )
 
@@ -1580,31 +1723,23 @@ final class FaceIDModelManager {
         }
         let inKey = livenessInputName
         let outKey = livenessOutputName
+        let cropScale = livenessCropScale
+        markUsedLocked()
         lock.unlock()
 
         let srcW = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let srcH = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
         let bb = observation.boundingBox
 
-        let faceW = bb.width * srcW
-        let faceH = bb.height * srcH
-        let faceCenterX = bb.midX * srcW
-        let faceCenterY = (1.0 - bb.midY) * srcH
+        let visionSide = max(bb.width * srcW, bb.height * srcH)
+        let boxSide = visionSide * FaceIDConfig.antiSpoofVisionBoxScale
+        let centerX = bb.midX * srcW
+        let centerY = (1.0 - bb.midY) * srcH - FaceIDConfig.antiSpoofVisionBoxShiftUp * visionSide
+        let cropSize = boxSide * cropScale
 
-        let maxSide = max(faceW, faceH)
-        let cropSize = maxSide * FaceIDConfig.antiSpoofCropMultiplier
+        guard cropSize >= 30 else { return nil }
 
-        let cx1 = max(0, faceCenterX - cropSize / 2.0)
-        let cy1 = max(0, faceCenterY - cropSize / 2.0)
-        let cx2 = min(srcW, faceCenterX + cropSize / 2.0)
-        let cy2 = min(srcH, faceCenterY + cropSize / 2.0)
-
-        let cropWidth = cx2 - cx1
-        let cropHeight = cy2 - cy1
-
-        guard cropWidth >= 30 && cropHeight >= 30 else { return nil }
-
-        let cropRect = CGRect(x: cx1, y: cy1, width: cropWidth, height: cropHeight)
+        let cropRect = CGRect(x: centerX - cropSize / 2.0, y: centerY - cropSize / 2.0, width: cropSize, height: cropSize)
 
         guard let cropped224 = getAntiSpoofBuffer(),
               rawCropAndResize(sourceBuffer: pixelBuffer, cropRect: cropRect, destBuffer: cropped224) else {
@@ -1645,6 +1780,7 @@ final class FaceIDModelManager {
         }
         let inKey = embeddingInputName
         let outKey = embeddingOutputName
+        markUsedLocked()
         lock.unlock()
 
         let runPred = { (array: MLMultiArray) -> [Float]? in
@@ -1672,6 +1808,7 @@ final class FaceIDModelManager {
         }
         let inKey = embeddingInputName
         let outKey = embeddingOutputName
+        markUsedLocked()
         lock.unlock()
 
         do {

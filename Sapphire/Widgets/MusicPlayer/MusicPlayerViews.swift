@@ -12,7 +12,7 @@ import QuartzCore
 // MARK: - Consolidated from MusicPlayerView.swift
 
 struct PlayerProgressView: View {
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
     @State private var isSeeking = false
     @State private var seekProgress: Double = 0.0
 
@@ -23,93 +23,115 @@ struct PlayerProgressView: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: musicManager.isPlaying && !isSeeking ? 0.2 : 60)) { context in
-            let liveElapsed = isSeeking
-                ? seekProgress * musicManager.totalDuration
-                : musicManager.elapsedTime(at: context.date)
-            let liveProgress = isSeeking
-                ? seekProgress
-                : musicManager.progress(at: context.date)
+        let trajectory = musicManager.playbackTrajectory
+        let duration = musicManager.totalDuration
+        let advancing = trajectory.isAdvancing && !isSeeking
 
-            HStack(alignment: .center, spacing: 8) {
-                Text(liveElapsed.asMinuteSecondClock)
-                    .font(.system(size: lightStyle ? 11 : 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(timeColor)
-                    .contentTransition(.numericText())
+        HStack(alignment: .center, spacing: 8) {
+            clock(trajectory: trajectory, advancing: advancing) { elapsed in
+                elapsed.asMinuteSecondClock
+            }
 
-                InteractiveProgressBar(
-                    value: Binding(
-                        get: { liveProgress },
-                        set: { seekProgress = $0 }
-                    ),
-                    gradient: Gradient(colors: lightStyle
-                        ? [.white, .white.opacity(0.75)]
-                        : [musicManager.leftGradientColor, musicManager.rightGradientColor]),
-                    onSeek: { newProgress in
-                        isSeeking = false
-                        let seekTime = newProgress * musicManager.totalDuration
-                        if seekTime.isFinite && musicManager.totalDuration > 0 {
-                            Task { await musicManager.seek(to: seekTime) }
-                        }
-                    },
-                    onDragChanged: { progress in
-                        isSeeking = true
-                        seekProgress = progress
+            InteractiveProgressBar(
+                value: Binding(
+                    get: { isSeeking ? seekProgress : trajectory.progressMotion.value(at: Date()) },
+                    set: { seekProgress = $0 }
+                ),
+                gradient: Gradient(colors: lightStyle
+                    ? [.white, .white.opacity(0.75)]
+                    : [musicManager.leftGradientColor, musicManager.rightGradientColor]),
+                onSeek: { newProgress in
+                    isSeeking = false
+                    let seekTime = newProgress * musicManager.totalDuration
+                    if seekTime.isFinite && musicManager.totalDuration > 0 {
+                        Task { await musicManager.seek(to: seekTime) }
                     }
-                )
-                .frame(height: lightStyle ? 10 : 30)
-                .shadow(color: musicManager.accentColor.opacity(lightStyle ? 0.2 : 0.3), radius: lightStyle ? 2 : 4, y: 1)
+                },
+                onDragChanged: { progress in
+                    isSeeking = true
+                    seekProgress = progress
+                },
+                rate: advancing ? trajectory.progressMotion.rate : 0
+            )
+            .frame(height: lightStyle ? 10 : 30)
+            .shadow(color: musicManager.accentColor.opacity(lightStyle ? 0.2 : 0.3), radius: lightStyle ? 2 : 4, y: 1)
 
-                Text("-\((max(0, musicManager.totalDuration - liveElapsed)).asMinuteSecondClock)")
-                    .font(.system(size: lightStyle ? 11 : 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(timeColor)
-                    .contentTransition(.numericText())
+            clock(trajectory: trajectory, advancing: advancing) { elapsed in
+                "-\((max(0, duration - elapsed)).asMinuteSecondClock)"
             }
         }
+    }
+
+    @ViewBuilder
+    private func clock(trajectory: PlaybackTrajectory, advancing: Bool, text: @escaping (TimeInterval) -> String) -> some View {
+        if advancing {
+            TimelineView(trajectory.clockSchedule) { context in
+                clockText(text(trajectory.elapsed(at: context.date)))
+            }
+        } else {
+            clockText(text(isSeeking ? seekProgress * musicManager.totalDuration : trajectory.elapsed(at: Date())))
+        }
+    }
+
+    private func clockText(_ string: String) -> some View {
+        Text(string)
+            .font(.system(size: lightStyle ? 11 : 10, weight: .medium, design: .monospaced))
+            .foregroundColor(timeColor)
     }
 }
 
 private struct LyricTextView: View {
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
     @EnvironmentObject var navigationManager: LockScreenNavigationManager
     @Binding var navigationStack: [NotchWidgetMode]
     let isLockScreenMode: Bool
     var onCustomTap: (() -> Void)? = nil
 
+    private static func lineBoundaries(_ lyrics: [LyricLine]) -> [ClosedRange<TimeInterval>] {
+        lyrics.flatMap { line -> [ClosedRange<TimeInterval>] in
+            var events = [line.timestamp...line.timestamp]
+            if let end = line.endTimestamp { events.append(end...end) }
+            return events
+        }
+    }
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: musicManager.isPlaying ? 0.25 : 60)) { context in
+        let _ = musicManager.currentLyric?.id
+        TimelineView(KaraokeFillSchedule(
+            referenceDate: Date(),
+            referenceElapsed: musicManager.lyricsElapsedTime(),
+            windows: musicManager.isPlaying ? Self.lineBoundaries(musicManager.lyrics) : []
+        )) { context in
             let line = musicManager.lyricLine(at: context.date)
             let lyricText = line?.translatedText ?? line?.text
             let trimmed = lyricText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-            if !trimmed.isEmpty {
-                Text(trimmed)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(musicManager.accentColor)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 35, alignment: .center)
-                    .contentTransition(.opacity)
-                    .animation(.easeInOut(duration: 0.2), value: line?.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if let onCustomTap {
-                            onCustomTap()
-                        } else if isLockScreenMode {
-                            navigationManager.navigateTo(.lyrics)
-                        } else {
-                            navigationStack.append(.musicLyrics)
-                        }
+            (trimmed.isEmpty ? Text(Image(systemName: "ellipsis")) : Text(trimmed))
+                .font(.system(size: 12, weight: trimmed.isEmpty ? .bold : .medium))
+                .foregroundColor(musicManager.accentColor.opacity(trimmed.isEmpty ? 0.45 : 1))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 35, alignment: .center)
+                .contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: line?.id)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if let onCustomTap {
+                        onCustomTap()
+                    } else if isLockScreenMode {
+                        navigationManager.navigateTo(.lyrics)
+                    } else {
+                        navigationStack.append(.musicLyrics)
                     }
-            }
+                }
         }
     }
 }
 
 struct MusicPlayerView: View {
     @Binding var navigationStack: [NotchWidgetMode]
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
     @EnvironmentObject var navigationManager: LockScreenNavigationManager
 
     var isLockScreenMode: Bool = false
@@ -124,6 +146,7 @@ struct MusicPlayerView: View {
 
     @State private var showLikeAnimation = false
     @State private var showTemporaryLikedGlow = false
+    @State private var readyCanvasURL: URL?
 
     @State private var isPressingPlaylists = false
     @State private var isPressingDevices = false
@@ -195,13 +218,71 @@ struct MusicPlayerView: View {
     }
 
     private var nextTrackArtworkURL: URL? {
-        nextQueueTrack?.metadata?.imageURL
+        if isSpotifyPlaying { return nextQueueTrack?.metadata?.imageURL }
+        if musicManager.lastKnownBundleID == "com.apple.Music" {
+            return musicManager.appleMusicNextTrack?.artworkURL
+        }
+        return nil
     }
 
-    private var suggestedTracks: [SpotifyRecommendedTrack] {
-        guard isSpotifyPlaying, settings.settings.spotifyShowSuggestedSongs else { return [] }
-        return Array(musicManager.spotifyPrivateAPI.relatedTracks.prefix(4))
+    private struct SuggestedSong: Identifiable {
+        let id: String
+        let name: String
+        let play: () async -> Void
     }
+
+    private var isAppleMusicPlaying: Bool {
+        musicManager.lastKnownBundleID == "com.apple.Music" && !isSpotifyPlaying
+    }
+
+    private var suggestedTracks: [SuggestedSong] {
+        guard settings.settings.spotifyShowSuggestedSongs else { return [] }
+        if isSpotifyPlaying {
+            return musicManager.spotifyPrivateAPI.relatedTracks.prefix(4).map { track in
+                SuggestedSong(id: track.id, name: track.name) { [musicManager] in
+                    _ = await musicManager.play(trackUri: track.uri, contextUri: track.albumURI)
+                }
+            }
+        }
+        if isAppleMusicPlaying {
+            return musicManager.appleSuggestedTracks.prefix(4).map { song in
+                SuggestedSong(id: song.id, name: song.title) { [musicManager] in
+                    _ = await musicManager.appleMusic.play(song: song)
+                }
+            }
+        }
+        return []
+    }
+
+    private var appleArtist: AppleMusicArtist? {
+        guard isAppleMusicPlaying, settings.settings.spotifyShowArtistProfile else { return nil }
+        return musicManager.appleNowPlaying.artist
+    }
+
+    private var appleArtistSubtitle: String? {
+        let details = musicManager.appleNowPlaying
+        var parts: [String] = []
+        if let genre = details.genreNames.first { parts.append(genre) }
+        if let date = details.releaseDate { parts.append(String(Calendar.current.component(.year, from: date))) }
+        if let plays = details.playCount, plays > 0 { parts.append("\(plays) \(plays == 1 ? "play" : "plays") by you") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private static let suggestionRowHeight: CGFloat = 23
+
+    private var reservesSuggestionSlot: Bool {
+        guard settings.settings.spotifyShowSuggestedSongs else { return false }
+        if !suggestedTracks.isEmpty { return true }
+        if isSpotifyPlaying {
+            let api = musicManager.spotifyPrivateAPI
+            guard api.isLoggedIn, let uri = api.playerState?.track?.uri,
+                  uri.contains("spotify:track:") else { return false }
+            return api.relatedTracksURI != uri
+        }
+        return isAppleMusicPlaying && !musicManager.appleSuggestionsResolved
+    }
+
+    private var reservesLyricSlot: Bool { musicManager.hasDisplayableLyrics }
 
     private var showConcertTickets: Bool {
         isSpotifyPlaying
@@ -216,10 +297,11 @@ struct MusicPlayerView: View {
                     .padding(.top, 8)
             }
 
-            if musicManager.isPlaying || musicManager.totalDuration > 0 {
-                controlsSection
-                    .transition(.opacity.animation(.easeInOut(duration: 0.3)))
-            }
+            let showsControls = musicManager.isPlaying || musicManager.totalDuration > 0
+            controlsSection
+                .opacity(showsControls ? 1 : 0)
+                .allowsHitTesting(showsControls)
+                .animation(.easeInOut(duration: 0.3), value: showsControls)
         }
         .frame(width: 400).padding(10)
         .animation(.easeInOut(duration: 0.4), value: musicManager.isPlaying)
@@ -235,7 +317,7 @@ struct MusicPlayerView: View {
             resetTransientButtonState()
             Task { await musicManager.setDetailPlayerOpen(false) }
         }
-        .onChange(of: musicManager.isLiked) { isLiked in
+        .onChange(of: musicManager.isLiked) { _, isLiked in
             if isLiked {
                 showTemporaryLikedGlow = true
                 Task {
@@ -252,24 +334,28 @@ struct MusicPlayerView: View {
         HStack(spacing: 12) {
             ZStack {
                     let showLiveCanvas = settings.settings.spotifyCanvasLiveVideo
+                        && !isLockScreenMode
                         && isSpotifyPlaying
                         && musicManager.spotifyPrivateAPI.currentCanvas?.isPlayableVideo == true
-                    if showLiveCanvas, let canvasURL = musicManager.spotifyPrivateAPI.currentCanvas?.videoURL {
-                        SpotifyCanvasView(canvasURL: canvasURL)
-                            .frame(width: 56, height: 56)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .id(canvasURL)
+                    let canvasURL = showLiveCanvas ? musicManager.spotifyPrivateAPI.currentCanvas?.videoURL : nil
+                    if let canvasURL {
+                        SpotifyCanvasView(canvasURL: canvasURL) { ready in
+                            readyCanvasURL = ready ? canvasURL : (readyCanvasURL == canvasURL ? nil : readyCanvasURL)
+                        }
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .id(canvasURL)
                     }
 
-                    if let cover = musicManager.artwork ?? musicManager.appIcon {
-                        Image(nsImage: cover)
-                            .resizable().aspectRatio(contentMode: .fit).frame(width: 56, height: 56)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .opacity(showLiveCanvas ? 0.0 : 1.0)
-                            .compositingGroup()
-                            .shadow(color: musicManager.accentColor.opacity(0.35), radius: 6, y: 3)
-                            .id(musicManager.currentTrackArtworkToken)
-                    }
+                    let isShowingVideo = canvasURL != nil && readyCanvasURL == canvasURL
+                    MusicArtworkImage(image: musicManager.artwork, size: 56, contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .opacity(isShowingVideo ? 0.0 : 1.0)
+                        .animation(.easeInOut(duration: 0.3), value: isShowingVideo)
+                        .compositingGroup()
+                        .shadow(color: musicManager.accentColor.opacity(0.35), radius: 6, y: 3)
+                        .id(musicManager.currentTrackArtworkToken)
+                        .transition(.notchArtworkSwap)
 
                     Image(systemName: "heart.fill")
                         .font(.system(size: 26, weight: .bold))
@@ -356,6 +442,27 @@ struct MusicPlayerView: View {
                                         .lineLimit(1)
                                 }
                             }
+                        } else if let artist = appleArtist {
+                            HStack(spacing: 6) {
+                                if let url = artist.artworkURL {
+                                    CachedAsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fill) } placeholder: {
+                                        Circle().fill(Color.white.opacity(0.1))
+                                    }
+                                    .frame(width: 16, height: 16)
+                                    .clipShape(Circle())
+                                    .id(artist.id)
+                                }
+                                Text(musicManager.artist ?? artist.name)
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            if let subtitle = appleArtistSubtitle {
+                                Text(subtitle)
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
                         } else {
                             Text(musicManager.artist ?? "Artist")
                                 .font(.system(size: 12, design: .rounded))
@@ -395,8 +502,15 @@ struct MusicPlayerView: View {
                         .transition(.opacity)
                     } else {
                         WaveformView()
-                            .environmentObject(musicManager)
                             .scaleEffect(1.05)
+                            .overlay(alignment: .topTrailing) {
+                                if settings.settings.showPopularityInMusicPlayer {
+                                    popularityAccessory
+                                        .id("pop-\(musicManager.uri ?? "")-\(musicManager.playCountValue ?? -1)-\(musicManager.popularity ?? -1)")
+                                        .fixedSize()
+                                        .offset(y: -24)
+                                }
+                            }
                             .transition(.opacity)
                     }
                 }
@@ -409,17 +523,12 @@ struct MusicPlayerView: View {
         VStack(spacing: 3) {
             PlayerProgressView()
 
-            if !suggestedTracks.isEmpty {
+            if reservesSuggestionSlot {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
                                 ForEach(suggestedTracks) { track in
                                     Button {
-                                        Task {
-                                            _ = await musicManager.play(
-                                                trackUri: track.uri,
-                                                contextUri: track.albumURI
-                                            )
-                                        }
+                                        Task { await track.play() }
                                     } label: {
                                         HStack(spacing: 5) {
                                             Image(systemName: "sparkles")
@@ -438,10 +547,13 @@ struct MusicPlayerView: View {
                             }
                             .padding(.leading, 2)
                         }
+                        .frame(height: Self.suggestionRowHeight)
+                        .opacity(suggestedTracks.isEmpty ? 0 : 1)
+                        .animation(.easeInOut(duration: 0.25), value: suggestedTracks.isEmpty)
                         .padding(.top, 1)
                     }
 
-                    if musicManager.hasCurrentDisplayableLyric {
+                    if reservesLyricSlot {
                         LyricTextView(
                             navigationStack: $navigationStack,
                             isLockScreenMode: isLockScreenMode,
@@ -466,13 +578,13 @@ struct MusicPlayerView: View {
                         )
                         .frame(width: 44, height: 44)
                         .foregroundStyle(holdFeedbackButtonID == "previous" ? holdFeedbackColor : .primary)
-                        .help(MusicLongPressUI.skipHelp(primary: "Previous", target: .previous, settings: settings.settings))
+                        .help(MusicLongPressUI.skipHelp(primary: "Previous", target: .previous, settings: settings.settings.value))
                         Spacer()
                         LongPressControlButton(
                             onTap: { Task { await (musicManager.isPlaying ? musicManager.pause() : musicManager.play()) } },
                             onLongPress: accessoryLongPressHandler(for: .playPause),
                             onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "playPause") },
-                            holdAction: settings.settings.resolvedAccessoryHoldAction(for: .playPause),
+                            holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .playPause),
                             onHoldEnded: endHoldFeedback
                         ) {
                             Image(systemName: holdFeedbackButtonID == "playPause"
@@ -484,9 +596,10 @@ struct MusicPlayerView: View {
                         }
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
+                        .notchHoverTile(size: 52)
                         .animation(.easeInOut(duration: 0.15), value: musicManager.isPlaying)
                         .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
-                        .help(MusicLongPressUI.accessoryHelp(primary: "Play / Pause", target: .playPause, settings: settings.settings))
+                        .help(MusicLongPressUI.accessoryHelp(primary: "Play / Pause", target: .playPause, settings: settings.settings.value))
                         Spacer()
                         SeekButton(
                             systemName: "forward.fill",
@@ -502,13 +615,13 @@ struct MusicPlayerView: View {
                         )
                         .frame(width: 44, height: 44)
                         .foregroundStyle(holdFeedbackButtonID == "next" ? holdFeedbackColor : .primary)
-                        .help(MusicLongPressUI.skipHelp(primary: "Next", target: .next, settings: settings.settings))
+                        .help(MusicLongPressUI.skipHelp(primary: "Next", target: .next, settings: settings.settings.value))
                         Spacer()
                         MusicPlayerActionButton(type: primaryButtons.dropFirst().first, size: .primary)
                     }
                     .buttonStyle(PlainButtonStyle()).font(.system(size: 22)).foregroundColor(.primary)
-                    .padding(.top, (!musicManager.hasCurrentDisplayableLyric && accessoryButtons.isEmpty) ? 8 : 0)
-                    .padding(.bottom, !musicManager.hasCurrentDisplayableLyric ? 4 : 0)
+                    .padding(.top, (!reservesLyricSlot && accessoryButtons.isEmpty) ? 8 : 0)
+                    .padding(.bottom, !reservesLyricSlot ? 4 : 0)
 
                     if !accessoryButtons.isEmpty {
                         HStack(spacing: 25) { ForEach(accessoryButtons) { buttonType in MusicPlayerActionButton(type: buttonType, size: .accessory) } }
@@ -518,12 +631,12 @@ struct MusicPlayerView: View {
     }
 
     private func accessoryLongPressHandler(for target: MusicLongPressTarget) -> (() -> Void)? {
-        guard let action = settings.settings.resolvedAccessoryHoldAction(for: target) else { return nil }
+        guard let action = settings.settings.value.resolvedAccessoryHoldAction(for: target) else { return nil }
         return holdFeedback.handler(for: action, musicManager: musicManager, navigation: longPressNavigation)
     }
 
     private func skipHoldAction(for target: MusicLongPressTarget) -> MusicLongPressAction? {
-        holdFeedback.skipAction(for: target, settings: settings.settings)
+        holdFeedback.skipAction(for: target, settings: settings.settings.value)
     }
 
     private func skipHoldClosure(for target: MusicLongPressTarget) -> (() -> Void)? {
@@ -621,7 +734,7 @@ struct MusicPlayerView: View {
                     onTap: { handleButtonTap(for: .musicQueueAndPlaylists) },
                     onLongPress: accessoryLongPressHandler(for: .playlists),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "playlists") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .playlists),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .playlists),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "playlists"
@@ -633,7 +746,7 @@ struct MusicPlayerView: View {
                 .foregroundStyle(holdFeedbackButtonID == "playlists" ? holdFeedbackColor : .secondary)
                 .frame(width: frameSize, height: frameSize)
                 .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
-                .help(MusicLongPressUI.accessoryHelp(primary: "Queue", target: .playlists, settings: settings.settings))
+                .help(MusicLongPressUI.accessoryHelp(primary: "Queue", target: .playlists, settings: settings.settings.value))
 
             case .devices:
                 let deviceIcon: String = musicManager.currentOutputDeviceSystemImage()
@@ -644,7 +757,7 @@ struct MusicPlayerView: View {
                     },
                     onLongPress: accessoryLongPressHandler(for: .devices),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "devices") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .devices),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .devices),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "devices"
@@ -655,7 +768,7 @@ struct MusicPlayerView: View {
                 }
                 .foregroundStyle(holdFeedbackButtonID == "devices" ? holdFeedbackColor : .secondary)
                 .frame(width: frameSize, height: frameSize)
-                .help(MusicLongPressUI.accessoryHelp(primary: "Playback device", target: .devices, settings: settings.settings))
+                .help(MusicLongPressUI.accessoryHelp(primary: "Playback device", target: .devices, settings: settings.settings.value))
                 .id(deviceIcon)
                 .animation(.easeInOut(duration: 0.2), value: deviceIcon)
                 .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
@@ -665,7 +778,7 @@ struct MusicPlayerView: View {
                     onTap: { Task { await musicManager.toggleLike() } },
                     onLongPress: accessoryLongPressHandler(for: .like),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "like") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .like),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .like),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "like"
@@ -680,14 +793,14 @@ struct MusicPlayerView: View {
                 .frame(width: frameSize, height: frameSize)
                 .animation(.spring(), value: musicManager.isLiked)
                 .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
-                .help(MusicLongPressUI.accessoryHelp(primary: "Like", target: .like, settings: settings.settings))
+                .help(MusicLongPressUI.accessoryHelp(primary: "Like", target: .like, settings: settings.settings.value))
 
             case .shuffle:
                 LongPressControlButton(
                     onTap: { Task { await musicManager.toggleShuffle() } },
                     onLongPress: accessoryLongPressHandler(for: .shuffle),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "shuffle") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .shuffle),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .shuffle),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "shuffle"
@@ -709,10 +822,10 @@ struct MusicPlayerView: View {
                 .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
                 .help(
                     musicManager.spotifyPrivateAPI.isSmartShuffleActive
-                        ? MusicLongPressUI.accessoryHelp(primary: "Smart Shuffle — tap for Off", target: .shuffle, settings: settings.settings)
+                        ? MusicLongPressUI.accessoryHelp(primary: "Smart Shuffle — tap for Off", target: .shuffle, settings: settings.settings.value)
                         : (musicManager.shuffleState
-                            ? MusicLongPressUI.accessoryHelp(primary: "Shuffle — tap for Smart Shuffle", target: .shuffle, settings: settings.settings)
-                            : MusicLongPressUI.accessoryHelp(primary: "Off — tap for Shuffle", target: .shuffle, settings: settings.settings))
+                            ? MusicLongPressUI.accessoryHelp(primary: "Shuffle — tap for Smart Shuffle", target: .shuffle, settings: settings.settings.value)
+                            : MusicLongPressUI.accessoryHelp(primary: "Off — tap for Shuffle", target: .shuffle, settings: settings.settings.value))
                 )
 
             case .repeat:
@@ -720,7 +833,7 @@ struct MusicPlayerView: View {
                     onTap: { Task { await musicManager.cycleRepeatMode() } },
                     onLongPress: accessoryLongPressHandler(for: .repeatMode),
                     onHoldBegan: { action in beginHoldFeedback(action: action, buttonID: "repeat") },
-                    holdAction: settings.settings.resolvedAccessoryHoldAction(for: .repeatMode),
+                    holdAction: settings.settings.value.resolvedAccessoryHoldAction(for: .repeatMode),
                     onHoldEnded: endHoldFeedback
                 ) {
                     Image(systemName: holdFeedbackButtonID == "repeat"
@@ -735,7 +848,7 @@ struct MusicPlayerView: View {
                 .frame(width: frameSize, height: frameSize)
                 .animation(.easeInOut, value: musicManager.repeatState)
                 .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
-                .help(MusicLongPressUI.accessoryHelp(primary: "Repeat", target: .repeatMode, settings: settings.settings))
+                .help(MusicLongPressUI.accessoryHelp(primary: "Repeat", target: .repeatMode, settings: settings.settings.value))
             }
         } else {
             Rectangle().fill(Color.clear).frame(width: 40, height: 40)
@@ -853,7 +966,7 @@ struct NextTrackInline: View {
 }
 
 struct NotchMediaSourceSwitcher: View {
-    @EnvironmentObject var musicManager: MusicManager
+    var musicManager: MusicManager { .shared }
 
     private var keys: [String] {
         musicManager.activeMediaSources.keys.sorted { a, b in
@@ -919,9 +1032,11 @@ struct NotchMediaSourceSwitcher: View {
 // MARK: - Consolidated from MusicWidgetView.swift
 
 struct MusicWidgetView: View {
+    static let artworkCornerRadius: CGFloat = 30
+
     @Environment(\.navigationStack) var navigationStack
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
     @State private var isHoveringArtwork = false
 
     var onExpand: (() -> Void)? = nil
@@ -971,9 +1086,8 @@ struct MusicWidgetView: View {
     }
 
     private var albumArt: some View {
-        Image(nsImage: musicManager.artwork ?? musicManager.appIcon ?? NSImage(systemSymbolName: "waveform", accessibilityDescription: "Album art")!)
-            .resizable().aspectRatio(contentMode: .fill)
-            .frame(width: 100, height: 100).cornerRadius(30)
+        MusicArtworkImage(image: musicManager.artwork, size: 100)
+            .cornerRadius(Self.artworkCornerRadius)
             .shadow(color: musicManager.accentColor.opacity(0.7), radius: 8, y: 5)
             .onHover { hovering in
                 self.isHoveringArtwork = hovering
@@ -1045,8 +1159,8 @@ private struct MusicControlsView: View {
     let onPlayPause: () -> Void
     let onNext: () -> Void
 
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settings: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settings: SettingsObserver
 
     let buttonHitboxSize: CGFloat = 37
 
@@ -1060,13 +1174,13 @@ private struct MusicControlsView: View {
                 },
                 onLongPressAction: MusicLongPressUI.skipHoldHandler(
                     for: .previous,
-                    settings: settings.settings,
+                    settings: settings.settings.value,
                     musicManager: musicManager,
                     navigation: .notifications
                 )
             )
             .frame(width: buttonHitboxSize, height: buttonHitboxSize)
-            .help(MusicLongPressUI.skipHelp(primary: "Previous", target: .previous, settings: settings.settings))
+            .help(MusicLongPressUI.skipHelp(primary: "Previous", target: .previous, settings: settings.settings.value))
 
             Button(action: onPlayPause) {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
@@ -1084,13 +1198,13 @@ private struct MusicControlsView: View {
                 },
                 onLongPressAction: MusicLongPressUI.skipHoldHandler(
                     for: .next,
-                    settings: settings.settings,
+                    settings: settings.settings.value,
                     musicManager: musicManager,
                     navigation: .notifications
                 )
             )
             .frame(width: buttonHitboxSize, height: buttonHitboxSize)
-            .help(MusicLongPressUI.skipHelp(primary: "Next", target: .next, settings: settings.settings))
+            .help(MusicLongPressUI.skipHelp(primary: "Next", target: .next, settings: settings.settings.value))
         }
         .font(.system(size: 16))
         .foregroundColor(.white)
@@ -1260,8 +1374,8 @@ struct CoreAnimationWaveformView: NSViewRepresentable, Equatable {
 }
 
 struct WaveformView: View {
-    @EnvironmentObject var musicManager: MusicManager
-    @EnvironmentObject var settingsModel: SettingsModel
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settingsModel: SettingsObserver
 
     @State private var isHovering = false
     @State private var volumeScale: CGFloat = 0.7
@@ -1281,18 +1395,6 @@ struct WaveformView: View {
 
     private var barCount: Int {
         min(max(settingsModel.settings.waveformBarCount, 1), 6)
-    }
-
-    private var minHeight: CGFloat {
-        settingsModel.settings.waveformBarThickness
-    }
-
-    private var waveformGradient: LinearGradient {
-        LinearGradient(
-            gradient: Gradient(colors: [musicManager.leftGradientColor, musicManager.rightGradientColor]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
     }
 
     var body: some View {
@@ -1364,22 +1466,25 @@ struct WaveformView: View {
             leftGradientColor: musicManager.leftGradientColor,
             rightGradientColor: musicManager.rightGradientColor
         )
+        .id(waveformLayoutID)
     }
 
     private var staticWaveformBody: some View {
-        let barFill = settingsModel.settings.waveformUseGradient ?
-            AnyShapeStyle(waveformGradient) :
-            AnyShapeStyle(musicManager.accentColor)
-
-        return HStack(spacing: 3) {
-            ForEach(0..<barCount, id: \.self) { _ in
-                Capsule()
-                    .fill(barFill)
-                    .frame(width: settingsModel.settings.waveformBarThickness, height: minHeight)
-            }
-        }
-        .frame(width: 18, height: 22)
+        let useGradient = settingsModel.settings.waveformUseGradient
+        return CoreAnimationWaveformView(
+            isPlaying: false,
+            barCount: barCount,
+            volumeScale: volumeScale,
+            barThickness: settingsModel.settings.waveformBarThickness,
+            leftGradientColor: useGradient ? musicManager.leftGradientColor : musicManager.accentColor,
+            rightGradientColor: useGradient ? musicManager.rightGradientColor : musicManager.accentColor
+        )
+        .id(waveformLayoutID)
         .transition(.opacity)
+    }
+
+    private var waveformLayoutID: String {
+        "\(barCount)-\(settingsModel.settings.waveformBarThickness)"
     }
 
     private func iconBody(systemName: String) -> some View {
@@ -1387,5 +1492,81 @@ struct WaveformView: View {
             .font(.system(size: 16, weight: .semibold))
             .foregroundColor(musicManager.accentColor)
             .transition(.opacity.animation(.easeOut(duration: 0.2)))
+    }
+}
+
+struct MusicLiveActivityRightView: View {
+    var musicManager: MusicManager { .shared }
+    @ObservedSettings var settingsModel: SettingsObserver
+
+    private var isPhoneMedia: Bool { musicManager.isPhoneMediaSourceSelected }
+
+    private var showText: Bool {
+        MusicLiveActivityChromePolicy.showsRightText(
+            mode: settingsModel.settings.musicLiveActivityRightTextMode,
+            isPhoneMedia: isPhoneMedia
+        )
+    }
+
+    private var showWaveform: Bool {
+        MusicLiveActivityChromePolicy.showsWaveform(
+            mode: settingsModel.settings.musicLiveActivityWaveformMode,
+            rightTextMode: settingsModel.settings.musicLiveActivityRightTextMode,
+            isPhoneMedia: isPhoneMedia
+        )
+    }
+
+    var body: some View {
+        if showText {
+            HStack(spacing: 7) {
+                textBlock
+                if showWaveform { waveform }
+            }
+        } else if showWaveform {
+            waveform
+        }
+    }
+
+    private var textBlock: some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(musicManager.title ?? "Now Playing")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundColor(.white.opacity(0.95))
+                .lineLimit(1)
+            HStack(spacing: 3) {
+                if isPhoneMedia {
+                    Image(systemName: "iphone.gen3")
+                        .font(.system(size: 8))
+                }
+                Text(subtitle)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 10.5))
+            .foregroundColor(.white.opacity(0.62))
+        }
+        .frame(maxWidth: 150, alignment: .trailing)
+    }
+
+    private var subtitle: String {
+        if let artist = musicManager.artist, !artist.isEmpty { return artist }
+        if isPhoneMedia { return musicManager.phoneMediaDeviceName ?? "Phone" }
+        return musicManager.album ?? ""
+    }
+
+    @ViewBuilder
+    private var waveform: some View {
+        switch settingsModel.settings.musicLiveActivityWaveformStyle {
+        case .classic:
+            WaveformView()
+        case .continuity:
+            NotchSymbolView(
+                systemName: musicManager.isPlaying ? "waveform" : "pause.fill",
+                pointSize: 12,
+                weight: .semibold,
+                color: NSColor.white.withAlphaComponent(0.85),
+                variableColor: musicManager.isPlaying
+            )
+            .frame(width: 16)
+        }
     }
 }

@@ -23,7 +23,7 @@ struct CalendarWidgetView: View {
     @Environment(\.navigationStack) var navigationStack
     @ObservedObject var viewModel: InteractiveCalendarViewModel
     @EnvironmentObject var calendarService: CalendarService
-    @EnvironmentObject var settings: SettingsModel
+    @ObservedSettings var settings: SettingsObserver
 
     @State private var hasScrolledInitially = false
     @State private var centeredDate: Date?
@@ -87,8 +87,8 @@ struct CalendarWidgetView: View {
         .onAppear {
             viewModel.updateStartOfWeek(settings.settings.calendarStartOfWeek)
         }
-        .onChange(of: settings.settings.calendarStartOfWeek) {
-            viewModel.updateStartOfWeek($0)
+        .onChange(of: settings.settings.calendarStartOfWeek) { _, startOfWeek in
+            viewModel.updateStartOfWeek(startOfWeek)
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -109,7 +109,7 @@ struct CalendarWidgetView: View {
                     ForEach(viewModel.dates, id: \.self) { date in
                         DynamicDayView(
                             date: date,
-                            containerMidX: containerProxy.frame(in: .global).midX
+                            containerWidth: containerProxy.size.width
                         )
                         .id(date)
                         .onTapGesture {
@@ -220,48 +220,60 @@ struct ScheduleItemRowView: View {
 
 struct DynamicDayView: View {
     let date: Date
-    let containerMidX: CGFloat
+    let containerWidth: CGFloat
 
     @EnvironmentObject private var viewModel: InteractiveCalendarViewModel
 
     var body: some View {
         let isSelected = date.isSameDay(as: viewModel.selectedDate)
         let dayName = date.format(as: isSelected ? "EEE" : "EEEEE").uppercased()
+        let numberBase = Self.opaque(date.isWeekend ? Color.red.opacity(0.8) : Color.white.opacity(0.8))
+        let letterBase = Self.opaque(.gray)
+        let focus = Self.opaque(.blue)
+        let centerX = containerWidth / 2
 
-        GeometryReader { itemProxy in
-            let itemMidX = itemProxy.frame(in: .global).midX
-            let distance = itemMidX - containerMidX
-
-            let absDistance = abs(distance)
-            let focusFactor = max(0, 1 - (absDistance / 80))
-
-            let scale = 0.7 + (focusFactor * 0.7)
-            let opacity = 0.5 + (focusFactor * 0.5)
-
-            let baseColor = date.isWeekend ? Color.red.opacity(0.8) : Color.white.opacity(0.8)
-            let finalColor = baseColor.lerp(to: .blue, t: focusFactor)
-            let dayLetterColor = Color.gray.lerp(to: .blue, t: focusFactor)
-
-            VStack(spacing: 3) {
-                Text(dayName)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundColor(dayLetterColor)
-                    .id(dayName)
-                    .transition(
-                        .asymmetric(
-                            insertion: .offset(y: 10).combined(with: .opacity),
-                            removal: .offset(y: -10).combined(with: .opacity)
-                        )
+        VStack(spacing: 3) {
+            tinted(Text(dayName).font(.system(size: 10, weight: .semibold, design: .rounded)),
+                   base: letterBase, focus: focus, centerX: centerX)
+                .id(dayName)
+                .transition(
+                    .asymmetric(
+                        insertion: .offset(y: 10).combined(with: .opacity),
+                        removal: .offset(y: -10).combined(with: .opacity)
                     )
+                )
 
-                Text(date.format(as: "d"))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(finalColor)
-            }
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .frame(width: itemProxy.size.width, height: itemProxy.size.height)
+            tinted(Text(date.format(as: "d")).font(.system(size: 13, weight: .bold, design: .rounded)),
+                   base: numberBase, focus: focus, centerX: centerX)
+        }
+        .visualEffect { content, proxy in
+            let factor = Self.focusFactor(proxy, centerX: centerX)
+            return content
+                .scaleEffect(0.7 + factor * 0.7)
+                .opacity(0.5 + factor * 0.5)
         }
         .frame(width: 28)
+        .frame(maxHeight: .infinity)
     }
+
+    private func tinted(_ text: Text, base: Color, focus: Color, centerX: CGFloat) -> some View {
+        text.foregroundColor(base)
+            .overlay {
+                text.foregroundColor(focus)
+                    .visualEffect { content, proxy in
+                        content.opacity(Self.focusFactor(proxy, centerX: centerX))
+                    }
+            }
+    }
+
+    private static func opaque(_ color: Color) -> Color {
+        let resolved = color.resolve(in: EnvironmentValues())
+        return Color(red: Double(resolved.red), green: Double(resolved.green), blue: Double(resolved.blue))
+    }
+
+    private static func focusFactor(_ proxy: GeometryProxy, centerX: CGFloat) -> CGFloat {
+        let distance = proxy.frame(in: .scrollView(axis: .horizontal)).midX - centerX
+        return max(0, 1 - (abs(distance) / 80))
+    }
+
 }

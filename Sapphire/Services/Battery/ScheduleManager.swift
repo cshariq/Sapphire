@@ -114,7 +114,7 @@ class ScheduleManager: ObservableObject {
         let now = Date()
         let calendar = Calendar.current
 
-        if settings.settings.enableBiweeklyCalibration {
+        if settings.current.enableBiweeklyCalibration {
             let lastCalibrationDate = UserDefaults.standard.object(forKey: lastCalibrationDateKey) as? Date
             let twoWeeksAgo = calendar.date(byAdding: .day, value: -14, to: now)!
 
@@ -125,7 +125,7 @@ class ScheduleManager: ObservableObject {
             }
         }
 
-        for task in settings.settings.scheduledTasks where task.isActive {
+        for task in settings.current.scheduledTasks where task.isActive {
             let scheduledTime = calendar.dateComponents([.hour, .minute], from: task.startTime)
             let nowTime = calendar.dateComponents([.hour, .minute], from: now)
 
@@ -168,11 +168,11 @@ class ScheduleManager: ObservableObject {
         timer?.invalidate()
         timer = nil
 
-        var candidates = settings.settings.scheduledTasks
+        var candidates = settings.current.scheduledTasks
             .filter(\.isActive)
             .compactMap { nextFireDate(for: $0, after: now) }
 
-        if settings.settings.enableBiweeklyCalibration,
+        if settings.current.enableBiweeklyCalibration,
            let lastCalibrationDate = UserDefaults.standard.object(forKey: lastCalibrationDateKey) as? Date,
            let dueDate = Calendar.current.date(byAdding: .day, value: 14, to: lastCalibrationDate),
            dueDate > now {
@@ -231,7 +231,7 @@ class ScheduleManager: ObservableObject {
         case .setChargeLimit:
             settings.settings.batteryChargeLimit = task.chargeLimit
         case .startCalibration:
-            if settings.settings.preventSleepDuringCalibration {
+            if settings.current.preventSleepDuringCalibration {
                 caffeineManager.start(forcePreventSleepInClamshell: true)
             }
             CalibrationManager.shared.start()

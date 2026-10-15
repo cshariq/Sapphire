@@ -75,9 +75,13 @@ struct DeviceAdjustView: View {
     private func refreshInputStats() {
         micGain = Double(audioManager.getInputVolume(for: device.id))
         isMicMuted = audioManager.areAllInputsMuted || audioManager.isInputMuted(for: device.id)
-        sampleRate = MultiAudioManager.getNominalSampleRate(for: device.id)
-        availableRates = audioManager.getAvailableSampleRates(for: device.id)
-        streamFormat = audioManager.getStreamFormat(for: device.id)
+        audioManager.loadFormatInfo(for: device.id) { info in
+            MainActor.assumeIsolated {
+                sampleRate = info.sampleRate
+                availableRates = info.availableRates
+                streamFormat = info.streamFormat
+            }
+        }
     }
 
     // MARK: - Output Layout
@@ -305,12 +309,17 @@ fileprivate final class AdjustViewPerAppStore: ObservableObject {
         if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 
+    private static var iconCache: [String: NSImage] = [:]
+
     func refreshRunningApps() {
         let activeBundles = MultiAudioManager.shared.activeAudioBundleIDs()
-        runningApps = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil }
-            .filter { activeBundles.contains($0.bundleIdentifier!) }
-            .compactMap { AdjustAppItem(bundleID: $0.bundleIdentifier!, name: $0.localizedName ?? "Unknown", icon: $0.icon) }
+        runningApps = RunningApps.shared.infoByPID()
+            .compactMap { pid, info -> AdjustAppItem? in
+                guard info.isRegular, let bundleID = info.bundleID, activeBundles.contains(bundleID) else { return nil }
+                let icon = Self.iconCache[bundleID] ?? NSRunningApplication(processIdentifier: pid)?.icon
+                if let icon { Self.iconCache[bundleID] = icon }
+                return AdjustAppItem(bundleID: bundleID, name: info.name ?? "Unknown", icon: icon)
+            }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 

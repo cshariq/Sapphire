@@ -101,20 +101,21 @@ end run
 """
 
 @MainActor
-final class AirPlayManager: NSObject, ObservableObject {
+@Observable
+final class AirPlayManager: NSObject {
     static let shared = AirPlayManager()
 
-    @Published private(set) var devices: [AirPlayDevice] = []
+    private(set) var devices: [AirPlayDevice] = []
 
     private let airPlayBrowser = NetServiceBrowser()
     private let raopBrowser = NetServiceBrowser()
-    private var airPlayServices: [String: NetService] = [:]
-    private var raopServices: [String: NetService] = [:]
-    private var isBrowsing = false
-    private var defaultOutputListener: AudioObjectPropertyListenerBlock?
-    private var volumeListener: AudioObjectPropertyListenerBlock?
-    private var volumeListenerDeviceID: AudioDeviceID?
-    private var volumeListenerAddress: AudioObjectPropertyAddress?
+    @ObservationIgnored private var airPlayServices: [String: NetService] = [:]
+    @ObservationIgnored private var raopServices: [String: NetService] = [:]
+    @ObservationIgnored private var isBrowsing = false
+    @ObservationIgnored private var defaultOutputListener: AudioObjectPropertyListenerBlock?
+    @ObservationIgnored private var volumeListener: AudioObjectPropertyListenerBlock?
+    @ObservationIgnored private var volumeListenerDeviceID: AudioDeviceID?
+    @ObservationIgnored private var volumeListenerAddress: AudioObjectPropertyAddress?
 
     override private init() {
         super.init()

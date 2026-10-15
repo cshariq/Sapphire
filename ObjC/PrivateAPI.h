@@ -1,6 +1,6 @@
 //
 //  PrivateAPI.h
-//  DynamicNotch
+//  Sapphire
 //
 
 #ifndef PrivateAPI_h

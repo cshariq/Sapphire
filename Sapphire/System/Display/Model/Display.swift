@@ -8,6 +8,7 @@
 import Foundation
 import Cocoa
 
+@MainActor
 class Display {
   let identifier: CGDirectDisplayID
   var name: String
@@ -29,7 +30,12 @@ class Display {
     self.isDummy = isDummy
   }
 
-  func stepBrightness(isUp: Bool, isSmallIncrement: Bool, step: Float = 0.0625) {}
+  var brightnessMethod: DisplayBrightnessMethod { .native }
+
+  func stepBrightness(isUp: Bool, isSmallIncrement: Bool, step: Float = 0.0625) {
+    let next = DisplayBrightnessMath.nextLevel(from: self.getBrightness(), step: step, isUp: isUp, isFine: isSmallIncrement)
+    self.setBrightness(next)
+  }
 
   func getBrightness() -> Float {
     return 1.0

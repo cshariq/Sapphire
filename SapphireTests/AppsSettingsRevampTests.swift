@@ -451,9 +451,13 @@ final class AppsSettingsRevampTests: XCTestCase {
         let parsed = InstalledAppUpdateSourceDetector.parseVSCodeProduct(data: valid)
         XCTAssertEqual(parsed?.baseURL.absoluteString, "https://update.example.test")
         XCTAssertEqual(parsed?.quality, "stable")
+        XCTAssertEqual(parsed?.commit, "0123abcd")
 
         let insecure = Data(#"{"updateUrl":"http:
         XCTAssertNil(InstalledAppUpdateSourceDetector.parseVSCodeProduct(data: insecure))
+
+        let missingCommit = Data(#"{"updateUrl":"https:
+        XCTAssertNil(InstalledAppUpdateSourceDetector.parseVSCodeProduct(data: missingCommit))
     }
 
     func testJSONUpdateManifestParsesVendorAndSquirrelFormats() {

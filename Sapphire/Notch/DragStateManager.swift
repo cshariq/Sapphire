@@ -153,7 +153,7 @@ class DragStateManager: ObservableObject {
         shelfDragItemID = nil
         stopShelfDragMouseUpMonitor()
 
-        guard SettingsModel.shared.settings.removeFileFromShelfAfterDrag,
+        guard SettingsModel.shared.current.removeFileFromShelfAfterDrag,
               let itemID,
               let item = FileShelfManager.shared.files.first(where: { $0.id == itemID }) else {
             return
@@ -171,34 +171,4 @@ class DragStateManager: ObservableObject {
             shelfDragGlobalMouseUpToken = nil
         }
     }
-
-    func refreshDraggedFilePreviews() {
-        let pasteboard = NSPasteboard(name: .drag)
-        let urls = FileDragPasteboard.fileURLs(from: pasteboard)
-        guard !urls.isEmpty else {
-            if !draggedFilePreviews.isEmpty {
-                draggedFilePreviews = []
-            }
-            return
-        }
-
-        let previews = urls.prefix(4).map { url in
-            DraggedFilePreview(
-                id: url.path,
-                url: url,
-                fileName: url.lastPathComponent,
-                icon: NSWorkspace.shared.icon(forFile: url.path)
-            )
-        }
-        if previews.map(\.id) != draggedFilePreviews.map(\.id) {
-            draggedFilePreviews = Array(previews)
-        }
-    }
-
-    func clearDraggedFilePreviews() {
-        if !draggedFilePreviews.isEmpty {
-            draggedFilePreviews = []
-        }
-    }
-
 }

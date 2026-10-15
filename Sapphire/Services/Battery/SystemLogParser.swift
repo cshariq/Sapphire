@@ -40,26 +40,30 @@ class SystemLogParser {
 
             let pipe = Pipe()
             process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
             let outHandle = pipe.fileHandleForReading
 
+            let assembler = AssemblerBox()
             outHandle.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    for line in assembler.value.finish() { continuation.yield(line) }
                     continuation.finish()
-                } else if let line = String(data: data, encoding: .utf8) {
-                    line.enumerateLines { line, _ in continuation.yield(line) }
+                } else {
+                    for line in assembler.value.append(data) { continuation.yield(line) }
                 }
             }
 
-            process.terminationHandler = { _ in
-                outHandle.readabilityHandler = nil
-                continuation.finish()
+            continuation.onTermination = { _ in
+                if process.isRunning { process.terminate() }
             }
 
             do {
                 try process.run()
             } catch {
                 print("[SystemLogParser] Failed to run pmset process: \(error)")
+                outHandle.readabilityHandler = nil
                 continuation.finish()
             }
         }
@@ -92,9 +96,19 @@ class SystemLogParser {
         )
     }
 
-    private func extractTimestamp(from line: String) -> Date? {
+    private final class AssemblerBox: @unchecked Sendable {
+        var value = LineChunkAssembler()
+    }
+
+    private let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
+        return formatter
+    }()
+
+    private func extractTimestamp(from line: String) -> Date? {
+        let formatter = timestampFormatter
 
         if let range = line.range(of: #"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4}"#, options: .regularExpression) {
             let dateString = String(line[range])
@@ -112,5 +126,32 @@ class SystemLogParser {
             }
         }
         return nil
+    }
+}
+
+struct LineChunkAssembler {
+    private var pending = Data()
+
+    mutating func append(_ chunk: Data) -> [String] {
+        pending.append(chunk)
+        var lines: [String] = []
+        var lineStart = pending.startIndex
+        while let newline = pending[lineStart...].firstIndex(of: 0x0A) {
+            lines.append(Self.decode(pending[lineStart..<newline]))
+            lineStart = pending.index(after: newline)
+        }
+        pending = Data(pending[lineStart...])
+        return lines
+    }
+
+    mutating func finish() -> [String] {
+        defer { pending = Data() }
+        return pending.isEmpty ? [] : [Self.decode(pending[...])]
+    }
+
+    private static func decode(_ bytes: Data.SubSequence) -> String {
+        var slice = bytes
+        if slice.last == 0x0D { slice = slice.dropLast() }
+        return String(decoding: slice, as: UTF8.self)
     }
 }

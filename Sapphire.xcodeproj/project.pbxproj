@@ -24,9 +24,13 @@
 		C0DE2000000000000000000B /* libusbmuxd-2.0.6.dylib in Embed iDevice Libraries */ = {isa = PBXBuildFile; fileRef = C0DE1000000000000000000B /* libusbmuxd-2.0.6.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		CAFE100000000000000007AA /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE100000000000000003AA /* main.swift */; };
 		CAFE100000000000000013AA /* SapphireCameraExtension.systemextension in Embed System Extensions */ = {isa = PBXBuildFile; fileRef = CAFE100000000000000001AA /* SapphireCameraExtension.systemextension */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CAFE1000000000000000A1AA /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE1000000000000000A0AA /* main.swift */; };
+		CAFE1000000000000000A2AA /* SapphireCameraProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE100000000000000004AA /* SapphireCameraProvider.swift */; };
+		CAFE1000000000000000A3AA /* SapphireCameraIdentifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFE10000000000000000AAA /* SapphireCameraIdentifiers.swift */; };
 		CAFE200000000000000006BB /* SapphireAudioDriver.c in Sources */ = {isa = PBXBuildFile; fileRef = CAFE200000000000000003BB /* SapphireAudioDriver.c */; };
 		CAFE200000000000000010BB /* SapphireAudioDriver.driver in Embed Audio Driver */ = {isa = PBXBuildFile; fileRef = CAFE200000000000000001BB /* SapphireAudioDriver.driver */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CAFE200000000000000013BB /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CAFE200000000000000014BB /* CoreAudio.framework */; };
+		CAFE2000000000000000A1BB /* SapphireAudioDriver.c in Sources */ = {isa = PBXBuildFile; fileRef = CAFE2000000000000000A0BB /* SapphireAudioDriver.c */; };
 		DA1D1AB72EAA76DA00E7F1B4 /* com.shariq.sapphireHelper in Embed Helper Executable */ = {isa = PBXBuildFile; fileRef = DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */; };
 		DA262AE02EA4841B0027CA69 /* OSD.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262ADF2EA4841B0027CA69 /* OSD.framework */; };
 		DA262AE62EA485150027CA69 /* CoreDisplay.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DA262AE52EA485150027CA69 /* CoreDisplay.framework */; };
@@ -48,7 +52,7 @@
 		DA7C49AD2E15D3800049937A /* libNearbyShare.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = DA7C49802E15CCA50049937A /* libNearbyShare.dylib */; settings = {ATTRIBUTES = (Required, ); }; };
 		DA8A79B02E5AAE260009F091 /* TransferDirection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DABC6CBC2E16F53E00A5CF83 /* TransferDirection.swift */; };
 		DA8A79B12E5AAE260009F091 /* OutboundNearbyConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C498D2E15D33A0049937A /* OutboundNearbyConnection.swift */; };
-		DA8A79B22E5AAE260009F091 /* NearDropDisplayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5256782E162B9F00D8F42E /* NearDropDisplayState.swift */; };
+		DA8A79B22E5AAE260009F091 /* NearbyTransferDisplayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5256782E162B9F00D8F42E /* NearbyTransferDisplayState.swift */; };
 		DA8A79B32E5AAE260009F091 /* NearbyConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C498A2E15D33A0049937A /* NearbyConnection.swift */; };
 		DA8A79B42E5AAE260009F091 /* NearbyConnectionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7C498B2E15D33A0049937A /* NearbyConnectionManager.swift */; };
 		DA8A79B52E5AAE260009F091 /* DeviceListCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA52567C2E162FBE00D8F42E /* DeviceListCell.swift */; };
@@ -141,9 +145,15 @@
 		F1CE00000000000000001AA /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CE000000000000000002AA /* main.swift */; };
 		F1CE00000000000000002AA /* SapphireFinderSync.appex in Embed Finder Extensions */ = {isa = PBXBuildFile; fileRef = F1CE000000000000000001AA /* SapphireFinderSync.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F2DE000000000000000013BB /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000002BB /* FileProviderExtension.swift */; };
+		F2DE000000000000000014BB /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000003BB /* FileProviderItem.swift */; };
+		F2DE000000000000000015BB /* FileProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000004BB /* FileProviderEnumerator.swift */; };
+		F2DE000000000000000016BB /* HostConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000005BB /* HostConnection.swift */; };
+		F2DE000000000000000017BB /* ContinuityFileProviderShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000006BB /* ContinuityFileProviderShared.swift */; };
 		F2DE000000000000000018BB /* SapphireFileProvider.appex in Embed Finder Extensions */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000001BB /* SapphireFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F3A600000000000000000003 /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = F3A600000000000000000002 /* Yams */; };
 		F4C6BD0940E54C6EBC832604 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = FD831867A2F947938E17E286 /* FirebaseFirestore */; };
+		F5A1000230F0000000000001 /* FirebaseInstallations in Frameworks */ = {isa = PBXBuildFile; productRef = F5A1000130F0000000000001 /* FirebaseInstallations */; };
+		F5A1000430F0000000000001 /* GoogleDataTransport in Frameworks */ = {isa = PBXBuildFile; productRef = F5A1000330F0000000000001 /* GoogleDataTransport */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -331,17 +341,20 @@
 		C0DE10000000000000000009 /* libplist-2.0.4.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = "libplist-2.0.4.dylib"; sourceTree = "<group>"; };
 		C0DE1000000000000000000A /* libssl.3.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = libssl.3.dylib; sourceTree = "<group>"; };
 		C0DE1000000000000000000B /* libusbmuxd-2.0.6.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = "libusbmuxd-2.0.6.dylib"; sourceTree = "<group>"; };
+		CAFE0000000000000000A0CC /* Extensions.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Extensions.xcconfig; path = PublicExtensionStubs/Extensions.xcconfig; sourceTree = SOURCE_ROOT; };
 		CAFE100000000000000001AA /* SapphireCameraExtension.systemextension */ = {isa = PBXFileReference; explicitFileType = "wrapper.system-extension"; includeInIndex = 0; path = SapphireCameraExtension.systemextension; sourceTree = BUILT_PRODUCTS_DIR; };
 		CAFE100000000000000003AA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = main.swift; path = PublicExtensionStubs/Camera/main.swift; sourceTree = SOURCE_ROOT; };
 		CAFE100000000000000004AA /* SapphireCameraProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SapphireCameraProvider.swift; sourceTree = "<group>"; };
 		CAFE100000000000000005AA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CAFE100000000000000006AA /* SapphireCameraExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireCameraExtension.entitlements; sourceTree = "<group>"; };
 		CAFE10000000000000000AAA /* SapphireCameraIdentifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SapphireCameraIdentifiers.swift; path = Sapphire/Services/Continuity/SapphireCameraIdentifiers.swift; sourceTree = SOURCE_ROOT; };
+		CAFE1000000000000000A0AA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = main.swift; path = SapphireCameraExtension/main.swift; sourceTree = SOURCE_ROOT; };
 		CAFE200000000000000001BB /* SapphireAudioDriver.driver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireAudioDriver.driver; sourceTree = BUILT_PRODUCTS_DIR; };
 		CAFE200000000000000003BB /* SapphireAudioDriver.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = SapphireAudioDriver.c; path = PublicExtensionStubs/AudioDriver/SapphireAudioDriver.c; sourceTree = SOURCE_ROOT; };
 		CAFE200000000000000004BB /* SapphireMicRing.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SapphireMicRing.h; sourceTree = "<group>"; };
 		CAFE200000000000000005BB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CAFE200000000000000014BB /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
+		CAFE2000000000000000A0BB /* SapphireAudioDriver.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = SapphireAudioDriver.c; path = SapphireAudioDriver/SapphireAudioDriver.c; sourceTree = SOURCE_ROOT; };
 		DA262ADF2EA4841B0027CA69 /* OSD.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OSD.framework; path = ../../../../System/Library/PrivateFrameworks/OSD.framework; sourceTree = "<group>"; };
 		DA262AE22EA484A70027CA69 /* Sapphire.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Sapphire.xcodeproj; sourceTree = "<group>"; };
 		DA262AE52EA485150027CA69 /* CoreDisplay.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreDisplay.framework; path = ../../../../System/Library/Frameworks/CoreDisplay.framework; sourceTree = "<group>"; };
@@ -351,7 +364,7 @@
 		DA452EAF2EAA57C90070E5C9 /* com.shariq.sapphireHelper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = com.shariq.sapphireHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA46CF762DCBCA0000F00EC5 /* Sapphire.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sapphire.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA46CF872DCBCA0100F00EC5 /* SapphireTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SapphireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		DA5256782E162B9F00D8F42E /* NearDropDisplayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearDropDisplayState.swift; sourceTree = "<group>"; };
+		DA5256782E162B9F00D8F42E /* NearbyTransferDisplayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyTransferDisplayState.swift; sourceTree = "<group>"; };
 		DA52567A2E162FA900D8F42E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		DA52567C2E162FBE00D8F42E /* DeviceListCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceListCell.swift; sourceTree = "<group>"; };
 		DA69D6282E8442F5007FD12D /* dylib1.o */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.objfile"; name = dylib1.o; path = usr/lib/dylib1.o; sourceTree = SDKROOT; };
@@ -466,7 +479,7 @@
 		F1CE000000000000000004AA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F1CE000000000000000005AA /* SapphireFinderSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireFinderSync.entitlements; sourceTree = "<group>"; };
 		F2DE000000000000000001BB /* SapphireFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SapphireFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		F2DE000000000000000002BB /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FileProviderExtension.swift; path = PublicExtensionStubs/FileProvider/FileProviderExtension.swift; sourceTree = SOURCE_ROOT; };
+		F2DE000000000000000002BB /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
 		F2DE000000000000000003BB /* FileProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItem.swift; sourceTree = "<group>"; };
 		F2DE000000000000000004BB /* FileProviderEnumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderEnumerator.swift; sourceTree = "<group>"; };
 		F2DE000000000000000005BB /* HostConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostConnection.swift; sourceTree = "<group>"; };
@@ -512,6 +525,7 @@
 			membershipExceptions = (
 				App/Info.plist,
 				Services/Music/MediaRemoteAdapter.framework,
+				Services/Music/SapphireMediaQueue.framework,
 			);
 			target = DA46CF752DCBCA0000F00EC5 /* Sapphire */;
 		};
@@ -530,6 +544,7 @@
 			buildPhase = DA46CF742DCBCA0000F00EC5 /* Resources */;
 			membershipExceptions = (
 				Services/Music/MediaRemoteAdapter.framework,
+				Services/Music/SapphireMediaQueue.framework,
 			);
 		};
 		DABFA98F2EBFBA8B000C5A8B /* Exceptions for "com.shariq.sapphireHelper" folder in "Embed Helper LaunchDaemon Plist" phase from "Sapphire" target */ = {
@@ -635,6 +650,8 @@
 				DABC6CDD2E17457A00A5CF83 /* IOKit.framework in Frameworks */,
 				DA8FB0532E7D898F00C9BD1A /* MobileTimerSupport.framework in Frameworks */,
 				DA5E1012304CBB63003D1D37 /* FirebaseCrashlytics in Frameworks */,
+				F5A1000230F0000000000001 /* FirebaseInstallations in Frameworks */,
+				F5A1000430F0000000000001 /* GoogleDataTransport in Frameworks */,
 				3EA625D8CDF343379815DBE6 /* FirebaseAppCheck in Frameworks */,
 				F4C6BD0940E54C6EBC832604 /* FirebaseFirestore in Frameworks */,
 				DA48B01B2E93DF9B0099BF74 /* SQLite in Frameworks */,
@@ -722,6 +739,8 @@
 			isa = PBXGroup;
 			children = (
 				CAFE100000000000000003AA /* main.swift */,
+				CAFE1000000000000000A0AA /* main.swift */,
+				CAFE0000000000000000A0CC /* Extensions.xcconfig */,
 				CAFE100000000000000004AA /* SapphireCameraProvider.swift */,
 				CAFE10000000000000000AAA /* SapphireCameraIdentifiers.swift */,
 				CAFE100000000000000005AA /* Info.plist */,
@@ -734,6 +753,7 @@
 			isa = PBXGroup;
 			children = (
 				CAFE200000000000000003BB /* SapphireAudioDriver.c */,
+				CAFE2000000000000000A0BB /* SapphireAudioDriver.c */,
 				CAFE200000000000000004BB /* SapphireMicRing.h */,
 				CAFE200000000000000005BB /* Info.plist */,
 			);
@@ -833,7 +853,7 @@
 				DA52567C2E162FBE00D8F42E /* DeviceListCell.swift */,
 				DA7C498A2E15D33A0049937A /* NearbyConnection.swift */,
 				DA7C498B2E15D33A0049937A /* NearbyConnectionManager.swift */,
-				DA5256782E162B9F00D8F42E /* NearDropDisplayState.swift */,
+				DA5256782E162B9F00D8F42E /* NearbyTransferDisplayState.swift */,
 				DA7C498D2E15D33A0049937A /* OutboundNearbyConnection.swift */,
 			);
 			path = Nearby;
@@ -1150,10 +1170,12 @@
 				DA5E1009304CBB63003D1D37 /* FirebaseAnalytics */,
 				DA5E100F304CBB63003D1D37 /* FirebaseCore */,
 				DA5E1011304CBB63003D1D37 /* FirebaseCrashlytics */,
+				F5A1000130F0000000000001 /* FirebaseInstallations */,
+				F5A1000330F0000000000001 /* GoogleDataTransport */,
 				350EC0B0ACC04131989F6CB6 /* FirebaseAppCheck */,
 				FD831867A2F947938E17E286 /* FirebaseFirestore */,
 			);
-			productName = DynamicNotch;
+			productName = Sapphire;
 			productReference = DA46CF762DCBCA0000F00EC5 /* Sapphire.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -1295,6 +1317,7 @@
 				DACA66602E8B70E60056ED60 /* XCRemoteSwiftPackageReference "qrcode" */,
 				DA48B0192E93DF9B0099BF74 /* XCRemoteSwiftPackageReference "SQLite" */,
 				DA5E1008304CBB63003D1D37 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				F5A1000030F0000000000001 /* XCRemoteSwiftPackageReference "GoogleDataTransport" */,
 			);
 			preferredProjectObjectVersion = 100;
 			productRefGroup = DA46CF772DCBCA0000F00EC5 /* Products */;
@@ -1519,12 +1542,16 @@
 			isa = PBXSourcesBuildPhase;
 			files = (
 				CAFE100000000000000007AA /* main.swift in Sources */,
+				CAFE1000000000000000A1AA /* main.swift in Sources */,
+				CAFE1000000000000000A2AA /* SapphireCameraProvider.swift in Sources */,
+				CAFE1000000000000000A3AA /* SapphireCameraIdentifiers.swift in Sources */,
 			);
 		};
 		CAFE200000000000000007BB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
 				CAFE200000000000000006BB /* SapphireAudioDriver.c in Sources */,
+				CAFE2000000000000000A1BB /* SapphireAudioDriver.c in Sources */,
 			);
 		};
 		DA452EAB2EAA57C90070E5C9 /* Sources */ = {
@@ -1551,7 +1578,7 @@
 				DA7C499A2E15D33A0049937A /* securemessage.pb.swift in Sources */,
 				DA8A79B02E5AAE260009F091 /* TransferDirection.swift in Sources */,
 				DA8A79B12E5AAE260009F091 /* OutboundNearbyConnection.swift in Sources */,
-				DA8A79B22E5AAE260009F091 /* NearDropDisplayState.swift in Sources */,
+				DA8A79B22E5AAE260009F091 /* NearbyTransferDisplayState.swift in Sources */,
 				DA8A79B32E5AAE260009F091 /* NearbyConnection.swift in Sources */,
 				DA8A79B42E5AAE260009F091 /* NearbyConnectionManager.swift in Sources */,
 				DA8A79B52E5AAE260009F091 /* DeviceListCell.swift in Sources */,
@@ -1579,6 +1606,10 @@
 			isa = PBXSourcesBuildPhase;
 			files = (
 				F2DE000000000000000013BB /* FileProviderExtension.swift in Sources */,
+				F2DE000000000000000014BB /* FileProviderItem.swift in Sources */,
+				F2DE000000000000000015BB /* FileProviderEnumerator.swift in Sources */,
+				F2DE000000000000000016BB /* HostConnection.swift in Sources */,
+				F2DE000000000000000017BB /* ContinuityFileProviderShared.swift in Sources */,
 			);
 		};
 /* End PBXSourcesBuildPhase section */
@@ -1645,7 +1676,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.AndroidWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1675,7 +1706,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.AndroidWidgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1688,23 +1719,25 @@
 		};
 		CAFE10000000000000000FAA /* Debug configuration for PBXNativeTarget "SapphireCameraExtension" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = "$(SAPPHIRE_CAMERA_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_CAMERA_EXCLUDED_SOURCES)";
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = PublicExtensionStubs/Camera/Info.plist;
+				INFOPLIST_FILE = "$(SAPPHIRE_CAMERA_INFOPLIST_FILE)";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.CameraExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1718,23 +1751,25 @@
 		};
 		CAFE100000000000000010AA /* Release configuration for PBXNativeTarget "SapphireCameraExtension" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = "$(SAPPHIRE_CAMERA_ENTITLEMENTS)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_CAMERA_EXCLUDED_SOURCES)";
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = PublicExtensionStubs/Camera/Info.plist;
+				INFOPLIST_FILE = "$(SAPPHIRE_CAMERA_INFOPLIST_FILE)";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.CameraExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1746,6 +1781,7 @@
 		};
 		CAFE20000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireAudioDriver" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -1753,11 +1789,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = NO;
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_AUDIO_EXCLUDED_SOURCES)";
 				EXECUTABLE_EXTENSION = driver;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = PublicExtensionStubs/AudioDriver/Info.plist;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				INFOPLIST_FILE = "$(SAPPHIRE_AUDIO_INFOPLIST_FILE)";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.ContinuityMicDriver;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1768,6 +1805,7 @@
 		};
 		CAFE20000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireAudioDriver" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = CAFE0000000000000000A0CC /* Extensions.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -1775,10 +1813,11 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = NO;
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_AUDIO_EXCLUDED_SOURCES)";
 				EXECUTABLE_EXTENSION = driver;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = PublicExtensionStubs/AudioDriver/Info.plist;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				INFOPLIST_FILE = "$(SAPPHIRE_AUDIO_INFOPLIST_FILE)";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphire.ContinuityMicDriver;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1798,6 +1837,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
@@ -1809,7 +1849,7 @@
 				FRAMEWORK_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
 				LIBRARY_SEARCH_PATHS = "";
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der --timestamp";
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
@@ -1841,6 +1881,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
+				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
@@ -1852,7 +1893,7 @@
 				FRAMEWORK_SEARCH_PATHS = "";
 				INFOPLIST_FILE = "$(SRCROOT)/$(TARGET_NAME)/Info.plist";
 				LIBRARY_SEARCH_PATHS = "";
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				OTHER_CODE_SIGN_FLAGS = "--identifier com.shariq.sapphireHelper --generate-entitlement-der --timestamp";
 				OTHER_LDFLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.sapphireHelper;
@@ -1885,7 +1926,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.SapphireTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1908,7 +1949,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shariq.SapphireTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1973,7 +2014,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -2036,7 +2077,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				OTHER_SWIFT_FLAGS = "-DSAPPHIRE_IS_BETA_BUILD";
@@ -2055,7 +2096,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				AUTOMATION_APPLE_EVENTS = YES;
-				CODE_SIGN_ENTITLEMENTS = Sapphire/Sapphire.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Sapphire/SapphireDebug.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -2064,6 +2105,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
@@ -2074,13 +2116,14 @@
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				EXCLUDED_SOURCE_FILE_NAMES = "*/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
+				GCC_OPTIMIZATION_LEVEL = s;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
 				INFOPLIST_FILE = Sapphire/App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Sapphire;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Sapphire needs access to control playback and read track information from Music and Spotify.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Sapphire controls playback in Music and Spotify, and reads and types into your Terminal or iTerm tabs when you send a message or command to a running task from the notch.";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Used to show upcming songs and playlists within apple music";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Sapphire needs bluetooth to show new connections and battery low notifications";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sapphire needs calendar permission to show upcoming events";
@@ -2108,8 +2151,8 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 3.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 3.5;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
@@ -2126,7 +2169,7 @@
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "ObjC/Bridging-Header.h";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = "$(SDKROOT)/System/Library/PrivateFrameworks";
 			};
@@ -2147,6 +2190,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
@@ -2163,7 +2207,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Sapphire;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Sapphire needs access to control playback and read track information from Music and Spotify.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Sapphire controls playback in Music and Spotify, and reads and types into your Terminal or iTerm tabs when you send a message or command to a running task from the notch.";
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Used to show upcming songs and playlists within apple music";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Sapphire needs bluetooth to show new connections and battery low notifications";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Sapphire needs calendar permission to show upcoming events";
@@ -2191,8 +2235,8 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/Sapphire/Services/Music",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 3.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 3.5;
 				OTHER_CODE_SIGN_FLAGS = "";
 				OTHER_LDFLAGS = "";
 				OTHER_SWIFT_FLAGS = "";
@@ -2250,7 +2294,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -2264,7 +2308,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -2290,8 +2334,8 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.9;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FinderSync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -2320,8 +2364,8 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.9;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FinderSync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -2335,7 +2379,7 @@
 		F2DE00000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireFileProvider" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -2343,14 +2387,14 @@
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = PublicExtensionStubs/FileProvider/Info.plist;
+				INFOPLIST_FILE = SapphireFileProvider/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.9;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FileProvider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -2365,7 +2409,7 @@
 		F2DE00000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireFileProvider" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -2373,14 +2417,14 @@
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = PublicExtensionStubs/FileProvider/Info.plist;
+				INFOPLIST_FILE = SapphireFileProvider/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 2.9;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cshariq.sapphire.FileProvider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -2548,6 +2592,14 @@
 				version = 6.2.2;
 			};
 		};
+		F5A1000030F0000000000001 /* XCRemoteSwiftPackageReference "GoogleDataTransport" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleDataTransport.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -2595,6 +2647,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F3A600000000000000000001 /* XCRemoteSwiftPackageReference "Yams" */;
 			productName = Yams;
+		};
+		F5A1000130F0000000000001 /* FirebaseInstallations */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DA5E1008304CBB63003D1D37 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseInstallations;
+		};
+		F5A1000330F0000000000001 /* GoogleDataTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F5A1000030F0000000000001 /* XCRemoteSwiftPackageReference "GoogleDataTransport" */;
+			productName = GoogleDataTransport;
 		};
 		FD831867A2F947938E17E286 /* FirebaseFirestore */ = {
 			isa = XCSwiftPackageProductDependency;

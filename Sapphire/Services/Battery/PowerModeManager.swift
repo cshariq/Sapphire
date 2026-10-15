@@ -13,6 +13,7 @@ class PowerModeManager: ObservableObject {
     static let shared = PowerModeManager()
 
     @Published var isLowPowerModeActive: Bool = false
+    private var pendingDesired: Bool?
 
     private init() {
         self.isLowPowerModeActive = ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -30,7 +31,15 @@ class PowerModeManager: ObservableObject {
     }
 
     @objc private func powerStateChanged() {
-        self.isLowPowerModeActive = ProcessInfo.processInfo.isLowPowerModeEnabled
+        let systemValue = ProcessInfo.processInfo.isLowPowerModeEnabled
+        if let pending = pendingDesired {
+            if systemValue == pending {
+                pendingDesired = nil
+                isLowPowerModeActive = systemValue
+            }
+            return
+        }
+        isLowPowerModeActive = systemValue
     }
 
     func isLowPowerModeEnabled() -> Bool {
@@ -54,6 +63,8 @@ class PowerModeManager: ObservableObject {
 
     private func setPowerMode(enabled: Bool) {
         print("[PowerModeManager] Setting Low Power Mode: \(enabled)")
+        pendingDesired = enabled
+        isLowPowerModeActive = enabled
 
         guard let helper = BatteryManager.shared.getHelper() else {
             print("[PowerModeManager] ERROR: Could not get helper connection.")
@@ -67,7 +78,11 @@ class PowerModeManager: ObservableObject {
                 self?.fallbackToAppleScript(enabled: enabled)
             } else {
                 Task { @MainActor in
-                    self?.isLowPowerModeActive = enabled
+                    guard let self else { return }
+                    self.isLowPowerModeActive = enabled
+                    if ProcessInfo.processInfo.isLowPowerModeEnabled == enabled {
+                        self.pendingDesired = nil
+                    }
                 }
             }
         }
@@ -90,9 +105,16 @@ class PowerModeManager: ObservableObject {
                 if let err = error {
                     print("[PowerModeManager] AppleScript error: \(err)")
                 }
+                Task { @MainActor in
+                    self.pendingDesired = nil
+                    self.isLowPowerModeActive = ProcessInfo.processInfo.isLowPowerModeEnabled
+                }
             } else {
                 Task { @MainActor in
                     self.isLowPowerModeActive = enabled
+                    if ProcessInfo.processInfo.isLowPowerModeEnabled == enabled {
+                        self.pendingDesired = nil
+                    }
                 }
             }
         }

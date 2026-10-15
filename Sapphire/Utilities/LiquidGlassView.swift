@@ -90,14 +90,6 @@ enum LiquidGlassMaterial: String, Codable, CaseIterable, Identifiable, Hashable 
         }
     }
 
-    var publicStyle: Int? {
-        switch self {
-        case .clearGlass, .windowBackground: return 1
-        case .sheet, .sidebar, .hud, .popover, .menu, .frosted, .widgets: return 0
-        default: return nil
-        }
-    }
-
     var fallbackMaterial: NSVisualEffectView.Material {
         switch self {
         case .sidebar, .inspector: return .sidebar
@@ -130,15 +122,98 @@ enum LiquidGlassBlendingMode: Int, Hashable {
     case withinWindow = 1
 }
 
-enum LiquidGlassAppearance: Int, Hashable {
+enum LiquidGlassAppearance: Int, Codable, CaseIterable, Identifiable, Hashable {
     case light = 0
     case dark = 1
     case auto = 2
+
+    var id: Int { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .light: return "Light"
+        case .dark: return "Dark"
+        case .auto: return "Auto"
+        }
+    }
 }
 
-enum LiquidGlassInteraction: Int, Hashable {
+enum LiquidGlassInteraction: Int, Codable, Hashable {
     case normal = 0
     case hovered = 1
+}
+
+struct LiquidGlassOptions: Codable, Equatable {
+    var material: LiquidGlassMaterial = .frosted
+    var tintHex: String = ""
+    var cornerRadius: Double = 16
+    var appearance: LiquidGlassAppearance = .auto
+    var hovered: Bool = false
+
+    static let lockScreenDefault = LiquidGlassOptions(
+        material: .frosted,
+        tintHex: "#352D164F",
+        cornerRadius: 40,
+        appearance: .dark
+    )
+
+    init(
+        material: LiquidGlassMaterial = .frosted,
+        tintHex: String = "",
+        cornerRadius: Double = 16,
+        appearance: LiquidGlassAppearance = .auto,
+        hovered: Bool = false
+    ) {
+        self.material = material
+        self.tintHex = tintHex
+        self.cornerRadius = cornerRadius
+        self.appearance = appearance
+        self.hovered = hovered
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = LiquidGlassOptions()
+        material = (try? c.decodeIfPresent(LiquidGlassMaterial.self, forKey: .material)) ?? fallback.material
+        tintHex = (try? c.decodeIfPresent(String.self, forKey: .tintHex)) ?? fallback.tintHex
+        cornerRadius = (try? c.decodeIfPresent(Double.self, forKey: .cornerRadius)) ?? fallback.cornerRadius
+        appearance = (try? c.decodeIfPresent(LiquidGlassAppearance.self, forKey: .appearance)) ?? fallback.appearance
+        hovered = (try? c.decodeIfPresent(Bool.self, forKey: .hovered)) ?? fallback.hovered
+    }
+
+    static let notchDefault = LiquidGlassOptions(
+        material: .frosted,
+        tintHex: "#352D164F",
+        cornerRadius: 0,
+        appearance: .dark
+    )
+
+    var tintColor: NSColor? { Self.color(fromHex: tintHex) }
+    var interaction: LiquidGlassInteraction { hovered ? .hovered : .normal }
+
+    static func color(fromHex hex: String) -> NSColor? {
+        var digits = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if digits.hasPrefix("#") { digits.removeFirst() }
+        guard digits.count == 6 || digits.count == 8,
+              let value = UInt64(digits, radix: 16) else { return nil }
+        let hasAlpha = digits.count == 8
+        let alpha = hasAlpha ? CGFloat((value >> 24) & 0xFF) / 255 : 1
+        return NSColor(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
+
+    static func hex(from color: NSColor) -> String {
+        guard let rgb = color.usingColorSpace(.sRGB) else { return "" }
+        func byte(_ component: CGFloat) -> Int { Int((max(0, min(1, component)) * 255).rounded()) }
+        return String(
+            format: "#%02X%02X%02X%02X",
+            byte(rgb.alphaComponent), byte(rgb.redComponent), byte(rgb.greenComponent), byte(rgb.blueComponent)
+        )
+    }
 }
 
 enum LiquidGlassBackend: Hashable {
@@ -240,14 +315,18 @@ private enum GlassRuntime {
             return
         }
 
-        if let style = material.publicStyle {
-            setLongLong(view, selectorName: "setStyle:", value: Int64(style))
-        }
         setLongLong(view, selectorName: "set_variant:", value: Int64(material.variant))
+        setDouble(view, selectorName: "setCornerRadius:", value: Double(max(0, cornerRadius)))
+
+        let tintSel = NSSelectorFromString("setTintColor:")
+        if view.responds(to: tintSel) {
+            view.perform(tintSel, with: tintColor)
+        }
 
         setLongLong(view, selectorName: "setBlendingMode:", value: Int64(blendingMode.rawValue))
-        setLongLong(view, selectorName: "set_interactionState:", value: Int64(max(0, min(1, interaction.rawValue))))
+        applyAppearance(view, appearance)
         setLongLong(view, selectorName: "set_adaptiveAppearance:", value: Int64(appearance.rawValue))
+        setLongLong(view, selectorName: "set_interactionState:", value: Int64(max(0, min(1, interaction.rawValue))))
 
         if let contentLensing {
             setLongLong(view, selectorName: "set_contentLensing:", value: Int64(contentLensing))
@@ -258,19 +337,6 @@ private enum GlassRuntime {
         if let subdued {
             setLongLong(view, selectorName: "set_subduedState:", value: Int64(subdued))
         }
-
-        if cornerRadius > 0 {
-            setDouble(view, selectorName: "setCornerRadius:", value: Double(cornerRadius))
-        } else {
-            setDouble(view, selectorName: "setCornerRadius:", value: 0)
-        }
-
-        let tintSel = NSSelectorFromString("setTintColor:")
-        if view.responds(to: tintSel) {
-            view.perform(tintSel, with: tintColor)
-        }
-
-        applyAppearance(view, appearance)
     }
 
     private static let aquaAppearance = NSAppearance(named: .aqua)
@@ -335,6 +401,9 @@ final class LiquidGlassHostView: NSView {
     private var appliedShadow: LiquidGlassShadow?
     private var appliedShadowPath: CGPath?
 
+    private var externalShapeRect: CGRect?
+    var onLayout: (() -> Void)?
+
     init(frame frameRect: NSRect, backend: LiquidGlassBackend) {
         self.backend = backend
         super.init(frame: frameRect)
@@ -360,7 +429,38 @@ final class LiquidGlassHostView: NSView {
     override func layout() {
         super.layout()
         guard Self.isValid(bounds) else { return }
-        if effectView?.frame != bounds { effectView?.frame = bounds }
+        let glassFrame = externalShapeRect ?? bounds
+        if effectView?.frame != glassFrame { effectView?.frame = glassFrame }
+        applyShapeIfNeeded()
+        onLayout?()
+    }
+
+    private func clearExternalShape() {
+        guard externalShapeRect != nil else { return }
+        externalShapeRect = nil
+        shapeNeedsUpdate = true
+        if let effectView, effectView.frame != bounds { effectView.frame = bounds }
+    }
+
+    private var glassBounds: CGRect {
+        guard let externalShapeRect else { return bounds }
+        return CGRect(origin: .zero, size: externalShapeRect.size)
+    }
+
+    func setExternalShape(_ path: CGPath?, in rect: CGRect) {
+        shapePathProvider = nil
+        shapePathCacheKey = nil
+        shapePathBounds = .null
+        let validatedPath = Self.validated(path)
+        let validRect = Self.isValid(rect) ? rect : .zero
+        guard validatedPath != shapePath || validRect != externalShapeRect else { return }
+        shapePath = validatedPath
+        externalShapeRect = validRect
+        shapeNeedsUpdate = true
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let effectView, effectView.frame != validRect { effectView.frame = validRect }
+        CATransaction.commit()
         applyShapeIfNeeded()
     }
 
@@ -378,6 +478,7 @@ final class LiquidGlassHostView: NSView {
     }
 
     func setShapePath(_ path: CGPath?) {
+        clearExternalShape()
         shapePathProvider = nil
         shapePathCacheKey = nil
         shapePathBounds = .null
@@ -395,6 +496,7 @@ final class LiquidGlassHostView: NSView {
         _ provider: ((CGRect) -> CGPath?)?,
         cacheKey: AnyHashable? = nil
     ) {
+        clearExternalShape()
         if let cacheKey,
            shapePathProvider != nil,
            shapePathCacheKey == cacheKey {
@@ -410,9 +512,17 @@ final class LiquidGlassHostView: NSView {
         applyShapeIfNeeded()
     }
 
+    private var pendingShadowAnimation: Animation?
+
     func setShadow(_ shadow: LiquidGlassShadow) {
+        setShadow(shadow, animation: nil)
+    }
+
+    func setShadow(_ shadow: LiquidGlassShadow, animation: Animation?) {
         requestedShadow = shadow
+        pendingShadowAnimation = animation
         applyShadowIfNeeded()
+        pendingShadowAnimation = nil
     }
 
     func configure(
@@ -487,7 +597,7 @@ final class LiquidGlassHostView: NSView {
         appliedShadow = nil
         appliedShadowPath = nil
 
-        let glass = GlassRuntime.makeEffectView(frame: bounds, backend: backend)
+        let glass = GlassRuntime.makeEffectView(frame: externalShapeRect ?? bounds, backend: backend)
         supportsCustomPath = GlassRuntime.supportsCustomPath(glass)
         glass.wantsLayer = true
         glass.layer?.isOpaque = false
@@ -498,7 +608,7 @@ final class LiquidGlassHostView: NSView {
     }
 
     private func applyShapeIfNeeded() {
-        let bounds = self.bounds
+        let bounds = glassBounds
         guard Self.isValid(bounds), !bounds.isEmpty else {
             clearShape()
             return
@@ -576,13 +686,14 @@ final class LiquidGlassHostView: NSView {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        let animation = pendingShadowAnimation
+        let shadowOpacity = Float(opacity)
+        let radius = max(0, requestedShadow.radius)
+        let offset = CGSize(width: requestedShadow.offset.width, height: -requestedShadow.offset.height)
         layer.shadowColor = requestedShadow.color.cgColor
-        layer.shadowOpacity = Float(opacity)
-        layer.shadowRadius = max(0, requestedShadow.radius)
-        layer.shadowOffset = CGSize(
-            width: requestedShadow.offset.width,
-            height: -requestedShadow.offset.height
-        )
+        NotchLayerScalarAnimation.set(layer, "shadowOpacity", to: shadowOpacity, equals: { ($0 as? Float) == shadowOpacity }, animation: animation)
+        NotchLayerScalarAnimation.set(layer, "shadowRadius", to: radius, equals: { ($0 as? CGFloat) == radius }, animation: animation)
+        NotchLayerScalarAnimation.set(layer, "shadowOffset", to: offset, equals: { ($0 as? CGSize) == offset }, animation: animation)
         layer.shadowPath = path
         CATransaction.commit()
 

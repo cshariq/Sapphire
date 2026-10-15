@@ -17,6 +17,7 @@ final class APIKeyManager {
 
     private let keychain = KeychainHelper.standard
     private let legacyMigrationDefaultsKey = "apiKeysMigratedFromUserDefaults_v1"
+    private let misplacedKeyMigrationDefaultsKey = "apiKeysMisplacedProviderMigration_v1"
 
     private let geminiKeychainKey = "gemini_api_key"
     private let hackClubKeychainKey = "hackclub_api_key"
@@ -38,6 +39,9 @@ final class APIKeyManager {
     }
 
     private func migrateMisplacedProviderKeysIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: misplacedKeyMigrationDefaultsKey) else { return }
+        defer { defaults.set(true, forKey: misplacedKeyMigrationDefaultsKey) }
         let gemini = loadKey(keychainKey: geminiKeychainKey)
         guard !gemini.isEmpty else { return }
 
