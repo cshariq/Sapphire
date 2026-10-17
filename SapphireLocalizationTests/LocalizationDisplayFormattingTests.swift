@@ -28,6 +28,27 @@ final class LocalizationDisplayFormattingTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testEnglishClipboardAndSelectionCountsRemainUngrouped() throws {
+        try XCTSkipIf(ChineseFormatting.isActive)
+        for count in [0, 1, 999, 1000, 1002] {
+            XCTAssertEqual(ClipboardPlayerView.itemCountDescription(count), "\(count) items")
+            XCTAssertEqual(InstalledAppUpdatesBatchBar.selectionSummary(count), count == 0 ? "None selected" : "\(count) selected")
+        }
+    }
+
+    @MainActor
+    func testEnglishFocusCompletionPreservesPluralAndUngroupedCount() throws {
+        try XCTSkipIf(ChineseFormatting.isActive)
+        for count in [0, 1, 2, 1000] {
+            let noun = count == 1 ? "block" : "blocks"
+            XCTAssertEqual(
+                FocusSessionManager.completionMessage(blocks: count, total: "2h 0m"),
+                "You finished \(count) \(noun). Total focus today: 2h 0m."
+            )
+        }
+    }
+
     func testChineseFocusDurationUsesNativeUnitLabels() throws {
         try XCTSkipUnless(ChineseFormatting.isActive)
         XCTAssertEqual(FocusInsightsPanel.compactDays(3), "3天")

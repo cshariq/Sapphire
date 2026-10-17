@@ -141,8 +141,8 @@ class WeatherViewModel: ObservableObject {
             temperature: useCelsius ? "\(data.temperatureMetric)°" : "\(data.temperature)°",
             conditionDescription: data.conditionDescription,
             highLowTemp: useCelsius
-                ? String(localized: "H: \(data.highTempMetric)° L: \(data.lowTempMetric)°")
-                : String(localized: "H: \(data.highTemp)° L: \(data.lowTemp)°"),
+                ? String(localized: "H: \(String(data.highTempMetric))° L: \(String(data.lowTempMetric))°")
+                : String(localized: "H: \(String(data.highTemp))° L: \(String(data.lowTemp))°"),
             feelsLike: useCelsius ? "\(data.feelsLikeMetric)°" : "\(data.feelsLike)°",
             windInfo: useMetricSystem ? data.windInfoMetric : data.windInfo,
             humidity: data.humidity,

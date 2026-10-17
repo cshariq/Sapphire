@@ -10,6 +10,10 @@ import SwiftUI
 struct InstalledAppUpdatesBatchBar: View {
     @ObservedObject var checker: InstalledAppUpdatesChecker
 
+    static func selectionSummary(_ count: Int) -> String {
+        count == 0 ? String(localized: "None selected") : String(localized: "\(String(count)) selected")
+    }
+
     var body: some View {
         let selectableCount = checker.entries.filter(checker.isSelectable).count
         let selectedCount = checker.selectedUpdatableCount
@@ -29,7 +33,7 @@ struct InstalledAppUpdatesBatchBar: View {
                         .buttonStyle(.link)
                         .font(.caption)
 
-                        Text(verbatim: selectedCount == 0 ? String(localized: "None selected") : String(localized: "\(selectedCount) selected"))
+                        Text(verbatim: Self.selectionSummary(selectedCount))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

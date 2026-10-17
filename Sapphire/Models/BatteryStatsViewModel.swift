@@ -167,7 +167,7 @@ class BatteryStatsViewModel: ObservableObject {
         let hours = minutes / 60
         let remainingMinutes = minutes % 60
         if hours > 0 {
-            return String(localized: "\(hours)h \(remainingMinutes)m")
+            return String(localized: "\(String(hours))h \(remainingMinutes)m")
         }
         return String(localized: "\(remainingMinutes)m")
     }

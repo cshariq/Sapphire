@@ -35,7 +35,7 @@ struct RelativeTimeView: View {
             return String(localized: "Updated \(minutes)m ago")
         } else {
             let hours = minutes / 60
-            return String(localized: "Updated \(hours)h ago")
+            return String(localized: "Updated \(String(hours))h ago")
         }
     }
 }

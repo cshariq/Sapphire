@@ -221,7 +221,7 @@ struct FocusSessionDetailView: View {
         case .idle, .finished:
             return focusManager.phase == .finished ? String(localized: "Session finished") : String(localized: "Ready")
         case .focusing:
-            return focusManager.isPaused ? String(localized: "Paused") : String(localized: "Block \(focusManager.currentBlockIndex + 1)")
+            return focusManager.isPaused ? String(localized: "Paused") : String(localized: "Block \(String(focusManager.currentBlockIndex + 1))")
         case .onBreak:
             return focusManager.isPaused ? String(localized: "Paused") : String(localized: "Rest & recharge")
         }

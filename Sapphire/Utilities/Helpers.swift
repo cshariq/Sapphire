@@ -437,7 +437,7 @@ struct PopularityIndicator: View {
             systemImage: "chart.line.uptrend.xyaxis",
             text: estimatedPlays.compactFormatted,
             color: color,
-            help: String(localized: "Popularity Score: \(popularity)/100")
+            help: String(localized: "Popularity Score: \(String(popularity))/100")
         )
     }
 }

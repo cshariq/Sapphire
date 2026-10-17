@@ -286,7 +286,7 @@ struct MenuBarProfile: Codable, Equatable, Identifiable {
     }
 
     var summaryText: String {
-        revealConditions.isEmpty ? String(localized: "No conditions") : String(localized: "\(revealConditions.count) condition(s)")
+        revealConditions.isEmpty ? String(localized: "No conditions") : String(localized: "\(String(revealConditions.count)) condition(s)")
     }
 }
 

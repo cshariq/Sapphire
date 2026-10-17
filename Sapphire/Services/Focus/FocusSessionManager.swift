@@ -415,7 +415,7 @@ final class FocusSessionManager: ObservableObject {
                 NotificationCenter.default.post(name: .focusSessionBlockCompleted, object: nil, userInfo: ["phase": "break"])
                 postCompletionNotification(
                     title: String(localized: "Focus block complete "),
-                    body: String(localized: "Great work! Time for a \(Int(plannedBreakDuration / 60)) minute break.")
+                    body: String(localized: "Great work! Time for a \(String(Int(plannedBreakDuration / 60))) minute break.")
                 )
             } else {
                 finishSession()
@@ -456,8 +456,15 @@ final class FocusSessionManager: ObservableObject {
         NotificationCenter.default.post(name: .focusSessionEnded, object: nil)
         postCompletionNotification(
             title: String(localized: "Focus session complete "),
-            body: String(localized: "You finished \(sessionCompletedBlocks) blocks. Total focus today: \(Self.format(completedToday)).")
+            body: Self.completionMessage(blocks: sessionCompletedBlocks, total: Self.format(completedToday))
         )
+    }
+
+    static func completionMessage(blocks: Int, total: String) -> String {
+        if blocks == 1 {
+            return String(localized: "You finished 1 block. Total focus today: \(total).")
+        }
+        return String(localized: "You finished \(String(blocks)) blocks. Total focus today: \(total).")
     }
 
     // MARK: - Local notifications

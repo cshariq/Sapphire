@@ -86,6 +86,10 @@ struct ClipboardWidgetView: View {
 }
 
 struct ClipboardPlayerView: View {
+    static func itemCountDescription(_ count: Int) -> String {
+        String(localized: "\(String(count)) items")
+    }
+
     @Binding var navigationStack: [NotchWidgetMode]
     @ObservedSettings var settings: SettingsObserver
     @ObservedObject private var clipboardManager = ClipboardManager.shared
@@ -112,7 +116,7 @@ struct ClipboardPlayerView: View {
     var body: some View {
         NotchSwipeListPanel(
             title: String(localized: "Clipboard"),
-            subtitle: String(localized: "\(clipboardManager.recentItems.count) items"),
+            subtitle: Self.itemCountDescription(clipboardManager.recentItems.count),
             accent: .blue,
             searchPlaceholder: String(localized: "Search clipboard"),
             searchText: $searchText,
