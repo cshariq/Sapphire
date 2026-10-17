@@ -7,11 +7,14 @@
   "entries": 1189,
   "reused_public_entries": 37,
   "new_entries": 1152,
+  "zh_hant_sha256": "b273dea4bc8f27ca53d404f27a73a03a8c156bbecec3c42e81ca8ac649e1fbb2",
   "translated_languages": [
     "en",
-    "zh-Hans"
+    "zh-Hans",
+    "zh-Hant"
   ],
   "chinese_string_units": 1189,
+  "zh_hant_string_units": 1189,
   "english_string_units": 1190,
   "printf_keys": 88,
   "raw_swift_interpolation_keys": [
@@ -28,7 +31,15 @@
     "exactly_37_existing_keys": true,
     "all_37_en_hans_records_unchanged": true,
     "new_key_english_exact": true,
-    "catalog_validator_passed": true
+    "catalog_validator_passed": true,
+    "zh_hant_exact_key_order_and_set": true,
+    "zh_hant_metadata_source_language_and_version": true,
+    "zh_hant_only_en_and_zh_hant": true,
+    "zh_hant_original_comments_preserved": true,
+    "zh_hant_manual_extraction_preserved": true,
+    "zh_hant_english_matches_zh_hans_delivery": true,
+    "all_37_zh_hant_records_unchanged": true,
+    "zh_hant_catalog_validator_passed": true
   },
   "errors": []
 }

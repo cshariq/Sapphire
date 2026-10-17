@@ -1,13 +1,13 @@
-# Private-build Simplified Chinese delivery
+# Private-build Chinese delivery
 
-`Sapphire-PrivateBuild.zh-Hans.xcstrings` contains English and Simplified Chinese for all 1,189 entries in the maintainer's [published catalog](https://github.com/user-attachments/files/33520868/Sapphire-PrivateBuild.json). It reuses 37 English/Simplified Chinese records from public localization commit `7a016b1f7c8ac41dc894d55646b15d48f85a6b76` and adds 1,152 translations. Private Traditional Chinese is reserved for the collaborating translator.
+`Sapphire-PrivateBuild.zh-Hans.xcstrings` contains English and Simplified Chinese for all 1,189 entries in the maintainer's [published catalog](https://github.com/user-attachments/files/33520868/Sapphire-PrivateBuild.json). It reuses 37 English/Simplified Chinese records from public localization commit `7a016b1f7c8ac41dc894d55646b15d48f85a6b76` and adds 1,152 translations. `Sapphire-PrivateBuild.zh-Hant.xcstrings` is the Traditional Chinese (Taiwan) counterpart from the collaborating translator: the same keys, comments and English records, with the 37 overlap records reusing the public `zh-Hant` from the same commit. Keys flagged below use the same provisional choices in both languages.
 
 This directory is outside the public application's synchronized resource group. It is a translation handoff, with no private executable or UI acceptance. The original attachment, its SHA-256, source references, preserved overlap records, and unresolved integration questions are recorded alongside the deliverable.
 
 ## Integration
 
 1. Compare the attachment's exact keys with a fresh private-build compiler extraction, especially the raw `\\(manager.searchQuery)` interpolation key.
-2. Merge the `zh-Hans` records by exact key into the private application's `Localizable.xcstrings`; retain the public entries and combine the collaborator's `zh-Hant` records. Do not add this file as a second default table. Compiling this filename directly creates a separate table named `Sapphire-PrivateBuild.zh-Hans`.
+2. Merge the `zh-Hans` and `zh-Hant` records by exact key into the private application's `Localizable.xcstrings`, retaining the public entries. Do not add either file as a second default table. Compiling one of these filenames directly creates a separate table named after the file.
 3. Resolve the questions below in the private source and catalog, then build and inspect both Chinese locales in the private UI.
 
 ## Maintainer checks
@@ -29,6 +29,7 @@ From the repository root:
 python3 localization/private-build/check_private_catalog.py
 mkdir -p /tmp/sapphire-private-catalog
 xcrun xcstringstool compile localization/private-build/Sapphire-PrivateBuild.zh-Hans.xcstrings --output-directory /tmp/sapphire-private-catalog
+xcrun xcstringstool compile localization/private-build/Sapphire-PrivateBuild.zh-Hant.xcstrings --output-directory /tmp/sapphire-private-catalog
 ```
 
-The validator checks the attachment hash, key order and set, source metadata and comments, translation completeness, argument positions and types, raw interpolation preservation, and the 37 reused records. It writes `validation-report.json` with explicit coverage limits.
+The validator checks the attachment hash, key order and set, source metadata and comments, translation completeness, argument positions and types, raw interpolation preservation, and the 37 reused records, for both the zh-Hans and zh-Hant deliveries. It writes `validation-report.json` with explicit coverage limits.

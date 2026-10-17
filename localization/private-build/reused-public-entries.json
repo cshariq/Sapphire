@@ -32,6 +32,18 @@
               }
             }
           }
+        },
+        "zh-Hant": {
+          "variations": {
+            "plural": {
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 個檔案"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -47,6 +59,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 分钟"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 分鐘"
           }
         }
       }
@@ -64,6 +82,12 @@
             "state": "translated",
             "value": "%lld 小时 %lld 分钟"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 小時 %lld 分鐘"
+          }
         }
       }
     },
@@ -79,6 +103,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "智能体"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理程式"
           }
         }
       }
@@ -96,6 +126,12 @@
             "state": "translated",
             "value": "专辑"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "專輯"
+          }
         }
       }
     },
@@ -108,6 +144,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "全部"
@@ -128,6 +170,12 @@
             "state": "translated",
             "value": "归档与 DMG"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封存檔與 DMG"
+          }
         }
       }
     },
@@ -140,6 +188,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "底部"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "底部"
@@ -160,6 +214,12 @@
             "state": "translated",
             "value": "关闭"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "關閉"
+          }
         }
       }
     },
@@ -172,6 +232,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每天"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "每天"
@@ -192,6 +258,12 @@
             "state": "translated",
             "value": "深度"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "深度"
+          }
         }
       }
     },
@@ -207,6 +279,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "默认"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "預設"
           }
         }
       }
@@ -224,6 +302,12 @@
             "state": "translated",
             "value": "设备"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "裝置"
+          }
         }
       }
     },
@@ -239,6 +323,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "程序坞"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock"
           }
         }
       }
@@ -256,6 +346,12 @@
             "state": "translated",
             "value": "启用"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "啟用"
+          }
         }
       }
     },
@@ -271,6 +367,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "额外修饰键"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "額外變更鍵"
           }
         }
       }
@@ -288,6 +390,12 @@
             "state": "translated",
             "value": "财经"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "財經"
+          }
         }
       }
     },
@@ -303,6 +411,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "免费"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費"
           }
         }
       }
@@ -320,6 +434,12 @@
             "state": "translated",
             "value": "标签（可选）"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標籤（選填）"
+          }
         }
       }
     },
@@ -335,6 +455,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在寻找人脸…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在尋找你的臉孔…"
           }
         }
       }
@@ -352,6 +478,12 @@
             "state": "translated",
             "value": "信息"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訊息"
+          }
         }
       }
     },
@@ -364,6 +496,12 @@
           }
         },
         "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月"
+          }
+        },
+        "zh-Hant": {
           "stringUnit": {
             "state": "translated",
             "value": "每月"
@@ -384,6 +522,12 @@
             "state": "translated",
             "value": "没有匹配项"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有符合項目"
+          }
         }
       }
     },
@@ -399,6 +543,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开应用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開 App"
           }
         }
       }
@@ -416,6 +566,12 @@
             "state": "translated",
             "value": "粘贴"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貼上"
+          }
         }
       }
     },
@@ -431,6 +587,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "手机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手機"
           }
         }
       }
@@ -448,6 +610,12 @@
             "state": "translated",
             "value": "就绪"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "就緒"
+          }
         }
       }
     },
@@ -463,6 +631,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "在访达中显示"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Finder 中顯示"
           }
         }
       }
@@ -480,6 +654,12 @@
             "state": "translated",
             "value": "需检查"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待檢查"
+          }
         }
       }
     },
@@ -495,6 +675,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在发送…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在傳送…"
           }
         }
       }
@@ -512,6 +698,12 @@
             "state": "translated",
             "value": "间隔"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "間隔"
+          }
         }
       }
     },
@@ -527,6 +719,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "体育"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "運動"
           }
         }
       }
@@ -544,6 +742,12 @@
             "state": "translated",
             "value": "开始"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始"
+          }
         }
       }
     },
@@ -559,6 +763,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "浅层"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表層"
           }
         }
       }
@@ -576,6 +786,12 @@
             "state": "translated",
             "value": "顶部"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "頂部"
+          }
         }
       }
     },
@@ -592,6 +808,12 @@
             "state": "translated",
             "value": "升级"
           }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升級"
+          }
         }
       }
     },
@@ -607,6 +829,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "每周"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每週"
           }
         }
       }

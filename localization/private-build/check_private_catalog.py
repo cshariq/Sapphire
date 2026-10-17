@@ -51,6 +51,33 @@ for key, value in translated['strings'].items():
             if unit['value'].count('%%') != en['value'].count('%%'):
                 errors.append(f'Escaped percent count changed: {key!r}')
 check('catalog_validator_passed', not validator.validate_catalog(translated))
+
+# Traditional Chinese delivery: same keys, comments and English records, zh-Hant only.
+hant_path = ROOT / 'Sapphire-PrivateBuild.zh-Hant.xcstrings'
+hant = json.loads(hant_path.read_text())
+check('zh_hant_exact_key_order_and_set', list(source['strings']) == list(hant['strings']))
+check('zh_hant_metadata_source_language_and_version', all(source[k] == hant[k] for k in ('sourceLanguage', 'version')))
+check('zh_hant_only_en_and_zh_hant', all(set(v.get('localizations', {})) == {'en', 'zh-Hant'} for v in hant['strings'].values()))
+check('zh_hant_original_comments_preserved', all(v['comment'] == hant['strings'].get(k, {}).get('comment') for k, v in source['strings'].items()))
+check('zh_hant_manual_extraction_preserved', all(v.get('extractionState') == 'manual' for v in hant['strings'].values()))
+check('zh_hant_english_matches_zh_hans_delivery', all(hant['strings'][k]['localizations']['en'] == v['localizations']['en'] for k, v in translated['strings'].items()))
+check('all_37_zh_hant_records_unchanged', all(hant['strings'][k]['localizations']['zh-Hant'] == public['strings'][k]['localizations']['zh-Hant'] for k in overlap))
+for key, value in hant['strings'].items():
+    en_units = validator.units(value['localizations']['en'])
+    for path, unit in validator.units(value['localizations']['zh-Hant']).items():
+        en = en_units.get(path)
+        if en is None and len(en_units) == 1:
+            en = next(iter(en_units.values()))
+        if en is not None:
+            if Counter(raw.findall(unit['value'])) != Counter(raw.findall(en['value'])):
+                errors.append(f'zh-Hant raw Swift interpolation changed: {key!r}')
+            if unit['value'].count('%%') != en['value'].count('%%'):
+                errors.append(f'zh-Hant escaped percent count changed: {key!r}')
+validator.REQUIRED_TRANSLATIONS = ('zh-Hant',)
+hant_errors = validator.validate_catalog(hant)
+errors.extend(hant_errors)
+check('zh_hant_catalog_validator_passed', not hant_errors)
+
 report = {
     'passed': not errors,
     'scope': 'catalog structure, completeness, exact source keys/comments, placeholders, and overlap reuse; no private runtime or UI acceptance',
@@ -60,8 +87,10 @@ report = {
     'entries': len(translated['strings']),
     'reused_public_entries': len(overlap),
     'new_entries': len(source['strings'].keys() - overlap),
-    'translated_languages': ['en', 'zh-Hans'],
+    'zh_hant_sha256': sha256(hant_path.read_bytes()).hexdigest(),
+    'translated_languages': ['en', 'zh-Hans', 'zh-Hant'],
     'chinese_string_units': sum(len(validator.units(v['localizations']['zh-Hans'])) for v in translated['strings'].values()),
+    'zh_hant_string_units': sum(len(validator.units(v['localizations']['zh-Hant'])) for v in hant['strings'].values()),
     'english_string_units': sum(len(validator.units(v['localizations']['en'])) for v in translated['strings'].values()),
     'printf_keys': sum(bool(validator.FORMAT.search(k)) for k in source['strings']),
     'raw_swift_interpolation_keys': [k for k in source['strings'] if raw.search(k)],

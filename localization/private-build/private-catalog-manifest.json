@@ -9,13 +9,14 @@
   "new_entries": 1152,
   "locales": [
     "en",
-    "zh-Hans"
+    "zh-Hans",
+    "zh-Hant"
   ],
-  "excluded_locale": "zh-Hant",
-  "exclusion_reason": "Private Traditional Chinese belongs to the collaborating translator.",
+  "zh_hant_artifact": "Sapphire-PrivateBuild.zh-Hant.xcstrings",
+  "zh_hant_note": "Traditional Chinese (Taiwan) from the collaborating translator: same 1,189 keys, comments and English records; the 37 overlap records reuse public zh-Hant from public_base_commit. Flagged keys follow the zh-Hans provisional choices (Hits=命中次數, S=盤, Quote=行情, sports codes unchanged).",
   "original_preserved_as": "Sapphire-PrivateBuild.json",
   "validation_report": "validation-report.json",
-  "native_catalog_compile": "passed with xcrun xcstringstool compile",
+  "native_catalog_compile": "passed with xcrun xcstringstool compile (zh-Hans and zh-Hant)",
   "runtime_coverage": "not established; private source/build/UI unavailable",
   "integration": "Delivery artifact only. Keep outside the public app synchronized resource group. Merge by exact key into private Localizable.xcstrings after collaborator zh-Hant integration and maintainer key review; renaming this file to Localizable.xcstrings is needed before compiling as the default Localizable table.",
   "issues": [
@@ -51,7 +52,7 @@
       ],
       "status": "requires_private_source_semantic_split",
       "reason": "Source references include SportsTailoredPanels.swift:422 (hockey, beside Power Play/Faceoffs Won) and :429 (baseball, beside Runs/Errors/Strikeouts). One English key cannot precisely express both body checks and base hits in Chinese. Provisional wording is 命中次数.",
-      "acceptance": "Split into sport-specific keys and use 撞击次数 for hockey and 安打 for baseball, with private UI confirmation."
+      "acceptance": "Split into sport-specific keys and use 撞击次数 for hockey and 安打 for baseball, with private UI confirmation. zh-Hant: 衝撞次數 for hockey and 安打 for baseball."
     },
     {
       "id": "short_sports_labels",
@@ -73,7 +74,7 @@
       ],
       "status": "requires_private_ui_confirmation",
       "reason": "Translated as 行情 based on the card context and nearby numeric placeholders; source body is not public.",
-      "acceptance": "Confirm this card is a financial quote; if it is quoted text, use 引用."
+      "acceptance": "Confirm this card is a financial quote; if it is quoted text, use 引用. zh-Hant uses 行情; for quoted text use 引述."
     },
     {
       "id": "upstream_context_dependent_copy",
