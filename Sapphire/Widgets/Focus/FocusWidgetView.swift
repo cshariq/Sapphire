@@ -98,11 +98,11 @@ struct FocusWidgetView: View {
 
     private var sessionSummary: String {
         guard focusManager.isSessionActive else {
-            return String(localized: "\(Int(settings.settings.focusSessionDuration / 60))m · \(FocusSessionManager.format(focusManager.completedToday)) today")
+            return String(localized: "\(String(Int(settings.settings.focusSessionDuration / 60)))m · \(FocusSessionManager.format(focusManager.completedToday)) today")
         }
         if blockedCount == 0 { return String(localized: "No distractions blocked") }
         if blockedCount == 1 { return String(localized: "Blocking 1 distraction") }
-        return String(localized: "Blocking \(blockedCount) distractions")
+        return String(localized: "Blocking \(String(blockedCount)) distractions")
     }
 
     // MARK: - Secondary stats (streak leads)
@@ -114,7 +114,7 @@ struct FocusWidgetView: View {
             CompactInfoRow(
                 iconName: focusManager.isSessionActive ? "square.stack.3d.up.fill" : "checkmark.seal.fill",
                 value: focusManager.isSessionActive
-                    ? String(localized: "\(focusManager.blocksCompletedThisSession) blocks")
+                    ? String(localized: "\(String(focusManager.blocksCompletedThisSession)) blocks")
                     : String(localized: "\(String(focusManager.history.count)) sessions")
             )
         }

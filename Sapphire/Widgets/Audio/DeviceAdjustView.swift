@@ -95,7 +95,7 @@ struct DeviceAdjustView: View {
                         ModernDarkSlider(label: String(localized: "Delay"), value: $settings.delay, range: 0...0.5, formatDisplay: { "\(Int($0 * 1000))ms" })
                         ModernDarkSlider(label: String(localized: "Balance"), value: $settings.balance, range: 0...1.0, formatDisplay: { val in
                             if abs(val - 0.5) < 0.02 { return String(localized: "Center") }
-                            return val < 0.5 ? String(localized: "L \(Int((0.5-val)*200))") : String(localized: "R \(Int((val-0.5)*200))")
+                            return val < 0.5 ? String(localized: "L \(String(Int((0.5-val)*200)))") : String(localized: "R \(String(Int((val-0.5)*200)))")
                         })
                     }
                     .padding(16)

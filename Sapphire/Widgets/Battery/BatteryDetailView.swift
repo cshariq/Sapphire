@@ -213,7 +213,7 @@ struct BatteryDetailView: View {
     private func showChargeLimitMessage(_ limit: Int) {
         chargeLimitMessageTask?.cancel()
         withAnimation(.easeOut(duration: 0.25)) {
-            chargeLimitMessage = String(localized: "Charge limit changed to \(limit)%")
+            chargeLimitMessage = String(localized: "Charge limit changed to \(String(limit))%")
         }
         chargeLimitMessageTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(2.5))

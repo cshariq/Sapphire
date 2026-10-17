@@ -731,7 +731,7 @@ final class MixerEngine: @unchecked Sendable {
         var format = AudioStreamBasicDescription()
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &format) == noErr else { return String(localized: "Unknown") }
-        return String(localized: "\(format.mChannelsPerFrame) Ch / \(format.mBitsPerChannel)-bit")
+        return String(localized: "\(String(format.mChannelsPerFrame)) Ch / \(String(format.mBitsPerChannel))-bit")
     }
 
     private static func inputAddress(_ selector: AudioObjectPropertySelector, deviceID: AudioDeviceID) -> AudioObjectPropertyAddress? {

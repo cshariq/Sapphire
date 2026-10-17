@@ -2185,7 +2185,7 @@ struct FileShelfSettingsView: View {
         if count == 1 {
             return String(localized: "Drop files onto your paired Continuity device from the File Shelf. Offline devices stay visible.")
         }
-        return String(localized: "Drop files onto any of your \(count) paired Continuity devices from the File Shelf. Offline devices stay visible.")
+        return String(localized: "Drop files onto any of your \(String(count)) paired Continuity devices from the File Shelf. Offline devices stay visible.")
     }
 }
 
@@ -6193,7 +6193,7 @@ struct FanRowView: View {
         case .sensor(let key, _, _):
             return String(localized: "Sensor: \(SensorNameMap.name(for: key))")
         case .customCurve(let key, let points):
-            return String(localized: "Curve (\(points.count) pts): \(SensorNameMap.name(for: key))")
+            return String(localized: "Curve (\(String(points.count)) pts): \(SensorNameMap.name(for: key))")
         case nil: return String(localized: "Auto")
         }
     }
@@ -6201,7 +6201,7 @@ struct FanRowView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: fan.name.contains("Fan") ? String(localized: "Fan \(fan.id + 1)") : fan.name)
+                Text(verbatim: fan.name.contains("Fan") ? String(localized: "Fan \(String(fan.id + 1))") : fan.name)
                     .font(.headline)
 
                 Text("Min: \(fan.minRPM) | Current: \(fan.currentRPM) | Max: \(fan.maxRPM) RPM")
@@ -7783,7 +7783,7 @@ struct BatteryDataPointCard: View {
         guard entry.timeRemainingMinutes > 0 else { return "—" }
         let hours = entry.timeRemainingMinutes / 60
         let minutes = entry.timeRemainingMinutes % 60
-        if hours > 0 { return String(localized: "\(hours)h \(minutes)m") }
+        if hours > 0 { return String(localized: "\(String(hours))h \(minutes)m") }
         return String(localized: "\(minutes)m")
     }
 
@@ -10028,7 +10028,7 @@ struct EyeBreakGraphView: View {
                 value: "\(summaries.first?.completedBreaks ?? 0)",
                 icon: "eyes",
                 color: .blue,
-                trend: String(localized: "+\(summaries.first?.completedBreaks ?? 0) today")
+                trend: String(localized: "+\(String(summaries.first?.completedBreaks ?? 0)) today")
             )
 
             MetricCardView(
@@ -13484,7 +13484,7 @@ private struct FocusScheduleRowView: View {
     }
 
     private var subtitle: String {
-        var text = String(localized: "\(Int(schedule.duration / 60)) min session")
+        var text = String(localized: "\(String(Int(schedule.duration / 60))) min session")
         if schedule.isActive,
            let next = FocusScheduleManager.shared.nextFireDate(for: schedule) {
             let day = Calendar.current.isDateInToday(next)

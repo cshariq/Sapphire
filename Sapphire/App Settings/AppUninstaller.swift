@@ -790,7 +790,7 @@ enum AppUninstaller {
             let reason = result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines)
             throw ValidationError.launchItemDeactivationFailed(
                 url,
-                reason.isEmpty ? String(localized: "launchctl exited with status \(result.terminationStatus).") : reason
+                reason.isEmpty ? String(localized: "launchctl exited with status \(String(result.terminationStatus)).") : reason
             )
         }
     }

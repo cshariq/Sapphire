@@ -264,7 +264,7 @@ private enum UpdateMetadataError: LocalizedError {
         switch self {
         case .invalidResponse: return String(localized: "The update server returned an invalid response.")
         case .insecureRedirect: return String(localized: "The update server redirected to an untrusted address.")
-        case .httpStatus(let status): return String(localized: "The update server returned HTTP \(status).")
+        case .httpStatus(let status): return String(localized: "The update server returned HTTP \(String(status)).")
         case .rateLimited(let retry):
             if let retry { return String(localized: "GitHub rate-limited update checks. Retrying \(retry.formatted(date: .omitted, time: .shortened)).") }
             return String(localized: "GitHub rate-limited update checks. Sapphire will retry automatically.")

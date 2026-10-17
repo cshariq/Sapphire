@@ -414,6 +414,29 @@
         }
       }
     },
+    "%@ + %@ more": {
+      "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ + %@ more"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，另有 %@ 项"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，另有 %@ 項"
+          }
+        }
+      }
+    },
     "%@ + %lld more": {
       "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
       "localizations": {
@@ -502,6 +525,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 建置"
+          }
+        }
+      }
+    },
+    "%@ Ch / %@-bit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Ch / %@-bit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 声道 / %@ 位"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 聲道 / %@ 位元"
           }
         }
       }
@@ -664,6 +709,29 @@
         }
       }
     },
+    "%@ blocks": {
+      "comment": "Native local UI wording in FocusWidgetView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ blocks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 个专注段"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 個專注區段"
+          }
+        }
+      }
+    },
     "%@ can't be exported (it may be protected).": {
       "localizations": {
         "en": {
@@ -726,6 +794,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 個字元 · 儲存時截短至 1 MB"
+          }
+        }
+      }
+    },
+    "%@ condition(s)": {
+      "comment": "Runtime interpolation or conditional static UI",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ condition(s)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 个条件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 個條件"
           }
         }
       }
@@ -1201,6 +1292,29 @@
         }
       }
     },
+    "%@ items": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ items"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 项"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 個項目"
+          }
+        }
+      }
+    },
     "%@ items (%@) will be moved to the Trash.": {
       "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
       "localizations": {
@@ -1292,6 +1406,52 @@
         }
       }
     },
+    "%@ km": {
+      "comment": "Weather detail value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ km"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 公里"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 公里"
+          }
+        }
+      }
+    },
+    "%@ km/h": {
+      "comment": "Weather detail value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ km/h"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 公里/小时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 公里/小時"
+          }
+        }
+      }
+    },
     "%@ left": {
       "comment": "Native local UI wording in FileOperationProgressPresenter.swift",
       "localizations": {
@@ -1337,6 +1497,29 @@
         }
       }
     },
+    "%@ mi": {
+      "comment": "Weather detail value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ mi"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 英里"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 英里"
+          }
+        }
+      }
+    },
     "%@ min left": {
       "localizations": {
         "en": {
@@ -1355,6 +1538,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "還剩 %@ 分鐘"
+          }
+        }
+      }
+    },
+    "%@ min session": {
+      "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ min session"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 分钟专注时段"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 分鐘專注時段"
           }
         }
       }
@@ -1423,6 +1629,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "每月 %@ 位聽眾"
+          }
+        }
+      }
+    },
+    "%@ mph": {
+      "comment": "Weather detail value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ mph"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 英里/小时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 英里/小時"
           }
         }
       }
@@ -1741,6 +1970,28 @@
         }
       }
     },
+    "%@ selected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ selected"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已选择 %@ 项"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已選取 %@ 項"
+          }
+        }
+      }
+    },
     "%@ sessions": {
       "comment": "Number of completed focus sessions; visible when no session is running.",
       "localizations": {
@@ -1804,6 +2055,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 首歌曲"
+          }
+        }
+      }
+    },
+    "%@ tasks running": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ tasks running"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 个任务正在运行"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 個工作正在執行"
           }
         }
       }
@@ -2188,6 +2461,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@：%@ → %@"
+          }
+        }
+      }
+    },
+    "%@h": {
+      "comment": "Duration in whole hours",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@h"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 小时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 小時"
+          }
+        }
+      }
+    },
+    "%@h %lldm": {
+      "comment": "Native local UI wording in BatteryStatsViewModel.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@h %lldm"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 小时 %lld 分钟"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 小時 %lld 分鐘"
+          }
+        }
+      }
+    },
+    "%@m · %@ today": {
+      "comment": "Native local UI wording in FocusWidgetView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@m · %@ today"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 分钟 · 今日 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 分鐘 · 今日 %@"
           }
         }
       }
@@ -3425,6 +3767,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "另有 %@ 項"
+          }
+        }
+      }
+    },
+    "+%@ today": {
+      "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%@ today"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日 +%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日 +%@"
           }
         }
       }
@@ -12986,6 +13351,28 @@
         }
       }
     },
+    "Battery is at %@%%. Connect your Mac to power.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Battery is at %@%%. Connect your Mac to power."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电池电量为 %@%%。请将 Mac 连接到电源。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電池電量為 %@%%。請將 Mac 連接至電源。"
+          }
+        }
+      }
+    },
     "Battery is at %lld%%. Connect your Mac to power.": {
       "localizations": {
         "en": {
@@ -13350,6 +13737,29 @@
         }
       }
     },
+    "Block %@": {
+      "comment": "Native local UI wording in FocusSessionDetailView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Block %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %@ 个专注段"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %@ 個專注區段"
+          }
+        }
+      }
+    },
     "Block %lld": {
       "comment": "Native local UI wording in FocusSessionDetailView.swift",
       "localizations": {
@@ -13575,6 +13985,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "遭封鎖的 App 一打開就會被強制結束，通知也會隱藏。無法解除封鎖，但你可以隨時結束專注時段。"
+          }
+        }
+      }
+    },
+    "Blocking %@ distractions": {
+      "comment": "Native local UI wording in FocusWidgetView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocking %@ distractions"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已屏蔽 %@ 个干扰项"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在封鎖 %@ 個干擾項目"
           }
         }
       }
@@ -14918,6 +15351,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "CPU 使用率"
+          }
+        }
+      }
+    },
+    "CPU has been at %@%% for about a minute.": {
+      "comment": "Runtime user-facing string",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU has been at %@%% for about a minute."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU 使用率已在 %@%% 左右持续约一分钟。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU 使用率已維持在 %@%% 約一分鐘。"
           }
         }
       }
@@ -16396,6 +16852,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "充電上限 %lld%%"
+          }
+        }
+      }
+    },
+    "Charge limit changed to %@%%": {
+      "comment": "Native local UI wording in BatteryDetailView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charge limit changed to %@%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "充电上限已设为 %@%%"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "充電上限已更改為 %@%%"
           }
         }
       }
@@ -22057,6 +22536,29 @@
         }
       }
     },
+    "Curve (%@ pts): %@": {
+      "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Curve (%@ pts): %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "曲线（%@ 个点）：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "曲線（%@ 個點）：%@"
+          }
+        }
+      }
+    },
     "Curve (%lld pts): %@": {
       "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
       "localizations": {
@@ -26093,6 +26595,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "放置目的地"
+          }
+        }
+      }
+    },
+    "Drop files onto any of your %@ paired Continuity devices from the File Shelf. Offline devices stay visible.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drop files onto any of your %@ paired Continuity devices from the File Shelf. Offline devices stay visible."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从文件暂存架将文件拖放到已配对的 %@ 台连续互通设备中的任意一台。离线设备仍会显示。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "從檔案暫存架將檔案拖放到已配對的 %@ 部接續互通裝置中的任一部。離線裝置仍會顯示。"
           }
         }
       }
@@ -30668,6 +31192,29 @@
         }
       }
     },
+    "Fan %@": {
+      "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fan %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "风扇 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "風扇 %@"
+          }
+        }
+      }
+    },
     "Fan %lld": {
       "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
       "localizations": {
@@ -34255,6 +34802,29 @@
         }
       }
     },
+    "Great work! Time for a %@ minute break.": {
+      "comment": "Runtime user-facing string",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Great work! Time for a %@ minute break."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "做得好！现在休息 %@ 分钟。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "做得好！現在休息 %@ 分鐘。"
+          }
+        }
+      }
+    },
     "Great work! Time for a %lld minute break.": {
       "comment": "Runtime user-facing string",
       "localizations": {
@@ -34412,6 +34982,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "訪客顧客"
+          }
+        }
+      }
+    },
+    "H: %@° L: %@°": {
+      "comment": "Runtime display or native interpolated quantity",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "H: %@° L: %@°"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最高：%@° 最低：%@°"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高：%@° 低：%@°"
           }
         }
       }
@@ -40335,6 +40928,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "左"
+          }
+        }
+      }
+    },
+    "L %@": {
+      "comment": "Native local UI wording in DeviceAdjustView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左 %@"
           }
         }
       }
@@ -57734,6 +58350,29 @@
         }
       }
     },
+    "Popularity Score: %@/100": {
+      "comment": "Runtime interpolation or conditional static UI",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Popularity Score: %@/100"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "热度：%@/100"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "熱門度：%@/100"
+          }
+        }
+      }
+    },
     "Popularity Score: %lld/100": {
       "comment": "Runtime interpolation or conditional static UI",
       "localizations": {
@@ -59664,6 +60303,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "右"
+          }
+        }
+      }
+    },
+    "R %@": {
+      "comment": "Native local UI wording in DeviceAdjustView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "R %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右 %@"
           }
         }
       }
@@ -64477,6 +65139,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "航行模式"
+          }
+        }
+      }
+    },
+    "Sailing by %@%%": {
+      "comment": "Runtime user-facing string",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sailing by %@%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "浮动充电：%@%%"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "航行範圍 %@%%"
           }
         }
       }
@@ -78911,6 +79596,28 @@
         }
       }
     },
+    "The CPU has been running at about %@°C for 30 seconds.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The CPU has been running at about %@°C for 30 seconds."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU 已在约 %@°C 的温度下运行了 30 秒。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPU 已在約 %@°C 的溫度下運作了 30 秒。"
+          }
+        }
+      }
+    },
     "The CPU has been running at about %lld°C for 30 seconds.": {
       "localizations": {
         "en": {
@@ -80621,6 +81328,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "更新伺服器重新導向至不受信任的位址。"
+          }
+        }
+      }
+    },
+    "The update server returned HTTP %@.": {
+      "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The update server returned HTTP %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新服务器返回了 HTTP %@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新伺服器傳回 HTTP %@。"
           }
         }
       }
@@ -85371,6 +86101,29 @@
         }
       }
     },
+    "Updated %@h ago": {
+      "comment": "Native local UI wording in WeatherDetailView.swift",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated %@h ago"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 小时前更新"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 小時前更新"
+          }
+        }
+      }
+    },
     "Updated %lldh ago": {
       "comment": "Native local UI wording in WeatherDetailView.swift",
       "localizations": {
@@ -90016,6 +90769,29 @@
         }
       }
     },
+    "You finished %@ blocks. Total focus today: %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You finished %1$@ blocks. Total focus today: %2$@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已完成 %1$@ 个专注时段。今日专注总时长：%2$@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已完成 %1$@ 個專注區段。今日專注總計：%2$@。"
+          }
+        }
+      }
+    },
     "You finished %lld blocks. Total focus today: %@.": {
       "extractionState": "manual",
       "localizations": {
@@ -90059,6 +90835,28 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "You finished 1 block. Total focus today: %@.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You finished 1 block. Total focus today: %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已完成 1 个专注时段。今日专注总时长：%@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已完成 1 個專注區段。今日專注總計：%@。"
           }
         }
       }
@@ -90424,6 +91222,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的 Sapphire 方案"
+          }
+        }
+      }
+    },
+    "Your scheduled focus session is running for %@ minutes. Stay focused!": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your scheduled focus session is running for %@ minutes. Stay focused!"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已按计划开始专注，时长 %@ 分钟。保持专注！"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你排定的專注時段正在進行，時長 %@ 分鐘。保持專注！"
           }
         }
       }
@@ -91739,6 +92560,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "剛剛"
+          }
+        }
+      }
+    },
+    "launchctl exited with status %@.": {
+      "comment": "Settings dynamic interpolated presentation; key and placeholder types verified against module-build-01 compiler output.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "launchctl exited with status %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "launchctl 已退出，状态码为 %@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "launchctl 已結束，狀態碼為 %@。"
           }
         }
       }
