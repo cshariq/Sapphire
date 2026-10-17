@@ -276,10 +276,11 @@ struct ClipboardItem: Identifiable, Equatable, Codable, Sendable {
     }
 
     private static func measure(textContent: String?, imagePNGData: Data?, fileURLString: String?, fileBookmarkData: Data?) -> Int {
-        (textContent?.utf8.count ?? 0)
-            + (imagePNGData?.count ?? 0)
-            + (fileURLString?.utf8.count ?? 0)
-            + (fileBookmarkData?.count ?? 0)
+        let textBytes = textContent?.utf8.count ?? 0
+        let imageBytes = imagePNGData?.count ?? 0
+        let pathBytes = fileURLString?.utf8.count ?? 0
+        let bookmarkBytes = fileBookmarkData?.count ?? 0
+        return textBytes + imageBytes + pathBytes + bookmarkBytes
     }
 
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {

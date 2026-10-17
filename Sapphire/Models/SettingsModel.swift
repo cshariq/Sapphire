@@ -3462,7 +3462,7 @@ enum LiveActivityType: String, Codable, CaseIterable, Identifiable, Equatable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .capsLock: String(localized: "Caps LockString(localized: "); case .music: String(localized: ")MusicString(localized: "); case .weather: String(localized: ")WeatherString(localized: "); case .calendar: String(localized: ")CalendarString(localized: "); case .reminders: String(localized: ")RemindersString(localized: "); case .timers: String(localized: ")TimersString(localized: "); case .battery: String(localized: ")BatteryString(localized: "); case .eyeBreak: String(localized: ")Eye BreakString(localized: "); case .desktop: String(localized: ")DesktopString(localized: "); case .focus: String(localized: ")FocusString(localized: "); case .fileShelf: String(localized: ")File ShelfString(localized: "); case .fileProgress: String(localized: ")File ProgressString(localized: "); case .stats: String(localized: ")StatsString(localized: "); case .microphone: String(localized: ")MicrophoneString(localized: "); case .devActivity: String(localized: ")Dev ActivityString(localized: "); case .sports: String(localized: ")SportsString(localized: "); case .finance: String(localized: ")Finance")
+        case .capsLock: String(localized: "Caps Lock"); case .music: String(localized: "Music"); case .weather: String(localized: "Weather"); case .calendar: String(localized: "Calendar"); case .reminders: String(localized: "Reminders"); case .timers: String(localized: "Timers"); case .battery: String(localized: "Battery"); case .eyeBreak: String(localized: "Eye Break"); case .desktop: String(localized: "Desktop"); case .focus: String(localized: "Focus"); case .fileShelf: String(localized: "File Shelf"); case .fileProgress: String(localized: "File Progress"); case .stats: String(localized: "Stats"); case .microphone: String(localized: "Microphone"); case .devActivity: String(localized: "Dev Activity"); case .sports: String(localized: "Sports"); case .finance: String(localized: "Finance")
         }
     }
 }
@@ -3721,11 +3721,11 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
 
     var displayName: String {
         switch self {
-        case .settings: String(localized: "SettingsString(localized: "); case .fileShelf: String(localized: ")File ShelfString(localized: "); case .notes: String(localized: ")NotesString(localized: "); case .clipboard: String(localized: ")Clipboard")
+        case .settings: String(localized: "Settings"); case .fileShelf: String(localized: "File Shelf"); case .notes: String(localized: "Notes"); case .clipboard: String(localized: "Clipboard")
         case .intelligence: String(localized: "Blip"); case .intelligenceLive: String(localized: "Gemini");
         case .focusSession: String(localized: "Focus");
-        case .caffeine: String(localized: "CaffeinateString(localized: "); case .spacer: String(localized: ")Spacer");
-        case .multiAudio: String(localized: "Multi-Audio (Beta)String(localized: "); case .continuity: String(localized: ")PhoneString(localized: "); case .battery: String(localized: ")BatteryString(localized: "); case .pin: String(localized: ")Pin")
+        case .caffeine: String(localized: "Caffeinate"); case .spacer: String(localized: "Spacer");
+        case .multiAudio: String(localized: "Multi-Audio (Beta)"); case .continuity: String(localized: "Phone"); case .battery: String(localized: "Battery"); case .pin: String(localized: "Pin")
         }
     }
 
@@ -3955,6 +3955,56 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         return !SubscriptionAccess.hasAccess(to: requiredPremiumFeature)
     }
 
+    // Stable English metadata used by the settings assistant protocol.
+    var englishShortDescription: String {
+        switch self {
+        case .overview: "Ask about any setting, get suggestions, and change the most-used settings."
+        case .general: "Core app behavior, launch options, animations, and notch controls."
+        case .systemEnhance: "Window previews, app switching, dock controls, and display behavior."
+        case .apps: "Review installed applications, inspect bundle details, and safely move unwanted apps to Trash."
+        case .storage: "Find large folders and reclaim space with transparent, user-approved cleanup."
+        case .widgets: "Choose which widgets appear in the notch and how they are ordered."
+        case .liveActivities: "Control which live activities can surface and auto-expand in the notch."
+        case .appActivities: "Live activities and controls for Zoom, Google Meet, Teams, Slack, Discord, FaceTime, recorders and more."
+        case .fileProgress: "Download, copy and AirDrop progress per app — Safari, Chrome, Edge, Firefox, Finder and others."
+        case .appearance: "Tune the notch look, materials, colors, and layout styling."
+        case .lockScreen: "Configure Sapphire content and behavior while your Mac is locked."
+        case .bluetoothUnlock: "Set up proximity-based authentication and trusted device behavior."
+        case .shortcuts: "Manage quick actions and shortcut surfaces shown in Sapphire."
+        case .keyboardShortcuts: "Reference page listing every keyboard shortcut in Sapphire — global hotkeys, snap zones, and in-app shortcuts."
+        case .snapZones: "Configure window snapping behavior, layouts, and zone actions."
+        case .audio: "Audio adjustments, EQ, and per-app volume adjustments."
+        case .battery: "Battery widgets, history, charging preferences, and power-related controls."
+        case .bluetooth: "Bluetooth device integrations, visibility, and connection behavior."
+        case .hud: "Heads-up display overlays for volume, brightness, keyboard, and media feedback."
+        case .notifications: "Choose which system notifications Sapphire mirrors or enhances."
+        case .nearbyShare: "Nearby sharing preferences, transfers, and device discovery options."
+        case .continuity: "Pair an Android phone for clipboard, notifications, media, battery, and Instant Hotspot."
+        case .fileShelf: "Manage temporary file storage, drag targets, and shelf behavior."
+        case .notes: "Quick notes widget, click-to-expand behavior, and notch bar access."
+        case .clipboard: "Clipboard history, monitoring, and notch clipboard shortcuts."
+        case .emoji: "Slack-style emoji typing with :shortcode: suggestions and a full search picker."
+        case .mouse: "Mouse and trackpad scroll, acceleration, and button customization."
+        case .monitoring: "Menu bar readouts and notifications for CPU, memory, disk, and network."
+        case .devActivity: "Track AI agents, builds, and terminal commands, and keep the Mac awake while they run."
+        case .archives: "Extract ZIP, RAR, 7-Zip, TAR, and other archives — or auto-mount and install disk images (DMGs) — from anywhere."
+        case .mirror: "Mirror widget showing live camera feed, with expandable fullscreen view."
+        case .caffeine: "Keep your Mac awake, clamshell sleep behavior, and lid-angle display controls."
+        case .music: "Music widget sources, playback controls, and media integrations."
+        case .weather: "Weather widget data sources, units, and location-based behavior."
+        case .calendar: "Calendar and reminder integrations shown in widgets and live activities."
+        case .eyeBreak: "Break reminders, timing, and focus nudges for healthier screen habits."
+        case .focusSession: "Session-style Focus Profiles with timers, app/website blocking, social filters, triggers, and cross-device sync."
+        case .appLock: "Lock apps behind Touch ID or password — blur overlays, idle/sleep auto-lock, and auto-close."
+        case .intelligence: "Sapphire Blip — Mac agent with memory, skills, tools, and computer use."
+        case .sports: "Sports widget settings, favorite teams selection, and scoreboard configurations."
+        case .finance: "Stock market ticker configurations, favorite stocks, and trendline visualizations."
+        case .dockLayouts: "Save Dock layouts as presets and switch between them with a click or hotkey."
+        case .mediaOptimizer: "Automatically shrink images, compress media, and extract text with OCR."
+        case .about: "App version details, Sapphire updates, release channels, credits, links, and project information."
+        }
+    }
+
     var shortDescription: String {
         switch self {
         case .overview: String(localized: "Ask about any setting, get suggestions, and change the most-used settings.")
@@ -4122,6 +4172,55 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mouse: return [.accessibility]
         case .intelligence: return [.accessibility, .fullDiskAccess, .screenRecording]
         default: return []
+        }
+    }
+
+    var englishLabel: String {
+        switch self {
+        case .overview: "Overview"
+        case .general: "General"
+        case .systemEnhance: "System Enhance"
+        case .apps: "Apps"
+        case .storage: "Storage"
+        case .widgets: "Widgets"
+        case .liveActivities: "Live Activities"
+        case .appActivities: "App Activities"
+        case .fileProgress: "File Progress"
+        case .appearance: "Appearance"
+        case .lockScreen: "Lock Screen"
+        case .bluetoothUnlock: "Authentication"
+        case .shortcuts: "Shortcuts"
+        case .keyboardShortcuts: "Keyboard Shortcuts"
+        case .snapZones: "Snap Zones"
+        case .audio: "Audio"
+        case .battery: "Battery"
+        case .bluetooth: "Bluetooth"
+        case .hud: "HUD"
+        case .notifications: "Notifications"
+        case .nearbyShare: "Nearby Share"
+        case .continuity: "Continuity"
+        case .fileShelf: "File Shelf"
+        case .notes: "Notes"
+        case .clipboard: "Clipboard"
+        case .emoji: "Emoji"
+        case .mouse: "Mouse"
+        case .monitoring: "Monitoring"
+        case .devActivity: "Dev Activity"
+        case .archives: "Archives & DMG"
+        case .mirror: "Mirror"
+        case .caffeine: "Caffeinate"
+        case .music: "Music"
+        case .weather: "Weather"
+        case .calendar: "Calendar"
+        case .eyeBreak: "Eye Break"
+        case .focusSession: "Focus Sessions"
+        case .appLock: "App Lock"
+        case .intelligence: "Blip"
+        case .sports: "Sports"
+        case .finance: "Finance"
+        case .dockLayouts: "Dock"
+        case .mediaOptimizer: "Media Optimizer"
+        case .about: "About"
         }
     }
 

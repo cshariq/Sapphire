@@ -42,10 +42,58 @@ final class LocalizationNavigationTests: XCTestCase {
         XCTAssertEqual(SettingsSection.sidebarGroups(matching: "Music").map(\.id), ["widgetsAndContent"])
     }
 
-    func testSidebarHasEverySectionExactlyOnce() {
-        let sections = SettingsSection.sidebarGroups.flatMap(\.sections)
-        XCTAssertEqual(sections.count, SettingsSection.allCases.count)
-        XCTAssertEqual(Set(sections), Set(SettingsSection.allCases))
+    func testSidebarHasEverySupportedSectionExactlyOnce() {
+        for includesOverview in [false, true] {
+            let sections = SettingsSection.sidebarGroups(includingOverview: includesOverview).flatMap(\.sections)
+            let expected = SettingsSection.allCases.filter { includesOverview || $0 != .overview }
+            XCTAssertEqual(sections.count, expected.count)
+            XCTAssertEqual(Set(sections), Set(expected))
+        }
+        XCTAssertEqual(
+            SettingsSection.sidebarGroups.flatMap(\.sections).contains(.overview),
+            SettingsAssistant.isSupported
+        )
+    }
+
+    func testSettingsIndexSearchesTranslatedAndEnglishTitles() throws {
+        let entry = try XCTUnwrap(SettingsIndex.byKey["launchAtLogin"])
+        XCTAssertEqual(entry.englishTitle, "Launch at Login")
+        XCTAssertTrue(SettingsIndex.search(entry.englishTitle).contains { $0.key == entry.key })
+        XCTAssertTrue(SettingsIndex.search(entry.displayTitle).contains { $0.key == entry.key })
+        if language.hasPrefix("zh") {
+            XCTAssertNotEqual(entry.displayTitle, entry.englishTitle)
+            let partialTitle = String(entry.displayTitle.suffix(2))
+            XCTAssertTrue(SettingsIndex.search(partialTitle, limit: 100).contains { $0.key == entry.key })
+        }
+    }
+
+    func testLocalizedSettingsLabelsKeepStoredValuesUsableForUndo() throws {
+        let entry = try XCTUnwrap(SettingsIndex.byKey["animationProfile"])
+        XCTAssertEqual(entry.displayOption("fluid"), AnimationProfile.fluid.displayName)
+        let original = Settings()
+        let (updated, change) = try SettingsIndex.applying(key: entry.key, rawValue: "fluid", to: original).get()
+        XCTAssertEqual(updated.animationProfile, .fluid)
+        XCTAssertEqual(change.newValue.description, "fluid")
+        let (restored, _) = try SettingsIndex.applying(key: entry.key, rawValue: change.oldValue.description, to: updated).get()
+        XCTAssertEqual(restored.animationProfile, original.animationProfile)
+        XCTAssertEqual(SettingsIndex.Value.bool(true).description, "on")
+        XCTAssertEqual(SettingsIndex.Value.bool(true).displayDescription, ChineseFormatting.isActive ? String(localized: "On") : "on")
+    }
+
+    func testAssistantRecognizesChineseQuestionPunctuation() {
+        XCTAssertTrue(SettingsAssistant.isQuestion("可以在全屏时隐藏刘海区域吗？"))
+        XCTAssertTrue(SettingsAssistant.isQuestion("可以在全螢幕時隱藏瀏海區域嗎？"))
+    }
+
+    func testSettingsIndexShowsCompleteQuotedTitleFromTheSettingsPane() throws {
+        let entry = try XCTUnwrap(SettingsIndex.byKey["bluetoothUnlockPauseMusicOnLock"])
+        XCTAssertEqual(entry.displayTitle, String(localized: "Pause \"Now Playing\" while Locked"))
+        XCTAssertEqual(entry.englishTitle, "Pause \\")
+        XCTAssertEqual(entry.key, "bluetoothUnlockPauseMusicOnLock")
+    }
+
+    func testIndexDisplayCatalogCoversEverySetting() {
+        XCTAssertEqual(Set(SettingsIndex.localizedTitles.keys), Set(SettingsIndex.entries.map(\.key)))
     }
 
     func testSavedIdentifiersStillDecodeWithoutUsingDisplayNames() throws {

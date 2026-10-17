@@ -1856,7 +1856,7 @@ class MusicManager {
             title = trimmedTitle
         } else if state.isPlaying {
             let app = state.appName.trimmingCharacters(in: .whitespacesAndNewlines)
-            title = app.isEmpty ? "Now Playing" : app
+            title = app.isEmpty ? String(localized: "Now Playing") : app
         } else {
             clearPhoneMediaSource()
             return

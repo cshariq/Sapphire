@@ -1134,7 +1134,7 @@ private enum AppStoreClient {
             request.setValue("Sapphire/\(currentAppVersion)", forHTTPHeaderField: "User-Agent")
             let (data, http) = try await InstalledAppHTTPClient.data(for: request)
             guard (200..<300).contains(http.statusCode) else {
-                return requests.map { ($0.id, .error("App Store lookup failed")) }
+                return requests.map { ($0.id, .error(String(localized: "App Store lookup failed"))) }
             }
             let lookup = try JSONDecoder().decode(AppStoreLookupResponse.self, from: data)
             let osVersion = ProcessInfo.processInfo.operatingSystemVersion
@@ -1193,6 +1193,18 @@ struct HomebrewCaskRecord: Equatable, Sendable {
     let installedVersion: String?
     let appPaths: [String]
     let requiresAdministrator: Bool
+}
+
+enum HomebrewFailureMessage {
+    static func upgrade(summary: String?) -> String {
+        let detail = summary ?? String(localized: "run it in Terminal for details")
+        return String(localized: "brew upgrade failed: \(detail)")
+    }
+
+    static func uninstall(summary: String?, command: String) -> String {
+        let detail = summary ?? String(localized: "run “\(command)” in Terminal for details")
+        return String(localized: "Homebrew could not remove the cask receipt: \(detail).")
+    }
 }
 
 enum HomebrewCaskInventory {
@@ -1275,15 +1287,15 @@ enum HomebrewCaskInventory {
     static func uninstall(_ record: HomebrewCaskRecord) async -> String? {
         let command = "brew uninstall --cask \(record.token)"
         guard !record.requiresAdministrator else {
-            return "Homebrew needs your administrator password to finish removing this cask. Run “\(command)” in Terminal."
+            return String(localized: "Homebrew needs your administrator password to finish removing this cask. Run “\(command)” in Terminal.")
         }
         switch await HomebrewClient.uninstallCask(token: record.token) {
         case .succeeded:
             return nil
         case .needsAdministrator:
-            return "Homebrew needs your administrator password to finish removing this cask. Run “\(command)” in Terminal."
+            return String(localized: "Homebrew needs your administrator password to finish removing this cask. Run “\(command)” in Terminal.")
         case .failed(let summary):
-            return "Homebrew could not remove the cask receipt: \(summary ?? "run “\(command)” in Terminal for details")."
+            return HomebrewFailureMessage.uninstall(summary: summary, command: command)
         }
     }
 
@@ -1843,7 +1855,7 @@ private enum HomebrewClient {
         apiVersion: String?
     ) -> InstalledAppUpdateEntry.Status {
         guard let cask else {
-            return .error("Unknown cask “\(request.token)”")
+            return .error(String(localized: "Unknown cask “\(request.token)”"))
         }
         let latest = normalizedVersion(apiVersion ?? cask.version)
         let currentVersion = request.currentVersion.contains(where: \.isNumber)
@@ -1875,17 +1887,17 @@ private enum HomebrewClient {
             return .upToDate(latestVersion: installed)
         }
         guard let latest else {
-            return .error("Homebrew returned no comparable version for “\(request.token)”")
+            return .error(String(localized: "Homebrew returned no comparable version for “\(request.token)”"))
         }
         return .upToDate(latestVersion: latest)
     }
 
     static func upgrade(tokens: [String]) async -> UpgradeOutcome {
         guard let brew = executablePath() else {
-            return .failed(summary: "Homebrew is not installed")
+            return .failed(summary: String(localized: "Homebrew is not installed"))
         }
         guard let arguments = HomebrewCommand.upgradeArguments(tokens: tokens) else {
-            return .failed(summary: "Unrecognised Homebrew cask name")
+            return .failed(summary: String(localized: "Unrecognised Homebrew cask name"))
         }
         guard let result = await Self.runProcess(
             executable: URL(fileURLWithPath: brew),
@@ -1895,7 +1907,7 @@ private enum HomebrewClient {
             mergeStandardError: true,
             keepOutputTail: true
         ) else {
-            return .failed(summary: "brew upgrade timed out or was cancelled")
+            return .failed(summary: String(localized: "brew upgrade timed out or was cancelled"))
         }
         if result.exitCode == 0 { return .succeeded }
         let text = String(decoding: result.output, as: UTF8.self)
@@ -1905,10 +1917,10 @@ private enum HomebrewClient {
 
     static func uninstallCask(token: String) async -> UpgradeOutcome {
         guard let brew = executablePath() else {
-            return .failed(summary: "Homebrew is not installed")
+            return .failed(summary: String(localized: "Homebrew is not installed"))
         }
         guard HomebrewCommand.isSafeToken(token) else {
-            return .failed(summary: "Unrecognised Homebrew cask name")
+            return .failed(summary: String(localized: "Unrecognised Homebrew cask name"))
         }
         guard let result = await Self.runProcess(
             executable: URL(fileURLWithPath: brew),
@@ -1918,7 +1930,7 @@ private enum HomebrewClient {
             mergeStandardError: true,
             keepOutputTail: true
         ) else {
-            return .failed(summary: "brew uninstall timed out or was cancelled")
+            return .failed(summary: String(localized: "brew uninstall timed out or was cancelled"))
         }
         if result.exitCode == 0 { return .succeeded }
         let text = String(decoding: result.output, as: UTF8.self)
@@ -3551,9 +3563,10 @@ final class InstalledAppUpdatesChecker: ObservableObject {
             let opened = await HomebrewClient.openUpgradeInTerminal(tokens: items.map { $0.token })
             guard let self else { return }
             let list = ListFormatter.localizedString(byJoining: names.isEmpty ? items.map { $0.token } : names)
+            let command = "brew upgrade --cask " + items.map { $0.token }.joined(separator: " ")
             self.homebrewNotice = opened
-                ? "Opened Terminal to upgrade \(list) — Homebrew needs your administrator password."
-                : "Couldn't open Terminal. Run “brew upgrade --cask \(items.map { $0.token }.joined(separator: " "))” yourself."
+                ? String(localized: "Opened Terminal to upgrade \(list) — Homebrew needs your administrator password.")
+                : String(localized: "Couldn't open Terminal. Run “\(command)” yourself.")
         }
     }
 
@@ -3577,7 +3590,7 @@ final class InstalledAppUpdatesChecker: ObservableObject {
             openHomebrewUpgradeInTerminal(items)
             for entryID in ids { checkAgain(entryID: entryID) }
         case .failed(let summary):
-            let message = "brew upgrade failed: \(summary ?? "run it in Terminal for details")"
+            let message = HomebrewFailureMessage.upgrade(summary: summary)
             for entryID in ids {
                 if versionsAfter[entryID] != versionsBefore[entryID] {
                     checkAgain(entryID: entryID)
@@ -3675,10 +3688,10 @@ final class InstalledAppUpdatesChecker: ObservableObject {
         if apps.count == 1 {
             title = String(localized: "Update available for \(names)")
         } else {
-            title = String(localized: "\(apps.count) apps have updates available")
+            title = String(localized: "\(String(apps.count)) apps have updates available")
         }
         let body = apps.count > 3
-            ? String(localized: "\(names) and \(apps.count - 3) more. Open Settings → Apps to update them.")
+            ? String(localized: "\(names) and \(String(apps.count - 3)) more. Open Settings → Apps to update them.")
             : String(localized: "Open Settings → Apps to update them.")
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { notificationSettings in

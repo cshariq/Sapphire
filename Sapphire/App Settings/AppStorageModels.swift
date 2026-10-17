@@ -3282,6 +3282,35 @@ struct StorageEntry: Identifiable, Equatable, Sendable {
     }
 }
 
+enum StorageRemovalConfirmation {
+    static func message(for entries: [StorageEntry]) -> String {
+        guard !entries.isEmpty else { return "" }
+        let bytes = entries.reduce(Int64(0)) { partial, entry in
+            let (sum, overflow) = partial.addingReportingOverflow(entry.size)
+            return overflow ? Int64.max : sum
+        }
+        var message: String
+        if entries.count == 1, let entry = entries.first {
+            message = String(localized: "\(entry.name) (\(bytes.formatted(.byteCount(style: .file)))) will be moved to the Trash.")
+        } else {
+            message = String(localized: "\(String(entries.count)) items (\(bytes.formatted(.byteCount(style: .file)))) will be moved to the Trash.")
+        }
+        let cloudSyncedCount = entries.filter {
+            StorageDeletionPolicy.isCloudSyncedLocation($0.url)
+        }.count
+        if cloudSyncedCount > 0 {
+            if entries.count == 1 {
+                message += " " + String(localized: "This item syncs to the cloud: removal here also removes from iCloud Drive or your cloud storage and from your other devices.")
+            } else if cloudSyncedCount == entries.count {
+                message += " " + String(localized: "These items sync to the cloud: removal here also removes from iCloud Drive or your cloud storage and from your other devices.")
+            } else {
+                message += " " + String(localized: "\(String(cloudSyncedCount)) of these sync to the cloud: removal here also removes from iCloud Drive or your cloud storage and from your other devices.")
+            }
+        }
+        return message
+    }
+}
+
 struct CleanupRecommendation: Identifiable, Sendable {
     let id = UUID()
     let category: StorageCategory
@@ -3444,7 +3473,11 @@ private struct StoragePresentedScan {
     }
     @Published private var scanPresentation = StorageScanPresentation()
     @Published private var capacityPresentation = StorageCapacityPresentation() {
-        didSet { spaceMapSnapshotCache = nil }
+        didSet {
+            #if !PUBLIC_BUILD
+            spaceMapSnapshotCache = nil
+            #endif
+        }
     }
     @Published private(set) var currentURL = URL(fileURLWithPath: "/")
     @Published private(set) var isLoading = false
@@ -3478,7 +3511,9 @@ private struct StoragePresentedScan {
     private var pendingHistoryDeepScanEnabled: Bool?
     private var filteredEntriesCache: [StorageEntry]?
     private var filteredInsightEntriesCache: [StorageEntry]?
+    #if !PUBLIC_BUILD
     private var spaceMapSnapshotCache: (maximumItems: Int, snapshot: StorageSpaceMapSnapshot)?
+    #endif
     private var hasValidCapacity = false
     private var capacityGeneration: UInt64 = 0
     private var scanLease: StorageScanCoordinator.Lease?
@@ -3581,9 +3616,12 @@ private struct StoragePresentedScan {
     private func invalidateFilteredEntryCaches() {
         filteredEntriesCache = nil
         filteredInsightEntriesCache = nil
+        #if !PUBLIC_BUILD
         spaceMapSnapshotCache = nil
+        #endif
     }
 
+    #if !PUBLIC_BUILD
     func spaceMapSnapshot(maximumItems: Int) -> StorageSpaceMapSnapshot {
         if let cached = spaceMapSnapshotCache, cached.maximumItems == maximumItems {
             return cached.snapshot
@@ -3599,6 +3637,7 @@ private struct StoragePresentedScan {
         spaceMapSnapshotCache = (maximumItems, snapshot)
         return snapshot
     }
+    #endif
 
     var totalCategorySize: [StorageCategory: Int64] {
         categorySizes
@@ -3704,7 +3743,7 @@ private struct StoragePresentedScan {
         loadTask?.cancel()
         loadTask = nil
         isLoading = false
-        updateScanPresentation(state: .idle, label: "Scan continues in the background")
+        updateScanPresentation(state: .idle, label: String(localized: "Scan continues in the background"))
     }
 
     func refreshCapacity() {
@@ -3885,28 +3924,7 @@ private struct StoragePresentedScan {
     }
 
     var removalMessage: String {
-        guard !pendingRemovalEntries.isEmpty else { return "" }
-        let bytes = pendingRemovalEntries.reduce(Int64(0)) { partial, entry in
-            let (sum, overflow) = partial.addingReportingOverflow(entry.size)
-            return overflow ? Int64.max : sum
-        }
-        var message: String
-        if pendingRemovalEntries.count == 1, let entry = pendingRemovalEntries.first {
-            message = String(localized: "\(entry.name) (\(bytes.formatted(.byteCount(style: .file)))) will be moved to the Trash.")
-        } else {
-            message = String(localized: "\(pendingRemovalEntries.count) items (\(bytes.formatted(.byteCount(style: .file)))) will be moved to the Trash.")
-        }
-        let cloudSyncedCount = pendingRemovalEntries.filter {
-            StorageDeletionPolicy.isCloudSyncedLocation($0.url)
-        }.count
-        if cloudSyncedCount > 0 {
-            if cloudSyncedCount == pendingRemovalEntries.count {
-                message += " " + String(localized: "These items sync to the cloud: removal here also removes them from iCloud Drive or your cloud storage and from your other devices.")
-            } else {
-                message += " " + String(localized: "\(cloudSyncedCount) of these items sync to the cloud: removal here also removes them from iCloud Drive or your cloud storage and from your other devices.")
-            }
-        }
-        return message
+        StorageRemovalConfirmation.message(for: pendingRemovalEntries)
     }
 
     func goUp() {
@@ -4112,8 +4130,8 @@ private struct StoragePresentedScan {
                     : String(localized: "App caches; system caches are rebuilt on demand and running apps may still be using theirs, so review before removing"),
                 potentialSpaceFreed: size,
                 actionDescription: allSafe
-                    ? String(localized: "Clear \(cacheEntries.count) cache files")
-                    : String(localized: "Review \(cacheEntries.count) cache files"),
+                    ? String(localized: "Clear \(String(cacheEntries.count)) cache files")
+                    : String(localized: "Review \(String(cacheEntries.count)) cache files"),
                 isAutomatic: allSafe,
                 entries: cacheEntries,
                 safetyOverride: allSafe ? nil : String(localized: "Caution")
