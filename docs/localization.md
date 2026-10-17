@@ -14,7 +14,7 @@ The main app uses a filesystem-synchronized Xcode group. The Widget target has e
 
 One integrator edits each catalog while module contributors supply reviewed keys and translations. Run Xcode extraction after changes to find new strings and preserve translator comments. A compiler-extracted key is an inventory entry, not proof that a screen has been tested.
 
-The private-build Simplified Chinese handoff lives in [`localization/private-build`](../localization/private-build/README.md), outside the synchronized app resources. It preserves the maintainer's published source catalog and its provenance. Private Traditional Chinese and final private-build integration remain separate work; the handoff lists source-dependent questions that catalog validation cannot answer.
+The private-build Simplified Chinese and Traditional Chinese (Taiwan) handoffs live in [`localization/private-build`](../localization/private-build/README.md), outside the synchronized app resources. They preserve the maintainer's published source catalog and its provenance. Final private-build integration remains separate work; the handoffs list source-dependent questions that catalog validation cannot answer.
 
 ## Writing UI text
 

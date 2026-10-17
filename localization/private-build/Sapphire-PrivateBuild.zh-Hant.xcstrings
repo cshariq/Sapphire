@@ -2516,7 +2516,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "將視窗排列成此平面的佈局。"
+            "value": "依照此視窗方案的佈局排列視窗。"
           }
         }
       }
@@ -3398,7 +3398,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "依顯示器"
+            "value": "依監測項目"
           }
         }
       }
@@ -3416,7 +3416,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "控球時間"
+            "value": "控制時間"
           }
         }
       }
@@ -5396,7 +5396,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "控球時間 %"
+            "value": "控制時間佔比 %"
           }
         }
       }
@@ -6422,7 +6422,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "到期日：%@"
+            "value": "今日應付：%@"
           }
         }
       }
@@ -11030,7 +11030,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "尚未指派任何飛機快速鍵。"
+            "value": "尚未指派任何視窗方案快速鍵。"
           }
         }
       }
@@ -11768,7 +11768,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "打開損益"
+            "value": "未實現損益"
           }
         }
       }
@@ -12614,7 +12614,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "個別按鍵視窗"
+            "value": "個別按鍵時間窗"
           }
         }
       }
@@ -13424,7 +13424,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "設定組"
+            "value": "個人資料"
           }
         }
       }
@@ -16034,7 +16034,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "搜尋顯示器…"
+            "value": "搜尋監測項目…"
           }
         }
       }
@@ -16718,7 +16718,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "快速鍵輸入"
+            "value": "短代碼輸入"
           }
         }
       }
@@ -17582,7 +17582,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在開始 %@：%@"
+            "value": "自 %@ 起：%@"
           }
         }
       }
@@ -18140,7 +18140,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "摔倒"
+            "value": "抱摔"
           }
         }
       }
@@ -18194,7 +18194,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "上位控制"
+            "value": "前列名次"
           }
         }
       }
@@ -18302,7 +18302,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "摔倒"
+            "value": "抱摔"
           }
         }
       }
@@ -19400,7 +19400,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已在 %@ 中解除封鎖"
+            "value": "將於 %@ 後解除封鎖"
           }
         }
       }
@@ -19886,7 +19886,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "對此按鍵使用預設視窗"
+            "value": "對此按鍵使用預設時間窗"
           }
         }
       }

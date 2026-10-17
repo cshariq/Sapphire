@@ -27,6 +27,7 @@ jobs:
           python3 localization/private-build/check_private_catalog.py
           mkdir -p "${RUNNER_TEMP}/SapphirePrivateCatalog"
           xcrun xcstringstool compile localization/private-build/Sapphire-PrivateBuild.zh-Hans.xcstrings --output-directory "${RUNNER_TEMP}/SapphirePrivateCatalog"
+          xcrun xcstringstool compile localization/private-build/Sapphire-PrivateBuild.zh-Hant.xcstrings --output-directory "${RUNNER_TEMP}/SapphirePrivateCatalog"
       - name: Verify native language fallback and formatting
         run: python3 script/test_localization.py --output localization-result.json
       - name: Preserve native resource results

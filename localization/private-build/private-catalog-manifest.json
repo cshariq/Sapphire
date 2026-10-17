@@ -18,7 +18,7 @@
   "validation_report": "validation-report.json",
   "native_catalog_compile": "passed with xcrun xcstringstool compile (zh-Hans and zh-Hant)",
   "runtime_coverage": "not established; private source/build/UI unavailable",
-  "integration": "Delivery artifact only. Keep outside the public app synchronized resource group. Merge by exact key into private Localizable.xcstrings after collaborator zh-Hant integration and maintainer key review; renaming this file to Localizable.xcstrings is needed before compiling as the default Localizable table.",
+  "integration": "Delivery artifacts only. Keep outside the public app synchronized resource group. Merge each locale's records by exact key into the private Localizable.xcstrings after maintainer key review; do not import the delivery files as separate default tables.",
   "issues": [
     {
       "id": "unverified_raw_swift_interpolation_key",
