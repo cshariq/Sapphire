@@ -196,6 +196,12 @@ class Helper: NSObject, HelperProtocol {
     private var dischargeWatchdogRechargeOnFloor: Bool = false
     private var dischargeWatchdogBypass: Bool = false
 
+    // Tracks external-power cuts (adapter inhibit / discharge) so they can be undone if the owning client goes away.
+    private let powerCutLock = NSLock()
+    private var adapterCutActive = false
+    private var dischargeActive = false
+    private var powerCutOwner: ObjectIdentifier?
+
     override init() {
         let smc = SMC()
         self.smc = smc
@@ -416,6 +422,12 @@ class Helper: NSObject, HelperProtocol {
         }
 
         if chargeControlMode == .adapter {
+            let owner = NSXPCConnection.current().map { ObjectIdentifier($0) }
+            powerCutLock.withLock {
+                adapterCutActive = !enabled
+                if !enabled, let owner { powerCutOwner = owner }
+                if !adapterCutActive && !dischargeActive { powerCutOwner = nil }
+            }
             reply(writeAdapterPowerEnabled(enabled))
             return
         }
@@ -594,6 +606,7 @@ class Helper: NSObject, HelperProtocol {
         if currentFloor > 0, !bypass, batteryPercent <= currentFloor {
             logger.log("[SapphireHelper] Discharge watchdog: battery at \(batteryPercent)% <= floor \(currentFloor)%, forcing discharge off.")
             _ = writeDischargeControlDirect(false)
+            powerCutLock.withLock { dischargeActive = false }
 
             if rechargeOnFloor {
                 logger.log("[SapphireHelper] Discharge watchdog: re-enabling charging at \(batteryPercent)%.")
@@ -622,6 +635,12 @@ class Helper: NSObject, HelperProtocol {
     func setDischarge(_ discharging: Bool, safetyFloor: Int, rechargeOnFloor: Bool, bypassSafetyFloor: Bool, reply: @escaping (Error?) -> Void) {
         logger.debug("[SapphireHelper] Received command: setDischarge(\(discharging), safetyFloor: \(safetyFloor), rechargeOnFloor: \(rechargeOnFloor), bypassSafetyFloor: \(bypassSafetyFloor))")
 
+        let owner = NSXPCConnection.current().map { ObjectIdentifier($0) }
+        powerCutLock.withLock {
+            dischargeActive = discharging
+            if discharging, let owner { powerCutOwner = owner }
+            if !adapterCutActive && !dischargeActive { powerCutOwner = nil }
+        }
         let error = writeDischargeControlDirect(discharging)
 
         if discharging && safetyFloor > 0 {
@@ -1072,10 +1091,37 @@ class Helper: NSObject, HelperProtocol {
 
     func clientConnectionEnded(_ connectionID: ObjectIdentifier) {
         fanController?.connectionEnded(connectionID)
+        let isOwner = powerCutLock.withLock { powerCutOwner == connectionID }
+        if isOwner {
+            restoreExternalPowerIfNeeded(reason: "client connection ended")
+        }
     }
 
     func prepareForExit() {
         fanController?.revertAllSynchronously()
+        restoreExternalPowerIfNeeded(reason: "helper exiting")
+    }
+
+    /// Undoes adapter cuts and active discharge so the Mac is never left on battery while plugged in.
+    /// Plain charge inhibition (firmware/legacy modes) is intentionally left untouched.
+    private func restoreExternalPowerIfNeeded(reason: String) {
+        let (adapterCut, discharging) = powerCutLock.withLock {
+            let state = (adapterCutActive, dischargeActive)
+            adapterCutActive = false
+            dischargeActive = false
+            powerCutOwner = nil
+            return state
+        }
+        guard adapterCut || discharging else { return }
+
+        if discharging {
+            stopDischargeWatchdog()
+            _ = writeDischargeControlDirect(false)
+        }
+        if adapterCut && chargeControlMode == .adapter {
+            _ = writeAdapterPowerEnabled(true)
+        }
+        logger.log("[SapphireHelper] Restored external power (adapterCut: \(adapterCut), discharge: \(discharging)): \(reason)")
     }
 
     func createAggregateDevice(subDeviceUIDs: [String], masterDeviceUID: String, reply: @escaping (UInt32) -> Void) {
