@@ -3519,7 +3519,7 @@ struct PlaylistView: View {
                 }
 
                 HStack(spacing: 8) {
-                    tonalButton("Play", systemImage: "play.fill") {
+                    tonalButton(String(localized: "Play"), systemImage: "play.fill") {
                         Task {
                             if !playlist.uri.hasPrefix("spotify:"),
                                musicManager.isAppleMusicContext {
@@ -3530,7 +3530,7 @@ struct PlaylistView: View {
                             }
                         }
                     }
-                    tonalButton("Shuffle", systemImage: "shuffle") {
+                    tonalButton(String(localized: "Shuffle"), systemImage: "shuffle") {
                         Task {
                             if !playlist.uri.hasPrefix("spotify:"),
                                musicManager.isAppleMusicContext {
@@ -3549,7 +3549,7 @@ struct PlaylistView: View {
                         }
                     }
                     if musicManager.spotifyPrivateAPI.smartShuffleAvailable && playlist.uri.hasPrefix("spotify:") {
-                        tonalButton("Smart", systemImage: "sparkles") {
+                        tonalButton(String(localized: "Smart"), systemImage: "sparkles") {
                             Task {
                                 handlePlaybackResult(await musicManager.spotifyPrivateAPI.playSmartShuffle(playlistURI: playlist.uri))
                             }
@@ -6238,7 +6238,7 @@ struct AppleMusicAudioBadgeRow: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(badges, id: \.self) { badge in
-                Label(badge.rawValue, systemImage: badge.systemImage)
+                Label(badge.displayName, systemImage: badge.systemImage)
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .labelStyle(.titleAndIcon)
                     .padding(.horizontal, 6)

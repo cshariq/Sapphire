@@ -2182,6 +2182,9 @@ struct FileShelfSettingsView: View {
         if count == 0 {
             return String(localized: "Drop files onto your paired Continuity phone from the File Shelf. Pair a device in Continuity settings first.")
         }
+        if count == 1 {
+            return String(localized: "Drop files onto your paired Continuity device from the File Shelf. Offline devices stay visible.")
+        }
         return String(localized: "Drop files onto any of your \(count) paired Continuity devices from the File Shelf. Offline devices stay visible.")
     }
 }
@@ -8899,7 +8902,7 @@ struct MusicSettingsView: View {
 
                 Picker("Music section", selection: $selectedTab) {
                     ForEach(MusicSettingsTab.allCases) { tab in
-                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                        Label(tab.displayName, systemImage: tab.icon).tag(tab)
                     }
                 }
                 .labelsHidden()
@@ -11473,10 +11476,10 @@ private struct MenuBarHotkeysSettingsSection: View {
         .modifier(SettingsContainerModifier())
     }
 
-    private func recorderRow(title: String, identifier: String, shortcut: Binding<KeyboardShortcut>) -> some View {
+    private func recorderRow(title: LocalizedStringKey, identifier: String, shortcut: Binding<KeyboardShortcut>) -> some View {
         let isRecording = shortcutRecorder.isRecording && shortcutRecorder.recordingIdentifier == identifier
         let label = shortcut.wrappedValue.key.isEmpty
-            ? "Not Set"
+            ? String(localized: "Not Set")
             : "\(KeyboardShortcutHelper.description(for: shortcut.wrappedValue.modifiers))\(shortcut.wrappedValue.key)"
         return HStack {
             Text(title).font(.system(size: 14, weight: .medium))
@@ -12811,7 +12814,7 @@ struct FocusSessionSettingsView: View {
 
     private var socialSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Social filters")
+            sectionLabel(String(localized: "Social filters"))
             Text("Cut short-form feeds without blocking every app by default.")
                 .font(.caption).foregroundColor(.secondary)
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 4)
@@ -12832,7 +12835,7 @@ struct FocusSessionSettingsView: View {
         .modifier(SettingsContainerModifier())
     }
 
-    private func socialChip(_ title: String, _ keyPath: WritableKeyPath<FocusSocialFilters, Bool>) -> some View {
+    private func socialChip(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<FocusSocialFilters, Bool>) -> some View {
         let on = profileStore.activeProfile.social[keyPath: keyPath]
         return Button {
             profileStore.updateActive { $0.social[keyPath: keyPath].toggle() }
@@ -12857,13 +12860,13 @@ struct FocusSessionSettingsView: View {
         .buttonStyle(.plain)
     }
 
-    private func socialToggle(_ title: String, _ keyPath: WritableKeyPath<FocusSocialFilters, Bool>) -> some View {
+    private func socialToggle(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<FocusSocialFilters, Bool>) -> some View {
         socialChip(title, keyPath)
     }
 
     private var triggersSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Auto-Start Triggers")
+            sectionLabel(String(localized: "Auto-Start Triggers"))
             Text("Start this profile when a macOS Focus mode turns on, or when your phone enters Do Not Disturb.")
                 .font(.caption).foregroundColor(.secondary)
                 .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 6)
@@ -12876,8 +12879,8 @@ struct FocusSessionSettingsView: View {
                 ForEach(availableFocusModes, id: \.id) { mode in
                     let selected = profileStore.activeProfile.triggers.macOSFocusModeIDs.contains(mode.id)
                     ToggleRow(
-                        title: mode.name,
-                        description: "Start this profile when “\(mode.name)” activates",
+                        title: Text(verbatim: mode.name),
+                        description: Text("Start this profile when “\(mode.name)” activates"),
                         isOn: Binding(
                             get: { selected },
                             set: { on in

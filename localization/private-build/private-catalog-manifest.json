@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "artifact": "Sapphire-PrivateBuild.zh-Hans.xcstrings",
+  "source_url": "https://github.com/user-attachments/files/33520868/Sapphire-PrivateBuild.json",
+  "source_sha256": "b14e4d4d5be16d8f93da1e46008ddb3166b572ba05c9ecc587d02b3111652872",
+  "public_base_commit": "7a016b1f7c8ac41dc894d55646b15d48f85a6b76",
+  "catalog_entries": 1189,
+  "public_reused_entries": 37,
+  "new_entries": 1152,
+  "locales": [
+    "en",
+    "zh-Hans"
+  ],
+  "excluded_locale": "zh-Hant",
+  "exclusion_reason": "Private Traditional Chinese belongs to the collaborating translator.",
+  "original_preserved_as": "Sapphire-PrivateBuild.json",
+  "validation_report": "validation-report.json",
+  "native_catalog_compile": "passed with xcrun xcstringstool compile",
+  "runtime_coverage": "not established; private source/build/UI unavailable",
+  "integration": "Delivery artifact only. Keep outside the public app synchronized resource group. Merge by exact key into private Localizable.xcstrings after collaborator zh-Hant integration and maintainer key review; renaming this file to Localizable.xcstrings is needed before compiling as the default Localizable table.",
+  "issues": [
+    {
+      "id": "unverified_raw_swift_interpolation_key",
+      "keys": [
+        "\"\\(manager.searchQuery)\" doesn't match any shortcode or keyword."
+      ],
+      "status": "requires_maintainer_confirmation",
+      "reason": "Attachment contains raw Swift source interpolation, not a compiler-confirmed catalog key. Exact key and interpolation are preserved; only surrounding prose is translated.",
+      "acceptance": "Confirm lookup key from private compiler .stringsdata or private source before changing this key."
+    },
+    {
+      "id": "english_plural_suffix_arguments",
+      "keys": [
+        "%lld active seat%@",
+        "%lld day%@ left in trial",
+        "%lld day%@ left in your trial",
+        "%lld item%@",
+        "%lld permission%@ remaining",
+        "%lld top match%@",
+        "Moved %lld item%@ to Trash • %@",
+        "Show %lld app%@"
+      ],
+      "status": "requires_private_source_verification",
+      "reason": "These keys appear to interpolate an English singular/plural suffix through %@. All format arguments are preserved, so translated output may still contain an English suffix if the caller passes s/es.",
+      "acceptance": "Inspect callers; use locale-aware plural catalog entries or locale-specific arguments and verify singular/plural Chinese rendering."
+    },
+    {
+      "id": "ambiguous_hits_context",
+      "keys": [
+        "Hits"
+      ],
+      "status": "requires_private_source_semantic_split",
+      "reason": "Source references include SportsTailoredPanels.swift:422 (hockey, beside Power Play/Faceoffs Won) and :429 (baseball, beside Runs/Errors/Strikeouts). One English key cannot precisely express both body checks and base hits in Chinese. Provisional wording is 命中次数.",
+      "acceptance": "Split into sport-specific keys and use 撞击次数 for hockey and 安打 for baseball, with private UI confirmation."
+    },
+    {
+      "id": "short_sports_labels",
+      "keys": [
+        "K",
+        "PP",
+        "T",
+        "TD",
+        "TOP"
+      ],
+      "status": "requires_private_ui_confirmation",
+      "reason": "Compact sports codes are preserved rather than expanding an abbreviation without its actual private UI. S is localized as 盘 based on its placement within both tennis panels.",
+      "acceptance": "Confirm sport-specific label meaning and compact layout against private screenshots."
+    },
+    {
+      "id": "quotation_or_market_quote",
+      "keys": [
+        "Quote"
+      ],
+      "status": "requires_private_ui_confirmation",
+      "reason": "Translated as 行情 based on the card context and nearby numeric placeholders; source body is not public.",
+      "acceptance": "Confirm this card is a financial quote; if it is quoted text, use 引用."
+    },
+    {
+      "id": "upstream_context_dependent_copy",
+      "keys": [
+        "Not configured yet. Paste a Client ID in BlipOAuthSecrets.swift (see the checklist at the end of this chat)."
+      ],
+      "status": "upstream_copy_followup",
+      "reason": "English source refers to the end of a chat that product users cannot identify. Translation preserves source meaning; no unsupported source rewrite is included.",
+      "acceptance": "Maintainer should replace the reference with durable configuration instructions in both English and translations."
+    }
+  ],
+  "overlap_reference": "reused-public-entries.json"
+}

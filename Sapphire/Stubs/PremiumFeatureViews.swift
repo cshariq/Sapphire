@@ -48,6 +48,15 @@ struct AppLockSettingsView: View { var body: some View { PremiumUnavailableView(
 struct DockLayoutsSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Dock Layouts")) } }
 struct MediaOptimizerSettingsView: View { var body: some View { PremiumUnavailableView(title: String(localized: "Media Optimizer")) } }
 
+struct SEQuitProtectionRulesView: View {
+    var body: some View {
+        PremiumUnavailableView(title: String(localized: "Quit & Close Protection"))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+    }
+}
+
 struct StorageWorkspaceView: View {
     @ObservedObject var model: StorageViewModel
     var body: some View { PremiumUnavailableView(title: String(localized: "Storage Workspace")) }

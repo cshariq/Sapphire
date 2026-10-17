@@ -14,6 +14,8 @@ The main app uses a filesystem-synchronized Xcode group. The Widget target has e
 
 One integrator edits each catalog while module contributors supply reviewed keys and translations. Run Xcode extraction after changes to find new strings and preserve translator comments. A compiler-extracted key is an inventory entry, not proof that a screen has been tested.
 
+The private-build Simplified Chinese handoff lives in [`localization/private-build`](../localization/private-build/README.md), outside the synchronized app resources. It preserves the maintainer's published source catalog and its provenance. Private Traditional Chinese and final private-build integration remain separate work; the handoff lists source-dependent questions that catalog validation cannot answer.
+
 ## Writing UI text
 
 - Use `LocalizedStringKey` for reusable SwiftUI components accepting fixed labels. Keep string literals at the call site so Xcode can extract them.
@@ -24,6 +26,7 @@ One integrator edits each catalog while module contributors supply reviewed keys
 - Keep interpolation placeholders intact. English values must reproduce Sapphire's existing English output exactly, including its wording, plurals, units and number and date formats; only the translations change what users see. A Chinese plural normally has an `other` form.
 - `String(localized:)` formats interpolated integers with the locale's grouping separator (`1,013`). When a plain `String` was built before and the number can reach four digits, interpolate `String(value)` so English keeps its ungrouped digits. Where Chinese needs a different number or date convention (for example 万/亿 counts), branch on `ChineseFormatting.isActive` and leave the English code path unchanged.
 - Settings search uses each section's English `searchTokens` unchanged. Terms for other languages go in `settings.search.keywords.<section>` as a comma-separated list; its English value is the section name, so English search behaves as before.
+- The 3.5 settings index keeps English metadata and raw option values for assistant actions and undo. Its static display catalog is in `SettingsIndex+Localization.swift`; add new setting titles there so Xcode can extract literal keys. Chinese searches also match localized titles and details. The navigation test checks that every setting has a display title, and formatting tests protect raw action values and existing English output.
 - Translate the message around an error code, never the code itself. Permission text describes the existing permission; localization must not request new access or change feature behavior.
 
 ## Terminology
@@ -40,6 +43,9 @@ One integrator edits each catalog while module contributors supply reviewed keys
 | Focus Session | 专注时段 | 專注時段 |
 | HUD | 提示浮层 | 浮動提示 |
 | Helper | 辅助服务（macOS 登录项中的注册名 Sapphire Helper 保留） | 輔助服務（macOS 登入項目中的註冊名稱 Sapphire Helper 保留） |
+| Continuity | 连续互通 | 接續互通 |
+
+The earbud section uses the semantic key `earbud.extras` (English: Extras). The private cricket panel also uses the English word Extras, meaning additional runs, so its original key must not replace the earbud translation when catalogs are combined.
 
 Traditional Chinese follows Apple's Taiwan wording rather than a character conversion of the Simplified text: for example 檔案 (file), 設定 (settings), 視窗 (window), 螢幕 (screen), 網路 (network), 預設 (default), 影片 (video) and 使用者 (user).
 

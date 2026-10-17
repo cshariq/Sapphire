@@ -8,6 +8,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UserNotifications
 
 enum ContinuityDeviceType: String, Codable, Sendable {
     case phone, tablet, mac, unknown
@@ -41,6 +42,15 @@ enum ContinuityNetworkKind: String, Codable {
 struct ContinuityConnectivitySnapshot: Equatable {
     enum Severity: Equatable {
         case noDevice, healthy, degraded, offline
+
+        var tint: Color {
+            switch self {
+            case .noDevice: .secondary
+            case .healthy: .green
+            case .degraded: .orange
+            case .offline: .red
+            }
+        }
     }
 
     var severity: Severity = .noDevice
@@ -150,6 +160,7 @@ struct ContinuityExternalActivity: Codable, Equatable, Identifiable {
     var appName: String
     var title: String
     var text: String?
+    var shortText: String?
     var left: ContinuityActivitySlot
     var right: ContinuityActivitySlot
     var progress: ContinuityActivityProgress?
@@ -200,6 +211,14 @@ final class ContinuityHandoffBridge {
     func handleBannerTap() {}
 }
 
+final class ContinuityNotificationResponseBridge {
+    func handleNotificationResponse(_ response: UNNotificationResponse) {}
+}
+
+final class ContinuityFocusModeManager {
+    var isApplyingRemoteFocus: Bool { false }
+}
+
 @MainActor
 @Observable
 final class ContinuityManager {
@@ -214,12 +233,15 @@ final class ContinuityManager {
     let liveActivityBridge = ContinuityExternalActivityBridge()
     let mediaBridge = ContinuityMediaBridge()
     let handoffBridge = ContinuityHandoffBridge()
+    let messagesBridge = ContinuityNotificationResponseBridge()
+    let callsBridge = ContinuityNotificationResponseBridge()
+    let focusModeManager = ContinuityFocusModeManager()
 
     private init() {}
 
     func startIfEnabled() {}
     func stop() {}
-    func openWidgets() {}
+    func openWidgets(focus: Int? = nil) {}
     func sendMediaCommand(_ action: ContinuityMediaAction, seekMs: Int? = nil) {}
     func sendFiles(_ urls: [URL], toPeerID peerID: String) {}
     func dismissNotificationOnPhone(peerID: String, key: String) {}

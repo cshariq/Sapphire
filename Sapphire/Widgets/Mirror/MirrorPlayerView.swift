@@ -408,7 +408,11 @@ final class MirrorFullscreenWindowController {
 
     func present() {
         let screens = NSScreen.screens
+        #if PUBLIC_BUILD
+        guard let index = screens.firstIndex(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? screens.indices.first else { return }
+        #else
         guard let index = OCRScreenTextSupport.indexOfScreen(containing: NSEvent.mouseLocation, in: screens.map(\.frame)) else { return }
+        #endif
         let screen = screens[index]
 
         let window: NSWindow

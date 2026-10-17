@@ -134,7 +134,7 @@ struct FocusProfile: Identifiable, Codable, Equatable, Hashable {
 
     var updatedAt: Date
 
-    static func makeDefault(name: String = "Deep Work", symbol: String = "moon.fill") -> FocusProfile {
+    static func makeDefault(name: String = String(localized: "Deep Work"), symbol: String = "moon.fill") -> FocusProfile {
         FocusProfile(
             id: UUID(),
             name: name,
@@ -160,21 +160,21 @@ struct FocusProfile: Identifiable, Codable, Equatable, Hashable {
     }
 
     static func presets() -> [FocusProfile] {
-        var deep = makeDefault(name: "Deep Work", symbol: "brain.head.profile")
+        var deep = makeDefault(name: String(localized: "Deep Work"), symbol: "brain.head.profile")
         deep.intensity = .strict
         deep.social.blockYouTubeShorts = true
         deep.social.blockInstagramReels = true
         deep.social.blockTikTok = true
         deep.social.blockShortFormWeb = true
 
-        var study = makeDefault(name: "Study", symbol: "book.fill")
+        var study = makeDefault(name: String(localized: "Study"), symbol: "book.fill")
         study.durationSeconds = 50 * 60
         study.breakSeconds = 10 * 60
         study.intensity = .standard
         study.social.blockYouTubeShorts = true
         study.social.blockInstagramReels = true
 
-        var windDown = makeDefault(name: "Wind Down", symbol: "bed.double.fill")
+        var windDown = makeDefault(name: String(localized: "Wind Down"), symbol: "bed.double.fill")
         windDown.durationSeconds = 30 * 60
         windDown.intensity = .gentle
         windDown.breakEnabled = false
@@ -182,7 +182,7 @@ struct FocusProfile: Identifiable, Codable, Equatable, Hashable {
         windDown.social.blockTikTok = true
         windDown.social.instagramFollowingOnly = true
 
-        var meeting = makeDefault(name: "Meetings", symbol: "person.3.fill")
+        var meeting = makeDefault(name: String(localized: "Meetings"), symbol: "person.3.fill")
         meeting.durationSeconds = 60 * 60
         meeting.intensity = .minimal
         meeting.blockingEnabled = false

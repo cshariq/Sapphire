@@ -145,6 +145,7 @@
 		DAF7D8AE2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle in CopyFiles */ = {isa = PBXBuildFile; fileRef = DAF7D8AD2E20801E00AB0820 /* SwiftProtobuf_SwiftProtobuf.bundle */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		F1CE00000000000000001AA /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CE000000000000000002AA /* main.swift */; };
 		F1CE00000000000000002AA /* SapphireFinderSync.appex in Embed Finder Extensions */ = {isa = PBXBuildFile; fileRef = F1CE000000000000000001AA /* SapphireFinderSync.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F2DE000000000000000020BB /* Public FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000021BB /* Public FileProviderExtension.swift */; };
 		F2DE000000000000000013BB /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000002BB /* FileProviderExtension.swift */; };
 		F2DE000000000000000014BB /* FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000003BB /* FileProviderItem.swift */; };
 		F2DE000000000000000015BB /* FileProviderEnumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2DE000000000000000004BB /* FileProviderEnumerator.swift */; };
@@ -488,6 +489,7 @@
 		F1CE000000000000000004AA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F1CE000000000000000005AA /* SapphireFinderSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SapphireFinderSync.entitlements; sourceTree = "<group>"; };
 		F2DE000000000000000001BB /* SapphireFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SapphireFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F2DE000000000000000021BB /* Public FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Public FileProviderExtension.swift"; path = PublicExtensionStubs/FileProvider/FileProviderExtension.swift; sourceTree = SOURCE_ROOT; };
 		F2DE000000000000000002BB /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
 		F2DE000000000000000003BB /* FileProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderItem.swift; sourceTree = "<group>"; };
 		F2DE000000000000000004BB /* FileProviderEnumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderEnumerator.swift; sourceTree = "<group>"; };
@@ -1066,6 +1068,7 @@
 			isa = PBXGroup;
 			children = (
 				F2DE000000000000000002BB /* FileProviderExtension.swift */,
+				F2DE000000000000000021BB /* Public FileProviderExtension.swift */,
 				F2DE000000000000000003BB /* FileProviderItem.swift */,
 				F2DE000000000000000004BB /* FileProviderEnumerator.swift */,
 				F2DE000000000000000005BB /* HostConnection.swift */,
@@ -1664,6 +1667,7 @@
 			isa = PBXSourcesBuildPhase;
 			files = (
 				F2DE000000000000000013BB /* FileProviderExtension.swift in Sources */,
+				F2DE000000000000000020BB /* Public FileProviderExtension.swift in Sources */,
 				F2DE000000000000000014BB /* FileProviderItem.swift in Sources */,
 				F2DE000000000000000015BB /* FileProviderEnumerator.swift in Sources */,
 				F2DE000000000000000016BB /* HostConnection.swift in Sources */,
@@ -2182,7 +2186,8 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = "*/Sapphire/Stubs/*";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_APP_EXCLUDED_SOURCES)";
+				SAPPHIRE_APP_EXCLUDED_SOURCES = "*/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GCC_OPTIMIZATION_LEVEL = s;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -2267,7 +2272,8 @@
 				ENABLE_RESOURCE_ACCESS_CONTACTS = YES;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = "*/Sapphire/Stubs/*";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_APP_EXCLUDED_SOURCES)";
+				SAPPHIRE_APP_EXCLUDED_SOURCES = "*/Sapphire/Stubs/*";
 				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)/Sapphire/Services/Music";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/PrivateHeaders";
@@ -2449,7 +2455,11 @@
 		F2DE00000000000000000CBB /* Debug configuration for PBXNativeTarget "SapphireFileProvider" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS)";
+				SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
+				SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE = SapphireFileProvider/Info.plist;
+				SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES = "*/PublicExtensionStubs/FileProvider/*";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -2457,7 +2467,7 @@
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = SapphireFileProvider/Info.plist;
+				INFOPLIST_FILE = "$(SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -2479,7 +2489,11 @@
 		F2DE00000000000000000DBB /* Release configuration for PBXNativeTarget "SapphireFileProvider" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS)";
+				SAPPHIRE_FILE_PROVIDER_ENTITLEMENTS = SapphireFileProvider/SapphireFileProvider.entitlements;
+				SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE = SapphireFileProvider/Info.plist;
+				SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES = "*/PublicExtensionStubs/FileProvider/*";
+				EXCLUDED_SOURCE_FILE_NAMES = "$(SAPPHIRE_FILE_PROVIDER_EXCLUDED_SOURCES)";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -2487,7 +2501,7 @@
 				DEVELOPMENT_TEAM = KVQFWJ7C7S;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = SapphireFileProvider/Info.plist;
+				INFOPLIST_FILE = "$(SAPPHIRE_FILE_PROVIDER_INFOPLIST_FILE)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

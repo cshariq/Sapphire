@@ -483,7 +483,7 @@ private struct LockScreenMusicPaneContent: View {
             eyebrow(label.isEmpty ? String(localized: "Now Playing") : label, m)
             if isAppleMusic {
                 ForEach(details.audioBadges.prefix(2), id: \.self) { badge in
-                    Label(badge.rawValue, systemImage: badge.systemImage)
+                    Label(badge.displayName, systemImage: badge.systemImage)
                         .font(.system(size: 11 * m.k, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.75))
                         .padding(.horizontal, 8 * m.k)
@@ -513,9 +513,9 @@ private struct LockScreenMusicPaneContent: View {
         let details = musicManager.appleNowPlaying
         let plays: String? = {
             if isAppleMusic, let count = details.playCount ?? musicManager.applePlayCount, count > 0 {
-                return count == 1 ? String(localized: "Played once") : String(localized: "Played \(count) times")
+                return count == 1 ? String(localized: "Played once") : String(localized: "Played \(String(count)) times")
             }
-            return musicManager.playCount.map { String(localized: "\($0) plays") }
+            return musicManager.playCount.map { String(localized: "\(String($0)) plays") }
         }()
 
         return HStack(spacing: 8 * m.k) {
@@ -877,7 +877,7 @@ private struct LockScreenMusicPaneContent: View {
         } else {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 24 * m.k) {
-                    headline(String(localized: "Your Library"), detail: String(localized: "\(playlists.count) playlists"), m)
+                    headline(String(localized: "Your Library"), detail: String(localized: "\(String(playlists.count)) playlists"), m)
                     LazyVGrid(
                         columns: [GridItem(.adaptive(minimum: 190 * m.k, maximum: 260 * m.k), spacing: 28 * m.k)],
                         alignment: .leading,
@@ -926,7 +926,7 @@ private struct LockScreenMusicPaneContent: View {
         let signedIn = isAppleMusic || musicManager.isPrivateAPIAuthenticated || musicManager.isOfficialAPIAuthenticated
         return Group {
             paneCard(m, key: "queue", padding: 28 * m.k) {
-                headline(String(localized: "Up Next"), detail: tracks.isEmpty ? nil : String(localized: "\(tracks.count) songs"), m)
+                headline(String(localized: "Up Next"), detail: tracks.isEmpty ? nil : String(localized: "\(String(tracks.count)) songs"), m)
                 if !signedIn {
                     emptyState(String(localized: "Sign in to Spotify to see your queue"), icon: "person.crop.circle.badge.questionmark", m)
                 } else if tracks.isEmpty {

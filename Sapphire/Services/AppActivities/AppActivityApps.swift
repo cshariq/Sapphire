@@ -17,10 +17,10 @@ enum AppActivityKind {
 
     var verb: String {
         switch self {
-        case .meeting: "In a meeting"
-        case .call: "On a call"
-        case .recording: "Recording"
-        case .remoteSession: "Connected"
+        case .meeting: String(localized: "In a meeting")
+        case .call: String(localized: "On a call")
+        case .recording: String(localized: "Recording")
+        case .remoteSession: String(localized: "Connected")
         }
     }
 }
@@ -39,16 +39,16 @@ enum AppActivityApp: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .zoom: "Zoom"
-        case .googleMeet: "Google Meet"
-        case .teams: "Microsoft Teams"
-        case .slack: "Slack huddles"
-        case .discord: "Discord voice"
-        case .faceTime: "FaceTime"
-        case .webex: "Webex"
-        case .voiceMemos: "Voice Memos"
-        case .quickTime: "QuickTime recordings"
-        case .screenSharing: "Screen Sharing"
+        case .zoom: String(localized: "Zoom")
+        case .googleMeet: String(localized: "Google Meet")
+        case .teams: String(localized: "Microsoft Teams")
+        case .slack: String(localized: "Slack huddles")
+        case .discord: String(localized: "Discord voice")
+        case .faceTime: String(localized: "FaceTime")
+        case .webex: String(localized: "Webex")
+        case .voiceMemos: String(localized: "Voice Memos")
+        case .quickTime: String(localized: "QuickTime recordings")
+        case .screenSharing: String(localized: "Screen Sharing")
         }
     }
 
@@ -174,16 +174,16 @@ enum AppActivityApp: String, CaseIterable, Identifiable, Codable {
 
     var detectionDetail: String {
         switch self {
-        case .zoom: "While you're in a meeting. Mute, video and sharing follow Zoom's own state."
-        case .googleMeet: "While a Meet tab in Chrome, Edge, Brave, Arc or Safari is using the microphone. Needs permission to control the browser."
-        case .teams: "While a Teams call or meeting is using the microphone."
-        case .slack: "While you're in a huddle."
-        case .discord: "While you're in a voice channel."
-        case .faceTime: "While you're on a FaceTime call."
-        case .webex: "While a Webex meeting is using the microphone."
-        case .voiceMemos: "While Voice Memos is recording."
-        case .quickTime: "While QuickTime is recording the screen, a movie or audio."
-        case .screenSharing: "While you're connected to another Mac."
+        case .zoom: String(localized: "While you're in a meeting. Mute, video and sharing follow Zoom's own state.")
+        case .googleMeet: String(localized: "While a Meet tab in Chrome, Edge, Brave, Arc or Safari is using the microphone. Needs permission to control the browser.")
+        case .teams: String(localized: "While a Teams call or meeting is using the microphone.")
+        case .slack: String(localized: "While you're in a huddle.")
+        case .discord: String(localized: "While you're in a voice channel.")
+        case .faceTime: String(localized: "While you're on a FaceTime call.")
+        case .webex: String(localized: "While a Webex meeting is using the microphone.")
+        case .voiceMemos: String(localized: "While Voice Memos is recording.")
+        case .quickTime: String(localized: "While QuickTime is recording the screen, a movie or audio.")
+        case .screenSharing: String(localized: "While you're connected to another Mac.")
         }
     }
 }

@@ -44,6 +44,7 @@ final class DMGInstallerManager: ObservableObject {
 
     private init() {}
     func handleOpenURLs(_ urls: [URL]) {}
+    func reconcileDefaultHandlerIfNeeded() {}
     static func isDefaultDMGHandler() -> Bool { false }
     static func setAsDefaultDMGHandler() {}
     static func shadowingCopy() -> URL? { nil }

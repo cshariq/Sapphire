@@ -19,7 +19,7 @@ struct InstalledAppUpdatesBatchBar: View {
             if selectableCount > 1 || selectedCount > 0 || !skipped.isEmpty {
                 HStack(spacing: 10) {
                     if selectableCount > 1 || selectedCount > 0 {
-                        Button(selectedCount == selectableCount && selectableCount > 0 ? "Deselect all" : "Select all") {
+                        Button(selectedCount == selectableCount && selectableCount > 0 ? String(localized: "Deselect all") : String(localized: "Select all")) {
                             if selectedCount == selectableCount {
                                 checker.clearSelection()
                             } else {
@@ -29,7 +29,7 @@ struct InstalledAppUpdatesBatchBar: View {
                         .buttonStyle(.link)
                         .font(.caption)
 
-                        Text(selectedCount == 0 ? "None selected" : "\(selectedCount) selected")
+                        Text(verbatim: selectedCount == 0 ? String(localized: "None selected") : String(localized: "\(selectedCount) selected"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

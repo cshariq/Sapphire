@@ -209,7 +209,7 @@ struct MomentumLyricText: View {
 
     var body: some View {
         let text = lyric.words.enumerated().reduce(Text("")) { text, item in
-            text + Text(item.element.text).customAttribute(MomentumToken(index: item.offset))
+            text + Text(verbatim: item.element.text).customAttribute(MomentumToken(index: item.offset))
         }
         .foregroundStyle(.white)
 

@@ -1221,7 +1221,7 @@ struct LiquidGlassOptionsEditor: View {
             set: { options.tintHex = LiquidGlassOptions.hex(from: NSColor($0)) }
         )
         return HStack(spacing: 12) {
-            SettingsRowLabel(title: "Tint", description: hasTint.wrappedValue ? options.tintHex : "No tint over the glass.")
+            SettingsRowLabel(title: Text("Tint"), description: hasTint.wrappedValue ? Text(verbatim: options.tintHex) : Text("No tint over the glass."))
             Spacer()
             if hasTint.wrappedValue {
                 ColorPicker("Tint Color", selection: color, supportsOpacity: true)

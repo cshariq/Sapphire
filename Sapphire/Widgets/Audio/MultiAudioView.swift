@@ -147,7 +147,7 @@ struct SystemAudioPanel: View {
         }
     }
 
-    private func tabButton(_ title: String, icon: String, tab: Tab) -> some View {
+    private func tabButton(_ title: LocalizedStringKey, icon: String, tab: Tab) -> some View {
         Button {
             selectedTab = tab
         } label: {

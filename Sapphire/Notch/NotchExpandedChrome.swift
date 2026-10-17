@@ -309,7 +309,7 @@ private struct NotchChromeButton: View {
 struct NotchCaffeinateMenu: View {
     @ObservedObject var caffeineManager: CaffeineManager
 
-    private static let durations: [(label: String, minutes: Double)] = [
+    private static let durations: [(label: LocalizedStringKey, minutes: Double)] = [
         ("15 Minutes", 15), ("30 Minutes", 30), ("1 Hour", 60), ("2 Hours", 120), ("4 Hours", 240), ("8 Hours", 480)
     ]
 

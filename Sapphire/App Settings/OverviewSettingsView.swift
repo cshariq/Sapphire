@@ -44,17 +44,17 @@ private struct SettingsAssistantCard: View {
     @FocusState private var isInputFocused: Bool
 
     private let starters = [
-        "Can I hide the notch when nothing is playing?",
-        "Suggest settings to save battery",
-        "Hide live activities in full screen",
-        "What can I change about the music player?"
+        String(localized: "Can I hide the notch when nothing is playing?"),
+        String(localized: "Suggest settings to save battery"),
+        String(localized: "Hide live activities in full screen"),
+        String(localized: "What can I change about the music player?")
     ]
 
     var body: some View {
         SettingsCard(title: "Ask Sapphire", description: "Runs on-device with Apple Intelligence. Changes apply right away and can be undone.") {
             VStack(alignment: .leading, spacing: 12) {
                 if let reason = assistant.unavailableReason {
-                    InfoContainer(text: reason, iconName: "apple.intelligence", color: .orange)
+                    InfoContainer(text: Text(verbatim: reason), iconName: "apple.intelligence", color: .orange)
                 }
 
                 if assistant.messages.isEmpty {
@@ -144,7 +144,7 @@ private struct MessageView: View {
         case .user:
             HStack {
                 Spacer(minLength: 60)
-                Text(message.text)
+                Text(verbatim: message.text)
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -152,7 +152,7 @@ private struct MessageView: View {
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 8) {
-                Text(message.text)
+                Text(verbatim: message.text)
                     .textSelection(.enabled)
                     .foregroundStyle(message.isError ? Color.orange : Color.primary)
                 ForEach(message.changes) { change in
@@ -184,7 +184,7 @@ private struct ChangeRow: View {
         HStack(spacing: 8) {
             Image(systemName: isUndone ? "arrow.uturn.backward.circle" : "checkmark.circle.fill")
                 .foregroundStyle(isUndone ? Color.secondary : Color.green)
-            Text("\(change.entry.displayTitle): \(change.oldValue.description) → \(change.newValue.description)")
+            Text("\(change.entry.displayTitle): \(change.entry.displayValue(change.oldValue)) → \(change.entry.displayValue(change.newValue))")
                 .font(.callout)
                 .strikethrough(isUndone)
             Spacer()
@@ -241,17 +241,17 @@ private struct SettingsEntryRow: View {
     private var control: some View {
         switch value {
         case .bool(let on)?:
-            SettingsSwitch(title: entry.displayTitle, isOn: Binding(get: { on }, set: { set($0 ? "on" : "off") }))
+            SettingsSwitch(title: Text(verbatim: entry.displayTitle), isOn: Binding(get: { on }, set: { set($0 ? "on" : "off") }))
         case .text(let current)? where entry.options != nil:
             Picker("", selection: Binding(get: { current }, set: { set($0) })) {
                 ForEach(entry.options ?? [], id: \.self) { option in
-                    Text(SettingsIndex.humanized(option)).tag(option)
+                    Text(verbatim: entry.displayOption(option)).tag(option)
                 }
             }
             .labelsHidden()
             .frame(maxWidth: 150)
         case let current?:
-            Text(current.description).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            Text(verbatim: entry.displayValue(current)).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
         case nil:
             EmptyView()
         }
