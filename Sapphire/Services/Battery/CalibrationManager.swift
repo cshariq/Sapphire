@@ -23,13 +23,13 @@ class CalibrationManager: ObservableObject {
 
         var description: String {
             switch self {
-            case .idle: return "Idle"
-            case .chargingToFull: return "Step 1: Charging to 100%"
-            case .holdingAtFull(let time): return "Step 2: Holding at 100% (\(time.formattedInterval()))"
-            case .dischargingToLow: return "Step 3: Discharging to 10%"
-            case .finalChargeToLimit: return "Step 4: Recharging to original limit"
-            case .done: return "Calibration Complete"
-            case .error(let msg): return "Error: \(msg)"
+            case .idle: return String(localized: "Idle")
+            case .chargingToFull: return String(localized: "Step 1: Charging to 100%")
+            case .holdingAtFull(let time): return String(localized: "Step 2: Holding at 100% (\(time.formattedInterval()))")
+            case .dischargingToLow: return String(localized: "Step 3: Discharging to 10%")
+            case .finalChargeToLimit: return String(localized: "Step 4: Recharging to original limit")
+            case .done: return String(localized: "Calibration Complete")
+            case .error(let msg): return String(localized: "Error: \(msg)")
             }
         }
     }
@@ -98,7 +98,7 @@ class CalibrationManager: ObservableObject {
                     guard let self else { return }
                     if let error = error {
                         print("[CalibrationManager] Failed to start calibration: \(error.localizedDescription)")
-                        self.transition(to: .error("Failed to start calibration: \(error.localizedDescription)"))
+                        self.transition(to: .error(String(localized: "Failed to start calibration: \(error.localizedDescription)")))
                     }
                 }
             }

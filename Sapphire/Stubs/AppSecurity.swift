@@ -20,9 +20,9 @@ enum AppSecurityValidationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notAnApplication:
-            "The downloaded item is not a valid application bundle."
+            String(localized: "The downloaded item is not a valid application bundle.")
         case .bundleIdentifierMismatch(let expected, let actual):
-            "The update is for \(actual), not \(expected)."
+            String(localized: "The update is for \(actual), not \(expected).")
         }
     }
 }

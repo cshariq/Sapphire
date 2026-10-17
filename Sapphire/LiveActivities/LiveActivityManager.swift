@@ -1913,7 +1913,7 @@ class LiveActivityManager {
         if musicWidget.showQuickPeek || showHoverPeek {
             bottomContentType =
                 .peek(
-                    title: " " + (musicWidget.title ?? "Now Playing"),
+                    title: " " + (musicWidget.title ?? String(localized: "Now Playing")),
                     artist: musicWidget.artist ?? ""
                 )
             bottomContentIdentifier = "peek"
@@ -2253,7 +2253,7 @@ class LiveActivityManager {
 
         if !newStatus.isActive && (oldStatus?.isActive ?? false) {
             let offModeInfo = FocusModeInfo(
-                name: "Off",
+                name: String(localized: "Off"),
                 identifier: "focus.off.activity",
                 symbolName: oldStatus?.symbolName ?? "moon.zzz.fill",
                 tintColorName: "systemGrayColor",
@@ -2428,7 +2428,7 @@ class LiveActivityManager {
                 id: eventID,
                 code: code,
                 source: notification.appName,
-                title: notification.title.isEmpty ? "Verification code" : notification.title,
+                title: notification.title.isEmpty ? String(localized: "Verification code") : notification.title,
                 body: notification.body,
                 date: notification.date
             )
@@ -2730,7 +2730,7 @@ class LiveActivityManager {
                 }
             } else { errorString = error.localizedDescription }
             payload.state =
-                .failed(errorString.isEmpty ? "Unknown Error" : errorString)
+                .failed(errorString.isEmpty ? String(localized: "Unknown Error") : errorString)
         } else { payload.state = .finished }
         payload.progress = nil
         self.currentNearbyTransferPayload = payload

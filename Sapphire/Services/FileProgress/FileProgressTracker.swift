@@ -726,7 +726,7 @@ final class FileProgressTracker: ObservableObject {
 
     nonisolated static func displayName(for url: URL) -> String {
         var name = finalURL(for: url).lastPathComponent
-        if name.hasPrefix("Unconfirmed ") { name = "Downloading…" }
+        if name.hasPrefix("Unconfirmed ") { name = String(localized: "Downloading…") }
         return name
     }
 

@@ -861,7 +861,7 @@ struct LyricsView: View {
         if let title = musicManager.title, !title.isEmpty {
             return title
         }
-        return "Not Playing"
+        return String(localized: "Not Playing")
     }
 
     private func openLyricsWindow() {
@@ -1051,12 +1051,12 @@ private struct LyricsDetachedLeftPane: View {
 
     private var displayTitle: String {
         if let title = musicManager.title, !title.isEmpty { return title }
-        return "Not Playing"
+        return String(localized: "Not Playing")
     }
 
     private var displayArtist: String {
         if let artist = musicManager.artist, !artist.isEmpty { return artist }
-        return "Unknown Artist"
+        return String(localized: "Unknown Artist")
     }
 }
 
@@ -1326,7 +1326,7 @@ private struct LyricsDetachedBottomBar: View {
                 )
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(holdFeedbackButtonID == "previous" ? holdFeedbackColor : .white.opacity(0.8))
-                .help(MusicLongPressUI.skipHelp(primary: "Previous", target: .previous, settings: settings.settings.value))
+                .help(MusicLongPressUI.skipHelp(primary: String(localized: "music.playback.previous", defaultValue: "Previous"), target: .previous, settings: settings.settings.value))
 
                 LongPressControlButton(
                     onTap: {
@@ -1354,7 +1354,7 @@ private struct LyricsDetachedBottomBar: View {
                 .buttonStyle(.plain)
                 .scaleEffect(musicManager.isPlaying ? 1.0 : 0.95)
                 .animation(.easeInOut(duration: 0.15), value: holdFeedbackIcon)
-                .help(MusicLongPressUI.accessoryHelp(primary: "Play / Pause", target: .playPause, settings: settings.settings.value))
+                .help(MusicLongPressUI.accessoryHelp(primary: String(localized: "Play / Pause"), target: .playPause, settings: settings.settings.value))
 
                 SeekButton(
                     systemName: "forward.fill",
@@ -1368,7 +1368,7 @@ private struct LyricsDetachedBottomBar: View {
                 )
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(holdFeedbackButtonID == "next" ? holdFeedbackColor : .white.opacity(0.8))
-                .help(MusicLongPressUI.skipHelp(primary: "Next", target: .next, settings: settings.settings.value))
+                .help(MusicLongPressUI.skipHelp(primary: String(localized: "music.playback.next", defaultValue: "Next"), target: .next, settings: settings.settings.value))
             }
         }
         .onAppear {
