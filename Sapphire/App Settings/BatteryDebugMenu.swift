@@ -19,6 +19,7 @@ struct BatteryDebugMenu: View {
     @State private var log: [String] = []
     @State private var protocolVersion: Int?
     @State private var chargeControlMode: ChargeControlMode?
+    @State private var nativeLimitSummary: String?
     @State private var batteryTemp: Double?
     @State private var hardwarePercent: Int?
     @State private var adapter: PowerAdapterInfo?
@@ -89,6 +90,7 @@ struct BatteryDebugMenu: View {
                 gridRow("Issue", helperManager.lastIssue?.code ?? "None")
                 gridRow("Protocol version", protocolVersion.map(String.init) ?? "—")
                 gridRow("Charge-control mode", chargeControlMode.map { String(describing: $0) } ?? "—")
+                gridRow("Native charge limit", nativeLimitSummary ?? "—")
             }
             .font(.caption.monospaced())
 
@@ -341,6 +343,13 @@ struct BatteryDebugMenu: View {
         let running = await XPCClient.shared.ping(timeout: 3)
         protocolVersion = await XPCClient.shared.helperProtocolVersion(timeout: 3)
         chargeControlMode = await BatteryManager.shared.currentChargeControlMode()
+        if await NativeChargeLimit.isSupported {
+            let enabled = await NativeChargeLimit.isEnabled
+            let limit = await NativeChargeLimit.currentLimit
+            nativeLimitSummary = "\(enabled.map { $0 ? "on" : "off" } ?? "?") @ \(limit.map { "\($0)%" } ?? "?")\(NativeChargeLimit.sapphireOwnsLimit ? " (Sapphire)" : "")"
+        } else {
+            nativeLimitSummary = "unsupported"
+        }
         appendLog("ping: \(running ? "reachable" : "unreachable"), protocol v\(protocolVersion.map(String.init) ?? "?"), mode \(String(describing: chargeControlMode ?? .legacy))")
     }
 
