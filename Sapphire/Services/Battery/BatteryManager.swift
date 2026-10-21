@@ -180,7 +180,14 @@ class PowerStateController: ObservableObject {
                         batteryManager.setChargeLimit(currentSettings.batteryChargeLimit)
                     }
                 case .adapter:
-                    batteryManager.enableCharging(false)
+                    // The native limit is enforced by firmware during sleep; only cut AC if the user asked to.
+                    let nativeLimitActive = NativeChargeLimit.sapphireOwnsLimit
+                        && !currentSettings.manualChargePaused
+                        && NativeChargeLimit.supportedRange.contains(currentSettings.batteryChargeLimit)
+                        && currentSettings.batteryChargeLimit < 100
+                    if !nativeLimitActive || currentSettings.stopChargingWhenSleeping {
+                        batteryManager.enableCharging(false)
+                    }
                 case .legacy, .unsupported:
                     if isAppleSilicon {
                         batteryManager.enableCharging(false)
@@ -241,12 +248,32 @@ class PowerStateController: ObservableObject {
 
             batteryManager.setDischarge(discharging: false)
 
+            let mode = await batteryManager.currentChargeControlMode()
+
+            // On gated firmware the adapter is the only SMC lever, so the limit itself is handed to
+            // macOS's native Charge Limit (it keeps the Mac on AC, applies its own hysteresis and
+            // enforces the limit during sleep). Sapphire's sailing hysteresis is ignored in this path.
+            var useNativeLimit = mode == .adapter
+                && !currentSettings.manualChargePaused
+                && NativeChargeLimit.supportedRange.contains(currentSettings.batteryChargeLimit)
+                && currentSettings.batteryChargeLimit < 100
+            if useNativeLimit {
+                useNativeLimit = await NativeChargeLimit.isSupported
+            }
+            if useNativeLimit {
+                useNativeLimit = await NativeChargeLimit.apply(limit: currentSettings.batteryChargeLimit)
+            } else if NativeChargeLimit.sapphireOwnsLimit {
+                await NativeChargeLimit.release()
+            }
+
             var shouldCharge = true
             var currentManagementState: ManagementState = .charging
 
             if currentSettings.manualChargePaused {
                 shouldCharge = false
                 currentManagementState = .inhibited
+            } else if useNativeLimit {
+                if currentCharge >= currentSettings.batteryChargeLimit { currentManagementState = .inhibited }
             } else if currentSettings.sailingModeEnabled {
                 let sailingLowerBound = currentSettings.batteryChargeLimit - currentSettings.sailingModeLowerLimit
                 if currentCharge >= currentSettings.batteryChargeLimit { shouldCharge = false; currentManagementState = .inhibited }
@@ -288,7 +315,6 @@ class PowerStateController: ObservableObject {
                 settings: currentSettings
             )
 
-            let mode = await batteryManager.currentChargeControlMode()
             switch mode {
             case .firmware:
                 if currentSettings.manualChargePaused {
@@ -308,7 +334,8 @@ class PowerStateController: ObservableObject {
                 }
             }
 
-            let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: !shouldCharge)
+            let heldByNativeLimit = useNativeLimit && currentCharge >= currentSettings.batteryChargeLimit
+            let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: !shouldCharge || heldByNativeLimit)
             batteryManager.setMagSafeLED(color: ledColor)
             statusManager.updateState(managementState: currentManagementState, ledColor: ledColor)
         }

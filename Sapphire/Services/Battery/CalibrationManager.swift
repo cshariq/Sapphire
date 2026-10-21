@@ -74,6 +74,11 @@ class CalibrationManager: ObservableObject {
             .sink { [weak self] _ in self?.evaluateNextStep() }
             .store(in: &cancellables)
 
+        // Calibration needs a full charge, so hand the native limit back until it finishes.
+        if NativeChargeLimit.sapphireOwnsLimit {
+            Task { await NativeChargeLimit.release() }
+        }
+
         transition(to: .chargingToFull)
     }
 
