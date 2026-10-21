@@ -12,13 +12,13 @@ struct NotesWidgetView: View {
 
     var body: some View {
         NotchMiniListWidget(
-            title: "Notes",
+            title: String(localized: "Notes"),
             systemImage: "note.text",
             tint: .yellow,
             gradient: [Color.yellow.opacity(0.35), Color.orange.opacity(0.18)],
             count: notesManager.notes.count,
             items: Array(notesManager.notes.sorted { $0.updatedAt > $1.updatedAt }.prefix(3)),
-            emptyText: "No notes yet"
+            emptyText: String(localized: "No notes yet")
         ) { note in
             Capsule()
                 .fill(Color.yellow.opacity(0.75))
@@ -33,7 +33,7 @@ struct NotesWidgetView: View {
     private static func suggestionLabel(for note: QuickNote) -> String {
         let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = note.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty ? (body.isEmpty ? "Untitled" : body) : title
+        return title.isEmpty ? (body.isEmpty ? String(localized: "Untitled") : body) : title
     }
 }
 
@@ -89,10 +89,10 @@ struct NotesPlayerView: View {
 
     private var listView: some View {
         NotchSwipeListPanel(
-            title: "Notes",
-            subtitle: "\(notesManager.notes.count) saved",
+            title: String(localized: "Notes"),
+            subtitle: String(localized: "\(String(notesManager.notes.count)) saved"),
             accent: .yellow,
-            searchPlaceholder: "Search notes",
+            searchPlaceholder: String(localized: "Search notes"),
             searchText: $searchText,
             showSearch: $showSearch,
             width: 460,
@@ -110,8 +110,8 @@ struct NotesPlayerView: View {
             NotchListEmptyState(
                 systemImage: "note.text",
                 tint: .yellow,
-                title: searchText.isEmpty ? "No notes yet" : "No matching notes",
-                message: searchText.isEmpty ? "Tap the pencil to create your first note." : "Try a different search."
+                title: searchText.isEmpty ? String(localized: "No notes yet") : String(localized: "No matching notes"),
+                message: searchText.isEmpty ? String(localized: "Tap the pencil to create your first note.") : String(localized: "Try a different search.")
             )
         }
     }
@@ -134,7 +134,7 @@ struct NotesPlayerView: View {
                     .frame(width: 3, height: 40)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(note.title.isEmpty ? "Untitled" : note.title)
+                        Text(note.title.isEmpty ? String(localized: "Untitled") : note.title)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(note.isDone ? .secondary : .primary)
                             .strikethrough(note.isDone, color: .secondary)
@@ -145,7 +145,7 @@ struct NotesPlayerView: View {
                                 .foregroundStyle(.green.opacity(0.9))
                         }
                     }
-                    Text(note.body.isEmpty ? "Empty note" : note.body)
+                    Text(note.body.isEmpty ? String(localized: "Empty note") : note.body)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -162,7 +162,7 @@ struct NotesPlayerView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button(note.isDone ? "Mark Undone" : "Mark Done") {
+            Button(note.isDone ? String(localized: "Mark Undone") : String(localized: "Mark Done")) {
                 notesManager.toggleNoteDone(id: note.id)
             }
             Button("Edit") { editorGate.editingNoteID = note.id }
@@ -249,7 +249,7 @@ private struct InNotchNoteEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                NotchSearchField(placeholder: "Title", text: $draft.title, autofocus: draft.title == "New Note" || draft.title.isEmpty)
+                NotchSearchField(placeholder: String(localized: "Title"), text: $draft.title, autofocus: draft.title == "New Note" || draft.title.isEmpty)
                     .font(.system(size: 15, weight: .bold, design: .rounded))
 
                 Spacer(minLength: 8)
@@ -258,7 +258,7 @@ private struct InNotchNoteEditor: View {
                     systemName: "trash",
                     isActive: true,
                     activeTint: .red,
-                    help: "Delete note",
+                    help: String(localized: "Delete note"),
                     action: onDelete
                 )
 
