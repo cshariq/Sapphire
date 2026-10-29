@@ -16,7 +16,7 @@ struct ClipboardPreviewPane: View {
     var body: some View {
         Group {
             if selectionCount > 1 {
-                placeholder(systemImage: "square.stack.3d.up", text: "\(selectionCount) items selected\n↵ pastes them together")
+                placeholder(systemImage: "square.stack.3d.up", text: String(localized: "\(String(selectionCount)) items selected\n↵ pastes them together"))
             } else if let item {
                 VStack(alignment: .leading, spacing: 10) {
                     content(for: item)
@@ -25,7 +25,7 @@ struct ClipboardPreviewPane: View {
                 }
                 .padding(12)
             } else {
-                placeholder(systemImage: "eye", text: "Select an item to preview it")
+                placeholder(systemImage: "eye", text: String(localized: "Select an item to preview it"))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,7 +66,9 @@ struct ClipboardPreviewPane: View {
                     .foregroundStyle(.white.opacity(0.4))
             }
             if item.kind == .text, let text = item.textContent {
-                Text("\(text.count.formatted()) characters\(item.isTextTruncated ? " · trimmed to 1 MB when saved" : "")")
+                Text(item.isTextTruncated
+                    ? String(localized: "\(text.count.formatted()) characters · trimmed to 1 MB when saved")
+                    : String(localized: "\(text.count.formatted()) characters"))
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.45))
             } else if let path = item.fileURLString {

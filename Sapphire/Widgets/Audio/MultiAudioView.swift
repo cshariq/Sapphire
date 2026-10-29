@@ -81,8 +81,8 @@ struct MultiAudioPermissionRequiredView: View {
 
     private var grantedTitle: String {
         permissionsManager.screenRecordingStatus == .denied
-            ? "Open System Settings"
-            : "Enable Screen Recording"
+            ? String(localized: "Open System Settings")
+            : String(localized: "Enable Screen Recording")
     }
 
     private var permissionSymbolName: String {
@@ -147,7 +147,7 @@ struct SystemAudioPanel: View {
         }
     }
 
-    private func tabButton(_ title: String, icon: String, tab: Tab) -> some View {
+    private func tabButton(_ title: LocalizedStringKey, icon: String, tab: Tab) -> some View {
         Button {
             selectedTab = tab
         } label: {
@@ -235,10 +235,10 @@ fileprivate struct AppControlCard: View {
     var onHide: () -> Void = {}
 
     private var statusText: String {
-        if isMuted { return "Muted" }
-        if isCurrentlyOutputting { return "Playing" }
-        if isRecentlyActive { return "Recent" }
-        return "Idle"
+        if isMuted { return String(localized: "Muted") }
+        if isCurrentlyOutputting { return String(localized: "Playing") }
+        if isRecentlyActive { return String(localized: "Recent") }
+        return String(localized: "Idle")
     }
 
     private var statusColor: Color {
@@ -387,7 +387,7 @@ fileprivate struct AppVolumeSlider: View {
 
     var body: some View {
         BoldPillSlider(
-            label: localValue > 100.5 ? "Boost" : "Volume",
+            label: localValue > 100.5 ? String(localized: "Boost") : String(localized: "Volume"),
             value: $localValue,
             range: 0...Double(PerAppAudioController.maxVolume * 100),
             specifier: "%.0f%%",
@@ -497,7 +497,7 @@ fileprivate struct DeviceControlCard: View {
             }
             .frame(width: 85, alignment: .leading)
 
-            BoldPillSlider(label: device.isOutput ? "Volume" : "Gain", value: $internalGain, range: 0...100, specifier: "%.0f%%")
+            BoldPillSlider(label: device.isOutput ? String(localized: "Volume") : String(localized: "Gain"), value: $internalGain, range: 0...100, specifier: "%.0f%%")
                 .frame(height: 30)
                 .onChange(of: internalGain) { _, nv in
                     if abs(nv/100.0 - volumeBinding.wrappedValue) > 0.01 { volumeBinding.wrappedValue = nv/100.0 }
@@ -530,7 +530,7 @@ fileprivate struct DeviceControlCard: View {
 
     private func getIcon() -> String { device.isOutput ? "hifispeaker.2.fill" : (isMicMuted ? "mic.slash.fill" : "mic.fill") }
     private func getColor() -> Color { device.isOutput ? (isActive ? .accentColor : .primary.opacity(0.8)) : (isMicMuted ? .red : (isActive ? .accentColor : .primary.opacity(0.8))) }
-    private func getSubtitle() -> String { device.isOutput ? (isActive ? "Active Channel" : "Standby") : (isMicMuted ? "Muted" : (isActive ? "System Input" : "Microphone")) }
+    private func getSubtitle() -> String { device.isOutput ? (isActive ? String(localized: "Active Channel") : String(localized: "Standby")) : (isMicMuted ? String(localized: "Muted") : (isActive ? String(localized: "System Input") : String(localized: "Microphone"))) }
     private func getSubtitleColor() -> Color { device.isOutput ? (isActive ? .accentColor.opacity(0.8) : .secondary) : (isMicMuted ? .red.opacity(0.8) : .secondary) }
     private func getBg() -> Color { device.isOutput ? (isActive ? Color.accentColor.opacity(0.08) : Color.white.opacity(0.05)) : (isMicMuted ? Color.red.opacity(0.08) : (isActive ? Color.accentColor.opacity(0.08) : Color.white.opacity(0.05))) }
     private func getBorder() -> Color { device.isOutput ? (isExplicitlySelected ? .accentColor : (isActive ? .accentColor.opacity(0.4) : .clear)) : (isMicMuted ? .red.opacity(0.4) : (isExplicitlySelected ? .accentColor : (isActive ? .accentColor.opacity(0.4) : .clear))) }
@@ -639,7 +639,7 @@ fileprivate final class MainMenuPerAppVolumeStore: ObservableObject {
                 } ?? false
                 return MainMenuRunningAppItem(
                     bundleID: bundleID,
-                    name: info.name ?? "Unknown App",
+                    name: info.name ?? String(localized: "Unknown App"),
                     icon: Self.icon(for: bundleID, pid: pid),
                     isRecentlyActive: isRecentlyActive,
                     isCurrentlyOutputting: activeAudio.contains(bundleID),

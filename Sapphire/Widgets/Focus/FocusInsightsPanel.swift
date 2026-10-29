@@ -19,7 +19,7 @@ struct FocusInsightsPanel: View {
 
             HStack(spacing: 12) {
                 metric("Today", Self.compact(manager.completedToday), "sun.max.fill", .orange)
-                metric("Streak", "\(snapshot.streak)d", "flame.fill", .orange)
+                metric("Streak", Self.compactDays(snapshot.streak), "flame.fill", .orange)
                 metric("All time", Self.compact(manager.totalFocusTimeAllTime), "clock.fill", .purple)
                 metric("Avg", Self.compact(manager.averageSessionDuration), "gauge.with.dots.needle.33percent", .cyan)
             }
@@ -117,7 +117,7 @@ struct FocusInsightsPanel: View {
         }
     }
 
-    private func metric(_ title: String, _ value: String, _ icon: String, _ tint: Color) -> some View {
+    private func metric(_ title: LocalizedStringKey, _ value: String, _ icon: String, _ tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
@@ -139,12 +139,28 @@ struct FocusInsightsPanel: View {
         )
     }
 
-    private static func compact(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        if m > 0 { return "\(m)m" }
-        return "0m"
+    static func compactDays(_ days: Int) -> String {
+        guard ChineseFormatting.isActive else { return "\(days)d" }
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.day]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: DateComponents(day: max(0, days))) ?? String(localized: "0d")
+    }
+
+    static func compact(_ seconds: TimeInterval) -> String {
+        guard ChineseFormatting.isActive else {
+            let total = Int(seconds)
+            let hours = total / 3600
+            let minutes = (total % 3600) / 60
+            if hours > 0 { return "\(hours)h \(minutes)m" }
+            if minutes > 0 { return "\(minutes)m" }
+            return "0m"
+        }
+        let minutes = max(0, Int(seconds.isFinite ? seconds / 60 : 0))
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        formatter.zeroFormattingBehavior = .dropLeading
+        return formatter.string(from: TimeInterval(minutes * 60)) ?? String(localized: "0m")
     }
 }

@@ -246,7 +246,7 @@ private struct MenuBarSearchView: View {
         if controller.isLoading {
             ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if entries.isEmpty {
-            Text(controller.query.isEmpty ? "No menu bar items found" : "No items match “\(controller.query)”")
+            Text(controller.query.isEmpty ? String(localized: "No menu bar items found") : String(localized: "No items match “\(controller.query)”"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

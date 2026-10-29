@@ -72,7 +72,7 @@ struct FocusStreakPanelView: View {
                         .foregroundColor(.white)
                         .monospacedDigit()
                         .contentTransition(.numericText())
-                    Text(snapshot.streak == 1 ? "day" : "days")
+                    Text(snapshot.streak == 1 ? String(localized: "day") : String(localized: "days"))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.white.opacity(0.55))
                 }
@@ -87,9 +87,9 @@ struct FocusStreakPanelView: View {
 
     private var stripLegend: some View {
         HStack(spacing: 12) {
-            legendItem(icon: "flame.fill", color: .orange, label: "Focused")
-            legendItem(icon: "shield.fill", color: .teal, label: "Immunity")
-            legendItem(icon: "circle.fill", color: .white.opacity(0.12), label: "Missed")
+            legendItem(icon: "flame.fill", color: .orange, label: String(localized: "Focused"))
+            legendItem(icon: "shield.fill", color: .teal, label: String(localized: "Immunity"))
+            legendItem(icon: "circle.fill", color: .white.opacity(0.12), label: String(localized: "Missed"))
         }
         .padding(.top, 2)
     }
@@ -163,7 +163,7 @@ struct FocusStreakPanelView: View {
 
             Button(action: {
                 if focusManager.restoreStreak() {
-                    confirmationText = "Streak revived "
+                    confirmationText = String(localized: "Streak revived ")
                 }
             }) {
                 Label("Revive with a streak pass", systemImage: "flame.fill")
@@ -187,8 +187,8 @@ struct FocusStreakPanelView: View {
 
     private var brokenDayText: String {
         guard let day = snapshot.brokenDay,
-              let date = Calendar.current.date(from: day) else { return "You missed a day without an immunity slot." }
-        return "Missed " + date.formatted(date: .abbreviated, time: .omitted) + " — a pass would revive it."
+              let date = Calendar.current.date(from: day) else { return String(localized: "You missed a day without an immunity slot.") }
+        return String(localized: "Missed \(date.formatted(date: .abbreviated, time: .omitted)) — a pass would revive it.")
     }
 
     // MARK: - Immunity scheduling (expanded only)
@@ -262,7 +262,7 @@ struct FocusStreakPanelView: View {
     private func addImmunity() {
         if focusManager.scheduleImmunity(on: immunityDate) {
             immunityDate = earliestImmunity
-            confirmationText = "Immunity scheduled "
+            confirmationText = String(localized: "Immunity scheduled ")
         }
     }
 

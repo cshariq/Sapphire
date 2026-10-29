@@ -1,0 +1,45 @@
+{
+  "passed": true,
+  "scope": "catalog structure, completeness, exact source keys/comments, placeholders, and overlap reuse; no private runtime or UI acceptance",
+  "source_sha256": "b14e4d4d5be16d8f93da1e46008ddb3166b572ba05c9ecc587d02b3111652872",
+  "translated_sha256": "549434f1a8eff03418bf56391741cc223ecd251d75b3a53aa26f13ed50a329fe",
+  "public_base_commit": "7a016b1f7c8ac41dc894d55646b15d48f85a6b76",
+  "entries": 1189,
+  "reused_public_entries": 37,
+  "new_entries": 1152,
+  "zh_hant_sha256": "4a50518a556fd5e6d879474ea4ae90354fa0fa76f7523962755079e14dac972e",
+  "translated_languages": [
+    "en",
+    "zh-Hans",
+    "zh-Hant"
+  ],
+  "chinese_string_units": 1189,
+  "zh_hant_string_units": 1189,
+  "english_string_units": 1190,
+  "printf_keys": 88,
+  "raw_swift_interpolation_keys": [
+    "\"\\(manager.searchQuery)\" doesn't match any shortcode or keyword."
+  ],
+  "checks": {
+    "original_sha256": true,
+    "entry_count_1189": true,
+    "exact_key_order_and_set": true,
+    "metadata_source_language_and_version": true,
+    "only_en_and_zh_hans": true,
+    "original_comments_preserved": true,
+    "manual_extraction_preserved": true,
+    "exactly_37_existing_keys": true,
+    "all_37_en_hans_records_unchanged": true,
+    "new_key_english_exact": true,
+    "catalog_validator_passed": true,
+    "zh_hant_exact_key_order_and_set": true,
+    "zh_hant_metadata_source_language_and_version": true,
+    "zh_hant_only_en_and_zh_hant": true,
+    "zh_hant_original_comments_preserved": true,
+    "zh_hant_manual_extraction_preserved": true,
+    "zh_hant_english_matches_zh_hans_delivery": true,
+    "all_37_zh_hant_records_unchanged": true,
+    "zh_hant_catalog_validator_passed": true
+  },
+  "errors": []
+}

@@ -35,7 +35,7 @@ struct AndroidWidgetChoice: AppEntity, Identifiable {
     init(snapshot: AndroidWidgetSnapshotRecord, catalog: AndroidWidgetCatalog, withThumbnail: Bool = false) {
         id = snapshot.id
         label = catalog.provider(snapshot.provider)?.label ?? snapshot.label
-        subtitle = "On your Mac"
+        subtitle = String(localized: "On your Mac")
         provider = snapshot.provider
         thumbnail = withThumbnail ? AndroidWidgetSnapshotStore.imageData(for: snapshot) : nil
     }
@@ -43,7 +43,7 @@ struct AndroidWidgetChoice: AppEntity, Identifiable {
     init(providerRecord: AndroidWidgetProviderRecord) {
         id = Self.providerPrefix + providerRecord.provider
         label = providerRecord.label
-        subtitle = providerRecord.detail ?? "Add from your phone"
+        subtitle = providerRecord.detail ?? String(localized: "Add from your phone")
         provider = providerRecord.provider
         thumbnail = nil
     }
@@ -52,7 +52,7 @@ struct AndroidWidgetChoice: AppEntity, Identifiable {
         let provider = String(providerID.dropFirst(Self.providerPrefix.count))
         id = providerID
         label = AndroidWidgetSnapshotStore.readableProviderName(provider)
-        subtitle = "Android widget"
+        subtitle = String(localized: "Android widget")
         self.provider = provider
         thumbnail = nil
     }
@@ -273,10 +273,10 @@ struct AndroidWidgetEntryView: View {
 
     private var message: String {
         switch entry.status {
-        case .adding: return "Adding from your phone — allow it there if asked"
-        case .waiting: return "Waiting for your phone"
-        case .removed: return "This widget was removed from your phone"
-        case .empty, .ready: return "Edit this widget to choose one from your phone"
+        case .adding: return String(localized: "Adding from your phone — allow it there if asked")
+        case .waiting: return String(localized: "Waiting for your phone")
+        case .removed: return String(localized: "This widget was removed from your phone")
+        case .empty, .ready: return String(localized: "Edit this widget to choose one from your phone")
         }
     }
 
@@ -358,8 +358,8 @@ struct AndroidSlotWidget<Slot: AndroidWidgetSlotIndex>: Widget {
         ) { entry in
             AndroidWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName(Text(info?.label ?? "Android Widget"))
-        .description(Text(info?.detail ?? "Live widget from your Android phone."))
+        .configurationDisplayName(Text(info?.label ?? String(localized: "Android Widget")))
+        .description(Text(info?.detail ?? String(localized: "Live widget from your Android phone.")))
         .supportedFamilies((info?.families ?? []).map(\.widgetFamily))
         .contentMarginsDisabled()
     }

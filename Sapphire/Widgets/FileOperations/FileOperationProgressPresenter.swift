@@ -165,9 +165,9 @@ private struct FileOperationProgressPopupView: View {
             totalBytes: task.totalSize,
             bytesPerSecond: task.speed
         ) {
-            parts.append("\(eta) left")
+            parts.append(String(localized: "\(eta) left"))
         }
-        return parts.isEmpty ? "Working…" : parts.joined(separator: " • ")
+        return parts.isEmpty ? String(localized: "Working…") : parts.joined(separator: " • ")
     }
 
 }

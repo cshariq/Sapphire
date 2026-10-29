@@ -28,8 +28,8 @@ enum FileConversionError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unreadableSource(let name): return "Couldn't read \(name)."
-        case .cannotCreateOutput: return "Couldn't create the converted file."
+        case .unreadableSource(let name): return String(localized: "Couldn't read \(name).")
+        case .cannotCreateOutput: return String(localized: "Couldn't create the converted file.")
         case .unsupported(let detail): return detail
         case .exportFailed(let detail): return detail
         }
@@ -113,7 +113,7 @@ class FileConversionManager {
                 } else if target == .pdf || target.conforms(to: .text) {
                     try await Self.convertTextDocument(from: sourceURL, to: stagedURL, as: target)
                 } else {
-                    throw FileConversionError.unsupported("Converting to \(format.displayName) isn't supported.")
+                    throw FileConversionError.unsupported(String(localized: "Converting to \(format.displayName) isn't supported."))
                 }
 
                 let finalURL = try Self.publish(stagedURL, source: sourceURL, ext: ext)
@@ -202,7 +202,10 @@ class FileConversionManager {
             CGImageDestinationAddImageFromSource(destination, source, 0, properties as CFDictionary)
         }
         guard CGImageDestinationFinalize(destination) else {
-            throw FileConversionError.exportFailed("Couldn't write the \(type.preferredFilenameExtension?.uppercased() ?? "image") file.")
+            let message = type.preferredFilenameExtension.map {
+                String(localized: "Couldn't write the \($0.uppercased()) file.")
+            } ?? String(localized: "Couldn't write the image file.")
+            throw FileConversionError.exportFailed(message)
         }
     }
 
@@ -230,12 +233,12 @@ class FileConversionManager {
     ) async throws {
         let asset = AVURLAsset(url: sourceURL)
         guard try await asset.load(.isExportable) else {
-            throw FileConversionError.unsupported("\(sourceURL.lastPathComponent) can't be exported (it may be protected).")
+            throw FileConversionError.unsupported(String(localized: "\(sourceURL.lastPathComponent) can't be exported (it may be protected)."))
         }
         let presets = audioOnly
             ? [AVAssetExportPresetAppleM4A]
             : [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality]
-        var lastError: Error = FileConversionError.unsupported("No export preset can write this file type.")
+        var lastError: Error = FileConversionError.unsupported(String(localized: "No export preset can write this file type."))
         for preset in presets {
             guard let session = AVAssetExportSession(asset: asset, presetName: preset) else { continue }
             let supported = await session.compatibleFileTypes
@@ -274,7 +277,7 @@ class FileConversionManager {
         case .cancelled:
             throw CancellationError()
         default:
-            throw session.error ?? FileConversionError.exportFailed("Export failed.")
+            throw session.error ?? FileConversionError.exportFailed(String(localized: "Export failed."))
         }
     }
 
@@ -303,7 +306,7 @@ class FileConversionManager {
         case .plainText:
             data = Data(attributedString.string.utf8)
         default:
-            throw FileConversionError.unsupported("Unsupported document type.")
+            throw FileConversionError.unsupported(String(localized: "Unsupported document type."))
         }
         try data.write(to: destinationURL, options: .atomic)
     }
@@ -341,7 +344,7 @@ class FileConversionManager {
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
         let content = UNMutableNotificationContent()
-        content.title = "Couldn't convert \(fileName) to \(format)"
+        content.title = String(localized: "Couldn't convert \(fileName) to \(format)")
         content.body = error.localizedDescription
         try? await center.add(UNNotificationRequest(identifier: "file-conversion-\(UUID().uuidString)", content: content, trigger: nil))
     }

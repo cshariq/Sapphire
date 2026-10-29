@@ -17,7 +17,7 @@ struct AppLockOverlayView: View {
     let onTouchID: () -> Void
     let onSubmitPassword: (String) -> Bool
     let onQuit: (() -> Void)?
-    var quitButtonTitle: String = "Quit App"
+    var quitButtonTitle: String = String(localized: "Quit App")
 
     var body: some View {
         Color.clear
