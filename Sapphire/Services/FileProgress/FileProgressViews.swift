@@ -14,21 +14,21 @@ enum FileProgressFormat {
     }
 
     static func speed(_ bytesPerSecond: Double) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file) + "/s"
+        String(localized: "\(ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file))/s")
     }
 
     static func remaining(_ seconds: TimeInterval) -> String {
-        if seconds < 60 { return "\(max(1, Int(seconds))) s left" }
-        if seconds < 3600 { return "\(Int(seconds / 60)) min left" }
+        if seconds < 60 { return String(localized: "\(String(max(1, Int(seconds)))) s left") }
+        if seconds < 3600 { return String(localized: "\(String(Int(seconds / 60))) min left") }
         let h = Int(seconds / 3600), m = Int(seconds.truncatingRemainder(dividingBy: 3600) / 60)
-        return m > 0 ? "\(h) h \(m) min left" : "\(h) h left"
+        return m > 0 ? String(localized: "\(String(h)) h \(String(m)) min left") : String(localized: "\(String(h)) h left")
     }
 
     static func status(percent: Double?, speed: Double?, remaining: TimeInterval?, finished: Bool, failed: Bool,
                        paused: Bool = false, verb: String) -> String {
-        if failed { return "Cancelled" }
-        if finished { return "Done" }
-        if paused { return "Paused" }
+        if failed { return String(localized: "Cancelled") }
+        if finished { return String(localized: "Done") }
+        if paused { return String(localized: "Paused") }
         let settings = SettingsModel.shared.settings
         var parts: [String] = []
         if let percent { parts.append("\(Int(percent * 100))%") }
@@ -75,7 +75,7 @@ struct FileProgressDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(tracker.transfers.count == 1 ? "1 transfer" : "\(tracker.transfers.count) transfers")
+                Text(tracker.transfers.count == 1 ? String(localized: "1 transfer") : String(localized: "\(String(tracker.transfers.count)) transfers"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.9))
                 Spacer()
@@ -108,10 +108,10 @@ private struct FileProgressRow: View {
 
     private var verb: String {
         switch transfer.operation {
-        case .copy: "Copying…"
-        case .move: "Moving…"
-        case .airDrop: "Receiving…"
-        default: "Downloading…"
+        case .copy: String(localized: "Copying…")
+        case .move: String(localized: "Moving…")
+        case .airDrop: String(localized: "Receiving…")
+        default: String(localized: "Downloading…")
         }
     }
 
@@ -153,17 +153,17 @@ private struct FileProgressRow: View {
             }
             HStack(spacing: 2) {
                 if transfer.canPause, !transfer.isFinished {
-                    iconButton(transfer.isPaused ? "play.fill" : "pause.fill", help: transfer.isPaused ? "Resume" : "Pause") {
+                    iconButton(transfer.isPaused ? "play.fill" : "pause.fill", help: transfer.isPaused ? String(localized: "Resume") : String(localized: "Pause")) {
                         transfer.isPaused ? tracker.resume(transfer.id) : tracker.pause(transfer.id)
                     }
                 }
                 if transfer.canCancel, !transfer.isFinished {
-                    iconButton("xmark", help: "Cancel") { tracker.cancel(transfer.id) }
+                    iconButton("xmark", help: String(localized: "Cancel")) { tracker.cancel(transfer.id) }
                 }
                 if transfer.isFinished {
-                    iconButton("arrow.up.forward.app", help: "Open") { tracker.open(transfer.id) }
+                    iconButton("arrow.up.forward.app", help: String(localized: "Open")) { tracker.open(transfer.id) }
                 }
-                iconButton("magnifyingglass", help: "Show in Finder") { tracker.reveal(transfer.id) }
+                iconButton("magnifyingglass", help: String(localized: "Show in Finder")) { tracker.reveal(transfer.id) }
             }
         }
         .padding(8)

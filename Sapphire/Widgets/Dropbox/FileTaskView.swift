@@ -426,11 +426,11 @@ private struct UniversalTransferRowView: View {
 
     private var verb: String {
         switch task.sourceType {
-        case .finder: return "Copying"
-        case .archiveExtraction: return "Extracting"
-        case .dmgInstall: return "Installing"
-        case .continuity: return "Phone"
-        case .browserDownload, .manual: return "Downloading"
+        case .finder: return String(localized: "Copying")
+        case .archiveExtraction: return String(localized: "Extracting")
+        case .dmgInstall: return String(localized: "Installing")
+        case .continuity: return String(localized: "Phone")
+        case .browserDownload, .manual: return String(localized: "Downloading")
         }
     }
 
@@ -454,20 +454,20 @@ private struct UniversalTransferRowView: View {
 
     private var subtitle: String {
         let sizeString = ByteFormatter.string(task.currentSize)
-        guard !task.isComplete else { return "Complete (\(sizeString))" }
+        guard !task.isComplete else { return String(localized: "Complete (\(sizeString))") }
 
         if task.sourceType == .continuity {
             if let totalBytes = task.totalSize, totalBytes > 0 {
                 let total = ByteFormatter.string(totalBytes)
                 let pct = Int((Double(task.currentSize) / Double(totalBytes)) * 100)
-                return "Continuity · \(sizeString) of \(total) · \(pct)%"
+                return String(localized: "Continuity · \(sizeString) of \(total) · \(String(pct))%")
             }
-            return "Continuity · \(sizeString)"
+            return String(localized: "Continuity · \(sizeString)")
         }
 
         var parts = ["\(verb)..."]
         if let total = task.totalSize {
-            parts.append("\(sizeString) of \(ByteFormatter.string(total))")
+            parts.append(String(localized: "\(sizeString) of \(ByteFormatter.string(total))"))
         } else {
             parts.append(sizeString)
         }

@@ -9,9 +9,19 @@ import SwiftUI
 import AppKit
 
 struct InfoContainer: View {
-    let text: String
+    let text: Text
     let iconName: String
     let color: Color
+
+    init(text: LocalizedStringKey, iconName: String, color: Color) {
+        self.init(text: Text(text), iconName: iconName, color: color)
+    }
+
+    init(text: Text, iconName: String, color: Color) {
+        self.text = text
+        self.iconName = iconName
+        self.color = color
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -20,7 +30,7 @@ struct InfoContainer: View {
                 .foregroundColor(color)
                 .padding(.top, 2)
 
-            Text(text)
+            text
                 .font(.system(size: 13))
                 .foregroundStyle(.white.opacity(0.8))
                 .lineSpacing(4)
@@ -33,27 +43,46 @@ struct InfoContainer: View {
 // MARK: - Row Building Blocks
 
 struct SettingsSwitch: View {
-    var title: String = ""
+    let title: Text
     @Binding var isOn: Bool
 
+    init(title: LocalizedStringKey = "", isOn: Binding<Bool>) {
+        self.init(title: Text(title), isOn: isOn)
+    }
+
+    init(title: Text, isOn: Binding<Bool>) {
+        self.title = title
+        self._isOn = isOn
+    }
+
     var body: some View {
-        Toggle(title, isOn: $isOn)
+        Toggle(isOn: $isOn) { title }
             .labelsHidden()
             .toggleStyle(.switch)
     }
 }
 
 struct SettingsRowLabel: View {
-    let title: String
-    var description: String = ""
+    let title: Text
+    let description: Text?
     var titleFont: Font = .system(size: 14, weight: .medium)
+
+    init(title: LocalizedStringKey, description: LocalizedStringKey? = nil, titleFont: Font = .system(size: 14, weight: .medium)) {
+        self.init(title: Text(title), description: description.flatMap { $0 == "" ? nil : Text($0) }, titleFont: titleFont)
+    }
+
+    init(title: Text, description: Text? = nil, titleFont: Font = .system(size: 14, weight: .medium)) {
+        self.title = title
+        self.description = description
+        self.titleFont = titleFont
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
+            title
                 .font(titleFont)
-            if !description.isEmpty {
-                Text(description)
+            if let description {
+                description
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -135,14 +164,25 @@ extension Binding where Value == CGFloat {
 struct IconToggleRow: View {
     let systemImage: String
     let color: Color
-    let title: String
+    let title: Text
     @Binding var isOn: Bool
+
+    init(systemImage: String, color: Color, title: LocalizedStringKey, isOn: Binding<Bool>) {
+        self.init(systemImage: systemImage, color: color, title: Text(title), isOn: isOn)
+    }
+
+    init(systemImage: String, color: Color, title: Text, isOn: Binding<Bool>) {
+        self.title = title
+        self.systemImage = systemImage
+        self.color = color
+        self._isOn = isOn
+    }
 
     var body: some View {
         HStack(spacing: 15) {
             SettingsIconBadge(systemImage: systemImage, color: color)
 
-            Text(title)
+            title
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.white)
 
@@ -210,7 +250,7 @@ struct WidgetRowView: View {
         } else {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(widgetType.displayName)
+                    Text(verbatim: widgetType.displayName)
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white)
                     if isAtCapacity {
@@ -266,7 +306,7 @@ struct LiveActivityRowView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(activityType.displayName)
+                Text(verbatim: activityType.displayName)
                     .font(.system(size: 14, weight: .medium))
                 Spacer()
                 SettingsSwitch(isOn: baseEnabledBinding.lockedOff(when: isPremiumLocked))
@@ -310,7 +350,7 @@ struct LiveActivityRowView: View {
         }
     }
 
-    private func optionToggle(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
+    private func optionToggle(_ title: LocalizedStringKey, detail: LocalizedStringKey, isOn: Binding<Bool>) -> some View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -340,7 +380,7 @@ struct NotificationToggleRowView: View {
         IconToggleRow(
             systemImage: source.systemImage,
             color: source.iconColor,
-            title: source.displayName,
+            title: Text(verbatim: source.displayName),
             isOn: isEnabledBinding
         )
     }
@@ -411,7 +451,7 @@ struct SystemAppRowView: View {
         HStack(spacing: 12) {
             SystemAppIconView(app: app, size: 28, cornerRadius: 6)
 
-            Text(app.name)
+            Text(verbatim: app.name)
                 .font(.system(size: 13))
                 .foregroundStyle(.white)
 
@@ -451,7 +491,7 @@ struct AppTogglesListView: View {
     let isEnabled: (SystemApp) -> Binding<Bool>
     var maxHeight: CGFloat = 280
     var showSearch: Bool = false
-    var browsersSectionTitle: String = "Browsers"
+    var browsersSectionTitle: LocalizedStringKey = "Browsers"
     var onSelectAll: ((Bool) -> Void)?
 
     @State private var query = ""
@@ -527,7 +567,7 @@ struct AppTogglesListView: View {
     }
 
     @ViewBuilder
-    private func appSection(_ title: String, apps: [SystemApp]) -> some View {
+    private func appSection(_ title: LocalizedStringKey, apps: [SystemApp]) -> some View {
         if !apps.isEmpty {
             Text(title).font(.caption).foregroundStyle(.secondary).padding(.vertical, 5)
             ForEach(apps) { app in
@@ -606,7 +646,7 @@ struct ReorderableVStack<Item: Identifiable & Equatable, Content: View>: View {
 }
 
 struct CustomSliderRowView: View {
-    let label: String
+    let label: Text
     @Binding var value: Double
     let range: ClosedRange<Double>
     let specifier: String
@@ -616,7 +656,17 @@ struct CustomSliderRowView: View {
     @State private var isEditing = false
 
     init(
-        label: String,
+        label: LocalizedStringKey,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        specifier: String,
+        onEditingChanged: ((Bool) -> Void)? = nil
+    ) {
+        self.init(label: Text(label), value: value, range: range, specifier: specifier, onEditingChanged: onEditingChanged)
+    }
+
+    init(
+        label: Text,
         value: Binding<Double>,
         range: ClosedRange<Double>,
         specifier: String,
@@ -633,7 +683,7 @@ struct CustomSliderRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(label)
+                label
                 Spacer()
                 Text(String(format: specifier, draft))
             }
@@ -848,15 +898,25 @@ struct SettingsCard<Content: View>: View {
 }
 
 struct StatusCapsuleLabel: View {
-    let title: String
+    let title: Text
     let color: Color
     let icon: String
+
+    init(title: LocalizedStringKey, color: Color, icon: String) {
+        self.init(title: Text(title), color: color, icon: icon)
+    }
+
+    init(title: Text, color: Color, icon: String) {
+        self.title = title
+        self.color = color
+        self.icon = icon
+    }
 
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
                 .font(.system(size: 10, weight: .bold))
-            Text(title)
+            title
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
         }
         .foregroundStyle(color)
@@ -867,17 +927,21 @@ struct StatusCapsuleLabel: View {
 }
 
 struct SettingsDetailRow<Content: View>: View {
-    let title: String
+    let title: Text
     let content: Content
 
-    init(title: String, @ViewBuilder content: () -> Content) {
+    init(title: LocalizedStringKey, @ViewBuilder content: () -> Content) {
+        self.init(title: Text(title), content: content)
+    }
+
+    init(title: Text, @ViewBuilder content: () -> Content) {
         self.title = title
         self.content = content()
     }
 
     var body: some View {
         HStack {
-            Text(title)
+            title
             Spacer()
             HStack { content }
                 .foregroundStyle(.secondary)
@@ -888,20 +952,33 @@ struct SettingsDetailRow<Content: View>: View {
 }
 
 struct SettingsMultiSelectList<Option: Identifiable & Equatable>: View {
-    let title: String
+    let title: Text
     let options: [Option]
     @Binding var selection: [Option]
     let label: (Option) -> String
 
+    init(title: LocalizedStringKey, options: [Option], selection: Binding<[Option]>, label: @escaping (Option) -> String) {
+        self.init(title: Text(title), options: options, selection: selection, label: label)
+    }
+
+    init(title: Text, options: [Option], selection: Binding<[Option]>, label: @escaping (Option) -> String) {
+        self.title = title
+        self.options = options
+        self._selection = selection
+        self.label = label
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title)
+            title
                 .font(.caption.weight(.medium))
                 .foregroundColor(.secondary)
                 .padding(.top, 8)
 
             ForEach(options) { option in
-                Toggle(label(option), isOn: $selection.membership(of: option))
+                Toggle(isOn: $selection.membership(of: option)) {
+                    Text(verbatim: label(option))
+                }
             }
         }
         .padding(.horizontal)
@@ -916,10 +993,21 @@ struct ToggleRow: View {
         case inset
     }
 
-    let title: String
-    var description: String = ""
+    let title: Text
+    let description: Text?
     @Binding var isOn: Bool
     var style: Style = .standard
+
+    init(title: LocalizedStringKey, description: LocalizedStringKey? = nil, isOn: Binding<Bool>, style: Style = .standard) {
+        self.init(title: Text(title), description: description.flatMap { $0 == "" ? nil : Text($0) }, isOn: isOn, style: style)
+    }
+
+    init(title: Text, description: Text? = nil, isOn: Binding<Bool>, style: Style = .standard) {
+        self.title = title
+        self.description = description
+        self._isOn = isOn
+        self.style = style
+    }
 
     var body: some View {
         let row = HStack(spacing: style == .compact ? 12 : nil) {
@@ -947,9 +1035,19 @@ struct ToggleRow: View {
 }
 
 struct CompactToggleRow: View {
-    let title: String
-    let description: String
+    let title: Text
+    let description: Text?
     @Binding var isOn: Bool
+
+    init(title: LocalizedStringKey, description: LocalizedStringKey? = nil, isOn: Binding<Bool>) {
+        self.init(title: Text(title), description: description.flatMap { $0 == "" ? nil : Text($0) }, isOn: isOn)
+    }
+
+    init(title: Text, description: Text? = nil, isOn: Binding<Bool>) {
+        self.title = title
+        self.description = description
+        self._isOn = isOn
+    }
 
     var body: some View {
         ToggleRow(title: title, description: description, isOn: $isOn, style: .compact)
@@ -957,11 +1055,23 @@ struct CompactToggleRow: View {
 }
 
 struct SwipeActionPickerRow<Action: Hashable & Identifiable>: View {
-    let title: String
-    let description: String
+    let title: Text
+    let description: Text?
     @Binding var selection: Action
     let options: [Action]
     let label: (Action) -> String
+
+    init(title: LocalizedStringKey, description: LocalizedStringKey? = nil, selection: Binding<Action>, options: [Action], label: @escaping (Action) -> String) {
+        self.init(title: Text(title), description: description.flatMap { $0 == "" ? nil : Text($0) }, selection: selection, options: options, label: label)
+    }
+
+    init(title: Text, description: Text? = nil, selection: Binding<Action>, options: [Action], label: @escaping (Action) -> String) {
+        self.title = title
+        self.description = description
+        self._selection = selection
+        self.options = options
+        self.label = label
+    }
 
     var body: some View {
         HStack {
@@ -969,7 +1079,7 @@ struct SwipeActionPickerRow<Action: Hashable & Identifiable>: View {
             Spacer()
             Picker("", selection: $selection) {
                 ForEach(options) { option in
-                    Text(label(option)).tag(option)
+                    Text(verbatim: label(option)).tag(option)
                 }
             }
             .labelsHidden()
@@ -980,18 +1090,27 @@ struct SwipeActionPickerRow<Action: Hashable & Identifiable>: View {
 }
 
 struct LiquidGlassStylePickerRow: View {
-    var title: String = "Liquid Glass Style"
+    let title: Text
     @Binding var selection: LiquidGlassMaterial
+
+    init(title: LocalizedStringKey = "Liquid Glass Style", selection: Binding<LiquidGlassMaterial>) {
+        self.init(title: Text(title), selection: selection)
+    }
+
+    init(title: Text, selection: Binding<LiquidGlassMaterial>) {
+        self.title = title
+        self._selection = selection
+    }
 
     var body: some View {
         HStack(spacing: 12) {
-            SettingsRowLabel(title: title, description: selection.summary)
+            SettingsRowLabel(title: title, description: Text(verbatim: selection.summary))
             Spacer()
             HStack(spacing: 4) {
                 stepButton(systemName: "chevron.left", help: "Previous Style", offset: -1)
                 Picker("", selection: $selection) {
                     ForEach(LiquidGlassMaterial.allCases) { style in
-                        Text(style.displayName).tag(style)
+                        Text(verbatim: style.displayName).tag(style)
                     }
                 }
                 .labelsHidden()
@@ -1003,7 +1122,7 @@ struct LiquidGlassStylePickerRow: View {
         .padding()
     }
 
-    private func stepButton(systemName: String, help: String, offset: Int) -> some View {
+    private func stepButton(systemName: String, help: LocalizedStringKey, offset: Int) -> some View {
         Button {
             let styles = LiquidGlassMaterial.allCases
             let index = styles.firstIndex(of: selection) ?? 0
@@ -1102,7 +1221,7 @@ struct LiquidGlassOptionsEditor: View {
             set: { options.tintHex = LiquidGlassOptions.hex(from: NSColor($0)) }
         )
         return HStack(spacing: 12) {
-            SettingsRowLabel(title: "Tint", description: hasTint.wrappedValue ? options.tintHex : "No tint over the glass.")
+            SettingsRowLabel(title: Text("Tint"), description: hasTint.wrappedValue ? Text(verbatim: options.tintHex) : Text("No tint over the glass."))
             Spacer()
             if hasTint.wrappedValue {
                 ColorPicker("Tint Color", selection: color, supportsOpacity: true)

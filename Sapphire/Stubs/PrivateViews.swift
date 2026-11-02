@@ -18,15 +18,15 @@ private struct UnavailableFeatureView: View {
 }
 
 struct SportsSettingsView: View {
-    var body: some View { UnavailableFeatureView(name: "Sports") }
+    var body: some View { UnavailableFeatureView(name: String(localized: "Sports")) }
 }
 
 struct FinanceSettingsView: View {
-    var body: some View { UnavailableFeatureView(name: "Finance") }
+    var body: some View { UnavailableFeatureView(name: String(localized: "Finance")) }
 }
 
 struct AccountSettingsView: View {
-    var body: some View { UnavailableFeatureView(name: "Account management") }
+    var body: some View { UnavailableFeatureView(name: String(localized: "Account management")) }
 }
 
 struct BetaBlockerView: View {
@@ -61,7 +61,7 @@ struct NativePaymentSheetView: View {
 enum SubscriptionRevocationReason: String {
     case sessionExpired
 
-    var alertMessage: String { "Your session has expired. Please sign in again." }
+    var alertMessage: String { String(localized: "Your session has expired. Please sign in again.") }
 }
 
 final class ScreenPerception {

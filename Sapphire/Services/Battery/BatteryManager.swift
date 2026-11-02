@@ -797,7 +797,7 @@ class BatteryManager {
             let error = NSError(
                 domain: "SapphireBattery",
                 code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "The privileged helper is not reachable. Install or reset it (Settings → Battery → Helper) before calibrating."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "The privileged helper is not reachable. Install or reset it (Settings → Battery → Helper) before calibrating.")]
             )
             print("[BatteryManager] beginCalibrationCycle failed: helper unreachable.")
             recordFailure()
@@ -843,7 +843,7 @@ class BatteryManager {
                 return
             }
 
-            let name = dict["Name"] as? String ?? "Power Adapter"
+            let name = dict["Name"] as? String ?? String(localized: "Power Adapter")
             let manufacturer = dict["Manufacturer"] as? String ?? "Apple Inc."
             let serialNumber = dict["SerialString"] as? String ?? "N/A"
             let current = dict["Current"] as? Int ?? 0

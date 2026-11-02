@@ -80,10 +80,10 @@ struct DevWidgetView: View {
     private var statusLine: String {
         if !monitor.tasks.isEmpty {
             let count = monitor.tasks.count
-            return count == 1 ? "1 task running" : "\(count) tasks running"
+            return count == 1 ? String(localized: "1 task running") : String(localized: "\(String(count)) tasks running")
         }
-        if runner.runningCount > 0 { return "Running a command" }
-        return usage.cards.isEmpty ? "Idle" : "Today's usage"
+        if runner.runningCount > 0 { return String(localized: "Running a command") }
+        return usage.cards.isEmpty ? String(localized: "Idle") : String(localized: "Today's usage")
     }
 
     private func row<Trailing: View>(symbol: String, tint: Color, title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
@@ -93,7 +93,7 @@ struct DevWidgetView: View {
                 .foregroundStyle(tint)
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(tint.opacity(0.18)))
-            Text(title)
+            Text(verbatim: title)
                 .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.9))
                 .lineLimit(1)

@@ -31,12 +31,12 @@ struct ShopifyOrdersWidgetView: View {
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("\(order.currency) \(order.totalPrice)")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    Text((order.financialStatus ?? "pending").capitalized)
+                    Text((order.financialStatus ?? String(localized: "pending")).capitalized)
                         .font(.caption2)
                         .foregroundStyle(.green)
                 }
             } else {
-                Text(shopify.isConfigured ? "No orders" : "Set up Shopify")
+                Text(shopify.isConfigured ? String(localized: "No orders") : String(localized: "Set up Shopify"))
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .lineLimit(1)
             }

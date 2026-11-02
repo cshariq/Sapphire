@@ -40,7 +40,7 @@ struct PlainTextPasteShortcutRow: View {
                     .background(Color.white.opacity(0.07))
                     .clipShape(Capsule())
             }
-            Button(isRecording ? "Cancel" : "Record…") {
+            Button(isRecording ? String(localized: "Cancel") : String(localized: "Record…")) {
                 if isRecording {
                     shortcutRecorder.stopRecording()
                 } else {
@@ -87,12 +87,14 @@ struct ClipboardIgnoredAppsRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Ignored Apps")
                         .font(.system(size: 14, weight: .medium))
-                    Text("Nothing copied in these apps is saved. \(settings.settings.clipboardIgnoredAppBundleIDs.count) app\(settings.settings.clipboardIgnoredAppBundleIDs.count == 1 ? "" : "s") ignored.")
+                    Text(settings.settings.clipboardIgnoredAppBundleIDs.count == 1
+                        ? String(localized: "Nothing copied in these apps is saved. 1 app ignored.")
+                        : String(localized: "Nothing copied in these apps is saved. \(String(settings.settings.clipboardIgnoredAppBundleIDs.count)) apps ignored."))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Button(isExpanded ? "Done" : "Edit…") { isExpanded.toggle() }
+                Button(isExpanded ? String(localized: "Done") : String(localized: "Edit…")) { isExpanded.toggle() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
             }

@@ -41,7 +41,7 @@ enum ParcelCarrier: String, Codable, CaseIterable {
         case .usps: return "USPS"
         case .dhl: return "DHL"
         case .amazon: return "Amazon"
-        case .unknown: return "Carrier"
+        case .unknown: return String(localized: "Carrier")
         }
     }
 

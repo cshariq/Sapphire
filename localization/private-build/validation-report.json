@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "scope": "catalog structure, completeness, exact source keys/comments, placeholders, and overlap reuse; no private runtime or UI acceptance",
+  "source_sha256": "b14e4d4d5be16d8f93da1e46008ddb3166b572ba05c9ecc587d02b3111652872",
+  "translated_sha256": "4a50518a556fd5e6d879474ea4ae90354fa0fa76f7523962755079e14dac972e",
+  "public_source": "Sapphire/Localizable.xcstrings on this branch; reused records are stored inline in reused-public-entries.json",
+  "entries": 1189,
+  "reused_public_entries": 37,
+  "new_entries": 1152,
+  "translated_languages": [
+    "en",
+    "zh-Hant"
+  ],
+  "chinese_string_units": 1189,
+  "english_string_units": 1190,
+  "printf_keys": 88,
+  "raw_swift_interpolation_keys": [
+    "\"\\(manager.searchQuery)\" doesn't match any shortcode or keyword."
+  ],
+  "checks": {
+    "original_sha256": true,
+    "entry_count_1189": true,
+    "exact_key_order_and_set": true,
+    "metadata_source_language_and_version": true,
+    "only_en_and_zh_hant": true,
+    "original_comments_preserved": true,
+    "manual_extraction_preserved": true,
+    "exactly_37_existing_keys": true,
+    "reused_records_match_public_catalog": true,
+    "all_37_en_hant_records_unchanged": true,
+    "new_key_english_exact": true,
+    "catalog_validator_passed": true
+  },
+  "errors": []
+}
