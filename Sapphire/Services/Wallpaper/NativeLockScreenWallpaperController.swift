@@ -219,7 +219,7 @@ actor NativeLockScreenWallpaperInstaller {
         if installation == nil {
             guard let slotURL = selectedAerialSlotURL() else {
                 throw CocoaError(.fileNoSuchFile, userInfo: [
-                    NSLocalizedDescriptionKey: "Select and download an Apple Aerial wallpaper in System Settings first."
+                    NSLocalizedDescriptionKey: String(localized: "Select and download an Apple Aerial wallpaper in System Settings first.")
                 ])
             }
             let backupURL = nativeDirectory.appendingPathComponent("\(slotURL.deletingPathExtension().lastPathComponent)-original.mov")
@@ -364,7 +364,7 @@ actor NativeLockScreenWallpaperInstaller {
         )
         guard !originals.isEmpty else {
             throw CocoaError(.fileReadCorruptFile, userInfo: [
-                NSLocalizedDescriptionKey: "No native Aerial lock-screen configuration was found."
+                NSLocalizedDescriptionKey: String(localized: "No native Aerial lock-screen configuration was found.")
             ])
         }
 

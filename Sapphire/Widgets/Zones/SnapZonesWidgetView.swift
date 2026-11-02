@@ -302,7 +302,7 @@ fileprivate struct SnapLayoutItemView: View {
             }
             .frame(width: itemWidth, height: itemHeight)
 
-            Text(layout.name)
+            Text(layout.displayName)
                 .font(.system(size: 10))
                 .fontWeight(.medium)
                 .foregroundColor(.secondary)

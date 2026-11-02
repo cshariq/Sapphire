@@ -154,13 +154,13 @@ nonisolated enum UsageFormat {
 
     static func countdown(to date: Date, from now: Date) -> String {
         let seconds = Int(date.timeIntervalSince(now))
-        guard seconds > 0 else { return "resetting" }
+        guard seconds > 0 else { return String(localized: "resetting") }
         let days = seconds / 86_400
         let hours = (seconds % 86_400) / 3600
         let minutes = (seconds % 3600) / 60
-        if days > 0 { return "resets in \(days)d \(hours)h" }
-        if hours > 0 { return "resets in \(hours)h \(minutes)m" }
-        return "resets in \(max(1, minutes))m"
+        if days > 0 { return String(localized: "resets in \(String(days))d \(String(hours))h") }
+        if hours > 0 { return String(localized: "resets in \(String(hours))h \(String(minutes))m") }
+        return String(localized: "resets in \(String(max(1, minutes)))m")
     }
 }
 
@@ -331,22 +331,24 @@ nonisolated final class ClaudeUsageReader {
         let topModel = byModel.max { $0.value < $1.value }?.key
 
         var stats = [
-            DevUsageStat(label: "Last 5 hours", value: "\(UsageFormat.dollars(recentCost)) · \(UsageFormat.tokens(recent.reduce(0) { $0 + $1.totalTokens }))"),
-            DevUsageStat(label: "7 days", value: UsageFormat.dollars(weekCost)),
-            DevUsageStat(label: "Output today", value: UsageFormat.tokens(today.reduce(0) { $0 + $1.output })),
+            DevUsageStat(label: String(localized: "Last 5 hours"), value: "\(UsageFormat.dollars(recentCost)) · \(UsageFormat.tokens(recent.reduce(0) { $0 + $1.totalTokens }))"),
+            DevUsageStat(label: String(localized: "7 days"), value: UsageFormat.dollars(weekCost)),
+            DevUsageStat(label: String(localized: "Output today"), value: UsageFormat.tokens(today.reduce(0) { $0 + $1.output })),
         ]
-        if let topModel { stats.append(DevUsageStat(label: "Top model", value: topModel)) }
+        if let topModel { stats.append(DevUsageStat(label: String(localized: "Top model"), value: topModel)) }
 
         return DevUsageCard(
             id: "claude",
             title: "Claude Code",
             symbol: DevToolCatalog.claude.symbol,
             tint: DevToolCatalog.claude.tint,
-            headline: "\(UsageFormat.tokens(todayTokens)) tokens today",
-            subtitle: "≈ \(UsageFormat.dollars(todayCost)) API value · \(sessions) session\(sessions == 1 ? "" : "s")",
+            headline: String(localized: "\(UsageFormat.tokens(todayTokens)) tokens today"),
+            subtitle: sessions == 1
+                ? String(localized: "≈ \(UsageFormat.dollars(todayCost)) API value · 1 session")
+                : String(localized: "≈ \(UsageFormat.dollars(todayCost)) API value · \(String(sessions)) sessions"),
             stats: stats,
             daily: daily,
-            footnote: "From local transcripts. Cost is the API-price equivalent, not your plan's bill.",
+            footnote: String(localized: "From local transcripts. Cost is the API-price equivalent, not your plan's bill."),
             compactValue: UsageFormat.tokens(todayTokens)
         )
     }
@@ -474,10 +476,10 @@ nonisolated final class CodexUsageReader {
 
         var meters: [DevUsageMeter] = []
         if let latest = limitsByFile.values.max(by: { $0.date < $1.date }) {
-            if let primary = latest.primary, let meter = Self.meter(primary, fallbackName: "5-hour limit", at: latest.date, now: window.now) {
+            if let primary = latest.primary, let meter = Self.meter(primary, fallbackName: String(localized: "5-hour limit"), at: latest.date, now: window.now) {
                 meters.append(meter)
             }
-            if let secondary = latest.secondary, let meter = Self.meter(secondary, fallbackName: "Weekly limit", at: latest.date, now: window.now) {
+            if let secondary = latest.secondary, let meter = Self.meter(secondary, fallbackName: String(localized: "Weekly limit"), at: latest.date, now: window.now) {
                 meters.append(meter)
             }
         }
@@ -496,15 +498,17 @@ nonisolated final class CodexUsageReader {
             title: "Codex",
             symbol: DevToolCatalog.codex.symbol,
             tint: DevToolCatalog.codex.tint,
-            headline: "\(UsageFormat.tokens(todayTokens)) tokens today",
-            subtitle: "\(sessions) session\(sessions == 1 ? "" : "s") today",
+            headline: String(localized: "\(UsageFormat.tokens(todayTokens)) tokens today"),
+            subtitle: sessions == 1
+                ? String(localized: "1 session today")
+                : String(localized: "\(String(sessions)) sessions today"),
             meters: meters,
             stats: [
-                DevUsageStat(label: "Last 5 hours", value: UsageFormat.tokens(recent.reduce(0) { $0 + $1.input + $1.output })),
-                DevUsageStat(label: "Cached input today", value: UsageFormat.tokens(today.reduce(0) { $0 + $1.cached })),
+                DevUsageStat(label: String(localized: "Last 5 hours"), value: UsageFormat.tokens(recent.reduce(0) { $0 + $1.input + $1.output })),
+                DevUsageStat(label: String(localized: "Cached input today"), value: UsageFormat.tokens(today.reduce(0) { $0 + $1.cached })),
             ],
             daily: daily,
-            footnote: "Limits are as of Codex's last reply.",
+            footnote: String(localized: "Limits are as of Codex's last reply."),
             compactValue: meters.first.map { "\(Int(($0.usedFraction * 100).rounded()))%" } ?? UsageFormat.tokens(todayTokens)
         )
     }
@@ -513,7 +517,7 @@ nonisolated final class CodexUsageReader {
         guard let used = (limit["used_percent"] as? NSNumber)?.doubleValue else { return nil }
         var name = fallbackName
         if let minutes = (limit["window_minutes"] as? NSNumber)?.intValue {
-            name = minutes >= 7 * 24 * 60 - 60 ? "Weekly limit" : minutes >= 60 ? "\(minutes / 60)-hour limit" : "\(minutes)-minute limit"
+            name = minutes >= 7 * 24 * 60 - 60 ? String(localized: "Weekly limit") : minutes >= 60 ? String(localized: "\(String(minutes / 60))-hour limit") : String(localized: "\(String(minutes))-minute limit")
         }
         var reset: Date?
         if let at = (limit["resets_at"] as? NSNumber)?.doubleValue {
@@ -521,7 +525,7 @@ nonisolated final class CodexUsageReader {
         } else if let seconds = (limit["resets_in_seconds"] as? NSNumber)?.doubleValue {
             reset = date.addingTimeInterval(seconds)
         }
-        if let reset, reset < now { return DevUsageMeter(label: name, usedFraction: 0, caption: "reset") }
+        if let reset, reset < now { return DevUsageMeter(label: name, usedFraction: 0, caption: String(localized: "reset")) }
         return DevUsageMeter(
             label: name,
             usedFraction: min(1, max(0, used / 100)),
@@ -597,9 +601,11 @@ nonisolated final class GeminiCLIUsageReader {
             title: "Gemini CLI",
             symbol: DevToolCatalog.gemini.symbol,
             tint: DevToolCatalog.gemini.tint,
-            headline: "\(UsageFormat.tokens(todayTokens)) tokens today",
-            subtitle: "\(today.count) repl\(today.count == 1 ? "y" : "ies") today",
-            stats: [DevUsageStat(label: "7 days", value: UsageFormat.tokens(turns.reduce(0) { $0 + $1.tokens }))],
+            headline: String(localized: "\(UsageFormat.tokens(todayTokens)) tokens today"),
+            subtitle: today.count == 1
+                ? String(localized: "1 reply today")
+                : String(localized: "\(String(today.count)) replies today"),
+            stats: [DevUsageStat(label: String(localized: "7 days"), value: UsageFormat.tokens(turns.reduce(0) { $0 + $1.tokens }))],
             daily: daily,
             compactValue: UsageFormat.tokens(todayTokens)
         )
@@ -677,7 +683,7 @@ nonisolated enum AntigravityUsageReader {
                 if let reset = quota.resetAt, reset > window.now {
                     caption = UsageFormat.countdown(to: reset, from: window.now)
                 } else {
-                    caption = quota.resetAt == nil ? nil : "refreshes when Antigravity syncs"
+                    caption = quota.resetAt == nil ? nil : String(localized: "refreshes when Antigravity syncs")
                 }
                 return DevUsageMeter(label: family(of: quota.name), usedFraction: 1 - quota.remaining, caption: caption)
             }
@@ -687,13 +693,15 @@ nonisolated enum AntigravityUsageReader {
             title: "Antigravity",
             symbol: DevToolCatalog.antigravity.symbol,
             tint: DevToolCatalog.antigravity.tint,
-            headline: "\(today) agent run\(today == 1 ? "" : "s") today",
-            subtitle: quotas.isEmpty ? nil : "\(quotas.count) models in your plan",
+            headline: today == 1
+                ? String(localized: "1 agent run today")
+                : String(localized: "\(String(today)) agent runs today"),
+            subtitle: quotas.isEmpty ? nil : String(localized: "\(String(quotas.count)) models in your plan"),
             meters: Array(meters),
-            stats: [DevUsageStat(label: "7 days", value: "\(runDates.filter { $0 >= window.weekStart }.count) runs")],
+            stats: [DevUsageStat(label: String(localized: "7 days"), value: String(localized: "\(String(runDates.filter { $0 >= window.weekStart }.count)) runs"))],
             daily: daily,
-            footnote: "Model quotas as Antigravity last cached them.",
-            compactValue: meters.first.map { "\(Int(((1 - $0.usedFraction) * 100).rounded()))% left" } ?? "\(today) runs"
+            footnote: String(localized: "Model quotas as Antigravity last cached them."),
+            compactValue: meters.first.map { String(localized: "\(String(Int(((1 - $0.usedFraction) * 100).rounded())))% left") } ?? String(localized: "\(String(today)) runs")
         )
     }
 
@@ -864,11 +872,11 @@ nonisolated enum CursorUsageReader {
             sql: "SELECT value FROM ItemTable WHERE key = 'cursorAuth/stripeMembershipType'"
         ).first?.first??.trimmingCharacters(in: CharacterSet(charactersIn: "\" "))
 
-        var stats = [DevUsageStat(label: "7 days", value: "\(Int(daily.reduce(0, +))) lines")]
-        if let agent = bySource["composer"] { stats.append(DevUsageStat(label: "Agent today", value: "\(agent) lines")) }
-        if let tab = bySource["tab"] { stats.append(DevUsageStat(label: "Tab today", value: "\(tab) lines")) }
+        var stats = [DevUsageStat(label: String(localized: "7 days"), value: String(localized: "\(String(Int(daily.reduce(0, +)))) lines"))]
+        if let agent = bySource["composer"] { stats.append(DevUsageStat(label: String(localized: "Agent today"), value: String(localized: "\(String(agent)) lines"))) }
+        if let tab = bySource["tab"] { stats.append(DevUsageStat(label: String(localized: "Tab today"), value: String(localized: "\(String(tab)) lines"))) }
         if let model = models.max(by: { $0.value < $1.value })?.key {
-            stats.append(DevUsageStat(label: "Top model", value: model))
+            stats.append(DevUsageStat(label: String(localized: "Top model"), value: model))
         }
 
         return DevUsageCard(
@@ -876,12 +884,12 @@ nonisolated enum CursorUsageReader {
             title: "Cursor",
             symbol: DevToolCatalog.cursor.symbol,
             tint: DevToolCatalog.cursor.tint,
-            headline: "\(todayLines) AI lines today",
-            subtitle: plan.map { "\($0.capitalized) plan" },
+            headline: String(localized: "\(String(todayLines)) AI lines today"),
+            subtitle: plan.map { String(localized: "\($0.capitalized) plan") },
             stats: stats,
             daily: daily,
-            footnote: "Lines Cursor's AI wrote, from its local tracking database.",
-            compactValue: "\(todayLines) lines"
+            footnote: String(localized: "Lines Cursor's AI wrote, from its local tracking database."),
+            compactValue: String(localized: "\(String(todayLines)) lines")
         )
     }
 }

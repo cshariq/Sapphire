@@ -1,0 +1,329 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSAppleEventsUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs access to control playback and read track information from Music and Spotify."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要取用權限，才能控制「音樂」和 Spotify 的播放並讀取曲目資訊。"
+          }
+        }
+      }
+    },
+    "NSAppleMusicUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used to show upcming songs and playlists within apple music"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於在 Apple Music 中顯示即將播放的歌曲和播放列表。"
+          }
+        }
+      }
+    },
+    "NSAudioCaptureUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire listens to your music app's audio on this Mac to time lyrics word by word. The audio never leaves your Mac."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 會在這台 Mac 上聆聽你的音樂 App 音訊，以逐字同步歌詞。音訊絕不會離開你的 Mac。"
+          }
+        }
+      }
+    },
+    "NSBluetoothAlwaysUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs bluetooth to show new connections and battery low notifications"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用藍牙顯示裝置連線通知和電池狀態，並提供近距離解鎖。"
+          }
+        }
+      }
+    },
+    "NSCalendarsFullAccessUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs calendar permission to show upcoming events"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要行事曆權限來顯示即將到來的行程。"
+          }
+        }
+      }
+    },
+    "NSCalendarsUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip can learn from your calendar patterns to better understand your schedule and preferences."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用行事曆取用權限顯示即將到來的行程。"
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire uses the camera for the Mirror widget so you can see yourself in the notch."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用相機提供「鏡子」小工具，讓你可以在瀏海區域中看到自己。"
+          }
+        }
+      }
+    },
+    "NSContactsUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs access to your contacts to find the correct phone number or email when sending a reply from a notification."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要取用你的聯絡人，以便從通知傳送回覆時找到正確的電話號碼或電子郵件。"
+          }
+        }
+      }
+    },
+    "NSFocusStatusUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needed to provide live focus updates"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於提供即時的專注狀態更新。"
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs this to provide nearby share functionality"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用區域網路進行 Nearby Share 檔案傳輸和音樂裝置連線。"
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needed to provide live weather updates"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於提供即時的天氣更新。"
+          }
+        }
+      }
+    },
+    "NSLocationUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs this to weather"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要此權限以提供天氣資訊。"
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blip uses your location for local weather, nearby places, and location-aware tasks."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用你的位置顯示當地天氣。"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire uses the microphone for Gemini Live voice conversations."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 使用麥克風擷取音訊。"
+          }
+        }
+      }
+    },
+    "NSNetworkVolumesUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs this to provide nearby share functionality"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要此權限以提供 Nearby Share 功能。"
+          }
+        }
+      }
+    },
+    "NSRemindersFullAccessUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs this to show upcoming reminders"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要此權限以顯示即將到來的提醒事項。"
+          }
+        }
+      }
+    },
+    "NSRemindersUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needed to show reminders"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用於顯示提醒事項。"
+          }
+        }
+      }
+    },
+    "NSScreenCaptureUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needed for gemini live activity"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini 即時動態需要螢幕錄製權限。"
+          }
+        }
+      }
+    },
+    "NSSystemExtensionUsageDescription": {
+      "comment": "System permission purpose. Preserve the permission meaning and Sapphire/Blip product names.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire needs this extension to create a virtual multi-output audio device."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sapphire 需要此延伸功能來建立虛擬多重輸出音訊裝置。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -129,7 +129,7 @@ struct RichTextToolbar: View {
         .padding(.vertical, 4)
     }
 
-    private func formatButton(_ systemName: String, tip: String, action: @escaping () -> Void) -> some View {
+    private func formatButton(_ systemName: String, tip: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 11, weight: .semibold))

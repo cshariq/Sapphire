@@ -274,7 +274,7 @@ struct DetailedScheduleItemRow: View {
                 Text(item.title).font(.system(size: 14, weight: .bold, design: .rounded))
                 HStack(spacing: 5) {
                     Image(systemName: item.type == .event ? "calendar" : "checklist")
-                    Text(item.type == .event ? "Event" : "Reminder")
+                    Text(item.type == .event ? String(localized: "Event") : String(localized: "Reminder"))
                 }.font(.system(size: 11, weight: .medium)).opacity(0.6)
             }
             Spacer()

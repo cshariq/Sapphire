@@ -216,6 +216,16 @@ enum AppleMusicAudioBadge: String, Hashable, CaseIterable {
     case spatial = "Spatial"
     case appleDigitalMaster = "Apple Digital Master"
 
+    var displayName: String {
+        switch self {
+        case .dolbyAtmos: String(localized: "Dolby Atmos")
+        case .lossless: String(localized: "Lossless")
+        case .hiResLossless: String(localized: "Hi-Res Lossless")
+        case .spatial: String(localized: "Spatial")
+        case .appleDigitalMaster: String(localized: "Apple Digital Master")
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .dolbyAtmos, .spatial: "hifispeaker.2.fill"

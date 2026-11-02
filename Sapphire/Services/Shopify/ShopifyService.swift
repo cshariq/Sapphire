@@ -16,7 +16,7 @@ struct ShopifyOrder: Codable, Identifiable, Hashable {
     let financialStatus: String?
     let fulfillmentStatus: String?
 
-    var customerDisplayName: String { customerName ?? "Guest customer" }
+    var customerDisplayName: String { customerName ?? String(localized: "Guest customer") }
 }
 
 private struct ShopifyOrdersResponse: Decodable {
@@ -67,7 +67,7 @@ final class ShopifyService: ObservableObject {
     func refresh() async {
         guard let url = ordersURL else {
             orders = []
-            errorMessage = isConfigured ? "Enter a valid Shopify store domain." : nil
+            errorMessage = isConfigured ? String(localized: "Enter a valid Shopify store domain.") : nil
             return
         }
         isLoading = true
@@ -84,7 +84,7 @@ final class ShopifyService: ObservableObject {
             orders = try decoder.decode(ShopifyOrdersResponse.self, from: data).orders
             errorMessage = nil
         } catch {
-            errorMessage = "Unable to load Shopify orders. Check the store domain and token."
+            errorMessage = String(localized: "Unable to load Shopify orders. Check the store domain and token.")
         }
     }
 

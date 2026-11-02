@@ -24,26 +24,26 @@ struct EarbudControlsView: View {
     private var eqPresets: [(String, String)] {
         snap.vendor == .sony
             ? [
-                ("Off", "off"), ("Bright", "bright"), ("Excited", "excited"),
-                ("Mellow", "mellow"), ("Relaxed", "relaxed"), ("Vocal", "vocal"),
-                ("Bass Boost", "bassBoost"), ("Treble Boost", "trebleBoost"),
-                ("Speech", "speech"), ("Manual", "custom")
+                (String(localized: "Off"), "off"), (String(localized: "Bright"), "bright"), (String(localized: "Excited"), "excited"),
+                (String(localized: "Mellow"), "mellow"), (String(localized: "Relaxed"), "relaxed"), (String(localized: "Vocal"), "vocal"),
+                (String(localized: "Bass Boost"), "bassBoost"), (String(localized: "Treble Boost"), "trebleBoost"),
+                (String(localized: "Speech"), "speech"), (String(localized: "Manual"), "custom")
             ]
             : [
-                ("Normal", "off"), ("Bass Boost", "bassBoost"), ("Soft", "soft"),
-                ("Dynamic", "dynamic"), ("Clear", "clear"), ("Treble Boost", "trebleBoost"),
-                ("Custom", "custom")
+                (String(localized: "Normal"), "off"), (String(localized: "Bass Boost"), "bassBoost"), (String(localized: "Soft"), "soft"),
+                (String(localized: "Dynamic"), "dynamic"), (String(localized: "Clear"), "clear"), (String(localized: "Treble Boost"), "trebleBoost"),
+                (String(localized: "Custom"), "custom")
             ]
     }
 
     private var noiseModes: [(String, String, String)] {
         var modes: [(String, String, String)] = [
-            ("Off", "off", "speaker.slash.fill"),
-            ("ANC", "anc", "ear.badge.waveform"),
-            ("Ambient", "ambient", "ear")
+            (String(localized: "Off"), "off", "speaker.slash.fill"),
+            (String(localized: "ANC"), "anc", "ear.badge.waveform"),
+            (String(localized: "Ambient"), "ambient", "ear")
         ]
         if snap.supportsAdaptive {
-            modes.append(("Adaptive", "adaptive", "waveform.path"))
+            modes.append((String(localized: "Adaptive"), "adaptive", "waveform.path"))
         }
         return modes
     }
@@ -107,7 +107,7 @@ struct EarbudControlsView: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(snap.vendor == .sony ? "SONY HEADPHONES" : "GALAXY BUDS")
+                Text(verbatim: snap.vendor == .sony ? String(localized: "SONY HEADPHONES") : "GALAXY BUDS")
                     .font(.system(size: 10, weight: .black))
                     .foregroundStyle(.white.opacity(0.4))
                     .tracking(1.2)
@@ -140,9 +140,9 @@ struct EarbudControlsView: View {
 
     private var statusLabel: String {
         if snap.connected {
-            return snap.ownedLocally ? "This Mac" : "On Phone"
+            return snap.ownedLocally ? String(localized: "This Mac") : String(localized: "On Phone")
         }
-        return "Idle"
+        return String(localized: "Idle")
     }
 
     @ViewBuilder
@@ -158,12 +158,12 @@ struct EarbudControlsView: View {
         }
     }
 
-    private func batteryBadge(_ label: String, _ percent: Int) -> some View {
+    private func batteryBadge(_ label: LocalizedStringKey, _ percent: Int) -> some View {
         HStack(spacing: 3) {
             Text(label)
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.secondary)
-            Text("\(percent)%")
+            Text(verbatim: ChineseFormatting.isActive ? (Double(percent) / 100).formatted(.percent.precision(.fractionLength(0))) : "\(percent)%")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(percent <= 15 ? Color.orange : .white.opacity(0.85))
         }
@@ -206,8 +206,8 @@ struct EarbudControlsView: View {
                     Text("ANC Strength")
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    ModernChip(title: "Low", isSelected: !snap.ancHigh) { manager.setAncHigh(false) }
-                    ModernChip(title: "High", isSelected: snap.ancHigh) { manager.setAncHigh(true) }
+                    ModernChip(title: String(localized: "Low"), isSelected: !snap.ancHigh) { manager.setAncHigh(false) }
+                    ModernChip(title: String(localized: "High"), isSelected: snap.ancHigh) { manager.setAncHigh(true) }
                 }
             } else if snap.noiseMode == "ambient" {
                 EarbudAmbientSlider(
@@ -263,7 +263,7 @@ struct EarbudControlsView: View {
 
     private var extrasSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("Extras")
+            sectionLabel("earbud.extras")
 
             VStack(spacing: 0) {
                 if snap.supportsDSEE {
@@ -301,7 +301,7 @@ struct EarbudControlsView: View {
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                ForEach([(0, "5s"), (1, "10s"), (2, "15s")], id: \.0) { item in
+                                ForEach([(0, String(localized: "5s")), (1, String(localized: "10s")), (2, String(localized: "15s"))], id: \.0) { item in
                                     Button(item.1) {
                                         manager.setDetectConversationsDuration(item.0)
                                     }
@@ -461,15 +461,9 @@ struct EarbudControlsView: View {
                                     .foregroundStyle(.cyan)
                                     .frame(width: 22)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(snap.fitTesting ? "Testing fit…" : "Earbud Fit Test")
+                                    Text(verbatim: snap.fitTesting ? String(localized: "Testing fit…") : String(localized: "Earbud Fit Test"))
                                         .font(.system(size: 13, weight: .semibold))
-                                    Text(
-                                        snap.fitTesting
-                                            ? "Keep still while the buds play tones"
-                                            : (snap.fitLeftGood || snap.fitRightGood
-                                               ? "L \(snap.fitLeftGood ? "Good" : "Adjust") · R \(snap.fitRightGood ? "Good" : "Adjust")"
-                                               : "Check seal for best ANC and bass")
-                                    )
+                                    Text(verbatim: fitTestDetail)
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                 }
@@ -518,12 +512,22 @@ struct EarbudControlsView: View {
         }
     }
 
+    private var fitTestDetail: String {
+        if snap.fitTesting { return String(localized: "Keep still while the buds play tones") }
+        guard snap.fitLeftGood || snap.fitRightGood else {
+            return String(localized: "Check seal for best ANC and bass")
+        }
+        let left = snap.fitLeftGood ? String(localized: "Good") : String(localized: "Adjust")
+        let right = snap.fitRightGood ? String(localized: "Good") : String(localized: "Adjust")
+        return String(localized: "L \(left) · R \(right)", comment: "Left and right earbud fit-test results")
+    }
+
     private var extrasDivider: some View {
         Divider().opacity(0.2).padding(.leading, 34)
     }
 
     private func touchOptionRow(
-        title: String,
+        title: LocalizedStringKey,
         selected: GalaxyTouchOption,
         onSelect: @escaping (GalaxyTouchOption) -> Void
     ) -> some View {
@@ -547,8 +551,8 @@ struct EarbudControlsView: View {
     }
 
     private func compactToggle(
-        title: String,
-        detail: String,
+        title: LocalizedStringKey,
+        detail: LocalizedStringKey,
         symbol: String,
         isOn: Binding<Bool>
     ) -> some View {
@@ -578,9 +582,9 @@ struct EarbudControlsView: View {
                 .foregroundStyle(finding ? Color.orange : Color.accentColor)
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 1) {
-                Text(finding ? "Ringing…" : "Find Earbuds")
+                Text(verbatim: finding ? String(localized: "Ringing…") : String(localized: "Find Earbuds"))
                     .font(.system(size: 13, weight: .semibold))
-                Text(finding ? "Playing a tone on both buds" : "Ring them if you set them down")
+                Text(verbatim: finding ? String(localized: "Playing a tone on both buds") : String(localized: "Ring them if you set them down"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -590,7 +594,7 @@ struct EarbudControlsView: View {
                 finding.toggle()
                 manager.find(finding)
             } label: {
-                Text(finding ? "Stop" : "Ring")
+                Text(verbatim: finding ? String(localized: "Stop") : String(localized: "Ring"))
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -603,8 +607,9 @@ struct EarbudControlsView: View {
         .padding(.vertical, 8)
     }
 
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title.uppercased())
+    private func sectionLabel(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .textCase(.uppercase)
             .font(.system(size: 10, weight: .black))
             .foregroundStyle(.secondary)
             .tracking(1.1)
