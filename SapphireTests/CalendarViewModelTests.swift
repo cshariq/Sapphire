@@ -97,6 +97,22 @@ struct CalendarViewModelTests {
         #expect(viewModel.monthGrid.map(\.id) == originalGridIDs)
     }
 
+    @Test func mondayStartMonthGridPutsDatesUnderTheirWeekday() {
+        let calendarSource = CalendarSource(timeZone: timeZone("Europe/Amsterdam"))
+        let clock = TestClock(date(2026, 10, 18, hour: 12, calendar: calendarSource.calendar))
+        let viewModel = makeViewModel(
+            calendarSource: calendarSource,
+            clock: clock,
+            notificationCenter: NotificationCenter()
+        )
+        viewModel.updateStartOfWeek(.monday)
+
+        // October 2026 starts on a Thursday, so a Monday-first grid opens on Monday September 28.
+        let october18 = date(2026, 10, 18, calendar: calendarSource.calendar)
+        #expect(viewModel.monthGrid.first?.date == date(2026, 9, 28, calendar: calendarSource.calendar))
+        #expect(viewModel.monthGrid.firstIndex { $0.date == october18 }.map { $0 % 7 } == 6)
+    }
+
     @Test func notificationObserversDoNotRetainReleasedViewModel() {
         let calendarSource = CalendarSource(timeZone: timeZone("America/Los_Angeles"))
         let clock = TestClock(date(2026, 8, 11, hour: 12, calendar: calendarSource.calendar))
