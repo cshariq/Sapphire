@@ -142,6 +142,19 @@ struct ArtworkChangeTests {
         let removed = parser.consume(Data("{\"payload\":{\"artworkData\":null}}\n".utf8))
         if case .removed = removed[0].artwork {} else { Issue.record("null artwork should read as removed") }
     }
+
+    @Test func trackChangeSnapshotWithoutArtworkReadsAsRemoved() {
+        let parser = NowPlayingStreamParser()
+        _ = parser.consume(Data("{\"type\":\"data\",\"diff\":false,\"payload\":{\"title\":\"A\"}}\n".utf8))
+
+        let nextTrack = parser.consume(Data("{\"type\":\"data\",\"diff\":false,\"payload\":{\"title\":\"B\"}}\n".utf8))
+        #expect(nextTrack[0].isSnapshot)
+        if case .removed = nextTrack[0].artwork {} else { Issue.record("a snapshot without art should read as removed") }
+
+        let diff = parser.consume(Data("{\"type\":\"data\",\"diff\":true,\"payload\":{\"playing\":true}}\n".utf8))
+        #expect(!diff[0].isSnapshot)
+        #expect(diff[0].artwork.isUnchanged)
+    }
 }
 
 @Suite("Adapter command queue")
