@@ -1287,6 +1287,8 @@ class MusicManager {
     }
 
     private func idleSourceKey(in sources: [String: TrackInfo]) -> String? {
+        // A paused source stays on screen so it can be resumed; the default player only fills in when it is gone.
+        if let current = currentSourceKey, sources[current] != nil { return current }
         let defaultPlayer = settingsModel.current.defaultMusicPlayer
         if let bundle = defaultPlayer.bundleIdentifier {
             let own = sources.keys.filter { bundleID(fromSourceKey: $0) == bundle }.sorted()
