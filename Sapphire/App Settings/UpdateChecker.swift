@@ -1070,7 +1070,9 @@ class UpdateChecker: NSObject, ObservableObject, @preconcurrency URLSessionDownl
     private func isInstallPathUserWritable() -> Bool {
         let appURL = URL(fileURLWithPath: Bundle.main.bundlePath)
         let parentPath = appURL.deletingLastPathComponent().path
+        // The .pkg leaves a root-owned bundle in admin-writable /Applications; only the helper can replace it.
         return FileManager.default.isWritableFile(atPath: parentPath)
+            && FileManager.default.isWritableFile(atPath: appURL.path)
     }
 
     nonisolated private static func validateUpdatePublisher(
