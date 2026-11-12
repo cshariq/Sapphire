@@ -125,6 +125,7 @@ class ActiveAppMonitor: ObservableObject {
     private var observedPID: pid_t?
     private var mouseUpToken: UUID?
     private var lastMoveTime: TimeInterval = 0
+    private var dragActivationTimer: Timer?
 
     private let fullScreenQueue = DispatchQueue(label: "com.sapphire.fullscreen-detection", qos: .userInitiated)
     private var fullScreenGeneration = 0
@@ -305,6 +306,8 @@ class ActiveAppMonitor: ObservableObject {
         axObserver?.detach()
         axObserver = nil
         observedPID = nil
+        dragActivationTimer?.invalidate()
+        dragActivationTimer = nil
 
         if let token = mouseUpToken {
             EventMonitorHub.shared.unregister(token: token, for: .leftMouseUp)
@@ -322,12 +325,21 @@ class ActiveAppMonitor: ObservableObject {
             if now - lastMoveTime < 0.016 { return }
             lastMoveTime = now
 
-            guard NSEvent.pressedMouseButtons & 1 != 0 else { return }
+            guard NSEvent.pressedMouseButtons & 1 != 0,
+                  !self.windowDrag.isDragging,
+                  self.dragActivationTimer == nil else { return }
 
-            if !self.windowDrag.isDragging {
-                self.windowDrag.beginDrag()
-                self.startMouseUpMonitoring()
+            self.startMouseUpMonitoring()
+            let delay = max(0.05, self.settingsModel.current.snapActivationDelay)
+            let timer = Timer(timeInterval: delay, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    self.dragActivationTimer = nil
+                    guard NSEvent.pressedMouseButtons & 1 != 0 else { return }
+                    self.windowDrag.beginDrag()
+                }
             }
+            RunLoop.main.add(timer, forMode: .common)
+            self.dragActivationTimer = timer
         }
     }
 
@@ -337,6 +349,8 @@ class ActiveAppMonitor: ObservableObject {
         mouseUpToken = EventMonitorHub.shared.register(for: .leftMouseUp) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                self.dragActivationTimer?.invalidate()
+                self.dragActivationTimer = nil
                 self.windowDrag.endDrag()
                 if let token = self.mouseUpToken {
                     EventMonitorHub.shared.unregister(token: token, for: .leftMouseUp)
