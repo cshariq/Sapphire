@@ -330,11 +330,15 @@ class ActiveAppMonitor: ObservableObject {
                   self.dragActivationTimer == nil else { return }
 
             self.startMouseUpMonitoring()
+            let origin = NSEvent.mouseLocation
             let delay = max(0.05, self.settingsModel.current.snapActivationDelay)
             let timer = Timer(timeInterval: delay, repeats: false) { _ in
                 MainActor.assumeIsolated {
                     self.dragActivationTimer = nil
-                    guard NSEvent.pressedMouseButtons & 1 != 0 else { return }
+                    let location = NSEvent.mouseLocation
+                    // A plain click can post AXWindowMoved too (e.g. closing a Chrome tab), so the cursor must have moved.
+                    guard NSEvent.pressedMouseButtons & 1 != 0,
+                          hypot(location.x - origin.x, location.y - origin.y) >= 3 else { return }
                     self.windowDrag.beginDrag()
                 }
             }
