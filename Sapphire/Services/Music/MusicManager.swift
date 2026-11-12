@@ -2156,7 +2156,8 @@ class MusicManager {
         }
 
         if let newArtwork = payload.artwork {
-            self.applyArtwork(newArtwork, trackIdentity: trackIdentity)
+            // Only Spotify pins lastTrackIdentity (to the Connect URI); other players re-publish the same song under a new content id once its cover loads.
+            self.applyArtwork(newArtwork, trackIdentity: isSpotify ? trackIdentity : nil)
         } else if switchingAwayFromSpotify {
             clearArtwork()
         }
