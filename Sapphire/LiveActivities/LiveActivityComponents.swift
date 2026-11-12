@@ -380,12 +380,14 @@ struct FileProgressLiveActivityView {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
                     .lineLimit(1)
+                    .truncationMode(.middle)
 
                 Text(statusText)
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.7))
                     .lineLimit(1)
             }
+            .frame(maxWidth: 200, alignment: .leading)
 
             Spacer()
 
