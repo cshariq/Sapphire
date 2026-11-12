@@ -21,4 +21,11 @@ enum ChargeLimitPolicy {
     static func shouldInhibitForSleep(charge: Int, limit: Int, isCharging: Bool, stopChargingWhenSleeping: Bool) -> Bool {
         stopChargingWhenSleeping || (limit < 100 && (charge >= limit || isCharging))
     }
+
+    /// At 100% there is nothing to enforce. Unless Sapphire must release a hold it sent itself, the firmware/legacy
+    /// charge keys are left alone, because writing them can switch off macOS's own Charge Limit. Adapter mode
+    /// always re-enables AC power.
+    static func leavesChargingToMacOS(mode: ChargeControlMode, limit: Int, shouldCharge: Bool, holdApplied: Bool) -> Bool {
+        mode != .adapter && limit >= 100 && shouldCharge && !holdApplied
+    }
 }

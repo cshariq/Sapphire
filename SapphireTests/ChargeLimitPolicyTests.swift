@@ -49,4 +49,16 @@ struct ChargeLimitPolicyTests {
         #expect(ChargeLimitPolicy.shouldInhibitForSleep(charge: 50, limit: 80, isCharging: true, stopChargingWhenSleeping: false))
         #expect(!ChargeLimitPolicy.shouldInhibitForSleep(charge: 50, limit: 80, isCharging: false, stopChargingWhenSleeping: false))
     }
+
+    // At 100% Sapphire leaves the charge keys alone unless it is releasing its own hold, so macOS's Charge Limit stays in charge.
+    @Test func fullLimitLeavesChargingToMacOSUnlessReleasingOwnHold() {
+        for mode in [ChargeControlMode.firmware, .legacy, .unsupported] {
+            #expect(ChargeLimitPolicy.leavesChargingToMacOS(mode: mode, limit: 100, shouldCharge: true, holdApplied: false))
+            #expect(!ChargeLimitPolicy.leavesChargingToMacOS(mode: mode, limit: 100, shouldCharge: true, holdApplied: true))
+            #expect(!ChargeLimitPolicy.leavesChargingToMacOS(mode: mode, limit: 100, shouldCharge: false, holdApplied: false))
+            #expect(!ChargeLimitPolicy.leavesChargingToMacOS(mode: mode, limit: 80, shouldCharge: true, holdApplied: false))
+        }
+        // Adapter mode always re-enables AC power.
+        #expect(!ChargeLimitPolicy.leavesChargingToMacOS(mode: .adapter, limit: 100, shouldCharge: true, holdApplied: false))
+    }
 }

@@ -318,6 +318,13 @@ class PowerStateController: ObservableObject {
             )
 
             switch mode {
+            case _ where ChargeLimitPolicy.leavesChargingToMacOS(
+                mode: mode,
+                limit: currentSettings.batteryChargeLimit,
+                shouldCharge: shouldCharge,
+                holdApplied: batteryManager.chargeHoldApplied
+            ):
+                break
             case .firmware:
                 if currentSettings.manualChargePaused {
                     batteryManager.setChargeLimit(max(50, min(100, currentCharge)))
@@ -622,6 +629,25 @@ class BatteryManager {
         commandStateLock.unlock()
     }
 
+    // Persisted so a 100% limit can tell its own leftover hold from macOS's Charge Limit; never written counts as held.
+    private static let chargeHoldKey = "sapphire.chargeHoldApplied"
+
+    /// Whether a charge limit or pause Sapphire sent may still be holding the battery.
+    var chargeHoldApplied: Bool {
+        UserDefaults.standard.object(forKey: Self.chargeHoldKey) as? Bool ?? true
+    }
+
+    private func noteChargeHold() {
+        UserDefaults.standard.set(true, forKey: Self.chargeHoldKey)
+    }
+
+    /// Called when a release succeeds; a hold sent after it keeps the flag set.
+    private func noteChargeReleased() {
+        commandStateLock.lock(); defer { commandStateLock.unlock() }
+        guard lastChargingCommand != false, (lastChargeLimitCommand ?? 100) >= 100 else { return }
+        UserDefaults.standard.set(false, forKey: Self.chargeHoldKey)
+    }
+
     func startSleepBatteryLogging(intervalMinutes: Int, chargeLimit: Int, stopChargingWhileAsleep: Bool) {
         let config = (intervalMinutes, chargeLimit, stopChargingWhileAsleep)
         if let active = activeSleepMonitoringConfig, active == config { return }
@@ -716,6 +742,7 @@ class BatteryManager {
             clearChargeLimitCommand(if: limit)
             return
         }
+        if limit < 100 { noteChargeHold() }
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
         helper.setChargeLimit(limit) { [weak self] error in
@@ -724,6 +751,7 @@ class BatteryManager {
                 recordFailure()
                 print("[BatteryManager] Error setting charge limit: \(error.localizedDescription)")
             } else {
+                if limit >= 100 { self?.noteChargeReleased() }
                 recordSuccess()
             }
         }
@@ -735,6 +763,7 @@ class BatteryManager {
             clearChargingCommand(if: enabled)
             return
         }
+        if !enabled { noteChargeHold() }
         let recordFailure = self.recordFailure
         let recordSuccess = self.recordSuccess
         helper.enableCharging(enabled) { [weak self] error in
@@ -743,6 +772,7 @@ class BatteryManager {
                 recordFailure()
                 print("[BatteryManager] Error setting charging enabled (\(enabled)): \(error.localizedDescription)")
             } else {
+                if enabled { self?.noteChargeReleased() }
                 recordSuccess()
             }
         }
