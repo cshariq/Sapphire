@@ -166,11 +166,12 @@ class PowerStateController: ObservableObject {
             let currentCharge = currentSettings.useHardwareBatteryPercentage
                 ? await batteryManager.getHardwareBatteryPercentage()
                 : batteryState.level
-            let atOrAboveLimit = currentCharge >= currentSettings.batteryChargeLimit
-            let shouldInhibit =
-                currentSettings.stopChargingWhenSleeping
-                || atOrAboveLimit
-                || (currentSettings.batteryChargeLimit < 100 && batteryState.isCharging)
+            let shouldInhibit = ChargeLimitPolicy.shouldInhibitForSleep(
+                charge: currentCharge,
+                limit: currentSettings.batteryChargeLimit,
+                isCharging: batteryState.isCharging,
+                stopChargingWhenSleeping: currentSettings.stopChargingWhenSleeping
+            )
 
             if shouldInhibit {
                 let mode = await batteryManager.currentChargeControlMode()
@@ -274,13 +275,14 @@ class PowerStateController: ObservableObject {
                 currentManagementState = .inhibited
             } else if useNativeLimit {
                 if currentCharge >= currentSettings.batteryChargeLimit { currentManagementState = .inhibited }
-            } else if currentSettings.sailingModeEnabled {
-                let sailingLowerBound = currentSettings.batteryChargeLimit - currentSettings.sailingModeLowerLimit
-                if currentCharge >= currentSettings.batteryChargeLimit { shouldCharge = false; currentManagementState = .inhibited }
-                else if currentCharge < sailingLowerBound { shouldCharge = true }
-                else { shouldCharge = batteryState.isCharging; if !shouldCharge { currentManagementState = .sailing } }
             } else {
-                if currentCharge >= currentSettings.batteryChargeLimit { shouldCharge = false; currentManagementState = .inhibited }
+                (shouldCharge, currentManagementState) = ChargeLimitPolicy.awakeDecision(
+                    charge: currentCharge,
+                    limit: currentSettings.batteryChargeLimit,
+                    sailingEnabled: currentSettings.sailingModeEnabled,
+                    sailingLowerLimit: currentSettings.sailingModeLowerLimit,
+                    isCharging: batteryState.isCharging
+                )
             }
 
             if currentSettings.heatProtectionEnabled && shouldCharge && batteryState.isCharging {
