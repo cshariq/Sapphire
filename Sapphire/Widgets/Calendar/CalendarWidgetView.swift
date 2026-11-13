@@ -122,8 +122,10 @@ struct CalendarWidgetView: View {
                     }
                 }
                 .scrollTargetLayout()
-                .padding(.horizontal, horizontalPadding)
             }
+            // Content margins, not padding: scrollPosition ignores padding and centered the strip two days early.
+            .contentMargins(.horizontal, horizontalPadding, for: .scrollContent)
+            .coordinateSpace(.calendarStrip)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $centeredDate, anchor: .center)
             .onAppear {
@@ -272,8 +274,13 @@ struct DynamicDayView: View {
     }
 
     private static func focusFactor(_ proxy: GeometryProxy, centerX: CGFloat) -> CGFloat {
-        let distance = proxy.frame(in: .scrollView(axis: .horizontal)).midX - centerX
+        let distance = proxy.frame(in: .calendarStrip).midX - centerX
         return max(0, 1 - (abs(distance) / 80))
     }
 
+}
+
+// The scroll view's own space shifts by its content margins; this one stays on the visible strip.
+private extension CoordinateSpaceProtocol where Self == NamedCoordinateSpace {
+    static var calendarStrip: NamedCoordinateSpace { .named("CalendarStripCoordinateSpace") }
 }

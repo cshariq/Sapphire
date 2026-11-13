@@ -97,7 +97,8 @@ class InteractiveCalendarViewModel: ObservableObject {
 
         var grid: [MonthGridItem] = []
 
-        let paddingDays = firstWeekday - calendar.firstWeekday
+        // ordinality already counts from calendar.firstWeekday, so day one of the week is 1.
+        let paddingDays = firstWeekday - 1
         if paddingDays > 0 {
             for i in (0..<paddingDays).reversed() {
                 if let date = calendar.date(byAdding: .day, value: -i - 1, to: firstDayOfMonth) {
