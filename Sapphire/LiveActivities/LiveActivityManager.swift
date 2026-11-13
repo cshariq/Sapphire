@@ -453,6 +453,7 @@ class LiveActivityManager {
             .battery: { self.checkForBatteryAlert() },
             .desktopChange: { self.checkForDesktopChange() },
             .timer: { self.checkForTimer() },
+            .focusSession: { self.checkForFocusSession() },
             .music: { self.checkForMusic() },
             .fileShelf: { self.checkForFileShelf() },
             .weather: { self.checkForWeather() },
@@ -1132,7 +1133,7 @@ class LiveActivityManager {
             + (isLowBatteryAlertDue ? [.battery] : [])
         let finalEvaluationOrder = chain(
             urgentActivities + highPriorityActivities,
-            settingsModel.current.liveActivityOrder.lazy.compactMap(ActivityType.init(from:))
+            ActivityType.evaluationOrder(for: settingsModel.current.liveActivityOrder)
         )
 
         var winningCandidate: (ActivityType, LiveActivityContent, TimeInterval?)? = nil
@@ -1190,13 +1191,6 @@ class LiveActivityManager {
            !isHiddenInFullScreenOnEveryNotchDisplay(.persistentBattery),
            snoozedActivities[.persistentBattery] == nil,
            let candidate = checkForPersistentBattery() {
-            winningCandidate = candidate
-        }
-
-        if winningCandidate == nil,
-           !isHiddenInFullScreenOnEveryNotchDisplay(.focusSession),
-           snoozedActivities[.focusSession] == nil,
-           let candidate = checkForFocusSession() {
             winningCandidate = candidate
         }
 

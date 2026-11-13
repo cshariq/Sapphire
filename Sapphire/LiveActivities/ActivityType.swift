@@ -74,6 +74,14 @@ enum ActivityType: Int, Equatable, Comparable, CaseIterable {
         }
     }
 
+    static func evaluationOrder(for userOrder: [LiveActivityType]) -> [ActivityType] {
+        userOrder.flatMap { settingsType -> [ActivityType] in
+            // Focus sessions have no row of their own, so they rank with the Focus row.
+            guard settingsType != .focus else { return [.focusModeChange, .focusSession] }
+            return ActivityType(from: settingsType).map { [$0] } ?? []
+        }
+    }
+
     func toLiveActivityType() -> LiveActivityType? {
         switch self {
         case .capsLock: return .capsLock
