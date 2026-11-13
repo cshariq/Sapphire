@@ -432,6 +432,7 @@ final class NativeMediaController: NSObject {
 
     private func handleStreamEvent(_ event: NowPlayingStreamParser.Event, token: UInt64) {
         guard stream?.token == token else { return }
+        if event.isSnapshot { currentMergedMetadata.removeAll() }
         handleTrackUpdate(event.metadata, artwork: event.artwork)
     }
 

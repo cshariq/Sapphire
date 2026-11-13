@@ -27,6 +27,8 @@ final class NowPlayingStreamParser: @unchecked Sendable {
     struct Event: @unchecked Sendable {
         let metadata: [String: Any]
         let artwork: ArtworkUpdate
+        // "diff": false carries the whole now-playing state; the adapter sends one on every track change.
+        let isSnapshot: Bool
     }
 
     static let maximumLineBytes = 16 * 1024 * 1024
@@ -47,6 +49,7 @@ final class NowPlayingStreamParser: @unchecked Sendable {
         var payload = (parsed["payload"] as? [String: Any]) ?? parsed
         let isFirstPayload = !sawFirstPayload
         sawFirstPayload = true
+        let isSnapshot = parsed["diff"] as? Bool == false
 
         let artwork: ArtworkUpdate
         if let raw = payload.removeValue(forKey: "artworkData") {
@@ -58,12 +61,12 @@ final class NowPlayingStreamParser: @unchecked Sendable {
                 lastImage = nil
                 artwork = .removed
             }
-        } else if isFirstPayload {
+        } else if isFirstPayload || isSnapshot {
             artwork = .removed
         } else {
             artwork = .unchanged
         }
-        return Event(metadata: payload, artwork: artwork)
+        return Event(metadata: payload, artwork: artwork, isSnapshot: isSnapshot)
     }
 
     private func decodeArtwork(_ base64: NSString) -> ArtworkUpdate {
