@@ -184,7 +184,10 @@ final class NotchHostedContentView: NSView {
     func setRootView(_ view: AnyView, key: NotchContentKey? = nil) {
         if let key, key == contentKey { return }
         contentKey = key
-        hosting.rootView = view
+        // Outside Auto Layout, NSHostingView doesn't invalidate its intrinsic size when the content changes.
+        hosting.rootView = sizing == .fitting
+            ? AnyView(view.onGeometryChange(for: CGSize.self, of: { $0.size }) { [weak self] _ in self?.fittingSizeDidChange() })
+            : view
         applyFittingSizeIfNeeded()
     }
 

@@ -279,6 +279,26 @@ final class NotchStageTests: XCTestCase {
         XCTAssertNil(host.layer?.filters, "the filter is dropped once the blur has gone")
     }
 
+    func testFittingHostFollowsContentThatResizesItself() {
+        let (window, stage, _) = makeStage()
+        defer { window.orderOut(nil) }
+        let state = LockScreenState()
+        state.isFaceIDEnabled = true
+        let host = NotchHostedContentView(rootView: AnyView(EmptyView()), sizing: .fitting)
+        var reports = 0
+        host.onFittingSizeChange = { reports += 1 }
+        stage.addSubview(host)
+        host.setRootView(AnyView(LockScreenLiveActivityView.right().fixedSize().environmentObject(state)))
+        pump(0.1)
+        XCTAssertEqual(host.frame.size, .zero, "nothing is shown before authentication starts")
+
+        state.isAuthenticating = true
+        pump(0.2)
+        XCTAssertGreaterThan(host.frame.width, 0, "the host grows when the Face ID glyph appears")
+        XCTAssertEqual(host.frame.size, host.preferredContentSize)
+        XCTAssertGreaterThan(reports, 0, "the region stage is told so it can widen the notch")
+    }
+
     func testOnlyPointsInsideTheOutlineAreTappable() {
         let (window, stage, engine) = makeStage()
         defer { window.orderOut(nil) }
