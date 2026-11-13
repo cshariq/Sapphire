@@ -208,7 +208,7 @@ private struct HelperInstallationStepView: View {
                         helperManager.beginInstallation()
                     }
                 } label: {
-                    Text(helperManager.isResettingHelper ? "Resetting…" : primaryActionTitle)
+                    Text(verbatim: helperManager.isResettingHelper ? String(localized: "Resetting…") : primaryActionTitle)
                         .font(.headline)
                         .frame(maxWidth: 280)
                         .padding(.vertical, 12)
@@ -250,26 +250,26 @@ private struct HelperInstallationStepView: View {
     private var primaryActionTitle: String {
         switch helperManager.status {
         case .requiresApproval:
-            return "Open Login Items"
+            return String(localized: "Open Login Items")
         case .enabled, .notFound:
-            return "Reset Helper"
+            return String(localized: "Reset Helper")
         default:
-            return "Install Helper"
+            return String(localized: "Install Helper")
         }
     }
 
     private var stepGuidance: String {
         switch helperManager.status {
         case .requiresApproval:
-            return "System Settings should be open. Under Allow in the Background, turn on both Sapphire and Sapphire Helper, then return here."
+            return String(localized: "System Settings should be open. Under Allow in the Background, turn on both Sapphire and Sapphire Helper, then return here.")
         case .enabled where !helperManager.isRunning:
-            return "The helper is approved but not responding. Tap Reset Helper so Sapphire can unregister its own background items and reinstall the helper."
+            return String(localized: "The helper is approved but not responding. Tap Reset Helper so Sapphire can unregister its own background items and reinstall the helper.")
         case .enabled:
-            return "Helper is ready. You can continue."
+            return String(localized: "Helper is ready. You can continue.")
         case .notFound:
-            return "macOS lost the helper registration (SAP-H3). Tap Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck."
+            return String(localized: "macOS lost the helper registration (SAP-H3). Tap Reset Helper to rebuild it; Sapphire relaunches itself if the helper stays stuck.")
         default:
-            return "Tap Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity."
+            return String(localized: "Tap Install Helper. Approve the macOS prompt, then enable Sapphire under System Settings → General → Login Items → Background Activity.")
         }
     }
 
@@ -343,7 +343,7 @@ private struct PrivacyStepView: View {
     }
 
     private struct PrivacySection: View {
-        let title: String, content: String
+        let title: LocalizedStringKey, content: LocalizedStringKey
         var body: some View { VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline).foregroundStyle(.primary); Text(content).font(.callout).foregroundStyle(.secondary).lineSpacing(4) } }
     }
 }
@@ -383,7 +383,7 @@ private struct MusicChoiceStepView: View {
 
             Spacer()
 
-            OnboardingButton(title: "Next", action: {
+            OnboardingButton(title: "onboarding.next", action: {
                 if let finalSelection = selection {
                     settings.settings.defaultMusicPlayer = finalSelection
                     onNext()
@@ -435,7 +435,7 @@ private struct SpotifySetupStepView: View {
                     isLoading = false
                 },
                 onCancel: {
-                    error = "Login was cancelled by the user."
+                    error = String(localized: "Login was cancelled by the user.")
                     spotifyPrivateAPI.loginChallenge = nil
                     isLoading = false
                 }
@@ -599,7 +599,7 @@ private struct SubscriptionOverviewStepView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(subscriptionManager.isSignedIn ? subscriptionManager.userDisplayName : "Guest Mode")
+                    Text(verbatim: subscriptionManager.isSignedIn ? subscriptionManager.userDisplayName : String(localized: "Guest Mode"))
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
                     Text("Current plan: \(SubscriptionFeatureCatalog.tierDisplayName(currentTier))")
                         .font(.system(size: 12, weight: .medium))
@@ -902,9 +902,9 @@ private struct OnboardingUpdateStatusView: View {
 }
 
 private struct ModernOnboardingRow<Content: View>: View {
-    let iconName: String, iconColor: Color, title: String, description: String
+    let iconName: String, iconColor: Color, title: LocalizedStringKey, description: LocalizedStringKey
     let content: Content
-    init(iconName: String, iconColor: Color, title: String, description: String, @ViewBuilder content: () -> Content) { self.iconName = iconName; self.iconColor = iconColor; self.title = title; self.description = description; self.content = content() }
+    init(iconName: String, iconColor: Color, title: LocalizedStringKey, description: LocalizedStringKey, @ViewBuilder content: () -> Content) { self.iconName = iconName; self.iconColor = iconColor; self.title = title; self.description = description; self.content = content() }
     var body: some View {
         HStack(spacing: 15) {
             Image(systemName: iconName).font(.title.weight(.semibold)).foregroundColor(iconColor).frame(width: 44, height: 44).background(iconColor.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -916,7 +916,7 @@ private struct ModernOnboardingRow<Content: View>: View {
 }
 
 private struct OnboardingButton: View {
-    let title: String
+    let title: LocalizedStringKey
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
     var body: some View {
@@ -953,8 +953,8 @@ private struct MusicServiceButton: View {
 }
 
 private struct PermissionSectionView: View {
-    let title: String, permissions: [PermissionItem]
-    var description: String? = nil
+    let title: LocalizedStringKey, permissions: [PermissionItem]
+    var description: LocalizedStringKey? = nil
     @ObservedObject var manager: PermissionsManager
     var body: some View { if !permissions.isEmpty { VStack(alignment: .leading, spacing: 4) { Text(title).font(.title2.weight(.semibold)); if let description = description { Text(description).font(.caption).foregroundColor(.secondary).padding(.bottom, 8) }; VStack(spacing: 15) { ForEach(permissions) { permission in PermissionRowView(permission: permission, manager: manager) } } } } }
 }

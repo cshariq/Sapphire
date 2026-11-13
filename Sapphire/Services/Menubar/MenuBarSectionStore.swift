@@ -20,9 +20,9 @@ enum MenuBarSectionKind: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .shown: return "Shown"
-        case .hidden: return "Hidden"
-        case .alwaysHidden: return "Always Hidden"
+        case .shown: return String(localized: "Shown")
+        case .hidden: return String(localized: "Hidden")
+        case .alwaysHidden: return String(localized: "Always Hidden")
         }
     }
 
@@ -52,15 +52,15 @@ enum MenuBarSystemItem: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .battery: return "Battery"
-        case .bluetooth: return "Bluetooth"
-        case .clock: return "Clock"
-        case .displays: return "Displays"
-        case .keyboard: return "Keyboard"
-        case .volume: return "Sound"
-        case .wifi: return "Wi-Fi"
-        case .screenMirroring: return "Screen Mirroring"
-        case .controlCenter: return "Control Center"
+        case .battery: return String(localized: "Battery")
+        case .bluetooth: return String(localized: "Bluetooth")
+        case .clock: return String(localized: "Clock")
+        case .displays: return String(localized: "Displays")
+        case .keyboard: return String(localized: "Keyboard")
+        case .volume: return String(localized: "Sound")
+        case .wifi: return String(localized: "Wi-Fi")
+        case .screenMirroring: return String(localized: "Screen Mirroring")
+        case .controlCenter: return String(localized: "Control Center")
         }
     }
 

@@ -23,13 +23,13 @@ private extension AppActivityControl {
 
     func label(isOn: Bool?) -> String {
         switch self {
-        case .mute: isOn == true ? "Unmute" : "Mute"
-        case .video: isOn == false ? "Start Video" : (isOn == true ? "Stop Video" : "Video")
-        case .share: isOn == true ? "Stop Share" : "Share"
-        case .deafen: "Deafen"
-        case .stop: "Stop"
-        case .leave: "Leave"
-        case .show: "Show"
+        case .mute: isOn == true ? String(localized: "Unmute") : String(localized: "Mute")
+        case .video: isOn == false ? String(localized: "Start Video") : (isOn == true ? String(localized: "Stop Video") : String(localized: "Video"))
+        case .share: isOn == true ? String(localized: "Stop Share") : String(localized: "Share")
+        case .deafen: String(localized: "Deafen")
+        case .stop: String(localized: "Stop")
+        case .leave: String(localized: "Leave")
+        case .show: String(localized: "Show")
         }
     }
 }

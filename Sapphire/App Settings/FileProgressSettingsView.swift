@@ -147,7 +147,7 @@ struct FileProgressSettingsView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
-        panel.prompt = "Watch"
+        panel.prompt = String(localized: "Watch")
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             let path = (url.path as NSString).abbreviatingWithTildeInPath

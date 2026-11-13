@@ -17,6 +17,16 @@ enum MusicSettingsTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var displayName: String {
+        switch self {
+        case .general: String(localized: "General")
+        case .player: String(localized: "Player")
+        case .features: String(localized: "Features")
+        case .accounts: String(localized: "Accounts")
+        case .lyrics: String(localized: "Lyrics")
+        }
+    }
+
     var icon: String {
         switch self {
         case .general: return "gearshape"
@@ -95,7 +105,7 @@ struct MusicPlayerFeaturesCard: View {
         }
     }
 
-    private func row(_ title: String, _ description: String, services: [Service], isOn: Binding<Bool>) -> some View {
+    private func row(_ title: LocalizedStringKey, _ description: LocalizedStringKey, services: [Service], isOn: Binding<Bool>) -> some View {
         let available = services.contains(.appleMusic) || isSpotifyAvailable
         return HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
@@ -106,7 +116,7 @@ struct MusicPlayerFeaturesCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     ForEach(services, id: \.title) { service in
-                        StatusCapsuleLabel(title: service.title, color: service.color, icon: service.icon)
+                        StatusCapsuleLabel(title: Text(verbatim: service.title), color: service.color, icon: service.icon)
                     }
                 }
             }
@@ -155,7 +165,7 @@ struct AppleMusicAccountCard: View {
     private var actionButton: some View {
         switch account.authorization {
         case .notDetermined:
-            Button(isRequesting ? "Requesting…" : "Allow Access") {
+            Button(isRequesting ? String(localized: "Requesting…") : String(localized: "Allow Access")) {
                 isRequesting = true
                 Task {
                     await AppleMusicManager.shared.requestAuthorization()
@@ -176,11 +186,11 @@ struct AppleMusicAccountCard: View {
 
     private var statusTitle: String {
         switch account.authorization {
-        case .authorized: return account.canPlayCatalogContent ? "Connected · Apple Music subscription" : "Connected · no subscription"
-        case .notDetermined: return "Not connected"
-        case .denied: return "Access is off"
-        case .restricted: return "Access is restricted"
-        @unknown default: return "Unknown"
+        case .authorized: return account.canPlayCatalogContent ? String(localized: "Connected · Apple Music subscription") : String(localized: "Connected · no subscription")
+        case .notDetermined: return String(localized: "Not connected")
+        case .denied: return String(localized: "Access is off")
+        case .restricted: return String(localized: "Access is restricted")
+        @unknown default: return String(localized: "Unknown")
         }
     }
 
@@ -188,11 +198,11 @@ struct AppleMusicAccountCard: View {
         if let error = account.lastError { return error }
         switch account.authorization {
         case .authorized:
-            return account.canPlayCatalogContent ? nil : "Library and Music.app playback work; catalog playback needs a subscription."
+            return account.canPlayCatalogContent ? nil : String(localized: "Library and Music.app playback work; catalog playback needs a subscription.")
         case .notDetermined:
-            return "Allow access to show artwork, artist profiles and Up Next for Apple Music."
+            return String(localized: "Allow access to show artwork, artist profiles and Up Next for Apple Music.")
         case .denied, .restricted:
-            return "Turn on Sapphire in System Settings › Privacy & Security › Media & Apple Music."
+            return String(localized: "Turn on Sapphire in System Settings › Privacy & Security › Media & Apple Music.")
         @unknown default:
             return nil
         }

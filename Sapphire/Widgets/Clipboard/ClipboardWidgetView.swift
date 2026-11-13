@@ -34,13 +34,13 @@ extension ClipboardItemKind {
     var displayName: String {
         switch self {
         case .text:
-            return "Text"
+            return String(localized: "Text")
         case .image:
-            return "Image"
+            return String(localized: "Image")
         case .file:
-            return "File"
+            return String(localized: "File")
         case .folder:
-            return "Folder"
+            return String(localized: "Folder")
         }
     }
 }
@@ -50,13 +50,13 @@ struct ClipboardWidgetView: View {
 
     var body: some View {
         NotchMiniListWidget(
-            title: "Clipboard",
+            title: String(localized: "Clipboard"),
             systemImage: "list.clipboard",
             tint: .blue,
             gradient: [Color.blue.opacity(0.35), Color.cyan.opacity(0.16)],
             count: clipboardManager.recentItems.count,
             items: Array(clipboardManager.recentItems.prefix(3)),
-            emptyText: "Nothing copied yet"
+            emptyText: String(localized: "Nothing copied yet")
         ) { item in
             let spec = item.kind.spec
             if item.isImage {
@@ -86,6 +86,10 @@ struct ClipboardWidgetView: View {
 }
 
 struct ClipboardPlayerView: View {
+    static func itemCountDescription(_ count: Int) -> String {
+        String(localized: "\(String(count)) items")
+    }
+
     @Binding var navigationStack: [NotchWidgetMode]
     @ObservedSettings var settings: SettingsObserver
     @ObservedObject private var clipboardManager = ClipboardManager.shared
@@ -111,10 +115,10 @@ struct ClipboardPlayerView: View {
 
     var body: some View {
         NotchSwipeListPanel(
-            title: "Clipboard",
-            subtitle: "\(clipboardManager.recentItems.count) items",
+            title: String(localized: "Clipboard"),
+            subtitle: Self.itemCountDescription(clipboardManager.recentItems.count),
             accent: .blue,
-            searchPlaceholder: "Search clipboard",
+            searchPlaceholder: String(localized: "Search clipboard"),
             searchText: $searchText,
             showSearch: $showSearch,
             width: 480,
@@ -134,8 +138,8 @@ struct ClipboardPlayerView: View {
             NotchListEmptyState(
                 systemImage: "list.clipboard",
                 tint: .blue,
-                title: filterImagesOnly ? "No images" : (searchText.isEmpty ? "Clipboard is empty" : "No matches"),
-                message: searchText.isEmpty ? "Copy text or images to build history." : "Try a different search."
+                title: filterImagesOnly ? String(localized: "No images") : (searchText.isEmpty ? String(localized: "Clipboard is empty") : String(localized: "No matches")),
+                message: searchText.isEmpty ? String(localized: "Copy text or images to build history.") : String(localized: "Try a different search.")
             )
         }
         .onAppear {

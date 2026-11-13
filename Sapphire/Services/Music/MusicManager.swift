@@ -1566,7 +1566,7 @@ class MusicManager {
     }
 
     func appName(for bundleID: String?) -> String {
-        guard let bundleID = bundleID else { return "Unknown" }
+        guard let bundleID = bundleID else { return String(localized: "Unknown") }
         if let url = appURL(for: bundleID) {
             return url.deletingPathExtension().lastPathComponent
         }
@@ -1856,7 +1856,7 @@ class MusicManager {
             title = trimmedTitle
         } else if state.isPlaying {
             let app = state.appName.trimmingCharacters(in: .whitespacesAndNewlines)
-            title = app.isEmpty ? "Now Playing" : app
+            title = app.isEmpty ? String(localized: "Now Playing") : app
         } else {
             clearPhoneMediaSource()
             return

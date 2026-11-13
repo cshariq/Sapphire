@@ -32,41 +32,41 @@ enum LiquidGlassMaterial: String, Codable, CaseIterable, Identifiable, Hashable 
 
     var displayName: String {
         switch self {
-        case .sidebar: return "Sidebar"
-        case .sheet: return "Sheet"
-        case .hud: return "HUD"
-        case .windowBackground: return "Window Background"
-        case .popover: return "Popover"
-        case .menu: return "Menu"
-        case .fullscreenUI: return "Fullscreen UI"
-        case .controlCenter: return "Control Center"
-        case .widgets: return "Widgets"
-        case .inspector: return "Inspector"
-        case .titlebar: return "Titlebar"
-        case .tooltip: return "Tooltip"
-        case .frosted: return "Frosted"
-        case .clearGlass: return "Clear Glass"
-        case .chromatic: return "Chromatic"
+        case .sidebar: return String(localized: "Sidebar")
+        case .sheet: return String(localized: "Sheet")
+        case .hud: return String(localized: "HUD")
+        case .windowBackground: return String(localized: "Window Background")
+        case .popover: return String(localized: "Popover")
+        case .menu: return String(localized: "Menu")
+        case .fullscreenUI: return String(localized: "Fullscreen UI")
+        case .controlCenter: return String(localized: "Control Center")
+        case .widgets: return String(localized: "Widgets")
+        case .inspector: return String(localized: "Inspector")
+        case .titlebar: return String(localized: "Titlebar")
+        case .tooltip: return String(localized: "Tooltip")
+        case .frosted: return String(localized: "Frosted")
+        case .clearGlass: return String(localized: "Clear Glass")
+        case .chromatic: return String(localized: "Chromatic")
         }
     }
 
     var summary: String {
         switch self {
-        case .sidebar: return "Thick, vibrant blur like a macOS sidebar."
-        case .sheet: return "The standard glass used by modal sheets."
-        case .hud: return "Dark, satiny glass like the Dock."
-        case .windowBackground: return "Subtle, lightly blurred glass."
-        case .popover: return "Modern popover glass."
-        case .menu: return "Notification Center-style glass."
-        case .fullscreenUI: return "Deep blur used by fullscreen media controls."
-        case .controlCenter: return "Translucent Control Center module glass."
-        case .widgets: return "Desktop widget background glass."
-        case .inspector: return "Sidebar glass tuned for inspector panels."
-        case .titlebar: return "Sidebar glass that blends into the title bar."
-        case .tooltip: return "Loupe glass used by hover cards."
-        case .frosted: return "Soft, strong blur with bright diffusion."
-        case .clearGlass: return "Almost no blur, crisp and transparent."
-        case .chromatic: return "Frosted glass with chromatic aberration."
+        case .sidebar: return String(localized: "Thick, vibrant blur like a macOS sidebar.")
+        case .sheet: return String(localized: "The standard glass used by modal sheets.")
+        case .hud: return String(localized: "Dark, satiny glass like the Dock.")
+        case .windowBackground: return String(localized: "Subtle, lightly blurred glass.")
+        case .popover: return String(localized: "Modern popover glass.")
+        case .menu: return String(localized: "Notification Center-style glass.")
+        case .fullscreenUI: return String(localized: "Deep blur used by fullscreen media controls.")
+        case .controlCenter: return String(localized: "Translucent Control Center module glass.")
+        case .widgets: return String(localized: "Desktop widget background glass.")
+        case .inspector: return String(localized: "Sidebar glass tuned for inspector panels.")
+        case .titlebar: return String(localized: "Sidebar glass that blends into the title bar.")
+        case .tooltip: return String(localized: "Loupe glass used by hover cards.")
+        case .frosted: return String(localized: "Soft, strong blur with bright diffusion.")
+        case .clearGlass: return String(localized: "Almost no blur, crisp and transparent.")
+        case .chromatic: return String(localized: "Frosted glass with chromatic aberration.")
         }
     }
 

@@ -70,13 +70,14 @@ final class DevTaskDetailModel: ObservableObject {
     }
 
     func sendUnavailableReason(for task: DevTask) -> String {
-        guard let detail else { return "Looking up the session…" }
-        if !detail.isAlive { return "This task has ended" }
+        guard let detail else { return String(localized: "Looking up the session…") }
+        if !detail.isAlive { return String(localized: "This task has ended") }
         if detail.agent?.isDesktopHosted == true {
-            return "Runs in \(detail.agent?.entrypoint?.replacingOccurrences(of: "-", with: " ").capitalized ?? "an app") — reply there"
+            let hostName = detail.agent?.entrypoint?.replacingOccurrences(of: "-", with: " ").capitalized ?? String(localized: "an app")
+            return String(localized: "Runs in \(hostName) — reply there")
         }
-        if let host = detail.host, host.isEditor { return "Runs in \(host.name)'s terminal — type there" }
-        return "\(task.title) isn't running in a terminal Sapphire can reach"
+        if let host = detail.host, host.isEditor { return String(localized: "Runs in \(host.name)'s terminal — type there") }
+        return String(localized: "\(task.title) isn't running in a terminal Sapphire can reach")
     }
 
     // MARK: - Actions
@@ -92,10 +93,10 @@ final class DevTaskDetailModel: ObservableObject {
             switch result {
             case .sent, .sentToFrontTab:
                 draft = ""
-                flash(result.message ?? "Sent")
+                flash(result.message ?? String(localized: "Sent"))
                 refreshSoon()
             case .needsAccessibility, .failed:
-                flash(result.message ?? "Couldn't send")
+                flash(result.message ?? String(localized: "Couldn't send"))
             }
         }
     }
@@ -103,7 +104,7 @@ final class DevTaskDetailModel: ObservableObject {
     func interrupt() {
         guard let detail else { return }
         let ok = DevTerminalBridge.interrupt(pid: detail.pid, foregroundProcessGroup: detail.foregroundProcessGroup)
-        flash(ok ? "Sent Ctrl-C" : "Couldn't interrupt")
+        flash(ok ? String(localized: "Sent Ctrl-C") : String(localized: "Couldn't interrupt"))
         refreshSoon()
     }
 
@@ -118,7 +119,7 @@ final class DevTaskDetailModel: ObservableObject {
             return
         }
         confirmingStop = false
-        flash(DevTerminalBridge.terminate(pid: detail.pid) ? "Stopped" : "Couldn't stop")
+        flash(DevTerminalBridge.terminate(pid: detail.pid) ? String(localized: "Stopped") : String(localized: "Couldn't stop"))
         refreshSoon()
         DevActivityMonitor.shared.refreshNow()
     }
@@ -142,7 +143,7 @@ final class DevTaskDetailModel: ObservableObject {
         guard let command = detail?.commandLine, !command.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command, forType: .string)
-        flash("Copied command")
+        flash(String(localized: "Copied command"))
     }
 
     func openTranscript() {

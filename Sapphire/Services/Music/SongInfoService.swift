@@ -38,11 +38,11 @@ struct SongInfo: Decodable, Equatable, Sendable {
             return roles.flatMap { credits?[$0] ?? [] }.filter { seen.insert($0).inserted }
         }
         return [
-            CreditSection(title: "Written By", names: names(["writer", "composer", "lyricist", "librettist"], in: writing)),
-            CreditSection(title: "Produced By", names: names(["producer"], in: production)),
-            CreditSection(title: "Mixing", names: names(["mix"], in: production)),
-            CreditSection(title: "Mastering", names: names(["mastering"], in: production)),
-            CreditSection(title: "Engineering", names: names(["recording", "engineer", "audio"], in: production)),
+            CreditSection(title: String(localized: "Written By"), names: names(["writer", "composer", "lyricist", "librettist"], in: writing)),
+            CreditSection(title: String(localized: "Produced By"), names: names(["producer"], in: production)),
+            CreditSection(title: String(localized: "Mixing"), names: names(["mix"], in: production)),
+            CreditSection(title: String(localized: "Mastering"), names: names(["mastering"], in: production)),
+            CreditSection(title: String(localized: "Engineering"), names: names(["recording", "engineer", "audio"], in: production)),
         ].filter { !$0.names.isEmpty }
     }
 

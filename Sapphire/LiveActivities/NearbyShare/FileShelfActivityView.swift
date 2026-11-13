@@ -16,7 +16,7 @@ struct FileShelfActivityView {
     }
 
     static func right(count: Int) -> some View {
-        Text("\(count) \(count == 1 ? "File" : "Files")")
+        Text("\(count) files")
             .font(.system(size: 13, weight: .semibold))
             .foregroundColor(.white.opacity(0.9))
     }

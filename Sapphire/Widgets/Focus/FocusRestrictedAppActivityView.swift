@@ -107,7 +107,7 @@ struct FocusRestrictedAppActivityView: View {
     @ViewBuilder
     private func actionButtons(unlockRemaining: TimeInterval?) -> some View {
         HStack {
-            actionButton(title: "Dismiss", systemName: "xmark", isPrimary: false) {
+            actionButton(title: String(localized: "Dismiss"), systemName: "xmark", isPrimary: false) {
                 onDismiss()
             }
 
@@ -125,7 +125,7 @@ struct FocusRestrictedAppActivityView: View {
                 .foregroundStyle(.orange)
                 .clipShape(Capsule())
             } else {
-                actionButton(title: "Unlock", systemName: "lock.open.fill", isPrimary: true) {
+                actionButton(title: String(localized: "Unlock"), systemName: "lock.open.fill", isPrimary: true) {
                     FocusSessionManager.shared.requestTemporaryUnlock(bundleID: bundleID)
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                         requested = true

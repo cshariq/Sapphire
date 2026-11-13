@@ -17,9 +17,9 @@ enum DevTaskKind: String, Codable, CaseIterable, Identifiable, Equatable {
 
     var displayName: String {
         switch self {
-        case .ai: return "AI Agents"
-        case .build: return "Builds & Tests"
-        case .command: return "Terminal Commands"
+        case .ai: return String(localized: "AI Agents")
+        case .build: return String(localized: "Builds & Tests")
+        case .command: return String(localized: "Terminal Commands")
         }
     }
 
@@ -38,9 +38,9 @@ struct DevTool: Identifiable, Hashable {
     let symbol: String
     let tint: Color
 
-    static let genericAI = DevTool(id: "ai", displayName: "AI Agent", symbol: "sparkles", tint: .purple)
-    static let genericBuild = DevTool(id: "build", displayName: "Build", symbol: "hammer.fill", tint: .orange)
-    static let genericCommand = DevTool(id: "shell", displayName: "Command", symbol: "terminal.fill", tint: .gray)
+    static let genericAI = DevTool(id: "ai", displayName: String(localized: "AI Agent"), symbol: "sparkles", tint: .purple)
+    static let genericBuild = DevTool(id: "build", displayName: String(localized: "Build"), symbol: "hammer.fill", tint: .orange)
+    static let genericCommand = DevTool(id: "shell", displayName: String(localized: "Command"), symbol: "terminal.fill", tint: .gray)
 }
 
 enum DevBusySignal: Equatable {

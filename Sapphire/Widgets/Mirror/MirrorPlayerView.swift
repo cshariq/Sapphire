@@ -88,7 +88,7 @@ struct MirrorPlayerView: View {
                                 .foregroundStyle(Color.red.opacity(0.9))
                         }
                     } else {
-                        Text(camera.isDenied ? "No access" : (camera.isError ? "Unavailable" : "Camera off"))
+                        Text(camera.isDenied ? String(localized: "No access") : (camera.isError ? String(localized: "Unavailable") : String(localized: "Camera off")))
                             .font(.system(size: 9, weight: .semibold, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
@@ -102,19 +102,19 @@ struct MirrorPlayerView: View {
             }
 
             if camera.isLive {
-                iconButton(systemName: "arrow.left.arrow.right", help: "Flip horizontally") {
+                iconButton(systemName: "arrow.left.arrow.right", help: String(localized: "Flip horizontally")) {
                     settings.settings.mirrorFlipHorizontally.toggle()
                     camera.updateMirroring(flipHorizontally: settings.settings.mirrorFlipHorizontally)
                 }
 
-                iconButton(systemName: "rotate.right", help: "Rotate camera") {
+                iconButton(systemName: "rotate.right", help: String(localized: "Rotate camera")) {
                     settings.settings.mirrorRotationMode = settings.settings.mirrorRotationMode.next
                 }
 
                 stopButton
             }
 
-            iconButton(systemName: "arrow.up.left.and.arrow.down.right", help: "Fullscreen") {
+            iconButton(systemName: "arrow.up.left.and.arrow.down.right", help: String(localized: "Fullscreen")) {
                 MirrorFullscreenWindowController.shared.present()
             }
 
@@ -211,7 +211,7 @@ struct MirrorPlayerView: View {
             }
 
             VStack(spacing: 6) {
-                Text(camera.isDenied ? "Camera Access Denied" : (camera.isError ? "Camera Unavailable" : (camera.isPending ? "Starting Camera…" : "Camera Off")))
+                Text(camera.isDenied ? String(localized: "Camera Access Denied") : (camera.isError ? String(localized: "Camera Unavailable") : (camera.isPending ? String(localized: "Starting Camera…") : String(localized: "Camera Off"))))
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                 Text(offlineMessage)
                     .font(.system(size: 12))
@@ -264,15 +264,15 @@ struct MirrorPlayerView: View {
 
     private var offlineMessage: String {
         if camera.isDenied {
-            return "Grant camera access in System Settings → Privacy & Security → Camera to use Mirror."
+            return String(localized: "Grant camera access in System Settings → Privacy & Security → Camera to use Mirror.")
         } else if camera.isError {
-            return camera.errorMessage ?? "No suitable camera found or camera in use by another app."
+            return camera.errorMessage ?? String(localized: "No suitable camera found or camera in use by another app.")
         } else if camera.status == .requestingPermission {
-            return "Waiting for camera access. Allow Sapphire in the system prompt."
+            return String(localized: "Waiting for camera access. Allow Sapphire in the system prompt.")
         } else if camera.isPending {
-            return "Opening the camera…"
+            return String(localized: "Opening the camera…")
         } else {
-            return "The camera is off. Turn it on to start a live mirror."
+            return String(localized: "The camera is off. Turn it on to start a live mirror.")
         }
     }
 }
@@ -369,7 +369,7 @@ struct MirrorFullscreenView: View {
                 Spacer()
 
                 if !camera.isLive {
-                    Text(camera.isDenied ? "Camera access denied" : "Camera off")
+                    Text(camera.isDenied ? String(localized: "Camera access denied") : String(localized: "Camera off"))
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.7))
                         .padding(.bottom, 40)
@@ -408,7 +408,11 @@ final class MirrorFullscreenWindowController {
 
     func present() {
         let screens = NSScreen.screens
+        #if PUBLIC_BUILD
+        guard let index = screens.firstIndex(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? screens.indices.first else { return }
+        #else
         guard let index = OCRScreenTextSupport.indexOfScreen(containing: NSEvent.mouseLocation, in: screens.map(\.frame)) else { return }
+        #endif
         let screen = screens[index]
 
         let window: NSWindow

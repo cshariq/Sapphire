@@ -38,6 +38,22 @@ struct SnapLayout: Codable, Equatable, Identifiable, Hashable {
     var name: String
     var zones: [SnapZone]
 
+    var displayName: String {
+        guard LayoutTemplate.allTemplates.contains(where: { $0.id == id && $0.name == name }) else {
+            return name
+        }
+        switch name {
+        case "Columns": return String(localized: "Columns")
+        case "Rows": return String(localized: "Rows")
+        case "Focus": return String(localized: "Focus")
+        case "Fancy": return String(localized: "Fancy")
+        case "Quarters": return String(localized: "Quarters")
+        case "Split Screen": return String(localized: "Split Screen")
+        case "Full Screen": return String(localized: "Full Screen")
+        default: return name
+        }
+    }
+
     init(name: String, zones: [SnapZone]) {
         self.id = UUID()
         self.name = name

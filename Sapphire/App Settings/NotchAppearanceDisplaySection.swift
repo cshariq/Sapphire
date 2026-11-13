@@ -21,8 +21,8 @@ struct NotchAppearanceDisplaySection: View {
             if screens.count > 1 {
                 displayPicker
             }
-            NotchAppearanceEditorView(appearance: widgetBinding, title: "Expanded Notch Appearance")
-            NotchAppearanceEditorView(appearance: liveActivityBinding, title: "Collapsed Notch Appearance")
+            NotchAppearanceEditorView(appearance: widgetBinding, title: String(localized: "Expanded Notch Appearance"))
+            NotchAppearanceEditorView(appearance: liveActivityBinding, title: String(localized: "Collapsed Notch Appearance"))
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             screensRevision += 1
@@ -39,13 +39,13 @@ struct NotchAppearanceDisplaySection: View {
         let hasOverride = selectedDisplay.map { current.hasAppearanceOverride(forDisplayID: $0) } ?? false
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                SettingsRowLabel(title: "Appearance For", description: pickerDescription(hasOverride: hasOverride))
+                SettingsRowLabel(title: Text("Appearance For"), description: Text(verbatim: pickerDescription(hasOverride: hasOverride)))
                 Spacer(minLength: 8)
                 Picker("Appearance For", selection: $selectedDisplay) {
                     Text("All Displays").tag(String?.none)
                     ForEach(screens, id: \.displayIdentifier) { screen in
                         let custom = current.hasAppearanceOverride(forDisplayID: screen.displayIdentifier)
-                        Text(screen.displayLabel + (custom ? " (Custom)" : ""))
+                        Text(verbatim: custom ? String(localized: "\(screen.displayLabel) (Custom)") : screen.displayLabel)
                             .tag(Optional(screen.displayIdentifier))
                     }
                 }
@@ -80,12 +80,12 @@ struct NotchAppearanceDisplaySection: View {
 
     private func pickerDescription(hasOverride: Bool) -> String {
         guard let selectedDisplay else {
-            return "Changes apply to every display that has no appearance of its own."
+            return String(localized: "Changes apply to every display that has no appearance of its own.")
         }
-        let name = screens.first { $0.displayIdentifier == selectedDisplay }?.displayLabel ?? "This display"
+        let name = screens.first { $0.displayIdentifier == selectedDisplay }?.displayLabel ?? String(localized: "This display")
         return hasOverride
-            ? "\(name) has its own appearance."
-            : "\(name) uses the default. Changing anything below gives it its own appearance."
+            ? String(localized: "\(name) has its own appearance.")
+            : String(localized: "\(name) uses the default. Changing anything below gives it its own appearance.")
     }
 
     private func resetOverride(for key: String) {

@@ -36,14 +36,14 @@ struct DisplaySettingsView: View {
                     Button {
                         testDisplay.toggle()
                     } label: {
-                        Label(testDisplay.isActive ? "Remove Test Display" : "Add Test Display", systemImage: "display.2")
+                        Label(testDisplay.isActive ? String(localized: "Remove Test Display") : String(localized: "Add Test Display"), systemImage: "display.2")
                     }
                     .help("Debug: add a notchless 1920×1080 virtual display, shown in a window, to test multi-display and floating island behaviour")
                 }
             }
 
             if debugMode.isEnabled, let error = testDisplay.captureError {
-                InfoContainer(text: error, iconName: "exclamationmark.triangle", color: .orange)
+                InfoContainer(text: Text(verbatim: error), iconName: "exclamationmark.triangle", color: .orange)
             }
 
             if connectedScreens.count > 1 {
@@ -142,7 +142,7 @@ private struct FullScreenBehaviorEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsRowLabel(title: "In Full Screen", description: visibility.detail)
+            SettingsRowLabel(title: Text("In Full Screen"), description: Text(verbatim: visibility.detail))
             Picker("In Full Screen", selection: $visibility) {
                 ForEach(FullScreenActivityVisibility.allCases) { visibility in
                     Text(visibility.displayName).tag(visibility)
@@ -152,7 +152,7 @@ private struct FullScreenBehaviorEditor: View {
             .labelsHidden()
 
             HStack(spacing: 12) {
-                SettingsRowLabel(title: "Hide Notch", description: hideNotchDescription)
+                SettingsRowLabel(title: Text("Hide Notch"), description: Text(verbatim: hideNotchDescription))
                 Spacer(minLength: 8)
                 SettingsSwitch(title: "Hide Notch", isOn: $hideNotch)
             }
@@ -173,11 +173,11 @@ private struct FullScreenBehaviorEditor: View {
     private var hideNotchDescription: String {
         switch visibility {
         case .hideAll:
-            "Hide the notch completely while an app is full screen."
+            String(localized: "Hide the notch completely while an app is full screen.")
         case .showAll:
-            "Hide the notch while nothing is happening. It appears for any live activity."
+            String(localized: "Hide the notch while nothing is happening. It appears for any live activity.")
         case .hidePersistent, .hideSelected:
-            "Hide the notch while nothing is happening. It still appears for activities that aren't hidden, like the volume HUD."
+            String(localized: "Hide the notch while nothing is happening. It still appears for activities that aren't hidden, like the volume HUD.")
         }
     }
 }
@@ -298,8 +298,8 @@ private struct PerDisplaySettingsCard: View {
                 .lineLimit(1)
                 .layoutPriority(-1)
             Spacer(minLength: 8)
-            sizeControl(label: "Width", value: sizeBinding(\.width, fallback: resolved.universalWidth), range: 80...400)
-            sizeControl(label: "Height", value: sizeBinding(\.height, fallback: resolved.universalHeight), range: 10...80)
+            sizeControl(label: String(localized: "Width"), value: sizeBinding(\.width, fallback: resolved.universalWidth), range: 80...400)
+            sizeControl(label: String(localized: "Height"), value: sizeBinding(\.height, fallback: resolved.universalHeight), range: 10...80)
             resetButton(visible: hasSizeOverride, help: "Clear this display's custom notch size") {
                 DisplaySettingsKey.removeValue(
                     from: &settings.settings.perDisplayNotchSize,
@@ -389,7 +389,7 @@ private struct PerDisplaySettingsCard: View {
         DisplaySettingsKey.value(in: settings.settings.value.perDisplayFloatingIslandStyle, for: displayID) != nil
     }
 
-    private func islandSlider(_ label: String, _ keyPath: WritableKeyPath<FloatingIslandStyle, CGFloat>, range: ClosedRange<CGFloat>) -> some View {
+    private func islandSlider(_ label: LocalizedStringKey, _ keyPath: WritableKeyPath<FloatingIslandStyle, CGFloat>, range: ClosedRange<CGFloat>) -> some View {
         CustomSliderRowView(
             label: label,
             value: Binding(
@@ -401,12 +401,12 @@ private struct PerDisplaySettingsCard: View {
                 }
             ),
             range: Double(range.lowerBound)...Double(range.upperBound),
-            specifier: "%.0f pt"
+            specifier: String(localized: "%.0f pt")
         )
         .padding(.horizontal)
     }
 
-    private func resetButton(visible: Bool, help: String, action: @escaping () -> Void) -> some View {
+    private func resetButton(visible: Bool, help: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label("Reset", systemImage: "arrow.counterclockwise").font(.callout)
         }
@@ -546,7 +546,7 @@ private struct FloatingIslandPreview: View {
         )
     }
 
-    private func labelled<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func labelled<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             content()
             Text(title).font(.caption2).foregroundStyle(.secondary)

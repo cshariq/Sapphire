@@ -17,7 +17,20 @@ enum SettingsIndex {
 
         var id: String { key }
 
-        var displayTitle: String { title ?? SettingsIndex.humanized(key) }
+        var englishTitle: String { title ?? SettingsIndex.humanized(key) }
+        var displayTitle: String { SettingsIndex.localizedTitles[key] ?? englishTitle }
+        var displayDetail: String? { SettingsIndex.localizedDetails[key] ?? detail }
+
+        func displayValue(_ value: Value) -> String {
+            guard ChineseFormatting.isActive else { return value.description }
+            if case .text(let text) = value, options != nil { return displayOption(text) }
+            return value.displayDescription
+        }
+
+        func displayOption(_ option: String) -> String {
+            guard ChineseFormatting.isActive else { return SettingsIndex.humanized(option) }
+            return SettingsIndex.displayOption(option, for: key)
+        }
     }
 
     enum Value: Equatable {
@@ -25,6 +38,16 @@ enum SettingsIndex {
         case number(Double)
         case text(String)
 
+        var displayDescription: String {
+            guard ChineseFormatting.isActive else { return description }
+            switch self {
+            case .bool(let on): return on ? String(localized: "On") : String(localized: "Off")
+            case .number(let value): return value.formatted(.number.precision(.fractionLength(0...2)))
+            case .text(let text): return text
+            }
+        }
+
+        // The assistant uses these values to apply and undo settings changes.
         var description: String {
             switch self {
             case .bool(let on): return on ? "on" : "off"
@@ -114,16 +137,19 @@ enum SettingsIndex {
     private static let endings: Set<Substring> = ["", "s", "es", "d", "ed", "ing", "r", "er", "ers", "ion", "ions", "ly"]
 
     private static func matches(_ indexed: String, _ word: String) -> Bool {
-        indexed.hasPrefix(word) && endings.contains(indexed.dropFirst(word.count))
+        if word.unicodeScalars.contains(where: { (0x3400...0x9FFF).contains($0.value) }) {
+            return indexed.contains(word)
+        }
+        return indexed.hasPrefix(word) && endings.contains(indexed.dropFirst(word.count))
     }
 
     private static let searchText: [SearchText] = entries.map { entry in
         SearchText(
-            title: words(entry.displayTitle),
+            title: words(entry.englishTitle) + words(entry.displayTitle),
             key: words(humanized(entry.key)),
             rawKey: entry.key.lowercased(),
-            detail: words(entry.detail ?? ""),
-            pane: words(entry.section.map { ([$0.label] + $0.searchTokens).joined(separator: " ") } ?? "")
+            detail: words(entry.detail ?? "") + words(entry.displayDetail ?? ""),
+            pane: words(entry.section.map { ([$0.label] + $0.searchTokens + $0.localizedSearchKeywords).joined(separator: " ") } ?? "")
         )
     }
 

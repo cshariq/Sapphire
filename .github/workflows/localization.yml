@@ -1,0 +1,57 @@
+name: Localization resources
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # Sapphire uses Swift 6.2 isolated protocol conformances.
+  DEVELOPER_DIR: /Applications/Xcode_26.1.1.app/Contents/Developer
+
+jobs:
+  resource-checks:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate catalog values and format arguments
+        run: python3 script/check_localization.py
+      - name: Test catalog validation failures
+        run: python3 script/localization/test_catalog_check.py
+      - name: Validate private translation handoff
+        run: |
+          python3 localization/private-build/check_private_catalog.py
+          mkdir -p "${RUNNER_TEMP}/SapphirePrivateCatalog"
+          xcrun xcstringstool compile localization/private-build/Sapphire-PrivateBuild.zh-Hans.xcstrings --output-directory "${RUNNER_TEMP}/SapphirePrivateCatalog"
+          xcrun xcstringstool compile localization/private-build/Sapphire-PrivateBuild.zh-Hant.xcstrings --output-directory "${RUNNER_TEMP}/SapphirePrivateCatalog"
+      - name: Verify native language fallback and formatting
+        run: python3 script/test_localization.py --output localization-result.json
+      - name: Preserve native resource results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: localization-resource-results
+          path: localization-result.json
+          if-no-files-found: warn
+
+  application-checks:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test four language and region combinations
+        env:
+          SAPPHIRE_TEST_DERIVED_DATA: ${{ runner.temp }}/SapphireLocalization
+          SAPPHIRE_TEST_PACKAGES_DIR: ${{ runner.temp }}/SourcePackages
+        run: bash script/test_localization.sh
+      - name: Preserve built resource results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: localization-built-resource-results
+          path: ${{ runner.temp }}/SapphireLocalization/LocalizationResults
+          if-no-files-found: warn

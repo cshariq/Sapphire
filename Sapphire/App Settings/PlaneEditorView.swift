@@ -37,7 +37,7 @@ struct PlaneEditorView: View {
 
                 Picker("Layout:", selection: $plane.layoutID) {
                     ForEach(allLayouts) { layout in
-                        Text(layout.name).tag(layout.id)
+                        Text(verbatim: layout.displayName).tag(layout.id)
                     }
                 }
 
@@ -84,7 +84,7 @@ struct PlaneEditorView: View {
                                     Text("None").tag(noAppSelectedID)
                                     Divider()
                                     ForEach(allApps) { app in
-                                        Text(app.name).tag(app.id)
+                                        Text(verbatim: app.name).tag(app.id)
                                     }
                                 }
                                 .labelsHidden()

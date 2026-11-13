@@ -421,7 +421,7 @@ private final class MirrorSessionWorker: @unchecked Sendable {
             options: discovery.options,
             systemDefaultID: discovery.systemDefaultID
         ), let device = AVCaptureDevice(uniqueID: deviceID) else {
-            return .failed("No camera available.", discovery: discovery)
+            return .failed(String(localized: "No camera available."), discovery: discovery)
         }
 
         let input: AVCaptureDeviceInput
@@ -434,7 +434,7 @@ private final class MirrorSessionWorker: @unchecked Sendable {
         session.beginConfiguration()
         guard session.canAddInput(input) else {
             session.commitConfiguration()
-            return .failed("Unable to add camera input.", discovery: discovery)
+            return .failed(String(localized: "Unable to add camera input."), discovery: discovery)
         }
         session.addInput(input)
         session.commitConfiguration()
@@ -450,7 +450,7 @@ private final class MirrorSessionWorker: @unchecked Sendable {
         }
         guard session.isRunning else {
             dismantle()
-            return .failed("The camera could not be started. It may be in use by another app.", discovery: discovery)
+            return .failed(String(localized: "The camera could not be started. It may be in use by another app."), discovery: discovery)
         }
         return .started(deviceID: deviceID, discovery: discovery)
     }

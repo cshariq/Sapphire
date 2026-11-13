@@ -276,10 +276,11 @@ struct ClipboardItem: Identifiable, Equatable, Codable, Sendable {
     }
 
     private static func measure(textContent: String?, imagePNGData: Data?, fileURLString: String?, fileBookmarkData: Data?) -> Int {
-        (textContent?.utf8.count ?? 0)
-            + (imagePNGData?.count ?? 0)
-            + (fileURLString?.utf8.count ?? 0)
-            + (fileBookmarkData?.count ?? 0)
+        let textBytes = textContent?.utf8.count ?? 0
+        let imageBytes = imagePNGData?.count ?? 0
+        let pathBytes = fileURLString?.utf8.count ?? 0
+        let bookmarkBytes = fileBookmarkData?.count ?? 0
+        return textBytes + imageBytes + pathBytes + bookmarkBytes
     }
 
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
@@ -542,7 +543,7 @@ final class ClipboardManager: ObservableObject {
             return wrote
         })
         let w = Int(image.size.width.rounded()), h = Int(image.size.height.rounded())
-        let preview = (w > 0 && h > 0) ? "Image \(w)×\(h)" : "Image"
+        let preview = (w > 0 && h > 0) ? String(localized: "Image \(String(w))×\(String(h))") : String(localized: "Image")
         processingQueue.async { [weak self] in
             let hash = Self.sha256(pngData)
             DispatchQueue.main.async {
@@ -887,7 +888,7 @@ final class ClipboardManager: ObservableObject {
             png = encodePNG(thumbnail)
         }
         guard let png, !png.isEmpty, png.count <= maxBytes else { return nil }
-        let preview = (width > 0 && height > 0) ? "Image \(width)×\(height)" : "Image"
+        let preview = (width > 0 && height > 0) ? String(localized: "Image \(String(width))×\(String(height))") : String(localized: "Image")
         return (png, preview, sha256(png))
     }
 

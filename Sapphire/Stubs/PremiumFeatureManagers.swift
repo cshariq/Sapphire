@@ -143,6 +143,7 @@ final class CleanURLManager {
     func start() {}
     func stopPolling() {}
     func cleanClipboardLinkNow() {}
+    func stopMonitoring() {}
 }
 
 final class FinderCutPasteManager {

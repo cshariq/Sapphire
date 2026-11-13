@@ -77,18 +77,19 @@ class LaunchpadViewModel: ObservableObject {
         guard let item = itemToDelete else { return "" }
         switch item {
         case .app(let appItem):
-            return "Move \"\(getApp(for: appItem)?.name ?? "App")\" to Trash?"
+            let appName = getApp(for: appItem)?.name ?? String(localized: "App")
+            return String(localized: "Move \"\(appName)\" to Trash?")
         case .folder:
-            return "Disband Folder?"
+            return String(localized: "Disband Folder?")
         }
     }
     var deleteAlertMessage: String {
         guard let item = itemToDelete else { return "" }
         switch item {
         case .app:
-            return "This will permanently remove the app from your Mac."
+            return String(localized: "This will permanently remove the app from your Mac.")
         case .folder(let folder):
-            return "The apps in \"\(folder.name)\" will be returned to the Launchpad."
+            return String(localized: "The apps in \"\(folder.name)\" will be returned to the Launchpad.")
         }
     }
 

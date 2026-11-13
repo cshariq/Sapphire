@@ -37,8 +37,8 @@ enum RegistrationStep: Equatable {
     case scanning, finalizing
     var instruction: String {
         switch self {
-        case .scanning: return "Look straight at the camera to begin."
-        case .finalizing: return "Securing your face profile..."
+        case .scanning: return String(localized: "Look straight at the camera to begin.")
+        case .finalizing: return String(localized: "Securing your face profile...")
         }
     }
 }
@@ -66,15 +66,15 @@ enum FacePoseBucket: String, CaseIterable {
 
     var hint: String {
         switch self {
-        case .center: return "Center your face"
-        case .left: return "Slowly turn left"
-        case .right: return "Slowly turn right"
-        case .up: return "Look slightly up"
-        case .down: return "Look slightly down"
-        case .tiltLeft: return "Tilt head left"
-        case .tiltRight: return "Tilt head right"
-        case .closer: return "Move closer"
-        case .farther: return "Move further back"
+        case .center: return String(localized: "Center your face")
+        case .left: return String(localized: "Slowly turn left")
+        case .right: return String(localized: "Slowly turn right")
+        case .up: return String(localized: "Look slightly up")
+        case .down: return String(localized: "Look slightly down")
+        case .tiltLeft: return String(localized: "Tilt head left")
+        case .tiltRight: return String(localized: "Tilt head right")
+        case .closer: return String(localized: "Move closer")
+        case .farther: return String(localized: "Move further back")
         }
     }
 
@@ -205,7 +205,7 @@ enum AntiSpoofQualityGate {
 final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptureVideoDataOutputSampleBufferDelegate {
     public let id = UUID()
     @Published var appState: CameraState = .idle
-    @Published var userInstruction: String = "Press 'Register' to begin."
+    @Published var userInstruction: String = String(localized: "Press 'Register' to begin.")
     @Published var faceIsRecognized: Bool = false
     @Published var smoothedBoundingBox: CGRect?
     @Published var registrationProgress: Double = 0.0
@@ -444,7 +444,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
     private func notifyCameraUnavailable() {
         DispatchQueue.main.async {
             self.appState = .idle
-            self.userInstruction = "Camera access is required for Face ID. Enable it in System Settings → Privacy & Security → Camera."
+            self.userInstruction = String(localized: "Camera access is required for Face ID. Enable it in System Settings → Privacy & Security → Camera.")
         }
     }
 
@@ -540,7 +540,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
         DispatchQueue.main.async {
             self.appState = .authenticating
-            self.userInstruction = "Looking for your face…"
+            self.userInstruction = String(localized: "Looking for your face…")
         }
         startCameraSession()
     }
@@ -598,7 +598,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
         DispatchQueue.main.async {
             self.holdProgress = 0.0
             self.appState = .registering(.finalizing)
-            self.userInstruction = "Securing face profile..."
+            self.userInstruction = String(localized: "Securing face profile...")
         }
 
         let allPrints = poseBucketSamples.values.flatMap { $0 }
@@ -606,7 +606,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             self.appState = .registeredAndIdle
-            self.userInstruction = "Registration Complete!"
+            self.userInstruction = String(localized: "Registration Complete!")
             self.cleanupFaceIDResources()
             AuthenticationManager.shared.fetchRegisteredFaces()
         }
@@ -647,7 +647,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
             DispatchQueue.main.async {
                 self.smoothedBoundingBox = nil
                 if self.isRegistrationMode {
-                    self.userInstruction = "Position your face in the camera view."
+                    self.userInstruction = String(localized: "Position your face in the camera view.")
                     if !self.accumulatedEmbeddings.isEmpty { self.accumulatedEmbeddings.removeLast() }
                 }
             }
@@ -736,7 +736,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                     debugTag: debugTag
                 ) {
                     if spoof.logit <= FaceIDModelManager.shared.livenessLogitThreshold {
-                        DispatchQueue.main.async { self.userInstruction = "Live face required — photo detected." }
+                        DispatchQueue.main.async { self.userInstruction = String(localized: "Live face required — photo detected.") }
                         return
                     }
                 }
@@ -855,7 +855,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                     stopForSecurityEvent(.spoofLocked)
                     return
                 }
-                DispatchQueue.main.async { self.userInstruction = "Checking liveness…" }
+                DispatchQueue.main.async { self.userInstruction = String(localized: "Checking liveness…") }
             } else {
                 clearSpoofStart = nil
             }
@@ -903,7 +903,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
                 return
             }
             DispatchQueue.main.async {
-                self.userInstruction = String(format: "Verifying... %.0f%%", min(99, score / FaceIDConfig.unlockIdentityThreshold * 100))
+                self.userInstruction = String(format: String(localized: "Verifying... %.0f%%"), min(99, score / FaceIDConfig.unlockIdentityThreshold * 100))
             }
             return
         } else {
@@ -920,7 +920,7 @@ final class CameraController: NSObject, ObservableObject, Identifiable, AVCaptur
             DispatchQueue.main.async {
                 self.appState = .recognized
                 self.faceIsRecognized = true
-                self.userInstruction = "Authenticated!"
+                self.userInstruction = String(localized: "Authenticated!")
                 AuthenticationManager.shared.handleFaceIDAuthenticated()
             }
         }

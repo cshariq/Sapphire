@@ -66,7 +66,7 @@ final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
 
     private static let hourlyTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "ha"
+        formatter.dateFormat = String(localized: "weather.hourly.dateFormat", defaultValue: "ha", comment: "Date format pattern for hourly forecast labels, e.g. 6AM.")
         return formatter
     }()
 
@@ -254,7 +254,7 @@ final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
 
         Task { @MainActor in
             let placemarks   = try? await CLGeocoder().reverseGeocodeLocation(location)
-            let locationName = placemarks?.first?.locality ?? placemarks?.first?.name ?? "Unknown Location"
+            let locationName = placemarks?.first?.locality ?? placemarks?.first?.name ?? String(localized: "Unknown Location")
 
             if !weatherAPIKey.isEmpty,
                let primaryData = await fetchPrimary(for: location, locationName: locationName) {
@@ -360,21 +360,21 @@ final class WeatherService: NSObject, @MainActor CLLocationManagerDelegate {
             highTempMetric: todayForecast?.metric?.max_temp ?? observation?.metric?.temp ?? 0,
             lowTemp: todayForecast?.imperial?.min_temp ?? observation?.imperial?.temp ?? 0,
             lowTempMetric: todayForecast?.metric?.min_temp ?? observation?.metric?.temp ?? 0,
-            conditionDescription: observation?.wx_phrase ?? "Unavailable",
+            conditionDescription: observation?.wx_phrase ?? String(localized: "Unavailable"),
             iconCode: observation?.wx_icon ?? 44,
             feelsLike: observation?.imperial?.feels_like ?? observation?.imperial?.temp ?? 0,
             feelsLikeMetric: observation?.metric?.feels_like ?? observation?.metric?.temp ?? 0,
-            windInfo: "\(observation?.imperial?.wspd ?? 0) mph",
-            windInfoMetric: "\(observation?.metric?.wspd ?? 0) km/h",
+            windInfo: String(localized: "\(String(observation?.imperial?.wspd ?? 0)) mph"),
+            windInfoMetric: String(localized: "\(String(observation?.metric?.wspd ?? 0)) km/h"),
             humidity: "\(observation?.rh ?? 0)%",
             precipChance: todayForecast?.day?.pop ?? 0,
             uvIndex: "\(observation?.uv_index ?? 0) (\(observation?.uv_desc ?? "N/A"))",
             sunriseTime: formatTime(from: todayForecast?.sunrise),
             sunsetTime: formatTime(from: todayForecast?.sunset),
-            visibility: observation?.vis != nil ? "\(Int(observation!.vis!)) mi" : "-- mi",
-            visibilityMetric: observation?.vis != nil ? "\(Int((observation!.vis! * 1.609344).rounded())) km" : "-- km",
-            pressure: observation?.pressure != nil ? "\(String(format: "%.2f", observation!.pressure! * 0.02953)) in" : "-- in",
-            pressureMetric: observation?.pressure != nil ? "\(Int(observation!.pressure!)) hPa" : "-- hPa",
+            visibility: observation?.vis != nil ? String(localized: "\(String(Int(observation!.vis!))) mi") : String(localized: "-- mi"),
+            visibilityMetric: observation?.vis != nil ? String(localized: "\(String(Int((observation!.vis! * 1.609344).rounded()))) km") : String(localized: "-- km"),
+            pressure: observation?.pressure != nil ? String(localized: "\(String(format: "%.2f", observation!.pressure! * 0.02953)) in") : String(localized: "-- in"),
+            pressureMetric: observation?.pressure != nil ? String(localized: "\(String(Int(observation!.pressure!))) hPa") : String(localized: "-- hPa"),
             dailyForecasts: uiDailyForecasts,
             hourlyForecasts: uiHourlyForecasts,
             isAvailable: true
@@ -403,14 +403,14 @@ enum WeatherServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey: return "Weather API key is not configured."
-        case .locationDisabled: return "Location services are disabled system-wide."
-        case .locationDenied: return "Location access was denied. Please enable it in System Settings."
-        case .locationNotDetermined: return "Grant Location access in Sapphire's Permissions settings to show weather."
-        case .locationUnavailable: return "Could not determine your location."
-        case .unknownAuthorization: return "Unknown location authorization status."
-        case .invalidURL: return "Invalid weather API URL."
-        case .unavailableData: return "Weather data is temporarily unavailable."
+        case .missingAPIKey: return String(localized: "Weather API key is not configured.")
+        case .locationDisabled: return String(localized: "Location services are disabled system-wide.")
+        case .locationDenied: return String(localized: "Location access was denied. Please enable it in System Settings.")
+        case .locationNotDetermined: return String(localized: "Grant Location access in Sapphire's Permissions settings to show weather.")
+        case .locationUnavailable: return String(localized: "Could not determine your location.")
+        case .unknownAuthorization: return String(localized: "Unknown location authorization status.")
+        case .invalidURL: return String(localized: "Invalid weather API URL.")
+        case .unavailableData: return String(localized: "Weather data is temporarily unavailable.")
         }
     }
 }

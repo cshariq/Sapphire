@@ -76,7 +76,7 @@ struct DataViewerView: View {
             Text("Failed to Load Data")
                 .font(.title2.bold())
 
-            Text(message)
+            Text(verbatim: message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -138,21 +138,21 @@ struct DataViewerView: View {
             HStack(spacing: 20) {
                 StatCard(
                     icon: "chart.bar.fill",
-                    title: "Total Data Points",
+                    title: String(localized: "Total Data Points"),
                     value: "\(summary.totalDataPoints)",
                     color: .blue
                 )
 
                 StatCard(
                     icon: "externaldrive.fill",
-                    title: "Database Size",
+                    title: String(localized: "Database Size"),
                     value: String(format: "%.2f MB", summary.databaseSizeMB),
                     color: .purple
                 )
 
                 StatCard(
                     icon: "checkmark.circle.fill",
-                    title: "Active Monitors",
+                    title: String(localized: "Active Monitors"),
                     value: "\(summary.countsByMonitorType.count)",
                     color: .green
                 )
@@ -186,7 +186,7 @@ struct DataViewerView: View {
                 if let oldest = summary.oldestEntry {
                     DataRangeRow(
                         icon: "calendar.badge.clock",
-                        title: "Oldest Entry",
+                        title: String(localized: "Oldest Entry"),
                         date: oldest
                     )
                 }
@@ -194,7 +194,7 @@ struct DataViewerView: View {
                 if let newest = summary.newestEntry {
                     DataRangeRow(
                         icon: "calendar.badge.checkmark",
-                        title: "Newest Entry",
+                        title: String(localized: "Newest Entry"),
                         date: newest
                     )
                 }
@@ -290,10 +290,10 @@ struct StatCard: View {
                 .font(.title)
                 .foregroundStyle(color)
 
-            Text(value)
+            Text(verbatim: value)
                 .font(.title2.bold())
 
-            Text(title)
+            Text(verbatim: title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -321,7 +321,7 @@ struct MonitorTypeDataRow: View {
                 Image(systemName: monitorType.icon)
                     .foregroundStyle(.blue)
 
-                Text(monitorType.displayName)
+                Text(verbatim: monitorType.displayName)
                     .font(.subheadline)
 
                 Spacer()
@@ -373,10 +373,10 @@ struct DataRangeRow: View {
         HStack {
             Image(systemName: icon)
                 .foregroundStyle(.blue)
-            Text(title + ":")
+            Text("\(title):")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Text(formattedDate)
+            Text(verbatim: formattedDate)
                 .font(.subheadline.weight(.medium))
             Spacer()
         }

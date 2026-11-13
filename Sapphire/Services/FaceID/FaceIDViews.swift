@@ -139,7 +139,7 @@ struct FaceIDRegistrationView: View {
 
     private var isRegistered: Bool { cameraController.appState == .registeredAndIdle }
     private var registrationProgress: Double { cameraController.registrationProgress }
-    private var instructionText: String { isRegistered ? "Registration Complete!" : cameraController.userInstruction }
+    private var instructionText: String { isRegistered ? String(localized: "Registration Complete!") : cameraController.userInstruction }
 
     private var overlayColor: Color {
         if case .registering(let step) = cameraController.appState {

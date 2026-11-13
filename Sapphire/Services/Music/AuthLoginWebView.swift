@@ -88,7 +88,7 @@ class AuthLoginCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "\(serviceName) Login"
+        window.title = String(localized: "\(serviceName) Login")
         window.contentView = popup
         window.isReleasedWhenClosed = false
         window.center()
@@ -117,7 +117,7 @@ class AuthLoginCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let alert = NSAlert()
         alert.messageText = serviceName
         alert.informativeText = message
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: String(localized: "OK"))
         alert.runModal()
         completionHandler()
     }
@@ -131,8 +131,8 @@ class AuthLoginCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         let alert = NSAlert()
         alert.messageText = serviceName
         alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: String(localized: "OK"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         completionHandler(alert.runModal() == .alertFirstButtonReturn)
     }
 }

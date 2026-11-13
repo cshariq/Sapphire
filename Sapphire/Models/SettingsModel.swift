@@ -110,19 +110,19 @@ enum FullScreenActivityVisibility: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .showAll: "Show All"
-        case .hidePersistent: "Hide Persistent"
-        case .hideSelected: "Hide Selected"
-        case .hideAll: "Hide All"
+        case .showAll: String(localized: "Show All")
+        case .hidePersistent: String(localized: "Hide Persistent")
+        case .hideSelected: String(localized: "Hide Selected")
+        case .hideAll: String(localized: "Hide All")
         }
     }
 
     var detail: String {
         switch self {
-        case .showAll: "Every live activity keeps showing."
-        case .hidePersistent: "Hide long-running activities like music, timers and persistent stats. Short events like HUDs, notifications and Caps Lock still show."
-        case .hideSelected: "Hide only the activities you pick."
-        case .hideAll: "Hide everything, including essentials like the volume and brightness HUD."
+        case .showAll: String(localized: "Every live activity keeps showing.")
+        case .hidePersistent: String(localized: "Hide long-running activities like music, timers and persistent stats. Short events like HUDs, notifications and Caps Lock still show.")
+        case .hideSelected: String(localized: "Hide only the activities you pick.")
+        case .hideAll: String(localized: "Hide everything, including essentials like the volume and brightness HUD.")
         }
     }
 }
@@ -154,12 +154,12 @@ public enum StatType: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .cpu: return "CPU Usage"
-        case .ram: return "RAM Usage"
-        case .gpu: return "GPU Usage"
-        case .disk: return "Disk Activity"
-        case .systemPower: return "System Power"
-        case .batteryPower: return "Battery Draw"
+        case .cpu: return String(localized: "CPU Usage")
+        case .ram: return String(localized: "RAM Usage")
+        case .gpu: return String(localized: "GPU Usage")
+        case .disk: return String(localized: "Disk Activity")
+        case .systemPower: return String(localized: "System Power")
+        case .batteryPower: return String(localized: "Battery Draw")
         }
     }
 
@@ -182,11 +182,11 @@ enum AnimationProfile: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .snappy: "Snappy"
-        case .fluid: "Fluid"
-        case .bouncy: "Bouncy"
-        case .calm: "Calm"
-        case .custom: "Custom"
+        case .snappy: String(localized: "Snappy")
+        case .fluid: String(localized: "Fluid")
+        case .bouncy: String(localized: "Bouncy")
+        case .calm: String(localized: "Calm")
+        case .custom: String(localized: "Custom")
         }
     }
 }
@@ -194,7 +194,12 @@ enum AnimationProfile: String, Codable, CaseIterable, Identifiable {
 enum WidgetSwitchEffect: String, Codable, CaseIterable, Identifiable {
     case smooth, bouncy
     var id: String { self.rawValue }
-    var displayName: String { self.rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .smooth: return String(localized: "Smooth")
+        case .bouncy: return String(localized: "Bouncy")
+        }
+    }
 }
 
 enum WidgetSwitchTransition: String, Codable, CaseIterable, Identifiable {
@@ -203,9 +208,9 @@ enum WidgetSwitchTransition: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .slide: "Slide"
-        case .fade: "Fade"
-        case .blurAndFade: "Blur & Fade"
+        case .slide: String(localized: "Slide")
+        case .fade: String(localized: "Fade")
+        case .blurAndFade: String(localized: "Blur & Fade")
         }
     }
 }
@@ -243,6 +248,13 @@ struct CustomizableAnimationConfiguration: Codable, Equatable {
 enum ReleaseChannel: String, Codable, CaseIterable {
     case stable
     case beta
+
+    var displayName: String {
+        switch self {
+        case .stable: return String(localized: "Stable")
+        case .beta: return String(localized: "Beta")
+        }
+    }
 }
 
 // MARK: - Customizable Configuration
@@ -317,20 +329,20 @@ enum WeatherInfoType: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .temperature: "Current Temperature"
-        case .condition: "Condition Icon"
-        case .wind: "Wind"
-        case .humidity: "Humidity"
-        case .feelsLike: "Feels Like"
-        case .precipitation: "Precipitation"
-        case .sunrise: "Sunrise"
-        case .sunset: "Sunset"
-        case .uvIndex: "UV Index"
-        case .visibility: "Visibility"
-        case .pressure: "Pressure"
-        case .locationName: "Location Name"
-        case .conditionDescription: "Condition Description"
-        case .highLowTemp: "High / Low Temperature"
+        case .temperature: String(localized: "Current Temperature")
+        case .condition: String(localized: "Condition Icon")
+        case .wind: String(localized: "Wind")
+        case .humidity: String(localized: "Humidity")
+        case .feelsLike: String(localized: "Feels Like")
+        case .precipitation: String(localized: "Precipitation")
+        case .sunrise: String(localized: "Sunrise")
+        case .sunset: String(localized: "Sunset")
+        case .uvIndex: String(localized: "UV Index")
+        case .visibility: String(localized: "Visibility")
+        case .pressure: String(localized: "Pressure")
+        case .locationName: String(localized: "Location Name")
+        case .conditionDescription: String(localized: "Condition Description")
+        case .highLowTemp: String(localized: "High / Low Temperature")
         }
     }
 
@@ -344,8 +356,8 @@ enum FocusDisplayMode: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .full: "Show Full Name"
-        case .compact: "Icon Only (On/Off)"
+        case .full: String(localized: "Show Full Name")
+        case .compact: String(localized: "Icon Only (On/Off)")
         }
     }
 }
@@ -355,9 +367,14 @@ enum LockScreenMainWidgetType: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .notes: return "Notes"
-        case .clipboard: return "Clipboard"
-        default: return self.rawValue.capitalized
+        case .music: return String(localized: "Music")
+        case .weather: return String(localized: "Weather")
+        case .calendar: return String(localized: "Calendar")
+        case .battery: return String(localized: "Battery")
+        case .focus: return String(localized: "Focus")
+        case .timer: return String(localized: "Timer")
+        case .notes: return String(localized: "Notes")
+        case .clipboard: return String(localized: "Clipboard")
         }
     }
 
@@ -371,13 +388,19 @@ enum LockScreenWidgetType: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .caffeine: return "Caffeine"
-        case .timer: return "Timer"
-        case .clock: return "Clock"
-        case .notes: return "Notes"
-        case .clipboard: return "Clipboard"
-        case .system: return "System"
-        default: return self.rawValue.capitalized
+        case .none: return String(localized: "None")
+        case .weather: return String(localized: "Weather")
+        case .calendar: return String(localized: "Calendar")
+        case .music: return String(localized: "Music")
+        case .focus: return String(localized: "Focus")
+        case .bluetooth: return String(localized: "Bluetooth")
+        case .battery: return String(localized: "Battery")
+        case .caffeine: return String(localized: "Caffeine")
+        case .timer: return String(localized: "Timer")
+        case .clock: return String(localized: "Clock")
+        case .notes: return String(localized: "Notes")
+        case .clipboard: return String(localized: "Clipboard")
+        case .system: return String(localized: "System")
         }
     }
 
@@ -391,12 +414,18 @@ enum LockScreenMiniWidgetType: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .caffeine: return "Caffeine"
-        case .timer: return "Timer"
-        case .clipboard: return "Clipboard"
-        case .notes: return "Notes"
-        case .system: return "System"
-        default: return self.rawValue.capitalized
+        case .none: return String(localized: "None")
+        case .weather: return String(localized: "Weather")
+        case .calendar: return String(localized: "Calendar")
+        case .music: return String(localized: "Music")
+        case .battery: return String(localized: "Battery")
+        case .focus: return String(localized: "Focus")
+        case .caffeine: return String(localized: "Caffeine")
+        case .timer: return String(localized: "Timer")
+        case .bluetooth: return String(localized: "Bluetooth")
+        case .clipboard: return String(localized: "Clipboard")
+        case .notes: return String(localized: "Notes")
+        case .system: return String(localized: "System")
         }
     }
 
@@ -411,11 +440,11 @@ enum BatteryInfoType: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .percentage: "Percentage"
-        case .statusIcon: "Status Icon"
-        case .statusText: "Status Text"
-        case .batteryIcon: "Battery Icon"
-        case .estimatedTime: "Estimated Time"
+        case .percentage: String(localized: "Percentage")
+        case .statusIcon: String(localized: "Status Icon")
+        case .statusText: String(localized: "Status Text")
+        case .batteryIcon: String(localized: "Battery Icon")
+        case .estimatedTime: String(localized: "Estimated Time")
         }
     }
 }
@@ -423,18 +452,28 @@ enum BatteryInfoType: String, Codable, CaseIterable, Identifiable {
 enum SnapZoneViewMode: String, Codable, CaseIterable, Identifiable {
     case single, multi
     var id: String { self.rawValue }
-    var displayName: String { self.rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .single: return String(localized: "Single")
+        case .multi: return String(localized: "Multi")
+        }
+    }
 }
 
 enum SnapWindowAnimation: String, Codable, CaseIterable, Identifiable {
     case fast, smooth
     var id: String { rawValue }
-    var displayName: String { rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .fast: return String(localized: "Fast")
+        case .smooth: return String(localized: "Smooth")
+        }
+    }
 
     var summary: String {
         switch self {
-        case .fast: return "Windows jump straight to their zone."
-        case .smooth: return "Windows glide into their zone with a short eased animation."
+        case .fast: return String(localized: "Windows jump straight to their zone.")
+        case .smooth: return String(localized: "Windows glide into their zone with a short eased animation.")
         }
     }
 }
@@ -447,8 +486,8 @@ enum FaceIDLocationPolicy: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .everywhere: return "Everywhere"
-        case .selectedWiFiNetworks: return "Selected Wi-Fi Networks"
+        case .everywhere: return String(localized: "Everywhere")
+        case .selectedWiFiNetworks: return String(localized: "Selected Wi-Fi Networks")
         }
     }
 }
@@ -543,10 +582,10 @@ enum NotchAppearanceMode: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .default: return "Default"
-        case .liquidGlass: return "Liquid Glass"
-        case .blur: return "Blur"
-        case .custom: return "Custom"
+        case .default: return String(localized: "Default")
+        case .liquidGlass: return String(localized: "Liquid Glass")
+        case .blur: return String(localized: "Blur")
+        case .custom: return String(localized: "Custom")
         }
     }
 }
@@ -603,9 +642,9 @@ enum MediaSource: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .system: "System Wide"
-        case .spotify: "Spotify"
-        case .appleMusic: "Apple Music"
+        case .system: String(localized: "System Wide")
+        case .spotify: String(localized: "Spotify")
+        case .appleMusic: String(localized: "Apple Music")
         }
     }
 
@@ -682,9 +721,9 @@ enum NotchDisplayTarget: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .macbookDisplay: "MacBook Display Only"
-        case .mainDisplay: "Main Display Only"
-        case .allDisplays: "All Displays"
+        case .macbookDisplay: String(localized: "MacBook Display Only")
+        case .mainDisplay: String(localized: "Main Display Only")
+        case .allDisplays: String(localized: "All Displays")
         }
     }
 }
@@ -692,6 +731,14 @@ enum NotchDisplayTarget: String, Codable, CaseIterable, Identifiable {
 enum HUDVisualStyle: String, Codable, CaseIterable, Identifiable {
     case white, color, adaptive
     var id: String { self.rawValue.capitalized }
+
+    var displayName: String {
+        switch self {
+        case .white: return String(localized: "White")
+        case .color: return String(localized: "Color")
+        case .adaptive: return String(localized: "Adaptive")
+        }
+    }
 }
 
 enum HUDAdaptiveTransitionStyle: String, Codable, CaseIterable, Identifiable {
@@ -704,7 +751,13 @@ enum HUDAdaptiveTransitionStyle: String, Codable, CaseIterable, Identifiable {
 enum NotchBackgroundStyle: String, Codable, CaseIterable, Identifiable {
     case solid, gradient, radial
     var id: String { self.rawValue }
-    var displayName: String { self.rawValue.capitalized }
+    var displayName: String {
+        switch self {
+        case .solid: return String(localized: "Solid")
+        case .gradient: return String(localized: "Gradient")
+        case .radial: return String(localized: "Radial")
+        }
+    }
 }
 
 enum MusicPlayerButtonType: String, Codable, CaseIterable, Identifiable, Equatable {
@@ -713,11 +766,11 @@ enum MusicPlayerButtonType: String, Codable, CaseIterable, Identifiable, Equatab
 
     var displayName: String {
         switch self {
-        case .like: "Like"
-        case .shuffle: "Shuffle"
-        case .repeat: "Repeat"
-        case .playlists: "Queue & Playlists"
-        case .devices: "Devices"
+        case .like: String(localized: "Like")
+        case .shuffle: String(localized: "Shuffle")
+        case .repeat: String(localized: "Repeat")
+        case .playlists: String(localized: "Queue & Playlists")
+        case .devices: String(localized: "Devices")
         }
     }
 
@@ -748,16 +801,16 @@ enum MusicLongPressAction: String, Codable, CaseIterable, Identifiable, Equatabl
 
     var displayName: String {
         switch self {
-        case .none: return "None (tap only)"
-        case .seek: return "Seek"
-        case .shuffle: return "Shuffle"
-        case .repeatMode: return "Repeat"
-        case .like: return "Like"
-        case .playPause: return "Play / Pause"
-        case .nextTrack: return "Next Track"
-        case .previousTrack: return "Previous Track"
-        case .openQueue: return "Open Queue"
-        case .openDevices: return "Open Devices"
+        case .none: return String(localized: "None (tap only)")
+        case .seek: return String(localized: "Seek")
+        case .shuffle: return String(localized: "Shuffle")
+        case .repeatMode: return String(localized: "Repeat")
+        case .like: return String(localized: "Like")
+        case .playPause: return String(localized: "Play / Pause")
+        case .nextTrack: return String(localized: "Next Track")
+        case .previousTrack: return String(localized: "Previous Track")
+        case .openQueue: return String(localized: "Open Queue")
+        case .openDevices: return String(localized: "Open Devices")
         }
     }
 
@@ -784,14 +837,14 @@ enum MusicLongPressTarget: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .previous: return "Previous"
-        case .next: return "Next"
-        case .playPause: return "Play / Pause"
-        case .playlists: return "Queue"
-        case .devices: return "Devices"
-        case .like: return "Like"
-        case .shuffle: return "Shuffle"
-        case .repeatMode: return "Repeat"
+        case .previous: return String(localized: "Previous")
+        case .next: return String(localized: "Next")
+        case .playPause: return String(localized: "Play / Pause")
+        case .playlists: return String(localized: "Queue")
+        case .devices: return String(localized: "Devices")
+        case .like: return String(localized: "Like")
+        case .shuffle: return String(localized: "Shuffle")
+        case .repeatMode: return String(localized: "Repeat")
         }
     }
 
@@ -868,10 +921,10 @@ enum NotesSwipeAction: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .toggleDone: return "Toggle Done"
-        case .copy: return "Copy"
-        case .delete: return "Delete"
-        case .none: return "None"
+        case .toggleDone: return String(localized: "Toggle Done")
+        case .copy: return String(localized: "Copy")
+        case .delete: return String(localized: "Delete")
+        case .none: return String(localized: "None")
         }
     }
 }
@@ -881,10 +934,10 @@ enum ClipboardSwipeAction: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .share: return "Share"
-        case .copy: return "Copy"
-        case .delete: return "Delete"
-        case .none: return "None"
+        case .share: return String(localized: "Share")
+        case .copy: return String(localized: "Copy")
+        case .delete: return String(localized: "Delete")
+        case .none: return String(localized: "None")
         }
     }
 }
@@ -894,9 +947,9 @@ enum FileDropSwipeAction: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .share: return "Share"
-        case .delete: return "Delete"
-        case .none: return "None"
+        case .share: return String(localized: "Share")
+        case .delete: return String(localized: "Delete")
+        case .none: return String(localized: "None")
         }
     }
 }
@@ -920,8 +973,8 @@ enum DMGInstallLocation: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .systemApplications: "/Applications"
-        case .homeApplications: "~/Applications"
+        case .systemApplications: String(localized: "/Applications")
+        case .homeApplications: String(localized: "~/Applications")
         }
     }
 
@@ -942,9 +995,9 @@ enum DMGPostInstallAction: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .open: "Open the app"
-        case .revealInFinder: "Reveal in Finder"
-        case .none: "Do nothing"
+        case .open: String(localized: "Open the app")
+        case .revealInFinder: String(localized: "Reveal in Finder")
+        case .none: String(localized: "Do nothing")
         }
     }
 
@@ -965,8 +1018,8 @@ enum FileOperationProgressDisplay: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .liveActivity: "Live Activity"
-        case .popup: "Popup Window"
+        case .liveActivity: String(localized: "Live Activity")
+        case .popup: String(localized: "Popup Window")
         }
     }
 }
@@ -2124,16 +2177,16 @@ enum ControlItemIconStyle: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .chevron: return "Chevron"
-        case .arrow: return "Arrow"
-        case .dot: return "Dot"
-        case .line: return "Line"
-        case .bracket: return "Bracket"
-        case .circle: return "Circle"
-        case .triangle: return "Triangle"
-        case .diamond: return "Diamond"
-        case .squareFilled: return "Square"
-        case .ellipsis: return "ellipsis"
+        case .chevron: return String(localized: "Chevron")
+        case .arrow: return String(localized: "Arrow")
+        case .dot: return String(localized: "Dot")
+        case .line: return String(localized: "Line")
+        case .bracket: return String(localized: "Bracket")
+        case .circle: return String(localized: "Circle")
+        case .triangle: return String(localized: "Triangle")
+        case .diamond: return String(localized: "Diamond")
+        case .squareFilled: return String(localized: "Square")
+        case .ellipsis: return String(localized: "ellipsis")
         }
     }
 
@@ -3269,8 +3322,8 @@ enum MagSafeLEDSetting: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .alwaysOn: "Always On"
-        case .off: "Always Off"
+        case .alwaysOn: String(localized: "Always On")
+        case .off: String(localized: "Always Off")
         }
     }
 }
@@ -3280,9 +3333,9 @@ enum LowPowerMode: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .alwaysOn: "Always On"
-        case .onBattery: "On Battery"
-        case .never: "Never"
+        case .alwaysOn: String(localized: "Always On")
+        case .onBattery: String(localized: "On Battery")
+        case .never: String(localized: "Never")
         }
     }
 }
@@ -3292,22 +3345,22 @@ enum WidgetType: String, Codable, CaseIterable, Identifiable, Equatable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .weather: return "Weather"
-        case .calendar: return "Calendar"
-        case .shortcuts: return "Shortcuts"
-        case .music: return "Music"
-        case .sports: return "Sports"
-        case .finance: return "Finance"
-        case .shopify: return "Shopify Orders"
-        case .notes: return "Notes"
-        case .clipboard: return "Clipboard"
-        case .mirror: return "Mirror"
-        case .battery: return "Battery"
-        case .timer: return "Timer"
-        case .focusSession: return "Focus"
-        case .storage: return "Storage"
-        case .dev: return "Dev"
-        case .agent: return "Agent"
+        case .weather: return String(localized: "Weather")
+        case .calendar: return String(localized: "Calendar")
+        case .shortcuts: return String(localized: "Shortcuts")
+        case .music: return String(localized: "Music")
+        case .sports: return String(localized: "Sports")
+        case .finance: return String(localized: "Finance")
+        case .shopify: return String(localized: "Shopify Orders")
+        case .notes: return String(localized: "Notes")
+        case .clipboard: return String(localized: "Clipboard")
+        case .mirror: return String(localized: "Mirror")
+        case .battery: return String(localized: "Battery")
+        case .timer: return String(localized: "Timer")
+        case .focusSession: return String(localized: "Focus")
+        case .storage: return String(localized: "Storage")
+        case .dev: return String(localized: "Dev")
+        case .agent: return String(localized: "Agent")
         }
     }
 }
@@ -3321,9 +3374,9 @@ enum MusicLiveActivityRightTextMode: String, Codable, CaseIterable, Identifiable
 
     var displayName: String {
         switch self {
-        case .off: return "Off"
-        case .continuityOnly: return "Phone only"
-        case .always: return "Always"
+        case .off: return String(localized: "Off")
+        case .continuityOnly: return String(localized: "Phone only")
+        case .always: return String(localized: "Always")
         }
     }
 }
@@ -3337,9 +3390,9 @@ enum MusicLiveActivityWaveformMode: String, Codable, CaseIterable, Identifiable,
 
     var displayName: String {
         switch self {
-        case .off: return "Off"
-        case .continuityOff: return "Hide on phone"
-        case .always: return "Always"
+        case .off: return String(localized: "Off")
+        case .continuityOff: return String(localized: "Hide on phone")
+        case .always: return String(localized: "Always")
         }
     }
 }
@@ -3352,8 +3405,8 @@ enum SpotifyAPIMode: String, Codable, CaseIterable, Identifiable, Equatable {
 
     var displayName: String {
         switch self {
-        case .privateAPI: return "Private API"
-        case .officialAPI: return "Official API"
+        case .privateAPI: return String(localized: "Private API")
+        case .officialAPI: return String(localized: "Official API")
         }
     }
 }
@@ -3366,8 +3419,8 @@ enum MusicLiveActivityWaveformStyle: String, Codable, CaseIterable, Identifiable
 
     var displayName: String {
         switch self {
-        case .classic: return "Classic"
-        case .continuity: return "Continuity"
+        case .classic: return String(localized: "Classic")
+        case .continuity: return String(localized: "Continuity")
         }
     }
 }
@@ -3409,7 +3462,7 @@ enum LiveActivityType: String, Codable, CaseIterable, Identifiable, Equatable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .capsLock: "Caps Lock"; case .music: "Music"; case .weather: "Weather"; case .calendar: "Calendar"; case .reminders: "Reminders"; case .timers: "Timers"; case .battery: "Battery"; case .eyeBreak: "Eye Break"; case .desktop: "Desktop"; case .focus: "Focus"; case .fileShelf: "File Shelf"; case .fileProgress: "File Progress"; case .stats: "Stats"; case .microphone: "Microphone"; case .devActivity: "Dev Activity"; case .sports: "Sports"; case .finance: "Finance"
+        case .capsLock: String(localized: "Caps Lock"); case .music: String(localized: "Music"); case .weather: String(localized: "Weather"); case .calendar: String(localized: "Calendar"); case .reminders: String(localized: "Reminders"); case .timers: String(localized: "Timers"); case .battery: String(localized: "Battery"); case .eyeBreak: String(localized: "Eye Break"); case .desktop: String(localized: "Desktop"); case .focus: String(localized: "Focus"); case .fileShelf: String(localized: "File Shelf"); case .fileProgress: String(localized: "File Progress"); case .stats: String(localized: "Stats"); case .microphone: String(localized: "Microphone"); case .devActivity: String(localized: "Dev Activity"); case .sports: String(localized: "Sports"); case .finance: String(localized: "Finance")
         }
     }
 }
@@ -3424,10 +3477,10 @@ enum FocusIntensity: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .minimal: return "Minimal"
-        case .gentle: return "Gentle"
-        case .standard: return "Standard"
-        case .strict: return "Strict"
+        case .minimal: return String(localized: "Minimal")
+        case .gentle: return String(localized: "Gentle")
+        case .standard: return String(localized: "Standard")
+        case .strict: return String(localized: "Strict")
         }
     }
 
@@ -3443,13 +3496,13 @@ enum FocusIntensity: String, Codable, CaseIterable, Identifiable {
     var blurb: String {
         switch self {
         case .minimal:
-            return "App is blurred while blocked. Notifications stay visible, and you can unblock an app instantly with a button, the app stays open."
+            return String(localized: "App is blurred while blocked. Notifications stay visible, and you can unblock an app instantly with a button, the app stays open.")
         case .gentle:
-            return "App is blurred while blocked. Notifications stay visible and the app stays open, but there is no unblock button, although you can end the session anytime."
+            return String(localized: "App is blurred while blocked. Notifications stay visible and the app stays open, but there is no unblock button, although you can end the session anytime.")
         case .standard:
-            return "Blocked apps are force-closed the moment they open and notifications are hidden. No unblocking, but you can end the session anytime."
+            return String(localized: "Blocked apps are force-closed the moment they open and notifications are hidden. No unblocking, but you can end the session anytime.")
         case .strict:
-            return "Blocked apps are force-closed and notifications are hidden. Unblock requests wait 10 minutes (or until the session ends), and the session itself can't be stopped early."
+            return String(localized: "Blocked apps are force-closed and notifications are hidden. Unblock requests wait 10 minutes (or until the session ends), and the session itself can't be stopped early.")
         }
     }
 
@@ -3485,10 +3538,10 @@ enum MirrorRotationMode: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .auto: return "Automatic"
-        case .angle90: return "90°"
-        case .angle180: return "180°"
-        case .angle270: return "270°"
+        case .auto: return String(localized: "Automatic")
+        case .angle90: return String(localized: "90°")
+        case .angle180: return String(localized: "180°")
+        case .angle270: return String(localized: "270°")
         }
     }
 
@@ -3529,9 +3582,9 @@ enum FocusShortcutSyncMode: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .none: return "Off"
-        case .timer: return "Sync Timer"
-        case .stopwatch: return "Sync Stopwatch"
+        case .none: return String(localized: "Off")
+        case .timer: return String(localized: "Sync Timer")
+        case .stopwatch: return String(localized: "Sync Stopwatch")
         }
     }
 }
@@ -3544,17 +3597,17 @@ enum FocusBlockingMode: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .blocklist: return "Block selected apps"
-        case .allowlist: return "Allow only selected apps"
+        case .blocklist: return String(localized: "Block selected apps")
+        case .allowlist: return String(localized: "Allow only selected apps")
         }
     }
 
     var blurb: String {
         switch self {
         case .blocklist:
-            return "Blocks only the apps (and websites) you add to the list. Everything else stays accessible."
+            return String(localized: "Blocks only the apps (and websites) you add to the list. Everything else stays accessible.")
         case .allowlist:
-            return "Blocks every app except the ones you allow. Ideal for deep-work sessions where only a few tools should exist."
+            return String(localized: "Blocks every app except the ones you allow. Ideal for deep-work sessions where only a few tools should exist.")
         }
     }
 }
@@ -3569,10 +3622,10 @@ enum FocusAmbientSoundType: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .whiteNoise: return "White Noise"
-        case .pinkNoise: return "Pink Noise"
-        case .brownNoise: return "Brown Noise"
-        case .rain: return "Rain"
+        case .whiteNoise: return String(localized: "White Noise")
+        case .pinkNoise: return String(localized: "Pink Noise")
+        case .brownNoise: return String(localized: "Brown Noise")
+        case .rain: return String(localized: "Rain")
         }
     }
 
@@ -3594,8 +3647,8 @@ enum MicrophoneLiveActivityBehavior: String, Codable, CaseIterable, Identifiable
 
     var displayName: String {
         switch self {
-        case .iconOnly: return "Icon Only"
-        case .iconAndGesture: return "Icon + Gesture"
+        case .iconOnly: return String(localized: "Icon Only")
+        case .iconAndGesture: return String(localized: "Icon + Gesture")
         }
     }
 }
@@ -3610,12 +3663,20 @@ enum BatteryNotificationStyle: String, CaseIterable, Identifiable, Decodable, En
     static var userSelectableCases: [BatteryNotificationStyle] {
         return [.default, .compact]
     }
+
+    var displayName: String {
+        switch self {
+        case .default: return String(localized: "Default")
+        case .compact: return String(localized: "Compact")
+        case .persistent: return String(localized: "Persistent")
+        }
+    }
 }
 
 enum NotificationSource: String, CaseIterable, Identifiable {
     case iMessage, faceTime, airDrop
     var id: String { rawValue }
-    var displayName: String { switch self { case .iMessage: "iMessage"; case .faceTime: "FaceTime"; case .airDrop: "AirDrop" } }
+    var displayName: String { switch self { case .iMessage: String(localized: "iMessage"); case .faceTime: String(localized: "FaceTime"); case .airDrop: String(localized: "AirDrop") } }
     var systemImage: String { switch self { case .iMessage: "message.fill"; case .faceTime: "video.fill"; case .airDrop: "shareplay" } }
     var iconColor: Color { switch self { case .iMessage, .faceTime: .green; case .airDrop: .blue } }
 }
@@ -3625,10 +3686,10 @@ enum GeneralSettingType: String, CaseIterable, Identifiable, Equatable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .expandOnHover: "Expand on Hover"
-        case .swipeToSwitchWidgets: "Swipe to Switch Widgets"
-        case .enableOpeningBounce: "Bounce when Opening Widgets"
-        case .capsLockHorizontalLock: "Lock Cursor Horizontally with Caps Lock"
+        case .expandOnHover: String(localized: "Expand on Hover")
+        case .swipeToSwitchWidgets: String(localized: "Swipe to Switch Widgets")
+        case .enableOpeningBounce: String(localized: "Bounce when Opening Widgets")
+        case .capsLockHorizontalLock: String(localized: "Lock Cursor Horizontally with Caps Lock")
         }
     }
     var systemImage: String {
@@ -3660,11 +3721,11 @@ enum NotchButtonType: String, Codable, Identifiable, Equatable {
 
     var displayName: String {
         switch self {
-        case .settings: "Settings"; case .fileShelf: "File Shelf"; case .notes: "Notes"; case .clipboard: "Clipboard"
-        case .intelligence: "Blip"; case .intelligenceLive: "Gemini";
-        case .focusSession: "Focus";
-        case .caffeine: "Caffeinate"; case .spacer: "Spacer";
-        case .multiAudio: "Multi-Audio (Beta)"; case .continuity: "Phone"; case .battery: "Battery"; case .pin: "Pin"
+        case .settings: String(localized: "Settings"); case .fileShelf: String(localized: "File Shelf"); case .notes: String(localized: "Notes"); case .clipboard: String(localized: "Clipboard")
+        case .intelligence: String(localized: "Blip"); case .intelligenceLive: String(localized: "Gemini");
+        case .focusSession: String(localized: "Focus");
+        case .caffeine: String(localized: "Caffeinate"); case .spacer: String(localized: "Spacer");
+        case .multiAudio: String(localized: "Multi-Audio (Beta)"); case .continuity: String(localized: "Phone"); case .battery: String(localized: "Battery"); case .pin: String(localized: "Pin")
         }
     }
 
@@ -3719,6 +3780,13 @@ enum Day: String, Codable, CaseIterable, Identifiable {
         let offset = self.firstWeekday - 1
         return Array(symbols[offset...] + symbols[..<offset])
     }
+
+    var displayName: String {
+        switch self {
+        case .sunday: return String(localized: "Sunday")
+        case .monday: return String(localized: "Monday")
+        }
+    }
 }
 
 enum DefaultMusicPlayer: String, Codable, CaseIterable, Identifiable {
@@ -3726,10 +3794,10 @@ enum DefaultMusicPlayer: String, Codable, CaseIterable, Identifiable {
     var id: String { self.rawValue }
     var displayName: String {
         switch self {
-        case .appleMusic: "Apple Music"
-        case .spotify: "Spotify"
-        case .tidal: "Tidal"
-        case .youtubeMusic: "YouTube Music"
+        case .appleMusic: String(localized: "Apple Music")
+        case .spotify: String(localized: "Spotify")
+        case .tidal: String(localized: "Tidal")
+        case .youtubeMusic: String(localized: "YouTube Music")
         }
     }
 
@@ -3775,16 +3843,41 @@ enum DefaultMusicPlayer: String, Codable, CaseIterable, Identifiable {
 enum HUDStyle: String, Codable, CaseIterable, Identifiable {
     case `default`, thin, dots, pill
     var id: String { self.rawValue.capitalized }
+
+    var displayName: String {
+        switch self {
+        case .default: return String(localized: "Default")
+        case .thin: return String(localized: "Thin")
+        case .dots: return String(localized: "Dots")
+        case .pill: return String(localized: "Pill")
+        }
+    }
 }
 
 enum PillHUDPosition: String, Codable, CaseIterable, Identifiable {
     case left, right, top, bottom
     var id: String { self.rawValue.capitalized }
+
+    var displayName: String {
+        switch self {
+        case .left: return String(localized: "Left")
+        case .right: return String(localized: "Right")
+        case .top: return String(localized: "Top")
+        case .bottom: return String(localized: "Bottom")
+        }
+    }
 }
 
 enum PillHUDStyle: String, Codable, CaseIterable, Identifiable {
     case contained, bare
     var id: String { self.rawValue.capitalized }
+
+    var displayName: String {
+        switch self {
+        case .contained: return String(localized: "Contained")
+        case .bare: return String(localized: "Bare")
+        }
+    }
 }
 
 struct LaunchpadItem: Codable, Equatable, Identifiable, Hashable {
@@ -3862,7 +3955,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         return !SubscriptionAccess.hasAccess(to: requiredPremiumFeature)
     }
 
-    var shortDescription: String {
+    // Stable English metadata used by the settings assistant protocol.
+    var englishShortDescription: String {
         switch self {
         case .overview: "Ask about any setting, get suggestions, and change the most-used settings."
         case .general: "Core app behavior, launch options, animations, and notch controls."
@@ -3907,8 +4001,57 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .finance: "Stock market ticker configurations, favorite stocks, and trendline visualizations."
         case .dockLayouts: "Save Dock layouts as presets and switch between them with a click or hotkey."
         case .mediaOptimizer: "Automatically shrink images, compress media, and extract text with OCR."
-
         case .about: "App version details, Sapphire updates, release channels, credits, links, and project information."
+        }
+    }
+
+    var shortDescription: String {
+        switch self {
+        case .overview: String(localized: "Ask about any setting, get suggestions, and change the most-used settings.")
+        case .general: String(localized: "Core app behavior, launch options, animations, and notch controls.")
+        case .systemEnhance: String(localized: "Window previews, app switching, dock controls, and display behavior.")
+        case .apps: String(localized: "Review installed applications, inspect bundle details, and safely move unwanted apps to Trash.")
+        case .storage: String(localized: "Find large folders and reclaim space with transparent, user-approved cleanup.")
+        case .widgets: String(localized: "Choose which widgets appear in the notch and how they are ordered.")
+        case .liveActivities: String(localized: "Control which live activities can surface and auto-expand in the notch.")
+        case .appActivities: String(localized: "Live activities and controls for Zoom, Google Meet, Teams, Slack, Discord, FaceTime, recorders and more.")
+        case .fileProgress: String(localized: "Download, copy and AirDrop progress per app — Safari, Chrome, Edge, Firefox, Finder and others.")
+        case .appearance: String(localized: "Tune the notch look, materials, colors, and layout styling.")
+        case .lockScreen: String(localized: "Configure Sapphire content and behavior while your Mac is locked.")
+        case .bluetoothUnlock: String(localized: "Set up proximity-based authentication and trusted device behavior.")
+        case .shortcuts: String(localized: "Manage quick actions and shortcut surfaces shown in Sapphire.")
+        case .keyboardShortcuts: String(localized: "Reference page listing every keyboard shortcut in Sapphire — global hotkeys, snap zones, and in-app shortcuts.")
+        case .snapZones: String(localized: "Configure window snapping behavior, layouts, and zone actions.")
+        case .audio: String(localized: "Audio adjustments, EQ, and per-app volume adjustments.")
+        case .battery: String(localized: "Battery widgets, history, charging preferences, and power-related controls.")
+        case .bluetooth: String(localized: "Bluetooth device integrations, visibility, and connection behavior.")
+        case .hud: String(localized: "Heads-up display overlays for volume, brightness, keyboard, and media feedback.")
+        case .notifications: String(localized: "Choose which system notifications Sapphire mirrors or enhances.")
+        case .nearbyShare: String(localized: "Nearby sharing preferences, transfers, and device discovery options.")
+        case .continuity: String(localized: "Pair an Android phone for clipboard, notifications, media, battery, and Instant Hotspot.")
+        case .fileShelf: String(localized: "Manage temporary file storage, drag targets, and shelf behavior.")
+        case .notes: String(localized: "Quick notes widget, click-to-expand behavior, and notch bar access.")
+        case .clipboard: String(localized: "Clipboard history, monitoring, and notch clipboard shortcuts.")
+        case .emoji: String(localized: "Slack-style emoji typing with :shortcode: suggestions and a full search picker.")
+        case .mouse: String(localized: "Mouse and trackpad scroll, acceleration, and button customization.")
+        case .monitoring: String(localized: "Menu bar readouts and notifications for CPU, memory, disk, and network.")
+        case .devActivity: String(localized: "Track AI agents, builds, and terminal commands, and keep the Mac awake while they run.")
+        case .archives: String(localized: "Extract ZIP, RAR, 7-Zip, TAR, and other archives — or auto-mount and install disk images (DMGs) — from anywhere.")
+        case .mirror: String(localized: "Mirror widget showing live camera feed, with expandable fullscreen view.")
+        case .caffeine: String(localized: "Keep your Mac awake, clamshell sleep behavior, and lid-angle display controls.")
+        case .music: String(localized: "Music widget sources, playback controls, and media integrations.")
+        case .weather: String(localized: "Weather widget data sources, units, and location-based behavior.")
+        case .calendar: String(localized: "Calendar and reminder integrations shown in widgets and live activities.")
+        case .eyeBreak: String(localized: "Break reminders, timing, and focus nudges for healthier screen habits.")
+        case .focusSession: String(localized: "Session-style Focus Profiles with timers, app/website blocking, social filters, triggers, and cross-device sync.")
+        case .appLock: String(localized: "Lock apps behind Touch ID or password — blur overlays, idle/sleep auto-lock, and auto-close.")
+        case .intelligence: String(localized: "Sapphire Blip — Mac agent with memory, skills, tools, and computer use.")
+        case .sports: String(localized: "Sports widget settings, favorite teams selection, and scoreboard configurations.")
+        case .finance: String(localized: "Stock market ticker configurations, favorite stocks, and trendline visualizations.")
+        case .dockLayouts: String(localized: "Save Dock layouts as presets and switch between them with a click or hotkey.")
+        case .mediaOptimizer: String(localized: "Automatically shrink images, compress media, and extract text with OCR.")
+
+        case .about: String(localized: "App version details, Sapphire updates, release channels, credits, links, and project information.")
         }
     }
 
@@ -3962,6 +4105,58 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Extra comma-separated search terms for the current language. The English value is the
+    /// section label, so English search behaves exactly as `searchTokens` alone.
+    var localizedSearchKeywords: [String] {
+        let keywords: String = switch self {
+        case .overview: String(localized: "settings.search.keywords.overview", defaultValue: "Overview")
+        case .appActivities: String(localized: "settings.search.keywords.appActivities", defaultValue: "App Activities")
+        case .fileProgress: String(localized: "settings.search.keywords.fileProgress", defaultValue: "File Progress")
+        case .general: String(localized: "settings.search.keywords.general", defaultValue: "General")
+        case .systemEnhance: String(localized: "settings.search.keywords.systemEnhance", defaultValue: "System Enhance")
+        case .apps: String(localized: "settings.search.keywords.apps", defaultValue: "Apps")
+        case .storage: String(localized: "settings.search.keywords.storage", defaultValue: "Storage")
+        case .widgets: String(localized: "settings.search.keywords.widgets", defaultValue: "Widgets")
+        case .liveActivities: String(localized: "settings.search.keywords.liveActivities", defaultValue: "Live Activities")
+        case .appearance: String(localized: "settings.search.keywords.appearance", defaultValue: "Appearance")
+        case .lockScreen: String(localized: "settings.search.keywords.lockScreen", defaultValue: "Lock Screen")
+        case .bluetoothUnlock: String(localized: "settings.search.keywords.bluetoothUnlock", defaultValue: "Authentication")
+        case .shortcuts: String(localized: "settings.search.keywords.shortcuts", defaultValue: "Shortcuts")
+        case .keyboardShortcuts: String(localized: "settings.search.keywords.keyboardShortcuts", defaultValue: "Keyboard Shortcuts")
+        case .snapZones: String(localized: "settings.search.keywords.snapZones", defaultValue: "Snap Zones")
+        case .audio: String(localized: "settings.search.keywords.audio", defaultValue: "Audio")
+        case .battery: String(localized: "settings.search.keywords.battery", defaultValue: "Battery")
+        case .bluetooth: String(localized: "settings.search.keywords.bluetooth", defaultValue: "Bluetooth")
+        case .hud: String(localized: "settings.search.keywords.hud", defaultValue: "HUD")
+        case .notifications: String(localized: "settings.search.keywords.notifications", defaultValue: "Notifications")
+        case .nearbyShare: String(localized: "settings.search.keywords.neardrop", defaultValue: "Nearby Share")
+        case .continuity: String(localized: "settings.search.keywords.continuity", defaultValue: "Continuity")
+        case .fileShelf: String(localized: "settings.search.keywords.fileShelf", defaultValue: "File Shelf")
+        case .notes: String(localized: "settings.search.keywords.notes", defaultValue: "Notes")
+        case .clipboard: String(localized: "settings.search.keywords.clipboard", defaultValue: "Clipboard")
+        case .emoji: String(localized: "settings.search.keywords.emoji", defaultValue: "Emoji")
+        case .mouse: String(localized: "settings.search.keywords.mouse", defaultValue: "Mouse")
+        case .monitoring: String(localized: "settings.search.keywords.monitoring", defaultValue: "Monitoring")
+        case .devActivity: String(localized: "settings.search.keywords.devActivity", defaultValue: "Dev Activity")
+        case .archives: String(localized: "settings.search.keywords.archives", defaultValue: "Archives & DMG")
+        case .mirror: String(localized: "settings.search.keywords.mirror", defaultValue: "Mirror")
+        case .caffeine: String(localized: "settings.search.keywords.caffeine", defaultValue: "Caffeinate")
+        case .music: String(localized: "settings.search.keywords.music", defaultValue: "Music")
+        case .weather: String(localized: "settings.search.keywords.weather", defaultValue: "Weather")
+        case .calendar: String(localized: "settings.search.keywords.calendar", defaultValue: "Calendar")
+        case .eyeBreak: String(localized: "settings.search.keywords.eyeBreak", defaultValue: "Eye Break")
+        case .focusSession: String(localized: "settings.search.keywords.focusSession", defaultValue: "Focus Sessions")
+        case .appLock: String(localized: "settings.search.keywords.appLock", defaultValue: "App Lock")
+        case .intelligence: String(localized: "settings.search.keywords.intelligence", defaultValue: "Blip")
+        case .sports: String(localized: "settings.search.keywords.sports", defaultValue: "Sports")
+        case .finance: String(localized: "settings.search.keywords.finance", defaultValue: "Finance")
+        case .dockLayouts: String(localized: "settings.search.keywords.dockLayouts", defaultValue: "Dock")
+        case .mediaOptimizer: String(localized: "settings.search.keywords.mediaOptimizer", defaultValue: "Media Optimizer")
+        case .about: String(localized: "settings.search.keywords.about", defaultValue: "About")
+        }
+        return keywords.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
     var requiredPermissions: [PermissionType] {
         switch self {
         case .systemEnhance, .hud, .music, .snapZones, .appearance, .dockLayouts, .mediaOptimizer: return [.accessibility]
@@ -3980,9 +4175,58 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         }
     }
 
+    var englishLabel: String {
+        switch self {
+        case .overview: "Overview"
+        case .general: "General"
+        case .systemEnhance: "System Enhance"
+        case .apps: "Apps"
+        case .storage: "Storage"
+        case .widgets: "Widgets"
+        case .liveActivities: "Live Activities"
+        case .appActivities: "App Activities"
+        case .fileProgress: "File Progress"
+        case .appearance: "Appearance"
+        case .lockScreen: "Lock Screen"
+        case .bluetoothUnlock: "Authentication"
+        case .shortcuts: "Shortcuts"
+        case .keyboardShortcuts: "Keyboard Shortcuts"
+        case .snapZones: "Snap Zones"
+        case .audio: "Audio"
+        case .battery: "Battery"
+        case .bluetooth: "Bluetooth"
+        case .hud: "HUD"
+        case .notifications: "Notifications"
+        case .nearbyShare: "Nearby Share"
+        case .continuity: "Continuity"
+        case .fileShelf: "File Shelf"
+        case .notes: "Notes"
+        case .clipboard: "Clipboard"
+        case .emoji: "Emoji"
+        case .mouse: "Mouse"
+        case .monitoring: "Monitoring"
+        case .devActivity: "Dev Activity"
+        case .archives: "Archives & DMG"
+        case .mirror: "Mirror"
+        case .caffeine: "Caffeinate"
+        case .music: "Music"
+        case .weather: "Weather"
+        case .calendar: "Calendar"
+        case .eyeBreak: "Eye Break"
+        case .focusSession: "Focus Sessions"
+        case .appLock: "App Lock"
+        case .intelligence: "Blip"
+        case .sports: "Sports"
+        case .finance: "Finance"
+        case .dockLayouts: "Dock"
+        case .mediaOptimizer: "Media Optimizer"
+        case .about: "About"
+        }
+    }
+
     var label: String {
         switch self {
-        case .overview: "Overview"; case .general: "General"; case .systemEnhance: "System Enhance"; case .apps: "Apps"; case .storage: "Storage"; case .widgets: "Widgets"; case .liveActivities: "Live Activities"; case .appActivities: "App Activities"; case .fileProgress: "File Progress"; case .appearance: "Appearance"; case .lockScreen: "Lock Screen"; case .bluetoothUnlock: "Authentication"; case .shortcuts: "Shortcuts"; case .keyboardShortcuts: "Keyboard Shortcuts"; case .snapZones: "Snap Zones"; case .audio: "Audio"; case .battery: "Battery"; case .bluetooth: "Bluetooth"; case .hud: "HUD"; case .notifications: "Notifications"; case .nearbyShare: "Nearby Share"; case .continuity: "Continuity"; case .fileShelf: "File Shelf"; case .notes: "Notes";        case .clipboard: "Clipboard"; case .emoji: "Emoji"; case .mouse: "Mouse"; case .monitoring: "Monitoring"; case .devActivity: "Dev Activity"; case .archives: "Archives & DMG"; case .mirror: "Mirror"; case .caffeine: "Caffeinate"; case .music: "Music"; case .weather: "Weather";        case .calendar: "Calendar"; case .eyeBreak: "Eye Break"; case .focusSession: "Focus Sessions"; case .appLock: "App Lock"; case .intelligence: "Blip"; case .sports: "Sports"; case .finance: "Finance"; case .dockLayouts: "Dock"; case .mediaOptimizer: "Media Optimizer"; case .about: "About"
+        case .overview: String(localized: "Overview"); case .general: String(localized: "General"); case .systemEnhance: String(localized: "System Enhance"); case .apps: String(localized: "Apps"); case .storage: String(localized: "Storage"); case .widgets: String(localized: "Widgets"); case .liveActivities: String(localized: "Live Activities"); case .appActivities: String(localized: "App Activities"); case .fileProgress: String(localized: "File Progress"); case .appearance: String(localized: "Appearance"); case .lockScreen: String(localized: "Lock Screen"); case .bluetoothUnlock: String(localized: "Authentication"); case .shortcuts: String(localized: "Shortcuts"); case .keyboardShortcuts: String(localized: "Keyboard Shortcuts"); case .snapZones: String(localized: "Snap Zones"); case .audio: String(localized: "Audio"); case .battery: String(localized: "Battery"); case .bluetooth: String(localized: "Bluetooth"); case .hud: String(localized: "HUD"); case .notifications: String(localized: "Notifications"); case .nearbyShare: String(localized: "Nearby Share"); case .continuity: String(localized: "Continuity"); case .fileShelf: String(localized: "File Shelf"); case .notes: String(localized: "Notes");        case .clipboard: String(localized: "Clipboard"); case .emoji: String(localized: "Emoji"); case .mouse: String(localized: "Mouse"); case .monitoring: String(localized: "Monitoring"); case .devActivity: String(localized: "Dev Activity"); case .archives: String(localized: "Archives & DMG"); case .mirror: String(localized: "Mirror"); case .caffeine: String(localized: "Caffeinate"); case .music: String(localized: "Music"); case .weather: String(localized: "Weather");        case .calendar: String(localized: "Calendar"); case .eyeBreak: String(localized: "Eye Break"); case .focusSession: String(localized: "Focus Sessions"); case .appLock: String(localized: "App Lock"); case .intelligence: String(localized: "Blip"); case .sports: String(localized: "Sports"); case .finance: String(localized: "Finance"); case .dockLayouts: String(localized: "Dock"); case .mediaOptimizer: String(localized: "Media Optimizer"); case .about: String(localized: "About")
         }
     }
 

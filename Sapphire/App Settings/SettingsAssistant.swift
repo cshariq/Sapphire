@@ -49,17 +49,17 @@ final class SettingsAssistant: ObservableObject {
             case .available:
                 return nil
             case .unavailable(.appleIntelligenceNotEnabled):
-                return "Turn on Apple Intelligence in System Settings to ask about settings."
+                return String(localized: "Turn on Apple Intelligence in System Settings to ask about settings.")
             case .unavailable(.modelNotReady):
-                return "Apple Intelligence is still getting ready. Try again in a little while."
+                return String(localized: "Apple Intelligence is still getting ready. Try again in a little while.")
             case .unavailable(.deviceNotEligible):
-                return "This Mac doesn't support Apple Intelligence."
+                return String(localized: "This Mac doesn't support Apple Intelligence.")
             case .unavailable:
-                return "Apple Intelligence isn't available right now."
+                return String(localized: "Apple Intelligence isn't available right now.")
             }
         }
         #endif
-        return "The settings assistant needs macOS 27."
+        return String(localized: "The settings assistant needs macOS 27.")
     }
 
     func attach(_ session: SettingsEditingSession) {
@@ -101,7 +101,7 @@ final class SettingsAssistant: ObservableObject {
                 var value = decision.value
                 if let entry = SettingsIndex.byKey[decision.key],
                    case .bool? = SettingsIndex.value(of: entry.key, in: currentSettings),
-                   let on = Self.impliedToggle(in: prompt, title: entry.displayTitle) {
+                   let on = Self.impliedToggle(in: prompt, title: entry.englishTitle) {
                     value = on ? "on" : "off"
                 }
                 outcome = change(key: decision.key, to: value)
@@ -116,7 +116,7 @@ final class SettingsAssistant: ObservableObject {
                 if case .exceededContextWindowSize = error {
                     storedSession = nil
                     reply = (try? await languageSession().respond(to: turn).content)
-                        ?? "That conversation got too long. Ask again and I'll start fresh."
+                        ?? String(localized: "That conversation got too long. Ask again and I'll start fresh.")
                 } else {
                     reply = error.localizedDescription
                     failed = true
@@ -147,7 +147,7 @@ final class SettingsAssistant: ObservableObject {
         let requests = ["can you ", "could you ", "would you ", "will you ", "please "]
         if requests.contains(where: lowered.hasPrefix) { return false }
         let questions = ["can i ", "could i ", "how ", "is ", "are ", "does ", "do ", "what ", "where ", "which ", "why ", "should ", "am i "]
-        return lowered.hasSuffix("?") || questions.contains(where: lowered.hasPrefix)
+        return lowered.hasSuffix("?") || lowered.hasSuffix("？") || questions.contains(where: lowered.hasPrefix)
     }
 
     nonisolated static func impliedToggle(in message: String, title: String) -> Bool? {
@@ -211,11 +211,12 @@ final class SettingsAssistant: ObservableObject {
     what they asked, say yes and name it; don't hedge. Say plainly when no setting does what they want.
     """
 
-    private static let paneCatalog = SettingsSection.allCases
-        .filter { $0 != .overview && $0 != .about }
-        .map { "- \($0.label): \($0.shortDescription)" }
-        .joined(separator: "\n")
     #endif
+
+    static let paneCatalog = SettingsSection.allCases
+        .filter { $0 != .overview && $0 != .about }
+        .map { "- \($0.englishLabel): \($0.englishShortDescription)" }
+        .joined(separator: "\n")
 
     private func groundedPrompt(_ prompt: String) -> String {
         var query = prompt
@@ -242,16 +243,27 @@ final class SettingsAssistant: ObservableObject {
         for entry in matches where !turnSuggestions.contains(entry) {
             turnSuggestions.append(entry)
         }
+        let lockedSections = Set(matches.compactMap(\.section).filter(\.isPremiumLocked))
+        return Self.formatMatches(matches, settings: settings, lockedSections: lockedSections)
+    }
+
+    static func formatMatches(
+        _ matches: [SettingsIndex.Entry],
+        settings: Settings,
+        lockedSections: Set<SettingsSection>
+    ) -> String {
         return matches.map { entry in
-            var line = "key=\(entry.key) | \"\(entry.displayTitle)\""
-            if let section = entry.section { line += " | pane: \(section.label)" }
+            var line = "key=\(entry.key) | \"\(entry.englishTitle)\""
+            if let section = entry.section { line += " | pane: \(section.englishLabel)" }
             if let value = SettingsIndex.value(of: entry.key, in: settings) { line += " | now: \(value.description)" }
             if let allowed = SettingsIndex.rangeDescription(entry) {
                 line += " | allowed: \(allowed)"
             } else if case .bool? = SettingsIndex.value(of: entry.key, in: settings) {
                 line += " | allowed: on / off"
             }
-            if entry.section?.isPremiumLocked == true { line += " | needs a Sapphire subscription" }
+            if let section = entry.section, lockedSections.contains(section) {
+                line += " | needs a Sapphire subscription"
+            }
             if let detail = entry.detail { line += " | " + String(detail.prefix(110)) }
             return line
         }.joined(separator: "\n")
@@ -264,11 +276,11 @@ final class SettingsAssistant: ObservableObject {
             return "Not changed: \(error.description)"
         case .success(let (updated, change)):
             if change.oldValue == change.newValue {
-                return "\"\(change.entry.displayTitle)\" was already \(change.newValue.description); nothing changed."
+                return "\"\(change.entry.englishTitle)\" was already \(change.newValue.description); nothing changed."
             }
             commit(updated)
             turnChanges.append(change)
-            return "Changed \"\(change.entry.displayTitle)\" from \(change.oldValue.description) to \(change.newValue.description)."
+            return "Changed \"\(change.entry.englishTitle)\" from \(change.oldValue.description) to \(change.newValue.description)."
         }
     }
 

@@ -158,7 +158,7 @@ nonisolated enum DevAgentTranscript {
                         guard !text.isEmpty else { continue }
                         messages.append(.init(id: blockID, role: .assistant, text: clip(text, 1200), timestamp: timestamp))
                     case "tool_use":
-                        let name = block["name"] as? String ?? "Tool"
+                        let name = block["name"] as? String ?? String(localized: "Tool")
                         let summary = toolInputSummary(block["input"] as? [String: Any])
                         messages.append(.init(id: blockID, role: .tool, text: summary.isEmpty ? name : "\(name) · \(summary)", timestamp: timestamp))
                     default:

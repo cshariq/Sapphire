@@ -107,7 +107,7 @@ private struct KeepAwakeAppList: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.prompt = "Add"
+        panel.prompt = String(localized: "Add")
         guard panel.runModal() == .OK else { return }
         let chosen = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
         let existing = Set(bundleIDs)

@@ -54,7 +54,7 @@ struct ShopifyOrdersView: View {
                         VStack(alignment: .trailing, spacing: 2) {
                             Text("\(order.currency) \(order.totalPrice)")
                                 .font(.system(size: 12, weight: .medium, design: .rounded))
-                            Text((order.financialStatus ?? "unknown").capitalized)
+                            Text((order.financialStatus ?? String(localized: "unknown")).capitalized)
                                 .font(.caption2)
                                 .foregroundStyle(.green)
                         }

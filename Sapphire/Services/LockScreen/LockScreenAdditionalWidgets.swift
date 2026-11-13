@@ -114,7 +114,7 @@ struct LockScreenNotesInfoView: View {
                 let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !title.isEmpty { return title }
                 let body = note.body.trimmingCharacters(in: .whitespacesAndNewlines)
-                return body.isEmpty ? "Untitled" : body
+                return body.isEmpty ? String(localized: "Untitled") : body
             }
     }
 
@@ -152,9 +152,9 @@ struct LockScreenClipboardInfoView: View {
 
     private var latestPreview: String? {
         guard let item = clipboardManager.recentItems.first else { return nil }
-        if item.isImage { return "Image" }
+        if item.isImage { return String(localized: "Image") }
         let text = item.preview.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? "Clipboard item" : text
+        return text.isEmpty ? String(localized: "Clipboard item") : text
     }
 
     var body: some View {
@@ -326,7 +326,7 @@ struct LockScreenFocusMiniWidget: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Focus")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(status.isActive ? info.name : "Focus Off")
+                Text(status.isActive ? info.name : String(localized: "Focus Off"))
                     .font(.system(size: 13, weight: .medium, design: .rounded))
                     .foregroundStyle(status.isActive ? .white : .secondary)
                     .lineLimit(1)

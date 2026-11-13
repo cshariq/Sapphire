@@ -19,9 +19,9 @@ enum ArchiveExtractionMode: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .smart: "Smart"
-        case .folder: "Always into a Folder"
-        case .inPlace: "In Place"
+        case .smart: String(localized: "Smart")
+        case .folder: String(localized: "Always into a Folder")
+        case .inPlace: String(localized: "In Place")
         }
     }
 }
@@ -33,9 +33,9 @@ enum ArchivePostExtractAction: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .reveal: "Reveal in Finder"
-        case .open: "Open Folder"
-        case .none: "Nothing"
+        case .reveal: String(localized: "Reveal in Finder")
+        case .open: String(localized: "Open Folder")
+        case .none: String(localized: "Nothing")
         }
     }
 
@@ -195,7 +195,7 @@ final class ArchiveExtractor: ObservableObject {
                 for: url,
                 preferredBundleIdentifiers: Self.systemArchiveHandlers
             ) else {
-                Task { await notify(title: "Sapphire Archives", body: "No other app can open \(url.lastPathComponent). Turn on Auto-Extract Archives to let Sapphire extract it.") }
+                Task { await notify(title: String(localized: "Sapphire Archives"), body: String(localized: "No other app can open \(url.lastPathComponent). Turn on Auto-Extract Archives to let Sapphire extract it.")) }
                 continue
             }
             NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
@@ -222,16 +222,16 @@ final class ArchiveExtractor: ObservableObject {
 
     private func extract(_ url: URL) async {
         let archiveName = url.lastPathComponent
-        currentActivity = "Preparing \(archiveName)…"
+        currentActivity = String(localized: "Preparing \(archiveName)…")
 
         await requestNotificationAuthorizationIfNeeded()
 
         guard FileManager.default.fileExists(atPath: url.path) else {
-            await notify(title: "Sapphire Archives", body: "\(archiveName) could not be found.")
+            await notify(title: String(localized: "Sapphire Archives"), body: String(localized: "\(archiveName) could not be found."))
             return
         }
 
-        currentActivity = "Reading \(archiveName)…"
+        currentActivity = String(localized: "Reading \(archiveName)…")
 
         let parent = url.deletingLastPathComponent()
         let baseName = Self.extractionBaseName(for: url)
@@ -241,8 +241,8 @@ final class ArchiveExtractor: ObservableObject {
 
         if let listing, Self.hasUnsafeEntry(listing) {
             await notify(
-                title: "Sapphire Archives",
-                body: "\(archiveName) was not extracted: it contains entries that would be written outside the destination folder."
+                title: String(localized: "Sapphire Archives"),
+                body: String(localized: "\(archiveName) was not extracted: it contains entries that would be written outside the destination folder.")
             )
             return
         }
@@ -264,14 +264,14 @@ final class ArchiveExtractor: ObservableObject {
             appropriateFor: parent,
             create: true
         ) else {
-            await notify(title: "Sapphire Archives", body: "Could not prepare a temporary folder to extract \(archiveName).")
+            await notify(title: String(localized: "Sapphire Archives"), body: String(localized: "Could not prepare a temporary folder to extract \(archiveName)."))
             return
         }
         defer {
             Task.detached(priority: .utility) { try? FileManager.default.removeItem(at: staging) }
         }
 
-        currentActivity = "Extracting \(archiveName)…"
+        currentActivity = String(localized: "Extracting \(archiveName)…")
 
         let archiveAttrs = try? fileManager.attributesOfItem(atPath: url.path)
         let archiveBytes = (archiveAttrs?[.size] as? NSNumber)?.int64Value ?? 0
@@ -293,13 +293,13 @@ final class ArchiveExtractor: ObservableObject {
         guard result.success else {
             currentTransferTask = nil
             await notify(
-                title: "Sapphire Archives",
-                body: "Could not extract \(archiveName). It may be damaged, unsupported, or password protected."
+                title: String(localized: "Sapphire Archives"),
+                body: String(localized: "Could not extract \(archiveName). It may be damaged, unsupported, or password protected.")
             )
             return
         }
 
-        currentActivity = "Moving \(archiveName) into place…"
+        currentActivity = String(localized: "Moving \(archiveName) into place…")
 
         let placement: ExtractionPlacement
         do {
@@ -313,7 +313,7 @@ final class ArchiveExtractor: ObservableObject {
             }.value
         } catch {
             currentTransferTask = nil
-            await notify(title: "Sapphire Archives", body: "Could not move the extracted files of \(archiveName) into \(parent.lastPathComponent).")
+            await notify(title: String(localized: "Sapphire Archives"), body: String(localized: "Could not move the extracted files of \(archiveName) into \(parent.lastPathComponent)."))
             return
         }
 
@@ -334,7 +334,7 @@ final class ArchiveExtractor: ObservableObject {
             break
         }
 
-        await notify(title: "Sapphire Archives", body: "\(archiveName) extracted successfully.")
+        await notify(title: String(localized: "Sapphire Archives"), body: String(localized: "\(archiveName) extracted successfully."))
     }
 
     // MARK: - Placement
@@ -548,15 +548,15 @@ final class ArchiveExtractor: ObservableObject {
 
     private func promptForPassword(archiveName: String) async -> String? {
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.placeholderString = "Password"
+        field.placeholderString = String(localized: "Password")
 
         return await withCheckedContinuation { continuation in
             HelperAlertPresenter.presentModal(
-                messageText: "\"\(archiveName)\" is password protected",
-                informativeText: "Enter the password to extract this archive. Sapphire does not store it.",
+                messageText: String(localized: "\"\(archiveName)\" is password protected"),
+                informativeText: String(localized: "Enter the password to extract this archive. Sapphire does not store it."),
                 alertStyle: .informational,
                 accessoryView: field,
-                buttonTitles: ["Extract", "Cancel"]
+                buttonTitles: [String(localized: "Extract"), String(localized: "Cancel")]
             ) { index in
                 let password = field.stringValue
                 continuation.resume(returning: index == 0 && !password.isEmpty ? password : nil)

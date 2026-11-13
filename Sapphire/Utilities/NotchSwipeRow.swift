@@ -37,7 +37,7 @@ struct NotchSwipeRow<Content: View>: View {
                             Image(systemName: leading.systemImage)
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(.white)
-                                .opacity(min(1, offset / 36))
+                                .opacity(min(1, Double(offset) / 36))
                         )
                 }
                 Spacer(minLength: 0)
@@ -49,7 +49,7 @@ struct NotchSwipeRow<Content: View>: View {
                             Image(systemName: trailing.systemImage)
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(.white)
-                                .opacity(min(1, -offset / 36))
+                                .opacity(min(1, Double(-offset) / 36))
                         )
                 }
             }

@@ -126,9 +126,9 @@ enum SonyNoiseMode: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .off: "Off"
-        case .anc: "Noise Cancelling"
-        case .ambient: "Ambient Sound"
+        case .off: String(localized: "Off")
+        case .anc: String(localized: "Noise Cancelling")
+        case .ambient: String(localized: "Ambient Sound")
         }
     }
 
@@ -170,16 +170,16 @@ enum SonyEqualizerPreset: Int, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .off: "Off"
-        case .bright: "Bright"
-        case .excited: "Excited"
-        case .mellow: "Mellow"
-        case .relaxed: "Relaxed"
-        case .vocal: "Vocal"
-        case .trebleBoost: "Treble Boost"
-        case .bassBoost: "Bass Boost"
-        case .speech: "Speech"
-        case .manual: "Manual"
+        case .off: String(localized: "Off")
+        case .bright: String(localized: "Bright")
+        case .excited: String(localized: "Excited")
+        case .mellow: String(localized: "Mellow")
+        case .relaxed: String(localized: "Relaxed")
+        case .vocal: String(localized: "Vocal")
+        case .trebleBoost: String(localized: "Treble Boost")
+        case .bassBoost: String(localized: "Bass Boost")
+        case .speech: String(localized: "Speech")
+        case .manual: String(localized: "Manual")
         }
     }
 

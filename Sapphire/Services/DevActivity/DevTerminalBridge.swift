@@ -19,8 +19,8 @@ enum DevTerminalSendResult: Equatable {
     var message: String? {
         switch self {
         case .sent: return nil
-        case .sentToFrontTab: return "Sent to the front tab"
-        case .needsAccessibility: return "Allow Accessibility for Sapphire to type into this app"
+        case .sentToFrontTab: return String(localized: "Sent to the front tab")
+        case .needsAccessibility: return String(localized: "Allow Accessibility for Sapphire to type into this app")
         case .failed(let reason): return reason
         }
     }
@@ -116,8 +116,8 @@ nonisolated enum DevTerminalBridge {
                 let result = runOSAScript(script, timeout: 5)
                 switch result?.trimmingCharacters(in: .whitespacesAndNewlines) {
                 case "ok": continuation.resume(returning: .sent)
-                case "missing": continuation.resume(returning: .failed("The terminal tab was closed"))
-                default: continuation.resume(returning: .failed("Allow Sapphire to control the terminal in Privacy & Security › Automation"))
+                case "missing": continuation.resume(returning: .failed(String(localized: "The terminal tab was closed")))
+                default: continuation.resume(returning: .failed(String(localized: "Allow Sapphire to control the terminal in Privacy & Security › Automation")))
                 }
             }
         }
@@ -127,7 +127,7 @@ nonisolated enum DevTerminalBridge {
     private static func pasteIntoFrontWindow(of host: DevTerminalHost, text: String) async -> DevTerminalSendResult {
         guard AXIsProcessTrusted() else { return .needsAccessibility }
         guard let app = NSRunningApplication(processIdentifier: host.pid) else {
-            return .failed("\(host.name) is not running")
+            return .failed(String(localized: "\(host.name) is not running"))
         }
 
         let pasteboard = NSPasteboard.general

@@ -16,9 +16,9 @@ enum EarbudVendor: String, Codable, Equatable {
 
     var displayName: String {
         switch self {
-        case .none: "Headphones"
+        case .none: String(localized: "Headphones")
         case .galaxy: "Galaxy Buds"
-        case .sony: "Sony Headphones"
+        case .sony: String(localized: "Sony Headphones")
         }
     }
 
@@ -95,12 +95,12 @@ struct EarbudControlSnapshot: Equatable {
 
     var batterySummary: String {
         if batteryLeft > 0 || batteryRight > 0 {
-            var parts = ["L \(batteryLeft)%", "R \(batteryRight)%"]
-            if batteryCase > 0 { parts.append("Case \(batteryCase)%") }
+            var parts = [String(localized: "L \(String(batteryLeft))%"), String(localized: "R \(String(batteryRight))%")]
+            if batteryCase > 0 { parts.append(String(localized: "Case \(String(batteryCase))%")) }
             return parts.joined(separator: " · ")
         }
         if batteryMain > 0 { return "\(batteryMain)%" }
-        return connected ? "Connected" : "Not connected"
+        return connected ? String(localized: "Connected") : String(localized: "Not connected")
     }
 }
 

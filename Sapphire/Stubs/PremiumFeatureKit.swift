@@ -52,7 +52,7 @@ extension View {
 
 func premiumDefaultMessage(for feature: AppFeature) -> String {
     let tier = SubscriptionFeatureCatalog.minimumTier(for: feature)
-    return "This feature requires Sapphire \(SubscriptionFeatureCatalog.tierDisplayName(tier))."
+    return String(localized: "This feature requires Sapphire \(SubscriptionFeatureCatalog.tierDisplayName(tier)).")
 }
 
 extension SettingsModel {

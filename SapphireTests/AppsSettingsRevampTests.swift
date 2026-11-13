@@ -447,13 +447,13 @@ final class AppsSettingsRevampTests: XCTestCase {
     }
 
     func testVSCodeProductMetadataRequiresSecureStructuredFields() throws {
-        let valid = Data(#"{"updateUrl":"https:
+        let valid = Data(#"{"updateUrl":"https://update.example.test","quality":"stable","commit":"0123456789abcdef"}"#.utf8)
         let parsed = InstalledAppUpdateSourceDetector.parseVSCodeProduct(data: valid)
         XCTAssertEqual(parsed?.baseURL.absoluteString, "https://update.example.test")
         XCTAssertEqual(parsed?.quality, "stable")
         XCTAssertEqual(parsed?.commit, "0123abcd")
 
-        let insecure = Data(#"{"updateUrl":"http:
+        let insecure = Data(#"{"updateUrl":"http://update.example.test","quality":"stable","commit":"0123456789abcdef"}"#.utf8)
         XCTAssertNil(InstalledAppUpdateSourceDetector.parseVSCodeProduct(data: insecure))
 
         let missingCommit = Data(#"{"updateUrl":"https:
@@ -461,7 +461,7 @@ final class AppsSettingsRevampTests: XCTestCase {
     }
 
     func testJSONUpdateManifestParsesVendorAndSquirrelFormats() {
-        let vendor = Data(#"{"version":"15.1.0","release_notes":"Fixes","release_notes_url":"https:
+        let vendor = Data(#"{"version":"15.1.0","release_notes":"Fixes","release_notes_url":"https://example.test/releases/15.1.0"}"#.utf8)
         XCTAssertEqual(
             JSONUpdateManifestParser.parse(data: vendor),
             ParsedJSONUpdateManifest(
@@ -471,7 +471,7 @@ final class AppsSettingsRevampTests: XCTestCase {
             )
         )
 
-        let squirrel = Data(#"{"currentRelease":"3.2.1","releases":[{"version":"3.2.1","updateTo":{"notes":"Safe update","url":"https:
+        let squirrel = Data(#"{"currentRelease":"3.2.1","releases":[{"version":"3.2.1","updateTo":{"notes":"Safe update","url":"https://example.test/releases/3.2.1"}}]}"#.utf8)
         XCTAssertEqual(JSONUpdateManifestParser.parse(data: squirrel)?.version, "3.2.1")
         XCTAssertEqual(JSONUpdateManifestParser.parse(data: squirrel)?.releaseNotes, "Safe update")
     }

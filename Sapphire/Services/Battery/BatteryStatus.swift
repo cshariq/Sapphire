@@ -27,6 +27,24 @@ enum ManagementState: String, Codable {
     case dischargeStopped = "Discharge Stopped"
     case heatProtectionOn = "Heat Protection Enabled"
     case heatProtectionOff = "Heat Protection Disabled"
+
+    var displayName: String {
+        switch self {
+        case .charging: return String(localized: "Charging")
+        case .inhibited: return String(localized: "Charge Limit")
+        case .sailing: return String(localized: "Sailing")
+        case .heatProtection: return String(localized: "Heat Protection")
+        case .discharging: return String(localized: "Discharging")
+        case .calibrating: return String(localized: "Calibrating")
+        case .calibrationStarted: return String(localized: "Calibration Started")
+        case .calibrationDone: return String(localized: "Calibration Complete")
+        case .calibrationFailed: return String(localized: "Calibration Failed")
+        case .dischargeStarted: return String(localized: "Discharge Started")
+        case .dischargeStopped: return String(localized: "Discharge Stopped")
+        case .heatProtectionOn: return String(localized: "Heat Protection Enabled")
+        case .heatProtectionOff: return String(localized: "Heat Protection Disabled")
+        }
+    }
 }
 
 @MainActor

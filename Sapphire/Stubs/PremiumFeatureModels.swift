@@ -44,6 +44,7 @@ final class DMGInstallerManager: ObservableObject {
 
     private init() {}
     func handleOpenURLs(_ urls: [URL]) {}
+    func reconcileDefaultHandlerIfNeeded() {}
     static func isDefaultDMGHandler() -> Bool { false }
     static func setAsDefaultDMGHandler() {}
     static func shadowingCopy() -> URL? { nil }
@@ -68,12 +69,12 @@ enum EmojiSkinTone: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .none: "Default"
-        case .light: "Light"
-        case .mediumLight: "Medium Light"
-        case .medium: "Medium"
-        case .mediumDark: "Medium Dark"
-        case .dark: "Dark"
+        case .none: String(localized: "emoji.skin-tone.none", defaultValue: "Default", comment: "Emoji skin tone option")
+        case .light: String(localized: "emoji.skin-tone.light", defaultValue: "Light", comment: "Emoji skin tone option")
+        case .mediumLight: String(localized: "emoji.skin-tone.mediumLight", defaultValue: "Medium Light", comment: "Emoji skin tone option")
+        case .medium: String(localized: "emoji.skin-tone.medium", defaultValue: "Medium", comment: "Emoji skin tone option")
+        case .mediumDark: String(localized: "emoji.skin-tone.mediumDark", defaultValue: "Medium Dark", comment: "Emoji skin tone option")
+        case .dark: String(localized: "emoji.skin-tone.dark", defaultValue: "Dark", comment: "Emoji skin tone option")
         }
     }
 }
@@ -210,17 +211,17 @@ enum MenuBarRevealConditionKind: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .batteryBelow: "Battery Level Below"
-        case .batteryAbove: "Battery Level Above"
-        case .charging: "Charging"
-        case .onBatteryPower: "On Battery Power"
-        case .focusActive: "Any Focus Active"
-        case .focusIdentifier: "Focus Mode Is"
-        case .wifiEquals: "Wi-Fi Network Is"
-        case .wifiConnected: "Wi-Fi Connected"
-        case .scriptSucceeds: "Script Exits Successfully"
-        case .scriptFails: "Script Fails"
-        case .scriptExitCode: "Script Exit Code Is"
+        case .batteryBelow: String(localized: "Battery Level Below")
+        case .batteryAbove: String(localized: "Battery Level Above")
+        case .charging: String(localized: "Charging")
+        case .onBatteryPower: String(localized: "On Battery Power")
+        case .focusActive: String(localized: "Any Focus Active")
+        case .focusIdentifier: String(localized: "Focus Mode Is")
+        case .wifiEquals: String(localized: "Wi-Fi Network Is")
+        case .wifiConnected: String(localized: "Wi-Fi Connected")
+        case .scriptSucceeds: String(localized: "Script Exits Successfully")
+        case .scriptFails: String(localized: "Script Fails")
+        case .scriptExitCode: String(localized: "Script Exit Code Is")
         }
     }
 
@@ -285,7 +286,7 @@ struct MenuBarProfile: Codable, Equatable, Identifiable {
     }
 
     var summaryText: String {
-        revealConditions.isEmpty ? "No conditions" : "\(revealConditions.count) condition(s)"
+        revealConditions.isEmpty ? String(localized: "No conditions") : String(localized: "\(String(revealConditions.count)) condition(s)")
     }
 }
 

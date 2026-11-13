@@ -42,19 +42,19 @@ struct SapphireVMLifecycleSnapshot: Codable {
 
         var displayName: String {
             switch self {
-            case .created: return "Created"
-            case .preparing: return "Preparing"
-            case .starting: return "Starting"
-            case .running: return "Running"
-            case .pausing: return "Pausing"
-            case .paused: return "Paused"
-            case .resuming: return "Resuming"
-            case .installing: return "Installing"
-            case .saving: return "Saving"
-            case .restoring: return "Restoring"
-            case .stopping: return "Stopping"
-            case .stopped: return "Stopped"
-            case .failed: return "Needs attention"
+            case .created: return String(localized: "Created")
+            case .preparing: return String(localized: "Preparing")
+            case .starting: return String(localized: "Starting")
+            case .running: return String(localized: "Running")
+            case .pausing: return String(localized: "Pausing")
+            case .paused: return String(localized: "Paused")
+            case .resuming: return String(localized: "Resuming")
+            case .installing: return String(localized: "Installing")
+            case .saving: return String(localized: "Saving")
+            case .restoring: return String(localized: "Restoring")
+            case .stopping: return String(localized: "Stopping")
+            case .stopped: return String(localized: "Stopped")
+            case .failed: return String(localized: "Needs attention")
             }
         }
     }
@@ -171,12 +171,12 @@ final class SandboxIntegration {
                 maximumLength: SapphireVMLifecycleContract.maximumDetailLength
             )
         }.flatMap { $0.isEmpty ? nil : $0 }
-        let body = detail ?? "\(name) is \(snapshot.state.displayName.lowercased())."
+        let body = detail ?? String(localized: "\(name) is \(snapshot.state.displayName.lowercased()).")
 
         NotificationManager.shared.latestNotification = NotificationPayload(
             id: "sandbox-\(snapshot.eventID.uuidString)",
             appIdentifier: SapphireVMLifecycleContract.writerBundleIdentifier,
-            title: "Sapphire VM · \(snapshot.state.displayName)",
+            title: String(localized: "Sapphire VM · \(snapshot.state.displayName)"),
             body: body,
             date: snapshot.occurredAt,
             appIcon: appIcon

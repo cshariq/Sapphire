@@ -31,27 +31,27 @@ enum HelperIssue: Equatable {
 
     var title: String {
         switch self {
-        case .spawnFailed: return "Helper cannot start"
-        case .needsApproval: return "Login Items approval required"
-        case .notFound: return "Helper registration missing"
+        case .spawnFailed: return String(localized: "Helper cannot start")
+        case .needsApproval: return String(localized: "Login Items approval required")
+        case .notFound: return String(localized: "Helper registration missing")
         }
     }
 
     var shortSummary: String {
         switch self {
         case .spawnFailed:
-            return "Permission is granted, but macOS still will not launch the helper."
+            return String(localized: "Permission is granted, but macOS still will not launch the helper.")
         case .needsApproval:
-            return "Turn on Sapphire and Sapphire Helper in Login Items."
+            return String(localized: "Turn on Sapphire and Sapphire Helper in Login Items.")
         case .notFound:
-            return "macOS lost the helper (status 3). Reset the helper; Sapphire will relaunch if it stays stuck."
+            return String(localized: "macOS lost the helper (status 3). Reset the helper; Sapphire will relaunch if it stays stuck.")
         }
     }
 
     var instructions: String {
         switch self {
         case .notFound:
-            return """
+            return String(localized: """
             Error code: SAP-H3
 
             macOS can't find the helper.
@@ -63,9 +63,9 @@ enum HelperIssue: Equatable {
             4. In System Settings → General → Login Items, enable Sapphire Helper under Allow in the Background.
 
             Try Reset Helper first. Only relaunch the app if the helper is still stuck after that.
-            """
+            """)
         case .needsApproval:
-            return """
+            return String(localized: """
             Error code: SAP-H2
 
             macOS registered the helper but is waiting for your permission (SMAppService status 2).
@@ -75,15 +75,15 @@ enum HelperIssue: Equatable {
             2. Under Allow in the Background, turn on Sapphire.
             3. Authenticate if macOS asks for your password.
             4. Return to Sapphire and click Install / Activate.
-            """
+            """)
         case .spawnFailed:
-            return """
+            return String(localized: """
             Error code: SAP-H1
 
             Login Items permission is already granted (status 1), but macOS still will not start the helper. This usually means Sapphire’s own helper registration is stuck.
 
             Click “Reset Helper” below. Sapphire will unregister the helper and register it again, then relaunch if the helper is still having issues.
-            """
+            """)
         }
     }
 }
@@ -194,15 +194,15 @@ class HelperManager: ObservableObject {
     }
 
     var bannerTitle: String {
-        if isRunning { return "Helper Active" }
-        return lastIssue?.title ?? "Helper Not Installed"
+        if isRunning { return String(localized: "Helper Active") }
+        return lastIssue?.title ?? String(localized: "Helper Not Installed")
     }
 
     var bannerSubtitle: String {
         if isRunning {
-            return "Privileged helper is running."
+            return String(localized: "Privileged helper is running.")
         }
-        return lastIssue?.shortSummary ?? "Install the helper to enable battery management and system integrations."
+        return lastIssue?.shortSummary ?? String(localized: "Install the helper to enable battery management and system integrations.")
     }
 
     var bannerSymbol: String {

@@ -15,9 +15,9 @@ enum DevDashboardTab: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .activity: return "ACTIVITY"
-        case .usage: return "USAGE"
-        case .terminal: return "TERMINAL"
+        case .activity: return String(localized: "ACTIVITY")
+        case .usage: return String(localized: "USAGE")
+        case .terminal: return String(localized: "TERMINAL")
         }
     }
 }
@@ -135,9 +135,9 @@ struct DevDashboardView: View {
     private var emptyHint: String {
         let settings = SettingsModel.shared.current
         if !settings.devActivityEnabled, !settings.devWidgetEnabled, !settings.caffeinateAutoDuringTasks {
-            return "Turn on Dev Activity in Settings to see AI agents, builds and terminal commands here."
+            return String(localized: "Turn on Dev Activity in Settings to see AI agents, builds and terminal commands here.")
         }
-        return "AI agents, builds and long terminal commands show up here while they run."
+        return String(localized: "AI agents, builds and long terminal commands show up here while they run.")
     }
 }
 
@@ -180,9 +180,9 @@ private enum DevDetailSection: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .conversation: return "CHAT"
-        case .output: return "OUTPUT"
-        case .processes: return "PROCESSES"
+        case .conversation: return String(localized: "CHAT")
+        case .output: return String(localized: "OUTPUT")
+        case .processes: return String(localized: "PROCESSES")
         }
     }
 }
@@ -237,7 +237,7 @@ struct DevTaskDetailPane: View {
     private var subtitle: String {
         var parts: [String] = []
         if model.detail?.agent?.sessionName != nil { parts.append(task.title) }
-        if let status = model.detail?.agent?.status { parts.append(status == "busy" ? "Working" : status.capitalized) }
+        if let status = model.detail?.agent?.status { parts.append(status == "busy" ? String(localized: "Working") : status.capitalized) }
         if !task.detail.isEmpty { parts.append(task.detail) }
         if let host = model.detail?.host { parts.append(host.name) }
         if parts.isEmpty { parts.append(task.kind.displayName) }
@@ -251,7 +251,7 @@ struct DevTaskDetailPane: View {
                     DevElapsedText(startedAt: task.startedAt, size: 10)
                 }
                 if let detail = model.detail {
-                    DevChip(symbol: "cpu", text: String(format: "%.0f%%", detail.totalCPU), tint: .white)
+                    DevChip(symbol: "cpu", text: DevPercentageFormatting.string(detail.totalCPU), tint: .white)
                     if detail.totalResidentBytes > 0 {
                         DevChip(symbol: "memorychip", text: ByteCountFormatter.string(fromByteCount: Int64(detail.totalResidentBytes), countStyle: .memory), tint: .white)
                     }
@@ -265,10 +265,10 @@ struct DevTaskDetailPane: View {
                         DevChip(symbol: "cpu.fill", text: ClaudePricing.displayName(for: model), tint: task.tool.tint)
                     }
                     if let context = detail.agent?.contextTokens {
-                        DevChip(symbol: "text.alignleft", text: "\(UsageFormat.tokens(context)) ctx", tint: .white)
+                        DevChip(symbol: "text.alignleft", text: String(localized: "\(UsageFormat.tokens(context)) ctx", comment: "Context tokens used by the developer agent"), tint: .white)
                     }
                     if let output = detail.agent?.sessionOutputTokens, output > 0 {
-                        DevChip(symbol: "arrow.up.right", text: "\(UsageFormat.tokens(output)) out", tint: .white)
+                        DevChip(symbol: "arrow.up.right", text: String(localized: "\(UsageFormat.tokens(output)) out", comment: "Output tokens produced by the developer agent"), tint: .white)
                     }
                     if let tty = detail.ttyPath {
                         DevChip(symbol: "terminal", text: (tty as NSString).lastPathComponent, tint: .white)
@@ -317,7 +317,7 @@ struct DevTaskDetailPane: View {
             DevMonospaceLog(text: text)
         } else if let detail = model.detail {
             VStack(alignment: .leading, spacing: 8) {
-                Text(detail.commandLine)
+                Text(verbatim: detail.commandLine)
                     .font(.system(size: 10.5, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(4)
@@ -331,11 +331,11 @@ struct DevTaskDetailPane: View {
     }
 
     private func outputHint(_ detail: DevTaskDetail) -> String {
-        guard let host = detail.host else { return "This task has no terminal window; its processes are on the Processes tab." }
+        guard let host = detail.host else { return String(localized: "This task has no terminal window; its processes are on the Processes tab.") }
         if host.kind.isScriptable {
-            return "Reading \(host.name)… If nothing appears, allow Sapphire to control \(host.name) in System Settings › Privacy & Security › Automation."
+            return String(localized: "Reading \(host.name)… If nothing appears, allow Sapphire to control \(host.name) in System Settings › Privacy & Security › Automation.")
         }
-        return "\(host.name) doesn't let other apps read its tabs. Send input below or open it to see the output."
+        return String(localized: "\(host.name) doesn't let other apps read its tabs. Send input below or open it to see the output.")
     }
 
     // MARK: Footer
@@ -395,7 +395,7 @@ struct DevTaskDetailPane: View {
                 action: model.terminate
             )
             .disabled(model.detail?.isAlive != true)
-            DevIconButton(symbol: "arrow.up.forward.app", help: "Show in \(model.detail?.host?.name ?? "app")", action: model.openHost)
+            DevIconButton(symbol: "arrow.up.forward.app", help: "Show in \(model.detail?.host?.name ?? String(localized: "app"))", action: model.openHost)
             Menu {
                 Button("Copy Command", action: model.copyCommand)
                 Button("Reveal Folder in Finder", action: model.revealFolder)
@@ -418,8 +418,9 @@ struct DevTaskDetailPane: View {
     }
 
     private var placeholder: String {
-        if task.kind == .ai { return "Message \(task.tool.displayName)…" }
-        return "Type into \(model.detail?.host?.name ?? "the terminal")…"
+        if task.kind == .ai { return String(localized: "Message \(task.tool.displayName)…") }
+        let hostName = model.detail?.host?.name ?? String(localized: "the terminal")
+        return String(localized: "Type into \(hostName)…")
     }
 }
 
@@ -452,7 +453,7 @@ private struct DevTranscriptView: View {
         case .user:
             HStack {
                 Spacer(minLength: 40)
-                Text(message.text)
+                Text(verbatim: message.text)
                     .font(.system(size: 11.5))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)
@@ -461,7 +462,7 @@ private struct DevTranscriptView: View {
                     .textSelection(.enabled)
             }
         case .assistant:
-            Text(message.text)
+            Text(verbatim: message.text)
                 .font(.system(size: 11.5))
                 .foregroundStyle(.white.opacity(0.88))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -471,13 +472,13 @@ private struct DevTranscriptView: View {
                 Image(systemName: "wrench.and.screwdriver.fill")
                     .font(.system(size: 8.5))
                     .foregroundStyle(tint.opacity(0.8))
-                Text(message.text)
+                Text(verbatim: message.text)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(2)
             }
         case .toolResult(let isError):
-            Text(message.text)
+            Text(verbatim: message.text)
                 .font(.system(size: 9.5, design: .monospaced))
                 .foregroundStyle(isError ? Color.red.opacity(0.8) : Color.white.opacity(0.38))
                 .lineLimit(3)
@@ -496,17 +497,17 @@ private struct DevProcessList: View {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(processes) { process in
                     HStack(spacing: 6) {
-                        Text(process.name)
+                        Text(verbatim: process.name)
                             .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.9))
                             .padding(.leading, CGFloat(min(process.depth, 6)) * 10)
-                        Text(process.commandLine)
+                        Text(verbatim: process.commandLine)
                             .font(.system(size: 9.5, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.4))
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 4)
-                        Text(process.cpuPercent.map { String(format: "%.0f%%", $0) } ?? "–")
+                        Text(process.cpuPercent.map { DevPercentageFormatting.string($0) } ?? "–")
                             .font(.system(size: 9.5, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.6))
                             .frame(width: 36, alignment: .trailing)
@@ -528,7 +529,7 @@ struct DevMonospaceLog: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                Text(text)
+                Text(verbatim: text)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.82))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -683,7 +684,7 @@ private struct DevTerminalPanel: View {
                     Text("$")
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundStyle(.green)
-                    NotchSearchField(placeholder: "Run a command…", text: $command, onSubmit: run)
+                    NotchSearchField(placeholder: String(localized: "Run a command…"), text: $command, onSubmit: run)
                         .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(.white)
                     if !runner.history.isEmpty {
@@ -865,7 +866,7 @@ private struct DevRunChip: View {
     var body: some View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text(run.command)
+            Text(verbatim: run.command)
                 .font(.system(size: 10, design: .monospaced))
                 .lineLimit(1)
                 .frame(maxWidth: 150)
@@ -965,7 +966,7 @@ private extension DevChip where Accessory == EmptyView {
 
 struct DevIconButton: View {
     let symbol: String
-    let help: String
+    let help: LocalizedStringKey
     var tint: Color = .white
     var size: CGFloat = 28
     let action: () -> Void
@@ -999,7 +1000,7 @@ struct DevPillButtonStyle: ButtonStyle {
 
 private struct DevPlaceholder: View {
     let symbol: String
-    let text: String
+    let text: LocalizedStringKey
 
     var body: some View {
         VStack(spacing: 6) {
@@ -1013,5 +1014,12 @@ private struct DevPlaceholder: View {
                 .frame(maxWidth: 320)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+enum DevPercentageFormatting {
+    static func string(_ value: Double) -> String {
+        guard ChineseFormatting.isActive else { return String(format: "%.0f%%", value) }
+        return (value / 100).formatted(.percent.precision(.fractionLength(0)))
     }
 }

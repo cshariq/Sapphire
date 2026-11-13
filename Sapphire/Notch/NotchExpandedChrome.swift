@@ -100,13 +100,13 @@ enum NotchExpandedChrome {
 
     static func title(for mode: NotchWidgetMode) -> String? {
         switch mode {
-        case .multiAudioDeviceAdjust: return "Adjust"
-        case .multiAudioEQ: return "EQ"
-        case .earbudControls: return "Earbuds"
-        case .musicDevices: return "Devices"
-        case .musicQueueAndPlaylists: return "Queue & Playlists"
-        case .multiAudio: return "Audio Devices"
-        case .continuityDetail: return "Phone"
+        case .multiAudioDeviceAdjust: return String(localized: "Adjust")
+        case .multiAudioEQ: return String(localized: "EQ")
+        case .earbudControls: return String(localized: "Earbuds")
+        case .musicDevices: return String(localized: "Devices")
+        case .musicQueueAndPlaylists: return String(localized: "Queue & Playlists")
+        case .multiAudio: return String(localized: "Audio Devices")
+        case .continuityDetail: return String(localized: "Phone")
         default: return nil
         }
     }
@@ -309,7 +309,7 @@ private struct NotchChromeButton: View {
 struct NotchCaffeinateMenu: View {
     @ObservedObject var caffeineManager: CaffeineManager
 
-    private static let durations: [(label: String, minutes: Double)] = [
+    private static let durations: [(label: LocalizedStringKey, minutes: Double)] = [
         ("15 Minutes", 15), ("30 Minutes", 30), ("1 Hour", 60), ("2 Hours", 120), ("4 Hours", 240), ("8 Hours", 480)
     ]
 
@@ -534,6 +534,6 @@ private struct ContinuityPhoneStatusItem: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(snapshot.deviceName.isEmpty ? "Phone" : snapshot.deviceName)
+        .help(snapshot.deviceName.isEmpty ? String(localized: "Phone") : snapshot.deviceName)
     }
 }

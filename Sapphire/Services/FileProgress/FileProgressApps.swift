@@ -32,9 +32,9 @@ enum FileProgressApp: String, CaseIterable, Identifiable, Codable {
         case .chromium: "Chromium"
         case .firefox: "Firefox"
         case .zen: "Zen Browser"
-        case .finder: "Finder copies"
+        case .finder: String(localized: "Finder copies")
         case .airDrop: "AirDrop"
-        case .other: "Other apps"
+        case .other: String(localized: "Other apps")
         }
     }
 
@@ -72,13 +72,13 @@ enum FileProgressApp: String, CaseIterable, Identifiable, Codable {
 
     var trackingDetail: String {
         switch self {
-        case .safari: "Exact progress from Safari's download bundle and the system progress Safari publishes."
+        case .safari: String(localized: "Exact progress from Safari's download bundle and the system progress Safari publishes.")
         case .chrome, .edge, .brave, .arc, .opera, .vivaldi, .chromium:
-            "Exact progress from the system progress Chromium publishes for .crdownload files, in the folder set in its settings."
-        case .firefox, .zen: "Follows the growing .part file in the folder set in Firefox's settings; the total size isn't known until it finishes."
-        case .finder: "Copies and moves Finder shows a progress bar for."
-        case .airDrop: "Files arriving over AirDrop."
-        case .other: "Any other app that publishes file progress, and .part/.partial files in watched folders."
+            String(localized: "Exact progress from the system progress Chromium publishes for .crdownload files, in the folder set in its settings.")
+        case .firefox, .zen: String(localized: "Follows the growing .part file in the folder set in Firefox's settings; the total size isn't known until it finishes.")
+        case .finder: String(localized: "Copies and moves Finder shows a progress bar for.")
+        case .airDrop: String(localized: "Files arriving over AirDrop.")
+        case .other: String(localized: "Any other app that publishes file progress, and .part/.partial files in watched folders.")
         }
     }
 

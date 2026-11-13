@@ -19,8 +19,8 @@ struct FocusWidgetView: View {
     }
 
     private var phaseLabel: String {
-        if focusManager.isPaused { return "PAUSED" }
-        return focusManager.isFocusBlock ? "FOCUS" : "BREAK"
+        if focusManager.isPaused { return String(localized: "PAUSED") }
+        return focusManager.isFocusBlock ? String(localized: "FOCUS") : String(localized: "BREAK")
     }
 
     private var blockedCount: Int {
@@ -86,16 +86,23 @@ struct FocusWidgetView: View {
                 .lineLimit(1)
                 .animation(.easeInOut(duration: 0.4), value: focusManager.isSessionActive)
 
-                Text(focusManager.isSessionActive ? phaseLabel : "Ready to focus")
+                Text(focusManager.isSessionActive ? phaseLabel : String(localized: "Ready to focus"))
                     .font(.headline).fontWeight(.medium).lineLimit(1).minimumScaleFactor(0.7)
                     .foregroundColor(focusManager.isSessionActive ? accent : .secondary)
 
-                Text(focusManager.isSessionActive
-                     ? (blockedCount > 0 ? "Blocking \(blockedCount) distraction\(blockedCount == 1 ? "" : "s")" : "No distractions blocked")
-                     : "\(Int(settings.settings.focusSessionDuration / 60))m · \(FocusSessionManager.format(focusManager.completedToday)) today")
+                Text(sessionSummary)
                     .font(.subheadline).opacity(0.8).lineLimit(1).minimumScaleFactor(0.7)
             }
         }
+    }
+
+    private var sessionSummary: String {
+        guard focusManager.isSessionActive else {
+            return String(localized: "\(String(Int(settings.settings.focusSessionDuration / 60)))m · \(FocusSessionManager.format(focusManager.completedToday)) today")
+        }
+        if blockedCount == 0 { return String(localized: "No distractions blocked") }
+        if blockedCount == 1 { return String(localized: "Blocking 1 distraction") }
+        return String(localized: "Blocking \(String(blockedCount)) distractions")
     }
 
     // MARK: - Secondary stats (streak leads)
@@ -107,8 +114,8 @@ struct FocusWidgetView: View {
             CompactInfoRow(
                 iconName: focusManager.isSessionActive ? "square.stack.3d.up.fill" : "checkmark.seal.fill",
                 value: focusManager.isSessionActive
-                    ? "\(focusManager.blocksCompletedThisSession) blocks"
-                    : "\(focusManager.history.count) sessions"
+                    ? String(localized: "\(String(focusManager.blocksCompletedThisSession)) blocks")
+                    : String(localized: "\(String(focusManager.history.count)) sessions")
             )
         }
         .animation(.easeInOut(duration: 0.4), value: focusManager.isSessionActive)
@@ -132,7 +139,7 @@ struct FocusWidgetView: View {
 
     private var streakText: String {
         let s = focusManager.currentStreak
-        return s == 1 ? "1 day streak" : "\(s) day streak"
+        return s == 1 ? String(localized: "1 day streak") : String(localized: "\(String(s)) day streak")
     }
 }
 

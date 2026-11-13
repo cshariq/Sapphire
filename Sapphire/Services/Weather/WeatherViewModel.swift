@@ -12,10 +12,10 @@ import Combine
 
 private struct WeatherViewState {
     var weatherData: ProcessedWeatherData?
-    var locationName = "Loading..."
+    var locationName = String(localized: "Loading...")
     var temperature = "—°"
-    var conditionDescription = "Fetching..."
-    var highLowTemp = "H: —° L: —°"
+    var conditionDescription = String(localized: "Fetching...")
+    var highLowTemp = String(localized: "H: —° L: —°")
     var feelsLike = "—°"
     var windInfo = "— mph"
     var humidity = "—%"
@@ -109,8 +109,8 @@ class WeatherViewModel: ObservableObject {
         var fetchingState = state
         fetchingState.isFetching = true
         if fetchingState.weatherData == nil {
-            fetchingState.locationName = "Loading..."
-            fetchingState.conditionDescription = "Locating…"
+            fetchingState.locationName = String(localized: "Loading...")
+            fetchingState.conditionDescription = String(localized: "Locating…")
         }
         state = fetchingState
 
@@ -141,8 +141,8 @@ class WeatherViewModel: ObservableObject {
             temperature: useCelsius ? "\(data.temperatureMetric)°" : "\(data.temperature)°",
             conditionDescription: data.conditionDescription,
             highLowTemp: useCelsius
-                ? "H: \(data.highTempMetric)° L: \(data.lowTempMetric)°"
-                : "H: \(data.highTemp)° L: \(data.lowTemp)°",
+                ? String(localized: "H: \(String(data.highTempMetric))° L: \(String(data.lowTempMetric))°")
+                : String(localized: "H: \(String(data.highTemp))° L: \(String(data.lowTemp))°"),
             feelsLike: useCelsius ? "\(data.feelsLikeMetric)°" : "\(data.feelsLike)°",
             windInfo: useMetricSystem ? data.windInfoMetric : data.windInfo,
             humidity: data.humidity,
@@ -171,17 +171,17 @@ class WeatherViewModel: ObservableObject {
         if let weatherError = error as? WeatherServiceError {
             message = weatherError.localizedDescription
         } else if (error as NSError).domain == CLError.errorDomain {
-            message = "Could not determine your location."
+            message = String(localized: "Could not determine your location.")
         } else {
             message = error.localizedDescription
         }
 
         state = WeatherViewState(
             weatherData: nil,
-            locationName: "Unavailable",
+            locationName: String(localized: "Unavailable"),
             temperature: "—°",
             conditionDescription: message,
-            highLowTemp: "H: —° L: —°",
+            highLowTemp: String(localized: "H: —° L: —°"),
             feelsLike: "—°",
             windInfo: useMetricSystem ? "— km/h" : "— mph",
             humidity: "—%",

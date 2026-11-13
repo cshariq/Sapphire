@@ -126,14 +126,14 @@ final class AppActivityMonitor: ObservableObject {
                 case .zoom, .quickTime:
                     if micActive || hintHit {
                         let named = windows.first { title in app.windowHints.contains { title.localizedCaseInsensitiveContains($0) } }
-                        activity = Self.make(app, pid, bundleID, title: app == .zoom ? "Zoom meeting" : (named ?? "Recording"),
+                        activity = Self.make(app, pid, bundleID, title: app == .zoom ? String(localized: "Zoom meeting") : (named ?? String(localized: "Recording")),
                                              subtitle: nil, previous: previous[app])
                     }
                 case .screenSharing:
                     let sessions = windows.filter { !$0.isEmpty && $0 != "Screen Sharing" }
                     if let first = sessions.first {
                         activity = Self.make(app, pid, bundleID, title: first,
-                                             subtitle: sessions.count > 1 ? "+\(sessions.count - 1) more" : nil,
+                                             subtitle: sessions.count > 1 ? String(localized: "+\(String(sessions.count - 1)) more") : nil,
                                              previous: previous[app])
                     }
                 case .googleMeet:
@@ -154,18 +154,18 @@ final class AppActivityMonitor: ObservableObject {
                 case .teams:
                     if micActive {
                         let meeting = windows.first { !$0.isEmpty && $0 != "Microsoft Teams" }
-                        activity = Self.make(app, pid, bundleID, title: "Teams call",
+                        activity = Self.make(app, pid, bundleID, title: String(localized: "Teams call"),
                                              subtitle: meeting?.components(separatedBy: " | ").first, previous: previous[app])
                     }
                 default:
                     if micActive {
                         let title: String
                         switch app {
-                        case .slack: title = "Huddle"
-                        case .discord: title = "Voice channel"
+                        case .slack: title = String(localized: "Huddle")
+                        case .discord: title = String(localized: "Voice channel")
                         case .faceTime: title = "FaceTime"
-                        case .webex: title = "Webex meeting"
-                        case .voiceMemos: title = "Recording"
+                        case .webex: title = String(localized: "Webex meeting")
+                        case .voiceMemos: title = String(localized: "Recording")
                         default: title = app.displayName
                         }
                         activity = Self.make(app, pid, bundleID, title: title, subtitle: nil, previous: previous[app])

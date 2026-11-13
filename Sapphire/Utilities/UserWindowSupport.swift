@@ -26,29 +26,29 @@ enum SapphireStandardMenu {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         appMenu.addItem(
-            withTitle: "Quit Sapphire",
+            withTitle: String(localized: "Quit Sapphire"),
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
 
-        let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        let editMenuItem = NSMenuItem(title: String(localized: "Edit"), action: nil, keyEquivalent: "")
         mainMenu.addItem(editMenuItem)
-        let editMenu = NSMenu(title: "Edit")
+        let editMenu = NSMenu(title: String(localized: "Edit"))
         editMenuItem.submenu = editMenu
 
-        editMenu.addItem(withTitle: "Undo", action: Selector("undo:"), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: Selector("redo:"), keyEquivalent: "Z")
+        editMenu.addItem(withTitle: String(localized: "Undo"), action: Selector("undo:"), keyEquivalent: "z")
+        editMenu.addItem(withTitle: String(localized: "Redo"), action: Selector("redo:"), keyEquivalent: "Z")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: String(localized: "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: String(localized: "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: String(localized: "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: String(localized: "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
         NSApp.mainMenu = mainMenu
     }
 
     private static var hasEditMenu: Bool {
-        NSApp.mainMenu?.items.contains { $0.title == "Edit" } == true
+        NSApp.mainMenu?.items.contains { $0.submenu?.items.contains(where: { $0.action == #selector(NSText.paste(_:)) }) == true } == true
     }
 }
 
@@ -173,14 +173,14 @@ enum HelperAlertPresenter {
 
     static func showHelperConnectionLost(onDismiss: (() -> Void)? = nil) {
         presentModal(
-            messageText: "Sapphire Helper Needs Attention",
-            informativeText: """
+            messageText: String(localized: "Sapphire Helper Needs Attention"),
+            informativeText: String(localized: """
             Sapphire lost connection to its system helper.
 
             Click “Reset Helper” to unregister Sapphire’s own background items, reinstall the helper, and relaunch. Other apps are not affected.
-            """,
+            """),
             alertStyle: .warning,
-            buttonTitles: ["Reset Helper", "OK"]
+            buttonTitles: [String(localized: "Reset Helper"), String(localized: "OK")]
         ) { index in
             if index == 0 {
                 HelperManager.shared.resetOwnBackgroundActivity()
@@ -193,15 +193,15 @@ enum HelperAlertPresenter {
         let buttons: [String]
         switch issue {
         case .notFound:
-            buttons = ["Reset Helper", "Relaunch Sapphire", "OK"]
+            buttons = [String(localized: "Reset Helper"), String(localized: "Relaunch Sapphire"), String(localized: "OK")]
         case .needsApproval:
-            buttons = ["Open Login Items", "OK"]
+            buttons = [String(localized: "Open Login Items"), String(localized: "OK")]
         case .spawnFailed:
-            buttons = ["Reset Helper", "Open Login Items", "OK"]
+            buttons = [String(localized: "Reset Helper"), String(localized: "Open Login Items"), String(localized: "OK")]
         }
 
         presentModal(
-            messageText: "Sapphire Helper  ·  \(issue.code)",
+            messageText: String(localized: "Sapphire Helper  ·  \(issue.code)"),
             informativeText: issue.instructions,
             alertStyle: issue == .spawnFailed ? .critical : .warning,
             buttonTitles: buttons

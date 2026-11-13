@@ -103,7 +103,7 @@ struct DeviceEQView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     if applicableAppEQs.isEmpty {
-                        ModernChip(title: "No App Overrides", isSelected: false) {}
+                        ModernChip(title: String(localized: "No App Overrides"), isSelected: false) {}
                             .disabled(true)
                             .opacity(0.5)
                     } else {
