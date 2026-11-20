@@ -125,6 +125,7 @@ class ScheduleManager: ObservableObject {
             }
         }
 
+        var finishedOneOffs: Set<UUID> = []
         for task in settings.current.scheduledTasks where task.isActive {
             let scheduledTime = calendar.dateComponents([.hour, .minute], from: task.startTime)
             let nowTime = calendar.dateComponents([.hour, .minute], from: now)
@@ -135,12 +136,7 @@ class ScheduleManager: ObservableObject {
 
             var shouldRun = false
             switch task.repeatInterval {
-            case .never:
-                let lastRun = taskHistory.first(where: { $0.taskDescription.contains(task.action.displayName) })?.timestamp
-                if lastRun == nil || !calendar.isDateInToday(lastRun!) {
-                    shouldRun = true
-                }
-            case .daily:
+            case .never, .daily:
                 shouldRun = true
             case .weekdays:
                 let weekday = calendar.component(.weekday, from: now)
@@ -158,10 +154,20 @@ class ScheduleManager: ObservableObject {
 
             if shouldRun {
                 executeTask(task)
+                if task.repeatInterval == .never { finishedOneOffs.insert(task.id) }
             }
         }
 
         scheduleNextCheck(after: now)
+
+        // A one-off task switches itself off once it has run; the in-memory history let it run again every day.
+        if !finishedOneOffs.isEmpty {
+            var tasks = settings.settings.scheduledTasks
+            for index in tasks.indices where finishedOneOffs.contains(tasks[index].id) {
+                tasks[index].isActive = false
+            }
+            settings.settings.scheduledTasks = tasks
+        }
     }
 
     private func scheduleNextCheck(after now: Date) {
