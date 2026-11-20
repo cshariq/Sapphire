@@ -2911,7 +2911,7 @@ class MusicManager {
             async let popular: Void = {
                 if wantArtist {
                     let artistId = resolvedArtistURI.replacingOccurrences(of: "spotify:artist:", with: "")
-                    _ = await spotifyPrivateAPI.fetchPopularReleases(artistId: artistId)
+                    _ = await spotifyPrivateAPI.fetchPopularReleases(artistId: artistId, trackURI: trackURI)
                 }
             }()
             _ = await (artistProfile, popular)
