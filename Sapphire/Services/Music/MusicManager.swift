@@ -3227,6 +3227,8 @@ class MusicManager {
                 LyricsLog.info("Word timing applied for '\(title)': \(timed.filter(\.hasWordTiming).count) word-synced lines")
                 self.replaceLyrics(timed, preservePosition: true)
                 self.lyricsCache.set(timed, for: cacheKey)
+                // Generated lines come from the untranslated provider text; put the translation back.
+                self.retranslateLyricsIfNeeded()
             }
         )
     }
