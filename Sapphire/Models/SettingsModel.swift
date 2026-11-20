@@ -2148,7 +2148,7 @@ struct SettingsBackupDocument: FileDocument {
             return payload
         }
 
-        if let settings = SettingsPersistence.decodeFromPayload(data) {
+        if sharesSettingsKeys(data), let settings = SettingsPersistence.decodeFromPayload(data) {
             return SettingsBackupPayload(settings: settings)
         }
 
@@ -2158,6 +2158,14 @@ struct SettingsBackupDocument: FileDocument {
                 debugDescription: "The file could not be read as a Sapphire settings backup."
             )
         )
+    }
+
+    // Unknown keys fall back to defaults, so without this any JSON file would import as a full reset.
+    private static func sharesSettingsKeys(_ data: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let known = SettingsPersistence.encodeToDictionary(Settings()) else { return false }
+        let incoming = (object["settings"] as? [String: Any]) ?? object
+        return incoming.keys.filter { known[$0] != nil }.count >= 10
     }
 }
 
