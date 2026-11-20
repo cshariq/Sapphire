@@ -146,6 +146,8 @@ final class LiveWallpaperManager {
     func screenDidUnlock() {
         guard isStarted, isLocked else { return }
         isLocked = false
+        // Drop the overlay before any other unlock work: it sits above the desktop, and a fade's completion can stall or never fire.
+        lockScreen.hide(animated: false)
         applyPlaybackPolicy()
         refresh()
     }
@@ -225,9 +227,6 @@ final class LiveWallpaperManager {
                 scaling: configuration.scaling,
                 playbackMode: configuration.playbackMode
             )
-            if lockScreen.isShowing {
-                lockScreen.hide(animated: true)
-            }
             lockScreen.prepare(nil)
         }
         applyPlaybackPolicy()
