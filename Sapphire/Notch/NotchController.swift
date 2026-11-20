@@ -1913,8 +1913,9 @@ struct NotchController: View {
         if oldState == .clickExpanded && newState != .clickExpanded && config.couplesContentToMorph && !reduceMotion {
             planeMorphDetached = false
             isAnimatingPlaneOut = true
+            // Always clear: a later state change would otherwise leave the panel mounted while collapsed.
+            // A newer collapse is still carried by the lastExpandedStagePass window in the stage pass.
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.fluidCarryDuration) {
-                guard self.scratch.stateTransitionGeneration == transition else { return }
                 self.isAnimatingPlaneOut = false
             }
         }

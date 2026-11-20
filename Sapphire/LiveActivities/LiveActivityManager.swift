@@ -1365,6 +1365,8 @@ class LiveActivityManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.dismissGraceTimer = nil
+                // Bypass the throttle: a throttled re-run would drop allowImmediateDismiss and start another grace period.
+                self.lastEvalTime = 0
                 self.evaluateAndDisplayActivity(allowImmediateDismiss: true)
             }
         }
@@ -1400,8 +1402,7 @@ class LiveActivityManager {
         let oldShape = notchShapeSignature
 
         if Self.displayAnchoredActivityTypes.contains(type) {
-            let cursorLocation = NSEvent.mouseLocation
-            activityAnchorDisplayID = NSScreen.screens.first { $0.frame.contains(cursorLocation) }?.displayID
+            activityAnchorDisplayID = NotchDisplayTargeting.pointerDisplayID
         }
 
         self.currentActivity = type
@@ -1679,6 +1680,7 @@ class LiveActivityManager {
                         self.logger.info("Low Power Mode toggled from low-battery prompt (now \(enabled ? "on" : "off", privacy: .public))")
                         self.hasShownLowBatteryAlert = true
                         self.dismissalTimer?.invalidate()
+                        self.dismissalTimer = nil
                         self.evaluateAndDisplayActivity()
                     },
                     onDismiss: {
