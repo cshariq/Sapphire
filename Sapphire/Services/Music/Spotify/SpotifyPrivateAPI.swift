@@ -697,6 +697,7 @@ class SpotifyPrivateAPIManager {
             await performUserVerification()
             await sendGaboSessionEvent()
             self.isLoggedIn = true
+            softReconnectRetryCount = 0
             await saveSession()
 
             do {
@@ -716,9 +717,13 @@ class SpotifyPrivateAPIManager {
     }
 
     @ObservationIgnored private var softReconnectRetryTask: Task<Void, Never>?
+    @ObservationIgnored private var softReconnectRetryCount = 0
 
-    private func scheduleSoftReconnectRetry(after delay: TimeInterval = 3.0) {
+    private func scheduleSoftReconnectRetry(after baseDelay: TimeInterval = 3.0) {
         softReconnectRetryTask?.cancel()
+        // Back off while offline or rate-limited (3 s, 6 s, 12 s… up to 5 min) instead of retrying every 3 s for hours.
+        let delay = min(baseDelay * pow(2, Double(min(softReconnectRetryCount, 7))), 300)
+        softReconnectRetryCount += 1
         softReconnectRetryTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
