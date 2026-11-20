@@ -287,7 +287,8 @@ class PowerStateController: ObservableObject {
                 )
             }
 
-            if currentSettings.heatProtectionEnabled && shouldCharge && batteryState.isCharging {
+            // Stay in this block while paused for heat, or charging resumes before the 3° hysteresis is reached.
+            if currentSettings.heatProtectionEnabled && shouldCharge && (batteryState.isCharging || isInHeatProtection) {
                 let temp = await batteryManager.getBatteryTemperature()
                 let threshold = currentSettings.heatProtectionThreshold
                 if temp >= threshold {
