@@ -839,6 +839,8 @@ class BatteryManager {
             reply(error)
             return
         }
+        // The helper sets 100% and enables charging itself; forget the cached commands so restoring the limit isn't skipped as a duplicate.
+        resetCommandState()
         helper.startCalibration { error in
             if error != nil {
                 recordFailure()
