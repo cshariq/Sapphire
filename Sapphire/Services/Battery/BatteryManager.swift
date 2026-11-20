@@ -154,6 +154,8 @@ class PowerStateController: ObservableObject {
     }
 
     private func applyChargePolicyForSleep() {
+        // Calibration owns charging; inhibiting here would stop "charge to 100%" and evaluateState won't undo it.
+        guard !calibrationManager.isActive else { return }
         let currentSettings = settings.settings
         guard let batteryState = batteryMonitor.currentState else {
             if currentSettings.stopChargingWhenSleeping {
