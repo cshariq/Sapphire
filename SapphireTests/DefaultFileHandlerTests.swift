@@ -69,5 +69,6 @@ final class DefaultFileHandlerTests: XCTestCase {
         XCTAssertEqual(ArchiveExtractor.topLevelCount(single), 1)
         let several = ["a.txt", "b.txt", "__MACOSX/._a.txt"]
         XCTAssertEqual(ArchiveExtractor.topLevelCount(several), 2)
+        XCTAssertEqual(ArchiveExtractor.topLevelCount(["./", "./a.txt", "./b.txt"]), 2)
     }
 }

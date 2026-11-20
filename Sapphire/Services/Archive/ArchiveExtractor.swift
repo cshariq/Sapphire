@@ -292,6 +292,11 @@ final class ArchiveExtractor: ObservableObject {
 
         guard result.success else {
             currentTransferTask = nil
+            // bsdtar can't list or extract a single compressed file (notes.txt.gz); let Archive Utility have it.
+            if listing == nil {
+                handOffToSystem([url])
+                return
+            }
             await notify(
                 title: String(localized: "Sapphire Archives"),
                 body: String(localized: "Could not extract \(archiveName). It may be damaged, unsupported, or password protected.")
@@ -536,7 +541,8 @@ final class ArchiveExtractor: ObservableObject {
 
     nonisolated static func topLevelCount(_ entries: [String]) -> Int {
         Set(entries.compactMap { entry -> String? in
-            guard let first = entry.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: true).first else {
+            // Skip "." so a tarball made with `tar -C dir .` (./a, ./b) counts its real top-level entries.
+            guard let first = entry.split(separator: "/").first(where: { $0 != "." }) else {
                 return nil
             }
             let name = String(first)

@@ -67,8 +67,12 @@ final class ShortcutsCatalog: ObservableObject {
 
     nonisolated static func run(name: String, argument: String? = nil) {
         var arguments = ["run", name]
+        // `-i` is --input-path: the CLI takes a file, not the value itself.
         if let argument {
-            arguments += ["-i", argument]
+            let input = FileManager.default.temporaryDirectory.appendingPathComponent("sapphire-shortcut-\(UUID().uuidString).txt")
+            if (try? argument.write(to: input, atomically: true, encoding: .utf8)) != nil {
+                arguments += ["-i", input.path]
+            }
         }
         ProcessRunner.runDetached(executablePath: "/usr/bin/shortcuts", arguments: arguments)
     }
