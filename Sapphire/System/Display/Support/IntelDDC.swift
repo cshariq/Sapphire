@@ -115,8 +115,8 @@ public class IntelDDC {
           os_log("Reading %{public}@ took %u tries.", type: .info, String(reflecting: command), i)
         }
         let (mh, ml, sh, sl) = (replyData[6], replyData[7], replyData[8], replyData[9])
-        let maxValue = UInt16(mh << 8) + UInt16(ml)
-        let currentValue = UInt16(sh << 8) + UInt16(sl)
+        let maxValue = UInt16(mh) << 8 | UInt16(ml)
+        let currentValue = UInt16(sh) << 8 | UInt16(sl)
         return (currentValue, maxValue)
       }
     }
