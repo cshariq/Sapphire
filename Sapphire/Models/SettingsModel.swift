@@ -1756,6 +1756,7 @@ struct Settings: Codable, Equatable {
     var prioritizeMediaSource: Bool = true
     var mediaAppVisibility: [String: Bool] = [:]
     var hideLiveActivityWhenSourceActive: Bool = true
+    var keepPausedMusicLiveActivity: Bool = false
     var enableQuickPeekOnHover: Bool = true
     var showQuickPeekOnTrackChange: Bool = true
     var swipeToSkipMusic: Bool = true
