@@ -2988,6 +2988,12 @@ struct LiveActivitiesSettingsView: View {
                     )
                     Divider().padding(.leading, 20)
                     ToggleRow(
+                        title: "Keep Paused Music in Notch",
+                        description: "Keep the music live activity showing while playback is paused instead of hiding it after 30 seconds.",
+                        isOn: $settings.settings.keepPausedMusicLiveActivity
+                    )
+                    Divider().padding(.leading, 20)
+                    ToggleRow(
                         title: "Keep Transient Activities Compact on Hover",
                         description: "Do not expand the notch from hover while a transient live activity is showing. Persistent activities, Music, Weather, Stats, and Developer Activity are exempt.",
                         isOn: $settings.settings.suppressHoverExpansionForTransientLiveActivities

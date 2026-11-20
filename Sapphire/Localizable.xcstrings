@@ -40367,6 +40367,29 @@
         }
       }
     },
+    "Keep Paused Music in Notch": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep Paused Music in Notch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停时在刘海中保留音乐"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暫停時在瀏海中保留音樂"
+          }
+        }
+      }
+    },
     "Keep Transient Activities Compact on Hover": {
       "localizations": {
         "en": {
@@ -40656,6 +40679,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "在兩次解鎖之間保持臉部辨識與活體偵測模型已載入，讓 Face ID 從相機的第一個畫格就能辨識你。"
+          }
+        }
+      }
+    },
+    "Keep the music live activity showing while playback is paused instead of hiding it after 30 seconds.": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep the music live activity showing while playback is paused instead of hiding it after 30 seconds."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放暂停时继续显示音乐实时活动，而不是在 30 秒后隐藏。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放暫停時繼續顯示音樂即時動態，而不是在 30 秒後隱藏。"
           }
         }
       }
