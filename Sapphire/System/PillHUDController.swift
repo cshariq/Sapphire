@@ -335,7 +335,7 @@ struct PillHUDView: View {
 
     private var displayedPercentage: Int {
         let level = hudManager.currentHUD?.primaryLevel ?? 0
-        return Int(min(max(level, 0), hudRange) * 100)
+        return Int((min(max(level, 0), hudRange) * 100).rounded())
     }
 
     private var withinIcon: some View {
