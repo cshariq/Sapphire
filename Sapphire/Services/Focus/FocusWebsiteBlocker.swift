@@ -7,6 +7,7 @@
 import Foundation
 import AppKit
 import Network
+import Combine
 
 @MainActor
 final class FocusWebsiteBlocker {
@@ -16,6 +17,7 @@ final class FocusWebsiteBlocker {
     private(set) var blockedDomains: Set<String> = []
     private let pageServer = FocusBlockPageServer()
     private var productiveAccessValidator: ((String) -> Bool)?
+    private var leftoverCleanup: AnyCancellable?
 
     private static let hostsMarkerStart = "# >>> Sapphire Focus Block >>>"
     private static let hostsMarkerEnd = "# <<< Sapphire Focus Block <<<"
@@ -28,6 +30,13 @@ final class FocusWebsiteBlocker {
         ) { [weak self] _ in
             self?.removeHostsEntriesAndFlush()
         }
+        // Entries left by a crash mid-session: the helper isn't up yet at launch, so clear them once it is.
+        leftoverCleanup = HelperManager.shared.$status
+            .first { $0 == .enabled }
+            .sink { [weak self] _ in
+                guard let self, !self.isActive else { return }
+                self.removeHostsEntriesAndFlush()
+            }
     }
 
     func setEnabled(_ enabled: Bool, domains: Set<String>, productiveAccessValidator: ((String) -> Bool)? = nil) {
