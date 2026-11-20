@@ -1681,6 +1681,7 @@ class LiveActivityManager {
                         self.logger.info("Low Power Mode toggled from low-battery prompt (now \(enabled ? "on" : "off", privacy: .public))")
                         self.hasShownLowBatteryAlert = true
                         self.dismissalTimer?.invalidate()
+                        self.dismissalTimer = nil
                         self.evaluateAndDisplayActivity()
                     },
                     onDismiss: {
