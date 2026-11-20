@@ -292,6 +292,11 @@ final class ArchiveExtractor: ObservableObject {
 
         guard result.success else {
             currentTransferTask = nil
+            // bsdtar can't list or extract a single compressed file (notes.txt.gz); let Archive Utility have it.
+            if listing == nil {
+                handOffToSystem([url])
+                return
+            }
             await notify(
                 title: String(localized: "Sapphire Archives"),
                 body: String(localized: "Could not extract \(archiveName). It may be damaged, unsupported, or password protected.")
