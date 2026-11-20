@@ -280,7 +280,8 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         guard self.isScreenLocked else {
             print("[AuthManager] Screen already unlocked. Sequence aborted.")
             isUnlockInProgress = false
-            stopAllAuthentication()
+            // Keep Bluetooth monitoring: walk-away lock needs it while unlocked.
+            if isFaceIDAuthenticating { tearDownFaceID() }
             return
         }
 
@@ -327,7 +328,7 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
         print("[AuthManager] Cancelling pending password injection: \(reason)")
         unlockAttemptID = UUID()
         isUnlockInProgress = false
-        stopAllAuthentication()
+        if isFaceIDAuthenticating { tearDownFaceID() }
     }
 
     // MARK: - Password & HID Injection
