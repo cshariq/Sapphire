@@ -1402,8 +1402,7 @@ class LiveActivityManager {
         let oldShape = notchShapeSignature
 
         if Self.displayAnchoredActivityTypes.contains(type) {
-            let cursorLocation = NSEvent.mouseLocation
-            activityAnchorDisplayID = NSScreen.screens.first { $0.frame.contains(cursorLocation) }?.displayID
+            activityAnchorDisplayID = NotchDisplayTargeting.pointerDisplayID
         }
 
         self.currentActivity = type
