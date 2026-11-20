@@ -1365,6 +1365,8 @@ class LiveActivityManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.dismissGraceTimer = nil
+                // Bypass the throttle: a throttled re-run would drop allowImmediateDismiss and start another grace period.
+                self.lastEvalTime = 0
                 self.evaluateAndDisplayActivity(allowImmediateDismiss: true)
             }
         }
