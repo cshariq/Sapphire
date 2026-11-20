@@ -372,12 +372,17 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
             var utf16chars = Array(password.utf16)
             defer { for i in utf16chars.indices { utf16chars[i] = 0 } }
 
-            if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
-                pwDown.keyboardSetUnicodeString(stringLength: utf16chars.count, unicodeString: &utf16chars)
-                pwDown.post(tap: tapLocation)
-            }
-            if let pwUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
-                pwUp.post(tap: tapLocation)
+            // A keyboard event carries at most 20 UTF-16 units, so longer passwords go in chunks.
+            for start in stride(from: 0, to: utf16chars.count, by: 20) {
+                var chunk = Array(utf16chars[start..<min(start + 20, utf16chars.count)])
+                defer { for i in chunk.indices { chunk[i] = 0 } }
+                if let pwDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
+                    pwDown.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: &chunk)
+                    pwDown.post(tap: tapLocation)
+                }
+                if let pwUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
+                    pwUp.post(tap: tapLocation)
+                }
             }
 
             let retDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
