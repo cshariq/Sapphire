@@ -451,12 +451,12 @@ final class AppsSettingsRevampTests: XCTestCase {
         let parsed = InstalledAppUpdateSourceDetector.parseVSCodeProduct(data: valid)
         XCTAssertEqual(parsed?.baseURL.absoluteString, "https://update.example.test")
         XCTAssertEqual(parsed?.quality, "stable")
-        XCTAssertEqual(parsed?.commit, "0123abcd")
+        XCTAssertEqual(parsed?.commit, "0123456789abcdef")
 
         let insecure = Data(#"{"updateUrl":"http://update.example.test","quality":"stable","commit":"0123456789abcdef"}"#.utf8)
         XCTAssertNil(InstalledAppUpdateSourceDetector.parseVSCodeProduct(data: insecure))
 
-        let missingCommit = Data(#"{"updateUrl":"https:
+        let missingCommit = Data(#"{"updateUrl":"https://update.example.test","quality":"stable"}"#.utf8)
         XCTAssertNil(InstalledAppUpdateSourceDetector.parseVSCodeProduct(data: missingCommit))
     }
 

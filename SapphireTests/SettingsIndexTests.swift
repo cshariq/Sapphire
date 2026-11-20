@@ -33,6 +33,13 @@ final class SettingsIndexTests: XCTestCase {
         XCTAssertEqual(updated.waveformBarCount, 6)
     }
 
+    func testKeepsTheDefaultEvenOutsideTheUIRange() throws {
+        var settings = Settings()
+        settings.notchWidth = 250
+        let (updated, _) = try SettingsIndex.applying(key: "notchWidth", rawValue: "0", to: settings).get()
+        XCTAssertEqual(updated.notchWidth, 0)
+    }
+
     func testKeepsDecimalsForDecimalSettings() throws {
         var settings = Settings()
         settings.waveformBarThickness = 4.0

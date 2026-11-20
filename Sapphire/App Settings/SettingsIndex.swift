@@ -218,7 +218,10 @@ enum SettingsIndex {
             guard var number = Double(trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "%ptsx "))) else {
                 return .failure(.invalidValue(key: key, expected: rangeDescription(entry) ?? "a number"))
             }
-            if let range = entry.range { number = min(max(number, range.lowerBound), range.upperBound) }
+            // A field's own default can sit outside the slider range (notch size 0 = built-in notch); keep it so Undo can restore it.
+            if let range = entry.range, value(of: key, in: Settings()) != .number(number) {
+                number = min(max(number, range.lowerBound), range.upperBound)
+            }
             newValue = .number(number)
         case .text:
             if let options = entry.options {
