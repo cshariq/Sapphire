@@ -120,6 +120,14 @@ final class DisplayBrightnessMathTests: XCTestCase {
         XCTAssertEqual(DisplayBrightnessMath.nextLevel(from: 0.5, step: 0.25, isUp: false, isFine: true), 0.49, accuracy: 0.0001)
         XCTAssertEqual(DisplayBrightnessMath.nextLevel(from: 1, step: 0.25, isUp: true, isFine: true), 1, accuracy: 0.0001)
     }
+
+    func testStepMathStaysOnTheGridWhenTheDeviceReadsBackSlightlyOff() {
+        XCTAssertEqual(SEStepMath.next(from: 0.0498, step: 0.05, direction: 1), 0.10, accuracy: 0.0001)
+        XCTAssertEqual(SEStepMath.next(from: 0.0503, step: 0.05, direction: 1), 0.10, accuracy: 0.0001)
+        XCTAssertEqual(SEStepMath.next(from: 0.0498, step: 0.05, direction: -1), 0, accuracy: 0.0001)
+        XCTAssertEqual(SEStepMath.next(from: 0.04, step: 0.05, direction: 1), 0.05, accuracy: 0.0001)
+        XCTAssertEqual(SEStepMath.next(from: 0.06, step: 0.05, direction: -1), 0.05, accuracy: 0.0001)
+    }
 }
 
 final class KeepAwakeTriggerEvaluatorTests: XCTestCase {
