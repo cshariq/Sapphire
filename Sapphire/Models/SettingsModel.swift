@@ -2970,14 +2970,6 @@ final class SettingsModel: ObservableObject {
                 loaded.musicLongPressDevices = .openQueue
             }
             defaults.set(true, forKey: "musicLongPressActionsMigratedV2")
-        } else if defaults.object(forKey: "musicLongPressPrevious") == nil {
-            if loaded.musicHoldSkipForSecondaryActions {
-                loaded.musicLongPressActionsEnabled = true
-            } else {
-                loaded.musicLongPressActionsEnabled = false
-            }
-            loaded.musicLongPressPrevious = .none
-            loaded.musicLongPressNext = .none
         }
 
         if defaults.object(forKey: "focusDefaultsAppliedV1") == nil {
