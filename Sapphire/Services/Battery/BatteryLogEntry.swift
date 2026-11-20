@@ -45,7 +45,7 @@ class BatteryDataLogger {
         let logDirURL = appSupportURL.appendingPathComponent("Sapphire/BatteryLogs")
         self.logFileURL = logDirURL.appendingPathComponent("battery_log.jsonl")
         self.legacyLogFileURL = logDirURL.appendingPathComponent("battery_log.json")
-        self.sleepLogFileURL = logDirURL.appendingPathComponent("battery_sleep_log.jsonl")
+        self.sleepLogFileURL = URL(fileURLWithPath: Constant.sleepBatteryLogPath)
 
         let logFile = logFileURL
         let legacyFile = legacyLogFileURL

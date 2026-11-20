@@ -657,7 +657,7 @@ class BatteryManager {
             return
         }
 
-        let logPath = sleepLogFileURL().path
+        let logPath = Constant.sleepBatteryLogPath
         helper.startSleepBatteryMonitoring(
             intervalMinutes: intervalMinutes,
             chargeLimit: chargeLimit,
@@ -679,15 +679,6 @@ class BatteryManager {
                 helperLogger.error("[BatteryManager] stopSleepBatteryMonitoring failed: \(error.localizedDescription)")
             }
         }
-    }
-
-    private func sleepLogFileURL() -> URL {
-        let fileManager = FileManager.default
-        let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fileManager.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return appSupportURL
-            .appendingPathComponent("Sapphire/BatteryLogs")
-            .appendingPathComponent("battery_sleep_log.jsonl")
     }
 
     private func withHelperCallback<T>(
