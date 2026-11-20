@@ -166,6 +166,8 @@ class AuthenticationManager: NSObject, ObservableObject, BLEDelegate {
     }
 
     func handleFaceIDAuthenticated() {
+        // A frame still in flight when the session was torn down must not unlock.
+        guard isFaceIDAuthenticating else { return }
         if let completion = pendingAppLockFaceIDCompletion {
             pendingAppLockFaceIDCompletion = nil
             tearDownFaceID()
