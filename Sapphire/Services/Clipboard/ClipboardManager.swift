@@ -935,7 +935,8 @@ final class ClipboardManager: ObservableObject {
             isTextTruncated: truncated
         )
         recentItems.removeAll {
-            $0.kind == .text && ($0.textContent == text || $0.preview == previewText)
+            // Match on preview only when the full text isn't loaded; texts sharing their first 240 characters are different items.
+            $0.kind == .text && ($0.textContent == text || ($0.textContent == nil && $0.preview == previewText))
         }
         insert(item)
     }

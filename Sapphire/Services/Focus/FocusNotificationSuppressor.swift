@@ -22,7 +22,12 @@ final class FocusNotificationSuppressor {
 
     private static let suppressMask = banners | alerts | showInNotificationCenter | showOnLockScreen
 
-    private var originalFlags: [String: Int] = [:]
+    private static let originalFlagsKey = "FocusNotificationSuppressor.originalFlags"
+
+    // Persisted so a crash or quit mid-session can't leave the user's notification settings stripped for good.
+    private var originalFlags: [String: Int] = UserDefaults.standard.dictionary(forKey: originalFlagsKey) as? [String: Int] ?? [:] {
+        didSet { UserDefaults.standard.set(originalFlags, forKey: Self.originalFlagsKey) }
+    }
 
     var isActive: Bool { !originalFlags.isEmpty }
 
