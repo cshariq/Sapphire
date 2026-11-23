@@ -256,10 +256,11 @@ class PowerStateController: ObservableObject {
             // On gated firmware the adapter is the only SMC lever, so the limit itself is handed to
             // macOS's native Charge Limit (it keeps the Mac on AC, applies its own hysteresis and
             // enforces the limit during sleep). Sapphire's sailing hysteresis is ignored in this path.
-            var useNativeLimit = mode == .adapter
-                && !currentSettings.manualChargePaused
-                && NativeChargeLimit.supportedRange.contains(currentSettings.batteryChargeLimit)
-                && currentSettings.batteryChargeLimit < 100
+            var useNativeLimit = ChargeLimitPolicy.usesNativeLimit(
+                mode: mode,
+                limit: currentSettings.batteryChargeLimit,
+                manualChargePaused: currentSettings.manualChargePaused
+            )
             if useNativeLimit {
                 useNativeLimit = await NativeChargeLimit.isSupported
             }
@@ -349,7 +350,10 @@ class PowerStateController: ObservableObject {
             let heldByNativeLimit = useNativeLimit && currentCharge >= currentSettings.batteryChargeLimit
             let ledColor = calculateMagSafeLEDColor(chargeState: batteryState, inhibited: !shouldCharge || heldByNativeLimit)
             batteryManager.setMagSafeLED(color: ledColor)
-            statusManager.updateState(managementState: currentManagementState, ledColor: ledColor)
+            statusManager.updateState(
+                managementState: ChargeLimitPolicy.displayedState(currentManagementState, isCharging: batteryState.isCharging),
+                ledColor: ledColor
+            )
         }
     }
 
@@ -967,7 +971,8 @@ class BatteryManager {
         let raw = await withHelperCallback(fallback: -1) { helper, reply in
             helper.getChargeControlMode(reply: reply)
         }
-        let mode = ChargeControlMode(rawValue: raw) ?? .legacy
+        // No answer from the helper means nothing it can enforce, not the legacy keys.
+        let mode = ChargeControlMode(rawValue: raw) ?? .unsupported
         cachedChargeControlMode = mode
         return mode
     }
