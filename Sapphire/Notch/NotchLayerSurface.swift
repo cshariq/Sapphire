@@ -19,6 +19,14 @@ enum NotchLayerFill: Equatable {
         case .linearGradient, .radialGradient: return true
         }
     }
+
+    var isClear: Bool {
+        switch self {
+        case .solid(let color): return color.alphaComponent == 0
+        case .linearGradient(let colors, _, _, _), .radialGradient(let colors, _, _):
+            return colors.allSatisfy { $0.alphaComponent == 0 }
+        }
+    }
 }
 
 enum NotchLayerScalarAnimation {

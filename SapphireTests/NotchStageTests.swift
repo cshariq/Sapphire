@@ -90,6 +90,22 @@ final class NotchStageTests: XCTestCase {
         XCTAssertEqual(style.glass?.backend, .visualEffect)
     }
 
+    func testAClearCustomColourDrawsNoBackgroundOrShadow() {
+        var settings = NotchAppearanceSettings()
+        settings.mode = .custom
+        settings.solidColor = CodableColor(color: Color.black.opacity(0))
+        settings.enableTransparencyBlur = false
+        let appearance = NotchController.resolveAppearance(settings, isExpandedLiveActivity: false, fadeStartLocation: 1) { false }
+        let style = NotchSurfaceStyle.resolve(inputs(appearance: appearance))
+        XCTAssertNil(style.glass)
+        XCTAssertNil(style.fill, "a clear fill would still cast its shadow")
+
+        settings.enableTransparencyBlur = true
+        let blurred = NotchSurfaceStyle.resolve(inputs(appearance: settings, glass: false))
+        XCTAssertEqual(blurred.glass?.backend, .visualEffect, "the colour's own alpha makes the surface translucent")
+        XCTAssertNil(blurred.glass?.tintColor)
+    }
+
     func testGeminiPaintsTwoGlowsAndKeepsTheShadowFixed() {
         let appearance = NotchController.resolveAppearance(NotchAppearanceSettings(), isExpandedLiveActivity: false, fadeStartLocation: 1) { false }
         let style = NotchSurfaceStyle.resolve(inputs(appearance: appearance, gemini: true))
