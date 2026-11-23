@@ -383,6 +383,7 @@ extension SettingsField {
         SettingsField(\.prioritizeMediaSource),
         SettingsField(\.mediaAppVisibility),
         SettingsField(\.hideLiveActivityWhenSourceActive),
+        SettingsField(\.keepPausedMusicLiveActivity),
         SettingsField(\.enableQuickPeekOnHover),
         SettingsField(\.showQuickPeekOnTrackChange),
         SettingsField(\.swipeToSkipMusic),

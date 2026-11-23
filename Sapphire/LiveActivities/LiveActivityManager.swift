@@ -55,6 +55,7 @@ private struct LiveActivityEvaluationSettings: Equatable {
     let weatherLiveActivityInterval: Int
     let capsLockLiveActivityEnabled: Bool
     let musicLiveActivityEnabled: Bool
+    let keepPausedMusicLiveActivity: Bool
     let continuityPhoneMediaLiveActivityEnabled: Bool
     let musicLiveActivityRightTextMode: MusicLiveActivityRightTextMode
     let musicLiveActivityWaveformMode: MusicLiveActivityWaveformMode
@@ -118,6 +119,7 @@ private struct LiveActivityEvaluationSettings: Equatable {
         weatherLiveActivityInterval = settings.weatherLiveActivityInterval
         capsLockLiveActivityEnabled = settings.capsLockLiveActivityEnabled
         musicLiveActivityEnabled = settings.musicLiveActivityEnabled
+        keepPausedMusicLiveActivity = settings.keepPausedMusicLiveActivity
         continuityPhoneMediaLiveActivityEnabled = settings.continuityPhoneMediaLiveActivityEnabled
         musicLiveActivityRightTextMode = settings.musicLiveActivityRightTextMode
         musicLiveActivityWaveformMode = settings.musicLiveActivityWaveformMode
@@ -1881,7 +1883,7 @@ class LiveActivityManager {
 
         let isPlaying = musicWidget.isPlaying
         if isDismissingPausedMusic && !isPlaying { return nil }
-        if isPlaying {
+        if isPlaying || settingsModel.current.keepPausedMusicLiveActivity {
             isDismissingPausedMusic = false
             musicPausedSince = nil
             pausedMusicExpiryWork?.cancel()

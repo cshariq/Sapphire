@@ -286,6 +286,7 @@ extension SettingsIndex {
         .init(key: "intelligenceOpenRouterModel", title: nil, detail: nil, section: .intelligence, range: nil, options: nil),
         .init(key: "intelligenceXAIModel", title: nil, detail: nil, section: .intelligence, range: nil, options: XAIModelOption.allCases.map(\.rawValue)),
         .init(key: "invertMusicGestures", title: "Invert Swipe Gestures", detail: "Swipe right to skip and left to go back.", section: .music, range: nil, options: nil),
+        .init(key: "keepPausedMusicLiveActivity", title: "Keep Paused Music in Notch", detail: "Keep the music live activity showing while playback is paused instead of hiding it after 30 seconds.", section: .liveActivities, range: nil, options: nil),
         .init(key: "keyboardDebounceEnabled", title: "Key Debounce", detail: "Filter the doubled letters a worn keyboard invents.", section: .mouse, range: nil, options: nil),
         .init(key: "keyboardDebounceInterval", title: "Debounce Window", detail: nil, section: .mouse, range: (0.02)...(0.15), options: nil),
         .init(key: "launchAtLogin", title: "Launch at Login", detail: "Start Sapphire automatically when you log in to your Mac.", section: .general, range: nil, options: nil),
