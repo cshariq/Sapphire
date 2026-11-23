@@ -1053,6 +1053,8 @@ final class AppTapController {
             renderDeviceDelay = deviceDelay
             renderEightDSettings = pendingEightDSettings
             renderSurroundSettings = pendingSurroundSettings
+            // Delay, surround and 8D timing follow the device rate, which the listener only stored for the EQ.
+            currentSampleRate = eqSampleRate
             os_unfair_lock_unlock(parameterLock)
         }
         let targetGain = renderAppMuted ? 0 : renderAppVolume * renderDeviceVolume
