@@ -155,7 +155,7 @@ struct BatteryInfoView: View {
             ZStack {
                 Image(systemName: "battery.100")
                     .font(.system(size: NotchConfiguration.batteryIconSize, weight: .light))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundStyle(.white.secondary)
 
                 HStack(spacing: 0) {
                     Rectangle()
