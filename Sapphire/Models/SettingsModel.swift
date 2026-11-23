@@ -1822,6 +1822,8 @@ struct Settings: Codable, Equatable {
     var hudShowFunctionName: Bool = false
     var hudVisualStyle: HUDVisualStyle = .adaptive
     var hudCustomColor: CodableColor? = CodableColor(color: .accentColor)
+    var xdrHudGradientStart: CodableColor = CodableColor(color: .purple)
+    var xdrHudGradientEnd: CodableColor = CodableColor(color: .blue)
     var hudAdaptiveTransitionStyle: HUDAdaptiveTransitionStyle = .smooth
     var hudAdaptiveColor1: CodableColor = CodableColor(color: .cyan)
     var hudAdaptiveColor2: CodableColor = CodableColor(color: .purple)

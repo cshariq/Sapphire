@@ -8545,6 +8545,15 @@ struct HUDSettingsView: View {
                             .transition(.opacity)
                     }
 
+                    if settings.settings.enableXDRBrightness {
+                        ColorPicker("XDR Gradient Start", selection: $settings.settings.xdrHudGradientStart.color)
+                            .padding()
+                            .transition(.opacity)
+                        ColorPicker("XDR Gradient End", selection: $settings.settings.xdrHudGradientEnd.color)
+                            .padding()
+                            .transition(.opacity)
+                    }
+
                     Divider().padding(.leading, 20)
 
                     CustomSliderRowView(label: "HUD Duration", value: $settings.settings.hudDuration, range: 1...10, specifier: "%.1f s")
@@ -8588,6 +8597,7 @@ struct HUDSettingsView: View {
                 .modifier(SettingsContainerModifier())
                 .animation(.default, value: pillStyleEnabled)
                 .animation(.default, value: settings.settings.hudVisualStyle)
+                .animation(.default, value: settings.settings.enableXDRBrightness)
 
                 // MARK: Spotify, App & Device Icons (essential)
                 VStack(alignment: .leading, spacing: 0) {

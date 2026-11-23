@@ -90612,6 +90612,52 @@
         }
       }
     },
+    "XDR Gradient End": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XDR Gradient End"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XDR 渐变结束色"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XDR 漸層結束色"
+          }
+        }
+      }
+    },
+    "XDR Gradient Start": {
+      "comment": "Settings interface",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XDR Gradient Start"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XDR 渐变起始色"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XDR 漸層起始色"
+          }
+        }
+      }
+    },
     "Xcode, Android Studio and Gradle, Swift, cargo, Go, npm and friends, make, Docker, and test runs.": {
       "comment": "Settings interface",
       "localizations": {
