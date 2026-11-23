@@ -154,6 +154,8 @@ class PowerStateController: ObservableObject {
     }
 
     private func applyChargePolicyForSleep() {
+        // Calibration owns charging; inhibiting here would stop "charge to 100%" and evaluateState won't undo it.
+        guard !calibrationManager.isActive else { return }
         let currentSettings = settings.settings
         guard let batteryState = batteryMonitor.currentState else {
             if currentSettings.stopChargingWhenSleeping {
@@ -285,7 +287,8 @@ class PowerStateController: ObservableObject {
                 )
             }
 
-            if currentSettings.heatProtectionEnabled && shouldCharge && batteryState.isCharging {
+            // Stay in this block while paused for heat, or charging resumes before the 3° hysteresis is reached.
+            if currentSettings.heatProtectionEnabled && shouldCharge && (batteryState.isCharging || isInHeatProtection) {
                 let temp = await batteryManager.getBatteryTemperature()
                 let threshold = currentSettings.heatProtectionThreshold
                 if temp >= threshold {
@@ -836,6 +839,8 @@ class BatteryManager {
             reply(error)
             return
         }
+        // The helper sets 100% and enables charging itself; forget the cached commands so restoring the limit isn't skipped as a duplicate.
+        resetCommandState()
         helper.startCalibration { error in
             if error != nil {
                 recordFailure()

@@ -980,6 +980,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         _ = settingsModel
         _ = batteryMonitor
         _ = batteryManager
+        // Charge limit, heat protection and scheduled tasks run from these; they used to start only with the Settings window.
+        _ = powerStateController
+        _ = scheduleManager
     }
 
     private func startNearbyShareIfNeeded() {
