@@ -3839,25 +3839,24 @@
         }
       }
     },
-    "+5m Postpone": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
+    "+5 min": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "+5m Postpone"
+            "value": "+5 min"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "推迟 5 分钟"
+            "value": "+5 分钟"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "延後 5 分鐘"
+            "value": "+5 分鐘"
           }
         }
       }
@@ -7109,29 +7108,6 @@
         }
       }
     },
-    "Add app": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Add app"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加应用"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "加入 App"
-          }
-        }
-      }
-    },
     "Add playlists in Apple Music to see them here.": {
       "comment": "Native local UI wording in MusicHubViews.swift",
       "localizations": {
@@ -8268,28 +8244,6 @@
         }
       }
     },
-    "All time": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "All time"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全部时间"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "所有時間"
-          }
-        }
-      }
-    },
     "All widgets and automations": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
@@ -8809,28 +8763,6 @@
         }
       }
     },
-    "Also sync system Focus / DND": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Also sync system Focus / DND"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同时同步系统专注模式 / 勿扰模式"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同時同步系統專注模式／勿擾模式"
-          }
-        }
-      }
-    },
     "Alternate action when the modifier button is held.": {
       "localizations": {
         "en": {
@@ -9052,29 +8984,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "琥珀色"
-          }
-        }
-      }
-    },
-    "Ambiance": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ambiance"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "环境音"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "環境音"
           }
         }
       }
@@ -9686,29 +9595,6 @@
         }
       }
     },
-    "App & Website Blocking": {
-      "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App & Website Blocking"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "应用与网站屏蔽"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App 與網站封鎖"
-          }
-        }
-      }
-    },
     "App Activities": {
       "localizations": {
         "en": {
@@ -9817,29 +9703,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "App 下載 QR 碼"
-          }
-        }
-      }
-    },
-    "App Limit": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App Limit"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "应用限制"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App 限制"
           }
         }
       }
@@ -10045,52 +9908,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "無法移除 App"
-          }
-        }
-      }
-    },
-    "App is blurred while blocked. Notifications stay visible and the app stays open, but there is no unblock button, although you can end the session anytime.": {
-      "comment": "FocusIntensity.blurb",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App is blurred while blocked. Notifications stay visible and the app stays open, but there is no unblock button, although you can end the session anytime."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "屏蔽期间，应用画面会被模糊处理，通知仍然显示，应用保持打开。没有解除屏蔽按钮，但你可以随时结束专注时段。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "封鎖期間，App 畫面會模糊處理。通知仍會顯示，App 也會保持打開，但沒有解除封鎖按鈕；不過你可以隨時結束專注時段。"
-          }
-        }
-      }
-    },
-    "App is blurred while blocked. Notifications stay visible, and you can unblock an app instantly with a button, the app stays open.": {
-      "comment": "FocusIntensity.blurb",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App is blurred while blocked. Notifications stay visible, and you can unblock an app instantly with a button, the app stays open."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "屏蔽期间，应用画面会被模糊处理，通知仍然显示。应用保持打开，你可以点按按钮立即解除屏蔽。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "封鎖期間，App 畫面會模糊處理。通知仍會顯示，你也可以點一下按鈕立即解除封鎖，App 會保持打開。"
           }
         }
       }
@@ -10729,29 +10546,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "為選單列背景加上光澤玻璃效果。"
-          }
-        }
-      }
-    },
-    "Apply environment adjustments to the whole Mac while a session runs.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Apply environment adjustments to the whole Mac while a session runs."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在专注时段内对整台 Mac 应用环境调整。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "專注時段進行時，將環境調整套用至整台 Mac。"
           }
         }
       }
@@ -11824,28 +11618,6 @@
         }
       }
     },
-    "Auto-Start Triggers": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auto-Start Triggers"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动启动条件"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自動啟動條件"
-          }
-        }
-      }
-    },
     "Auto-copy verification codes": {
       "comment": "Settings interface",
       "localizations": {
@@ -11909,29 +11681,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "自動最佳化拷貝的影像"
-          }
-        }
-      }
-    },
-    "Auto-start a focus session at a set time of day — daily, on specific days of the week, weekly, monthly, or once.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auto-start a focus session at a set time of day — daily, on specific days of the week, weekly, monthly, or once."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在指定时间自动开始专注时段，可设为每天、每周指定日期、每周、每月或仅一次。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在指定時間自動開始專注時段，可設為每天、每週特定日子、每週、每月或僅一次。"
           }
         }
       }
@@ -12411,29 +12160,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "自動縮小影像、壓縮媒體，並使用 OCR 擷取文字。"
-          }
-        }
-      }
-    },
-    "Automatically start a break after each focus block.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatically start a break after each focus block."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每个专注区段结束后自动开始休息。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每個專注區段結束後自動開始休息。"
           }
         }
       }
@@ -13485,29 +13211,6 @@
         }
       }
     },
-    "Begin Focus": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Begin Focus"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开始专注"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "開始專注"
-          }
-        }
-      }
-    },
     "Behavior": {
       "comment": "Settings interface",
       "localizations": {
@@ -13943,48 +13646,112 @@
         }
       }
     },
-    "Blocked apps are force-closed and notifications are hidden. Unblock requests wait 10 minutes (or until the session ends), and the session itself can't be stopped early.": {
-      "comment": "FocusIntensity.blurb",
+    "Blocked apps are blurred but stay open. Notifications still show, and you can unblock an app with one click.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Blocked apps are force-closed and notifications are hidden. Unblock requests wait 10 minutes (or until the session ends), and the session itself can't be stopped early."
+            "value": "Blocked apps are blurred but stay open. Notifications still show, and you can unblock an app with one click."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "被屏蔽的应用会被强制关闭，通知也会隐藏。解除屏蔽需等待 10 分钟或专注时段结束，且无法提前结束专注时段。"
+            "value": "被屏蔽的应用会被模糊处理，但保持打开。通知仍会显示，你可以一键解除屏蔽某个应用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "遭封鎖的 App 會被強制結束，通知也會隱藏。解除封鎖的要求需等待 10 分鐘（或直到專注時段結束），且無法提前停止專注時段。"
+            "value": "被封鎖的 App 會被模糊處理，但保持開啟。通知仍會顯示，你可以一鍵解除封鎖某個 App。"
           }
         }
       }
     },
-    "Blocked apps are force-closed the moment they open and notifications are hidden. No unblocking, but you can end the session anytime.": {
-      "comment": "FocusIntensity.blurb",
+    "Blocked apps are blurred but stay open. Notifications still show. There's no unblock button, but you can end the session at any time.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Blocked apps are force-closed the moment they open and notifications are hidden. No unblocking, but you can end the session anytime."
+            "value": "Blocked apps are blurred but stay open. Notifications still show. There's no unblock button, but you can end the session at any time."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "被屏蔽的应用一旦打开就会被强制关闭，通知也会隐藏。无法单独解除屏蔽，但你可以随时结束专注时段。"
+            "value": "被屏蔽的应用会被模糊处理，但保持打开。通知仍会显示。没有解除屏蔽按钮，但你可以随时结束专注时段。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "遭封鎖的 App 一打開就會被強制結束，通知也會隱藏。無法解除封鎖，但你可以隨時結束專注時段。"
+            "value": "被封鎖的 App 會被模糊處理，但保持開啟。通知仍會顯示。沒有解除封鎖按鈕，但你可以隨時結束專注時段。"
+          }
+        }
+      }
+    },
+    "Blocked apps close and notifications are hidden. Unblock requests wait 10 minutes or until the session ends, and you can't end the session early.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked apps close and notifications are hidden. Unblock requests wait 10 minutes or until the session ends, and you can't end the session early."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被屏蔽的应用会被关闭，通知会被隐藏。解除屏蔽请求需等待 10 分钟或直到专注时段结束，且无法提前结束专注时段。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被封鎖的 App 會被關閉，通知會被隱藏。解除封鎖要求需等待 10 分鐘或直到專注時段結束，且無法提前結束專注時段。"
+          }
+        }
+      }
+    },
+    "Blocked apps close as soon as they open and notifications are hidden. You can't unblock apps, but you can end the session at any time.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked apps close as soon as they open and notifications are hidden. You can't unblock apps, but you can end the session at any time."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被屏蔽的应用一打开就会被关闭，通知会被隐藏。无法解除屏蔽应用，但你可以随时结束专注时段。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被封鎖的 App 一開啟就會被關閉，通知會被隱藏。無法解除封鎖 App，但你可以隨時結束專注時段。"
+          }
+        }
+      }
+    },
+    "Blocking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocking"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "屏蔽"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封鎖"
           }
         }
       }
@@ -14058,52 +13825,6 @@
         }
       }
     },
-    "Blocking Intensity": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Blocking Intensity"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "屏蔽强度"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "封鎖強度"
-          }
-        }
-      }
-    },
-    "Blocking mode": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Blocking mode"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "屏蔽模式"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "封鎖模式"
-          }
-        }
-      }
-    },
     "Blocks": {
       "comment": "Native local UI wording in FocusSessionDetailView.swift",
       "localizations": {
@@ -14127,48 +13848,46 @@
         }
       }
     },
-    "Blocks every app except the ones you allow. Ideal for deep-work sessions where only a few tools should exist.": {
-      "comment": "FocusBlockingMode.blurb",
+    "Blocks every app except the ones you allow.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Blocks every app except the ones you allow. Ideal for deep-work sessions where only a few tools should exist."
+            "value": "Blocks every app except the ones you allow."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "屏蔽允许列表之外的所有应用，适合只使用少量工具的深度专注时段。"
+            "value": "屏蔽除你允许的应用之外的所有应用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "封鎖你允許之外的所有 App。適合只需使用少數工具的深度工作時段。"
+            "value": "封鎖除你允許的 App 以外的所有 App。"
           }
         }
       }
     },
-    "Blocks only the apps (and websites) you add to the list. Everything else stays accessible.": {
-      "comment": "FocusBlockingMode.blurb",
+    "Blocks only the apps and websites you add. Everything else stays available.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Blocks only the apps (and websites) you add to the list. Everything else stays accessible."
+            "value": "Blocks only the apps and websites you add. Everything else stays available."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仅屏蔽加入列表的应用和网站，其他内容仍可访问。"
+            "value": "只屏蔽你添加的应用和网站，其他内容仍可使用。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "僅封鎖你加入列表的 App（和網站），其他內容仍可取用。"
+            "value": "只封鎖你加入的 App 和網站，其他內容仍可使用。"
           }
         }
       }
@@ -14693,29 +14412,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "休息時間長度"
-          }
-        }
-      }
-    },
-    "Break Duration:": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Break Duration:"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "休息时长："
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "休息時間長度："
           }
         }
       }
@@ -16176,6 +15872,28 @@
         }
       }
     },
+    "Can't be changed while a session is running.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't be changed while a session is running."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "专注时段进行中时无法更改。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "專注時段進行中時無法更改。"
+          }
+        }
+      }
+    },
     "Cancel": {
       "comment": "Runtime user-facing string",
       "localizations": {
@@ -16760,6 +16478,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "更改會套用至所有未個別設定外觀的顯示器。"
+          }
+        }
+      }
+    },
+    "Changes to the whole Mac while a session runs.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes to the whole Mac while a session runs."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "专注时段进行期间对整台 Mac 生效的更改。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "專注時段進行期間對整台 Mac 生效的變更。"
           }
         }
       }
@@ -18743,29 +18483,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "按一下控制項目會在選單列下方開啟一個列，顯示隱藏項目，無須在原選單列中騰出空間。適合瀏海造成空間不足的情況"
-          }
-        }
-      }
-    },
-    "Clicking the focus session activity opens the full detail view.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clicking the focus session activity opens the full detail view."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点击专注实时活动可打开完整的详细视图。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按一下專注時段即時動態時，會打開完整的詳細檢視。"
           }
         }
       }
@@ -22147,25 +21864,24 @@
         }
       }
     },
-    "Cover the desktop wallpaper and icons with black for the duration of the session.": {
-      "comment": "Settings interface",
+    "Cover the wallpaper and desktop icons with black during a session.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cover the desktop wallpaper and icons with black for the duration of the session."
+            "value": "Cover the wallpaper and desktop icons with black during a session."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "专注时段内以黑色覆盖桌面壁纸和图标。"
+            "value": "专注时段内用黑色遮盖壁纸和桌面图标。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在專注時段期間以黑色覆蓋桌面背景圖片和圖像。"
+            "value": "專注時段內用黑色遮蓋桌布和桌面圖像。"
           }
         }
       }
@@ -23019,28 +22735,6 @@
         }
       }
     },
-    "Cut short-form feeds without blocking every app by default.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cut short-form feeds without blocking every app by default."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "过滤短内容信息流，无需默认屏蔽整个 App。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "過濾短內容動態消息，無需預設封鎖整個 App。"
-          }
-        }
-      }
-    },
     "Cycle Count": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
@@ -23201,25 +22895,24 @@
         }
       }
     },
-    "Darken windows you're not using so the active app stands out and visual clutter recedes.": {
-      "comment": "Settings interface",
+    "Darken windows you aren't using.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Darken windows you're not using so the active app stands out and visual clutter recedes."
+            "value": "Darken windows you aren't using."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "调暗未使用的窗口，突出当前应用，减少视觉干扰。"
+            "value": "调暗你未在使用的窗口。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "調暗你未使用的視窗，讓目前的 App 更突出並減少視覺干擾。"
+            "value": "調暗你未在使用的視窗。"
           }
         }
       }
@@ -24456,29 +24149,6 @@
         }
       }
     },
-    "Dim Apps": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dim Apps"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "调暗应用"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "調暗 App"
-          }
-        }
-      }
-    },
     "Dim Inactive Apps": {
       "comment": "Settings interface",
       "localizations": {
@@ -24502,25 +24172,24 @@
         }
       }
     },
-    "Dim Intensity:": {
-      "comment": "Settings interface",
+    "Dim Intensity": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dim Intensity:"
+            "value": "Dim Intensity"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "调暗程度："
+            "value": "调暗程度"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "調暗強度："
+            "value": "調暗強度"
           }
         }
       }
@@ -25458,29 +25127,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在即時動態中顯示預計充滿時間（充電時）或剩餘使用時間（使用電池時）。"
-          }
-        }
-      }
-    },
-    "Display the focus session as a live activity in the notch while it's running.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Display the focus session as a live activity in the notch while it's running."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "专注时段进行时，在刘海区域中显示实时活动。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "專注時段進行時，在瀏海區域中以即時動態顯示。"
           }
         }
       }
@@ -26960,29 +26606,6 @@
         }
       }
     },
-    "ETA %@": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ETA %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "预计 %@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "預計 %@"
-          }
-        }
-      }
-    },
     "Each app is followed the way it reports its own transfers, so you see exact progress where the app provides it.": {
       "localizations": {
         "en": {
@@ -27005,24 +26628,24 @@
         }
       }
     },
-    "Each profile has its own timer, blocks, and social filters. Sync activation and settings separately.": {
+    "Each profile has its own timer, blocking and social filters.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Each profile has its own timer, blocks, and social filters. Sync activation and settings separately."
+            "value": "Each profile has its own timer, blocking and social filters."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每个配置方案都有独立的计时器、屏蔽规则和社交内容过滤规则。启用状态与设置可分别同步。"
+            "value": "每个配置方案都有各自的计时、屏蔽和社交内容过滤设置。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "每個設定組合都有獨立的計時器、封鎖規則和社群內容過濾規則。啟用狀態與設定可分別同步。"
+            "value": "每個設定組都有各自的計時、封鎖和社群內容過濾設定。"
           }
         }
       }
@@ -29300,29 +28923,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "環境"
-          }
-        }
-      }
-    },
-    "Environment Control": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Environment Control"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "环境控制"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "環境控制"
           }
         }
       }
@@ -32621,25 +32221,24 @@
         }
       }
     },
-    "Focus Duration:": {
-      "comment": "Settings interface",
+    "Focus Duration": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Focus Duration:"
+            "value": "Focus Duration"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "专注时长："
+            "value": "专注时长"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "專注時間長度："
+            "value": "專注時間長度"
           }
         }
       }
@@ -33181,28 +32780,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "隨著播放在裝置間切換"
-          }
-        }
-      }
-    },
-    "Following only": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Following only"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅显示关注内容"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只顯示追蹤內容"
           }
         }
       }
@@ -34226,29 +33803,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "開始使用"
-          }
-        }
-      }
-    },
-    "Get a notification when a focus block ends and a break starts, when a break ends, and when the session finishes.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Get a notification when a focus block ends and a break starts, when a break ends, and when the session finishes."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "专注区段结束并开始休息、休息结束以及整个专注时段完成时发送通知。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "專注區段結束並開始休息、休息結束，以及整個專注時段完成時傳送通知。"
           }
         }
       }
@@ -36302,29 +35856,6 @@
         }
       }
     },
-    "Hide Wall": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hide Wall"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隐藏壁纸"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隱藏桌布"
-          }
-        }
-      }
-    },
     "Hide Wallpaper": {
       "comment": "Settings interface",
       "localizations": {
@@ -36680,6 +36211,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "隱藏 Dock 中固定的 App，僅在 App 執行時顯示其圖示。"
+          }
+        }
+      }
+    },
+    "Hide short-form feeds without blocking the whole app.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide short-form feeds without blocking the whole app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏短视频内容，而不屏蔽整个应用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏短影音內容，而不封鎖整個 App。"
           }
         }
       }
@@ -37586,29 +37139,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "偵測運作方式"
-          }
-        }
-      }
-    },
-    "How aggressively blocked apps (and websites) are handled during a session.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "How aggressively blocked apps (and websites) are handled during a session."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置专注时段内处理被屏蔽应用和网站的严格程度。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在專注時段進行期間處理被封鎖 App（和網站）的嚴格程度。"
           }
         }
       }
@@ -38924,28 +38454,6 @@
         }
       }
     },
-    "Insights": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Insights"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "统计"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "統計"
-          }
-        }
-      }
-    },
     "Inspector": {
       "comment": "Onboarding, app menus, helper, shared utilities, public build placeholders",
       "localizations": {
@@ -38987,6 +38495,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Instagram 探索"
+          }
+        }
+      }
+    },
+    "Instagram Following Only": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instagram Following Only"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instagram 仅显示关注"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instagram 僅顯示追蹤中"
           }
         }
       }
@@ -39732,29 +39262,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "強度"
-          }
-        }
-      }
-    },
-    "Intensity can't be changed while a session is running": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Intensity can't be changed while a session is running"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "专注时段进行时无法更改强度"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "專注時段進行期間無法更改強度"
           }
         }
       }
@@ -40548,25 +40055,24 @@
         }
       }
     },
-    "Keep only a few apps on screen; switching to another tucks the oldest one away (restored when the session ends).": {
-      "comment": "Settings interface",
+    "Keep only a few apps on screen. Opening another hides the oldest; they come back when the session ends.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep only a few apps on screen; switching to another tucks the oldest one away (restored when the session ends)."
+            "value": "Keep only a few apps on screen. Opening another hides the oldest; they come back when the session ends."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "屏幕上仅保留少量应用；切换到新应用时隐藏最早使用的应用，专注时段结束后恢复。"
+            "value": "屏幕上只保留少数应用。打开新应用时会隐藏最早的应用，专注时段结束后会恢复。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "螢幕上只保留少數 App；切換到其他 App 時會收起最舊的那個（時段結束時回復）。"
+            "value": "螢幕上只保留少數 App。開啟新 App 時會隱藏最早的 App，專注時段結束後會恢復。"
           }
         }
       }
@@ -45459,29 +44965,6 @@
         }
       }
     },
-    "Max visible apps:": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Max visible apps:"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最多可见应用数："
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最多可見 App 數量："
-          }
-        }
-      }
-    },
     "Maximize in Current Space": {
       "comment": "Settings interface",
       "localizations": {
@@ -45546,6 +45029,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "最大容量"
+          }
+        }
+      }
+    },
+    "Maximum Visible Apps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum Visible Apps"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多可见应用数"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多可見 App 數量"
           }
         }
       }
@@ -46728,51 +46233,6 @@
         }
       }
     },
-    "Mirror blocks and social filters. Off = customize each device.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mirror blocks and social filters. Off = customize each device."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同步屏蔽项和社交筛选条件。关闭后可单独自定义各设备。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同步封鎖項目與社群篩選條件。關閉後可個別自訂各裝置。"
-          }
-        }
-      }
-    },
-    "Mirror focus sessions to the system Clock app via Shortcuts.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mirror focus sessions to the system Clock app via Shortcuts."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "通过快捷指令将专注时段同步到系统时钟应用。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "透過捷徑將專注時段同步到系統「時鐘」App。"
-          }
-        }
-      }
-    },
     "Mirror macOS Focus and Android Do Not Disturb.": {
       "localizations": {
         "en": {
@@ -46791,6 +46251,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "同步 macOS 專注模式與 Android 勿擾模式。"
+          }
+        }
+      }
+    },
+    "Mirror sessions to the Clock app using Apple's Clock shortcuts, such as Start Timer, when they're on this Mac.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mirror sessions to the Clock app using Apple's Clock shortcuts, such as Start Timer, when they're on this Mac."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当这台 Mac 上有 Apple 的时钟快捷指令（如“开始计时器”）时，将专注时段同步到时钟 App。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "當這台 Mac 上有 Apple 的時鐘捷徑（如「開始計時器」）時，將專注時段同步到時鐘 App。"
           }
         }
       }
@@ -46929,29 +46411,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "缺少必要資料：%@"
-          }
-        }
-      }
-    },
-    "Mission Ctl": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mission Ctl"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "调度中心"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "指揮中心"
           }
         }
       }
@@ -49354,6 +48813,28 @@
         }
       }
     },
+    "New Profile": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Profile"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新配置方案"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新設定組"
+          }
+        }
+      }
+    },
     "New Scheduled Task": {
       "comment": "Settings interface",
       "localizations": {
@@ -49853,6 +49334,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "找不到專注模式（或在沒有專注模式權限時無法使用）。"
+          }
+        }
+      }
+    },
+    "No Focus modes found. Allow Focus Status access and set up Focus modes in System Settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Focus modes found. Allow Focus Status access and set up Focus modes in System Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到专注模式。请允许访问专注状态，并在系统设置中设置专注模式。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到專注模式。請允許取用專注狀態，並在系統設定中設定專注模式。"
           }
         }
       }
@@ -50886,52 +50389,6 @@
         }
       }
     },
-    "No limit — enter any number of minutes": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No limit — enter any number of minutes"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无上限 — 可输入任意分钟数"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無限制——可輸入任意分鐘數"
-          }
-        }
-      }
-    },
-    "No limit — enter any number of minutes (0 disables the break)": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No limit — enter any number of minutes (0 disables the break)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无上限 — 可输入任意分钟数（0 表示禁用休息）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無限制——可輸入任意分鐘數（0 會停用休息）"
-          }
-        }
-      }
-    },
     "No longer at this location": {
       "localizations": {
         "en": {
@@ -50973,28 +50430,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "沒有可用的歌詞。"
-          }
-        }
-      }
-    },
-    "No macOS Focus modes found. Enable Focus Status permission and create modes in System Settings.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No macOS Focus modes found. Enable Focus Status permission and create modes in System Settings."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未找到 macOS 专注模式。请允许访问专注状态，并在系统设置中创建专注模式。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "找不到 macOS 專注模式。請允許取用專注模式狀態，並在系統設定中建立專注模式。"
           }
         }
       }
@@ -51524,25 +50959,24 @@
         }
       }
     },
-    "No scheduled sessions.": {
-      "comment": "Settings interface",
+    "No schedules yet.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No scheduled sessions."
+            "value": "No schedules yet."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无定时专注时段。"
+            "value": "暂无计划。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "沒有已排程的時段。"
+            "value": "尚無排程。"
           }
         }
       }
@@ -53085,6 +52519,28 @@
         }
       }
     },
+    "Notify you when a focus block, a break or the session ends.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notify you when a focus block, a break or the session ends."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在一个专注阶段、休息或整个时段结束时通知你。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在一個專注階段、休息或整個時段結束時通知你。"
+          }
+        }
+      }
+    },
     "Notify you when a verified Sapphire release is ready.": {
       "comment": "Settings interface",
       "localizations": {
@@ -53788,52 +53244,6 @@
         }
       }
     },
-    "On session end": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "On session end"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "专注时段结束时"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "時段結束時"
-          }
-        }
-      }
-    },
-    "On session start": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "On session start"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "专注时段开始时"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "時段開始時"
-          }
-        }
-      }
-    },
     "On time": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
@@ -53876,28 +53286,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "一次"
-          }
-        }
-      }
-    },
-    "One place for how you’ve been focusing — not three competing charts.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "One place for how you’ve been focusing — not three competing charts."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "集中查看你的专注情况，无需在三张图表之间来回切换。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "集中查看你的專注情況，無須在三張圖表之間來回切換。"
           }
         }
       }
@@ -55154,6 +54542,28 @@
         }
       }
     },
+    "Open the full session view when you click the activity.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the full session view when you click the activity."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按实时活动时打开完整的专注视图。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "點按即時動態時打開完整的專注視圖。"
+          }
+        }
+      }
+    },
     "Open the unified Sapphire picker right where you're typing with a global shortcut. Selecting a clipboard item copies it and pastes it at the cursor; the Emoji tab types emoji directly. (The emoji shortcut opens the same panel on its Emoji tab.)": {
       "comment": "Settings interface",
       "localizations": {
@@ -55737,29 +55147,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "PIN：%@"
-          }
-        }
-      }
-    },
-    "PLAYING": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "PLAYING"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在播放"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在播放"
           }
         }
       }
@@ -57739,29 +57126,6 @@
         }
       }
     },
-    "Play generated white/pink/brown noise or rain to mask noisy surroundings. Starts automatically with each session.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Play generated white/pink/brown noise or rain to mask noisy surroundings. Starts automatically with each session."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "播放生成的白噪声、粉红噪声、棕噪声或雨声，遮盖周围噪音。每个专注时段自动开始播放。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "播放產生的白噪音／粉紅噪音／棕噪音或雨聲，以掩蓋周遭的噪音。每個時段都會自動開始播放。"
-          }
-        }
-      }
-    },
     "Play phone audio on the Mac": {
       "localizations": {
         "en": {
@@ -57849,6 +57213,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "播放專輯，或在 Spotify 中打開以查看完整曲目列表。"
+          }
+        }
+      }
+    },
+    "Play white, pink or brown noise or rain during each session.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play white, pink or brown noise or rain during each session."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在每个专注时段播放白噪音、粉红噪音、棕噪音或雨声。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在每個專注時段播放白噪音、粉紅噪音、棕噪音或雨聲。"
           }
         }
       }
@@ -58511,25 +57897,24 @@
         }
       }
     },
-    "Postpone the break by 5 minutes and keep focusing": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
+    "Postpone the break by 5 minutes": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Postpone the break by 5 minutes and keep focusing"
+            "value": "Postpone the break by 5 minutes"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将休息推迟 5 分钟，继续专注"
+            "value": "将休息推迟 5 分钟"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "將休息延後 5 分鐘並繼續專注"
+            "value": "將休息延後 5 分鐘"
           }
         }
       }
@@ -58944,6 +58329,28 @@
         }
       }
     },
+    "Press a shortcut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a shortcut"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下快捷键"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下快速鍵"
+          }
+        }
+      }
+    },
     "Press and hold secondary player buttons (Queue, Devices, Like, Shuffle, Repeat) for an alternate action. Previous / Next / Play are tap-only unless you assign a hold action below. When this is off, Previous/Next still seek while held.": {
       "comment": "Settings interface",
       "localizations": {
@@ -58985,29 +58392,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "按下快速鍵，在螢幕文字周圍拖出一個矩形，所選文字就會以文字形式拷貝到剪貼簿。"
-          }
-        }
-      }
-    },
-    "Press this shortcut from anywhere to start or pause a focus session.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Press this shortcut from anywhere to start or pause a focus session."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在任何位置按下此快捷键，即可开始或暂停专注时段。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在任何地方按下此快速鍵即可開始或暫停專注時段。"
           }
         }
       }
@@ -62996,6 +62380,28 @@
         }
       }
     },
+    "Requires Continuity.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires Continuity."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要连续互通。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要接續互通。"
+          }
+        }
+      }
+    },
     "Requires a spotify login": {
       "comment": "Settings interface",
       "localizations": {
@@ -63494,29 +62900,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "回應：動畫所需時間（數值越低越快）。\n阻尼：回彈程度（1.0 為無回彈）。"
-          }
-        }
-      }
-    },
-    "Rest & recharge": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rest & recharge"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "休息恢复"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "休息充電"
           }
         }
       }
@@ -64741,29 +64124,6 @@
         }
       }
     },
-    "Run a Shortcut when a session starts / ends — e.g. turn on Do Not Disturb.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Run a Shortcut when a session starts / ends — e.g. turn on Do Not Disturb."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "专注时段开始或结束时运行快捷指令，例如开启勿扰模式。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在專注時段開始／結束時執行捷徑，例如開啟「勿擾模式」。"
-          }
-        }
-      }
-    },
     "Run a command": {
       "localizations": {
         "en": {
@@ -64804,6 +64164,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "執行指令…"
+          }
+        }
+      }
+    },
+    "Run a shortcut from the Shortcuts app.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run a shortcut from the Shortcuts app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行“快捷指令”App 中的快捷指令。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "執行「捷徑」App 中的捷徑。"
           }
         }
       }
@@ -65025,29 +64407,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "透過 Apple Intelligence 在裝置上執行。更改立即生效，並可還原。"
-          }
-        }
-      }
-    },
-    "SESSION CONTROL": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SESSION CONTROL"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "专注时段控制"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "專注時段控制"
           }
         }
       }
@@ -65506,29 +64865,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "無法在此移除 Sapphire 和 macOS 系統 App。"
-          }
-        }
-      }
-    },
-    "Sapphire automatically uses Apple's standard Clock shortcut names (\"Start Timer\", \"Start Stopwatch\", etc.). If iCloud sync is enabled and those Clock shortcuts are present on this Mac, they run automatically during sessions.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sapphire automatically uses Apple's standard Clock shortcut names (\"Start Timer\", \"Start Stopwatch\", etc.). If iCloud sync is enabled and those Clock shortcuts are present on this Mac, they run automatically during sessions."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sapphire 自动使用 Apple 标准时钟快捷指令名称（如“Start Timer”“Start Stopwatch”）。若已启用 iCloud 同步且此 Mac 上存在这些时钟快捷指令，它们将在专注时段内自动运行。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sapphire 會自動使用 Apple 標準的「時鐘」捷徑名稱（「Start Timer」、「Start Stopwatch」等）。若已啟用 iCloud 同步，且這台 Mac 上有這些「時鐘」捷徑，則會在專注時段期間自動執行。"
           }
         }
       }
@@ -66330,25 +65666,46 @@
         }
       }
     },
-    "Scheduled sessions respect your blocking, environment, and ambient-sound settings — they behave exactly like sessions you start manually.": {
-      "comment": "Settings interface",
+    "Scheduled sessions use the same blocking, environment and sound settings as sessions you start yourself.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scheduled sessions respect your blocking, environment, and ambient-sound settings — they behave exactly like sessions you start manually."
+            "value": "Scheduled sessions use the same blocking, environment and sound settings as sessions you start yourself."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "定时专注时段沿用屏蔽、环境和环境音设置，行为与手动开始的专注时段完全一致。"
+            "value": "计划的专注时段与你手动开始的时段使用相同的屏蔽、环境和声音设置。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "排程的專注時段會遵循你的封鎖、環境和環境音設定，運作方式與手動開始的專注時段完全相同。"
+            "value": "排程的專注時段與你手動開始的時段使用相同的封鎖、環境和聲音設定。"
+          }
+        }
+      }
+    },
+    "Schedules": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schedules"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排程"
           }
         }
       }
@@ -67669,29 +67026,6 @@
         }
       }
     },
-    "Select an app…": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select an app…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择应用…"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選擇 App…"
-          }
-        }
-      }
-    },
     "Select an image or video to show on your lock screen.": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
@@ -68443,25 +67777,24 @@
         }
       }
     },
-    "Session Timing": {
-      "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
+    "Session": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Session Timing"
+            "value": "Session"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "时段计时"
+            "value": "专注时段"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "專注時段計時"
+            "value": "專注時段"
           }
         }
       }
@@ -69016,24 +68349,24 @@
         }
       }
     },
-    "Short-form web": {
+    "Short-Form Websites": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Short-form web"
+            "value": "Short-Form Websites"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "网页短内容"
+            "value": "短视频网站"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "網頁短內容"
+            "value": "短影音網站"
           }
         }
       }
@@ -71870,25 +71203,46 @@
         }
       }
     },
-    "Show the remaining time on the right side instead of the completing progress ring.": {
-      "comment": "Settings interface",
+    "Show the running session as a live activity.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Show the remaining time on the right side instead of the completing progress ring."
+            "value": "Show the running session as a live activity."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在右侧显示剩余时间，替代完成进度圆环。"
+            "value": "将进行中的专注时段显示为实时活动。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在右側顯示剩餘時間，而非完成進度圓環。"
+            "value": "將進行中的專注時段顯示為即時動態。"
+          }
+        }
+      }
+    },
+    "Show the time left instead of the progress ring.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show the time left instead of the progress ring."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示剩余时间，而不是进度环。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示剩餘時間，而非進度環。"
           }
         }
       }
@@ -73343,28 +72697,6 @@
         }
       }
     },
-    "Snap Spotlight": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Snap Spotlight"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Snap Spotlight"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Snap Spotlight"
-          }
-        }
-      }
-    },
     "Snap Zone Shortcuts": {
       "comment": "Settings interface",
       "localizations": {
@@ -73452,6 +72784,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "貼齊觸發延遲"
+          }
+        }
+      }
+    },
+    "Snapchat Spotlight": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapchat Spotlight"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapchat Spotlight"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Snapchat Spotlight"
           }
         }
       }
@@ -73594,12 +72948,12 @@
         }
       }
     },
-    "Social filters": {
+    "Social Filters": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Social filters"
+            "value": "Social Filters"
           }
         },
         "zh-Hans": {
@@ -74728,6 +74082,28 @@
         }
       }
     },
+    "Start Automatically": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Automatically"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动开始"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動開始"
+          }
+        }
+      }
+    },
     "Start Calibration": {
       "comment": "Settings interface",
       "localizations": {
@@ -74816,6 +74192,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "開始遠距校正"
+          }
+        }
+      }
+    },
+    "Start Focus": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Focus"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始专注"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始專注"
           }
         }
       }
@@ -75069,6 +74467,50 @@
         }
       }
     },
+    "Start a break after each focus block.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a break after each focus block."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个专注阶段结束后开始休息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每個專注階段結束後開始休息。"
+          }
+        }
+      }
+    },
+    "Start a focus session automatically at a set time.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a focus session automatically at a set time."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在设定的时间自动开始专注时段。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在設定的時間自動開始專注時段。"
+          }
+        }
+      }
+    },
     "Start increasing from:": {
       "comment": "Settings interface",
       "localizations": {
@@ -75088,6 +74530,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "開始加速的溫度："
+          }
+        }
+      }
+    },
+    "Start or pause a session from anywhere.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start or pause a session from anywhere."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在任何地方开始或暂停专注时段。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在任何地方開始或暫停專注時段。"
           }
         }
       }
@@ -75158,46 +74622,24 @@
         }
       }
     },
-    "Start this profile when a macOS Focus mode turns on, or when your phone enters Do Not Disturb.": {
+    "Start this profile when a macOS Focus turns on or your phone enters Do Not Disturb.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start this profile when a macOS Focus mode turns on, or when your phone enters Do Not Disturb."
+            "value": "Start this profile when a macOS Focus turns on or your phone enters Do Not Disturb."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当 macOS 专注模式开启或手机进入勿扰模式时，启动此配置方案。"
+            "value": "当 macOS 专注模式开启或手机进入勿扰模式时开始此配置方案。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "當 macOS 專注模式開啟或手機進入勿擾模式時，啟動此設定組合。"
-          }
-        }
-      }
-    },
-    "Start this profile when “%@” activates": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Start this profile when “%@” activates"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "“%@”启用时开始此配置"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「%@」啟用時開始此設定檔"
+            "value": "當 macOS 專注模式開啟或手機進入勿擾模式時開始此設定組。"
           }
         }
       }
@@ -75221,28 +74663,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "開始使用麥克風以查看其音量。"
-          }
-        }
-      }
-    },
-    "Start when the phone enters DND (requires Continuity).": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Start when the phone enters DND (requires Continuity)."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手机进入勿扰模式时开始（需要连续互通）。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "手機進入勿擾模式時開始（需要接續互通）。"
           }
         }
       }
@@ -75332,6 +74752,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "在一部裝置上開始或結束專注設定檔，會在另一部裝置上同步開始或結束。"
+          }
+        }
+      }
+    },
+    "Starting or ending this profile here does the same on your Android phone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting or ending this profile here does the same on your Android phone."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这里开始或结束此配置方案时，Android 手机上也会同步执行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在這裡開始或結束此設定組時，Android 手機上也會同步執行。"
           }
         }
       }
@@ -75716,29 +75158,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "連接顯示器時保持喚醒，不包括 AirPlay 與並行顯示器。"
-          }
-        }
-      }
-    },
-    "Stay in the zone": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stay in the zone"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保持专注状态"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保持專注"
           }
         }
       }
@@ -77928,6 +77347,28 @@
         }
       }
     },
+    "Sync Blocking With Phone": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync Blocking With Phone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与手机同步屏蔽设置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "與手機同步封鎖設定"
+          }
+        }
+      }
+    },
     "Sync Focus Session settings": {
       "localizations": {
         "en": {
@@ -77972,6 +77413,50 @@
         }
       }
     },
+    "Sync Mode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync Mode"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步模式"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步模式"
+          }
+        }
+      }
+    },
+    "Sync Start and Stop With Phone": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync Start and Stop With Phone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与手机同步开始和停止"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "與手機同步開始與停止"
+          }
+        }
+      }
+    },
     "Sync Stopwatch": {
       "comment": "FocusShortcutSyncMode.displayName",
       "localizations": {
@@ -77995,6 +77480,28 @@
         }
       }
     },
+    "Sync System Focus": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync System Focus"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步系统专注模式"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步系統專注模式"
+          }
+        }
+      }
+    },
     "Sync Timer": {
       "comment": "FocusShortcutSyncMode.displayName",
       "localizations": {
@@ -78014,73 +77521,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "同步計時器"
-          }
-        }
-      }
-    },
-    "Sync mode": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sync mode"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同步模式"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同步模式"
-          }
-        }
-      }
-    },
-    "Sync start & stop with phone": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sync start & stop with phone"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "与手机同步开始和停止"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "與手機同步開始與停止"
-          }
-        }
-      }
-    },
-    "Sync this profile’s settings": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sync this profile’s settings"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同步此配置的设置"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同步此設定檔的設定"
           }
         }
       }
@@ -78150,29 +77590,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "系統與工具程式"
-          }
-        }
-      }
-    },
-    "System Clock & Shortcuts": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "System Clock & Shortcuts"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "系统时钟与快捷指令"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "系統時鐘與捷徑"
           }
         }
       }
@@ -78754,29 +78171,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "系統"
-          }
-        }
-      }
-    },
-    "TAP START TO BEGIN": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TAP START TO BEGIN"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点击开始"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "點一下「開始」以開始"
           }
         }
       }
@@ -79390,29 +78784,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "暫時放電至指定百分比。這不會影響你的主要充電上限或自動放電設定。"
-          }
-        }
-      }
-    },
-    "Temporarily remove the dim layer while Mission Control is open so you can actually see the apps in the Exposé grid.": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Temporarily remove the dim layer while Mission Control is open so you can actually see the apps in the Exposé grid."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "调度中心打开时暂时移除调暗层，便于查看窗口总览中的应用。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「指揮中心」打開時暫時移除調暗圖層，讓你能真正看清 Exposé 格狀排列中的 App。"
           }
         }
       }
@@ -81809,6 +81180,28 @@
         }
       }
     },
+    "This Week": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Week"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本週"
+          }
+        }
+      }
+    },
     "This app was closed because it's blocked during your focus session.": {
       "comment": "Native local UI wording in FocusRestrictedAppActivityView.swift",
       "localizations": {
@@ -82190,28 +81583,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "此更新無法在這台 Mac 上原生執行。"
-          }
-        }
-      }
-    },
-    "This week": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This week"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本周"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本週"
           }
         }
       }
@@ -83464,29 +82835,6 @@
         }
       }
     },
-    "Total": {
-      "comment": "Native local UI wording in FocusSessionDetailView.swift",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Total"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "总计"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "總計"
-          }
-        }
-      }
-    },
     "Total Data Points": {
       "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
       "localizations": {
@@ -84460,6 +83808,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "請在「系統設定 › 隱私權與安全性 › 媒體與 Apple Music」中開啟 Sapphire。"
+          }
+        }
+      }
+    },
+    "Turn the dimming off while Mission Control is open.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn the dimming off while Mission Control is open."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调度中心打开时关闭调暗效果。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「指揮中心」開啟時關閉調暗效果。"
           }
         }
       }
@@ -86898,6 +86268,28 @@
         }
       }
     },
+    "Use this profile's blocking and social filters on your phone too. Turn off to set them separately on each device.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use this profile's blocking and social filters on your phone too. Turn off to set them separately on each device."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在手机上也使用此配置方案的屏蔽和社交内容过滤设置。关闭后可在每台设备上分别设置。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在手機上也使用此設定組的封鎖和社群內容過濾設定。關閉後可在每部裝置上分別設定。"
+          }
+        }
+      }
+    },
     "Use trusted Wi-Fi networks as locations. Face ID will not start on other networks or when the network name is unavailable.": {
       "comment": "Settings interface",
       "localizations": {
@@ -89014,6 +88406,50 @@
         }
       }
     },
+    "When a Session Ends": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When a Session Ends"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "专注时段结束时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "專注時段結束時"
+          }
+        }
+      }
+    },
+    "When a Session Starts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When a Session Starts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "专注时段开始时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "專注時段開始時"
+          }
+        }
+      }
+    },
     "When a song only has line timing, listen to the music app's audio on this Mac to time each word, and share good results. Asks for audio access and downloads Apple's speech model once.": {
       "comment": "Settings interface",
       "localizations": {
@@ -89302,28 +88738,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "這部 Mac 或手機開始播放時，會重新連接共用的耳塞，另一部裝置則暫停。無縫連線一律免費。"
-          }
-        }
-      }
-    },
-    "When this profile starts or ends here, do the same on Android.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "When this profile starts or ends here, do the same on Android."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在此开始或结束此配置时，在 Android 上执行相同操作。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在此開始或結束此設定檔時，在 Android 上執行相同操作。"
           }
         }
       }
@@ -89903,29 +89317,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wi-Fi 網路名稱"
-          }
-        }
-      }
-    },
-    "Widget & Activity": {
-      "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Widget & Activity"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "小组件与活动"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "小工具與活動"
           }
         }
       }
@@ -92201,29 +91592,6 @@
         }
       }
     },
-    "e.g. twitter.com": {
-      "comment": "Settings interface",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "e.g. twitter.com"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "例如 twitter.com"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "例如 twitter.com"
-          }
-        }
-      }
-    },
     "e.g. ↓ 1.2 MB/s ↑ 340 KB/s": {
       "localizations": {
         "en": {
@@ -92425,6 +91793,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "預設膚色"
+          }
+        }
+      }
+    },
+    "example.com": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "example.com"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "example.com"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "example.com"
           }
         }
       }

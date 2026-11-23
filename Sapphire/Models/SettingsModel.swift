@@ -3497,13 +3497,13 @@ enum FocusIntensity: String, Codable, CaseIterable, Identifiable {
     var blurb: String {
         switch self {
         case .minimal:
-            return String(localized: "App is blurred while blocked. Notifications stay visible, and you can unblock an app instantly with a button, the app stays open.")
+            return String(localized: "Blocked apps are blurred but stay open. Notifications still show, and you can unblock an app with one click.")
         case .gentle:
-            return String(localized: "App is blurred while blocked. Notifications stay visible and the app stays open, but there is no unblock button, although you can end the session anytime.")
+            return String(localized: "Blocked apps are blurred but stay open. Notifications still show. There's no unblock button, but you can end the session at any time.")
         case .standard:
-            return String(localized: "Blocked apps are force-closed the moment they open and notifications are hidden. No unblocking, but you can end the session anytime.")
+            return String(localized: "Blocked apps close as soon as they open and notifications are hidden. You can't unblock apps, but you can end the session at any time.")
         case .strict:
-            return String(localized: "Blocked apps are force-closed and notifications are hidden. Unblock requests wait 10 minutes (or until the session ends), and the session itself can't be stopped early.")
+            return String(localized: "Blocked apps close and notifications are hidden. Unblock requests wait 10 minutes or until the session ends, and you can't end the session early.")
         }
     }
 
@@ -3606,9 +3606,9 @@ enum FocusBlockingMode: String, Codable, CaseIterable, Identifiable {
     var blurb: String {
         switch self {
         case .blocklist:
-            return String(localized: "Blocks only the apps (and websites) you add to the list. Everything else stays accessible.")
+            return String(localized: "Blocks only the apps and websites you add. Everything else stays available.")
         case .allowlist:
-            return String(localized: "Blocks every app except the ones you allow. Ideal for deep-work sessions where only a few tools should exist.")
+            return String(localized: "Blocks every app except the ones you allow.")
         }
     }
 }
