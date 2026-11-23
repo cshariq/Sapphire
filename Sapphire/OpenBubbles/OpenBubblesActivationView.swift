@@ -42,7 +42,7 @@ struct OpenBubblesActivationView: View {
         switch buttonState {
         case .idle: return String(localized: "Generate One-Time Activation Code")
         case .processing: return String(localized: "Generating...")
-        case .success: return String(localized: "Succeeded!")
+        case .success: return String(localized: "Succeeded")
         case .error: return String(localized: "An Error Occurred")
         }
     }

@@ -111,7 +111,7 @@ struct InstalledAppUpdateSelectionToggle: View {
                 .toggleStyle(.checkbox)
                 .labelsHidden()
                 .disabled(true)
-                .help("Updated from its own row — not included in batch updates")
+                .help("Update this app from its own row. Batch updates skip it.")
         }
     }
 }

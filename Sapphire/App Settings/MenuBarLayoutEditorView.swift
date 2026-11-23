@@ -34,7 +34,7 @@ struct MenuBarLayoutEditorView: View {
             Divider().padding(.leading, 20)
             ToggleRow(
                 title: "Show Hidden Items in a Bar",
-                description: "Clicking the control item opens a bar under the menu bar with the hidden items instead of making room for them. Useful when the notch leaves no space",
+                description: "Clicking the control item opens a bar under the menu bar with the hidden items instead of making room for them. Useful when the notch leaves no space.",
                 isOn: $settings.settings.menuBarUseHiddenItemsBar
             )
 

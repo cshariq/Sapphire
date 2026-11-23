@@ -272,9 +272,9 @@ final class SystemAlertsManager: ObservableObject {
         lastPressureLevel = level
         switch level {
         case .critical:
-            postAlert(kind: .memoryPressure, title: String(localized: "Memory Pressure"), body: String(localized: "Memory pressure is critical — consider closing some apps."))
+            postAlert(kind: .memoryPressure, title: String(localized: "Memory Pressure"), body: String(localized: "Memory pressure is critical. Consider closing some apps."))
         case .warning:
-            postAlert(kind: .memoryPressure, title: String(localized: "Memory Pressure"), body: String(localized: "Memory pressure is high — consider closing some apps."))
+            postAlert(kind: .memoryPressure, title: String(localized: "Memory Pressure"), body: String(localized: "Memory pressure is high. Consider closing some apps."))
         }
     }
 

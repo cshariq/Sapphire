@@ -1911,7 +1911,7 @@ class LiveActivityManager {
         if musicWidget.showQuickPeek || showHoverPeek {
             bottomContentType =
                 .peek(
-                    title: " " + (musicWidget.title ?? String(localized: "Now Playing")),
+                    title: musicWidget.title ?? String(localized: "Now Playing"),
                     artist: musicWidget.artist ?? ""
                 )
             bottomContentIdentifier = "peek"

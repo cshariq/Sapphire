@@ -65,7 +65,7 @@ struct DevActivitySettingsView: View {
 
             ToggleRow(
                 title: "Builds & Tests",
-                description: "Xcode, Android Studio and Gradle, Swift, cargo, Go, npm and friends, make, Docker, and test runs.",
+                description: "Xcode, Android Studio and Gradle, Swift, cargo, Go, npm, make, Docker, and test runs.",
                 isOn: kindBinding(.build, keyPath: \.devActivityKinds)
             )
 
@@ -171,13 +171,13 @@ struct DevActivitySettingsView: View {
                 .font(.system(size: 14, weight: .medium))
 
             Text("""
-            Sapphire watches your own processes — nothing is read from inside an app, no accessibility \
+            Sapphire watches your own processes. Nothing is read from inside an app, no accessibility \
             permission is used, and nothing leaves the Mac.
 
             Tools that only exist while they run (xcodebuild, cargo, gradle, npm run build, a command you \
             typed) are detected the moment they start. Tools that stay resident between turns (Claude, \
-            Codex, an editor's built-in agent, a Gradle daemon) are reported only while they are actually \
-            working, which is why sensitivity exists.
+            Codex, an editor's built-in agent, a Gradle daemon) are reported only while they are \
+            working. Sensitivity sets how much activity counts as working.
             """)
                 .font(.caption)
                 .foregroundStyle(.secondary)

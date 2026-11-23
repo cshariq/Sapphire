@@ -56,9 +56,9 @@ enum HelperIssue: Equatable {
 
             macOS can't find the helper.
 
-            Do fix this:
+            To fix this:
             1. Click “Reset Helper” below. Sapphire will unregister the helper with SMAppService and register it again.
-            2. If the helper still does not start, Sapphire will relaunch itself — or click “Relaunch Sapphire”.
+            2. If the helper still does not start, Sapphire will relaunch itself. You can also click “Relaunch Sapphire”.
             3. When Sapphire opens, click Install if asked.
             4. In System Settings → General → Login Items, enable Sapphire Helper under Allow in the Background.
 

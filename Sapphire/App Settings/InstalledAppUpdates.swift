@@ -3565,7 +3565,7 @@ final class InstalledAppUpdatesChecker: ObservableObject {
             let list = ListFormatter.localizedString(byJoining: names.isEmpty ? items.map { $0.token } : names)
             let command = "brew upgrade --cask " + items.map { $0.token }.joined(separator: " ")
             self.homebrewNotice = opened
-                ? String(localized: "Opened Terminal to upgrade \(list) — Homebrew needs your administrator password.")
+                ? String(localized: "Opened Terminal to upgrade \(list). Homebrew needs your administrator password.")
                 : String(localized: "Couldn't open Terminal. Run “\(command)” yourself.")
         }
     }

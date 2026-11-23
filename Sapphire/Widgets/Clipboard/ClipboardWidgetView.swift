@@ -53,7 +53,6 @@ struct ClipboardWidgetView: View {
             title: String(localized: "Clipboard"),
             systemImage: "list.clipboard",
             tint: .blue,
-            gradient: [Color.blue.opacity(0.35), Color.cyan.opacity(0.16)],
             count: clipboardManager.recentItems.count,
             items: Array(clipboardManager.recentItems.prefix(3)),
             emptyText: String(localized: "Nothing copied yet")

@@ -194,13 +194,7 @@ struct MirrorPlayerView: View {
         VStack(spacing: 18) {
             ZStack {
                 Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.indigo.opacity(0.45), Color.purple.opacity(0.3)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(Color.indigo.opacity(0.4))
                     .frame(width: 84, height: 84)
                 Circle()
                     .stroke(.white.opacity(0.2), lineWidth: 1)

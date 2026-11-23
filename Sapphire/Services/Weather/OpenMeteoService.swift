@@ -124,7 +124,7 @@ private func wmcDescription(_ wmo: Int) -> String {
     case 82:     return String(localized: "Heavy Showers")
     case 85, 86: return String(localized: "Snow Showers")
     case 95:     return String(localized: "Thunderstorm")
-    case 96, 99: return String(localized: "Thunderstorm w/ Hail")
+    case 96, 99: return String(localized: "Thunderstorm with Hail")
     default:     return String(localized: "Unknown")
     }
 }

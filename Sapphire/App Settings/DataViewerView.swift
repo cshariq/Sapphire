@@ -147,14 +147,14 @@ struct DataViewerView: View {
                     icon: "externaldrive.fill",
                     title: String(localized: "Database Size"),
                     value: String(format: "%.2f MB", summary.databaseSizeMB),
-                    color: .purple
+                    color: .blue
                 )
 
                 StatCard(
                     icon: "checkmark.circle.fill",
                     title: String(localized: "Active Monitors"),
                     value: "\(summary.countsByMonitorType.count)",
-                    color: .green
+                    color: .blue
                 )
             }
         }
@@ -212,7 +212,7 @@ struct DataViewerView: View {
                         Spacer()
                     }
                     .padding()
-                    .background(Color.blue.opacity(0.05))
+                    .background(Color.gray.opacity(0.05))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
@@ -228,24 +228,24 @@ struct DataViewerView: View {
             VStack(spacing: 12) {
                 HStack {
                     Image(systemName: "lock.shield.fill")
-                        .foregroundStyle(.purple)
+                        .foregroundStyle(.blue)
                     Text("All data is AES-256 encrypted")
                         .font(.subheadline)
                     Spacer()
                 }
                 .padding()
-                .background(Color.purple.opacity(0.05))
+                .background(Color.gray.opacity(0.05))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 HStack {
                     Image(systemName: "externaldrive.badge.checkmark")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(.blue)
                     Text("Stored locally on your device")
                         .font(.subheadline)
                     Spacer()
                 }
                 .padding()
-                .background(Color.green.opacity(0.05))
+                .background(Color.gray.opacity(0.05))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }

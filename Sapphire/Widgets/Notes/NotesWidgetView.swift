@@ -15,7 +15,6 @@ struct NotesWidgetView: View {
             title: String(localized: "Notes"),
             systemImage: "note.text",
             tint: .yellow,
-            gradient: [Color.yellow.opacity(0.35), Color.orange.opacity(0.18)],
             count: notesManager.notes.count,
             items: Array(notesManager.notes.sorted { $0.updatedAt > $1.updatedAt }.prefix(3)),
             emptyText: String(localized: "No notes yet")
@@ -122,15 +121,7 @@ struct NotesPlayerView: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: note.isDone
-                                ? [Color.green.opacity(0.75), Color.mint.opacity(0.45)]
-                                : [Color.yellow.opacity(0.9), Color.orange.opacity(0.55)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .fill(note.isDone ? Color.green.opacity(0.75) : Color.yellow.opacity(0.9))
                     .frame(width: 3, height: 40)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {

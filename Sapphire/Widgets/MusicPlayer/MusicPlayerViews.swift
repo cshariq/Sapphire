@@ -436,7 +436,7 @@ struct MusicPlayerView: View {
                             }
                             HStack(spacing: 8) {
                                 if let listeners = artist.monthlyListeners ?? artist.followers {
-                                    Text("Monthly Listener: \(formattedListenerCount(listeners))")
+                                    Text("\(formattedListenerCount(listeners)) monthly listeners")
                                         .font(.system(size: 10, weight: .medium, design: .rounded))
                                         .foregroundStyle(.tertiary)
                                         .lineLimit(1)

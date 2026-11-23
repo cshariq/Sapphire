@@ -265,7 +265,7 @@ private struct NotchIslandBarTypeButton: View {
             NotchIslandBarButton(isSelected: isSelected, help: "Blip", action: context.onOpenBlipHub) {
                 Image(systemName: "sparkle")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(LinearGradient(colors: [.purple, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .foregroundStyle(Color.purple)
             }
             .simultaneousGesture(TapGesture(count: 2).onEnded(context.onOpenAgentS))
         case .caffeine:

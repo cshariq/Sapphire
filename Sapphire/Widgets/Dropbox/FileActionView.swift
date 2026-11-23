@@ -181,7 +181,7 @@ struct FileActionView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    Text("Type a new name, then press Return or tap .")
+                    Text("Type a new name, then press Return.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
