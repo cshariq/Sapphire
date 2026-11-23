@@ -945,6 +945,8 @@ struct NotchController: View {
         ].map { NotificationCenter.default.publisher(for: $0) }
     )
 
+    private static let windowResignedKey = NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
+
     private func applyNotchNotificationHandlers<V: View>(to view: V) -> some View {
         view
             .background(GeminiPickerBridge())
@@ -970,6 +972,15 @@ struct NotchController: View {
                 default:
                     break
                 }
+            }
+            .onReceive(Self.windowResignedKey) { notification in
+                // The hold for typing just ended while the pointer may already be elsewhere.
+                guard (notification.object as? NSWindow) === notchWindow,
+                      navigationStack.last == .notesPlayer,
+                      notchState == .clickExpanded,
+                      !isHovered else { return }
+                // Next turn: revertNotchWindowFocus clears isFocusable only after resigning key.
+                DispatchQueue.main.async { evaluateCollapseIfCursorOutsideHoverZone() }
             }
     }
 
@@ -3436,11 +3447,18 @@ struct NotchController: View {
         #endif
     }
 
+    /// Typing in Notes keeps the notch open when the pointer drifts off; it closes once the note does or another app takes focus.
+    private var isHeldOpenForTyping: Bool {
+        guard navigationStack.last == .notesPlayer, let window = notchWindow as? DynamicFocusWindow else { return false }
+        return window.isFocusable && window.isKeyWindow
+    }
+
     private func scheduleCollapse(after delay: TimeInterval, caller: String = #function, line: Int = #line) {
         noteCollapseReason("scheduleCollapse from \(caller):\(line) [prev: \(scratch.lastCollapseReason)]")
         scratch.collapseTask?.cancel()
         scratch.collapseTask = nil
         guard !isPinned,
+              !isHeldOpenForTyping,
               !isFileDropTargeted,
               !isFileDragSessionInProgress,
               !scratch.awaitingDropCompletion else {
