@@ -191,6 +191,7 @@ struct NotchSurfaceStyle: Equatable {
 final class NotchSurfaceHostView: NSView {
     private var glassView: LiquidGlassHostView?
     private var glassCoordinator: NotchGlassMorphCoordinator?
+    private weak var retiringGlass: LiquidGlassHostView?
     private var fillView: NotchLayerSurfaceView?
     private var style: NotchSurfaceStyle?
     private weak var engine: NotchMorphEngine?
@@ -247,7 +248,11 @@ final class NotchSurfaceHostView: NSView {
             )
             view.setShadow(glass.shadow, animation: shadowAnimation)
             glassCoordinator?.update(shape: style.shape, engine: engine)
-        } else {
+        } else if previous?.glass != nil, style.fill != nil, let glassView {
+            // Leaving glass: keep it under the new fill while that fades in, instead of cutting to the fill in one frame.
+            retiringGlass = glassView
+            glassView.setShadow(.none)
+        } else if retiringGlass !== glassView {
             removeGlass()
         }
 
@@ -274,6 +279,19 @@ final class NotchSurfaceHostView: NSView {
             fillView.detach()
             fillView.removeFromSuperview()
             self.fillView = nil
+        }
+
+        if previous?.glass != nil, let retiring = retiringGlass, let layer = fillView?.layer {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = 0.3
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(fade, forKey: "glassHandoff")
+            DispatchQueue.main.asyncAfter(deadline: .now() + fade.duration) { [weak self] in
+                guard let self, self.glassView === retiring else { return }
+                self.removeGlass()
+            }
         }
     }
 
@@ -303,6 +321,7 @@ final class NotchSurfaceHostView: NSView {
     }
 
     private func removeGlass() {
+        retiringGlass = nil
         glassCoordinator?.detach()
         glassCoordinator = nil
         glassView?.removeFromSuperview()
