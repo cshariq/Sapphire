@@ -739,6 +739,11 @@ final class InfrastructureUtilitiesTests: XCTestCase {
         XCTAssertEqual(recovered.hapticFeedbackEnabled, Settings().hapticFeedbackEnabled)
     }
 
+    func testImportRejectsJSONThatIsNotASettingsBackup() {
+        XCTAssertThrowsError(try SettingsBackupDocument.decodePayload(from: Data(#"{"version":1,"presets":[]}"#.utf8)))
+        XCTAssertThrowsError(try SettingsBackupDocument.decodePayload(from: Data(#"{"settings":{"name":"x"}}"#.utf8)))
+    }
+
     func testFocusNotchBarItemPreferenceIsIndependentFromFocusWidget() throws {
         var settings = Settings()
         settings.focusSessionIconEnabled = false
