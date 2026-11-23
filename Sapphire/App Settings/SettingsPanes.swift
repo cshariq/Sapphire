@@ -6052,8 +6052,7 @@ fileprivate struct CalibrateRSSIView: View {
         Text("Here are the suggested settings based on your measurements.").multilineTextAlignment(.center).foregroundColor(.secondary)
 
         if let near = nearRSSI, let far = farRSSI {
-            let suggestedUnlock = min(-10, near + 5)
-            let suggestedLock = max(-100, far - 5)
+            let (suggestedUnlock, suggestedLock) = BLE.suggestedThresholds(near: near, far: far)
 
             VStack(alignment: .leading, spacing: 15) {
                 Text("Measured Average 'Near' Signal: **\(near) dBm**")
