@@ -19,9 +19,9 @@ extension Notification.Name {
 enum SEStepMath {
     static func next(from current: Float, step: Float, direction: Float) -> Float {
         let step = step.clamped(to: 0.01...1.0)
+        // Snap to the step grid; devices read back a hair off what was set (0.05 → 0.0498), so a tenth of a step still counts as on it.
         let steps = current / step
-        let rounded = steps.rounded()
-        let base = abs(steps - rounded) < 0.001 ? rounded : steps
+        let base = direction > 0 ? (steps + 0.1).rounded(.down) : (steps - 0.1).rounded(.up)
         return ((base + direction) * step).clamped(to: 0...1)
     }
 }
@@ -1037,7 +1037,7 @@ struct SystemHUDView: View {
             }
 
             if settings.settings.hudShowPercentage {
-                Text("\(Int(level * 100))%")
+                Text("\(Int((level * 100).rounded()))%")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white.opacity(0.6))
                     .frame(width: 40)
@@ -1140,7 +1140,7 @@ struct SystemHUDView: View {
              .frame(height: 14)
 
              if settings.settings.hudShowPercentage {
-                 Text("\(Int(level * 100))%")
+                 Text("\(Int((level * 100).rounded()))%")
                      .font(.system(size: 12, weight: .semibold, design: .monospaced))
                      .foregroundColor(.white.opacity(0.6))
                      .frame(width: 40)
@@ -1181,7 +1181,7 @@ struct SystemHUDView: View {
               }
 
               if settings.settings.hudShowPercentage {
-                  Text("\(Int(appVolume * 100))%")
+                  Text("\(Int((appVolume * 100).rounded()))%")
                       .font(.system(size: 12, weight: .semibold, design: .monospaced))
                       .foregroundColor(.white.opacity(0.6))
                       .frame(width: 40)
@@ -1275,7 +1275,7 @@ struct ExternalDeviceIndicatorHUD: View {
                 }
 
                 if canControlVolume {
-                    Text("\(Int(level * 100))%")
+                    Text("\(Int((level * 100).rounded()))%")
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundColor(.white.opacity(0.6))
                         .frame(width: 40)
