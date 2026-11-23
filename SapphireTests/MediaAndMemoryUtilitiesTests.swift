@@ -16,7 +16,9 @@ final class MediaApplicationIdentityTests: XCTestCase {
             "com.google.Chrome.helper.GPU": "com.google.Chrome",
             "com.microsoft.edgemac.helper": "com.microsoft.edgemac",
             "com.microsoft.edgemac.helper.Renderer": "com.microsoft.edgemac",
-            "company.thebrowser.Browser.helper": "company.thebrowser.Browser"
+            "company.thebrowser.Browser.helper": "company.thebrowser.Browser",
+            "com.qobuz.desktop.helper": "com.qobuz.desktop",
+            "com.qobuz.desktop.helper.Renderer": "com.qobuz.desktop"
         ]
 
         for (helperBundleID, applicationBundleID) in mappings {
@@ -33,6 +35,9 @@ final class MediaApplicationIdentityTests: XCTestCase {
             MediaApplicationIdentity.canonicalBundleID("com.spotify.client"),
             "com.spotify.client"
         )
+        for unrelated in ["com.helper", "com.example.helperapp", "com.example.helper.a.b"] {
+            XCTAssertEqual(MediaApplicationIdentity.canonicalBundleID(unrelated), unrelated)
+        }
     }
 }
 
