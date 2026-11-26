@@ -1896,7 +1896,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if NSApp.activationPolicy() != .accessory {
             NSApp.setActivationPolicy(.accessory)
         }
-        let handedBack = previouslyFrontmostApp?.activate(options: [.activateIgnoringOtherApps]) ?? false
+        // If the user already clicked into another app, leave them there.
+        let handedBack = NSApp.isActive && previouslyFrontmostApp?.activate(options: [.activateIgnoringOtherApps]) == true
         if didActivateForNotchFocus, !handedBack, NSApp.isActive {
             NSApp.deactivate()
         }

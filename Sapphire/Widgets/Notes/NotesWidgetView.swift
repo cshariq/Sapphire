@@ -228,6 +228,7 @@ private struct InNotchNoteEditor: View {
     @State private var attributedBody: NSAttributedString
     @StateObject private var textViewBox = RichTextViewBox()
     @State private var autosaveTask: Task<Void, Never>?
+    @FocusState private var isTitleFocused: Bool
 
     let onBack: () -> Void
     let onSave: (QuickNote) -> Void
@@ -249,8 +250,12 @@ private struct InNotchNoteEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                NotchSearchField(placeholder: String(localized: "Title"), text: $draft.title, autofocus: draft.title == "New Note" || draft.title.isEmpty)
+                TextField("Title", text: $draft.title)
+                    .textFieldStyle(.plain)
                     .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .focused($isTitleFocused)
+                    .onSubmit(focusBody)
+                    .onExitCommand(perform: onBack)
 
                 Spacer(minLength: 8)
 
@@ -262,7 +267,7 @@ private struct InNotchNoteEditor: View {
                     action: onDelete
                 )
 
-                Button(action: saveAndBack) {
+                Button(action: onBack) {
                     Text("Done")
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .padding(.horizontal, 12)
@@ -281,7 +286,7 @@ private struct InNotchNoteEditor: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
 
-            RichTextEditor(attributedText: $attributedBody, textViewBox: textViewBox)
+            RichTextEditor(attributedText: $attributedBody, textViewBox: textViewBox, onEscape: onBack)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(MaterialChartPalette.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(
@@ -295,9 +300,34 @@ private struct InNotchNoteEditor: View {
         .clipped()
         .onChange(of: draft.title) { _, _ in scheduleAutosave() }
         .onChange(of: attributedBody) { _, _ in scheduleAutosave() }
+        .onAppear(perform: takeKeyboardFocus)
         .onDisappear {
             persistDraft()
+            if draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                onDelete()
+            }
+            (NSApp.delegate as? AppDelegate)?.revertNotchWindowFocus(textViewBox.textView?.window)
         }
+    }
+
+    // The editor holds keyboard focus for as long as it's open, so typing, copy and paste
+    // reach the note whichever field is active, instead of the app that was in front.
+    private func takeKeyboardFocus() {
+        DispatchQueue.main.async {
+            (NSApp.delegate as? AppDelegate)?.makeNotchWindowFocusable(textViewBox.textView?.window)
+            if draft.title.isEmpty && draft.body.isEmpty {
+                isTitleFocused = true
+            } else {
+                focusBody()
+            }
+        }
+    }
+
+    private func focusBody() {
+        guard let textView = textViewBox.textView else { return }
+        textView.window?.makeFirstResponder(textView)
+        textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
     }
 
     private func scheduleAutosave() {
@@ -314,10 +344,5 @@ private struct InNotchNoteEditor: View {
         autosaveTask = nil
         draft.applyAttributedBody(attributedBody)
         onSave(draft)
-    }
-
-    private func saveAndBack() {
-        persistDraft()
-        onBack()
     }
 }

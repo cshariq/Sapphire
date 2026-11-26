@@ -81,7 +81,7 @@ final class NotesManager: ObservableObject {
     }
 
     @discardableResult
-    func addNote(title: String = "New Note", body: String = "") -> QuickNote {
+    func addNote(title: String = "", body: String = "") -> QuickNote {
         let note = QuickNote(title: title, body: body)
         notes.insert(note, at: 0)
         save()
