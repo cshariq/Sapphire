@@ -127,6 +127,13 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var latestRSSIs: [Double] = []
     private let latestN: Int = 5
 
+    /// Calibration suggestions: unlock (signal at or above) a little below the near reading, lock (signal below)
+    /// a little above the far reading, with the unlock threshold always above the lock one.
+    static func suggestedThresholds(near: Int, far: Int) -> (unlock: Int, lock: Int) {
+        let unlock = min(-10, near - 5)
+        return (unlock, max(-100, min(far + 5, unlock - 5)))
+    }
+
     var isScanningContinuously = false
     var includeUnnamedDevices = false
     private var peripheralsBeingProbed = Set<UUID>()
@@ -468,6 +475,8 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     @MainActor private func updateMonitoredPeripheral(_ rssi: Int) {
+        // CoreBluetooth reports 127 (0 once clamped) when it has no reading; averaging it in reads as "right next to the Mac".
+        guard rssi < 0 else { return }
         let estimatedRSSI = getEstimatedRSSI(rssi: rssi)
 
         Task { @MainActor in self.delegate?.updateRSSI(rssi: estimatedRSSI, active: self.activeModeTimer != nil) }
@@ -476,7 +485,6 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             Task { @MainActor in self.delegate?.updatePresence(presence: true, reason: "close") }
             proximityTimer?.invalidate()
             proximityTimer = nil
-            latestRSSIs.removeAll()
         } else if estimatedRSSI < lockRSSI {
             if proximityTimer == nil {
                 proximityTimer = Timer(timeInterval: proximityTimeout, repeats: false, block: { [weak self] _ in
