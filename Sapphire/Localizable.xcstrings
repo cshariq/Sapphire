@@ -19229,29 +19229,6 @@
         }
       }
     },
-    "Collapsed Notch Appearance": {
-      "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Collapsed Notch Appearance"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "折叠时的刘海区域外观"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "收合時的瀏海區域外觀"
-          }
-        }
-      }
-    },
     "Collected Data": {
       "comment": "Settings interface",
       "localizations": {
@@ -42473,6 +42450,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "即時動態"
+          }
+        }
+      }
+    },
+    "Live Activity & HUD Appearance": {
+      "comment": "Settings dynamic presentation at literal source; reconcile with final compiler extraction.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Activity & HUD Appearance"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时活动与提示浮层外观"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即時動態與浮動提示外觀"
           }
         }
       }
