@@ -10,15 +10,16 @@ enum MediaApplicationIdentity {
         switch bundleID {
         case "com.apple.WebKit.GPU", "com.apple.WebKit.WebContent":
             return "com.apple.Safari"
-        case let id where id.starts(with: "com.google.Chrome.helper"):
-            return "com.google.Chrome"
-        case let id where id.starts(with: "com.microsoft.edgemac.helper"):
-            return "com.microsoft.edgemac"
-        case "company.thebrowser.Browser.helper":
-            return "company.thebrowser.Browser"
         case let id where id == AppleMusicPlaybackIdentity.hostBundleID && AppleMusicPlaybackIdentity.isInAppPlaybackActive:
             return "com.apple.Music"
         default:
+            // Chromium browsers and Electron apps (Qobuz, ...) play from "<app id>.helper[.Type]" processes,
+            // which aren't listed as running apps.
+            let parts = bundleID.split(separator: ".")
+            if let helper = parts.lastIndex(where: { $0.caseInsensitiveCompare("helper") == .orderedSame }),
+               helper > 1, helper >= parts.count - 2 {
+                return parts[..<helper].joined(separator: ".")
+            }
             return bundleID
         }
     }
